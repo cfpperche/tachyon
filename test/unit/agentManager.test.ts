@@ -361,6 +361,44 @@ describe("AgentManager", () => {
     }
   });
 
+  it("canonical Evolution selector fails closed when the authorized active profile identity differs", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-selector-"));
+    try {
+      const evolution = new EvolutionStore(root);
+      const candidate = await evolution.createCandidate("reviewer", {
+        reviewId: "review-selector",
+        taskId: "t-selector",
+        target: { kind: "learning", content: "Authorized learning.", reason: "Selector binding test." },
+      });
+      const detail = await evolution.candidateDetail("reviewer", candidate.id);
+      await evolution.approveCandidate("reviewer", candidate.id, {
+        expectedActiveVersion: 0,
+        expectedTargetDigest: detail.currentTargetDigest,
+      });
+      const config = configOf("agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
+      config.agents.reviewer!.profileEvolution = {
+        profileId: "another-profile",
+        selectorSha256: "a".repeat(64),
+      };
+      const fake = fakeTmux();
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: workspaceHash(root),
+        workspaceRoot: root,
+        ledger: new SessionLedger(root),
+        getConfig: () => config,
+        getMaxAgents: () => 8,
+      });
+
+      await expect(manager.spawn("reviewer")).rejects.toThrow(
+        "Agent Evolution active profile does not match canonical selector",
+      );
+      expect(fake.newSessionArgs).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("SDD 421 delivers the same approved evolution snapshot through every supported runtime channel", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-runtimes-"));
     try {
@@ -1560,6 +1598,45 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
+
+  it("refuses disabled canonical profiles before spawn, resume, restart, or bound Delivery preparation", async () => {
+    let prepared = 0;
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      prepareDeliveryJoin: async () => { prepared += 1; throw new Error("must not prepare"); },
+      confirmDeliveryJoin: async () => undefined,
+    });
+    h.manager.defOf("reviewer")!.profileLifecycle = {
+      enabled: false,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await expect(h.manager.spawn("reviewer")).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.spawn("reviewer", { cmd: "codex" })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.resume("reviewer", {
+      def: { cmd: "codex", kind: "agent" },
+      resume: { runtime: "codex", sessionId: "session-1" },
+      cwd: h.ws,
+      declared: true,
+      updatedAt: "now",
+    })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow("canonical agent profile is disabled");
+    await expect(h.manager.spawn("review-run", {
+      deliveryJoin: {
+        deliveryId: "delivery-1",
+        role: "reviewer",
+        ownsSubset: [],
+        expectedHead: "abc",
+        declaredAgent: "reviewer",
+        operationId: "join-disabled",
+      },
+    })).rejects.toThrow("canonical agent profile is disabled");
+
+    expect(prepared).toBe(0);
+    expect(h.sessions.size).toBe(0);
+    expect(h.newSessionArgs).toEqual([]);
+  });
 
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
     const prepared: string[] = [];
@@ -3917,6 +3994,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager } = resumeHarness(HARNESS_YML, stubHarness());
     await manager.spawn("researcher");
     await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
+    await expect(manager.prepareCanonicalProfileRename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 
   it("phase 2: renaming a managed Pi agent is refused while its private session home is name-keyed", async () => {
@@ -3926,6 +4004,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("pi");
     await expect(manager.rename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
+    await expect(manager.prepareCanonicalProfileRename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
   });
 
   // spec 236 — the Bridge reaches EVERY Tachyon-spawned agent via withRuntimeBridge (one shared step).
@@ -4425,6 +4504,32 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("GROK_HOME="))).toBe(false);
     });
 
+    it("canonical Grok materializes its private home even when the Bridge is down", async () => {
+      const materialized: string[] = [];
+      const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        materializeHarness: ({ name, def }) => {
+          materialized.push(`${name}:${def.profileLifecycle?.authorityRevision ?? "legacy"}`);
+          return {
+            home: `/ws/.tachyon/bridge-mcp/${name}.grok`,
+            env: { GROK_HOME: `/ws/.tachyon/bridge-mcp/${name}.grok` },
+            args: [],
+          };
+        },
+        materializeBridgeMcpGrok: () => undefined,
+      });
+      h.manager.defOf("grok")!.profileLifecycle = {
+        enabled: true,
+        agentId: "11111111-1111-4111-8111-111111111111",
+        canonicalSha256: "a".repeat(64),
+        authorityRevision: "grok-r1",
+      };
+
+      await h.manager.spawn("grok");
+
+      expect(materialized).toEqual(["grok:grok-r1"]);
+      expect(envFromTmuxArgs(h.newSessionArgs.at(-1)!).GROK_HOME).toBe("/ws/.tachyon/bridge-mcp/grok.grok");
+    });
+
     // t-303f2b — gated/ad-hoc grok must use the Bridge private GROK_HOME (same as declared), not a
     // second isolate:transcript harness home that races auth materialization.
     it("t-303f2b: ad-hoc grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {
@@ -4808,6 +4913,62 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
 });
 
 describe("live rename (agent/terminal, running or not)", () => {
+  it("converges a captured canonical live rename idempotently across tmux, ledger, lineage and activity", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-canonical-live-rename-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      ledger.record("reviewer", { resume: { runtime: "codex", sessionId: "session-1" }, cwd: dir, declared: true });
+      ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "reviewer", delegator: "reviewer" }, cwd: dir, declared: false });
+      const fake = fakeTmux();
+      const hash = workspaceHash(dir);
+      fake.sessions.add(`tachyon-${hash}-reviewer`);
+      const activityDir = path.join(dir, ".tachyon", "activity");
+      fs.mkdirSync(activityDir, { recursive: true });
+      fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "event\n");
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: hash,
+        workspaceRoot: dir,
+        ledger,
+        getConfig: () => configOf("agents:\n  reviewer:\n    cmd: codex\n"),
+        getMaxAgents: () => 8,
+      });
+      await manager.rehydrateFromLedger();
+      const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+      fs.appendFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "late event\n");
+
+      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
+      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
+
+      expect(fake.sessions.has(`tachyon-${hash}-reviewer`)).toBe(false);
+      expect(fake.sessions.has(`tachyon-${hash}-maintainer`)).toBe(true);
+      expect(ledger.get("reviewer")).toBeUndefined();
+      expect(ledger.get("maintainer")?.resume?.sessionId).toBe("session-1");
+      expect(ledger.get("child")?.def).toMatchObject({ parent: "maintainer", delegator: "maintainer" });
+      expect((await manager.list()).find((agent) => agent.name === "child")?.parent).toBe("maintainer");
+      expect(fs.existsSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`))).toBe(false);
+      expect(fs.readFileSync(path.join(activityDir, `${agentLogId("maintainer")}.jsonl`), "utf8")).toBe("event\nlate event\n");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("acknowledges tmux rename success when the command result is lost", async () => {
+    const { manager, sessions } = makeManager("agents:\n  reviewer:\n    cmd: codex\n");
+    await manager.spawn("reviewer");
+    const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+    const oldSession = manager.session("reviewer");
+    const newSession = manager.session("maintainer");
+    vi.spyOn((manager as unknown as { opts: { tmux: TmuxService } }).opts.tmux, "renameSession").mockImplementationOnce(async () => {
+      sessions.delete(oldSession);
+      sessions.add(newSession);
+      throw new Error("lost result");
+    });
+    await expect(manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot)).resolves.toBeUndefined();
+    expect(sessions.has(oldSession)).toBe(false);
+    expect(sessions.has(newSession)).toBe(true);
+  });
+
   it("renames a LIVE session in place and the new name answers", async () => {
     const { manager, sessions } = makeManager("agents:\n  claude:\n    cmd: claude\n  pilot:\n    cmd: x\n");
     await manager.spawn("claude");

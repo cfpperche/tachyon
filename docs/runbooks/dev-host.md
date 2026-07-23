@@ -10,6 +10,25 @@ fleet window.
 **Canonical F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)
 **Scripts:** `scripts/dev-host/`
 
+## Maintaining the harness (read this if you dogfood)
+
+**Everything under `scripts/dev-host/` is FIRST-PARTY, living code — ours to keep sharp.** The harness
+_orchestrates_ third-party primitives (VS Code / the Extension Development Host, `Xvfb`, `puppeteer-core`,
+the Chrome DevTools Protocol) but the scenario runner, the verb dispatch, the frame targeting, the
+pointer/fixture lane, and every assertion are ours.
+
+Standing directive (maintainer, 2026-07-22): **if you hit a bug or a rough edge IN THE HARNESS while
+dogfooding, fix it — don't work around it silently.** A broken/awkward harness is a product defect on
+our own tooling; treat it to the same bar as any other code (branch, test, land, journal). Every real
+dogfood session is also a chance to harden the harness: a new reusable verb, better frame targeting, a
+new scenario worth keeping — land it back into `scripts/dev-host/` so the next agent starts ahead.
+
+The one line to hold: distinguish **our bugs from their limits.** A defect in what we built → fix it.
+A genuine limitation of a third-party primitive (an EDH quirk, an Xvfb/CDP constraint) → work around it
+AND document the workaround here (or report upstream) — that is not ours to patch, but the reader after
+you must not have to rediscover it. The webview-console caveat below is the model: a real CDP limit,
+documented, with the injected-spy workaround captured next to it.
+
 ## Evolution (keep this on purpose)
 
 The *mechanism* did not change; the **name and entry surface** did. Agents and humans reading old
@@ -36,7 +55,8 @@ pins, journals, or commits should map the old vocabulary here:
 
 | Entry | How | Why |
 |-------|-----|-----|
-| `tachyon.yml`, README, other files | **symlink** into fixture | Live edits in fixture show in EDH Explorer |
+| `tachyon.yml` | **real copy** | Engine config reads are no-follow and Studio mutations must stay inside disposable dogfood state |
+| README, other files | **symlink** into fixture | Live edits in fixture show in EDH Explorer |
 | `.tachyon/` (tasks, continuity, sessions, …) | **real copy** (`cpSync`) | Engine Soul launch fails closed if `.tachyon` resolves *outside* the open workspace (`SoulError: … parent escapes workspace`) |
 | `.edh-*` CLI dirs | skipped | Not needed for F5 |
 
@@ -187,6 +207,95 @@ PNG evidence: `$FIXTURE/headless-out/shots/fail-visible.png` (copied to `.tachyo
 
 Requirements: `Xvfb`, and a compatible VS Code test/native binary. The resolver also sees the primary checkout's
 `.vscode-test` cache when this command runs from an isolated worktree.
+
+---
+
+## Interactive headless (agent-drivable, full webview access)
+
+`scripts/dev-host/headless-runner.js` (above) runs INSIDE the extension host — it has the full
+`vscode` API but **cannot see webview DOM/console** (webviews are separate renderer targets). When a
+bug lives in a webview — a Control route, a studio form, the sidebar — use the **interactive** harness
+instead: it launches the SAME pointed Dev Host on Xvfb with `--remote-debugging-port`, then drives it
+over CDP (puppeteer-core, already a dep) with every webview iframe reachable for clicks, DOM reads,
+console capture, and screenshots. This is the "agent reproduces a UI bug end-to-end, headless, no
+human clicking" primitive.
+
+```bash
+# arm the pointer once (any worktree/fixture — primary checkout is fine):
+npm run dogfood:dev-host -- point --worktree /home/goat/tachyon --fixture <slug> --spec NNN --slug <slug>
+# build the pointed extension's dev bundle (the harness refuses a missing dist/extension.js):
+TACHYON_ENGINE_CHANNEL=dev npm run build
+
+# boot smoke (settle, dump CDP targets + one screenshot, exit):
+node scripts/dev-host/headless-interactive.mjs
+
+# run a scenario (reproduce a specific bug, assert, capture evidence):
+node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/<name>.mjs
+```
+
+Output (default `.tachyon/dev-host/interactive-out/`, wiped per run): `console.log` (every target's
+console + pageerrors, captured continuously), `driver.log`, `host.log`, `result.json`
+(`{ ok, asserts: [{id, ok, detail}] }`), and `<name>.png` screenshots.
+
+**Scenario contract** — an ES module exporting `run(ctx)`; `ctx` gives you:
+
+| `ctx.*` | what |
+|---|---|
+| `workbench` | puppeteer `Page` for the VS Code workbench renderer |
+| `findWebviewFrame(predJs)` | locate a webview iframe by a JS predicate string evaluated inside each candidate frame (e.g. `"!!document.querySelector('.ck-tabs')"` finds Control) |
+| `command(id)` | run a VS Code command via the keyboard-driven Command Palette (e.g. `"Tachyon: Open Control"`) |
+| `shot(name)` | screenshot the workbench → `<out>/<name>.png` |
+| `log(msg)` / `sleep(ms)` | timestamped driver log line / delay |
+
+`scripts/dev-host/scenarios/t-0e8a9a-agent-studio-nav-loop.mjs` is the worked reference: it opens
+Control, edits an agent, clicks the breadcrumb back, and asserts the route actually stays put — the
+exact repro that caught the studio nav-checkpoint teardown bug (t-0e8a9a). Copy it as a template for
+any "click here, then this should happen" webview repro.
+
+**Webview-console caveat:** the parent CDP target does NOT surface a webview iframe's own
+`console.log` (separate execution context). When you need client-side visibility, inject a spy INTO
+the frame with `frame.evaluate` — e.g. `window.addEventListener('message', …)` recording inbound host
+messages into a `window.__x` array, then read it back with another `frame.evaluate`. The reference
+scenario does exactly this to prove the checkpoint/ack handshake.
+
+Requirements: `Xvfb`, `puppeteer-core` (dep), a compatible VS Code binary (`resolve-code.mjs` finds
+`.vscode-test/…/bin/code` — the sh launcher, NOT the raw ELF, which is the tunnel CLI). The harness
+strips `VSCODE_IPC_HOOK_CLI`/`ELECTRON_RUN_AS_NODE` from the child env so it never hijacks the human's
+live window. Uses display `:97` (distinct from the S1 lane's `:96`) and its own private profile dirs.
+
+### Exploratory session (drive it live, verb-by-verb)
+
+`headless-interactive.mjs` runs ONE scenario then exits — great for a canned repro. For **exploratory**
+dogfood (boot once → look → act → look → decide the next step) use `headless-session.mjs`: `up` launches
+the pointed Dev Host once under Xvfb + CDP and leaves it running detached; every later verb makes a
+fresh cheap CDP connection, does one thing, prints a JSON line, disconnects. No relaunch between steps.
+
+```bash
+node scripts/dev-host/headless-session.mjs up                       # boot once (detached), ~10s
+node scripts/dev-host/headless-session.mjs cmd "Tachyon: Open Control"
+node scripts/dev-host/headless-session.mjs eval control "[...document.querySelectorAll('.ck-tabs button')].map(b=>b.textContent.trim())"
+node scripts/dev-host/headless-session.mjs click control "Fleet"
+node scripts/dev-host/headless-session.mjs dom control "[data-testid='control-fleet'] button"
+node scripts/dev-host/headless-session.mjs shot fleet             # → session-out/fleet.png (Read it)
+node scripts/dev-host/headless-session.mjs down                     # kill EDH + Xvfb
+```
+
+While that session is live, `point` and `point-clear` refuse to replace its pointer. Every
+interactive verb also checks the pointer generation and aborts fail-closed if metadata was changed
+outside the CLI. Always finish with `down` before handing the shared pointer to another workflow.
+
+Verbs: `up`/`down`/`status`/`sleep`/`cmd`/`shot`/`frames`/`eval`/`click`/`click-testid`/`dom`/
+`spy-console`/`console`/`steps`. `<frame>` is the alias `control` (built-in Control-webview predicate)
+or any JS predicate string that returns truthy inside the target frame. `spy-console <frame>` installs
+a `console.*`/error mirror in the frame and `console <frame> [n]` reads it back — this is how you get
+the **webview's own** console (the parent CDP target can't see it).
+
+Guided/batch mode: `steps <file.json>` runs `[{ "verb": "...", "args": [...] }, ...]` in order (insert
+`{ "verb": "sleep", "args": ["2000"] }` between actions to let the UI settle) and prints a result
+array; it stops at the first failing step unless that step has `"continueOnError": true`. Session
+state lives in `.tachyon/dev-host/session.json`; screenshots/logs in `.tachyon/dev-host/session-out/`.
+`up` refuses if a session is already live (`--force` overrides a stale one). **Always `down` when
+finished** — a detached EDH left running holds the CDP port and the pointer's engine.
 
 ---
 

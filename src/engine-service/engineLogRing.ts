@@ -11,6 +11,14 @@ const DEFAULT_MAX_FILE_BYTES = 1_500_000;
 
 export type LogLevel = "I" | "W" | "E" | "D";
 
+/**
+ * Node's own default 'warning' handler prints via console.error (e.g. "(node:1586539)
+ * ExperimentalWarning: SQLite is an experimental feature..."), so our console.error
+ * capture tags it "E" even though it's not a daemon fault. t-3cdb91: reclassify these
+ * to "W" at capture time so the ring's E-level (and hasError()) means an actual error.
+ */
+const NODE_PROCESS_WARNING_RE = /\(node:\d+\)\s+\S*Warning:/;
+
 export class EngineLogRing {
   private readonly lines: string[] = [];
   private readonly filePath?: string;
@@ -40,7 +48,8 @@ export class EngineLogRing {
       const msg = args
         .map((a) => (typeof a === "string" ? a : util.inspect(a, { depth: 2, breakLength: 120 })))
         .join(" ");
-      this.push(msg, level);
+      const effectiveLevel = level === "E" && NODE_PROCESS_WARNING_RE.test(msg) ? "W" : level;
+      this.push(msg, effectiveLevel);
     } catch {
       /* never break logging */
     }

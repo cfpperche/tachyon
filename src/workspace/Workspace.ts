@@ -1,10 +1,69 @@
 import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { loadConfigFile, parseConfig, CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { CONFIG_FILENAMES, inferKind, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import {
+  loadProfileAwareConfig,
+  parseProfileAwareConfigSyntax,
+} from "../config/agentProfileConfigLoader.js";
+import {
+  parseAgentProfileAuthorityRegistry,
+  serializeAgentProfileAuthorityRegistry,
+  type AgentProfileAuthorityRecord,
+} from "../config/agentProfileAuthority.js";
+import {
+  commitLegacyAgentProfileMigration,
+  planLegacyAgentProfileMigration,
+  reconcileAgentProfileMigrations,
+  readAgentProfileConfigText,
+  replaceAgentProfileConfigIfDigest,
+  rollbackLegacyAgentProfileMigration,
+  type AgentProfileMigrationAuthorityPort,
+  type AgentProfileMigrationResult,
+  type PlanLegacyAgentProfileMigrationResult,
+} from "../config/agentProfileMigration.js";
+import {
+  agentProfileLifecycleBlocked,
+  commitAgentProfileLifecycle as commitCanonicalAgentProfileLifecycle,
+  inspectAgentProfileLifecycle as inspectCanonicalAgentProfileLifecycle,
+  reconcileAgentProfileLifecycle,
+  type AgentProfileLifecycleConfigPort,
+  type AgentProfileLifecycleCommitResult,
+  type AgentProfileLifecycleSnapshot,
+  type CommitAgentProfileLifecycleInput,
+} from "../config/agentProfileLifecycle.js";
+import {
+  agentProfileRenameBlocked,
+  commitAgentProfileRename,
+  reconcileAgentProfileRenames,
+} from "../config/agentProfileRename.js";
+import {
+  agentProfileForgetBlocked,
+  agentProfileForgetRetainedNames,
+  agentProfileForgetRetentionUncertain,
+  commitAgentProfileForget,
+  reconcileAgentProfileForgets,
+  type AgentProfileForgetResult,
+} from "../config/agentProfileForget.js";
+import {
+  clonePortableAgentProfile,
+  exportPortableAgentProfileBundle,
+  importPortableAgentProfileBundle,
+  type ImportPortableAgentProfileResult,
+  type PortableAgentProfileBytes,
+} from "../config/agentProfileBundle.js";
+import {
+  createProfileFromStudioMutation,
+  patchProfileFromStudioMutation,
+  projectAgentProfileStudioSnapshot,
+  type AgentProfileStudioLifecycleMutationV1,
+  type AgentProfileStudioLifecycleResultV1,
+  type AgentProfileStudioMutationV1,
+  type AgentProfileStudioSnapshotV1,
+} from "../config/agentProfileStudio.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -113,6 +172,7 @@ import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } fro
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import {
+  agentProfileAuthoritiesSecretKey,
   authorityHeadsSecretKey,
   callerIdentityInstanceIdStateKey,
   callerIdentityRegistryStateKey,
@@ -321,6 +381,19 @@ export interface WorkspaceSeams {
   startBridge?: boolean;
   /** test-only presentation override; production obtains the adapter from EngineHost. */
   terminals?: TerminalPresentation;
+  /** test-only native-profile inspection home; production inspects the real runtime home. */
+  agentProfileHomeDir?: string;
+}
+
+/** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
+export function resolveAgentProfileHomeDir(
+  seam: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (seam) return seam;
+  if (env.TACHYON_DEV_HOST !== "1") return undefined;
+  const candidate = env.TACHYON_DEV_HOST_PROFILE_HOME;
+  return typeof candidate === "string" && path.isAbsolute(candidate) ? candidate : undefined;
 }
 
 export interface BridgeStartFailureInfo {
@@ -539,6 +612,10 @@ export class Workspace {
   private authorityIntegrityKey: Buffer | undefined;
   /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
   private authorityHeads = new Map<string, AuthorityHead>();
+  /** Host-custodied profile heads selected before any profile-backed config can load. */
+  private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
+  private readonly agentProfileHomeDir: string | undefined;
+  private agentProfileAuthorityTail: Promise<void> = Promise.resolve();
   /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
   private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
   private readonly reloadTransactions: ReloadTransactionStore;
@@ -548,6 +625,8 @@ export class Workspace {
   private clientRebind: BridgeClientRebindCoordinator | undefined;
   private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
+  /** Profile-backed rows retained after a warm reload failure remain visible but cannot start anew. */
+  private profileSpawnBlocked = new Set<string>();
   /**
    * t-8354ae — set whenever the working-tree config fails to load. Survives until the next
    * successful reloadConfig(). Drives the persistent sidebar error banner + degraded roster.
@@ -581,9 +660,10 @@ export class Workspace {
     private readonly deps: WorkspaceDeps,
     seams: WorkspaceSeams = {},
   ) {
+    this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
-    this.taskNotifications = new TaskNotificationService(workspaceRoot, deps.host, () => this.config);
+    this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
     if (seams.tmux) {
       // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
       // is polling-only via tick()). A no-op engine keeps start()/dispose() coherent.
@@ -632,7 +712,14 @@ export class Workspace {
 
     // Auth: stable per-workspace token (extension storage — never in a committable file).
     const earlyFile = this.configPath();
-    const earlyConfig = earlyFile ? loadConfigFile(earlyFile).config : undefined;
+    let earlyConfig: TachyonConfig | undefined;
+    if (earlyFile) {
+      try {
+        earlyConfig = parseProfileAwareConfigSyntax(fs.readFileSync(earlyFile, "utf8")).config;
+      } catch {
+        // Preserve the historical default-on auth behavior when the file cannot be read.
+      }
+    }
     this.authEnabled = earlyConfig?.settings.auth ?? true;
     this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
     this.externalToken = this.token ? loadOrCreateExternalToken(deps.host.globalStoragePath(), this.wsHash, this.token) : undefined;
@@ -808,6 +895,10 @@ export class Workspace {
       // env + MCP wiring; null when the agent has no harness / runtime can't.
       materializeHarness: ({ name, def, cwd }) => {
         const adapter = adapterFor(def.cmd);
+        if (def.profileCapabilities) {
+          if (!adapter) throw new Error(`runtime for '${name}' has no capability projection adapter`);
+          return this.harness.materializeProfileCapabilities(name, def.profileCapabilities, adapter, cwd, this.bridgeEntry());
+        }
         // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its
         // dedicated exact-resource materializer rather than pretending Pi has generic MCP wiring.
         if (adapter?.runtime === "pi" && def.isolate === undefined) {
@@ -819,12 +910,30 @@ export class Workspace {
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
         if (def.harness) return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
+        if (adapter.runtime === "claude" && def.profileLifecycle) {
+          return this.harness.materializeCanonicalClaudeHome(name, adapter, cwd);
+        }
         // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,
         // so the agent still loads the workspace project config (incl. the project .mcp.json).
         if (def.isolate === "transcript") return this.harness.materializeHomeOnly(name, adapter, cwd);
         // spec 357 - codex defaults to a lifetime-scoped private CODEX_HOME so same-cwd agents cannot
         // bind to each other's rollout transcripts.
-        if (adapter.runtime === "codex") return this.harness.materializeHomeOnly(name, adapter, cwd);
+        if (adapter.runtime === "codex") {
+          // Canonical profiles own their forming inputs. Their private CODEX_HOME must not inherit
+          // selectors/capabilities from the account-wide config that the profile inspector suppresses.
+          return this.harness.materializeHomeOnly(name, adapter, cwd, {
+            inheritNativeConfig: def.profileLifecycle === undefined,
+          });
+        }
+        if (adapter.runtime === "grok" && def.profileLifecycle) {
+          const home = this.harness.materializeBridgeMcpGrok(
+            name,
+            this.bridgeEntry() ?? {},
+            cwd ?? this.workspaceRoot,
+            { exactTrust: true },
+          );
+          return { home, env: { GROK_HOME: home }, args: [] };
+        }
         return null;
       },
       // spec 236 — write a NON-harness claude agent's Bridge-only --mcp-config file and return its path
@@ -850,7 +959,12 @@ export class Workspace {
       // undefined when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
       materializeBridgeMcpGrok: (name, cwd) => {
         const entry = this.bridgeEntry();
-        return entry ? this.harness.materializeBridgeMcpGrok(name, entry, cwd ?? this.workspaceRoot) : undefined;
+        return entry ? this.harness.materializeBridgeMcpGrok(
+          name,
+          entry,
+          cwd ?? this.workspaceRoot,
+          { exactTrust: this.config?.agents[name]?.profileLifecycle !== undefined },
+        ) : undefined;
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
       materializeBridgeMcpHermes: (name) => {
@@ -2365,6 +2479,82 @@ export class Workspace {
     return authorityHeadsSecretKey(this.wsHash);
   }
 
+  private profileAuthorityPort(): AgentProfileMigrationAuthorityPort {
+    const refresh = async (): Promise<Map<string, AgentProfileAuthorityRecord>> => {
+      await this.agentProfileAuthorityTail;
+      const records = parseAgentProfileAuthorityRegistry(
+        await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+      );
+      this.agentProfileAuthorities = records;
+      return records;
+    };
+    const mutate = async (operation: (records: Map<string, AgentProfileAuthorityRecord>) => void): Promise<void> => {
+      const pending = this.agentProfileAuthorityTail.then(async () => {
+        const records = parseAgentProfileAuthorityRegistry(
+          await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+        );
+        operation(records);
+        const serialized = serializeAgentProfileAuthorityRegistry(records);
+        await this.host.setSecret(agentProfileAuthoritiesSecretKey(this.wsHash), serialized);
+        const persisted = parseAgentProfileAuthorityRegistry(
+          await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+        );
+        if (serializeAgentProfileAuthorityRegistry(persisted) !== serialized) {
+          throw new Error("agent profile authority SecretStorage readback mismatch");
+        }
+        this.agentProfileAuthorities = persisted;
+      });
+      this.agentProfileAuthorityTail = pending.catch(() => undefined);
+      return pending;
+    };
+    return {
+      read: async (agentName) => {
+        const record = (await refresh()).get(agentName);
+        return record ? structuredClone(record) : undefined;
+      },
+      publish: async (record) => mutate((records) => {
+        if (records.has(record.agentName)) throw new Error(`agent profile authority CAS conflict for '${record.agentName}'`);
+        records.set(record.agentName, structuredClone(record));
+      }),
+      replace: async (record, expected) => mutate((records) => {
+        const current = records.get(record.agentName);
+        if (!current || !isDeepStrictEqual(current, expected)) {
+          throw new Error(`agent profile authority CAS conflict for '${record.agentName}'`);
+        }
+        records.set(record.agentName, structuredClone(record));
+      }),
+      retire: async (agentName, expected) => mutate((records) => {
+        const current = records.get(agentName);
+        if (!current || !isDeepStrictEqual(current, expected)) {
+          throw new Error(`agent profile authority CAS conflict for '${agentName}'`);
+        }
+        records.delete(agentName);
+      }),
+      move: async (oldAgentName, newAgentName, expected, target) => mutate((records) => {
+        const current = records.get(oldAgentName);
+        const destination = records.get(newAgentName);
+        if (!current) {
+          if (destination && isDeepStrictEqual(destination, target)) return;
+          throw new Error(`agent profile authority CAS conflict for '${oldAgentName}'`);
+        }
+        if (!isDeepStrictEqual(current, expected) || destination !== undefined
+          || target.agentName !== newAgentName || target.agentId !== expected.agentId) {
+          throw new Error(`agent profile authority CAS conflict for '${oldAgentName}' -> '${newAgentName}'`);
+        }
+        records.delete(oldAgentName);
+        records.set(newAgentName, structuredClone(target));
+      }),
+    };
+  }
+
+  private agentProfileLifecycleConfigPort(): AgentProfileLifecycleConfigPort {
+    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
+    return {
+      read: () => readAgentProfileConfigText(file),
+      replace: (expectedSha256, text) => replaceAgentProfileConfigIfDigest(file, expectedSha256, text),
+    };
+  }
+
   private authorityHeadMapKey(identity: string): string {
     return `canonical:${identity}`;
   }
@@ -2698,6 +2888,71 @@ export class Workspace {
     } catch (err) {
       ws.host.notify(ws.t("per-agent Bridge tokens and authority custody unavailable: {0} (falling back to the shared token; gated authority remains fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
     }
+    try {
+      ws.agentProfileAuthorities = parseAgentProfileAuthorityRegistry(
+        await deps.host.getSecret(agentProfileAuthoritiesSecretKey(ws.wsHash)),
+      );
+    } catch (err) {
+      ws.host.notify(ws.t("agent profile authority custody unavailable: {0} (profile-backed agents remain fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
+    }
+    const profileMigrationConfig = ws.configPath();
+    if (profileMigrationConfig) {
+      const reconciled = await reconcileAgentProfileMigrations({
+        workspaceRoot,
+        configPath: profileMigrationConfig,
+        authority: ws.profileAuthorityPort(),
+      });
+      if (reconciled.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile migration recovery found {0} degraded transaction(s); affected agents remain fail-closed", reconciled.degraded.length), "error");
+      }
+      const lifecycle = await reconcileAgentProfileLifecycle({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        activateState: (agentName, state) => ws.activateAgentProfileLifecycleState(agentName, state),
+      });
+      if (lifecycle.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile lifecycle recovery found {0} degraded transaction(s); affected agents remain fail-closed", lifecycle.degraded.length), "error");
+      }
+      const renames = await reconcileAgentProfileRenames({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
+          rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
+        },
+        live: {
+          prepare: (oldAgentName, newAgentName) => ws.manager.prepareCanonicalProfileRename(oldAgentName, newAgentName),
+          converge: (oldAgentName, newAgentName, snapshot) => ws.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+        },
+        activateState: () => {
+          if (!ws.reloadConfig()) throw new Error("trusted profile rename activation failed");
+        },
+      });
+      if (renames.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile rename recovery found {0} degraded transaction(s); affected agents remain fail-closed", renames.degraded.length), "error");
+      }
+      const forgets = await reconcileAgentProfileForgets({
+        workspaceRoot,
+        authority: ws.profileAuthorityPort(),
+        config: ws.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
+          retire: (agentName, expectedProfileId) => ws.evolutionStore.retireAgent(agentName, expectedProfileId),
+        },
+        live: {
+          prepare: (agentName) => ws.manager.prepareCanonicalProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => ws.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+        },
+        activateState: () => {
+          if (!ws.reloadConfig()) throw new Error("trusted profile forget activation failed");
+        },
+      });
+      if (forgets.degraded.length > 0) {
+        ws.host.notify(ws.t("agent profile forget recovery found {0} degraded transaction(s); affected names remain fail-closed", forgets.degraded.length), "error");
+      }
+    }
 
     try {
       // Load config before the Bridge so settings.bridgePort applies; default is a
@@ -2747,6 +3002,12 @@ export class Workspace {
       }
     };
     ws.disposables.push(ws.host.watch(workspaceRoot, "tachyon.{yml,yaml}", { change: true, create: true }, onConfigChange));
+    ws.disposables.push(ws.host.watch(
+      workspaceRoot,
+      ".tachyon/agents/*/agent.yml",
+      { change: true, create: true, delete: true },
+      onConfigChange,
+    ));
 
     // Manual edits to .tachyon/* (or agent writes through another window) reflect live.
     const refreshTachyonDir = () => {
@@ -3326,7 +3587,13 @@ export class Workspace {
    */
   private gcOrphanAgentFootprints(live: Set<string>): void {
     try {
-      const known = new Set<string>([...live, ...this.ledger.all().keys(), ...Object.keys(this.config?.agents ?? {})]);
+      if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+      const known = new Set<string>([
+        ...live,
+        ...this.ledger.all().keys(),
+        ...Object.keys(this.config?.agents ?? {}),
+        ...agentProfileForgetRetainedNames(this.workspaceRoot),
+      ]);
       const result = gcOrphanAgentFootprints({
         workspaceRoot: this.workspaceRoot,
         knownAgents: known,
@@ -3354,6 +3621,51 @@ export class Workspace {
       removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
+  }
+
+  isCanonicalProfileAgent(name: string): boolean {
+    return this.config?.agents[name]?.profileLifecycle !== undefined;
+  }
+
+  /** Recoverable retirement for a profile-backed declared agent. */
+  async forgetCanonicalProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
+    const lifecycle = this.config?.agents[name]?.profileLifecycle;
+    if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    const inspected = await this.inspectAgentProfileLifecycle(name);
+    if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
+      throw new Error(`agent '${name}' profile revision conflict`);
+    }
+    const wasOpen = this.terminals.has(name);
+    if (wasOpen) this.terminals.close(name);
+    try {
+      const result = await commitAgentProfileForget({
+        workspaceRoot: this.workspaceRoot,
+        agentName: name,
+        expectedRevision: inspected.revision,
+        authority: this.profileAuthorityPort(),
+        config: this.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
+          retire: (agentName, expectedProfileId) => this.evolutionStore.retireAgent(agentName, expectedProfileId),
+        },
+        live: {
+          prepare: (agentName) => this.manager.prepareCanonicalProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => this.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+        },
+        activateState: () => {
+          if (!this.reloadConfig()) throw new Error("trusted profile forget activation failed");
+          this.profileSpawnBlocked.delete(name);
+        },
+      });
+      this.rebuildWatches();
+      this.refreshAgentsViews();
+      return result;
+    } catch (error) {
+      if (wasOpen && !agentProfileForgetBlocked(this.workspaceRoot, name)) {
+        this.terminals.open(name, this.manager.session(name));
+      }
+      throw error;
+    }
   }
 
   /** spec 241 OQ4 — the sidebar freshness badge: missing (no brief) | stale (≥ staleLag behind) | fresh. */
@@ -4270,14 +4582,24 @@ export class Workspace {
    * one of the authoritative workspace sets: live tmux sessions, durable session ledger, or tachyon.yml.
    */
   private compactSessionOwners(declaredInConfig: Set<string>, live: Set<string>): void {
-    const known = new Set([...live, ...this.ledger.all().keys(), ...declaredInConfig]);
+    if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+    const known = new Set([
+      ...live,
+      ...this.ledger.all().keys(),
+      ...declaredInConfig,
+      ...agentProfileForgetRetainedNames(this.workspaceRoot),
+    ]);
     compactSessionOwnerRows(sessionOwnersFile(this.workspaceRoot), known);
     compactSpawnSettings(this.workspaceRoot, known);
   }
 
   private gcHarnessHomes(): void {
     try {
-      const declared = new Set(Object.keys(this.config?.agents ?? {}));
+      if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
+      const declared = new Set([
+        ...Object.keys(this.config?.agents ?? {}),
+        ...agentProfileForgetRetainedNames(this.workspaceRoot),
+      ]);
       const tracked = new Set(this.ledger.all().keys());
       // spec 240 — keep any home a ledger row still POINTS AT via resume.configHome (a persisted home can
       // differ from harnessHome(currentName) after a rename/toggle; a name-only keep-set would reap the live
@@ -4303,6 +4625,7 @@ export class Workspace {
     if (!file) {
       this.config = undefined;
       this.configFailure = undefined;
+      this.profileSpawnBlocked.clear();
       if (prevCompanionTabTools) {
         // Settings gone → drop companion tools from live MCP sessions.
         try {
@@ -4318,7 +4641,25 @@ export class Workspace {
       }
       return false;
     }
-    const { config, errors, warnings } = loadConfigFile(file);
+    let text: string;
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch (error) {
+      this.configFailure = {
+        path: file,
+        file: path.basename(file),
+        errors: [`cannot read ${file}: ${error instanceof Error ? error.message : String(error)}`],
+        at: new Date().toISOString(),
+      };
+      this.blockProfileSpawnsFromLiveConfig();
+      return false;
+    }
+    const { config, errors, warnings } = loadProfileAwareConfig({
+      yamlText: text,
+      workspaceRoot: this.workspaceRoot,
+      authorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
+    });
     if (errors.length > 0) {
       // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
       // Do NOT clear a previously-loaded in-memory config: live sessions keep working until
@@ -4329,12 +4670,14 @@ export class Workspace {
         errors: [...errors],
         at: new Date().toISOString(),
       };
+      this.blockProfileSpawnsFromLiveConfig();
       this.host.notify(this.t("invalid {0} — {1}{2}", path.basename(file), errors[0], errors.length > 1 ? this.t(" (+{0} more)", errors.length - 1) : ""), "error");
       return false;
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
     this.configFailure = undefined;
+    this.profileSpawnBlocked.clear();
     // SDD 414 — human toggle settings.companion.tabTools changes the Bridge tool catalog.
     // Close MCP sessions + announce list_changed so runtimes re-discover (pair alone does not).
     const nextCompanionTabTools = config?.settings.companion?.tabTools === true;
@@ -4381,6 +4724,246 @@ export class Workspace {
     return true;
   }
 
+  private parseTrustedConfigText(yamlText: string) {
+    return loadProfileAwareConfig({
+      yamlText,
+      workspaceRoot: this.workspaceRoot,
+      authorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
+    });
+  }
+
+  private blockProfileSpawnsFromLiveConfig(): void {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "legacy" | "profile" }>;
+    }) | undefined)?.agentSources;
+    this.profileSpawnBlocked = new Set(
+      Object.entries(sources ?? {}).filter(([, source]) => source.mode === "profile").map(([name]) => name),
+    );
+  }
+
+  async planAgentProfileMigration(
+    agentName: string,
+    nonSecretEnv: readonly string[] = [],
+  ): Promise<PlanLegacyAgentProfileMigrationResult> {
+    const file = this.configPath();
+    if (!file) return { ok: false, blockers: ["tachyon.yml does not exist"], unclassifiedEnv: [] };
+    let evolutionSelector: { profileId: string; text: string; sha256: string } | undefined;
+    if (this.config?.agents[agentName]?.selfEvolution?.enabled === true) {
+      try {
+        const active = await this.evolutionStore.readAuthorizedActiveState(agentName);
+        const text = `${JSON.stringify({ schemaVersion: 1, profileId: active.profile.profileId }, null, 2)}\n`;
+        evolutionSelector = {
+          profileId: active.profile.profileId,
+          text,
+          sha256: createHash("sha256").update(text).digest("hex"),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          blockers: [`agents.${agentName}.selfEvolution: ${error instanceof Error ? error.message : String(error)}`],
+          unclassifiedEnv: [],
+        };
+      }
+    }
+    return planLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configText: fs.readFileSync(file, "utf8"),
+      agentName,
+      nonSecretEnv,
+      currentAuthority: this.agentProfileAuthorities.get(agentName),
+      existingAuthorities: this.agentProfileAuthorities,
+      homeDir: this.agentProfileHomeDir,
+      evolutionSelector,
+    });
+  }
+
+  private async assertAgentStoppedForProfileMigration(agentName: string): Promise<void> {
+    if ((await this.manager.runningAgents()).includes(agentName)) {
+      throw new Error(`agent '${agentName}' must be stopped before profile migration`);
+    }
+  }
+
+  async migrateAgentProfile(agentName: string, nonSecretEnv: readonly string[] = []): Promise<AgentProfileMigrationResult> {
+    const file = this.configPath();
+    if (!file) throw new Error("tachyon.yml does not exist");
+    const planned = await this.planAgentProfileMigration(agentName, nonSecretEnv);
+    if (!planned.ok) throw new Error(planned.blockers.join("; "));
+    const result = await commitLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configPath: file,
+      plan: planned.plan,
+      authority: this.profileAuthorityPort(),
+      homeDir: this.agentProfileHomeDir,
+      assertStopped: (name) => this.assertAgentStoppedForProfileMigration(name),
+    });
+    if (!this.reloadConfig()) throw new Error(`migration '${result.txid}' committed but trusted reload failed`);
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async rollbackAgentProfileMigration(txid: string): Promise<AgentProfileMigrationResult> {
+    const file = this.configPath();
+    if (!file) throw new Error("tachyon.yml does not exist");
+    const result = await rollbackLegacyAgentProfileMigration({
+      workspaceRoot: this.workspaceRoot,
+      configPath: file,
+      authority: this.profileAuthorityPort(),
+      txid,
+      assertStopped: (name) => this.assertAgentStoppedForProfileMigration(name),
+    });
+    if (!this.reloadConfig()) throw new Error(`rollback '${result.txid}' completed but legacy reload failed`);
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async inspectAgentProfileLifecycle(agentName: string): Promise<AgentProfileLifecycleSnapshot> {
+    return inspectCanonicalAgentProfileLifecycle({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+    });
+  }
+
+  async inspectAgentProfileStudio(agentName: string): Promise<AgentProfileStudioSnapshotV1> {
+    return projectAgentProfileStudioSnapshot(await this.inspectAgentProfileLifecycle(agentName));
+  }
+
+  async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
+    if (mutation.expectedRevision === undefined) {
+      const result = await this.commitAgentProfileLifecycle({
+        agentName: mutation.agentName,
+        operation: "create",
+        createProfile: createProfileFromStudioMutation(mutation),
+      });
+      return projectAgentProfileStudioSnapshot(result.snapshot);
+    }
+    const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+    const result = await this.commitAgentProfileLifecycle({
+      agentName: mutation.agentName,
+      operation: "edit",
+      expectedRevision: mutation.expectedRevision,
+      patch: patchProfileFromStudioMutation(mutation, current),
+    });
+    return projectAgentProfileStudioSnapshot(result.snapshot);
+  }
+
+  async commitAgentProfileStudioLifecycle(
+    mutation: AgentProfileStudioLifecycleMutationV1,
+  ): Promise<AgentProfileStudioLifecycleResultV1> {
+    if (mutation.operation === "set-enabled") {
+      const result = await this.commitAgentProfileLifecycle({
+        agentName: mutation.agentName,
+        operation: "set-enabled",
+        expectedRevision: mutation.expectedRevision,
+        enabled: mutation.enabled,
+      });
+      return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
+    }
+    if (mutation.operation === "rename") {
+      await this.renameAgent(mutation.agentName, mutation.newName, mutation.expectedRevision);
+      return { schemaVersion: 1, kind: "snapshot", snapshot: await this.inspectAgentProfileStudio(mutation.newName) };
+    }
+    if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
+    const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
+    return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
+  }
+
+  async commitAgentProfileLifecycle(
+    input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
+  ): Promise<AgentProfileLifecycleCommitResult> {
+    await this.assertAgentStoppedForProfileMigration(input.agentName);
+    const result = await commitCanonicalAgentProfileLifecycle({
+      ...input,
+      workspaceRoot: this.workspaceRoot,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(input.agentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async exportAgentProfileBundle(agentName: string): Promise<PortableAgentProfileBytes> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return exportPortableAgentProfileBundle({ workspaceRoot: this.workspaceRoot, snapshot });
+  }
+
+  async exportAgentProfileStudioBundle(agentName: string, expectedRevision: string): Promise<PortableAgentProfileBytes> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    if (snapshot.revision !== expectedRevision) throw new Error(`agent '${agentName}' profile revision conflict`);
+    return exportPortableAgentProfileBundle({ workspaceRoot: this.workspaceRoot, snapshot });
+  }
+
+  async importAgentProfileBundle(agentName: string, bundle: string | Buffer): Promise<ImportPortableAgentProfileResult> {
+    await this.assertAgentStoppedForProfileMigration(agentName);
+    const result = await importPortableAgentProfileBundle({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      bundle,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(agentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async cloneCanonicalProfileAgent(sourceAgentName: string, destinationAgentName: string): Promise<ImportPortableAgentProfileResult> {
+    const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
+    await this.assertAgentStoppedForProfileMigration(destinationAgentName);
+    const result = await clonePortableAgentProfile({
+      workspaceRoot: this.workspaceRoot,
+      source,
+      destinationAgentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async cloneAgentProfileStudioBundle(
+    sourceAgentName: string,
+    expectedRevision: string,
+    destinationAgentName: string,
+  ): Promise<ImportPortableAgentProfileResult> {
+    const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
+    if (source.revision !== expectedRevision) throw new Error(`agent '${sourceAgentName}' profile revision conflict`);
+    await this.assertAgentStoppedForProfileMigration(destinationAgentName);
+    const result = await clonePortableAgentProfile({
+      workspaceRoot: this.workspaceRoot,
+      source,
+      destinationAgentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  private activateAgentProfileLifecycleState(agentName: string, state: "target" | "prior" | "blocked"): void {
+    if (state !== "blocked") {
+      if (!this.reloadConfig()) throw new Error(`trusted profile ${state} activation failed`);
+      this.profileSpawnBlocked.delete(agentName);
+      return;
+    }
+    this.profileSpawnBlocked.add(agentName);
+    const definition = this.config?.agents[agentName];
+    if (definition?.profileLifecycle) {
+      definition.profileLifecycle = { ...definition.profileLifecycle, enabled: false };
+    }
+  }
+
   /** t-8354ae — last successful roster snapshot (null when never written / corrupt). */
   readConfigLkg(): ConfigLkgSnapshot | null {
     return readConfigLkg(this.workspaceRoot);
@@ -4391,6 +4974,13 @@ export class Workspace {
    * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
+    if (agentProfileLifecycleBlocked(this.workspaceRoot, name) || agentProfileRenameBlocked(this.workspaceRoot, name)
+      || agentProfileForgetBlocked(this.workspaceRoot, name)) {
+      throw new Error(`cannot spawn profile-backed agent '${name}' while its lifecycle transaction requires recovery`);
+    }
+    if (this.profileSpawnBlocked.has(name)) {
+      throw new Error(`cannot spawn profile-backed agent '${name}' while its trusted configuration is invalid; fix the profile/authority error and reload`);
+    }
     if (!this.configFailure) return;
     const inLive = !!this.config?.agents[name] || this.manager.defOf(name) !== undefined;
     const lkg = this.readConfigLkg();
@@ -4922,7 +5512,7 @@ export class Workspace {
       // t-099be8 — validate the full resulting file BEFORE write (same gate as Studio submit / Bridge tool).
       // Never persist a config that loadConfig would reject; the delayed-detonation window (invalid on disk
       // until next reload) is the incident class this blocks for UI-driven edits.
-      const check = parseConfig(text);
+      const check = this.parseTrustedConfigText(text);
       if (check.errors.length > 0) {
         throw new Error(`invalid tachyon.yml (not saved): ${check.errors[0]}${check.errors.length > 1 ? ` (+${check.errors.length - 1} more)` : ""}`);
       }
@@ -4943,7 +5533,7 @@ export class Workspace {
    * Refuses to save on parse/schema/cross-ref hard errors; returns structured result (no throw).
    */
   writeTachyonConfigText(yamlText: string): { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] } {
-    const check = parseConfig(yamlText);
+    const check = this.parseTrustedConfigText(yamlText);
     if (check.errors.length > 0) return { ok: false, errors: check.errors, warnings: check.warnings };
     const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
     try {
@@ -5111,7 +5701,7 @@ export class Workspace {
     } catch (err) {
       return [err instanceof Error ? err.message : String(err)];
     }
-    const cfg = parseConfig(candidate.text);
+    const cfg = this.parseTrustedConfigText(candidate.text);
     if (cfg.errors.length > 0) return cfg.errors;
     const ok = this.mutateConfig(
       () => candidate,
@@ -5180,7 +5770,59 @@ export class Workspace {
    * pane is reopened under the new name (terminal titles can't change in place).
    * Attention state self-heals on the next tick; watchers rebuild on reload.
    */
-  async renameAgent(oldName: string, newName: string): Promise<void> {
+  async renameAgent(oldName: string, newName: string, expectedRevision?: string): Promise<void> {
+    const profileLifecycle = this.config?.agents[oldName]?.profileLifecycle;
+    if (profileLifecycle) {
+      const inspected = await this.inspectAgentProfileLifecycle(oldName);
+      if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
+        throw new Error(`agent '${oldName}' profile revision conflict`);
+      }
+      const liveSnapshot = await this.manager.prepareCanonicalProfileRename(oldName, newName);
+      const wasOpen = this.terminals.has(oldName);
+      if (wasOpen) this.terminals.close(oldName);
+      try {
+        await commitAgentProfileRename({
+        workspaceRoot: this.workspaceRoot,
+        oldAgentName: oldName,
+        newAgentName: newName,
+        expectedRevision: inspected.revision,
+        authority: this.profileAuthorityPort(),
+        config: this.agentProfileLifecycleConfigPort(),
+        evolution: {
+          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
+          rename: (oldAgentName, newAgentName) => this.evolutionStore.renameAgent(oldAgentName, newAgentName),
+        },
+        live: {
+          prepare: async () => liveSnapshot,
+          converge: (oldAgentName, newAgentName, snapshot) => this.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+        },
+        activateState: () => {
+          if (!this.reloadConfig()) throw new Error("trusted profile rename activation failed");
+          this.profileSpawnBlocked.delete(oldName);
+          this.profileSpawnBlocked.delete(newName);
+        },
+        });
+      } catch (error) {
+        if (wasOpen && !agentProfileRenameBlocked(this.workspaceRoot, oldName)
+          && !agentProfileRenameBlocked(this.workspaceRoot, newName)) {
+          this.terminals.open(oldName, this.manager.session(oldName));
+        }
+        throw error;
+      }
+      this.pendingAnchor.delete(newName);
+      if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
+      this.agentIncarnations.delete(newName);
+      const incarnation = this.agentIncarnations.get(oldName);
+      if (incarnation !== undefined) {
+        this.agentIncarnations.delete(oldName);
+        this.agentIncarnations.set(newName, incarnation);
+        this.agentIncarnationCounters.set(newName, Math.max(this.agentIncarnationCounters.get(newName) ?? 0, incarnation));
+      }
+      if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
+      this.rebuildWatches();
+      this.refreshAgentsViews();
+      return;
+    }
     const wasOpen = this.terminals.has(oldName);
     if (wasOpen) this.terminals.close(oldName);
     await this.manager.rename(oldName, newName);

@@ -6,6 +6,12 @@ import type { PinStudioAttachmentVM, TiptapJSON } from "./types.js";
 export const PIN_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "attachImage", "storeSketch", "attachmentStored"] as const;
 assertNoDomainNameCollision(PIN_STUDIO_DOMAIN_MESSAGE_NAMES);
 
+/** t-610705 (Phase D, D3) — the host->webview-only subset of the names above, browser-safe (no
+ *  `assertNoDomainNameCollision`'s Node-side import chain) — mirrors task-studio/domain.ts's
+ *  TASK_STUDIO_HOST_MESSAGE_NAMES split. Pin Studio's only inbound domain push is the same
+ *  "attachmentStored" (import/attach/storeSketch results) every rich-doc-based studio shares. */
+export const PIN_STUDIO_HOST_MESSAGE_NAMES = ["attachmentStored"] as const;
+
 export interface PinDetailEntity {
   workspaceHash: string;
   folder: string;
@@ -21,6 +27,7 @@ export interface PinFields {
   tags: string[];
   doc: TiptapJSON;
   attachments: PinAttachment[];
+  docDirty: boolean;
 }
 
 export type PinPatch = PinFields;
@@ -30,12 +37,20 @@ export function pinStudioTitleFor(mode: "new" | "edit", entityId: string | undef
   return `Pin Studio — ${entity?.pinId ?? entityId ?? ""}`;
 }
 
+/**
+ * t-cdd4e1 — `fields.docDirty` is an EXPLICIT flag (set only by TipTap's own `onUpdate` firing), not a
+ * structural diff of `fields.doc` against the loaded entity's doc: TipTap's `editor.getJSON()` does
+ * not round-trip byte-for-byte through `setContent()` (extension-added default attrs, etc.), so a
+ * JSON.stringify comparison against the raw seed doc read as dirty from the moment of mount, before
+ * any edit — mirrors task-studio/domain.ts's `computeTaskDirty`, which uses the same explicit-flag
+ * pattern for exactly this reason.
+ */
 export function computePinDirty(entity: PinDetailEntity | undefined, fields: PinFields): boolean {
   if (!entity) return false;
   return (
     fields.title.trim() !== entity.title ||
     JSON.stringify(fields.tags) !== JSON.stringify(entity.tags) ||
-    JSON.stringify(fields.doc) !== JSON.stringify(entity.doc ?? emptyDoc()) ||
+    fields.docDirty ||
     JSON.stringify(fields.attachments) !== JSON.stringify(entity.attachments.map(stripAttachmentVm))
   );
 }
@@ -49,10 +64,6 @@ export function canDiscardPinFields(fields: PinFields): boolean {
 }
 
 export const isEmptyDoc = isEmptyPinDoc;
-
-function emptyDoc(): TiptapJSON {
-  return { type: "doc", content: [{ type: "paragraph" }] };
-}
 
 function stripAttachmentVm(att: PinStudioAttachmentVM): PinAttachment {
   if (att.kind === "image") {

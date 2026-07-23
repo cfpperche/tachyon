@@ -8,6 +8,10 @@ export interface AgentPromptLayers {
   role?: Role;
   instructions?: string;
   evolution?: EvolutionStartupSnapshot;
+  /** Canonical formation-owned Evolution layer. Mutually exclusive with the legacy startup snapshot. */
+  formationEvolution?: string;
+  /** Canonical, human-approved selected-memory layer. */
+  selectedMemory?: string;
   bridgeGuidance: boolean;
   taskBrief?: string;
   /** Present only when taskBrief was rendered from the validated structured SpawnContract. */
@@ -26,6 +30,8 @@ export interface AgentPromptManifest {
   role: boolean;
   persistentInstructions: boolean;
   evolution?: { version: number; digest: string };
+  canonicalEvolution?: true;
+  selectedMemory?: true;
   bridgeGuidance: boolean;
   task: PromptTaskLayer;
 }
@@ -50,12 +56,17 @@ export interface ComposedAgentBody {
 const present = (value: string | undefined): string | undefined => value?.trim() ? value : undefined;
 
 export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody {
+  if (layers.evolution && present(layers.formationEvolution)) {
+    throw new Error("legacy and canonical Evolution layers cannot be composed together");
+  }
   const hasTaskBrief = !!present(layers.taskBrief);
   const manifest: AgentPromptManifest = {
     soul: !!layers.soul,
     role: !!layers.role && layers.role !== "custom",
     persistentInstructions: !!present(layers.instructions),
     ...(layers.evolution ? { evolution: { version: layers.evolution.version, digest: layers.evolution.digest } } : {}),
+    ...(present(layers.formationEvolution) ? { canonicalEvolution: true as const } : {}),
+    ...(present(layers.selectedMemory) ? { selectedMemory: true as const } : {}),
     bridgeGuidance: layers.bridgeGuidance,
     task: !hasTaskBrief
       ? { kind: "absent" }
@@ -63,7 +74,7 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
         ? { kind: "contract", completion: layers.taskContractCompletion }
         : { kind: "brief" },
   };
-  if (!layers.soul && !layers.evolution) {
+  if (!layers.soul && !layers.evolution && !present(layers.formationEvolution) && !present(layers.selectedMemory)) {
     const legacyInstructions = [layers.instructions, layers.taskBrief].filter(Boolean).join("\n\n") || undefined;
     const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
     return { body, manifest };
@@ -80,7 +91,16 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
       ].filter(Boolean).join("\n\n")
     : undefined;
   const evolution = layers.evolution ? renderEvolutionPromptLayer(layers.evolution) : undefined;
-  const body = [identity, present(roleBody), present(layers.instructions), evolution, guidance, present(layers.taskBrief)].filter(Boolean).join("\n\n") || undefined;
+  const body = [
+    identity,
+    present(roleBody),
+    present(layers.instructions),
+    evolution,
+    present(layers.formationEvolution),
+    present(layers.selectedMemory),
+    guidance,
+    present(layers.taskBrief),
+  ].filter(Boolean).join("\n\n") || undefined;
   return {
     body,
     ...(layers.soul ? { soul: {

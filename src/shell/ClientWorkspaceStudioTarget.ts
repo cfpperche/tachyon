@@ -5,9 +5,10 @@ import { SoulError, isSoulErrorCode } from "../agents/soul.js";
 import {
   CONFIG_FILENAMES,
   inferKind,
-  loadConfigFile,
   type TachyonConfig,
 } from "../config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
+import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
@@ -27,6 +28,18 @@ import type {
   SoulProfileMutationTargetResult,
   WorkspaceAgentStudioTarget,
 } from "./WorkspacePresentation.js";
+import {
+  isAgentProfileStudioSnapshotV1,
+  agentProfileStudioLifecycleResultSchemaV1,
+  agentProfileStudioBundleCreatedResultSchemaV1,
+  agentProfileStudioBundleExportResultSchemaV1,
+  type AgentProfileStudioBundleCreatedResultV1,
+  type AgentProfileStudioBundleExportResultV1,
+  type AgentProfileStudioLifecycleMutationV1,
+  type AgentProfileStudioLifecycleResultV1,
+  type AgentProfileStudioMutationV1,
+  type AgentProfileStudioSnapshotV1,
+} from "../config/agentProfileStudio.js";
 
 type SoulProfileCommand = Extract<ExtensionCommandV1, {
   action:
@@ -114,6 +127,78 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     this.refreshConfig();
     return undefined;
   };
+
+  async inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent-profile.studio-inspect", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.studio-inspect"
+      || !isAgentProfileStudioSnapshotV1(result.value)) {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio snapshot");
+    }
+    return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
+    const result = await this.client.invoke(`agent-profile-studio:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.studio-commit", mutation },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.studio-commit"
+      || !isAgentProfileStudioSnapshotV1(result.value)) {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio commit result");
+    }
+    this.refreshConfig();
+    return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1> {
+    const result = await this.client.invoke(`agent-profile-studio-lifecycle:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.studio-lifecycle", mutation },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.studio-lifecycle") {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio lifecycle result");
+    }
+    const parsed = agentProfileStudioLifecycleResultSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed canonical Agent Studio lifecycle result");
+    this.refreshConfig();
+    return structuredClone(parsed.data);
+  }
+
+  async exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1> {
+    const result = await this.client.query({ schemaVersion: 1, method: "extension.query", input: { action: "agent-profile.studio-bundle-export", agent, expectedRevision } });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.studio-bundle-export") throw new Error("persistent engine returned a mismatched profile bundle export");
+    return agentProfileStudioBundleExportResultSchemaV1.parse(result.value);
+  }
+
+  async cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    return this.invokeProfileBundle({ action: "agent-profile.studio-bundle-clone", agent, expectedRevision, destinationAgentName });
+  }
+
+  async importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    const staged = this.client.stagePayload(bytes);
+    try { return await this.invokeProfileBundle({ action: "agent-profile.studio-bundle-import", destinationAgentName, payload: staged.ref }); }
+    finally { staged.discard(); }
+  }
+
+  private async invokeProfileBundle(input: Extract<ExtensionCommandV1, { action: "agent-profile.studio-bundle-clone" | "agent-profile.studio-bundle-import" }>): Promise<AgentProfileStudioBundleCreatedResultV1> {
+    const result = await this.client.invoke(`agent-profile-studio-bundle:${input.action}:${this.operationId()}`, { schemaVersion: 1, method: "extension.invoke", input });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== input.action) throw new Error("persistent engine returned a mismatched profile bundle result");
+    const parsed = agentProfileStudioBundleCreatedResultSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed profile bundle result");
+    this.refreshConfig();
+    return parsed.data;
+  }
 
   createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
     return this.invokeSoulProfile({ action: "soul.profile.create", agent });
@@ -348,8 +433,16 @@ function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
   for (const fileName of CONFIG_FILENAMES) {
     const file = path.join(workspaceRoot, fileName);
     if (!fs.existsSync(file)) continue;
-    const loaded = loadConfigFile(file);
-    return loaded.config ? { status: "valid", config: loaded.config } : { status: "invalid" };
+    const yamlText = fs.readFileSync(file, "utf8");
+    const loaded = parseProfileAwareConfigSyntax(yamlText);
+    if (!loaded.config) return { status: "invalid" };
+    const pointers = scanAgentProfilePointers(yamlText);
+    if (pointers.errors.length > 0) return { status: "invalid" };
+    for (const name of pointers.pointers.keys()) {
+      const def = loaded.config.agents[name];
+      if (def) def.profilePointer = true;
+    }
+    return { status: "valid", config: loaded.config };
   }
   return { status: "missing" };
 }

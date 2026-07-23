@@ -7,16 +7,6 @@
 
 .td-root { max-width: 760px; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); }
 
-/* t-610705 (SDD 410 Phase C.1) — precedes .td-root only when Task Detail renders as a Control
-   subroute (never present in the standalone-era layout); shares .td-root's horizontal rhythm so the
-   two align, with its own top padding so .td-root's isn't doubled underneath it. Just the back-link —
-   the task's own title already renders right below as the page H1, so this stays a single small
-   element instead of a full breadcrumb trail. */
-/* width:100% is load-bearing here (unlike .td-root below): a lone small Button has no content wide
-   enough to reach max-width on its own, so without it the box shrinks to the button's size and the
-   auto margins center THAT small box on the page instead of aligning it with the column below. */
-.td-breadcrumb { width: 100%; max-width: 760px; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) 0; box-sizing: border-box; }
-.td-breadcrumb + .td-root { padding-top: var(--ds-2); }
 .td-head { display: flex; align-items: baseline; gap: var(--ds-3); flex-wrap: wrap; margin-bottom: var(--ds-3); }
 .td-head h1 { font-size: var(--ds-title); font-weight: 600; margin: 0; }
 .ref { font-size: var(--ds-micro); color: var(--ds-muted); font-family: var(--ds-mono); }

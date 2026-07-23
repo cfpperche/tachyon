@@ -116,8 +116,12 @@ function createSidebarTarget(
     mutateSidebar,
     pinAttachmentBlobRoot: () => pinStudio.attachmentBlobRoot(),
     shellCommandArgs,
-    loadPinPreview: async (id, context) => {
-      const [fleet, detail] = await Promise.all([loadSidebar(), pinStudio.loadPinStudio(id, context)]);
+    // t-610705 (Phase D, D3) — `context` (asWebviewUri) is no longer threaded to loadPinStudio: it
+    // now always embeds attachment bytes as `data:` URIs (PinStudioTarget.ts's hydrateAttachment,
+    // ported from TaskStudioTarget.ts's D2 fix) — no local-resource-root translation needed here
+    // either. The `context` param stays (part of WorkspaceSidebarTarget's loadPinPreview contract).
+    loadPinPreview: async (id, _context) => {
+      const [fleet, detail] = await Promise.all([loadSidebar(), pinStudio.loadPinStudio(id)]);
       const summary = fleet.pins.find((pin) => pin.id === id);
       if (!summary || detail.pinId !== id) throw new Error(`unknown pin '${id}'`);
       return {

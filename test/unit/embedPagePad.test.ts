@@ -29,6 +29,7 @@ const read = (rel: string) => fs.readFileSync(path.resolve(root, rel), "utf8");
 const VALIDATIONS_CSS = "src/webview/validations/validations.css";
 const RUNTIME_OPS_CSS = "src/webview/runtime-ops/runtime-ops.css";
 const VALIDATIONS_APP = "src/webview/validations/App.tsx";
+const COCKPIT_APP = "src/webview/cockpit/App.tsx";
 
 /** strip comments, then collect every `selector { declarations }` block (nested at-rule inner rules included). */
 function rules(css: string): { selector: string; body: string }[] {
@@ -97,6 +98,26 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
         if (padsHost) expect(declaration(r.body, "padding")).toBeUndefined();
       }
     }
+  });
+});
+
+describe("Plugins root pads exactly once inside its Control embed host", () => {
+  // maintainer dogfood 2026-07-23: cockpit/App.tsx wrapped <PluginsApp> in its own extra
+  // `<div class="ck-plugins-root">`, but plugins/App.tsx already roots ITS render on that same class
+  // (`.ck-plugins-root` is `--ds-page-pad-*`-padded, same as .runtime-ops/.validations-main above) — so
+  // the page pad applied twice, nesting the whole surface visibly further in/down than every other tab.
+  it("cockpit/App.tsx's plugins branch does not wrap PluginsApp in a second .ck-plugins-root", () => {
+    const cockpit = read(COCKPIT_APP);
+    const start = cockpit.indexOf('section === "plugins"');
+    expect(start, "plugins branch not found in cockpit/App.tsx").toBeGreaterThan(-1);
+    const end = cockpit.indexOf('} else {', start);
+    const branch = cockpit.slice(start, end === -1 ? undefined : end);
+    expect(branch).not.toContain('class="ck-plugins-root"');
+  });
+
+  it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {
+    const app = read("src/webview/plugins/App.tsx");
+    expect(app.match(/class="ck-plugins-root"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
   });
 });
 

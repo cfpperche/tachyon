@@ -89,6 +89,19 @@ interface Binding {
   dirty: boolean;
   saveInFlight: boolean;
   loadFailed: boolean;
+  /** t-610705 (Phase D, D2) — does the bound entity durably exist yet? NOT the same question as
+   *  `mode === "edit"`: Task Studio's staged-create pattern opens a pre-minted, not-yet-saved id
+   *  directly in "edit" mode (see StudioLoadResult's own doc comment), so `mode` can't be used as the
+   *  provisional-vs-durable signal. Defaults to `route.kind === "studio-edit"` at binding creation
+   *  (a studio-new binding is never durable yet; a studio-edit binding is ASSUMED durable until its
+   *  first load says otherwise — "when in doubt, don't clean up" is the safe default here, matching
+   *  this file's own "when in doubt, restore LESS" draft-cache principle: nothing an adapter could
+   *  clean up can exist before the mount handshake + first load complete, so getting this wrong for
+   *  the brief window before the first `sendStudioLoad` resolves is a no-op in practice), then
+   *  corrected from `StudioLoadResult.persisted` on every load. Flips permanently to `true` the
+   *  moment a save actually succeeds (`beginStudioSave`'s "ok" branch) — see
+   *  `abandonProvisionalIfNeeded` for how this gates `adapter.onCancel`. */
+  persisted: boolean;
 }
 
 let binding: Binding | undefined;
@@ -100,16 +113,18 @@ let generationCounter = 0;
 export function reconcileStudioTeardown(nextRoute: CockpitRoute): void {
   if (!binding) return;
   if (routeKey(nextRoute) === routeKey(binding.route)) return;
+  abandonProvisionalIfNeeded(binding);
   binding = undefined;
 }
 
 export function stopStudioBinding(): void {
+  if (binding) abandonProvisionalIfNeeded(binding);
   binding = undefined;
 }
 
-export function currentStudioBindingFor(route: CockpitRoute): { mountNonce: string } | undefined {
+export function currentStudioBindingFor(route: CockpitRoute): { mountNonce: string; persisted: boolean } | undefined {
   if (!binding || routeKey(route) !== routeKey(binding.route)) return undefined;
-  return { mountNonce: binding.mountNonce };
+  return { mountNonce: binding.mountNonce, persisted: binding.persisted };
 }
 
 export type StudioAdapterFactory = (route: StudioRoute) => Adapter | undefined;
@@ -136,8 +151,34 @@ export function ensureStudioBinding(route: StudioRoute, makeAdapter: StudioAdapt
     dirty: false,
     saveInFlight: false,
     loadFailed: false,
+    persisted: route.kind === "studio-edit",
   };
   return true;
+}
+
+/**
+ * t-610705 (Phase D, D2) — the ONE place `adapter.onCancel` is ever called, from every real
+ * abandonment path (explicit Cancel, the nav-transaction's Discard choice, and binding teardown on
+ * workspace-detach/window-close/route-replacement) — never scattered per-call-site logic, so it's
+ * provably exactly-once regardless of which path actually fires first for a given binding. Idempotent
+ * by construction: `persisted` flips to `true` BEFORE `onCancel` is invoked, so a second call (e.g.
+ * Discard immediately followed by teardown for the same binding) is a guaranteed no-op on the second
+ * hit. A no-op for every adapter except Task Studio today (the only one that implements `onCancel`),
+ * and a no-op for Task Studio itself once `persisted` is already `true` (an edit of a real, already-
+ * saved task closing has nothing provisional to clean up — deleting a real task's real attachments
+ * because it happened to close would be a correctness bug, not cleanup, which is exactly why this
+ * checks `persisted` rather than firing unconditionally on every exit path). Best-effort and
+ * fire-and-forget (not awaited): unlike the old one-panel-per-entity host, Control's cockpit webview
+ * has no real per-studio "disposal" moment left to gate on — the panel outlives every binding.
+ */
+function abandonProvisionalIfNeeded(b: Binding): void {
+  if (b.persisted) return;
+  b.persisted = true;
+  try {
+    void Promise.resolve(b.adapter.onCancel?.(b.entityId)).catch(() => undefined);
+  } catch {
+    // best-effort — a synchronous throw from onCancel must not break the caller's own teardown/discard flow.
+  }
 }
 
 function concurrencyStateFor(adapter: Adapter, entity: unknown): StudioConcurrencyState {
@@ -166,6 +207,7 @@ export async function sendStudioLoad(io: StudioHostIO): Promise<void> {
     b.loadFailed = false;
     b.entity = result.entity;
     b.referenceData = result.referenceData;
+    b.persisted = result.persisted ?? true;
     io.post(envelope({
       type: "load",
       entity: result.entity,
@@ -243,12 +285,39 @@ export interface StudioMessageHooks {
    *  `ctx.entityId`/`m.agent !== agent` guard. A studio with no such guard (command/terminal's
    *  "browse") simply never reads it. */
   handleDomainMessage?: (ctx: { post: (m: unknown) => void; entityId: string | undefined }, message: { type: string }) => void;
+  /** t-cdd4e1 — Cancel is a deliberate "leave without saving" gesture; the client has no way to
+   *  navigate itself away (routes are host-authoritative), so the host must do it after discarding
+   *  the draft. Every studio wires `onCancel` the same one-line way (`post(cancelMessage())`, no
+   *  navigate call) — none of the 7 App.tsx files were ever missing anything; the host simply never
+   *  followed through.
+   *  t-c3c819 — `persisted` (the binding's, captured before `abandonProvisionalIfNeeded` may have
+   *  already torn it down) lets the implementation avoid `parentRoute()`'s task-detail parent for a
+   *  brand-new, still-unsaved task (Task Studio's staged-create pattern) — that id was never saved,
+   *  so task-detail(id) would 404 ("never found on disk"); see the model.ts studioPersisted doc
+   *  comment for the client-side breadcrumb's identical fix. */
+  onCancelled: (persisted: boolean) => void;
+  /** t-527767 — a successful Save, for adapters the client wants to auto-navigate away from
+   *  afterward (Pin/Task Studio: "create/edit → return to the list", scoped narrowly per maintainer
+   *  decision — the other 5 studios read more like config editors, where staying open to keep
+   *  tweaking is the better default, so their client-side implementation is a no-op). `persisted` is
+   *  the binding's value from BEFORE this save flipped it to `true` (same "task-detail is only a
+   *  valid destination for a REAL, already-saved entity" reasoning as onCancelled's own `persisted`
+   *  param — a brand-new task's first save must still land on Board, not its own task-detail).
+   *  Fired only on a genuinely successful save (never on validation/persistence error), after any
+   *  first-save `sendStudioLoad` has already completed — see beginStudioSave's "ok" branch. This
+   *  hook was deliberately ABSENT from D2's original scope (an adversarial dueto, REDESIGN verdict,
+   *  found bolting auto-navigation onto beginStudioSave unsafe without a larger atomic-transaction
+   *  redesign — route.ts's parentRoute doc comment); re-examined for this task and found safe: every
+   *  binding-mutation path (`patch`/`cancel`/nav-transaction) is already blocked by `saveInFlight`/
+   *  `txnLock` for the ENTIRE span from this save starting to this hook firing, so there is no window
+   *  for the state this hook reads to have moved out from under it. */
+  onSaved: (persisted: boolean) => void;
 }
 
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
   const b = binding;
   if (!b) return false;
-  const decoded = decodeStudioMessage<{ type: string; routeKey?: string; mountNonce?: string; patch?: unknown; editRevision?: number; dirty?: boolean }>(raw, ["browse", "cwd"]);
+  const decoded = decodeStudioMessage<{ type: string; routeKey?: string; mountNonce?: string; patch?: unknown; editRevision?: number; dirty?: boolean }>(raw, b.adapter.domainMessageNames);
   if (!decoded.ok || !decoded.message) return false;
   const msg = decoded.message;
   // t-610705 (Phase D, D0, round-5 blocker) — EVERY binding-scoped message must match the CURRENT
@@ -287,8 +356,14 @@ export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks:
       // Excluded for the WHOLE transaction window (txnLock), not just while a save is in flight
       // (round-3 major) — a queued Cancel must never land while a discard-choice modal is still open.
       if (b.saveInFlight || txnLock) return true;
+      // t-c3c819 — captured BEFORE abandonProvisionalIfNeeded, which unconditionally sets
+      // b.persisted = true as part of its own idempotency guard (see its doc comment) — reading it
+      // after that call would always observe true, even for a task that was never actually saved.
+      const wasPersisted = b.persisted;
       discardDraft(b.route);
+      abandonProvisionalIfNeeded(b);
       hooks.onChanged();
+      hooks.onCancelled(wasPersisted);
       return true;
     default:
       hooks.handleDomainMessage?.({ post: io.post, entityId: b.entityId }, msg as { type: string });
@@ -357,16 +432,32 @@ async function beginStudioSave(io: StudioHostIO, hooks: StudioMessageHooks): Pro
     const result = await b.adapter.save(b.entityId, b.patch);
     if (!io.isCurrent() || binding !== b) return;
     if (result.status === "ok") {
+      // t-527767 — captured BEFORE the flip below, same reasoning as the "cancel" case's
+      // `wasPersisted` (t-c3c819): onSaved's client-side destination logic needs to know whether
+      // THIS save is the entity's first (a brand-new task's save must still land on Board, not its
+      // own task-detail) — reading b.persisted after this line would always observe true.
+      const wasPersisted = b.persisted;
       b.dirty = false;
       b.patch = undefined;
+      b.persisted = true; // t-610705 (D2) — a successful save durably commits the entity either way
       discardDraft(b.route); // saved, not abandoned — nothing left to keep as a draft
       hooks.onChanged();
+      // t-527767 — defense-in-depth (3rd adversarial probe round): re-check after `hooks.onChanged`
+      // even though its real current binding (`refreshAll`, extension.ts) never navigates — a
+      // FUTURE onChanged implementation gaining that ability would otherwise silently reopen the
+      // exact stale-binding hazard the guards around this function already close everywhere else.
+      if (!io.isCurrent() || binding !== b) return;
       io.post(envelope({ type: "save", status: "ok" as const }));
       if (result.entityId !== undefined && b.entityId === undefined) {
         b.entityId = result.entityId;
         b.mode = "edit";
         await sendStudioLoad(io);
+        // t-527767 — re-check after the await: sendStudioLoad has its own internal guard for ITS
+        // OWN state writes, but onSaved is fired by US, below, so we need our own fresh check before
+        // trusting `b`/`io` are still the live binding/panel.
+        if (!io.isCurrent() || binding !== b) return;
       }
+      hooks.onSaved(wasPersisted);
     } else {
       const error: StudioError = result.status === "conflict"
         ? { code: result.error.code, message: result.error.message, source: "transport", blocking: true }
@@ -561,6 +652,10 @@ export async function beginStudioNavTransaction(io: StudioHostIO, commit: () => 
           io.post({ type: "studioNavAbort", txnId });
           return "aborted";
         }
+        b.persisted = true; // t-610705 (D2) — same reasoning as beginStudioSave's own success branch:
+        // this is an INDEPENDENT save call (not routed through beginStudioSave), so it needs its own
+        // flip — without it, a task saved via nav-away's "Save" choice would still read persisted:false
+        // at teardown just below, and abandonProvisionalIfNeeded would wrongly clean up what was just saved.
         discardDraft(b.route);
         commit();
         return "committed";
@@ -573,6 +668,7 @@ export async function beginStudioNavTransaction(io: StudioHostIO, commit: () => 
       cacheDraft(b.route, ack.patch, ack.editRevision, b.entity);
     } else {
       discardDraft(b.route); // "Discard" — defensive: normally nothing cached yet this session
+      abandonProvisionalIfNeeded(b);
     }
     commit();
     return "committed";

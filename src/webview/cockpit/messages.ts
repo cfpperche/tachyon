@@ -20,6 +20,11 @@ export interface CockpitStrings {
   navTmux: string;
   navPlugins: string;
   navSettings: string;
+  /** t-610705 (Phase D, D3) — pin's breadcrumb generic label, for a returnRoute kind with no fixed
+   *  nav-tab name of its own (agent-activity/agent-probes/workspace-probes — every OTHER studio's
+   *  breadcrumb already has a specific label: the parent section's own nav name, or "Board" for
+   *  Task's task-detail parent). */
+  back: string;
   refresh: string;
   auto: string;
   empty: string;
@@ -185,7 +190,14 @@ export type CockpitAction =
    * opaque to the router (the studio's own domain shape); the host only ever stores or hands it back
    * to that same studio's adapter, never inspects it.
    */
-  | { type: "studioNavCheckpointAck"; txnId: string; dirty: boolean; editRevision: number; patch: unknown };
+  | { type: "studioNavCheckpointAck"; txnId: string; dirty: boolean; editRevision: number; patch: unknown }
+  /** t-610705 (Phase D, D3) — pin's ONE breadcrumb action. `routeKey` carries NO destination (the
+   *  host still reads its own `currentRoute.returnRoute`, never anything client-sent) — it's the
+   *  client's identity snapshot of the pin route it was showing when the button was clicked, echoed
+   *  back so the host can detect a stale/queued click (design-dueto probe-12f603f3 major finding: a
+   *  delayed click from pin A processed after a fast navigation to pin B would otherwise navigate to
+   *  B's returnRoute instead of being silently dropped). See Cockpit.ts's "navigateReturn" case. */
+  | { type: "navigateReturn"; routeKey: string };
 
 /** Ephemeral pair offer — not part of the polled CockpitModel. */
 export type CompanionPairOffer =
@@ -227,6 +239,7 @@ export const copyDiagnosticsAction = (): CockpitAction => ({ type: "copyDiagnost
 export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" });
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
+export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
 export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetStart",

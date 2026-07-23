@@ -78,6 +78,11 @@ export const taskStudioFixtures: Record<string, Fixture<TaskStudioFixtureVM>> = 
   default: { provenance: "synthetic-edge", vm: { entity: editTask } },
   new: { provenance: "synthetic-edge", vm: { entity: newTask } },
   conflict: { provenance: "synthetic-edge", vm: { entity: editTask, conflict: "precondition-failed: updatedAt did not match" } },
+  // t-610705 (Phase D, D2) — the cockpit route's generic studio-fixture dispatch (routes.ts's
+  // byStudio table) always requests "dense-edit" for a studio-edit route, same key every other
+  // migrated studio's fixtures module provides — task is edit-only in practice (studio-new is
+  // rejected for "task"), so this is just an alias of `default`.
+  "dense-edit": { provenance: "synthetic-edge", vm: { entity: editTask } },
 };
 
 export type { TaskStudioFixtureVM };

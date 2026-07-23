@@ -3,7 +3,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { ActivityLog, LOG_SCHEMA_VERSION, agentLogId, deleteActivityLog, moveActivityLog } from "../../src/activity/logStore.js";
+import {
+  ActivityLog,
+  LOG_SCHEMA_VERSION,
+  agentLogId,
+  captureActivityRenameSnapshot,
+  convergeActivityRename,
+  deleteActivityLog,
+  moveActivityLog,
+} from "../../src/activity/logStore.js";
 import type { NormalizedEvent } from "../../src/activity/types.js";
 
 const dirs: string[] = [];
@@ -180,5 +188,27 @@ describe("moveActivityLog", () => {
 
   it("is best-effort: moving a never-written log does not throw", () => {
     expect(() => moveActivityLog(freshDir(), "missing", "renamed")).not.toThrow();
+  });
+});
+
+describe("recoverable activity rename", () => {
+  it("preserves appends after capture and acknowledges replay", () => {
+    const dir = freshDir();
+    const old = new ActivityLog(dir, "old");
+    old.appendRecord([ev("assistant.message.completed", { payload: { text: "before" } })], src("r1"), "t");
+    const snapshot = captureActivityRenameSnapshot(dir, "old");
+    old.appendRecord([ev("assistant.message.completed", { payload: { text: "after" } })], src("r2"), "t");
+
+    convergeActivityRename(dir, "old", "new", snapshot);
+    convergeActivityRename(dir, "old", "new", snapshot);
+
+    expect(new ActivityLog(dir, "new").readTail(10).map((event) => (event.payload as { text: string }).text)).toEqual(["before", "after"]);
+  });
+
+  it("refuses a destination that was already occupied", () => {
+    const dir = freshDir();
+    new ActivityLog(dir, "old").appendRecord([ev("assistant.message.completed")], src("r1"), "t");
+    new ActivityLog(dir, "new").appendRecord([ev("assistant.message.completed")], src("r2"), "t");
+    expect(() => convergeActivityRename(dir, "old", "new", captureActivityRenameSnapshot(dir, "old"))).toThrow("changed outside");
   });
 });

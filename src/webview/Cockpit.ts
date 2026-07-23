@@ -10,6 +10,7 @@ import {
   navSection,
   isSection,
   type CockpitRoute,
+  type CockpitNonStudioRoute,
   type CockpitPanelState,
 } from "../cockpit/route.js";
 import { markCockpitSingletonClaimed, clearCockpitSingletonClaim } from "./cockpitSingleton.js";
@@ -84,7 +85,7 @@ import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } fro
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import type { PluginsPanelManager } from "./PluginsPanel.js";
-import { isStudioRoute } from "../cockpit/route.js";
+import { isStudioRoute, parentRoute } from "../cockpit/route.js";
 import {
   reconcileStudioTeardown,
   stopStudioBinding,
@@ -94,6 +95,8 @@ import {
   beginStudioNavTransaction,
   currentStudioBindingFor,
   refreshStudioReferenceData,
+  sendStudioLoad,
+  type StudioRoute,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 export type { CockpitStudios };
@@ -251,6 +254,7 @@ function strings(): CockpitStrings {
     navTmux: t("tmux"),
     navPlugins: t("Plugins"),
     navSettings: t("Settings"),
+    back: t("Back"),
     refresh: t("Refresh"),
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
@@ -431,6 +435,16 @@ function inspectorStrings(): InspectorStrings {
 let panel: vscode.WebviewPanel | undefined;
 let currentRoute: CockpitRoute = routes.section("overview");
 /**
+ * t-610705 (Phase D, D3) — the last COMMITTED route that was NOT itself a studio route, tracked
+ * separately from `currentRoute` (design-dueto probe-43bca1cc blockers): a pin's `returnRoute` must
+ * survive re-entry to the SAME pin (routeKey-based idempotent re-entry never re-derives it from
+ * `currentRoute`, which would already be the pin route itself) and chained pin↔other-studio
+ * navigation (an intervening studio visit must not overwrite it). Reset to the Overview default
+ * whenever a panel is disposed (see the `onDidDispose` handler below) so a later fresh panel never
+ * inherits a disposed panel's provenance.
+ */
+let lastCommittedNonStudioRoute: CockpitNonStudioRoute = routes.section("overview");
+/**
  * t-610705 (Phase C.0) — bumped on every route change AND every workspace-scope change (both are
  * "the world changed" events). Async send*() functions capture this at the start and re-check it
  * after their awaits; a mismatch means a newer navigation/scope-switch has superseded this call,
@@ -440,10 +454,22 @@ let currentRoute: CockpitRoute = routes.section("overview");
  */
 let navEpoch = 0;
 
+/**
+ * t-610705 (Phase D, D3) — captures `lastCommittedNonStudioRoute` into a pin route's own
+ * `returnRoute` slot at the moment it commits, IF one hasn't already been captured (a persisted/
+ * revived pin route already carries its own real returnRoute — never overwritten). Every other
+ * studio's `returnRoute` stays `null` (never read — `studioParentSection` answers their parent).
+ */
+function captureReturnRoute(route: CockpitRoute): CockpitRoute {
+  if (!isStudioRoute(route) || route.studio !== "pin" || route.returnRoute !== null) return route;
+  return { ...route, returnRoute: lastCommittedNonStudioRoute };
+}
+
 function navigate(route: CockpitRoute): void {
   reconcileActivityTeardown(route);
   reconcileStudioTeardown(route);
-  currentRoute = route;
+  currentRoute = captureReturnRoute(route);
+  if (!isStudioRoute(currentRoute)) lastCommittedNonStudioRoute = currentRoute;
   navEpoch += 1;
 }
 
@@ -497,6 +523,8 @@ let pushHandoff: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
+let pushTaskStudioEntity: (() => void) | undefined;
+let pushPinStudioEntity: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
@@ -527,6 +555,27 @@ export function refreshCockpitProbes(): void {
  *  see studioHost.ts's refreshStudioReferenceData doc comment). */
 export function refreshCockpitStudioReferenceData(): void {
   pushStudioReferenceData?.();
+}
+
+/** t-610705 (Phase D, D2) — re-send a fresh `load` for an open Task Studio binding after ANY task
+ *  mutation, from ANY source (board drag/edit, detail edit, MCP tool call) — the same fan-out the
+ *  retired standalone TaskStudioPanelManager wired via `base.refreshAll()` into `onTasksChanged`.
+ *  Task and Pin (D3, see refreshCockpitPinStudioEntity below) are the two migrated studios whose
+ *  underlying entity can change out from under an open binding through paths OTHER than Save — the
+ *  other 4 studios' entities have no such external-mutation path, so they have no equivalent push.
+ *  A no-op off a task studio-edit route, and best-effort (sendStudioLoad already tolerates a load
+ *  failure) otherwise. */
+export function refreshCockpitTaskStudioEntity(): void {
+  pushTaskStudioEntity?.();
+}
+
+/** t-610705 (Phase D, D3) — Pin's equivalent of refreshCockpitTaskStudioEntity above: the retired
+ *  standalone PinStudioPanelManager wired `base.refreshAll()` into the SAME broad `refreshAll()`
+ *  fan-out extension.ts already calls after worktree/plugin/reference-data changes (pins can be
+ *  created/deleted from the sidebar tree while a DIFFERENT pin's studio tab is open) — ported as-is,
+ *  same call site, rather than narrowed to a pin-specific event that didn't exist before this port. */
+export function refreshCockpitPinStudioEntity(): void {
+  pushPinStudioEntity?.();
 }
 
 /** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
@@ -755,16 +804,29 @@ export async function openCockpit(
   if (panel && !opts?.revivedPanel) {
     panel.reveal(vscode.ViewColumn.Active);
   } else {
+    // t-4d59d3 — every localResourceRoot the panel will EVER need is granted here, once, at
+    // creation: dist/webview plus each workspace's stable task-attachments parent (covers every
+    // task's blob dir — read-only mapping via asWebviewUri, still confined to the attachments
+    // tree). Reassigning `webview.options` later on a LIVE panel makes VS Code recreate the
+    // webview's inner iframe, and that reload can wedge at the fake.html placeholder — the whole
+    // Control surface went permanently blank the moment a Board card was clicked (the old
+    // sendTaskDetail did exactly that per-navigation re-grant; see its comment below). A workspace
+    // folder added AFTER Control opened won't have its root here — its task images degrade to
+    // broken thumbnails until Control is reopened, which beats a blank panel.
+    const creationResourceRoots = [
+      vscode.Uri.joinPath(deps.extensionUri, "dist", "webview"),
+      ...deps.taskDetail.getWorkspaces().map((w) => vscode.Uri.file(w.attachmentsRoot())),
+    ];
     panel = opts?.revivedPanel ?? vscode.window.createWebviewPanel(COCKPIT_VIEW_TYPE, s.title, vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       enableFindWidget: true,
-      localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
+      localResourceRoots: creationResourceRoots,
     });
     panel.title = s.title;
     panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
+      localResourceRoots: creationResourceRoots,
     };
     panel.iconPath = panelIcon(deps.extensionUri, "pulse");
     markCockpitSingletonClaimed();
@@ -779,9 +841,15 @@ export async function openCockpit(
         pushTaskDetail = undefined;
         pushProbes = undefined;
         pushStudioReferenceData = undefined;
+        pushTaskStudioEntity = undefined;
+        pushPinStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
+        // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
+        // provenance (design-dueto probe-43bca1cc: module-scoped router state outlives any one panel).
+        currentRoute = routes.section("overview");
+        lastCommittedNonStudioRoute = routes.section("overview");
         missionAgentLists.clear();
         stopActivityBinding();
         stopStudioBinding();
@@ -805,7 +873,11 @@ export async function openCockpit(
     let model: CockpitModel;
     try {
       const bundles = await deps.collect();
-      model = buildCockpitModel(bundles, { section: navSection(currentRoute), wsHash: controlWsHash });
+      // t-610705 (Phase D, D3) — navSection(currentRoute) is null for pin (nav-less); "overview"
+      // here is only "which background section data stays warm underneath the studio form", NOT a
+      // claim that the Overview tab is active (tab highlighting is suppressed client-side instead —
+      // see cockpit/App.tsx's `isNavlessStudio`).
+      model = buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview", wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -823,7 +895,7 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: navSection(currentRoute), wsHash: controlWsHash },
+        { section: navSection(currentRoute) ?? "overview", wsHash: controlWsHash },
       );
     }
     // t-610705 (Phase C.1) — carries the exact route when it's a subroute; buildCockpitModel stays
@@ -836,11 +908,14 @@ export async function openCockpit(
       // existing binding (routeKey match), so calling it from both places is safe.
       ensureStudioBinding(currentRoute, makeStudioAdapterFactory(deps.studios));
       const b = currentStudioBindingFor(currentRoute);
-      if (b) model.studioMountNonce = b.mountNonce;
+      if (b) {
+        model.studioMountNonce = b.mountNonce;
+        model.studioPersisted = b.persisted;
+      }
     }
     if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
-      live.title = sectionTitle(s, navSection(currentRoute));
+      live.title = sectionTitle(s, navSection(currentRoute) ?? "overview");
     }
   };
 
@@ -976,6 +1051,20 @@ export async function openCockpit(
     return false;
   };
 
+  // t-527767 — shared by onCancelled (every studio) and onSaved (Pin/Task only — see onSaved's own
+  // scoping comment below) since the "where does this studio route's exit land" computation is
+  // IDENTICAL for both triggers; only whether-to-navigate-at-all differs.
+  // t-c3c819 — task-detail is only a valid exit destination for a REAL, already-saved task; Task
+  // Studio's staged-create pattern opens a brand-new task straight into studio-edit with a
+  // pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on disk"). Fall
+  // back to the studio's own section instead — "mission" (Board) is correct unconditionally here:
+  // task-detail is task-only, parentRoute never produces it for any other studio (route.ts's
+  // parentRoute switch), so this branch can't misfire for one.
+  const studioExitTarget = (route: StudioRoute, persisted: boolean): CockpitRoute => {
+    const parent = parentRoute(route);
+    return parent?.kind === "task-detail" && !persisted ? routes.section("mission") : parent ?? routes.section("overview");
+  };
+
   // t-610705 (Phase D, D0) — studio-envelope dispatch (ready/patch/dirty/save/cancel/domain). The
   // io/hooks capabilities are the SAME injected-capability shape activityFeed.ts established (post +
   // isCurrent), so a torn-down/replaced binding's in-flight work can never post into whatever
@@ -988,6 +1077,39 @@ export async function openCockpit(
       notify,
       handleDomainMessage: (ctx, message) => {
         if (isStudioRoute(currentRoute)) studioDomainDispatch(currentRoute, ctx, message);
+      },
+      // t-cdd4e1 — Cancel discards the draft server-side but never navigated anywhere; the studio
+      // route just sat there with no visible effect. Navigate to the SAME destination the route's
+      // own breadcrumb would (parentRoute already resolves pin's captured returnRoute vs every other
+      // studio's flat/task-detail parent generically — no separate branching needed here, same as
+      // "setSection"/"navigateReturn" below reuse it). Calls navigate() DIRECTLY, not requestNavigate
+      // — Cancel is designed as an unconfirmed direct discard (see the "cancel" case's own comment in
+      // studioHost.ts), so it must bypass beginStudioNavTransaction's checkpoint entirely rather than
+      // re-prompt a dialog the user just explicitly opted out of by clicking Cancel.
+      onCancelled: (persisted) => {
+        if (!isStudioRoute(currentRoute)) return;
+        navigate(studioExitTarget(currentRoute, persisted));
+        void (async () => {
+          await sendModel();
+          await sendSectionModule();
+        })();
+      },
+      // t-527767 — maintainer directive 2026-07-23: Pin/Task Studio read as "create/edit → return to
+      // the list" — Save should navigate away automatically, same destination Cancel/Back already
+      // use. Deliberately scoped to just these two: the other 5 studios (command/terminal/runbook/
+      // schedule/agent) read more like config editors, where staying open to keep tweaking is the
+      // better default — a maintainer decision, not an oversight (can extend later if it proves
+      // wanted). Calls navigate() DIRECTLY, same as onCancelled — a save that just succeeded has
+      // nothing left to confirm-discard, so this bypasses beginStudioNavTransaction's checkpoint the
+      // same way Cancel does.
+      onSaved: (persisted) => {
+        if (!isStudioRoute(currentRoute)) return;
+        if (currentRoute.studio !== "pin" && currentRoute.studio !== "task") return;
+        navigate(studioExitTarget(currentRoute, persisted));
+        void (async () => {
+          await sendModel();
+          await sendSectionModule();
+        })();
       },
     });
 
@@ -1050,17 +1172,14 @@ export async function openCockpit(
       live.webview.postMessage(taskMessage(emptyTombstoneVm(route.wsHash, route.taskId)));
       return;
     }
-    // dogfood round 1 (#5, spec 339, ported from TaskDetailPanel.ts) — the blob root must be an
-    // allowed local resource root before asWebviewUri() below can resolve `attachment:<id>` refs.
-    // Least-privilege: only the CURRENT task's root is allowed (Control is single-instance, so a
-    // prior task's images simply stop resolving once navigated away — nothing still displays them).
-    live.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(deps.extensionUri, "dist", "webview"),
-        vscode.Uri.file(ws.attachmentBlobRoot(route.taskId)),
-      ],
-    };
+    // t-4d59d3 — the blob root must be an allowed local resource root before asWebviewUri() below
+    // can resolve `attachment:<id>` refs. The per-navigation `live.webview.options` re-grant this
+    // ported from TaskDetailPanel.ts (dogfood round 1 #5, spec 339) is GONE: reassigning options on
+    // a live panel recreates the inner iframe, and that reload wedged at the fake.html placeholder,
+    // blanking all of Control the moment a Board card was clicked. The standalone panel got away
+    // with it because it re-set its own html around every open; Control sets html once. The grant
+    // now happens ONCE at panel creation (each workspace's stable attachments parent — see the
+    // creationResourceRoots comment above), which covers every task's blob dir.
     try {
       const detail = await ws.loadTaskDetail(route.taskId);
       if (panel !== live || navEpoch !== epoch) return;
@@ -1352,6 +1471,8 @@ export async function openCockpit(
   // the io capability directly (same studioIo the studio-envelope dispatch above uses), and is a
   // no-op with no binding — the isStudioRoute guard here just avoids the pointless call off-route.
   pushStudioReferenceData = () => { if (isStudioRoute(currentRoute)) void refreshStudioReferenceData(studioIo); };
+  pushTaskStudioEntity = () => { if (isStudioRoute(currentRoute) && currentRoute.studio === "task") void sendStudioLoad(studioIo); };
+  pushPinStudioEntity = () => { if (isStudioRoute(currentRoute) && currentRoute.studio === "pin") void sendStudioLoad(studioIo); };
   doOpenActivityTranscript = () => {
     if (currentRoute.kind !== "agent-activity") {
       notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
@@ -1603,6 +1724,24 @@ export async function openCockpit(
             await sendSectionModule();
           });
           return;
+        case "navigateReturn":
+          // t-610705 (Phase D, D3) — pin's ONLY breadcrumb action. The DESTINATION is deliberately
+          // never client-sent (design-dueto probe-43bca1cc: a client-sent route payload widens the
+          // trust boundary from "pick one of N enum values" to "send back an arbitrary route object"
+          // for no real benefit) — the host is the sole authority on where "back" goes, reading its
+          // OWN already-sanitized `currentRoute.returnRoute`. `c.routeKey` is the client's identity
+          // snapshot of the pin route it was showing when clicked — checked against the CURRENT
+          // route before acting (design-dueto probe-12f603f3 major finding: without this, a delayed
+          // click from a pin the user already navigated away from could fire against whatever pin is
+          // current by the time this handler runs, navigating to the WRONG pin's returnRoute — a
+          // stale-message confused-deputy bug, not route-payload injection, but still a real navigate-
+          // to-the-wrong-place bug).
+          if (!isStudioRoute(currentRoute) || currentRoute.studio !== "pin" || routeKey(currentRoute) !== c.routeKey) return;
+          await requestNavigate(currentRoute.returnRoute ?? routes.section("overview"), live, async () => {
+            await sendModel();
+            await sendSectionModule();
+          });
+          return;
         case "switchControlWorkspace":
           // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
           // active section's module (per-workspace sections re-resolve; plugins embed re-binds).
@@ -1617,7 +1756,7 @@ export async function openCockpit(
         case "copyDiagnostics": {
           try {
             const bundles = await deps.collect();
-            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) }));
+            const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview" }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied));
           } catch (err) {
@@ -1847,6 +1986,8 @@ export async function openCockpit(
     const runbookStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "runbook";
     const scheduleStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "schedule";
     const agentStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "agent";
+    const taskStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "task";
+    const pinStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "pin";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -1866,6 +2007,40 @@ export async function openCockpit(
       // srcdoc iframe (the standalone TaskDetailPanel.ts set this too); purely additive to the CSP,
       // no effect on any other already-embedded section.
       frameSrc: "self",
+      // t-610705 (Phase D, D2) — the CSP tranche the design doc's security-probe requirement exists
+      // to gate. Verified against the actual code paths (not copied blind from the retired
+      // TaskStudioPanel.ts config), per probe-6a55db50's adversarial review:
+      //  - imgBlob: pasted-image blob: URLs rendered inline in the rich-doc editor.
+      //  - connectSrc: rich-doc/VisualsPanel.tsx's uriToDataURL() does `fetch(att.uri)` on a same-
+      //    origin asWebviewUri resource (the "annotate an existing image" flow) — without this,
+      //    that fetch is blocked outright (falls back to default-src 'none').
+      //  - workerSrc: "blob" — Excalidraw's own vendor bundle constructs a Worker via
+      //    `new Worker(URL.createObjectURL(...))`; confirmed by grepping
+      //    node_modules/@excalidraw/excalidraw/dist for the literal `new Worker(` call.
+      //  - childSrc: "blob" was DROPPED (present in the old standalone panel's config, copied
+      //    forward into the first cut of this diff) — the probe's adversarial pass caught that it's
+      //    INERT here: CSP only falls back to child-src for frame/worker loads when frame-src/
+      //    worker-src are ABSENT, and this shell always sets frame-src ('self', for the unrelated
+      //    PrototypePreview iframe) and worker-src (blob:, above) explicitly — so child-src's blob:
+      //    token is never consulted for either. No blob-iframe usage exists in rich-doc/excalidraw
+      //    to justify it either way. Removing it shrinks the grant to only what's provably load-
+      //    bearing.
+      //
+      // t-610705 (Phase D, D3) — "CSP tranche 2" (studios-routes-design.md's sequencing table) turns
+      // out to add NOTHING new: Pin Studio's attachment/Excalidraw needs are a strict subset of Task
+      // Studio's (same putXStudioImage/putXStudioSketch base64-in, dataUri-out pattern — see
+      // PinStudioTarget.ts's D3 port of TaskStudioTarget.ts's D2 fix — no CAS, no prototype iframe).
+      // The grants below already cover it; re-verified against Pin's actual diff by its own
+      // pre-landing adversarial probe rather than assumed. See D2's comment immediately below for
+      // each grant's own justification (still accurate, now serving 2 studios instead of 1).
+      //
+      // Emitted ONCE at panel creation for Control's whole lifetime (this `<meta>` isn't re-rendered
+      // per route) — a PERMANENT grant across the entire Cockpit surface, not scoped to when a Task
+      // Studio route is actually active. The probe's verdict (SHIP WITH CONDITIONS) and the
+      // maintainer's recorded acceptance of the panel-wide-CSP trade-off are in t-610705's journal.
+      imgBlob: true,
+      connectSrc: true,
+      workerSrc: "blob",
       // No nested `[...]` inside this literal — test/unit/cockpitCssParity.test.ts source-scans this
       // exact array via a non-greedy `styles:\s*\[([\s\S]*?)\]` regex, so an inline array literal
       // (e.g. a `...(cond ? [x] : [])` spread) closes the match early at ITS `]` and silently
@@ -1897,12 +2072,26 @@ export async function openCockpit(
         // → agent-studio-shell.css), so studio-frame.css's own rules still win the cascade over any
         // Tailwind utility class at equal specificity, same as it always has for this surface.
         agentStudioIsActive ? uri("agent-studio-shell.tailwind.css") : undefined,
+        // t-610705 (Phase D, D2) — same Tailwind-before-studio-frame ordering as Agent Studio above;
+        // rich-doc.css (entity-neutral editor styles, shared with the retired standalone panel + the
+        // dev preview harness) loads BEFORE studio-frame.css too — matches the old standalone panel's
+        // `styleFiles` order exactly (codicon, design-system, vscode-theme, task-studio.tailwind,
+        // rich-doc, studio-frame, task-studio), so studio-frame.css's shell-chrome rules still win the
+        // cascade over rich-doc.css at equal specificity, same as they always have for this surface.
+        taskStudioIsActive ? uri("task-studio.tailwind.css") : undefined,
+        // t-610705 (Phase D, D3) — Pin Studio shares Task Studio's rich-doc.css (same entity-neutral
+        // editor sheet, no Tailwind sheet of its own) — one shared conditional, same reasoning as the
+        // "*-mermaid" shared conditionals above (a second, separately-gated call for the identical
+        // file would duplicate the <link> and fail cockpitCssParity's no-duplicate-link check).
+        (taskStudioIsActive || pinStudioIsActive) ? uri("rich-doc.css") : undefined,
         studioIsActive ? uri("studio-frame.css") : undefined,
         commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
         terminalStudioIsActive ? uri("terminal-studio-shell.css") : undefined,
         runbookStudioIsActive ? uri("runbook-studio-shell.css") : undefined,
         scheduleStudioIsActive ? uri("schedule-studio-shell.css") : undefined,
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
+        taskStudioIsActive ? uri("task-studio.css") : undefined,
+        pinStudioIsActive ? uri("pin-studio.css") : undefined,
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),
@@ -1948,11 +2137,29 @@ export async function openCockpit(
           "studio-frame-agent": uri("studio-frame.css"),
           "studio-agent-tailwind": uri("agent-studio-shell.tailwind.css"),
           "studio-agent": uri("agent-studio-shell.css"),
+          "studio-frame-task": uri("studio-frame.css"),
+          "studio-task-tailwind": uri("task-studio.tailwind.css"),
+          "studio-task-richdoc": uri("rich-doc.css"),
+          "studio-task": uri("task-studio.css"),
+          // t-610705 (Phase D, D3) — own key even though it resolves to the SAME rich-doc.css href as
+          // "studio-task-richdoc" — matches the per-studio-key convention "studio-frame-<id>" already
+          // uses (one distinct key per client call site, not a shared key across two lazy blocks).
+          "studio-frame-pin": uri("studio-frame.css"),
+          "studio-pin-richdoc": uri("rich-doc.css"),
+          "studio-pin": uri("pin-studio.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),
         __katexCssUri: uri("katex.min.css"),
         __codeThemeForced: codeTheme,
+        // t-610705 (Phase D, D2) — Task Studio's VisualsPanel/SketchModal read these three
+        // `window.*` globals (task-studio/App.tsx's `readAssets()`) to locate the Excalidraw bundle —
+        // same shape TaskStudioPanel.ts's (retired) standalone `bootstrapGlobals` already provided,
+        // now emitted unconditionally like every other bootstrap global here (harmless on a route
+        // that never mounts Task Studio — same reasoning Phase C.2's mermaid/katex URIs already use).
+        EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
+        EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
+        EXCALIDRAW_ASSET_PATH: uri("").replace(/\/?$/, "/"),
       },
     });
   } else {

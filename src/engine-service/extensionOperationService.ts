@@ -9,7 +9,10 @@ import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
+import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
+import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
 import { loadConfigFile } from "../config/loadConfig.js";
+import { listRollbackableAgentProfileMigrations } from "../config/agentProfileMigration.js";
 import {
   addAgent,
   cloneAgent,
@@ -91,6 +94,29 @@ export async function executeExtensionQuery(
       return doctorReport(workspace);
     case "legacy-delivery.retirement-preview":
       return json(workspace.legacyDeliveryRetirement.preview());
+    case "agent-profile.migration-preview": {
+      const result = await workspace.planAgentProfileMigration(query.agent, query.nonSecretEnv);
+      return result.ok
+        ? json({ ok: true, agent: result.plan.agentName, profilePath: `.tachyon/agents/${result.plan.agentName}/agent.yml` })
+        : json({ ok: false, blockers: result.blockers, unclassifiedEnv: result.unclassifiedEnv });
+    }
+    case "agent-profile.rollbackable":
+      return json(listRollbackableAgentProfileMigrations(workspace.workspaceRoot));
+    case "agent-profile.studio-inspect":
+      return json(await workspace.inspectAgentProfileStudio(query.agent));
+    case "agent-profile.studio-bundle-export": {
+      const exported = await workspace.exportAgentProfileStudioBundle(query.agent, query.expectedRevision);
+      return json({
+        schemaVersion: 1,
+        agentName: query.agent,
+        revision: query.expectedRevision,
+        fileName: `${query.agent}.tachyon-agent-profile.json`,
+        contentBase64: exported.bytes.toString("base64"),
+        byteSize: exported.bytes.length,
+        sha256: exported.sha256,
+        requiresReauthorization: exported.bundle.requiresReauthorization,
+      });
+    }
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "companion.status": {
@@ -324,11 +350,17 @@ export async function executeExtensionCommand(
         (text) => addAgent(text, command.agent, command.cmd, command.kind),
         () => onViewsChanged("agents"),
       ));
-    case "config.agent.clone":
+    case "config.agent.clone": {
+      if (workspace.isCanonicalProfileAgent(command.agent)) {
+        await workspace.cloneCanonicalProfileAgent(command.agent, command.newName);
+        onViewsChanged("agents");
+        return json({ changed: true });
+      }
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => cloneAgent(text ?? "", command.agent, command.newName),
         () => onViewsChanged("agents"),
       ));
+    }
     case "config.agent.rename":
       await workspace.renameAgent(command.agent, command.newName);
       return json({ changed: true });
@@ -336,6 +368,38 @@ export async function executeExtensionCommand(
       return deleteConfiguredAgent(workspace, command.agent, command.removeWorktree, onViewsChanged);
     case "config.agent.promote":
       return promoteAgent(workspace, command.agent, onViewsChanged);
+    case "agent-profile.migrate":
+      return json(await workspace.migrateAgentProfile(command.agent, command.nonSecretEnv));
+    case "agent-profile.rollback":
+      return json(await workspace.rollbackAgentProfileMigration(command.txid));
+    case "agent-profile.studio-commit":
+      return json(await workspace.commitAgentProfileStudio(command.mutation));
+    case "agent-profile.studio-lifecycle":
+      return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
+    case "agent-profile.studio-bundle-clone": {
+      const result = await workspace.cloneAgentProfileStudioBundle(command.agent, command.expectedRevision, command.destinationAgentName);
+      return json({
+        schemaVersion: 1,
+        kind: "created",
+        operation: "clone",
+        snapshot: projectAgentProfileStudioSnapshot(result.lifecycle.snapshot),
+        bundleSha256: result.bundleSha256,
+        requiresReauthorization: result.requiresReauthorization,
+      });
+    }
+    case "agent-profile.studio-bundle-import": {
+      if (!stagedPayloads) throw new Error("Agent profile bundle payload transport is unavailable");
+      const bytes = stagedPayloads.consume(command.payload, PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES);
+      const result = await workspace.importAgentProfileBundle(command.destinationAgentName, bytes);
+      return json({
+        schemaVersion: 1,
+        kind: "created",
+        operation: "import",
+        snapshot: projectAgentProfileStudioSnapshot(result.lifecycle.snapshot),
+        bundleSha256: result.bundleSha256,
+        requiresReauthorization: result.requiresReauthorization,
+      });
+    }
     case "config.command.delete":
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => deleteCommand(text ?? "", command.name),
@@ -757,6 +821,14 @@ async function deleteConfiguredAgent(
     throw new Error(`agent '${agent}' still owns a worktree; remove it before deleting the agent`);
   }
   if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
+  if (workspace.isCanonicalProfileAgent(agent)) {
+    if ((await workspace.manager.agentStates()).has(agent)) {
+      throw new Error(`agent '${agent}' must be fully stopped before canonical forget`);
+    }
+    await workspace.forgetCanonicalProfileAgent(agent);
+    onViewsChanged("agents");
+    return json({ changed: true });
+  }
   const states = await workspace.manager.agentStates();
   if (states.has(agent)) {
     await workspace.manager.kill(agent).catch(() => undefined);

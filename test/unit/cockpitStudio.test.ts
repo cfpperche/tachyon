@@ -69,7 +69,7 @@ const loadMessages = () => studioMessages().filter((m) => (m as { type?: string 
 const checkpointMessages = () => __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "studioNavCheckpoint") as Array<{ txnId: string }>;
 
 async function openStudioNew(deps: ReturnType<typeof depsFor>): Promise<{ routeKey: string; mountNonce: string }> {
-  await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+  await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
   __createdPanels[0].webview.__receive({ type: "ready" });
   await flush();
   const model = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } } | undefined;
@@ -160,7 +160,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
   it("round-4/5: reopening the SAME studio-EDIT route while already on it is a no-op — no checkpoint, no hang", async () => {
     const ws = commandStudioTarget({ config: fakeConfig({ flaky: { cmd: "npm test" } } as unknown as TachyonConfig["commands"]) });
     const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model0 = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } };
@@ -174,7 +174,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "dirty", dirty: true }));
     await flush();
 
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     await flush();
 
     expect(checkpointMessages()).toHaveLength(0);
@@ -194,7 +194,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     __createdPanels[0].webview.__receive(scoped(routeKey, mountNonce, { type: "dirty", dirty: true }));
     await flush();
 
-    const openPromise = openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+    const openPromise = openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
     await flush();
     const checkpoint = checkpointMessages().at(-1);
     expect(checkpoint).toBeTruthy(); // a checkpoint WAS requested — unlike studio-edit's shortcut
@@ -247,7 +247,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     expect(model.model.section).toBe("fleet");
 
     // re-entering the SAME identity must NOT resurrect the discarded draft.
-    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
     await flush();
     const model2 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     sendStudioReady("studio-new:command:ws-1", model2.model.studioMountNonce!);
@@ -272,7 +272,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     __createdPanels[0].webview.__receive({ type: "studioNavCheckpointAck", txnId: checkpoint.txnId, dirty: true, editRevision: 5, patch });
     await flush();
 
-    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
     await flush();
     const model2 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     sendStudioReady("studio-new:command:ws-1", model2.model.studioMountNonce!);
@@ -328,7 +328,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
 
   it("a checkpoint-ack timeout NEVER authorizes navigation (round-2 F1) — the route stays put", async () => {
     const deps = depsFor({ getWorkspaces: () => [commandStudioTarget()], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model0 = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } };
@@ -466,7 +466,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     const commands = { flaky: { cmd: "npm test" } } as unknown as TachyonConfig["commands"];
     const ws = commandStudioTarget({ config: fakeConfig(commands) });
     const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model0 = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } };
@@ -482,7 +482,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
 
     // re-entering with the SAME command now removed from config (adapter.load returns not-found).
     (ws.config as unknown as { commands: Record<string, unknown> }).commands = {};
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     await flush();
     const model1 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     sendStudioReady("studio-edit:command:ws-1:flaky", model1.model.studioMountNonce!);
@@ -493,7 +493,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     // restore the command and re-enter again — the draft must STILL be there (round-3: a failed
     // load must not have silently deleted it).
     (ws.config as unknown as { commands: Record<string, unknown> }).commands = commands;
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     await flush();
     const model2 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     sendStudioReady("studio-edit:command:ws-1:flaky", model2.model.studioMountNonce!);
@@ -507,7 +507,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     const commands = { flaky: { cmd: "npm test" } } as unknown as TachyonConfig["commands"];
     const ws = commandStudioTarget({ config: fakeConfig(commands) });
     const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model0 = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } };
@@ -524,7 +524,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     // the underlying command changes elsewhere (another window, a direct tachyon.yml edit) before
     // the user returns — the draft's fingerprint no longer matches.
     (ws.config as unknown as { commands: Record<string, unknown> }).commands = { flaky: { cmd: "npm test --changed-elsewhere" } };
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "flaky", returnRoute: null } });
     await flush();
     const model1 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     sendStudioReady("studio-edit:command:ws-1:flaky", model1.model.studioMountNonce!);
@@ -539,7 +539,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     __setWarningMessageResult("Discard");
     const buildWs = commandStudioTarget({ config: fakeConfig({ build: { cmd: "npm run build" } } as unknown as TachyonConfig["commands"]) });
     const deps = depsFor({ getWorkspaces: () => [buildWs], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "build" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "build", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model0 = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } };
@@ -557,7 +557,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     const leaveCheckpoint = checkpointMessages().at(-1)!;
     __createdPanels[0].webview.__receive({ type: "studioNavCheckpointAck", txnId: leaveCheckpoint.txnId, dirty: false, editRevision: 0, patch: undefined });
     await flush();
-    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1" } });
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
     await flush();
     const model1 = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { studioMountNonce?: string } };
     const freshRouteKey = "studio-new:command:ws-1";
@@ -584,7 +584,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
 
   it("no attached workspace leaves the route open but empty (no throw)", async () => {
     const deps = depsFor({ getWorkspaces: () => [], onChanged: () => {} });
-    await expect(openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "gone" } })).resolves.not.toThrow();
+    await expect(openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "gone", returnRoute: null } })).resolves.not.toThrow();
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     expect(loadMessages()).toHaveLength(0);
@@ -659,7 +659,7 @@ describe("Control → studio (D1d: entityId adoption after create-save)", () => 
       studioSubmit: () => undefined,
     });
     const deps = depsFor({ getWorkspaces: () => [ws], onChanged: () => {} });
-    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "build" } });
+    await openCockpit(deps, { route: { kind: "studio-edit", studio: "command", wsHash: "ws-1", entityId: "build", returnRoute: null } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const model = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "model") as { model: { studioMountNonce?: string } } | undefined;

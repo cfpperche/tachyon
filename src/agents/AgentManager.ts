@@ -19,7 +19,13 @@ import {
   type SessionRecord,
   type SessionResume,
 } from "../resume/SessionLedger.js";
-import { moveActivityLog } from "../activity/logStore.js";
+import {
+  captureActivityRenameSnapshot,
+  convergeActivityRetirement,
+  convergeActivityRename,
+  moveActivityLog,
+  type ActivityRenameSnapshot,
+} from "../activity/logStore.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type DelegationGate, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
@@ -95,6 +101,17 @@ export class AgentNotRunningError extends Error {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const LAUNCH_READINESS_RUNTIMES = new Set<ResumeRuntime>(["codex", "claude", "grok"]);
+
+export interface CanonicalLiveRenameSnapshot {
+  sessionPresent: boolean;
+  ledgerRecord: SessionRecord | null;
+  activity: ActivityRenameSnapshot;
+}
+
+export interface CanonicalProfileForgetSnapshot {
+  ledgerSha256: string | null;
+  activity: ActivityRenameSnapshot;
+}
 
 /** spec 236 — opencode honors this env var pointing at a config file (verified on 1.17.15). Tachyon
  *  sets it to the per-agent Bridge-only opencode config file it materializes, so a Tachyon-spawned
@@ -714,8 +731,12 @@ export class AgentManager {
     if (managesOwnSession(def.cmd)) return prior?.evolution;
     if (!instructionsDeliverable(def.cmd)) return undefined;
     if (def.selfEvolution?.enabled === true) {
-      return this.opts.resolveEvolutionSnapshot?.(principal)
-        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal);
+      const snapshot = await (this.opts.resolveEvolutionSnapshot?.(principal)
+        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal));
+      if (def.profileEvolution && snapshot.profileId !== def.profileEvolution.profileId) {
+        throw new Error(`Agent Evolution active profile does not match canonical selector for '${name}'`);
+      }
+      return snapshot;
     }
     if (prior?.def?.fork && prior.evolution) {
       return this.opts.resolveEvolutionSnapshot?.(prior.evolution.agent)
@@ -806,6 +827,12 @@ export class AgentManager {
 
   private definitionOf(name: string): AgentDef | undefined {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
+  }
+
+  private assertProfileLifecycleEnabled(name: string, definition = this.definitionOf(name)): void {
+    if (definition?.profileLifecycle) this.opts.assertSpawnAllowed?.(name);
+    if (definition?.profileLifecycle?.enabled !== false) return;
+    throw new Error(`cannot launch '${name}': canonical agent profile is disabled`);
   }
 
   private async assertLaunchPreflight(
@@ -1220,7 +1247,8 @@ export class AgentManager {
   private materializeRuntimeHarness(name: string, def: AgentDef | undefined, cwd: string): MaterializedHarness | null {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
     // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
-    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript" || isolation?.mechanism === "private-home";
+    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript"
+      || isolation?.mechanism === "private-home" || !!def?.profileLifecycle;
     if (!def || !needsPrivateHome || !this.opts.materializeHarness) return null;
     return this.opts.materializeHarness({ name, def, cwd });
   }
@@ -1314,8 +1342,10 @@ export class AgentManager {
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-      // Ad-hoc spawns with an explicit cmd are allowed (caller supplies the def); declared LKG-only names are not.
-      if (!opts?.cmd) this.opts.assertSpawnAllowed?.(name);
+      // An explicit cmd creates an ad-hoc identity only when the name is not already declared.
+      const declared = this.opts.getConfig()?.agents[name];
+      if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
+      this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
       if (opts?.deliveryJoin) {
         if (opts.gate || opts.worktree) {
           throw new Error("spawn_agent delivery_join cannot combine with gate or worktree:true");
@@ -1378,6 +1408,7 @@ export class AgentManager {
       const config = this.opts.getConfig();
       const source = config?.agents[bound];
       if (!source) throw new UnknownAgentError(bound);
+      this.assertProfileLifecycleEnabled(bound, source);
       if (source.kind !== "agent") throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
       if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
       if (config?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
@@ -2914,6 +2945,126 @@ export class AgentManager {
     }
   }
 
+  /** Capture the exact durable/live bindings before canonical profile authority commits. */
+  async prepareCanonicalProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
+    if (oldName === newName) throw new Error("canonical live rename source and destination must differ");
+    if (this.definitionOf(oldName)?.harness) {
+      throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
+    }
+    if (this.opts.ledger?.get(oldName)?.resume?.runtime === "pi") {
+      throw new Error(`cannot rename '${oldName}': renaming a managed Pi session isn't supported yet (phase 2)`);
+    }
+    if (this.definitionOf(newName)) throw new Error(`agent '${newName}' already exists`);
+    const oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+    const newSession = await this.opts.tmux.hasSession(this.session(newName));
+    if (newSession) throw new Error(`a session named '${newName}' already exists`);
+    const ledgerRecord = this.opts.ledger?.get(oldName) ?? null;
+    if (this.opts.ledger?.get(newName)) throw new Error(`session ledger already contains '${newName}'`);
+    const targetActivity = captureActivityRenameSnapshot(this.activityDir(), newName);
+    if (targetActivity.jsonlSha256 !== null || targetActivity.stateSha256 !== null) {
+      throw new Error(`activity storage already contains '${newName}'`);
+    }
+    return {
+      sessionPresent: oldSession,
+      ledgerRecord: ledgerRecord ? structuredClone(ledgerRecord) : null,
+      activity: captureActivityRenameSnapshot(this.activityDir(), oldName),
+    };
+  }
+
+  /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
+  async prepareCanonicalProfileForget(name: string): Promise<CanonicalProfileForgetSnapshot> {
+    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)
+      || this.provisionalAgents.has(name) || this.soulReservations.has(name)) {
+      throw new Error(`agent '${name}' must be fully stopped before canonical forget`);
+    }
+    if (this.opts.ledger?.get(name)?.worktree) {
+      throw new Error(`agent '${name}' still owns a worktree; remove it explicitly before canonical forget`);
+    }
+    return {
+      ledgerSha256: this.opts.ledger?.recordDigest(name) ?? null,
+      activity: captureActivityRenameSnapshot(this.activityDir(), name),
+    };
+  }
+
+  /** Remove only captured projections; private runtime homes and external bindings are retained. */
+  async convergeCanonicalProfileForget(
+    name: string,
+    agentId: string,
+    txid: string,
+    expected: CanonicalProfileForgetSnapshot,
+  ): Promise<void> {
+    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)) {
+      throw new Error(`canonical forget found a live or indeterminate session for '${name}'`);
+    }
+    this.opts.ledger?.removeExactDigest(name, expected.ledgerSha256);
+    convergeActivityRetirement(
+      this.activityDir(),
+      name,
+      expected.activity,
+      path.join(this.opts.workspaceRoot, ".tachyon", "retired-agent-profiles", agentId, txid, "runtime-projections"),
+    );
+    this.adhoc.delete(name);
+    this.lineage.delete(name);
+    this.delegators.delete(name);
+    this.readyAgents.delete(name);
+    this.provisionalAgents.delete(name);
+    this.readinessCache.delete(name);
+    this.stoppingSince.delete(name);
+    this.stopFailed.delete(name);
+    this.cleanExited.delete(name);
+    this.postmortemOutput.delete(name);
+  }
+
+  /** Idempotently converge captured live bindings after canonical profile authority commits. */
+  async convergeCanonicalProfileRename(
+    oldName: string,
+    newName: string,
+    expected: CanonicalLiveRenameSnapshot,
+  ): Promise<void> {
+    let oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+    let newSession = await this.opts.tmux.hasSession(this.session(newName));
+    if (expected.sessionPresent) {
+      if (oldSession && !newSession) {
+        try { await this.opts.tmux.renameSession(this.session(oldName), this.session(newName)); }
+        catch (error) {
+          oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+          newSession = await this.opts.tmux.hasSession(this.session(newName));
+          if (oldSession || !newSession) throw error;
+        }
+        oldSession = await this.opts.tmux.hasSession(this.session(oldName));
+        newSession = await this.opts.tmux.hasSession(this.session(newName));
+      }
+      if (oldSession || !newSession) throw new Error("canonical live rename tmux ownership is ambiguous");
+    } else if (oldSession || newSession) {
+      throw new Error("canonical stopped rename found an unexpected tmux session");
+    }
+
+    this.opts.ledger?.renameExact(oldName, newName, expected.ledgerRecord);
+    convergeActivityRename(this.activityDir(), oldName, newName, expected.activity);
+
+    const def = this.adhoc.get(oldName);
+    if (def) {
+      if (this.adhoc.has(newName)) throw new Error("canonical live rename found conflicting ad-hoc state");
+      this.adhoc.delete(oldName);
+      this.adhoc.set(newName, def);
+    }
+    const parent = this.lineage.get(oldName);
+    if (parent) {
+      const targetParent = this.lineage.get(newName);
+      if (targetParent !== undefined && targetParent !== parent) throw new Error("canonical live rename found conflicting lineage");
+      this.lineage.delete(oldName);
+      this.lineage.set(newName, parent);
+    }
+    for (const [child, value] of this.lineage) if (value === oldName) this.lineage.set(child, newName);
+    for (const [child, value] of this.delegators) if (value === oldName) this.delegators.set(child, newName);
+    const postmortem = this.postmortemOutput.get(oldName);
+    if (postmortem) {
+      if (this.postmortemOutput.has(newName)) throw new Error("canonical live rename found conflicting postmortem state");
+      this.postmortemOutput.delete(oldName);
+      this.postmortemOutput.set(newName, postmortem);
+    }
+  }
+
   /** Drop an ad-hoc agent's in-memory def + lineage (spec 211: after promotion to
    *  tachyon.yml, config is authoritative — no lingering ad-hoc shadow). */
   forgetAdhoc(name: string): void {
@@ -3105,6 +3256,7 @@ export class AgentManager {
   async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
     // SDD 368 T14 — refuse before any stop/replace mutation.
     this.assertNotDeliveryLifecycleDenied(name, "restart");
+    this.assertProfileLifecycleEnabled(name);
     const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
     const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
     const gracefulTimeoutMs = opts.gracefulTimeoutMs ?? AgentManager.STOPPING_FALLBACK_MS;
@@ -3620,6 +3772,7 @@ export class AgentManager {
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
     // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
     this.assertNotDeliveryLifecycleDenied(name, "resume", record);
+    this.assertProfileLifecycleEnabled(name);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
     const cmd = record.def?.cmd;

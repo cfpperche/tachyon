@@ -19,6 +19,7 @@ class FakeHost implements EngineHost {
   t = (m: string, ...a: (string | number | boolean)[]): string => m.replace(/\{(\d+)\}/g, (_x, i) => String(a[Number(i)] ?? ""));
   notify(_m: string, _l: NotifyLevel = "info", _act?: NoticeAction[]): void {}
   focusPrimaryView(): void {}
+  openTask(): void {}
   executeCommand(command: string): Promise<unknown> {
     return Promise.reject(new Error(`unexpected host command in headless test: ${command}`));
   }

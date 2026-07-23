@@ -5,12 +5,14 @@ import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./sh
 import {
   AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
   agentStudioTitleFor,
-  blankAgentFields,
+  canonicalAgentFields,
   canDiscardAgentFields,
   computeAgentDirty,
   createAgentEvolutionLabels,
+  createAgentProfileLabels,
   serializeAgentPatch,
   type AgentEvolutionLabels,
+  type AgentProfileLabels,
   type AgentStudioEntity,
   type AgentStudioFields,
   type AgentStudioPatch,
@@ -28,7 +30,7 @@ import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/stud
 export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, AgentStudioFields, AgentStudioPatch> {
   entityType = "agent";
   domainMessageNames = AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES;
-  concurrency = { kind: "none" as const };
+  concurrency = { kind: "cas" as const };
   allowPatchRestore = true;
   dirty = { computeDirty: computeAgentDirty, serializePatch: serializeAgentPatch, canDiscard: canDiscardAgentFields };
 
@@ -36,10 +38,15 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     private readonly ws: WorkspaceAgentStudioTarget,
     private readonly evolutionLabels: AgentEvolutionLabels = createAgentEvolutionLabels(),
     private readonly persistentInstructionsHelp = "When supported, delivered at startup through the selected runtime.",
+    private readonly profileLabels: AgentProfileLabels = createAgentProfileLabels(),
   ) {}
 
   titleFor(mode: "new" | "edit", entityId: string | undefined, entity: AgentStudioEntity | undefined): string {
     return agentStudioTitleFor(mode, entityId, entity);
+  }
+
+  revisionOf(entity: AgentStudioEntity): string {
+    return entity.profile?.revision ?? "";
   }
 
   async load(entityId: string | undefined): Promise<StudioLoadResult<AgentStudioEntity>> {
@@ -52,13 +59,22 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
       verifyCandidates: deps.verifyCandidates(),
       persistentInstructionsHelp: this.persistentInstructionsHelp,
       evolutionLabels: this.evolutionLabels,
+      profileLabels: this.profileLabels,
     };
     if (entityId === undefined) {
-      return { status: "ok", entity: { fields: blankAgentFields(), ...reference } };
+      return { status: "ok", entity: { storage: "canonical", fields: canonicalAgentFields(), ...reference } };
     }
     const def = this.ws.config?.agents[entityId];
     if (!def || def.kind !== "agent") return { status: "not-found" };
-    return { status: "ok", entity: { name: entityId, fields: fromDef(entityId, def), ...reference } };
+    if (def.profileLifecycle || def.profilePointer) {
+      try {
+        const profile = await this.ws.inspectAgentProfileStudio(entityId);
+        return { status: "ok", entity: { name: entityId, storage: "canonical", profile, fields: canonicalAgentFields(profile), ...reference } };
+      } catch (error) {
+        return { status: "error", error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    return { status: "ok", entity: { name: entityId, storage: "legacy", fields: fromDef(entityId, def), ...reference } };
   }
 
   validate(_fields: AgentStudioFields): StudioValidationResult {
@@ -66,6 +82,17 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   }
 
   save(entityId: string | undefined, patch: AgentStudioPatch): StudioSaveResult | Promise<StudioSaveResult> {
+    if (patch.kind === "canonical") {
+      return this.ws.commitAgentProfileStudio(patch).then(
+        () => ({ status: "ok" as const, ...(entityId === undefined ? { entityId: patch.agentName } : {}) }),
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          return message.includes("revision conflict")
+            ? { status: "conflict" as const, error: { code: "agent-profile/revision-conflict", message: "This profile changed. Reload before saving again." } }
+            : { status: "error" as const, error: { code: "agent-profile/save-failed", message, source: "persistence" as const } };
+        },
+      );
+    }
     return mapStudioSubmitResult(
       this.ws.studioSubmit({ state: patch, editingName: entityId }),
       "validation/agent-save-failed",

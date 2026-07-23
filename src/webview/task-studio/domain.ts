@@ -23,6 +23,12 @@ export interface TaskStudioDepVM {
 
 export type TaskStudioAnchor = "load" | "reimport" | "read-only";
 
+/** t-610705 (Phase D, D2) — host -> webview DOMAIN message names only (core lifecycle messages are
+ *  handled separately by decodeStudioMessage) — mirrors agent-studio-shell/domain.ts's
+ *  AGENT_STUDIO_HOST_MESSAGE_NAMES split. Task Studio's only inbound domain push is the
+ *  import/attach/sketch round trip's result. */
+export const TASK_STUDIO_HOST_MESSAGE_NAMES = ["attachmentStored"] as const;
+
 export interface TaskDetailEntity {
   taskId: string;
   workspaceHash: string;

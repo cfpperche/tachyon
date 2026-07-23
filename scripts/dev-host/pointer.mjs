@@ -23,6 +23,7 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
@@ -191,13 +192,20 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") continue;
     const src = path.join(fixture, name);
     const dest = path.join(mirrorDir, name);
-    // `.tachyon` must be a REAL directory under the mirror, not a symlink to the fixture.
+    // `.tachyon` and tachyon.yml must be REAL entries under the mirror. The engine deliberately
+    // opens authoritative config with a no-follow policy; a tachyon.yml symlink therefore fails
+    // closed with ELOOP during real Dev Host Studio saves. Copying the config also keeps destructive
+    // dogfood mutations inside the disposable mirror instead of writing back into a tracked fixture.
     // Engine AgentManager fails closed if `.tachyon` resolves outside the workspace
     // (SoulError: Soul launch reservation parent escapes workspace) — common when dogfood
     // fixtures seed tasks/continuity/sessions under fixture/.tachyon and pointer only
     // symlinks them. Other entries stay symlinks so Explorer still shows fixture files.
     if (name === ".tachyon") {
       fs.cpSync(src, dest, { recursive: true });
+      continue;
+    }
+    if (name === "tachyon.yml") {
+      fs.copyFileSync(src, dest);
       continue;
     }
     fs.symlinkSync(src, dest);
@@ -505,6 +513,7 @@ export function portableDevHostLaunchConfig() {
     env: {
       TACHYON_DEV_HOST: "1",
       TACHYON_DEV_HOST_ENGINE_RUNTIME: "${workspaceFolder}/.tachyon/dev-host/runtime",
+      TACHYON_DEV_HOST_PROFILE_HOME: "${workspaceFolder}/.tachyon/dev-host/profile-home",
       TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
       XDG_CACHE_HOME: "${workspaceFolder}/.tachyon/dev-host/cache",
       XDG_STATE_HOME: "${workspaceFolder}/.tachyon/dev-host/state",
@@ -572,6 +581,7 @@ export function point(opts) {
   assertWorkspaceNotRepoRoot(workspace, repoRoot);
 
   const p = pathsOf(repoRoot);
+  assertPointerSessionIdle(p.root);
   ensureDir(p.root);
   ensureDir(p.userData);
   ensureDir(p.extensions);
@@ -598,6 +608,7 @@ export function point(opts) {
 
   const meta = {
     schemaVersion: 1,
+    generation: randomUUID(),
     kind: "dev-host",
     worktree,
     workspace,
@@ -830,12 +841,37 @@ export async function clear(repoRoot, opts = {}) {
   if (!fs.existsSync(p.root)) {
     return { cleared: false, reason: "already clear" };
   }
+  assertPointerSessionIdle(p.root);
   // Reconcile before touching storage: never wipe state/data out from under a live engine.
   const reconciled = await reconcileDevHostOccupant(repoRoot, opts);
   // Only remove pointer + isolation dirs under .tachyon/dev-host — never the worktree/fixture targets
   fs.rmSync(p.root, { recursive: true, force: true });
   const launch = restoreTemplateLaunchConfig(repoRoot);
   return { cleared: true, launch, reconciled };
+}
+
+/** Refuse destructive pointer changes while an interactive headless session owns it. */
+export function assertPointerSessionIdle(pointerRoot) {
+  const sessionFile = path.join(pointerRoot, "session.json");
+  if (!fs.existsSync(sessionFile)) return;
+  let session;
+  try { session = JSON.parse(fs.readFileSync(sessionFile, "utf8")); }
+  catch { throw new Error(`${SELF}: interactive session marker is unreadable; run headless-session.mjs down`); }
+  const livePids = [
+    ["edh", session.edhPid],
+    ["xvfb", session.xvfbPid],
+  ].filter(([, pid]) => Number.isInteger(pid));
+  for (const [kind, pid] of livePids) {
+    try {
+      process.kill(pid, 0);
+      throw new Error(
+        `${SELF}: interactive headless session owns this pointer (${kind}Pid=${pid}); run headless-session.mjs down before point/point-clear`,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith(`${SELF}: interactive`)) throw error;
+    }
+  }
+  fs.rmSync(sessionFile, { force: true });
 }
 
 export function parseArgs(argv) {

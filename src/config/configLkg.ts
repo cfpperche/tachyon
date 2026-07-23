@@ -18,6 +18,11 @@ export interface ConfigLkgAgent {
   /** best-effort command for model badge / terminal sub-line; never used to spawn */
   cmd?: string;
   declaredOwner?: string;
+  sourceMode?: "legacy" | "profile";
+  agentId?: string;
+  profileSha256?: string;
+  effectiveSha256?: string;
+  authorityRevision?: string;
 }
 
 export interface ConfigLkgSnapshot {
@@ -34,13 +39,28 @@ export function configLkgPath(workspaceRoot: string): string {
 
 /** Build a roster-only snapshot from a successfully parsed config. */
 export function snapshotFromConfig(config: TachyonConfig, sourceFile: string, now = new Date()): ConfigLkgSnapshot {
+  const sources = (config as TachyonConfig & {
+    agentSources?: Record<string, {
+      mode: "legacy" | "profile";
+      agentId?: string;
+      profileSha256?: string;
+      effectiveSha256?: string;
+      authorityRevision?: string;
+    }>;
+  }).agentSources;
   const agents: ConfigLkgAgent[] = Object.entries(config.agents)
     .map(([name, def]) => {
+      const source = sources?.[name];
       const row: ConfigLkgAgent = {
         name,
         kind: def.kind,
         ...(def.cmd ? { cmd: def.cmd } : {}),
         ...(config.declaredOwner[name] ? { declaredOwner: config.declaredOwner[name] } : {}),
+        ...(source ? { sourceMode: source.mode } : {}),
+        ...(source?.mode === "profile" && source.agentId ? { agentId: source.agentId } : {}),
+        ...(source?.mode === "profile" && source.profileSha256 ? { profileSha256: source.profileSha256 } : {}),
+        ...(source?.mode === "profile" && source.effectiveSha256 ? { effectiveSha256: source.effectiveSha256 } : {}),
+        ...(source?.mode === "profile" && source.authorityRevision ? { authorityRevision: source.authorityRevision } : {}),
       };
       return row;
     })
@@ -101,6 +121,11 @@ export function parseConfigLkg(raw: string): ConfigLkgSnapshot | null {
       kind,
       ...(typeof a.cmd === "string" && a.cmd ? { cmd: a.cmd } : {}),
       ...(typeof a.declaredOwner === "string" && a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),
+      ...(a.sourceMode === "legacy" || a.sourceMode === "profile" ? { sourceMode: a.sourceMode } : {}),
+      ...(typeof a.agentId === "string" && a.agentId ? { agentId: a.agentId } : {}),
+      ...(typeof a.profileSha256 === "string" && /^[a-f0-9]{64}$/.test(a.profileSha256) ? { profileSha256: a.profileSha256 } : {}),
+      ...(typeof a.effectiveSha256 === "string" && /^[a-f0-9]{64}$/.test(a.effectiveSha256) ? { effectiveSha256: a.effectiveSha256 } : {}),
+      ...(typeof a.authorityRevision === "string" && a.authorityRevision ? { authorityRevision: a.authorityRevision } : {}),
     });
   }
   return {

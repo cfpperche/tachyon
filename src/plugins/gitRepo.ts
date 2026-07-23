@@ -6,8 +6,10 @@
  * common dir, and the config scope may differ) — never a hardcoded `.git/hooks`. Built on the injectable
  * `GitRun` (argv array, no shell) shared with the fetcher, so it is testable without mocking child_process.
  *
- * `core.hooksPath` is single-owner, so this layer REFUSES to touch it when `extensions.worktreeConfig` is
- * enabled (the scope is then ambiguous): the engine surfaces that as a clear error instead of guessing.
+ * `core.hooksPath` is single-owner, so this layer REFUSES to touch it when a worktree's OWN
+ * `config.worktree` overrides `core.hooksPath` itself (the scope is then genuinely ambiguous): the
+ * engine surfaces that as a clear error instead of guessing. `extensions.worktreeConfig` being on is
+ * NOT by itself disqualifying — see `worktreeConfigEnabled()`'s doc comment (t-4781f3).
  */
 
 import path from "node:path";
@@ -66,10 +68,24 @@ export class GitRepo {
     return path.resolve(this.cwd, await this.runOk(["rev-parse", "--git-path", `hooks/${event}`]));
   }
 
-  /** Whether per-worktree config is enabled — when true, `core.hooksPath` scope is ambiguous and we refuse. */
+  /**
+   * Whether `core.hooksPath` SPECIFICALLY has an ambiguous scope for the CURRENT worktree — not merely
+   * whether `extensions.worktreeConfig` is on at all.
+   *
+   * t-4781f3 — `extensions.worktreeConfig` gets enabled for reasons that have nothing to do with hooks
+   * (e.g. `git sparse-checkout disable`, which VS Code's own Git tooling runs automatically for a newly
+   * opened linked worktree, writes an unrelated `config.worktree` with just `core.sparseCheckout`/
+   * `index.sparse`). Refusing to manage hooks on the extension bit ALONE means creating any worktree in
+   * a repo can permanently disable Tachyon's own git-hook plugin management for that repo, even though
+   * nothing ever made `core.hooksPath` itself ambiguous. Only refuse when this worktree's OWN
+   * `config.worktree` actually overrides `core.hooksPath` — that is the one case a shared-scope write
+   * would genuinely disagree with what this worktree resolves.
+   */
   async worktreeConfigEnabled(): Promise<boolean> {
-    const r = await this.run(["config", "--bool", "--get", "extensions.worktreeConfig"]);
-    return r.code === 0 && r.stdout.trim() === "true";
+    const ext = await this.run(["config", "--bool", "--get", "extensions.worktreeConfig"]);
+    if (!(ext.code === 0 && ext.stdout.trim() === "true")) return false;
+    const scoped = await this.run(["config", "--worktree", "--get", "core.hooksPath"]);
+    return scoped.code === 0 && scoped.stdout.trim().length > 0;
   }
 
   /** The current `core.hooksPath` (raw + resolved), or undefined when unset. */

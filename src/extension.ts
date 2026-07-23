@@ -16,6 +16,8 @@ import {
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskDetail,
+  refreshCockpitTaskStudioEntity,
+  refreshCockpitPinStudioEntity,
   refreshCockpitProbes,
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
@@ -37,10 +39,11 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
-import { PinStudioPanelManager, PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
+import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
-import { TaskStudioPanelManager, TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
+import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
+import { mintTaskId } from "./tasks/TaskStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
@@ -828,6 +831,96 @@ async function pickAgent(ws: WorkspaceShellHandle, placeholder: string, runningO
   );
 }
 
+async function migrateAgentProfileFlow(): Promise<void> {
+  const ws = await pickWorkspace();
+  if (!ws) return;
+  const agents = ws.client.presentation.agents;
+  if (agents.truncated) throw new Error("agent list is truncated");
+  const stopped = agents.items.filter((agent) => agent.kind === "agent" && !agent.running);
+  if (stopped.length === 0) {
+    notify(vscode.l10n.t("No stopped agent is available for profile migration."), "warn");
+    return;
+  }
+  const agent = await vscode.window.showQuickPick(stopped.map((row) => row.name), {
+    placeHolder: vscode.l10n.t("Migrate which stopped agent to agent.yml?"),
+  });
+  if (!agent) return;
+
+  let nonSecretEnv: string[] = [];
+  let preview = jsonObject(await extensionQuery(ws, {
+    action: "agent-profile.migration-preview",
+    agent,
+    nonSecretEnv,
+  }), "agent-profile.migration-preview");
+  const unclassified = Array.isArray(preview.unclassifiedEnv)
+    ? preview.unclassifiedEnv.filter((value): value is string => typeof value === "string")
+    : [];
+  if (unclassified.length > 0) {
+    const confirmValues = vscode.l10n.t("Treat as non-secret values");
+    const answer = await showNotification(
+      vscode.l10n.t("'{0}' has environment value(s): {1}. Confirm they are non-secret before storing them in agent.yml.", agent, unclassified.join(", ")),
+      "warn",
+      [confirmValues],
+      { modal: true },
+    );
+    if (answer !== confirmValues) return;
+    nonSecretEnv = unclassified;
+    preview = jsonObject(await extensionQuery(ws, {
+      action: "agent-profile.migration-preview",
+      agent,
+      nonSecretEnv,
+    }), "agent-profile.migration-preview");
+  }
+  if (preview.ok !== true) {
+    const blockers = Array.isArray(preview.blockers)
+      ? preview.blockers.filter((value): value is string => typeof value === "string")
+      : [];
+    notify(vscode.l10n.t("Profile migration blocked for '{0}': {1}", agent, blockers.join("; ") || vscode.l10n.t("unknown blocker")), "error");
+    return;
+  }
+  const migrate = vscode.l10n.t("Migrate profile");
+  const confirmed = await showNotification(
+    vscode.l10n.t("Migrate stopped agent '{0}' to {1}? A recoverable journal will be kept for rollback.", agent, String(preview.profilePath ?? "agent.yml")),
+    "warn",
+    [migrate],
+    { modal: true },
+  );
+  if (confirmed !== migrate) return;
+  const result = jsonObject(await extensionInvoke(ws, { action: "agent-profile.migrate", agent, nonSecretEnv }), "agent-profile.migrate");
+  await ws.client.sync();
+  notify(vscode.l10n.t("Agent '{0}' migrated to agent.yml (transaction {1}).", agent, String(result.txid ?? "")));
+}
+
+async function rollbackAgentProfileFlow(): Promise<void> {
+  const ws = await pickWorkspace();
+  if (!ws) return;
+  const rows = jsonArray(await extensionQuery(ws, { action: "agent-profile.rollbackable" }), "agent-profile.rollbackable")
+    .map((value) => jsonObject(value, "rollbackable migration"))
+    .filter((row) => typeof row.txid === "string" && typeof row.agentName === "string");
+  if (rows.length === 0) {
+    notify(vscode.l10n.t("No safely rollbackable agent profile migration was found."), "warn");
+    return;
+  }
+  const picked = await vscode.window.showQuickPick(rows.map((row) => ({
+    label: String(row.agentName),
+    description: String(row.createdAt ?? ""),
+    detail: String(row.txid),
+    txid: String(row.txid),
+  })), { placeHolder: vscode.l10n.t("Roll back which agent profile migration?") });
+  if (!picked) return;
+  const rollback = vscode.l10n.t("Roll back profile");
+  const confirmed = await showNotification(
+    vscode.l10n.t("Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.", picked.label),
+    "warn",
+    [rollback],
+    { modal: true },
+  );
+  if (confirmed !== rollback) return;
+  await extensionInvoke(ws, { action: "agent-profile.rollback", txid: picked.txid });
+  await ws.client.sync();
+  notify(vscode.l10n.t("Agent '{0}' profile migration rolled back.", picked.label));
+}
+
 async function connectRuntime(ws: WorkspaceShellHandle): Promise<void> {
   const url = ws.bridgeUrl;
   if (!url) {
@@ -965,17 +1058,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onTasksChanged = () => {
     refreshCockpitMissionBoard(); // Control → Mission is THE board since t-610705 (standalone panel retired)
     refreshCockpitTaskDetail(); // Control → task-detail subroute (t-610705 Phase C.1, same reasoning)
-    taskStudioPanels.refreshAll();
+    refreshCockpitTaskStudioEntity(); // Control → task studio-edit route (t-610705 Phase D, D2, same reasoning)
     sidebarProto.refresh();
   };
-  // spec 339 — Task Studio: constructed first (no forward declaration needed) so the board/detail panels
-  // can inject an `openTaskStudio` callback into their own constructors below.
-  const taskStudioPanels = new TaskStudioPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.taskStudio),
-    onTasksChanged,
-  );
-  context.subscriptions.push({ dispose: () => taskStudioPanels.dispose() });
   let lastBridgeLagNoticeAt = 0;
   let bridgeLagExpectedAt = Date.now() + 5_000;
   const bridgeLagTimer = setInterval(() => {
@@ -1008,14 +1093,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
     refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
+    refreshCockpitPinStudioEntity(); // t-610705 (Phase D, D3) — was pinStudioPanels.refreshAll() (retired panel)
     approvalPanels.refreshAll();
   };
-  const pinStudioPanels = new PinStudioPanelManager(
-    context.extensionUri,
-    () => workspaces().map((ws) => ws.pinStudio),
-    refreshAll,
-  );
-  context.subscriptions.push({ dispose: () => pinStudioPanels.dispose() });
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
   const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
@@ -1265,11 +1345,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     missionBoard: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+      // t-610705 (Phase D, D2) — Task Studio is a Control studio-edit route now, not a standalone
+      // panel: navigate the (already-open, since this fires from inside a live Cockpit message
+      // handler) singleton in place, same idiom every other "open a studio route" command/action
+      // uses elsewhere in this file. "new" mints an id up front (route.ts's decodeRoute rejects
+      // studio-new + "task" outright — same pre-minting TaskStudioAdapter.save() already does for a
+      // caller that skips this path entirely) rather than reaching for a "studio-new" route that
+      // doesn't exist for "task".
       openTaskStudio: (target, id) => {
         const ws = wsOf({ ws: target });
         if (!ws) return;
-        if (id) taskStudioPanels.openExisting(ws.taskStudio, id);
-        else taskStudioPanels.openNew(ws.taskStudio);
+        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
       },
       onTasksChanged,
     },
@@ -1641,8 +1727,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void openCockpit(makeCockpitDeps(), { route });
   });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
-  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => pinStudioPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => taskStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
   // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
@@ -1669,6 +1753,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
   registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
   registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
+  // t-610705 (Phase D, D3) — unlike Task, Pin's studioNew never throws (pin IS reachable id-less —
+  // a brand-new pin has no id until its first save) — the shared helper works as-is.
+  registerLegacyStudioRedirect<PinStudioPanelState>(PIN_STUDIO_VIEW_TYPE, "pin");
+  // t-610705 (Phase D, D2) — Task Studio's redirect can't reuse registerLegacyStudioRedirect's shared
+  // helper as-is: its non-edit fallback calls cockpitRoutes.studioNew(studio, wsKey), which THROWS for
+  // "task" (route.ts's defensive assertion — task is never id-less in practice). A persisted "new"
+  // Task Studio panel state is a genuinely malformed/legacy edge case (every real "new" caller
+  // pre-mints an id and never persists panel state before its first save completes), so this redirects
+  // to Mission instead of constructing an invalid route.
+  registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (isCockpitSingletonClaimed()) return;
+    if (!state?.wsKey) return;
+    if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", state.wsKey, state.snapshot.entityId) });
+      return;
+    }
+    void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state.wsKey });
+  });
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
   // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
@@ -1972,6 +2075,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // convenience: Control → Mission tab (same as tachyon.missionControl without pick when single-root)
     vscode.commands.registerCommand("tachyon.openControlMission", () => openCockpit(makeCockpitDeps(), { section: "mission" })),
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
+    // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
+    // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
+    vscode.commands.registerCommand("tachyon.openControlTask", (wsHash: string, taskId: string) =>
+      openCockpit(makeCockpitDeps(), { route: cockpitRoutes.taskDetail(wsHash, taskId) }),
+    ),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
@@ -2213,7 +2321,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = (node?.workspaceHash ? byHash(node.workspaceHash) : node?.ws ? wsOf({ ws: node.ws }) : undefined) ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        pinStudioPanels.openNew(ws.pinStudio);
+        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("pin", ws.wsHash) });
         return;
       }
       if (text.trim().length === 0) return;
@@ -2236,7 +2344,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      pinStudioPanels.openExisting(ws.pinStudio, item.pinId);
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("pin", ws.wsHash, item.pinId) });
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {
@@ -2353,7 +2461,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) taskStudioPanels.openNew(ws.taskStudio);
+      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, mintTaskId()) });
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for
@@ -2819,6 +2927,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
+    }),
+    vscode.commands.registerCommand("tachyon.migrateAgentProfile", async () => {
+      try { await migrateAgentProfileFlow(); }
+      catch (error) { notify(error instanceof Error ? error.message : String(error), "error"); }
+    }),
+    vscode.commands.registerCommand("tachyon.rollbackAgentProfile", async () => {
+      try { await rollbackAgentProfileFlow(); }
+      catch (error) { notify(error instanceof Error ? error.message : String(error), "error"); }
     }),
     // ---- lifecycle ----
     vscode.commands.registerCommand("tachyon.start", async () => {

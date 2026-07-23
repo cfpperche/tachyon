@@ -1,0 +1,59 @@
+# 438 — agent-profile-studio — notes
+
+_Created 2026-07-22._
+
+_In-flight design memory — decisions, deviations, tradeoffs, and open questions surfaced **while building** that weren't pre-empted by `spec.md` or `plan.md`. Append-only by convention._
+
+## Design decisions
+
+- 2026-07-22 — Architecture probe `probe-ba265098-ea19-4b80-9f94-8b08fb7ea578` correctly identified that the original task crossed four independently reviewable boundaries. The umbrella was decomposed into `t-fdb422`, `t-293326`, `t-ecd405` and `t-fa332a`.
+- 2026-07-22 — Probe suggestions for a generic import-plan registry, conflict-choice framework and new secret-binding API were not adopted. Existing bundle import is already validate-before-commit and V1 does not edit secrets; adding those abstractions would not close current acceptance.
+- 2026-07-22 — Canonical and legacy modes remain a discriminated boundary. Canonical persistence never receives the legacy `FormState` wholesale.
+- 2026-07-22 — `t-fdb422` keeps the proven Agent Studio form as presentation state but adds an explicit canonical marker whose serializer emits only `{agentName, expectedRevision, editable:{displayName,runtime,role}}`. The engine accepts that closed schema and projects only secret names/binding counts, never environment values, secret provider/ID, reference paths or resolved config.
+- 2026-07-22 — Canonical creation is disabled at the lifecycle level and canonical edits preserve unrelated prompt bindings by rebuilding the narrow top-level patch from the inspected CAS snapshot. Soul and Evolution remain separate protocols; their toggles cannot be serialized through canonical save.
+- 2026-07-22 — `t-293326` exposes enable/disable, rename and forget as a closed revisioned lifecycle union, not as form fields. Rename and forget reuse their existing canonical transactions; forget additionally requires the exact agent name as confirmation. Errors are redacted, stale revisions trigger a fresh bounded snapshot, dirty forms cannot launch lifecycle actions, and rename/forget confirmations focus Cancel first.
+- 2026-07-22 — The Control host was decoding a hardcoded `browse/cwd` domain subset even though adapters already declare their domain vocabulary. It now decodes `adapter.domainMessageNames`; without this correction Agent Studio's typed lifecycle messages (and other registered domain actions) could not reach their existing handler.
+- 2026-07-22 — `t-ecd405` keeps portable bundles byte-exact: export and clone bind the loaded profile revision, import crosses the existing staged-payload seam with the bundle service's 256 KiB cap, and the Studio only projects digest plus reauthorization requirements. Clone/import call the V1 services directly and create disabled, grant-free identities; no bundle is reconstructed from form fields.
+- 2026-07-22 — `t-fa332a` presents the snapshot's four ownership domains without widening the write contract: authored profile is marked writable; host authority, learned state and runtime projection are read-only. Binding counts remain redacted metadata. Disabled/degraded/conflict states and explicit refresh/retry are visible in the lifecycle region.
+- 2026-07-22 — Canonical profile copy is translated by the extension host and projected into the webview, matching Evolution's existing localization boundary. English and pt-BR bundles cover the new source, authority and retry language.
+- 2026-07-22 — Visual QA passed at the Control-hosted canonical fixture in dark, light and high-contrast. Captures are in `evidence/agent-profile-{dark,light,high-contrast}.png`. The preview harness now emulates VS Code's one-way outbound bridge so a studio command cannot echo back as a false host protocol error.
+
+## Deviations
+
+_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+
+## Tradeoffs
+
+_Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+
+## Open questions
+
+- Installed human dogfood remains required for create/edit/disable-enable/clone-export-import/rename/forget. The Dev Host correctly refused the monorepo root as a mutable test workspace; run this against an isolated canonical-profile fixture, never the live fleet.
+- Resolved 2026-07-23 — the isolated headless Dev Host run below completed the lifecycle proof.
+## Dev Host interactive dogfood hardening
+
+- Interactive dogfood exposed that the shared pointer could be replaced while a CDP session was
+  live. `t-b3553e` adds a pointer generation to session identity, refuses `point`/`point-clear` while
+  the recorded EDH process is alive, and makes every session verb abort if generation drifts.
+- This is harness integrity work required for trustworthy final lifecycle evidence; it does not
+  change the Agent Studio product contract.
+
+## Final Dev Host dogfood — 2026-07-23
+
+- The isolated headless Dev Host fixture completed canonical create, Fleet/Edit reload, enable,
+  rename, clone, 378-byte export, import, and confirmed forget. The resulting `agent.yml` files and
+  pointer-only `tachyon.yml` stanzas changed with each operation.
+- The run exposed and closed three integration gaps: the interactive pointer reservation now uses
+  the long-lived Xvfb PID when VS Code's launcher exits; runtime CLI attestation receives a
+  Dev-Host-only isolated profile home through the persistent engine allowlist; and the editor-side
+  config projection recognizes canonical `profile:` stanzas without treating them as legacy agents.
+- The installed-screen failure reported as “Profile status unavailable” plus Evolution stuck on
+  loading had one cause: Agent Studio's strict domain validator rejected the mandatory
+  `routeKey`/`mountNonce` safety metadata added by the shared studio host. Those routing fields are
+  now ignored only for payload-key comparison; arbitrary extra fields remain rejected. Real Dev
+  Host proof shows Soul as missing and Evolution version 0 instead of generic errors.
+
+## Dogfood log
+
+### 2026-07-23T14:44:44Z — pass (1/1) — source: tasks.md — commit: 1f1204d49d5a7872c1b6579d0df69d94e327b29d
+- `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts` — pass

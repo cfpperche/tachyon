@@ -26,6 +26,8 @@
   "command.newAgent": "Tachyon: New Agent (quick)",
   "command.cloneAgentItem": "Clone…",
   "command.editAgentItem": "Edit in tachyon.yml",
+  "command.migrateAgentProfile": "Tachyon: Migrate Agent Profile",
+  "command.rollbackAgentProfile": "Tachyon: Roll Back Agent Profile Migration",
   "command.renameAgentItem": "Rename…",
   "command.deleteAgentItem": "Remove…",
   "command.promoteAgentItem": "Save to tachyon.yml",

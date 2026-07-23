@@ -15,6 +15,7 @@ import { AGENT_NAME_PATTERN, isValidAgentName } from "../config/nameValidation.j
 export const SOUL_MAX_BYTES = 64 * 1024;
 export const SOUL_MAX_CHARS = 20_000;
 export const SOUL_PROFILE_SCHEMA_VERSION = 1;
+export const SOUL_PROFILE_SCHEMA_VERSION_V2 = 2;
 export const SOUL_FILE_NAME = "SOUL.md";
 export const SOUL_MANIFEST_FILE_NAME = "profile.json";
 export const SOUL_RETRY_DELAYS_MS = [2_000, 4_000, 8_000] as const;
@@ -258,10 +259,12 @@ export class SoulError extends Error {
 }
 
 export interface SoulProfileManifest {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   profileId: string;
   owner: string;
   state: "active" | "retained";
+  /** Present and mandatory for canonical profile authority (schema v2). */
+  agentId?: string;
 }
 
 export interface ResolvedSoul {
@@ -271,6 +274,7 @@ export interface ResolvedSoul {
   sha256: string;
   chars: number;
   bytes: number;
+  agentId?: string;
 }
 
 export function validateSoulAgentName(name: string): void {
@@ -313,8 +317,11 @@ function mapFsError(error: unknown, source: string): SoulError {
 function parseManifestFields(raw: string, owner: string, allowRetained: boolean): SoulProfileManifest {
   try {
     const value = JSON.parse(raw) as Partial<SoulProfileManifest>;
-    if (Object.keys(value).sort().join(",") !== "owner,profileId,schemaVersion,state" ||
-        value.schemaVersion !== SOUL_PROFILE_SCHEMA_VERSION || typeof value.profileId !== "string" ||
+    const keys = Object.keys(value).sort().join(",");
+    const v1 = value.schemaVersion === SOUL_PROFILE_SCHEMA_VERSION && keys === "owner,profileId,schemaVersion,state";
+    const v2 = value.schemaVersion === SOUL_PROFILE_SCHEMA_VERSION_V2 && keys === "agentId,owner,profileId,schemaVersion,state"
+      && typeof value.agentId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.agentId);
+    if ((!v1 && !v2) || typeof value.profileId !== "string" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.profileId) ||
         value.owner !== owner ||
         (value.state !== "active" && !(allowRetained && value.state === "retained"))) {
@@ -513,11 +520,14 @@ function decodeSoul(bytes: Buffer): { body: string; chars: number } {
  * Resolve through one descriptor. POSIX uses O_NOFOLLOW. Windows additionally performs pre-open
  * lstat and post-open fstat; Node cannot portably close a same-user parent replacement race there.
  */
-export async function resolveSoul(workspaceRoot: string, name: string): Promise<ResolvedSoul> {
+export async function resolveSoul(workspaceRoot: string, name: string, expectedAgentId?: string): Promise<ResolvedSoul> {
   const source = agentSoulPath(workspaceRoot, name);
   try {
     await assertCanonicalProfileDir(workspaceRoot, name);
     const manifest = await readPrivateManifest(agentSoulManifestPath(workspaceRoot, name), name);
+    if (expectedAgentId !== undefined && (manifest.schemaVersion !== SOUL_PROFILE_SCHEMA_VERSION_V2 || manifest.agentId !== expectedAgentId)) {
+      throw new SoulError("soul/profile-adoption-required", `Soul profile for '${name}' is not bound to agentId '${expectedAgentId}'`);
+    }
     const handle = await openNoFollow(source);
     try {
       const { bytes: first } = await readStableHandle(handle, source);
@@ -529,6 +539,7 @@ export async function resolveSoul(workspaceRoot: string, name: string): Promise<
         sha256: createHash("sha256").update(first).digest("hex"),
         chars,
         bytes: first.length,
+        ...(manifest.agentId ? { agentId: manifest.agentId } : {}),
       };
     } finally {
       await handle.close();

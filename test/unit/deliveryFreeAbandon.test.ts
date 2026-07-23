@@ -741,6 +741,7 @@ class WiringHost implements EngineHost {
   t = (m: string, ...a: (string | number | boolean)[]): string => m.replace(/\{(\d+)\}/g, (_x, i) => String(a[Number(i)] ?? ""));
   notify(): void {}
   focusPrimaryView(): void {}
+  openTask(): void {}
   executeCommand(command: string): Promise<unknown> {
     return Promise.reject(new Error(`unexpected host command in wiring test: ${command}`));
   }

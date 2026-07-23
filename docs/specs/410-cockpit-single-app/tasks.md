@@ -4,19 +4,20 @@ _From plan.md. Revised 2026-07-19 (fable P0s). Work phase-by-phase; one migratio
 
 ## Phase A — Foundation
 
-_Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in code; human Visual QA still pending._
+_Status 2026-07-22: foundation + Approvals single-path + lazy ESM shipped in code; Visual QA closed
+via real production usage acceptance, not a written A/B (maintainer decision, see notes.md)._
 
 
-- [ ] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
-- [ ] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
-- [ ] Section module interface + shell wrapper (`PageChrome` + page pad).
-- [ ] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
-- [ ] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy).
-- [ ] Harden section restore: exact S; unknown → `overview` + unit test.
-- [ ] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
-- [ ] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
-- [ ] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
-- [ ] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`.
+- [x] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
+- [x] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
+- [x] Section module interface + shell wrapper (`PageChrome` + page pad).
+- [x] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
+- [x] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy). Enforced by `cockpitBundleBudget.test.ts`.
+- [x] Harden section restore: exact S; unknown → `overview` + unit test.
+- [x] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
+- [x] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
+- [x] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
+- [x] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`. Closed 2026-07-22 via production-usage acceptance (no formal A/B recorded) — see notes.md's "Phase E close-out".
 
 ## Phase B — Control-family (one PR each; each PR updates WEBVIEW_SURFACES + MIGRATED_VIEWS if paths move)
 
@@ -35,10 +36,10 @@ _Status 2026-07-19: foundation + Approvals single-path + lazy ESM shipped in cod
 - [x] Mandate recorded: ALL screens open inside Control as subroutes; multi-instance exception revoked; side-by-side knowingly traded (maintainer, 2026-07-21, t-610705 journal).
 - [x] C.0 Router: `CockpitRoute` discriminated union + navEpoch staleness guard + persisted revive (schemaVersion 2) + revive precedence. Design hardened in an adversarial dueto first (probe-840f7a80, 16 findings). Commit eeb28089.
 - [x] C.1a Task Detail subroute: `mission/task/<id>` navigates in place inside Control (tombstone contract + CAS updates ported verbatim); retire TaskDetailPanel host. Commit 19199b4a.
-- [ ] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): design DONE (studios-routes-design.md, 2 duetos 2026-07-21); lands as Phase D PR **D2**; retire TaskStudioPanel host when it lands.
+- [x] C.1b Task Studio subroutes (`mission/task/new`, `mission/task/<id>/edit`): lands as Phase D **D2** (below) — closed there; TaskStudioPanel host retired.
 - [x] C.2 Fleet subroutes: `fleet/agent/<name>/activity` (Activity), `fleet/agent/<name>/probes` + `fleet/probes` unfiltered debug route (Probes); retire ActivityPanel + ProbeResultPanel hosts. Design hardened in an adversarial dueto first (probe-2d90286d, REDESIGN verdict, binding-generation + envelope-identity guard added). Commit 937f3701.
 - [x] C.3 Handoff section: folds directly into a `"handoff"` CockpitSectionId (workspace-scoped like Approvals/Validations, no new route kind — no immutable per-entity locator unlike Fleet's subroutes); retire HandoffPanel host. Also fixed a coverage gap found in the same PR: `src/webview/cockpit/**/*.tsx` was never typechecked by any tsconfig. Commit 985708bb.
-- [ ] C.4 Pin Studio nav-less route; retire PinStudioPanel host. Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21); design DONE (studios-routes-design.md); lands as Phase D PR **D3**.
+- [x] C.4 Pin Studio nav-less route; retire PinStudioPanel host. Regrouped with C.1b + Phase D (maintainer decision, 2026-07-21); design DONE (studios-routes-design.md); landed as Phase D PR **D3**.
 - [x] Standing exceptions approved: plugin surfaces stay out (security isolation); dev-only spec-350 fakes stay.
 
 ## Phase D — Studios (design hardened 2026-07-21 — see studios-routes-design.md)
@@ -96,22 +97,72 @@ landing gates with security probes._
       caches under the wrong slot), and a doc-comment on the `patch.name`-as-persisted-key invariant).
       Also fixed 2 unrelated pre-existing typecheck breaks discovered blocking this landing on main
       (companion LAN/pair-QR work from other agents, `129c7a9b`) — not part of D1d's scope.
-- [ ] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security probe; retires TaskStudioPanel (closes C.1b).
-- [ ] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security probe; retires PinStudioPanel (closes C.4).
+- [x] D2: Task Studio (CAS/rich-doc/visuals, task-edit→task-detail chain) + CSP tranche 1 + security
+      probe; retires TaskStudioPanel (closes C.1b). App.tsx ported from the old standalone Root's
+      already-decoded-props shape onto the shared studio protocol (inline envelope decode,
+      useStudioFreeze, editRevision) — the same rewrite each of D0/D1a/D1b's simpler shells underwent,
+      here for the largest/richest surface (rich-doc editor, Excalidraw, attachments, CAS conflict
+      banner). `persisted` derived from `TaskDetailEntity.expectUpdatedAt`'s presence — zero
+      wire-protocol change. Design-doc-mandated onCancel/nav-transaction gap fixed via a new
+      `Binding.persisted` field + `abandonProvisionalIfNeeded` (foundation commits `d551ec45`/
+      `689d9274`); save-triggered auto-navigation dropped from scope after an adversarial design
+      dueto (REDESIGN verdict) found it unsafe — task-edit→task-detail back-navigation instead reuses
+      `parentRoute`'s existing generic path (route.ts special-cases studio-edit+"task" to the task's
+      own task-detail route). All ~4 real `openTaskStudio` host call sites migrated to
+      `requestNavigate`/`openCockpit` (mints an id up front for "new", since studio-new is rejected
+      for "task"); TaskStudioPanel.ts reduced to a types-only stub (CommandStudioPanel.ts's shape).
+      CSP tranche (imgBlob/connectSrc/workerSrc:"blob") verified against actual code paths (not
+      copied blind) via adversarial probe `probe-6a55db50` — caught and removed an inert
+      `childSrc:"blob"` grant; maintainer explicitly accepted the panel-wide-CSP structural trade-off
+      (journal `j-50b86d04e857`). Full unit suite green throughout (468 files / 5354 tests), typecheck
+      and production build clean.
+- [x] D3: Pin Studio (Excalidraw, attachment roots, nav-less returnRoute) + CSP tranche 2 + security
+      probe; retires PinStudioPanel (closes C.4). The last studio migration — Phase D is now
+      complete. Pin is the ONE nav-less studio (no fixed Control nav tab; opened only from the
+      sidebar TreeView's `tachyon.addPin`/`tachyon.editPinItem`), so its close-target is a
+      `returnRoute` captured automatically at commit time rather than a static parent-section table.
+      route.ts gained `CockpitNonStudioRoute` (every kind except the two studio kinds — the type a
+      returnRoute is allowed to hold, excluding studio kinds by construction); `returnRoute` is a
+      mandatory field on both studio route kinds (`null` for every non-pin studio, enforced both by
+      `decodeRoute` at the untrusted boundary and by a runtime guard in `routes.studioNew/studioEdit`
+      for trusted callers); `routeKey` deliberately excludes it (provenance, not identity).
+      Cockpit.ts's `navigate()` captures the last-committed non-studio route into a freshly-committing
+      pin route (tracked in its own var, reset on panel dispose); a new parameterless
+      `navigateReturn` client action (routeKey-bound against a stale post-navigation click) is the
+      ONE trust boundary for "go back" — destination always read from the host's own sanitized
+      `currentRoute.returnRoute`, never client-sent. `navSection` is now `CockpitSectionId | null`
+      (null for pin); the "overview" fallback used for background-data purposes is kept distinct from
+      the client's own nav-tab-highlight suppression so "nav-less" and "Overview genuinely active"
+      never collapse. Attachment hydration (PinStudioTarget.ts) ported to the same `data:` URI
+      pattern D2's TaskStudioTarget.ts fix established — no new CSP surface (confirmed against
+      shell.ts's actual directive construction: `img-src` already allows `data:` unconditionally; Pin
+      reuses the SAME excalidraw-entry.tsx/rich-doc components D2's CSP grant already covers).
+      Hardened via two adversarial probes before landing: round 1 (design, `probe-43bca1cc`) found
+      and fixed 5 blocker/major issues in the returnRoute capture/decode design (lost provenance on
+      pin re-entry, unbounded recursive decode, no cross-workspace-match check, an over-widened
+      client→host trust boundary — replaced a route-payload-carrying action with the parameterless
+      one); round 2 (code, `probe-12f603f3`), the mandatory pre-landing CSP gate, found and fixed a
+      trusted-constructor footgun and the stale-message navigateReturn race, and required concrete
+      CSP evidence (not just an equivalence claim) before the maintainer's recorded security
+      acceptance. Full unit suite green throughout (469 files / 5378 tests), typecheck and production
+      build clean.
 
 ## Phase E — Cleanup
 
-- [ ] Delete dead bundles; convention tests green.
-- [ ] Optional cookbook via `sdd-cookbook.sh`.
-- [ ] Closure line on spec when agreed tranche ships.
+- [x] Delete dead bundles; convention tests green. Confirmed no lingering standalone panel that
+      should be converted (only the approved standing exceptions: plugin surfaces, 2 dev-only
+      fakes); found + fixed one real drift (`standalone-multi` dead type, `43164ebb`).
+- [x] Optional cookbook via `sdd-cookbook.sh`. Added `c973b8fc`.
+- [ ] Closure line on spec when agreed tranche ships. Deliberately deferred (maintainer, 2026-07-22)
+      — waiting for Phase E to be genuinely finished, not just Phase D. The one item left in this file.
 
 ## Verification
 
-- [ ] `webviewConvention.test.ts` green (primary guard).
-- [ ] Kit / patterns tests green.
-- [ ] Lazy loader present before first heavy Phase B merge.
-- [ ] Pilot visual QA recorded.
-- [ ] Eager cockpit.js size noted vs 350 KB budget.
+- [x] `webviewConvention.test.ts` green (primary guard).
+- [x] Kit / patterns tests green.
+- [x] Lazy loader present before first heavy Phase B merge.
+- [x] Pilot visual QA recorded. Closed via production-usage acceptance, 2026-07-22 — see notes.md.
+- [x] Eager cockpit.js size noted vs 350 KB budget. ~42KB as of D3, well under budget; enforced by `cockpitBundleBudget.test.ts`.
 
 **Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 
@@ -128,4 +179,10 @@ Required for pilot and every migrated surface (shell vs Fleet).
 - Risk: double pad, dual open paths, button overrides, co-load bleed, multi-instance regressions.
 - Record `Evidence:` + `Verdict:` in notes or PR.
 
-**Visual QA:** pending foundation pilot.
+**Visual QA:** closed 2026-07-22 via production-usage acceptance (no formal Approvals-vs-Fleet A/B
+recorded) — see notes.md's "Phase E close-out".
+
+## Cookbook
+
+**Cookbook:** yes — [`cookbook.md`](./cookbook.md), the "add a new Control section/studio" recipe
+(written after 7 real applications of the pattern: Approvals + 6 studios).

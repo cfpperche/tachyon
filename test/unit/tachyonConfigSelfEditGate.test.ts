@@ -20,6 +20,7 @@ class FakeHost implements EngineHost {
     this.notices.push({ message, level });
   }
   focusPrimaryView(): void {}
+  openTask(): void {}
   executeCommand(): Promise<unknown> {
     return Promise.reject(new Error("unexpected host command"));
   }

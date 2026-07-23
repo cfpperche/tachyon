@@ -197,6 +197,28 @@ export class DaemonEngineHost implements EngineHost {
     });
   }
 
+  // t-75fd3c — reuses the existing generic "execute-command" UI request (same one executeCommand()
+  // below sends) rather than adding a new DaemonUiRequest variant: the shell-side command already
+  // exists (tachyon.openControlTask), and openTask is best-effort/void like focusPrimaryView, not
+  // throwing like executeCommand does on failure.
+  openTask(wsHash: string, taskId: string): void {
+    this.assertActive();
+    const request: DaemonUiRequest = {
+      schemaVersion: 1,
+      operationId: randomUUID(),
+      kind: "execute-command",
+      command: "tachyon.openControlTask",
+      args: [wsHash, taskId],
+    };
+    if (!this.options.requestUi) {
+      this.emit({ kind: "ui-unavailable", request, at: new Date().toISOString() });
+      return;
+    }
+    void this.options.requestUi(request).catch(() => {
+      this.emit({ kind: "ui-unavailable", request, at: new Date().toISOString() });
+    });
+  }
+
   async executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
     this.assertActive();
     if (!args.every(isJsonValue)) throw new EngineUiUnavailableError("editor command arguments are not JSON-safe");

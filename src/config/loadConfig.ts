@@ -21,6 +21,7 @@ import {
 } from "./behaviorVerification.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -123,6 +124,8 @@ export interface ManagedEntryDef {
   soul?: boolean;
   /** spec 421 — opt in to Tachyon-owned, human-reviewed agent evolution. */
   selfEvolution?: SelfEvolutionDef;
+  /** Internal canonical selector. Active bytes still require the host-custodied Evolution head. */
+  profileEvolution?: { profileId: string; selectorSha256: string };
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
@@ -133,6 +136,17 @@ export interface ManagedEntryDef {
   verify?: string;
   /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
   harness?: HarnessDef;
+  /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
+  profileCapabilities?: ResolvedAgentCapabilityProjection;
+  /** Internal canonical-profile lifecycle snapshot. It cannot be authored in tachyon.yml. */
+  profileLifecycle?: {
+    enabled: boolean;
+    agentId: string;
+    canonicalSha256: string;
+    authorityRevision: string;
+  };
+  /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
+  profilePointer?: true;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
    *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */

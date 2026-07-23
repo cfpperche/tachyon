@@ -610,13 +610,19 @@ describe("SidebarPrototypeProvider", () => {
     // t-321e9d — the raw doc travels too, so pin-preview's App can render the image inline instead of the
     // flattened "[Image]" text placeholder.
     expect(msg?.vm.doc).toMatchObject({ content: [{ type: "paragraph" }, { type: "image" }] });
+    // t-610705 (Phase D, D3) — attachment bytes travel as `data:` URIs now (PinStudioTarget.ts's
+    // hydrateAttachment, ported from TaskStudioTarget.ts's D2 fix) — no webview-resource path to
+    // assert on. Decoding the payload is a STRONGER check than the old path-substring assertion: it
+    // proves the bytes came from `rightRoot`'s blob store specifically (wrongRoot has no blobs dir at
+    // all — a cross-workspace read would throw, not merely produce a differently-pathed URI).
     const img = msg?.vm.attachments.find((a) => a.name === "screen.png");
-    expect(img?.uri).toContain(`${rightRoot}/.tachyon/pins/blobs/`);
+    expect(img?.uri).toMatch(/^data:image\/png;base64,/);
+    expect(Buffer.from(img!.uri!.slice(img!.uri!.indexOf(",") + 1), "base64").toString("utf8")).toBe("image");
     // the excalidraw thumbnail resolves under its own `previewUri` field (not `uri`, which is image-only).
     const sketch = msg?.vm.attachments.find((a) => a.name === "sketch.excalidraw");
-    expect(sketch?.previewUri).toContain(`${rightRoot}/.tachyon/pins/blobs/`);
+    expect(sketch?.previewUri).toMatch(/^data:image\/png;base64,/);
+    expect(Buffer.from(sketch!.previewUri!.slice(sketch!.previewUri!.indexOf(",") + 1), "base64").toString("utf8")).toBe("preview");
     expect(sketch?.uri).toBeUndefined();
-    expect(JSON.stringify(msg?.vm)).not.toContain(`${wrongRoot}/.tachyon/pins/blobs/`);
   });
 
   it("extracts a readable preview from rich pin documents", () => {

@@ -45,6 +45,10 @@ const referenceKindSchema = z.enum([
   "skill",
   "mcp",
   "hook",
+  "pi-extension",
+  "pi-prompt",
+  "pi-theme",
+  "pi-package",
   "project-guidance",
   "bridge-guidance",
   "verification",
@@ -68,7 +72,7 @@ export const agentProfileReferenceSchema = z.object({
   if (reference.scope === "profile" && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "profile-local references must be pinned" });
   }
-  if (["soul", "instructions", "role", "evolution", "memory", "skill", "mcp", "hook", "bridge-guidance", "verification", "worktree-setup", "runtime-adapter"].includes(reference.kind)
+  if (["soul", "instructions", "role", "evolution", "memory", "skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package", "bridge-guidance", "verification", "worktree-setup", "runtime-adapter"].includes(reference.kind)
     && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: `${reference.kind} references must be pinned` });
   }
@@ -125,6 +129,7 @@ const promptSchema = z.object({
 }).strict();
 
 const lifecycleSchema = z.object({
+  enabled: z.boolean().optional(),
   autostart: z.boolean().optional(),
   watch: z.array(boundedText("watch pattern", 1024)).max(128).optional(),
   attention: attentionSchema.optional(),
@@ -146,6 +151,12 @@ const capabilitiesSchema = z.object({
   skills: z.array(z.string().regex(ID_RE)).max(128).optional(),
   mcp: z.array(z.string().regex(ID_RE)).max(128).optional(),
   hooks: z.array(z.string().regex(ID_RE)).max(128).optional(),
+  pi: z.object({
+    extensions: z.array(z.string().regex(ID_RE)).max(128).optional(),
+    prompts: z.array(z.string().regex(ID_RE)).max(128).optional(),
+    themes: z.array(z.string().regex(ID_RE)).max(128).optional(),
+    packages: z.array(z.string().regex(ID_RE)).max(128).optional(),
+  }).strict().optional(),
 }).strict();
 
 const guidanceSchema = z.object({
@@ -207,6 +218,10 @@ export const agentProfileSchemaV1 = z.object({
   for (const [index, id] of (profile.capabilities?.skills ?? []).entries()) requireKind(id, ["capabilities", "skills", index], ["skill"]);
   for (const [index, id] of (profile.capabilities?.mcp ?? []).entries()) requireKind(id, ["capabilities", "mcp", index], ["mcp"]);
   for (const [index, id] of (profile.capabilities?.hooks ?? []).entries()) requireKind(id, ["capabilities", "hooks", index], ["hook"]);
+  for (const [index, id] of (profile.capabilities?.pi?.extensions ?? []).entries()) requireKind(id, ["capabilities", "pi", "extensions", index], ["pi-extension"]);
+  for (const [index, id] of (profile.capabilities?.pi?.prompts ?? []).entries()) requireKind(id, ["capabilities", "pi", "prompts", index], ["pi-prompt"]);
+  for (const [index, id] of (profile.capabilities?.pi?.themes ?? []).entries()) requireKind(id, ["capabilities", "pi", "themes", index], ["pi-theme"]);
+  for (const [index, id] of (profile.capabilities?.pi?.packages ?? []).entries()) requireKind(id, ["capabilities", "pi", "packages", index], ["pi-package"]);
   for (const [index, id] of (profile.guidance?.project ?? []).entries()) requireKind(id, ["guidance", "project", index], ["project-guidance"]);
   for (const [index, id] of (profile.guidance?.bridge ?? []).entries()) requireKind(id, ["guidance", "bridge", index], ["bridge-guidance"]);
   for (const [index, id] of (profile.workspace?.worktree?.setup ?? []).entries()) requireKind(id, ["workspace", "worktree", "setup", index], ["worktree-setup"]);

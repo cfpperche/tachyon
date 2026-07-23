@@ -10,6 +10,7 @@ export interface EvolutionSectionProps {
   labels: AgentEvolutionLabels;
   savedAgent?: string;
   enabled: boolean;
+  toggleDisabled?: boolean;
   summary?: AgentEvolutionSummaryMessage;
   candidates?: AgentEvolutionCandidateSummaryMessage[];
   detail?: AgentEvolutionCandidateDetailMessage;
@@ -95,7 +96,7 @@ export function EvolutionSection(props: EvolutionSectionProps) {
       </div>
 
       <label class="check ash-evolution-toggle">
-        <input type="checkbox" checked={enabled} onChange={(event) => props.onToggle((event.currentTarget as HTMLInputElement).checked)} />
+        <input type="checkbox" checked={enabled} disabled={props.toggleDisabled} onChange={(event) => props.onToggle((event.currentTarget as HTMLInputElement).checked)} />
         {labels.enable}
       </label>
       <div class="hint">{labels.enableHelp}</div>

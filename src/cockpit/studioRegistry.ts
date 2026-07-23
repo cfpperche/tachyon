@@ -14,16 +14,36 @@ import * as vscode from "vscode";
 import type { StudioId } from "./studioIds.js";
 import type { StudioHostAdapter } from "../webview/shared/studio/adapter.js";
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
+import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import { CommandStudioAdapter } from "../webview/CommandStudioAdapter.js";
 import { TerminalStudioAdapter } from "../webview/TerminalStudioAdapter.js";
 import { RunbookStudioAdapter } from "../webview/RunbookStudioAdapter.js";
 import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
-import { createAgentEvolutionLabels } from "../webview/agent-studio-shell/domain.js";
+import { TaskStudioAdapter } from "../webview/TaskStudioAdapter.js";
+import { PinStudioAdapter } from "../webview/PinStudioAdapter.js";
+import { createAgentEvolutionLabels, createAgentProfileLabels } from "../webview/agent-studio-shell/domain.js";
 import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
+import { handleTaskStudioDomainMessage } from "./taskStudioDomain.js";
+import { handlePinStudioDomainMessage } from "./pinStudioDomain.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
+
+/** t-9dadad — the task/pin studio surfaces live as nested sub-targets on the workspace handle
+ *  (`handle.taskStudio` / `handle.pinStudio`), NOT flat on the handle like agent's. Resolves the
+ *  nested target and fails LOUDLY (a thrown, host-visible error the studio error envelope carries)
+ *  if a future handle shape drops it — never a silent `undefined` method call. */
+interface NestedStudioTargets {
+  taskStudio: WorkspaceTaskStudioTarget;
+  pinStudio: WorkspacePinStudioTarget;
+}
+function nestedTarget<K extends keyof NestedStudioTargets>(ws: WorkspaceStudioTarget, key: K): NestedStudioTargets[K] {
+  const nested = (ws as Partial<NestedStudioTargets>)[key];
+  if (!nested) throw new Error(`workspace handle for '${ws.folderName}' is missing its nested '${key}' studio target`);
+  return nested;
+}
 
 export interface StudioDomainContext {
   post: (message: unknown) => void;
@@ -96,8 +116,26 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
       ws as unknown as WorkspaceAgentStudioTarget,
       createAgentEvolutionLabels((message, ...args) => vscode.l10n.t(message, ...args)),
       vscode.l10n.t("When supported, delivered at startup through the selected runtime."),
+      createAgentProfileLabels((message, ...args) => vscode.l10n.t(message, ...args)),
     ) as unknown as Adapter,
     handleDomainMessage: (ws, ctx, message) => handleAgentStudioDomainMessage(ws as unknown as WorkspaceAgentStudioTarget, ctx, message),
+  },
+  task: {
+    legacyViewType: "tachyonTaskStudio",
+    // t-9dadad — UNLIKE agent (whose surface WorkspaceShellHandle implements flat), the task-studio
+    // surface lives as a NESTED sub-target (`handle.taskStudio`, wired since the persistent-engine
+    // cutover). D2's flat cast of the whole handle meant `this.target.loadTaskStudio` was undefined
+    // at runtime — Task Studio never loaded through Control (infinite "Loading…"); the double-cast
+    // hid it from the compiler and no e2e ever opened the studio through this path until the
+    // 0.56.94 dogfood did.
+    makeAdapter: (ws) => new TaskStudioAdapter(nestedTarget(ws, "taskStudio")) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handleTaskStudioDomainMessage(nestedTarget(ws, "taskStudio"), ctx, message),
+  },
+  pin: {
+    legacyViewType: "tachyonPinStudio",
+    // t-9dadad — same nested-target shape as task above (`handle.pinStudio`).
+    makeAdapter: (ws) => new PinStudioAdapter(nestedTarget(ws, "pinStudio")) as unknown as Adapter,
+    handleDomainMessage: (ws, ctx, message) => handlePinStudioDomainMessage(nestedTarget(ws, "pinStudio"), ctx, message),
   },
 } satisfies Record<StudioId, StudioRegistryEntry>;
 

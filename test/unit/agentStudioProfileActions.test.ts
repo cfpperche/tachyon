@@ -25,6 +25,12 @@ import {
   refreshSoulMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
+  forgetCanonicalProfileMessage,
+  renameCanonicalProfileMessage,
+  setCanonicalProfileEnabledMessage,
+  exportCanonicalProfileBundleMessage,
+  cloneCanonicalProfileBundleMessage,
+  importCanonicalProfileBundleMessage,
 } from "../../src/webview/agent-studio-shell/messages.js";
 import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webview/shared/studio/protocol.js";
 import { openingPromptCapability, parseConfig } from "../../src/config/loadConfig.js";
@@ -104,6 +110,19 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "soulProfileError",
       "browse",
       "cwd",
+      "refreshCanonicalProfile",
+      "setCanonicalProfileEnabled",
+      "renameCanonicalProfile",
+      "forgetCanonicalProfile",
+      "canonicalProfileSnapshot",
+      "canonicalProfileForgotten",
+      "canonicalProfileError",
+      "exportCanonicalProfileBundle",
+      "cloneCanonicalProfileBundle",
+      "importCanonicalProfileBundle",
+      "canonicalProfileBundleExport",
+      "canonicalProfileBundleCreated",
+      "canonicalProfileBundleError",
     ]));
     expect(() => assertNoDomainNameCollision(AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)).not.toThrow();
     for (const name of AGENT_STUDIO_DOMAIN_MESSAGE_NAMES) {
@@ -198,6 +217,46 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(validateAgentStudioHostDomainMessage(status)).toBe(true);
     expect(validateAgentStudioHostDomainMessage({ ...status, status: { ...status.status, relativePath: "/absolute/SOUL.md" } })).toBe(false);
     expect(decodeStudioMessage(status, AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).ok).toBe(false);
+
+    const revision = "a".repeat(64);
+    const enabled = setCanonicalProfileEnabledMessage("Ada", revision, true);
+    expect(validateAgentStudioInboundMessage(enabled)).toEqual({ type: "setCanonicalProfileEnabled", agent: "Ada", expectedRevision: revision, enabled: true });
+    expect(validateAgentStudioInboundMessage({ ...enabled, editable: {} })).toBeUndefined();
+    const rename = renameCanonicalProfileMessage("Ada", revision, "Bea");
+    expect(validateAgentStudioInboundMessage(rename)).toEqual({ type: "renameCanonicalProfile", agent: "Ada", expectedRevision: revision, newName: "Bea" });
+    expect(validateAgentStudioInboundMessage({ ...rename, newName: "../Bea" })).toBeUndefined();
+    const forget = forgetCanonicalProfileMessage("Ada", revision, "Ada");
+    expect(validateAgentStudioInboundMessage(forget)).toEqual({ type: "forgetCanonicalProfile", agent: "Ada", expectedRevision: revision, confirmation: "Ada" });
+    expect(validateAgentStudioInboundMessage({ ...forget, expectedRevision: "stale" })).toBeUndefined();
+    expect(validateAgentStudioInboundMessage(exportCanonicalProfileBundleMessage("Ada", revision))).toMatchObject({ type: "exportCanonicalProfileBundle", expectedRevision: revision });
+    expect(validateAgentStudioInboundMessage(cloneCanonicalProfileBundleMessage("Ada", revision, "Bea"))).toMatchObject({ type: "cloneCanonicalProfileBundle", destinationAgentName: "Bea" });
+    const portable = importCanonicalProfileBundleMessage("Ada", "Bea", Buffer.from("{}\n").toString("base64"));
+    expect(validateAgentStudioInboundMessage(portable)).toMatchObject({ type: "importCanonicalProfileBundle", destinationAgentName: "Bea" });
+    expect(validateAgentStudioInboundMessage({ ...portable, contentBase64: "not base64" })).toBeUndefined();
+  });
+
+  it("keeps lifecycle controls canonical-only, dirty-gated, and cancel-focused for rename and forget", () => {
+    const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
+    expect(source).toContain('canonical && mode === "edit"');
+    expect(source).toContain("const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired");
+    expect(source).toContain("renameCancelButtonRef.current?.focus()");
+    expect(source).toContain("forgetCancelButtonRef.current?.focus()");
+    expect(source).toContain("Type <strong>{canonicalSnapshot.agentName}</strong> to confirm.");
+    expect(source).toContain("forgetValue !== canonicalSnapshot.agentName");
+    expect(source).toContain("bundleCancelButtonRef.current?.focus()");
+    expect(source).toContain("Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.");
+    expect(source).toContain('aria-labelledby="ash-profile-sources-title"');
+    expect(source).toContain("canonicalSnapshot.provenance.authority.grants");
+    expect(source).toContain("profileLabels.retryRefresh");
+  });
+
+  it("ships canonical profile labels in English and pt-BR", () => {
+    const en = JSON.parse(fs.readFileSync(path.resolve("l10n/bundle.l10n.json"), "utf8")) as Record<string, string>;
+    const pt = JSON.parse(fs.readFileSync(path.resolve("l10n/bundle.l10n.pt-br.json"), "utf8")) as Record<string, string>;
+    expect(en["Profile sources and authority"]).toBe("Profile sources and authority");
+    expect(pt["Profile sources and authority"]).toBe("Origens e autoridade do perfil");
+    expect(pt["Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."]).toContain("somente leitura");
+    expect(pt["Refresh and retry"]).toBe("Atualizar e tentar novamente");
   });
 
   it("keeps the browser import cap aligned with the authoritative soul byte cap", () => {

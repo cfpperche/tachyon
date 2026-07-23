@@ -4,6 +4,12 @@ import type {
   EvolutionStudioCandidateSummary,
   EvolutionStudioSummary,
 } from "../../evolution/studioProjection.js";
+import type {
+  AgentProfileStudioMutationV1,
+  AgentProfileStudioSnapshotV1,
+} from "../../config/agentProfileStudio.js";
+import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
+import { agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -47,6 +53,13 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "loadEvolutionCandidate",
   "approveEvolutionCandidate",
   "rejectEvolutionCandidate",
+  "refreshCanonicalProfile",
+  "setCanonicalProfileEnabled",
+  "renameCanonicalProfile",
+  "forgetCanonicalProfile",
+  "exportCanonicalProfileBundle",
+  "cloneCanonicalProfileBundle",
+  "importCanonicalProfileBundle",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
@@ -58,6 +71,12 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "evolutionCandidateDetail",
   "evolutionActionResult",
   "evolutionError",
+  "canonicalProfileSnapshot",
+  "canonicalProfileForgotten",
+  "canonicalProfileError",
+  "canonicalProfileBundleExport",
+  "canonicalProfileBundleCreated",
+  "canonicalProfileBundleError",
 ] as const;
 
 /** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
@@ -115,13 +134,28 @@ export type AgentStudioEvolutionActionMessage =
       expectedTargetDigest?: string;
     };
 
+export type AgentStudioLifecycleActionMessage =
+  | { type: "refreshCanonicalProfile"; agent: string }
+  | { type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
+  | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
+  | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string };
+
+export type AgentStudioBundleActionMessage =
+  | { type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }
+  | { type: "cloneCanonicalProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
+  | { type: "importCanonicalProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
+
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
   | AgentStudioSoulActionMessage
-  | AgentStudioEvolutionActionMessage;
+  | AgentStudioEvolutionActionMessage
+  | AgentStudioLifecycleActionMessage
+  | AgentStudioBundleActionMessage;
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
+  const keys = Object.keys(value)
+    .filter((key) => key !== "studioProtocolVersion" && key !== "routeKey" && key !== "mountNonce")
+    .sort();
   return keys.join("\0") === [...expected].sort().join("\0");
 }
 
@@ -130,6 +164,54 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
+  if (value.type === "refreshCanonicalProfile") {
+    return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      ? { type: "refreshCanonicalProfile", agent: value.agent }
+      : undefined;
+  }
+  if (value.type === "exportCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "expectedRevision"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "exportCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision } : undefined;
+  }
+  if (value.type === "cloneCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "destinationAgentName"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
+      ? { type: "cloneCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision, destinationAgentName: value.destinationAgentName } : undefined;
+  }
+  if (value.type === "importCanonicalProfileBundle") {
+    return exactKeys(value, ["type", "agent", "destinationAgentName", "contentBase64"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
+      && typeof value.contentBase64 === "string" && value.contentBase64.length > 0 && value.contentBase64.length <= 350_000 && BASE64_RE.test(value.contentBase64)
+      ? { type: "importCanonicalProfileBundle", agent: value.agent, destinationAgentName: value.destinationAgentName, contentBase64: value.contentBase64 } : undefined;
+  }
+  if (value.type === "setCanonicalProfileEnabled") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "enabled"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.enabled === "boolean"
+      ? { type: "setCanonicalProfileEnabled", agent: value.agent, expectedRevision: value.expectedRevision, enabled: value.enabled }
+      : undefined;
+  }
+  if (value.type === "renameCanonicalProfile") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "newName"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.newName === "string" && AGENT_NAME_RE.test(value.newName)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "renameCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, newName: value.newName }
+      : undefined;
+  }
+  if (value.type === "forgetCanonicalProfile") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "confirmation"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.confirmation === "string" && AGENT_NAME_RE.test(value.confirmation)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "forgetCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, confirmation: value.confirmation }
+      : undefined;
+  }
   if (value.type === "refreshEvolution") {
     return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       ? { type: "refreshEvolution", agent: value.agent }
@@ -286,6 +368,31 @@ function isEvolutionCandidateDetail(raw: unknown): raw is AgentEvolutionCandidat
 export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
   const value = raw as Record<string, unknown>;
+  if (value.type === "canonicalProfileSnapshot") {
+    return exactKeys(value, ["type", "action", "snapshot"])
+      && ["refresh", "set-enabled", "rename"].includes(String(value.action))
+      && isAgentProfileStudioSnapshotV1(value.snapshot);
+  }
+  if (value.type === "canonicalProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "canonicalProfileBundleCreated") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleCreatedResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "canonicalProfileBundleError") {
+    return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000 && typeof value.conflict === "boolean";
+  }
+  if (value.type === "canonicalProfileForgotten") {
+    return exactKeys(value, ["type", "agent", "agentId"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.agentId === "string" && PROFILE_ID_RE.test(value.agentId);
+  }
+  if (value.type === "canonicalProfileError") {
+    return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000
+      && typeof value.conflict === "boolean";
+  }
   if (value.type === "cwd") return exactKeys(value, ["type", "value"]) && typeof value.value === "string";
   if (value.type === "soulProfileStatus") return exactKeys(value, ["type", "status"]) && isSoulProfileStatusMessage(value.status);
   if (value.type === "soulProfileError") {
@@ -330,13 +437,62 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
 export interface AgentStudioEntity {
   /** undefined in "new" mode. */
   name?: string;
-  fields: FormState;
+  fields: AgentStudioFields;
+  storage?: "legacy" | "canonical";
+  /** Present only for canonical storage; redacted and never accepted as a save payload. */
+  profile?: AgentProfileStudioSnapshotV1;
   chips: QuickAddChip[];
   flagMap: Record<string, string[]>;
   defaultCwd: string;
   verifyCandidates: string[];
   persistentInstructionsHelp: string;
   evolutionLabels: AgentEvolutionLabels;
+  profileLabels?: AgentProfileLabels;
+}
+
+/** Host-localized copy for the canonical profile-only region. */
+export interface AgentProfileLabels {
+  lifecycleTitle: string;
+  lifecycleHelp: string;
+  enabled: string;
+  disabled: string;
+  closed: string;
+  degraded: string;
+  conflict: string;
+  enableAgent: string;
+  disableAgent: string;
+  refresh: string;
+  retryRefresh: string;
+  rename: string;
+  forget: string;
+  export: string;
+  clone: string;
+  import: string;
+  saveFirst: string;
+  provenanceTitle: string;
+  provenanceHelp: string;
+  authoredProfile: string;
+  hostAuthority: string;
+  learnedState: string;
+  runtimeProjection: string;
+  writable: string;
+  readOnly: string;
+  scope: string;
+  profileScope: string;
+  hostScope: string;
+  runtimeScope: string;
+  present: string;
+  absent: string;
+  active: string;
+  inactive: string;
+  grants: string;
+  bindingsTitle: string;
+  environmentValues: string;
+  secrets: string;
+  externalReferences: string;
+  capabilities: string;
+  promptInputs: string;
+  profileIdentity: string;
 }
 
 /** Human-visible copy is translated by the extension host and projected in the load entity. */
@@ -425,12 +581,37 @@ export function createAgentEvolutionLabels(t: AgentStudioTranslate = (message) =
   };
 }
 
+export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => message): AgentProfileLabels {
+  return {
+    lifecycleTitle: t("Agent lifecycle"),
+    lifecycleHelp: t("Operational actions use the loaded profile revision and stay separate from form save."),
+    enabled: t("Enabled"), disabled: t("Disabled"), closed: t("Closed"), degraded: t("Degraded"), conflict: t("Conflict"),
+    enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
+    rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
+    saveFirst: t("Save or discard form changes before a lifecycle action."),
+    provenanceTitle: t("Profile sources and authority"),
+    provenanceHelp: t("Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."),
+    authoredProfile: t("Authored profile"), hostAuthority: t("Host authority"), learnedState: t("Learned state"), runtimeProjection: t("Runtime projection"),
+    writable: t("Writable"), readOnly: t("Read-only"), scope: t("Scope"), profileScope: t("Agent profile"), hostScope: t("Host"), runtimeScope: t("Runtime"),
+    present: t("Present"), absent: t("Absent"), active: t("Active"), inactive: t("Inactive"), grants: t("Grants"),
+    bindingsTitle: t("Bound profile data"), environmentValues: t("Environment values"), secrets: t("Secret references"),
+    externalReferences: t("External references"), capabilities: t("Capabilities"), promptInputs: t("Prompt inputs"), profileIdentity: t("Profile identity"),
+  };
+}
+
 export type AgentEvolutionSummaryMessage = EvolutionStudioSummary;
 export type AgentEvolutionCandidateSummaryMessage = EvolutionStudioCandidateSummary;
 export type AgentEvolutionCandidateDetailMessage = EvolutionStudioCandidateDetail;
 
-export type AgentStudioFields = FormState;
-export type AgentStudioPatch = FormState;
+export interface AgentStudioCanonicalContext {
+  kind: "canonical";
+  expectedRevision?: string;
+  displayName: string;
+  runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
+}
+
+export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalContext };
+export type AgentStudioPatch = FormState | (AgentProfileStudioMutationV1 & Partial<Omit<FormState, "kind">>);
 
 /** A blank agent-kind FormState.
  *  (attention on by default, no harness/worktree). */
@@ -470,16 +651,76 @@ export function blankAgentFields(): FormState {
   };
 }
 
-export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: FormState): boolean {
+export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): AgentStudioFields {
+  const fields = blankAgentFields() as AgentStudioFields;
+  fields.name = snapshot?.agentName ?? "";
+  fields.cmd = snapshot?.editable.runtime.executable ?? "";
+  fields.role = snapshot?.editable.role ?? "";
+  fields.soul = snapshot?.bindings.prompt.soul ?? false;
+  fields.selfEvolution = snapshot?.bindings.prompt.evolution ?? false;
+  fields.cwd = snapshot?.editable.cwd ?? "";
+  fields.autostart = snapshot?.editable.lifecycle.autostart ?? false;
+  fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
+  fields.attention = snapshot?.editable.lifecycle.attention ?? true;
+  fields.watch = snapshot?.editable.lifecycle.watch.join("\n") ?? "";
+  fields.worktree = snapshot?.editable.worktree.enabled ?? false;
+  fields.branch = snapshot?.editable.worktree.branch ?? "";
+  fields.isolate = snapshot?.editable.isolation === "transcript";
+  fields.canonical = {
+    kind: "canonical",
+    ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
+    displayName: snapshot?.editable.displayName ?? "",
+    runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
+  };
+  return fields;
+}
+
+export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: AgentStudioFields): boolean {
   const base = entity?.fields ?? blankAgentFields();
   return JSON.stringify(base) !== JSON.stringify(fields);
 }
 
-export function serializeAgentPatch(fields: FormState, dirty: boolean): FormState | undefined {
-  return dirty ? fields : undefined;
+export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): AgentStudioPatch | undefined {
+  if (!dirty) return undefined;
+  if (!fields.canonical) return fields;
+  const executable = fields.cmd.trim();
+  const adapter = fields.canonical.expectedRevision
+    ? fields.canonical.runtime.adapter
+    : executable.split(/[\\/]/).pop() ?? executable;
+  // Keep unmeasured Quick Add runtimes on the legacy writer instead of minting partial authority.
+  // usable through Agent Studio's existing legacy writer instead of minting an authority the resolver
+  // cannot attest.
+  if (!fields.canonical.expectedRevision && !["codex", "pi", "claude", "grok"].includes(adapter)) {
+    const { canonical: _canonical, ...legacy } = fields;
+    return legacy;
+  }
+  return {
+    schemaVersion: 1,
+    kind: "canonical",
+    agentName: fields.name,
+    ...(fields.canonical.expectedRevision ? { expectedRevision: fields.canonical.expectedRevision } : {}),
+    editable: {
+      displayName: fields.canonical.displayName,
+      runtime: { ...fields.canonical.runtime, adapter, executable },
+      role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
+      cwd: fields.cwd.trim(),
+      lifecycle: {
+        autostart: fields.autostart,
+        restart: fields.restartOnCrash ? "on-crash" : "never",
+        attention: fields.attention,
+        watch: fields.watch.split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+      },
+      worktree: {
+        enabled: fields.worktree,
+        branch: fields.branch.trim(),
+      },
+      isolation: fields.isolate ? "transcript" : "",
+    },
+  };
 }
 
-export function canDiscardAgentFields(fields: FormState): boolean {
+export function canDiscardAgentFields(fields: AgentStudioFields): boolean {
+  if (fields.canonical) return fields.name.length === 0 && fields.cmd.length === 0 && fields.role.length === 0;
   return JSON.stringify(fields) === JSON.stringify(blankAgentFields());
 }
 

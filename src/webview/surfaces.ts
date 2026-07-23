@@ -14,9 +14,7 @@ export type WebviewEditorHome =
   | "sidebar"
   | "cockpit"
   | "standalone"
-  | "standalone-multi"
-  | "dev-only"
-  | "legacy-redirect";
+  | "dev-only";
 
 export interface WebviewSurface {
   /** the createWebviewPanel id / WebviewView viewType. */
@@ -29,13 +27,20 @@ export interface WebviewSurface {
   /** false ⇒ still an inline-HTML panel (guard-allowlisted until its lane lands); true ⇒ a preact bundle. */
   converted: boolean;
   /**
-   * spec 410 — preferred editor home after cockpit-single-app migration.
-   * `legacy-redirect`: host retained for serializer/revive; new opens should go to cockpit.
-   * `standalone-multi`: multi-instance panels (task detail / handoff / probes) — thin-host exception.
+   * spec 410 — preferred editor home after cockpit-single-app migration. Every migrated
+   * section/studio's OLD panel is retired to a types-only stub (its own doc comment explains the
+   * retirement) and DROPS OUT of this manifest entirely — a manifest row only exists for a surface
+   * that still genuinely creates a panel.
+   *
+   * Two values were removed here after going unused (Phase E audit, t-610705, 2026-07-22):
+   * `standalone-multi` (the multi-instance thin-host exception for task detail/handoff/probes —
+   * Phase C closed all three into Control subroutes) and `legacy-redirect` + the `cockpitSectionId`
+   * field it paired with (Approvals was the only user; its manager is a pure redirect stub with no
+   * `createWebviewPanel` call left at all, same shape as every other retired panel below — it just
+   * hadn't dropped out of this manifest yet). Re-add the shape if a future retirement genuinely needs
+   * to describe "revive redirects into a specific Control section" again — don't keep it unused.
    */
   editorHome?: WebviewEditorHome;
-  /** When editorHome is cockpit or legacy-redirect, the CockpitSectionId to open. */
-  cockpitSectionId?: string;
 }
 
 export const WEBVIEW_SURFACES: WebviewSurface[] = [
@@ -52,13 +57,23 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The
   // trusted serializer for the legacy "tachyonHandoff" viewType stays registered in extension.ts: a
   // revived pre-410 panel disposes itself and redirects into Control → Handoff.
-  { viewId: "tachyonApprovals", view: "approval", hostFile: "src/webview/ApprovalPanel.ts", mode: "live", converted: true, editorHome: "legacy-redirect", cockpitSectionId: "approvals" },
+  // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
+  // standalone Approvals panel was retired: it's a Control section now (src/webview/approval/App.tsx
+  // stays, lazy-imported by cockpit/App.tsx). ApprovalPanelManager (src/webview/ApprovalPanel.ts) is
+  // a pure redirect stub — it never calls createWebviewPanel, matching every other retired panel's
+  // shape below. The trusted serializer for the legacy "tachyonApprovals" viewType stays registered
+  // in extension.ts: a revived pre-410 panel disposes itself and redirects into Control → Approvals.
   // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
   // only (src/webview/plugins/App.tsx stays, lazy-imported by cockpit/App.tsx; the per-workspace
   // need is served by Control's shell workspace selector, t-d16a39). The trusted serializer for
   // the legacy "tachyonPlugins" viewType stays registered in extension.ts: a revived pre-410 panel
   // disposes itself and redirects into Control → Plugins.
-  { viewId: "tachyonPinStudio", view: "pin-studio", hostFile: "src/webview/PinStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio panel (spec 255) was retired: it's a
+  // Control studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by cockpit/App.tsx
+  // via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it). The trusted
+  // serializer for the legacy "tachyonPinStudio" viewType stays registered in extension.ts
+  // (registerLegacyStudioRedirect): a revived pre-410 panel disposes itself and redirects into
+  // Control → the pin's studio route.
   // spec 279 conversions (flip `converted` as each lane lands)
   // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Probes panel was retired: it's a
   // Control subroute now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx;
@@ -92,7 +107,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=task-detail instead). The
   // trusted serializer for the legacy "tachyonTaskDetail" viewType stays registered in extension.ts:
   // a revived pre-410 panel disposes itself and redirects into Control → the task's subroute.
-  { viewId: "tachyonTaskStudio", view: "task-studio", hostFile: "src/webview/TaskStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone" },
+  // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio panel was retired: it's a Control
+  // studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
+  // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer
+  // for the legacy "tachyonTaskStudio" viewType stays registered in extension.ts: a revived pre-410
+  // panel disposes itself and redirects into Control → the task's studio-edit route.
   // spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067, 2026-07-20) — it was never
   // registered (no registerWebviewViewProvider call), unreachable in production. Runtime Ops lives ONLY as
   // a cockpit section now (view: "runtime-ops" the directory still exists — src/webview/runtime-ops/App.tsx

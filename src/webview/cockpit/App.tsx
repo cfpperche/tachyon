@@ -10,6 +10,7 @@ import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import {
   formatCompanionPairClipboard,
+  navigateReturnAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
@@ -183,6 +184,37 @@ const AgentStudioApp = lazy(() =>
     loadSectionStylesheet("studio-agent-tailwind");
     loadSectionStylesheet("studio-frame-agent");
     loadSectionStylesheet("studio-agent");
+    return { default: m.App };
+  }),
+);
+// t-610705 (Phase D, D2) — Task Studio needs its own compiled Tailwind utilities (KitFieldRow/
+// KitLabeledInput/KitSelect) PLUS the entity-neutral rich-doc editor sheet (shared with the retired
+// standalone panel and Pin Studio's future D3 migration) BEFORE studio-frame.css — same cascade-order
+// requirement Agent Studio's own comment above explains (actual <link> DOM insertion order, not call
+// intent), matching Cockpit.ts's eager `styles: [...]` order exactly: tailwind, rich-doc,
+// studio-frame, THEN Task Studio's own sheet.
+const TaskStudioApp = lazy(() =>
+  import("../task-studio/App").then((m) => {
+    loadSectionStylesheet("studio-task-tailwind");
+    loadSectionStylesheet("studio-task-richdoc");
+    loadSectionStylesheet("studio-frame-task");
+    loadSectionStylesheet("studio-task");
+    return { default: m.App };
+  }),
+);
+// t-610705 (Phase D, D3) — Pin Studio needs the SAME entity-neutral rich-doc.css HREF as Task Studio
+// BEFORE studio-frame.css, matching the retired standalone panel's own styleFiles order (`rich-doc.css,
+// studio-frame.css, pin-studio.css`) — no Tailwind sheet of its own (unlike Task/Agent Studio: Pin's UI
+// has no KitFieldRow/KitSelect-family controls). Own co-load KEY ("studio-pin-richdoc", not a reused
+// "studio-task-richdoc") even though both resolve to the same file — same "one distinct key per client
+// call site" convention studio-frame's per-studio keys already use (cockpitCssParity.test.ts's client/
+// host co-load-id parity check is a plain array compare, not set-based — a shared key called from two
+// lazy blocks would appear twice on the client side but only once in the host's bootstrap map).
+const PinStudioApp = lazy(() =>
+  import("../pin-studio/App").then((m) => {
+    loadSectionStylesheet("studio-pin-richdoc");
+    loadSectionStylesheet("studio-frame-pin");
+    loadSectionStylesheet("studio-pin");
     return { default: m.App };
   }),
 );
@@ -631,6 +663,21 @@ export function App(p: CockpitAppProps) {
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
   const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute;
+  // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
+  // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
+  // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
+  // active while Pin Studio is open. Suppressed here, client-side only; deliberately NOT threaded
+  // through `model.section` itself (design-dueto probe-43bca1cc minor finding: coercing null to
+  // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
+  // from "Overview is genuinely active").
+  const isNavlessStudio = !!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin";
+  // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
+  // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
+  // very top, and the content area gets the vertical space the tab strip would have used. Each
+  // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
+  // inline placement — this only changes WHERE it renders, not the navigation logic itself.
+  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute;
+  let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
   if (!m) {
@@ -643,15 +690,15 @@ export function App(p: CockpitAppProps) {
     // t-610705 (Phase C.1) — a lone back-link, not a full "parent / current" trail: the task's own
     // title already renders right below as the page H1 (PageChrome), so repeating it here would just
     // be the same text twice with nothing between them.
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-task-detail-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s.navMission}
+        </Button>
+      );
+    }
     body = (
       <div class="ck-embed-host" data-testid="control-task-detail">
-        {parent && parent.kind === "section" ? (
-          <div class="td-breadcrumb" data-testid="control-task-detail-breadcrumb">
-            <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
-              {s.navMission}
-            </Button>
-          </div>
-        ) : null}
         <Suspense fallback={<SectionFallback />}>
           <TaskDetailApp vm={p.taskVm} errorSeq={p.taskErrorSeq} errorMessage={p.taskErrorMessage} dispatch={p.taskDetailDispatch} />
         </Suspense>
@@ -661,16 +708,18 @@ export function App(p: CockpitAppProps) {
     // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
     // task-detail above (nav section reads "fleet" for all three; this renders the actual content).
     const parent = parentRoute(activeRoute);
-    const back = parent && parent.kind === "section" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-fleet-subroute-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
+    // t-fullpage-proto — was a compact "← Fleet" line under the surface's OWN title
+    // (ActivityApp/ProbesApp rendered it there); now lives in the top chrome instead, so neither
+    // component receives a backLink prop any more.
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-fleet-subroute-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
           {s.navFleet}
         </Button>
-      </div>
-    ) : null;
+      );
+    }
     body = (
       <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
-        {back}
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.kind === "agent-activity" ? (
             <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
@@ -688,12 +737,44 @@ export function App(p: CockpitAppProps) {
     // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
     // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
     const parent = parentRoute(activeRoute);
-    const back = parent && parent.kind === "section" ? (
-      <div class="ck-subroute-breadcrumb" data-testid="control-studio-breadcrumb">
-        <Button variant="default" icon="arrow-left" onClick={() => p.onSetSection(parent.section)}>
-          {s[TAB_META[parent.section].navKey]}
-        </Button>
-      </div>
+    // t-610705 (Phase D, D3) — pin is nav-less: its breadcrumb ALWAYS posts the parameterless
+    // "navigateReturn" action (the host is the sole authority on the destination — its own
+    // already-sanitized `currentRoute.returnRoute`, see Cockpit.ts's "navigateReturn" case; the
+    // client never sends a route object). `parent` (computed client-side via the SAME pure
+    // parentRoute() the host uses) only decides the button's LABEL here — a specific nav-tab name
+    // when returnRoute is a flat section, else the generic "Back" (returnRoute can also be
+    // task-detail/agent-activity/agent-probes/workspace-probes, none of which have their own fixed
+    // breadcrumb dispatch the way Task's task-detail parent does below).
+    // t-fullpage-proto — was a compact "← Parent" line under StudioFrame's OWN title (backLink
+    // prop); now lives in the top chrome instead, same as every other subroute's breadcrumb.
+    breadcrumb = activeRoute.studio === "pin" ? (
+      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
+        {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
+      </Button>
+      // t-610705 (Phase D, D2) — Task Studio's edit route is the one OTHER studio whose parent is
+      // NOT a flat section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the
+      // task's own task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip
+      // (the SAME one Task Detail's own breadcrumb and the Board's card-click already navigate
+      // through) rather than inventing a new generic route-navigate prop for this one case.
+    ) : parent && parent.kind === "section" ? (
+      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+        {s[TAB_META[parent.section].navKey]}
+      </Button>
+    ) : parent && parent.kind === "task-detail" ? (
+      <Button
+        variant="default"
+        icon="arrow-left"
+        class="ck-top-breadcrumb-btn"
+        data-testid="control-studio-breadcrumb"
+        // t-c3c819 — task-detail is the correct parent for a REAL edit, but Task Studio's
+        // staged-create pattern opens a brand-new task straight into studio-edit with a
+        // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
+        // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
+        // Board itself instead, same as every other studio's flat-section parent.
+        onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.taskDetailDispatch.openTask(parent.taskId))}
+      >
+        {s.navMission}
+      </Button>
     ) : null;
     // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully UNMOUNT +
     // remount on identity change instead of reusing the component instance with stale state visible
@@ -703,7 +784,6 @@ export function App(p: CockpitAppProps) {
     const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch };
     body = (
       <div class="ck-embed-host" data-testid="control-studio">
-        {back}
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.studio === "command" ? (
             <CommandStudioApp key={studioKey} {...studioMountProps} />
@@ -715,6 +795,10 @@ export function App(p: CockpitAppProps) {
             <ScheduleStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "agent" ? (
             <AgentStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "task" ? (
+            <TaskStudioApp key={studioKey} {...studioMountProps} />
+          ) : activeRoute.studio === "pin" ? (
+            <PinStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>
       </div>
@@ -1057,8 +1141,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "plugins") {
     body = (
       <div class="ck-embed-host" data-testid="control-plugins">
-        <div class="ck-plugins-root">
-          <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback />}>
           <PluginsApp
             vm={p.pluginsVm}
             consent={p.pluginsConsent}
@@ -1067,7 +1150,6 @@ export function App(p: CockpitAppProps) {
             dispatch={p.pluginsDispatch}
           />
         </Suspense>
-        </div>
       </div>
     );
   } else {
@@ -1213,49 +1295,60 @@ export function App(p: CockpitAppProps) {
 
   return (
     <div class="ck-root">
-      <header class="ck-top">
-        {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
-        <div class="ck-chrome">
-          <div class="ck-tabs" role="tablist" aria-label={s.title}>
-            {COCKPIT_SECTION_ORDER.map((id) => {
-              const meta = TAB_META[id];
-              const engineErr =
-                id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
-              return (
-                <button
-                  type="button"
-                  role="tab"
-                  key={id}
-                  aria-selected={section === id}
-                  class={`${section === id ? "active" : ""}${engineErr ? " has-err" : ""}`}
-                  onClick={() => p.onSetSection(id)}
-                >
-                  <span class={`codicon codicon-${meta.icon}`} />
-                  {s[meta.navKey]}
-                  {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
-                </button>
-              );
-            })}
+      {/* t-fullpage-proto — a subroute (task-detail, a Fleet subroute, or any studio) replaces the
+          whole section tab strip with ONE minimal "← Back" row; the content area gets the vertical
+          space the tabs would have used. `breadcrumb` is null for a genuine deep-link edge case
+          (pin with no captured returnRoute) — falls back to the normal tab strip rather than showing
+          an empty header. */}
+      {isSubroute && breadcrumb ? (
+        <header class="ck-top ck-top--fullpage">
+          <div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>
+        </header>
+      ) : (
+        <header class="ck-top">
+          {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
+          <div class="ck-chrome">
+            <div class="ck-tabs" role="tablist" aria-label={s.title}>
+              {COCKPIT_SECTION_ORDER.map((id) => {
+                const meta = TAB_META[id];
+                const engineErr =
+                  id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
+                return (
+                  <button
+                    type="button"
+                    role="tab"
+                    key={id}
+                    aria-selected={section === id && !isNavlessStudio}
+                    class={`${section === id && !isNavlessStudio ? "active" : ""}${engineErr ? " has-err" : ""}`}
+                    onClick={() => p.onSetSection(id)}
+                  >
+                    <span class={`codicon codicon-${meta.icon}`} />
+                    {s[meta.navKey]}
+                    {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+            {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
+                single-workspace case (nothing to choose). Radix Select rejects an empty-string item
+                value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
+                (the wire/host side keeps "" = All). */}
+            {m && m.workspaces.length > 1 ? (
+              <KitSelect
+                aria-label="Control workspace"
+                data-testid="control-workspace-select"
+                class="ck-workspace-select"
+                value={m.selectedWsHash ?? ALL_WORKSPACES}
+                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+                options={[
+                  { value: ALL_WORKSPACES, label: "All workspaces" },
+                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+                ]}
+              />
+            ) : null}
           </div>
-          {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
-              single-workspace case (nothing to choose). Radix Select rejects an empty-string item
-              value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
-              (the wire/host side keeps "" = All). */}
-          {m && m.workspaces.length > 1 ? (
-            <KitSelect
-              aria-label="Control workspace"
-              data-testid="control-workspace-select"
-              class="ck-workspace-select"
-              value={m.selectedWsHash ?? ALL_WORKSPACES}
-              onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
-              options={[
-                { value: ALL_WORKSPACES, label: "All workspaces" },
-                ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
-              ]}
-            />
-          ) : null}
-        </div>
-      </header>
+        </header>
+      )}
 
       <main class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
         {body}

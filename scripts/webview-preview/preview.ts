@@ -42,19 +42,36 @@ function run(): void {
   const fixture = route.fixtures[fixtureName];
   if (!fixture) return fail(`unknown fixture: ${fixtureName} (view ${view})`, `known: ${Object.keys(route.fixtures).join(", ")}`);
 
+  // Stand in for VS Code's one-way webview bridge. Without this, a browser-only fallback posts
+  // outbound studio commands back onto the same window and the surface mistakes its own command
+  // for a host response. Keep only the ready handshake observable by this harness.
+  (window as Window & { acquireVsCodeApi?: () => unknown }).acquireVsCodeApi = () => ({
+    postMessage(message: { type?: string }) {
+      if (message?.type === READY) window.postMessage(message, "*");
+    },
+    getState() { return undefined; },
+    setState() { return undefined; },
+  });
+
   // link the real panel's stylesheet set, in order, then frame the surface.
   for (const href of route.cssLinks) addStylesheet(href);
   // optional width override for responsive visual QA (?width=360).
   const widthParam = params.get("width");
   const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
   frameTo({ w: frameW, h: route.frame.h });
-  // optional light theme stand-in (?theme=light) — default remains Dark+ harness tokens.
-  const theme = params.get("theme") === "light" ? "light" : "dark";
+  // Optional theme stand-ins; default remains Dark+ harness tokens.
+  const requestedTheme = params.get("theme");
+  const theme = requestedTheme === "light" || requestedTheme === "high-contrast" ? requestedTheme : "dark";
   if (theme === "light") {
     document.body.classList.add("vscode-light");
     document.body.classList.remove("vscode-dark");
     const darkLink = document.querySelector('link[href*="theme-dark.css"]') as HTMLLinkElement | null;
     if (darkLink) darkLink.href = "/scripts/webview-preview/theme-light.css";
+  } else if (theme === "high-contrast") {
+    document.body.classList.add("vscode-high-contrast");
+    document.body.classList.remove("vscode-dark");
+    const darkLink = document.querySelector('link[href*="theme-dark.css"]') as HTMLLinkElement | null;
+    if (darkLink) darkLink.href = "/scripts/webview-preview/theme-high-contrast.css";
   } else {
     document.body.classList.add("vscode-dark");
   }

@@ -10,6 +10,7 @@ import { fixtureEngineUnitName } from "../../scripts/dev-host/stop-bridge.mjs";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ESM CLI has no CJS .d.ts in the typecheck graph
 const {
   assertWorkspaceNotRepoRoot,
+  assertPointerSessionIdle,
   clear,
   ensurePortableLaunchConfig,
   fixtureNew,
@@ -127,8 +128,11 @@ describe("dev-host pointer", () => {
     expect(fs.statSync(ws).isDirectory()).toBe(true);
     expect(fs.realpathSync(ext)).toBe(path.resolve(worktree));
 
-    // Child entries are symlinks into the fixture (live content)
-    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(true);
+    // Authoritative config is a real disposable copy: the engine opens it no-follow and dogfood
+    // mutations must not write back into a tracked fixture. Non-authoritative files stay linked.
+    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(ws, "tachyon.yml")).isFile()).toBe(true);
+    expect(fs.lstatSync(path.join(ws, "README.md")).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
     expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
     // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for Soul launch.
@@ -193,6 +197,36 @@ describe("dev-host pointer", () => {
     expect((await status(repo, noopProbe)).armed).toBe(false);
   });
 
+  it("refuses point and clear while a live interactive session owns the pointer", async () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({ edhPid: process.pid }));
+
+    expect(() => assertPointerSessionIdle(pointerRoot)).toThrow(/interactive headless session owns this pointer/);
+    expect(() => point({ repoRoot: repo, worktree, workspace: fixture })).toThrow(/interactive headless session owns this pointer/);
+    await expect(clear(repo, noopReconcile)).rejects.toThrow(/interactive headless session owns this pointer/);
+  });
+
+  it("keeps the reservation when the VS Code launcher exited but Xvfb is still live", () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({
+      edhPid: 2_147_483_647,
+      xvfbPid: process.pid,
+    }));
+
+    expect(() => assertPointerSessionIdle(pointerRoot)).toThrow(/xvfbPid=.*interactive|interactive.*xvfbPid=/);
+  });
+
+  it("reclaims a stale interactive session marker", () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    const sessionFile = path.join(pointerRoot, "session.json");
+    fs.writeFileSync(sessionFile, JSON.stringify({ edhPid: 2_147_483_647 }));
+    expect(() => assertPointerSessionIdle(pointerRoot)).not.toThrow();
+    expect(fs.existsSync(sessionFile)).toBe(false);
+  });
+
   it("links node_modules from primary when worktree lacks them", () => {
     const wtNm = path.join(worktree, "node_modules");
     expect(fs.existsSync(wtNm)).toBe(false);
@@ -227,6 +261,7 @@ describe("dev-host pointer", () => {
     expect(cfg.env.TMUX_TMPDIR).toContain("${workspaceFolder}");
     expect(cfg.env.TACHYON_DEV_HOST).toBe("1");
     expect(cfg.env.TACHYON_DEV_HOST_ENGINE_RUNTIME).toContain("${workspaceFolder}");
+    expect(cfg.env.TACHYON_DEV_HOST_PROFILE_HOME).toBe("${workspaceFolder}/.tachyon/dev-host/profile-home");
     expect(cfg.env.XDG_CACHE_HOME).toContain("${workspaceFolder}");
     expect(cfg.env.XDG_STATE_HOME).toContain("${workspaceFolder}");
     expect(cfg.env.XDG_DATA_HOME).toContain("${workspaceFolder}");

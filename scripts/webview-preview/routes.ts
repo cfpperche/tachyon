@@ -22,13 +22,12 @@ import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
-import { pinStudioMessage } from "../../src/webview/pin-studio/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
-import { pinStudioFixtures } from "./fixtures/pin-studio";
+import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
@@ -118,12 +117,16 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/agent-studio-shell.tailwind.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
       "/dist/webview/terminal-studio-shell.css",
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
+      "/dist/webview/task-studio.css",
+      "/dist/webview/pin-studio.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
@@ -183,17 +186,37 @@ export const ROUTES: Record<string, Route> = {
         // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
         // rather than gated on a real "ready" mount handshake (this static harness has no live host
         // to answer one — the client processes whatever arrives regardless of handshake state).
-        const key = activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
+        const key = (activeRoute as { studio?: string; entityId?: string }).studio === "agent"
+          && (activeRoute as { entityId?: string }).entityId === "canonical-reviewer"
+          ? "canonical-disabled"
+          : activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
         const byStudio: Record<string, { fixtures: Record<string, Fixture>; makeMessage: (vm: unknown) => unknown }> = {
           command: { fixtures: commandStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => commandStudioShellMakeMessage(vm as never) },
           terminal: { fixtures: terminalStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never) },
           runbook: { fixtures: runbookStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never) },
           schedule: { fixtures: scheduleStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never) },
           agent: { fixtures: agentStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => agentStudioShellMakeMessage(vm as never) },
+          // t-610705 (Phase D, D2) — task's fixtures module predates the "-shell" naming convention
+          // (it's task-studio/, not task-studio-shell/) and was written for the now-retired standalone
+          // "task-studio" preview route below — reused as-is here rather than renamed, same "dense-edit"
+          // key every other studio's fixtures module provides.
+          task: { fixtures: taskStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => taskStudioMakeMessage(vm as never) },
+          // t-610705 (Phase D, D3) — same "-shell" naming exception as task above (pin-studio/, not
+          // pin-studio-shell/) — reused as-is from the now-retired standalone "pin-studio" preview
+          // route below.
+          pin: { fixtures: pinStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => pinStudioMakeMessage(vm as never) },
         };
         const entry = byStudio[(activeRoute as { studio: string }).studio];
         const studio = entry?.fixtures[key]?.vm;
-        if (studio) msgs.push(entry.makeMessage(studio));
+        if (studio) {
+          // t-610705 (Phase D, D2) — task's makeMessage (unlike the other 5 studio-shell modules'
+          // single-object return) returns unknown[] (its "conflict" fixture needs a second, distinct
+          // error envelope alongside "load" — see fixtures/task-studio.ts) — spread rather than push
+          // the array itself as one opaque element.
+          const result = entry.makeMessage(studio);
+          if (Array.isArray(result)) msgs.push(...result);
+          else msgs.push(result);
+        }
       }
       return msgs;
     },
@@ -208,48 +231,28 @@ export const ROUTES: Record<string, Route> = {
   // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
   // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same
   // App.tsx, same fixture VM, via the cockpit route's section injection above).
-  approval: {
-    bundle: "/dist/webview/approval.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/approval.css"],
-    frame: { w: 900, h: 760 },
-    fixtures: approvalFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => approvalsMessage(vm as never),
-  },
-  "pin-studio": {
-    bundle: "/dist/webview/pin-studio.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/pin-studio.css"],
-    frame: { w: 900, h: 800 },
-    fixtures: pinStudioFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pinStudioMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
+  // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
+  // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
+  // cockpit route's section injection above).
   // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
   // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
   // (same App.tsx, same fixture VM via the cockpit route's board injection below).
   // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
   // (never registered in production). Runtime Ops is a cockpit-only section now; use
   // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
-  // spec 342 dogfood round 2 (#4) — onboards Task Studio (the surface that motivated this spec's Pilot B)
-  // into the harness; spec 350 T3 migrated it onto the studio shell (StudioFrame chrome, studio-frame.css
-  // added to the CSS order — matches TaskStudioPanel.ts's real renderWebviewShell call exactly).
-  "task-studio": {
-    bundle: "/dist/webview/task-studio.js",
-    cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM,
-      "/dist/webview/vscode-theme.css",
-      "/dist/webview/task-studio.tailwind.css",
-      "/dist/webview/rich-doc.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/task-studio.css",
-    ],
-    frame: { w: 900, h: 800 },
-    fixtures: taskStudioFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => taskStudioMakeMessage(vm as never),
-  },
+  // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
+  // TaskStudioPanel.ts webview; Task Studio is a cockpit-only studio route now — use
+  // ?view=cockpit&fixture=studio-task-edit (same App.tsx, same fixture VMs, via the cockpit route's
+  // byStudio fixture injection above).
   // t-610705 (SDD 410 Phase C.1) — the standalone "task-detail" route previewed the retired Task
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
   // activeRoute injection above).
+  // t-610705 (SDD 410 Phase D, D3) — the standalone "pin-studio" route previewed the retired
+  // PinStudioPanel.ts webview; Pin Studio is a cockpit-only studio route now — use
+  // ?view=cockpit&fixture=studio-pin-edit (same App.tsx, same fixture VMs, via the cockpit route's
+  // byStudio fixture injection above).
   // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
   // command contribution) — reachable only through this route and its own host-side tests.
   "pipeline-studio": {

@@ -84,4 +84,30 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
     expect(calls).toEqual(["studio-agent-tailwind", "studio-frame-agent", "studio-agent"]);
   });
+
+  // t-610705 (Phase D, D2) — same ordering hazard as Agent Studio above, one sheet deeper: Task
+  // Studio's lazy block must request tailwind, THEN rich-doc, THEN the shared studio-frame sheet,
+  // THEN its own sheet — matching Cockpit.ts's eager `styles: [...]` order exactly (see that array's
+  // own D2 comment for why rich-doc must precede studio-frame, not follow it).
+  it("Task Studio's lazy block requests tailwind, then rich-doc, then the shared studio-frame sheet, in that order", () => {
+    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    const block = /TaskStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
+    expect(block, "cockpit/App.tsx: TaskStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
+    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
+    expect(calls).toEqual(["studio-task-tailwind", "studio-task-richdoc", "studio-frame-task", "studio-task"]);
+  });
+
+  // t-610705 (Phase D, D3) — same ordering hazard as Task Studio above, minus the Tailwind sheet
+  // (Pin has no Tailwind-family controls): rich-doc THEN the shared studio-frame sheet THEN its own
+  // sheet — matching Cockpit.ts's eager `styles: [...]` order exactly. Own co-load key
+  // ("studio-pin-richdoc") even though it resolves to the same rich-doc.css href as Task's
+  // "studio-task-richdoc" — a shared key called from two lazy blocks would fail the co-load-id
+  // parity check below (a plain array compare, not set-based).
+  it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
+    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
+    expect(block, "cockpit/App.tsx: PinStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
+    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
+    expect(calls).toEqual(["studio-pin-richdoc", "studio-frame-pin", "studio-pin"]);
+  });
 });

@@ -7,6 +7,8 @@ import type {
   AgentStudioPatch,
   SoulProfileStatusMessage,
 } from "./domain";
+import type { AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
+import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
 
 export type {
   AgentEvolutionCandidateDetailMessage,
@@ -29,7 +31,13 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "evolutionCandidates"; agent: string; candidates: AgentEvolutionCandidateSummaryMessage[] }>
   | StudioDomainMessage<{ type: "evolutionCandidateDetail"; agent: string; detail: AgentEvolutionCandidateDetailMessage }>
   | StudioDomainMessage<{ type: "evolutionActionResult"; agent: string; candidateId: string; status: "approved" | "rejected"; activeVersion: number }>
-  | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>;
+  | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>
+  | StudioDomainMessage<{ type: "canonicalProfileSnapshot"; action: "refresh" | "set-enabled" | "rename"; snapshot: AgentProfileStudioSnapshotV1 }>
+  | StudioDomainMessage<{ type: "canonicalProfileForgotten"; agent: string; agentId: string }>
+  | StudioDomainMessage<{ type: "canonicalProfileError"; agent: string; code: string; message: string; conflict: boolean }>
+  | StudioDomainMessage<{ type: "canonicalProfileBundleExport"; result: AgentProfileStudioBundleExportResultV1 }>
+  | StudioDomainMessage<{ type: "canonicalProfileBundleCreated"; result: AgentProfileStudioBundleCreatedResultV1 }>
+  | StudioDomainMessage<{ type: "canonicalProfileBundleError"; agent: string; code: string; message: string; conflict: boolean }>;
 
 /** Webview -> host messages this surface sends. */
 export type AgentStudioWebviewMessage =
@@ -53,4 +61,11 @@ export type AgentStudioWebviewMessage =
       candidateId: string;
       expectedActiveVersion: number;
       expectedTargetDigest?: string;
-    }>;
+    }>
+  | StudioDomainMessage<{ type: "refreshCanonicalProfile"; agent: string }>
+  | StudioDomainMessage<{ type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }>
+  | StudioDomainMessage<{ type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }>
+  | StudioDomainMessage<{ type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string }>
+  | StudioDomainMessage<{ type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }>
+  | StudioDomainMessage<{ type: "cloneCanonicalProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }>
+  | StudioDomainMessage<{ type: "importCanonicalProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string }>;

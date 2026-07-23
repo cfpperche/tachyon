@@ -169,6 +169,36 @@ select.ck-workspace-select {
   border-radius: 3px;
 }
 
+/* ---- t-fullpage-proto: fullpage subroute chrome — the tab strip's row is replaced by ONE minimal
+   back-link, so the subroute's own content gets the vertical space the tabs would have used. ---- */
+.ck-top--fullpage {
+  padding: 0 4px;
+}
+
+.ck-chrome--fullpage {
+  min-height: 29px;
+}
+
+.ck-top-breadcrumb-btn.ds-btn {
+  min-height: 29px;
+  padding: 0 8px 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-muted);
+  font-size: 11px;
+  font-weight: 400;
+  border-radius: 0;
+}
+
+.ck-top-breadcrumb-btn.ds-btn:hover {
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+.ck-top-breadcrumb-btn .codicon {
+  font-size: 14px;
+}
+
 .ck-note {
   margin: 6px 0 8px;
   font-size: 10px;
@@ -270,14 +300,6 @@ main.ck-main.ck-main--mission,
   min-height: 0;
   max-width: none;
   margin: 0;
-}
-
-/* t-610705 (SDD 410 Phase C.2) — the Fleet subroutes' (Activity/Probes) back-link, full-bleed and
-   left-aligned with the embedded surface's own chrome below it (unlike task-detail's centered
-   760px column, these surfaces use their full embed-host width). */
-.ck-subroute-breadcrumb {
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) 0;
-  box-sizing: border-box;
 }
 
 /* Approvals / any main root: full-bleed width (no 980px column inside Control). */
@@ -437,6 +459,7 @@ main.ck-main.ck-main--mission,
 .ci-ws-head {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 6px;
   padding: 8px 10px;

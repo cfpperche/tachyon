@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { inferKind, type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -221,6 +223,67 @@ export class SessionLedger {
     if (all.delete(name)) this.write(all);
   }
 
+  /** Content-only custody token for a name-scoped row; does not disclose stored env or prompts. */
+  recordDigest(name: string): string | null {
+    const record = this.get(name);
+    return record ? crypto.createHash("sha256").update(JSON.stringify(record)).digest("hex") : null;
+  }
+
+  /** Remove only the exact row captured before a canonical identity retirement. */
+  removeExactDigest(name: string, expectedDigest: string | null): void {
+    const all = this.all();
+    const record = all.get(name);
+    const actual = record ? crypto.createHash("sha256").update(JSON.stringify(record)).digest("hex") : null;
+    if (actual === null) {
+      if (expectedDigest !== null) return; // acknowledges the transaction's prior exact removal
+      return;
+    }
+    if (expectedDigest === null || actual !== expectedDigest) {
+      throw new Error(`session ledger row for '${name}' changed outside the retirement transaction`);
+    }
+    all.delete(name);
+    this.write(all);
+  }
+
+  /**
+   * Move one exact owner row and every persisted child reference in one ledger replacement.
+   * Replay acknowledges an already-moved exact row only when no old lineage references remain.
+   */
+  renameExact(oldName: string, newName: string, expected: SessionRecord | null): void {
+    if (oldName === newName) return;
+    const all = this.all();
+    const source = all.get(oldName);
+    const destination = all.get(newName);
+    if (expected === null) {
+      if (source || destination) throw new Error(`session ledger rename '${oldName}' -> '${newName}' conflicts with an unexpected owner row`);
+      return;
+    }
+    if (!source) {
+      const staleReference = [...all.values()].some((record) => record.def?.parent === oldName || record.def?.delegator === oldName);
+      if (!isDeepStrictEqual(destination, expected) || staleReference) {
+        throw new Error(`session ledger rename '${oldName}' -> '${newName}' is ambiguous`);
+      }
+      return;
+    }
+    if (!isDeepStrictEqual(source, expected) || destination) {
+      throw new Error(`session ledger rename '${oldName}' -> '${newName}' changed outside the transaction`);
+    }
+    all.delete(oldName);
+    all.set(newName, source);
+    for (const [name, record] of all) {
+      if (record.def?.parent !== oldName && record.def?.delegator !== oldName) continue;
+      all.set(name, {
+        ...record,
+        def: {
+          ...record.def,
+          ...(record.def.parent === oldName ? { parent: newName } : {}),
+          ...(record.def.delegator === oldName ? { delegator: newName } : {}),
+        },
+      });
+    }
+    this.write(all);
+  }
+
   /**
    * spec 210 — drop the worktree block after the worktree is removed, keeping the row, AND
    * reset cwd off the now-deleted worktree path back to the workspace root (review fix:
@@ -341,7 +404,25 @@ export class SessionLedger {
     const dir = path.dirname(this.path);
     fs.mkdirSync(dir, { recursive: true });
     const sessions = Object.fromEntries(all);
-    fs.writeFileSync(this.path, `${JSON.stringify({ sessions }, null, 2)}\n`, "utf8");
+    const temporary = `${this.path}.${crypto.randomUUID()}.tmp`;
+    const fd = fs.openSync(temporary, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
+    try {
+      fs.writeFileSync(fd, `${JSON.stringify({ sessions }, null, 2)}\n`, "utf8");
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    try {
+      fs.renameSync(temporary, this.path);
+      let dirFd: number | undefined;
+      try { dirFd = fs.openSync(dir, fs.constants.O_RDONLY); fs.fsyncSync(dirFd); }
+      catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (process.platform !== "win32" && code !== "EINVAL" && code !== "ENOTSUP" && code !== "EISDIR") throw error;
+      } finally { if (dirFd !== undefined) fs.closeSync(dirFd); }
+    } finally {
+      try { fs.rmSync(temporary, { force: true }); } catch { /* already renamed */ }
+    }
   }
 }
 

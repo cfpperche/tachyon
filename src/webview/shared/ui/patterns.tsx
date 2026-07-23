@@ -6,17 +6,20 @@ export interface PageChromeProps {
   title: ComponentChildren;
   /** @deprecated Editor pages must not use title icons (Fleet chrome). Ignored. */
   icon?: string;
+  /** t-bf3498 — a subroute's "← Parent" back-link, rendered as a compact line under the title. */
+  backLink?: ComponentChildren;
   hint?: ComponentChildren;
   actions?: ComponentChildren;
   class?: string;
 }
 
 /** Shared page header for webviews and Control tabs. */
-export function PageChrome({ title, icon: _icon, hint, actions, class: cls }: PageChromeProps) {
+export function PageChrome({ title, icon: _icon, backLink, hint, actions, class: cls }: PageChromeProps) {
   return (
     <div class={cx("ds-page-chrome", cls)}>
       <div class="ds-page-chrome-text">
         <h1 class="ds-page-chrome-title">{title}</h1>
+        {backLink ? <div class="ds-page-chrome-backlink">{backLink}</div> : null}
         {hint != null && hint !== false ? <p class="ds-page-chrome-hint">{hint}</p> : null}
       </div>
       {actions ? <div class="ds-page-chrome-actions">{actions}</div> : null}

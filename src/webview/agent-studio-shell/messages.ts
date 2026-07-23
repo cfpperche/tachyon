@@ -7,6 +7,8 @@ import {
   type AgentStudioPatch,
   type SoulProfileStatusMessage,
 } from "./domain";
+import type { AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
+import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
 
 /** t-610705 (Phase D, D1b) — routeKey/mountNonce identify WHICH Control-hosted binding this ready is
  *  for (studioHost.ts's mount handshake, round-2 F3); undefined off the Control host. */
@@ -73,6 +75,18 @@ export const rejectEvolutionCandidateMessage = (
   ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
 });
 
+export const refreshCanonicalProfileMessage = (agent: string) =>
+  envelope({ type: "refreshCanonicalProfile" as const, agent });
+export const setCanonicalProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
+  envelope({ type: "setCanonicalProfileEnabled" as const, agent, expectedRevision, enabled });
+export const renameCanonicalProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
+  envelope({ type: "renameCanonicalProfile" as const, agent, expectedRevision, newName });
+export const forgetCanonicalProfileMessage = (agent: string, expectedRevision: string, confirmation: string) =>
+  envelope({ type: "forgetCanonicalProfile" as const, agent, expectedRevision, confirmation });
+export const exportCanonicalProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportCanonicalProfileBundle" as const, agent, expectedRevision });
+export const cloneCanonicalProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneCanonicalProfileBundle" as const, agent, expectedRevision, destinationAgentName });
+export const importCanonicalProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importCanonicalProfileBundle" as const, agent, destinationAgentName, contentBase64 });
+
 /** Host → webview: profile status / preview reply. */
 export const soulProfileStatusMessage = (status: SoulProfileStatusMessage) =>
   envelope({ type: "soulProfileStatus" as const, status: projectSoulProfileStatus(status) });
@@ -95,3 +109,15 @@ export const evolutionActionResultMessage = (
 ) => envelope({ type: "evolutionActionResult" as const, agent, candidateId, status, activeVersion });
 export const evolutionErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
   envelope({ type: "evolutionError" as const, agent, code, message, conflict });
+
+export const canonicalProfileSnapshotMessage = (
+  action: "refresh" | "set-enabled" | "rename",
+  snapshot: AgentProfileStudioSnapshotV1,
+) => envelope({ type: "canonicalProfileSnapshot" as const, action, snapshot });
+export const canonicalProfileForgottenMessage = (agent: string, agentId: string) =>
+  envelope({ type: "canonicalProfileForgotten" as const, agent, agentId });
+export const canonicalProfileErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
+  envelope({ type: "canonicalProfileError" as const, agent, code, message, conflict });
+export const canonicalProfileBundleExportMessage = (result: AgentProfileStudioBundleExportResultV1) => envelope({ type: "canonicalProfileBundleExport" as const, result });
+export const canonicalProfileBundleCreatedMessage = (result: AgentProfileStudioBundleCreatedResultV1) => envelope({ type: "canonicalProfileBundleCreated" as const, result });
+export const canonicalProfileBundleErrorMessage = (agent: string, code: string, message: string, conflict: boolean) => envelope({ type: "canonicalProfileBundleError" as const, agent, code, message, conflict });

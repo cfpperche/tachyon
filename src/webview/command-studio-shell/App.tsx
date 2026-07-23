@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
@@ -31,12 +32,14 @@ export interface CommandStudioAppProps {
    *  Nav-transaction freeze messages (studioNavCheckpoint/Abort, studioSaveBegin/End) do NOT arrive
    *  here — see studioFreezeBus.ts for why they need a synchronous, non-React delivery path. */
   incoming?: { seq: number; message: unknown };
+  /** t-bf3498 — the route's "← Parent" back-link, rendered under the studio title. */
+  backLink?: ComponentChildren;
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
 const emptyReferenceData = (): CommandStudioReferenceData => ({ flagMap: {}, defaultCwd: "", verifyCandidates: [] });
 
-export function App({ dispatch, routeKey, mountNonce, incoming }: CommandStudioAppProps) {
+export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: CommandStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<CommandStudioEntity | undefined>(undefined);
@@ -153,7 +156,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: CommandStudioA
   }, [ready, dirty, fields, frozen]);
 
   if (!ready || !entity) {
-    return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Command Studio...</div></div>;
+    return (
+      <>
+        {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
+        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Command Studio...</div></div>
+      </>
+    );
   }
 
   const errors: StudioError[] = hostError ? [hostError] : [];
@@ -196,6 +204,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming }: CommandStudioA
   return (
     <StudioFrame
       title={commandStudioTitleFor(mode, entityId, entity)}
+      backLink={backLink}
       errors={errors}
       dirty={dirty}
       saveInFlight={saving}

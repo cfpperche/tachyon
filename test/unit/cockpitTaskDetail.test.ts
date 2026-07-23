@@ -115,6 +115,38 @@ describe("Control → task-detail routing", () => {
     expect(ws.taskStore.get(t.id).priority).toBeUndefined();
   });
 
+  it("t-4d59d3: navigating into task-detail NEVER reassigns webview.options on the live panel", async () => {
+    // Reassigning options on a live panel makes VS Code recreate the webview's inner iframe, and
+    // that reload wedged at the fake.html placeholder — the whole Control surface went permanently
+    // blank the moment a Board card was clicked (reproduced headlessly, iframe stuck at fake.html).
+    // Every resource root is granted once at creation instead; reference identity proves no
+    // later assignment happened.
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "no reload", author: "human" });
+    const { deps } = depsFor(ws);
+    await openCockpit(deps, { section: "mission" });
+    const optionsAtCreation = __createdPanels[0].webview.options;
+    expect(optionsAtCreation).toBeDefined();
+
+    // in-place navigate into the task (the Board card click path) + full detail load
+    __createdPanels[0].webview.__receive({ type: "openTask", id: t.id });
+    await flush();
+    __createdPanels[0].webview.__receive({ type: "requestSnapshot" });
+    await flush();
+
+    expect(taskMessages().at(-1)?.vm.task?.title).toBe("no reload");
+    expect(__createdPanels[0].webview.options).toBe(optionsAtCreation);
+  });
+
+  it("t-4d59d3: the creation grant covers every task's blob dir via the workspace attachments parent", async () => {
+    const ws = fakeWorkspace();
+    const { deps } = depsFor(ws);
+    await openCockpit(deps, { section: "mission" });
+    const roots = (__createdPanels[0].webview.options as { localResourceRoots?: Array<{ fsPath?: string; path?: string }> }).localResourceRoots ?? [];
+    const rootPaths = roots.map((r) => String(r.fsPath ?? r.path ?? r));
+    expect(rootPaths.some((p) => p.includes(path.join(".tachyon", "tasks", "attachments")))).toBe(true);
+  });
+
   it("renders a tombstone from the last-known state when the task file disappears (dueto F8) — the route stays open", async () => {
     const root = mkroot();
     const ws = fakeWorkspace(root);
@@ -154,6 +186,7 @@ describe("Control → task-detail routing", () => {
       updateTask: async () => {},
       reviewPrototype: async () => {},
       attachmentBlobRoot: () => root,
+      attachmentsRoot: () => root,
       attachmentBlobPath: () => root,
       prototypeHtml: () => { throw new Error("no prototype"); },
     };

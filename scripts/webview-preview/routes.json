@@ -460,6 +460,90 @@
   },
   {
     "view": "cockpit",
+    "fixture": "studio-agent-canonical",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-canonical",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-task-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-pin-edit",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-edit",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "studio-pin-new",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-new",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "validations",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
     "frame": {
@@ -759,111 +843,6 @@
     "aliases": [
       "pin preview",
       "pin readonly"
-    ]
-  },
-  {
-    "view": "approval",
-    "fixture": "pending",
-    "url": "/scripts/webview-preview/index.html?view=approval&fixture=pending",
-    "frame": {
-      "w": 900,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Human Approvals",
-    "aliases": [
-      "approvals",
-      "human approvals",
-      "approval view"
-    ]
-  },
-  {
-    "view": "pin-studio",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Pin Studio",
-    "aliases": [
-      "pin studio",
-      "pin editor",
-      "sketch"
-    ]
-  },
-  {
-    "view": "pin-studio",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=pin-studio&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Pin Studio",
-    "aliases": [
-      "pin studio",
-      "pin editor",
-      "sketch"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=default",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "new",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=new",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
-    ]
-  },
-  {
-    "view": "task-studio",
-    "fixture": "conflict",
-    "url": "/scripts/webview-preview/index.html?view=task-studio&fixture=conflict",
-    "frame": {
-      "w": 900,
-      "h": 800
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Task Studio",
-    "aliases": [
-      "task studio",
-      "task editor"
     ]
   },
   {
