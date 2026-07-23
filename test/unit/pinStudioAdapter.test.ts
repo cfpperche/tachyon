@@ -36,6 +36,7 @@ function baseFields(overrides: Partial<PinFields> = {}): PinFields {
     tags: [],
     doc: { type: "doc", content: [{ type: "paragraph" }] },
     attachments: [],
+    docDirty: false,
     ...overrides,
   };
 }
@@ -126,6 +127,11 @@ describe("PinStudioAdapter — validate/concurrency/dirty hooks", () => {
     expect(computePinDirty(entity, dirty)).toBe(true);
     expect(serializePinPatch(dirty, true)).toBe(dirty);
     expect(canDiscardPinFields(dirty)).toBe(false);
+
+    // t-cdd4e1 — docDirty is an explicit flag, not a structural diff: a doc that's byte-identical to
+    // the loaded entity's doc still reads dirty once TipTap's onUpdate has fired at least once, and a
+    // structurally-different-but-never-edited doc (the round-trip mismatch this bug was about) must NOT.
+    expect(computePinDirty(entity, baseFields({ docDirty: true }))).toBe(true);
 
     // canDiscardPinFields is its own, stricter question ("is this draft blank enough to close
     // without a confirm?") — unrelated to whether it's dirty relative to some loaded entity.

@@ -83,6 +83,7 @@ describe("Workspace Pin Studio target", () => {
       tags: ["docs"],
       doc: { type: "doc", content: [{ type: "paragraph" }] },
       attachments: [],
+      docDirty: false,
     })).resolves.toEqual({ status: "ok" });
     const image = await target.putPinStudioImage({
       data: Buffer.from("remote image"),
@@ -168,6 +169,7 @@ describe("Workspace Pin Studio target", () => {
       tags: [],
       doc: { type: "doc", content: [{ type: "paragraph" }] },
       attachments: [],
+      docDirty: false,
     })).rejects.toThrow(/changed the saved Pin identity/);
     expect(fake.stagedPayloads).toMatchObject([{ discarded: true }]);
   });

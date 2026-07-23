@@ -85,7 +85,7 @@ import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } fro
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import type { PluginsPanelManager } from "./PluginsPanel.js";
-import { isStudioRoute } from "../cockpit/route.js";
+import { isStudioRoute, parentRoute } from "../cockpit/route.js";
 import {
   reconcileStudioTeardown,
   stopStudioBinding,
@@ -1058,6 +1058,22 @@ export async function openCockpit(
       notify,
       handleDomainMessage: (ctx, message) => {
         if (isStudioRoute(currentRoute)) studioDomainDispatch(currentRoute, ctx, message);
+      },
+      // t-cdd4e1 — Cancel discards the draft server-side but never navigated anywhere; the studio
+      // route just sat there with no visible effect. Navigate to the SAME destination the route's
+      // own breadcrumb would (parentRoute already resolves pin's captured returnRoute vs every other
+      // studio's flat/task-detail parent generically — no separate branching needed here, same as
+      // "setSection"/"navigateReturn" below reuse it). Calls navigate() DIRECTLY, not requestNavigate
+      // — Cancel is designed as an unconfirmed direct discard (see the "cancel" case's own comment in
+      // studioHost.ts), so it must bypass beginStudioNavTransaction's checkpoint entirely rather than
+      // re-prompt a dialog the user just explicitly opted out of by clicking Cancel.
+      onCancelled: () => {
+        if (!isStudioRoute(currentRoute)) return;
+        navigate(parentRoute(currentRoute) ?? routes.section("overview"));
+        void (async () => {
+          await sendModel();
+          await sendSectionModule();
+        })();
       },
     });
 

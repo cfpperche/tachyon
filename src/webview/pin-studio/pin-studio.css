@@ -8,4 +8,3 @@
   .tag-pill { display: inline-flex; align-items: center; gap: 3px; max-width: 160px; padding: 1px 5px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); color: var(--ds-muted); background: transparent; font-size: var(--ds-small); line-height: 1.4; cursor: pointer; }
   .tag-pill:hover { color: var(--vscode-foreground); border-color: var(--ds-accent); }
   .tag-pill .codicon { font-size: 11px; }
-  .pin-side-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }

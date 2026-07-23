@@ -21,6 +21,7 @@ function savePayload(overrides: Record<string, unknown> = {}): Buffer {
       tags: ["ui"],
       doc: EMPTY_DOC,
       attachments: [],
+      docDirty: false,
       ...overrides,
     },
   }), "utf8");
