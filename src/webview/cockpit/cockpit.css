@@ -169,6 +169,36 @@ select.ck-workspace-select {
   border-radius: 3px;
 }
 
+/* ---- t-fullpage-proto: fullpage subroute chrome — the tab strip's row is replaced by ONE minimal
+   back-link, so the subroute's own content gets the vertical space the tabs would have used. ---- */
+.ck-top--fullpage {
+  padding: 0 4px;
+}
+
+.ck-chrome--fullpage {
+  min-height: 29px;
+}
+
+.ck-top-breadcrumb-btn.ds-btn {
+  min-height: 29px;
+  padding: 0 8px 0 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--ds-muted);
+  font-size: 11px;
+  font-weight: 400;
+  border-radius: 0;
+}
+
+.ck-top-breadcrumb-btn.ds-btn:hover {
+  background: transparent;
+  color: var(--vscode-foreground);
+}
+
+.ck-top-breadcrumb-btn .codicon {
+  font-size: 14px;
+}
+
 .ck-note {
   margin: 6px 0 8px;
   font-size: 10px;
