@@ -65,9 +65,25 @@ describe.skipIf(!gitOk())("GitRepo (spec 264)", () => {
     expect(path.basename(linkedHook)).toBe("pre-commit");
   });
 
-  it("refuses to manage core.hooksPath when extensions.worktreeConfig is enabled", async () => {
+  // t-4781f3 — extensions.worktreeConfig alone (e.g. from an unrelated `git sparse-checkout disable`
+  // some OTHER worktree ran, or VS Code's own git tooling auto-running it on a newly opened linked
+  // worktree) must NOT block hook management: nothing about core.hooksPath itself became ambiguous.
+  it("does not refuse core.hooksPath management when worktreeConfig is on but hooksPath itself is not worktree-scoped", async () => {
     const dir = makeRepo();
     execFileSync("git", ["config", "extensions.worktreeConfig", "true"], { cwd: dir, env: ENV });
+    const repo = new GitRepo(dir);
+    expect(await repo.worktreeConfigEnabled()).toBe(false);
+    await repo.setHooksPath(".tachyon/githooks");
+    expect((await repo.getHooksPath())?.raw).toBe(".tachyon/githooks");
+    await repo.unsetHooksPath();
+  });
+
+  // The genuine ambiguity: THIS worktree's own config.worktree overrides core.hooksPath, so a
+  // shared-scope write would silently disagree with what this worktree actually resolves.
+  it("refuses to manage core.hooksPath when THIS worktree's own config.worktree overrides it", async () => {
+    const dir = makeRepo();
+    execFileSync("git", ["config", "extensions.worktreeConfig", "true"], { cwd: dir, env: ENV });
+    execFileSync("git", ["config", "--worktree", "core.hooksPath", "/some/other/path"], { cwd: dir, env: ENV });
     const repo = new GitRepo(dir);
     expect(await repo.worktreeConfigEnabled()).toBe(true);
     await expect(repo.setHooksPath(".tachyon/githooks")).rejects.toBeInstanceOf(GitRepoError);
