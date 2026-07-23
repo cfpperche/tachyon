@@ -802,16 +802,29 @@ export async function openCockpit(
   if (panel && !opts?.revivedPanel) {
     panel.reveal(vscode.ViewColumn.Active);
   } else {
+    // t-4d59d3 — every localResourceRoot the panel will EVER need is granted here, once, at
+    // creation: dist/webview plus each workspace's stable task-attachments parent (covers every
+    // task's blob dir — read-only mapping via asWebviewUri, still confined to the attachments
+    // tree). Reassigning `webview.options` later on a LIVE panel makes VS Code recreate the
+    // webview's inner iframe, and that reload can wedge at the fake.html placeholder — the whole
+    // Control surface went permanently blank the moment a Board card was clicked (the old
+    // sendTaskDetail did exactly that per-navigation re-grant; see its comment below). A workspace
+    // folder added AFTER Control opened won't have its root here — its task images degrade to
+    // broken thumbnails until Control is reopened, which beats a blank panel.
+    const creationResourceRoots = [
+      vscode.Uri.joinPath(deps.extensionUri, "dist", "webview"),
+      ...deps.taskDetail.getWorkspaces().map((w) => vscode.Uri.file(w.attachmentsRoot())),
+    ];
     panel = opts?.revivedPanel ?? vscode.window.createWebviewPanel(COCKPIT_VIEW_TYPE, s.title, vscode.ViewColumn.Active, {
       enableScripts: true,
       retainContextWhenHidden: true,
       enableFindWidget: true,
-      localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
+      localResourceRoots: creationResourceRoots,
     });
     panel.title = s.title;
     panel.webview.options = {
       enableScripts: true,
-      localResourceRoots: [vscode.Uri.joinPath(deps.extensionUri, "dist", "webview")],
+      localResourceRoots: creationResourceRoots,
     };
     panel.iconPath = panelIcon(deps.extensionUri, "pulse");
     markCockpitSingletonClaimed();
@@ -1107,17 +1120,14 @@ export async function openCockpit(
       live.webview.postMessage(taskMessage(emptyTombstoneVm(route.wsHash, route.taskId)));
       return;
     }
-    // dogfood round 1 (#5, spec 339, ported from TaskDetailPanel.ts) — the blob root must be an
-    // allowed local resource root before asWebviewUri() below can resolve `attachment:<id>` refs.
-    // Least-privilege: only the CURRENT task's root is allowed (Control is single-instance, so a
-    // prior task's images simply stop resolving once navigated away — nothing still displays them).
-    live.webview.options = {
-      enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(deps.extensionUri, "dist", "webview"),
-        vscode.Uri.file(ws.attachmentBlobRoot(route.taskId)),
-      ],
-    };
+    // t-4d59d3 — the blob root must be an allowed local resource root before asWebviewUri() below
+    // can resolve `attachment:<id>` refs. The per-navigation `live.webview.options` re-grant this
+    // ported from TaskDetailPanel.ts (dogfood round 1 #5, spec 339) is GONE: reassigning options on
+    // a live panel recreates the inner iframe, and that reload wedged at the fake.html placeholder,
+    // blanking all of Control the moment a Board card was clicked. The standalone panel got away
+    // with it because it re-set its own html around every open; Control sets html once. The grant
+    // now happens ONCE at panel creation (each workspace's stable attachments parent — see the
+    // creationResourceRoots comment above), which covers every task's blob dir.
     try {
       const detail = await ws.loadTaskDetail(route.taskId);
       if (panel !== live || navEpoch !== epoch) return;
