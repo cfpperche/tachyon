@@ -57,7 +57,11 @@ describe("ClientWorkspaceStudioTarget", () => {
       agentId: "123e4567-e89b-42d3-a456-426614174000",
       revision: "a".repeat(64),
       enabled: false,
-      editable: { displayName: "Ada", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+      editable: {
+        displayName: "Ada", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        worktree: { enabled: false, branch: "" }, isolation: "",
+      },
       bindings: { environmentValueNames: [], secretNames: ["TOKEN"], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, externalReferences: 0 },
       provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
     };

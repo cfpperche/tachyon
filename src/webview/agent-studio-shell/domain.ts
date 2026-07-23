@@ -658,6 +658,14 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.role = snapshot?.editable.role ?? "";
   fields.soul = snapshot?.bindings.prompt.soul ?? false;
   fields.selfEvolution = snapshot?.bindings.prompt.evolution ?? false;
+  fields.cwd = snapshot?.editable.cwd ?? "";
+  fields.autostart = snapshot?.editable.lifecycle.autostart ?? false;
+  fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
+  fields.attention = snapshot?.editable.lifecycle.attention ?? true;
+  fields.watch = snapshot?.editable.lifecycle.watch.join("\n") ?? "";
+  fields.worktree = snapshot?.editable.worktree.enabled ?? false;
+  fields.branch = snapshot?.editable.worktree.branch ?? "";
+  fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {
     kind: "canonical",
     ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
@@ -679,10 +687,10 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
   const adapter = fields.canonical.expectedRevision
     ? fields.canonical.runtime.adapter
     : executable.split(/[\\/]/).pop() ?? executable;
-  // V1 has measured canonical projectors only for Codex and Pi. Keep every other Quick Add runtime
+  // Keep unmeasured Quick Add runtimes on the legacy writer instead of minting partial authority.
   // usable through Agent Studio's existing legacy writer instead of minting an authority the resolver
   // cannot attest.
-  if (!fields.canonical.expectedRevision && adapter !== "codex" && adapter !== "pi") {
+  if (!fields.canonical.expectedRevision && !["codex", "pi", "claude", "grok"].includes(adapter)) {
     const { canonical: _canonical, ...legacy } = fields;
     return legacy;
   }
@@ -695,6 +703,18 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       displayName: fields.canonical.displayName,
       runtime: { ...fields.canonical.runtime, adapter, executable },
       role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
+      cwd: fields.cwd.trim(),
+      lifecycle: {
+        autostart: fields.autostart,
+        restart: fields.restartOnCrash ? "on-crash" : "never",
+        attention: fields.attention,
+        watch: fields.watch.split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
+      },
+      worktree: {
+        enabled: fields.worktree,
+        branch: fields.branch.trim(),
+      },
+      isolation: fields.isolate ? "transcript" : "",
     },
   };
 }

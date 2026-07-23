@@ -27,7 +27,12 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
         secrets: { TOKEN: { provider: "vault", id: "secret-handle", purpose: "auth" } },
       },
       prompt: { soul: "soul", evolution: "evolution", role: "reviewer" },
-      lifecycle: { enabled: false },
+      lifecycle: {
+        enabled: false, autostart: true, restart: "on-crash",
+        attention: { enabled: false, silenceSec: 12 }, watch: ["src/**"],
+      },
+      workspace: { cwd: "apps/reviewer", worktree: { enabled: true, branch: "feature/reviewer" } },
+      isolation: "transcript",
       references: [
         { id: "soul", kind: "soul", scope: "profile", owner: "123e4567-e89b-42d3-a456-426614174000", path: "SOUL.md", mode: "pinned", sha256: "b".repeat(64) },
         { id: "evolution", kind: "evolution", scope: "product", owner: "tachyon", path: "evolution.md", mode: "pinned", sha256: "c".repeat(64), version: "1" },
@@ -52,6 +57,10 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       role: "tester",
+      cwd: "apps/tester",
+      lifecycle: { autostart: false, restart: "never", attention: true, watch: ["test/**"] },
+      worktree: { enabled: false, branch: "" },
+      isolation: "",
     },
   };
 }
@@ -63,6 +72,10 @@ describe("canonical Agent Studio projection", () => {
       displayName: "Reviewer",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       role: "reviewer",
+      cwd: "apps/reviewer",
+      lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      worktree: { enabled: true, branch: "feature/reviewer" },
+      isolation: "transcript",
     });
     expect(projected.bindings).toMatchObject({
       environmentValueNames: ["PUBLIC"],
@@ -83,7 +96,8 @@ describe("canonical Agent Studio projection", () => {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       prompt: { role: "tester" },
-      lifecycle: { enabled: false },
+      lifecycle: { enabled: false, watch: ["test/**"] },
+      workspace: { cwd: "apps/tester" },
     });
   });
 
@@ -93,6 +107,12 @@ describe("canonical Agent Studio projection", () => {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       prompt: { soul: "soul", evolution: "evolution", role: "tester" },
+      lifecycle: {
+        enabled: false, autostart: false, restart: "never",
+        attention: { enabled: true, silenceSec: 12 }, watch: ["test/**"],
+      },
+      workspace: { cwd: "apps/tester", worktree: { enabled: false, branch: undefined } },
+      isolation: undefined,
     });
     expect(() => patchProfileFromStudioMutation(mutation("e".repeat(64)), current)).toThrow("revision conflict");
   });

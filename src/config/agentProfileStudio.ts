@@ -17,6 +17,18 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     serviceTier: text(128).optional(),
   }).strict(),
   role: z.enum(["", "coder", "reviewer", "tester", "orchestrator", "custom"]),
+  cwd: text(4096),
+  lifecycle: z.object({
+    autostart: z.boolean(),
+    restart: z.enum(["never", "on-crash"]),
+    attention: z.boolean(),
+    watch: z.array(text(1024).min(1)).max(128),
+  }).strict(),
+  worktree: z.object({
+    enabled: z.boolean(),
+    branch: text(1024),
+  }).strict(),
+  isolation: z.enum(["", "transcript"]),
 }).strict();
 
 export const agentProfileStudioMutationSchemaV1 = z.object({
@@ -144,6 +156,18 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       displayName: profile.displayName ?? "",
       runtime: { ...profile.runtime },
       role: profile.prompt?.role ?? "",
+      cwd: profile.workspace?.cwd ?? "",
+      lifecycle: {
+        autostart: profile.lifecycle?.autostart ?? false,
+        restart: profile.lifecycle?.restart ?? "never",
+        attention: profile.lifecycle?.attention?.enabled ?? true,
+        watch: [...(profile.lifecycle?.watch ?? [])],
+      },
+      worktree: {
+        enabled: profile.workspace?.worktree?.enabled ?? false,
+        branch: profile.workspace?.worktree?.branch ?? "",
+      },
+      isolation: profile.isolation ?? "",
     },
     bindings: {
       environmentValueNames: Object.keys(profile.environment?.values ?? {}).sort(),
@@ -178,7 +202,25 @@ export function createProfileFromStudioMutation(
     ...(parsed.editable.displayName ? { displayName: parsed.editable.displayName } : {}),
     runtime: { ...parsed.editable.runtime },
     ...(parsed.editable.role ? { prompt: { role: parsed.editable.role } } : {}),
-    lifecycle: { enabled: false },
+    lifecycle: {
+      enabled: false,
+      ...(parsed.editable.lifecycle.autostart ? { autostart: true } : {}),
+      ...(parsed.editable.lifecycle.restart !== "never" ? { restart: parsed.editable.lifecycle.restart } : {}),
+      ...(!parsed.editable.lifecycle.attention ? { attention: { enabled: false } } : {}),
+      ...(parsed.editable.lifecycle.watch.length > 0 ? { watch: [...parsed.editable.lifecycle.watch] } : {}),
+    },
+    ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
+      workspace: {
+        ...(parsed.editable.cwd ? { cwd: parsed.editable.cwd } : {}),
+        ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
+          worktree: {
+            ...(parsed.editable.worktree.enabled ? { enabled: true } : {}),
+            ...(parsed.editable.worktree.branch ? { branch: parsed.editable.worktree.branch } : {}),
+          },
+        } : {}),
+      },
+    } : {}),
+    ...(parsed.editable.isolation ? { isolation: parsed.editable.isolation } : {}),
   };
 }
 
@@ -194,10 +236,33 @@ export function patchProfileFromStudioMutation(
   const prompt = { ...(current.profile.prompt ?? {}) };
   if (parsed.editable.role) prompt.role = parsed.editable.role;
   else delete prompt.role;
+  const lifecycle = {
+    ...(current.profile.lifecycle ?? {}),
+    autostart: parsed.editable.lifecycle.autostart,
+    restart: parsed.editable.lifecycle.restart,
+    attention: {
+      ...(current.profile.lifecycle?.attention ?? {}),
+      enabled: parsed.editable.lifecycle.attention,
+    },
+    watch: [...parsed.editable.lifecycle.watch],
+  };
+  const worktree = {
+    ...(current.profile.workspace?.worktree ?? {}),
+    enabled: parsed.editable.worktree.enabled,
+    branch: parsed.editable.worktree.branch || undefined,
+  };
+  const workspace = {
+    ...(current.profile.workspace ?? {}),
+    cwd: parsed.editable.cwd || undefined,
+    worktree,
+  };
   return {
     displayName: parsed.editable.displayName || undefined,
     runtime: { ...parsed.editable.runtime },
     prompt: Object.keys(prompt).length > 0 ? prompt : undefined,
+    lifecycle,
+    workspace,
+    isolation: parsed.editable.isolation || undefined,
   };
 }
 

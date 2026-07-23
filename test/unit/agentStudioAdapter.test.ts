@@ -22,7 +22,11 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     agentId: "123e4567-e89b-42d3-a456-426614174000",
     revision: "a".repeat(64),
     enabled: false,
-    editable: { displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer" },
+    editable: {
+      displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
+      cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      worktree: { enabled: true, branch: "feature/web" }, isolation: "transcript",
+    },
     bindings: {
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
@@ -149,6 +153,16 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.storage).toBe("canonical");
     expect(result.entity.fields.cmd).toBe("codex");
     expect(result.entity.fields.role).toBe("reviewer");
+    expect(result.entity.fields).toMatchObject({
+      cwd: "apps/web",
+      autostart: true,
+      restartOnCrash: true,
+      attention: false,
+      watch: "src/**",
+      worktree: true,
+      branch: "feature/web",
+      isolate: true,
+    });
     expect(result.entity.profile?.bindings.secretNames).toEqual(["API_TOKEN"]);
     expect(JSON.stringify(result.entity)).not.toContain("secret-handle");
     expect(new AgentStudioAdapter(ws).revisionOf(result.entity)).toBe(snapshot.revision);
@@ -201,22 +215,41 @@ describe("AgentStudioAdapter — save", () => {
 
     expect(await adapter.save("frontend", patch)).toEqual({ status: "ok" });
     expect(mutations).toEqual([expect.objectContaining({ kind: "canonical", agentName: "frontend", expectedRevision: "a".repeat(64) })]);
-    expect(mutations[0]?.editable).toEqual(expect.objectContaining({ role: "tester", runtime: expect.objectContaining({ executable: "codex" }) }));
+    expect(mutations[0]?.editable).toEqual(expect.objectContaining({
+      role: "tester",
+      runtime: expect.objectContaining({ executable: "codex" }),
+      cwd: "apps/web",
+      lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      worktree: { enabled: true, branch: "feature/web" },
+      isolation: "transcript",
+    }));
     expect(submits).toEqual([]);
   });
 
   it("keeps unsupported Quick Add runtimes on the legacy creation path", async () => {
     const { ws, submits } = fakeWorkspace({ submitResult: undefined });
     const fields = canonicalAgentFields();
-    fields.name = "claude-helper";
-    fields.cmd = "claude";
+    fields.name = "opencode-helper";
+    fields.cmd = "opencode";
     fields.kind = "agent";
 
     const patch = serializeAgentPatch(fields, true)!;
     expect(patch).not.toHaveProperty("canonical");
     expect(patch).not.toHaveProperty("editable");
-    expect(await new AgentStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "claude-helper" });
-    expect(submits).toEqual([{ state: expect.objectContaining({ name: "claude-helper", cmd: "claude" }), editingName: undefined }]);
+    expect(await new AgentStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "opencode-helper" });
+    expect(submits).toEqual([{ state: expect.objectContaining({ name: "opencode-helper", cmd: "opencode" }), editingName: undefined }]);
+  });
+
+  it.each(["claude", "grok"])("creates measured %s runtimes through canonical mutation", (runtime) => {
+    const fields = canonicalAgentFields();
+    fields.name = `${runtime}-helper`;
+    fields.cmd = runtime;
+    const patch = serializeAgentPatch(fields, true)!;
+    expect(patch).toMatchObject({
+      kind: "canonical",
+      agentName: `${runtime}-helper`,
+      editable: { runtime: { adapter: runtime, executable: runtime } },
+    });
   });
 
   it("maps a stale canonical save to a redacted Studio conflict", async () => {

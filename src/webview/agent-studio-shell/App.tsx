@@ -988,11 +988,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </div>
 
-            {!canonical && <details open={!!fields.instructions}>
+            <details open={!!fields.instructions}>
               <summary>Persistent instructions</summary>
-              <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <div class="hint">{entity.persistentInstructionsHelp}</div>
-            </details>}
+              <Textarea disabled={canonical} rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
+              <div class="hint">{canonical ? "Persistent instructions use their dedicated profile binding and are not editable in this form yet." : entity.persistentInstructionsHelp}</div>
+            </details>
 
             <EvolutionSection
               labels={entity.evolutionLabels}
@@ -1011,10 +1011,15 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               onReject={(detail) => resolveEvolutionCandidate(detail, "reject")}
             />
 
-            {!canonical && <><div class="checks ash-check-grid">
+            <><div class="checks ash-check-grid">
               <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>
               <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
+            </div>
+
+            <div class="ash-group">
+              <label class="ash-label" for="ash-watch">Watch patterns</label>
+              <Textarea id="ash-watch" rows={2} value={fields.watch} placeholder="src/** · package.json (one per line)" onInput={(e) => set("watch", (e.currentTarget as HTMLTextAreaElement).value)} />
             </div>
 
             <div class="ash-group">
@@ -1034,17 +1039,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
               <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>
-              <Textarea id="ash-setup" rows={3} value={fields.worktreeSetup} onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
+              <Textarea id="ash-setup" disabled={canonical} rows={3} value={fields.worktreeSetup} onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
               <label class="ash-label" for="ash-verify">Verify gate (proves the branch is shippable)</label>
-              <Input id="ash-verify" value={fields.verify} placeholder="npm test · cargo test · a command/runbook name" onInput={(e) => set("verify", (e.currentTarget as HTMLInputElement).value)} />
-              <div class="ash-chips">
+              <Input id="ash-verify" disabled={canonical} value={fields.verify} placeholder="npm test · cargo test · a command/runbook name" onInput={(e) => set("verify", (e.currentTarget as HTMLInputElement).value)} />
+              {canonical && <div class="hint">Setup and verification require pinned profile references; they remain read-only until that binding is available.</div>}
+              {!canonical && <div class="ash-chips">
                 {entity.verifyCandidates.map((c) => (
                   <Chip key={c} active={c === fields.verify.trim()} onClick={() => set("verify", c)}>{c}</Chip>
                 ))}
-              </div>
+              </div>}
             </details>
 
-            {showHarness && (
+            <label class="check"><input type="checkbox" checked={fields.isolate} onChange={(e) => set("isolate", (e.currentTarget as HTMLInputElement).checked)} /> Isolate runtime transcript/config home</label>
+
+            {showHarness && !canonical && (
               <details open={fields.harness}>
                 <summary>Isolated harness</summary>
                 <label class="check"><input type="checkbox" checked={fields.harness} onChange={(e) => set("harness", (e.currentTarget as HTMLInputElement).checked)} /> {harnessCheckboxLabel}</label>
@@ -1072,7 +1080,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <label class="ash-label" for="ash-hooks">Hooks (YAML)</label>
                 <Textarea id="ash-hooks" rows={4} value={fields.harnessHooks} onInput={(e) => set("harnessHooks", (e.currentTarget as HTMLTextAreaElement).value)} />
               </details>
-            )}</>}
+            )}</>
           </div>
         ),
       }}

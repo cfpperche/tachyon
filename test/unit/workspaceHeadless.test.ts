@@ -441,7 +441,11 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       schemaVersion: 1,
       kind: "canonical",
       agentName: "reviewer",
-      editable: { displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+      editable: {
+        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+        cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+      },
     });
     expect(created.enabled).toBe(false);
     expect(created.editable.role).toBe("reviewer");
@@ -452,7 +456,11 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       kind: "canonical",
       agentName: "reviewer",
       expectedRevision: created.revision,
-      editable: { displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester" },
+      editable: {
+        displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
+        cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+      },
     });
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
     await expect(ws.commitAgentProfileStudio({
@@ -460,7 +468,11 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       kind: "canonical",
       agentName: "reviewer",
       expectedRevision: created.revision,
-      editable: { displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder" },
+      editable: {
+        displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder",
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        worktree: { enabled: false, branch: "" }, isolation: "",
+      },
     })).rejects.toThrow("revision conflict");
     expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
   } finally {
@@ -482,7 +494,11 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       schemaVersion: 1,
       kind: "canonical",
       agentName: "reviewer",
-      editable: { displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+      editable: {
+        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        worktree: { enabled: false, branch: "" }, isolation: "",
+      },
     });
     await expect(ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,

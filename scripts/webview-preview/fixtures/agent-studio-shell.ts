@@ -83,7 +83,11 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   agentId: "123e4567-e89b-42d3-a456-426614174000",
   revision: "a".repeat(64),
   enabled: false,
-  editable: { displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer" },
+  editable: {
+    displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
+    cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true, watch: ["src/**"] },
+    worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+  },
   bindings: {
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
     prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
