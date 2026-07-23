@@ -55,6 +55,13 @@ import {
   type ImportPortableAgentProfileResult,
   type PortableAgentProfileBytes,
 } from "../config/agentProfileBundle.js";
+import {
+  createProfileFromStudioMutation,
+  patchProfileFromStudioMutation,
+  projectAgentProfileStudioSnapshot,
+  type AgentProfileStudioMutationV1,
+  type AgentProfileStudioSnapshotV1,
+} from "../config/agentProfileStudio.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -4723,6 +4730,29 @@ export class Workspace {
       authority: this.profileAuthorityPort(),
       config: this.agentProfileLifecycleConfigPort(),
     });
+  }
+
+  async inspectAgentProfileStudio(agentName: string): Promise<AgentProfileStudioSnapshotV1> {
+    return projectAgentProfileStudioSnapshot(await this.inspectAgentProfileLifecycle(agentName));
+  }
+
+  async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
+    if (mutation.expectedRevision === undefined) {
+      const result = await this.commitAgentProfileLifecycle({
+        agentName: mutation.agentName,
+        operation: "create",
+        createProfile: createProfileFromStudioMutation(mutation),
+      });
+      return projectAgentProfileStudioSnapshot(result.snapshot);
+    }
+    const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+    const result = await this.commitAgentProfileLifecycle({
+      agentName: mutation.agentName,
+      operation: "edit",
+      expectedRevision: mutation.expectedRevision,
+      patch: patchProfileFromStudioMutation(mutation, current),
+    });
+    return projectAgentProfileStudioSnapshot(result.snapshot);
   }
 
   async commitAgentProfileLifecycle(

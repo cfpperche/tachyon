@@ -76,6 +76,10 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined> {
     return this.studio.studioSubmit(submit);
   }
+  inspectAgentProfileStudio(agent: string) { return this.studio.inspectAgentProfileStudio(agent); }
+  commitAgentProfileStudio(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudio"]>[0]) {
+    return this.studio.commitAgentProfileStudio(mutation);
+  }
   createSoulProfile(agent: string) { return this.studio.createSoulProfile(agent); }
   importSoulProfileBytes(agent: string, bytes: Buffer) { return this.studio.importSoulProfileBytes(agent, bytes); }
   replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string) {

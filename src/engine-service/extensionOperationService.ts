@@ -100,6 +100,8 @@ export async function executeExtensionQuery(
     }
     case "agent-profile.rollbackable":
       return json(listRollbackableAgentProfileMigrations(workspace.workspaceRoot));
+    case "agent-profile.studio-inspect":
+      return json(await workspace.inspectAgentProfileStudio(query.agent));
     case "bridge.token":
       return json({ token: workspace.externalToken ?? null, authEnabled: workspace.authEnabled });
     case "companion.status": {
@@ -352,6 +354,8 @@ export async function executeExtensionCommand(
       return json(await workspace.migrateAgentProfile(command.agent, command.nonSecretEnv));
     case "agent-profile.rollback":
       return json(await workspace.rollbackAgentProfileMigration(command.txid));
+    case "agent-profile.studio-commit":
+      return json(await workspace.commitAgentProfileStudio(command.mutation));
     case "config.command.delete":
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => deleteCommand(text ?? "", command.name),

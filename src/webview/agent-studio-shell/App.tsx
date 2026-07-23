@@ -13,6 +13,7 @@ import {
   agentStudioTitleFor,
   blankAgentFields,
   computeAgentDirty,
+  serializeAgentPatch,
   isAllowedSoulImportFileName,
   validateAgentStudioHostDomainMessage,
 } from "./domain";
@@ -46,6 +47,7 @@ import type {
   AgentStudioEntity,
   AgentStudioFields,
   AgentStudioHostMessage,
+  AgentStudioPatch,
   SoulProfileStatusMessage,
 } from "./types";
 
@@ -201,7 +203,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
 
   const { frozen, saving: saveInFlight, frozenRef, freezeForSave } = useStudioFreeze({
     post: dispatch.post,
-    getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: dirtyRef.current ? fieldsRef.current : undefined }),
+    getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: serializeAgentPatch(fieldsRef.current, dirtyRef.current) }),
   });
 
   // Re-handshake whenever the binding identity changes (fresh mount OR a same-route re-entry the
@@ -284,9 +286,24 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setReady(true);
     } else if (d.type === "restore") {
       if (d.snapshot?.patch) {
-        fieldsRef.current = d.snapshot.patch;
-        dirtyRef.current = computeAgentDirty(entityRef.current, d.snapshot.patch);
-        setFields(d.snapshot.patch);
+        const patch: AgentStudioPatch = d.snapshot.patch;
+        const restored: AgentStudioFields = patch.kind === "canonical"
+          ? {
+              ...(entityRef.current?.fields ?? blankAgentFields()),
+              name: patch.agentName,
+              cmd: patch.editable.runtime.executable,
+              role: patch.editable.role,
+              canonical: {
+                kind: "canonical",
+                ...(patch.expectedRevision ? { expectedRevision: patch.expectedRevision } : {}),
+                displayName: patch.editable.displayName,
+                runtime: { ...patch.editable.runtime },
+              },
+            }
+          : patch;
+        fieldsRef.current = restored;
+        dirtyRef.current = computeAgentDirty(entityRef.current, restored);
+        setFields(restored);
       }
     } else if (d.type === "cwd") {
       setHostError(undefined);
@@ -364,7 +381,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     if (!ready || frozen) return;
     editRevisionRef.current += 1;
     post(dirtyMessage(dirty));
-    post(patchMessage(fields, editRevisionRef.current));
+    post(patchMessage(serializeAgentPatch(fields, true)!, editRevisionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields, frozen]);
 
@@ -416,6 +433,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   };
 
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];
+  const canonical = fields.canonical !== undefined;
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
   const showHarnessRules = harnessRuntime === "claude";
@@ -699,7 +717,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             <div class="ash-grid ash-grid-compact">
               <div class="ash-field">
                 <label class="ash-label" for="ash-name">Name</label>
-                <Input id="ash-name" value={fields.name} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
+                <Input id="ash-name" value={fields.name} disabled={canonical && mode === "edit"} placeholder="frontend, revisor, dev..." onInput={(e) => set("name", (e.currentTarget as HTMLInputElement).value)} />
               </div>
 
               <div class="ash-field">
@@ -718,23 +736,24 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             <div class="ash-group">
               <label class="ash-label" for="ash-cmd">Command</label>
               <Input id="ash-cmd" value={fields.cmd} placeholder="claude · codex · agy · npm run dev" onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
-              <div class="ash-chips">
+              {!canonical && <div class="ash-chips">
                 {flags.map((flag) => (
                   <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
                 ))}
-              </div>
+              </div>}
             </div>
 
-            <details open={!!fields.instructions}>
+            {!canonical && <details open={!!fields.instructions}>
               <summary>Persistent instructions</summary>
               <Textarea rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
               <div class="hint">{entity.persistentInstructionsHelp}</div>
-            </details>
+            </details>}
 
             <EvolutionSection
               labels={entity.evolutionLabels}
               savedAgent={savedAgent}
               enabled={fields.selfEvolution}
+              toggleDisabled={canonical}
               summary={evolutionSummary}
               candidates={evolutionCandidates}
               detail={evolutionDetail}
@@ -747,7 +766,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               onReject={(detail) => resolveEvolutionCandidate(detail, "reject")}
             />
 
-            <div class="checks ash-check-grid">
+            {!canonical && <><div class="checks ash-check-grid">
               <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>
               <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
@@ -808,7 +827,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <label class="ash-label" for="ash-hooks">Hooks (YAML)</label>
                 <Textarea id="ash-hooks" rows={4} value={fields.harnessHooks} onInput={(e) => set("harnessHooks", (e.currentTarget as HTMLTextAreaElement).value)} />
               </details>
-            )}
+            )}</>}
           </div>
         ),
       }}

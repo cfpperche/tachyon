@@ -4,6 +4,10 @@ import type {
   EvolutionStudioCandidateSummary,
   EvolutionStudioSummary,
 } from "../../evolution/studioProjection.js";
+import type {
+  AgentProfileStudioMutationV1,
+  AgentProfileStudioSnapshotV1,
+} from "../../config/agentProfileStudio.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -330,7 +334,10 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
 export interface AgentStudioEntity {
   /** undefined in "new" mode. */
   name?: string;
-  fields: FormState;
+  fields: AgentStudioFields;
+  storage?: "legacy" | "canonical";
+  /** Present only for canonical storage; redacted and never accepted as a save payload. */
+  profile?: AgentProfileStudioSnapshotV1;
   chips: QuickAddChip[];
   flagMap: Record<string, string[]>;
   defaultCwd: string;
@@ -429,8 +436,15 @@ export type AgentEvolutionSummaryMessage = EvolutionStudioSummary;
 export type AgentEvolutionCandidateSummaryMessage = EvolutionStudioCandidateSummary;
 export type AgentEvolutionCandidateDetailMessage = EvolutionStudioCandidateDetail;
 
-export type AgentStudioFields = FormState;
-export type AgentStudioPatch = FormState;
+export interface AgentStudioCanonicalContext {
+  kind: "canonical";
+  expectedRevision?: string;
+  displayName: string;
+  runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
+}
+
+export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalContext };
+export type AgentStudioPatch = FormState | (AgentProfileStudioMutationV1 & Partial<Omit<FormState, "kind">>);
 
 /** A blank agent-kind FormState.
  *  (attention on by default, no harness/worktree). */
@@ -470,16 +484,49 @@ export function blankAgentFields(): FormState {
   };
 }
 
-export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: FormState): boolean {
+export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): AgentStudioFields {
+  const fields = blankAgentFields() as AgentStudioFields;
+  fields.name = snapshot?.agentName ?? "";
+  fields.cmd = snapshot?.editable.runtime.executable ?? "";
+  fields.role = snapshot?.editable.role ?? "";
+  fields.soul = snapshot?.bindings.prompt.soul ?? false;
+  fields.selfEvolution = snapshot?.bindings.prompt.evolution ?? false;
+  fields.canonical = {
+    kind: "canonical",
+    ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
+    displayName: snapshot?.editable.displayName ?? "",
+    runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
+  };
+  return fields;
+}
+
+export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: AgentStudioFields): boolean {
   const base = entity?.fields ?? blankAgentFields();
   return JSON.stringify(base) !== JSON.stringify(fields);
 }
 
-export function serializeAgentPatch(fields: FormState, dirty: boolean): FormState | undefined {
-  return dirty ? fields : undefined;
+export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): AgentStudioPatch | undefined {
+  if (!dirty) return undefined;
+  if (!fields.canonical) return fields;
+  const executable = fields.cmd.trim();
+  const adapter = fields.canonical.expectedRevision
+    ? fields.canonical.runtime.adapter
+    : executable.split(/[\\/]/).pop() ?? executable;
+  return {
+    schemaVersion: 1,
+    kind: "canonical",
+    agentName: fields.name,
+    ...(fields.canonical.expectedRevision ? { expectedRevision: fields.canonical.expectedRevision } : {}),
+    editable: {
+      displayName: fields.canonical.displayName,
+      runtime: { ...fields.canonical.runtime, adapter, executable },
+      role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
+    },
+  };
 }
 
-export function canDiscardAgentFields(fields: FormState): boolean {
+export function canDiscardAgentFields(fields: AgentStudioFields): boolean {
+  if (fields.canonical) return fields.name.length === 0 && fields.cmd.length === 0 && fields.role.length === 0;
   return JSON.stringify(fields) === JSON.stringify(blankAgentFields());
 }
 

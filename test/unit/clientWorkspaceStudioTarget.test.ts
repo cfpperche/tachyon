@@ -15,6 +15,7 @@ import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js"
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
+import type { AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 
 const roots: string[] = [];
 
@@ -23,6 +24,41 @@ afterEach(() => {
 });
 
 describe("ClientWorkspaceStudioTarget", () => {
+  it("routes canonical Studio inspect/commit through typed extension operations", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-profile-studio-"));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    const identity = projectionIdentity(root);
+    const snapshot: AgentProfileStudioSnapshotV1 = {
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "Ada",
+      agentId: "123e4567-e89b-42d3-a456-426614174000",
+      revision: "a".repeat(64),
+      enabled: false,
+      editable: { displayName: "Ada", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+      bindings: { environmentValueNames: [], secretNames: ["TOKEN"], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, externalReferences: 0 },
+      provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
+    };
+    const fake = new FakeWorkspaceClient({
+      identity,
+      snapshot: projectionSnapshot(identity),
+      query: async (query) => {
+        expect(query).toMatchObject({ method: "extension.query", input: { action: "agent-profile.studio-inspect", agent: "Ada" } });
+        return workspaceExtensionQuerySuccessV1(query as never, snapshot);
+      },
+      invoke: async (_operationId, command) => {
+        expect(command).toMatchObject({ method: "extension.invoke", input: { action: "agent-profile.studio-commit", mutation: { agentName: "Ada", expectedRevision: snapshot.revision } } });
+        return workspaceExtensionCommandSuccessV1(command as never, { ...snapshot, revision: "c".repeat(64) });
+      },
+    });
+    const target = new ClientWorkspaceStudioTarget(fake, { extensionUri: {} as StudioDeps["extensionUri"], operationId: () => "profile-studio-operation" });
+
+    await expect(target.inspectAgentProfileStudio("Ada")).resolves.toEqual(snapshot);
+    await expect(target.commitAgentProfileStudio({ schemaVersion: 1, kind: "canonical", agentName: "Ada", expectedRevision: snapshot.revision, editable: snapshot.editable }))
+      .resolves.toMatchObject({ revision: "c".repeat(64) });
+  });
+
   it("loads forms locally but routes every save through one idempotency-keyed engine command", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-"));
     roots.push(root);

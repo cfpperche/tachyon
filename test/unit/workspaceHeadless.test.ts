@@ -356,6 +356,48 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   }
 });
 
+it("creates and edits canonical Agent Studio profiles through a redacted CAS boundary", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const created = await ws.commitAgentProfileStudio({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "reviewer",
+      editable: { displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+    });
+    expect(created.enabled).toBe(false);
+    expect(created.editable.role).toBe("reviewer");
+    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
+
+    const edited = await ws.commitAgentProfileStudio({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "reviewer",
+      expectedRevision: created.revision,
+      editable: { displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester" },
+    });
+    expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
+    await expect(ws.commitAgentProfileStudio({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "reviewer",
+      expectedRevision: created.revision,
+      editable: { displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder" },
+    })).rejects.toThrow("revision conflict");
+    expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("exports, imports and clones portable profiles through the Workspace boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();

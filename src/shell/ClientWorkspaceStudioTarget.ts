@@ -27,6 +27,11 @@ import type {
   SoulProfileMutationTargetResult,
   WorkspaceAgentStudioTarget,
 } from "./WorkspacePresentation.js";
+import {
+  isAgentProfileStudioSnapshotV1,
+  type AgentProfileStudioMutationV1,
+  type AgentProfileStudioSnapshotV1,
+} from "../config/agentProfileStudio.js";
 
 type SoulProfileCommand = Extract<ExtensionCommandV1, {
   action:
@@ -114,6 +119,35 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     this.refreshConfig();
     return undefined;
   };
+
+  async inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent-profile.studio-inspect", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.studio-inspect"
+      || !isAgentProfileStudioSnapshotV1(result.value)) {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio snapshot");
+    }
+    return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
+    const result = await this.client.invoke(`agent-profile-studio:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.studio-commit", mutation },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.studio-commit"
+      || !isAgentProfileStudioSnapshotV1(result.value)) {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio commit result");
+    }
+    this.refreshConfig();
+    return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
 
   createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {
     return this.invokeSoulProfile({ action: "soul.profile.create", agent });
