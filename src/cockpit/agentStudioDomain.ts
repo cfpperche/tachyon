@@ -29,6 +29,9 @@ import {
   evolutionCandidatesMessage,
   evolutionErrorMessage,
   evolutionSummaryMessage,
+  canonicalProfileErrorMessage,
+  canonicalProfileForgottenMessage,
+  canonicalProfileSnapshotMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
 } from "../webview/agent-studio-shell/messages.js";
@@ -38,7 +41,9 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   const m = validateAgentStudioInboundMessage(message);
   if (!m) {
     const type = typeof message.type === "string" ? message.type : "";
-    if (type.toLowerCase().includes("evolution")) {
+    if (type.toLowerCase().includes("canonicalprofile")) {
+      postCanonicalProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed canonical profile message"));
+    } else if (type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Evolution message"));
     } else {
       postProfileError(ctx, ctx.entityId ?? "Agent", new SoulError("soul/path-invalid", "Rejected malformed Agent Studio profile message"));
@@ -51,11 +56,44 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   }
   const agent = ctx.entityId;
   if (!agent || m.agent !== agent) {
-    if (m.type.toLowerCase().includes("evolution")) {
+    if (m.type.toLowerCase().includes("canonicalprofile")) {
+      postCanonicalProfileError(ctx, agent ?? "Agent", new Error("Canonical profile action does not match this Agent Studio entity"));
+    } else if (m.type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, agent ?? "Agent", new Error("Evolution action does not match this saved Agent Studio entity"));
     } else {
       postProfileError(ctx, agent ?? "Agent", new SoulError("soul/path-invalid", "Profile action does not match this saved Agent Studio entity"));
     }
+    return;
+  }
+  if (m.type === "refreshCanonicalProfile") { void refreshCanonicalProfile(ws, ctx, agent); return; }
+  if (m.type === "setCanonicalProfileEnabled") {
+    void runCanonicalProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "set-enabled",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      enabled: m.enabled,
+    });
+    return;
+  }
+  if (m.type === "renameCanonicalProfile") {
+    void runCanonicalProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "rename",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      newName: m.newName,
+    });
+    return;
+  }
+  if (m.type === "forgetCanonicalProfile") {
+    void runCanonicalProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      confirmation: m.confirmation,
+    });
     return;
   }
   if (m.type === "refreshEvolution") { void refreshEvolution(ws, ctx, agent); return; }
@@ -71,6 +109,49 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "enableSoul") { void runProfileAction(ctx, agent, "enable", () => ws.enableSoulProfile(agent)); return; }
   if (m.type === "disableSoul") { void runProfileAction(ctx, agent, "disable", () => ws.disableSoulProfile(agent)); return; }
   if (m.type === "deleteSoulProfile") { void runProfileAction(ctx, agent, "delete", () => ws.deleteSoulProfile(agent)); return; }
+}
+
+async function refreshCanonicalProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
+  try {
+    ctx.post(canonicalProfileSnapshotMessage("refresh", await ws.inspectAgentProfileStudio(agent)));
+  } catch (error) {
+    postCanonicalProfileError(ctx, agent, error);
+  }
+}
+
+async function runCanonicalProfileAction(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  mutation: Parameters<WorkspaceAgentStudioTarget["commitAgentProfileStudioLifecycle"]>[0],
+): Promise<void> {
+  try {
+    const result = await ws.commitAgentProfileStudioLifecycle(mutation);
+    if (result.kind === "forgotten") {
+      ctx.post(canonicalProfileForgottenMessage(result.agentName, result.agentId));
+      return;
+    }
+    ctx.post(canonicalProfileSnapshotMessage(mutation.operation === "forget" ? "refresh" : mutation.operation, result.snapshot));
+  } catch (error) {
+    postCanonicalProfileError(ctx, mutation.agentName, error);
+    if (isRevisionConflict(error)) await refreshCanonicalProfile(ws, ctx, mutation.agentName);
+  }
+}
+
+function isRevisionConflict(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("revision")
+    && (error.message.toLowerCase().includes("conflict") || error.message.toLowerCase().includes("changed"));
+}
+
+function postCanonicalProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
+  const conflict = isRevisionConflict(error);
+  ctx.post(canonicalProfileErrorMessage(
+    agent,
+    conflict ? "agent-profile/revision-conflict" : "agent-profile/lifecycle-failed",
+    conflict
+      ? "This profile changed. The latest profile was loaded; review it before trying again."
+      : "The profile lifecycle action could not be completed.",
+    conflict,
+  ));
 }
 
 async function browse(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext): Promise<void> {

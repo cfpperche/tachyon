@@ -38,10 +38,10 @@ const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 interface FakeEntity { name: string }
 interface FakeFields { name: string }
 
-function fakeAdapter(overrides: { persisted?: boolean; onCancel?: (entityId: string | undefined) => void } = {}): StudioHostAdapter<FakeEntity, FakeFields, FakeFields> {
+function fakeAdapter(overrides: { persisted?: boolean; onCancel?: (entityId: string | undefined) => void; domainMessageNames?: readonly string[] } = {}): StudioHostAdapter<FakeEntity, FakeFields, FakeFields> {
   return {
     entityType: "fake",
-    domainMessageNames: [],
+    domainMessageNames: overrides.domainMessageNames ?? [],
     concurrency: { kind: "none" },
     allowPatchRestore: true,
     dirty: {
@@ -81,6 +81,16 @@ function scoped(mountNonce: string, msg: { type: string } & Record<string, unkno
 }
 
 describe("abandonProvisionalIfNeeded (t-610705, D2)", () => {
+  it("decodes adapter-declared domain messages instead of a host hardcoded subset", async () => {
+    const { io, mountNonce } = await openAndLoad(fakeAdapter({ domainMessageNames: ["canonicalAction"] }));
+    const received: string[] = [];
+    await expect(handleStudioMessage(io, scoped(mountNonce, { type: "canonicalAction" }), {
+      onChanged: () => {},
+      notify: () => {},
+      handleDomainMessage: (_ctx, message) => received.push(message.type),
+    })).resolves.toBe(true);
+    expect(received).toEqual(["canonicalAction"]);
+  });
   it("cancel calls onCancel for a provisional (not-yet-persisted) binding", async () => {
     const onCancel = vi.fn();
     const adapter = fakeAdapter({ persisted: false, onCancel });

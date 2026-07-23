@@ -10,7 +10,7 @@ import type {
   EvolutionStudioCandidateDetail,
   EvolutionStudioOverview,
 } from "../evolution/studioProjection.js";
-import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
+import type { AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
 export interface WorkspacePresentationTarget {
@@ -51,6 +51,7 @@ export interface SoulProfileMutationTargetResult {
 export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;
+  commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1>;
   createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
   importSoulProfileBytes(agent: string, bytes: Buffer): Promise<SoulProfileMutationTargetResult>;
   replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string): Promise<SoulProfileMutationTargetResult>;

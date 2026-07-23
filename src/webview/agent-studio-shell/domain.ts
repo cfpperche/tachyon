@@ -8,6 +8,7 @@ import type {
   AgentProfileStudioMutationV1,
   AgentProfileStudioSnapshotV1,
 } from "../../config/agentProfileStudio.js";
+import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -51,6 +52,10 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "loadEvolutionCandidate",
   "approveEvolutionCandidate",
   "rejectEvolutionCandidate",
+  "refreshCanonicalProfile",
+  "setCanonicalProfileEnabled",
+  "renameCanonicalProfile",
+  "forgetCanonicalProfile",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
@@ -62,6 +67,9 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "evolutionCandidateDetail",
   "evolutionActionResult",
   "evolutionError",
+  "canonicalProfileSnapshot",
+  "canonicalProfileForgotten",
+  "canonicalProfileError",
 ] as const;
 
 /** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
@@ -119,10 +127,17 @@ export type AgentStudioEvolutionActionMessage =
       expectedTargetDigest?: string;
     };
 
+export type AgentStudioLifecycleActionMessage =
+  | { type: "refreshCanonicalProfile"; agent: string }
+  | { type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
+  | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
+  | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string };
+
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
   | AgentStudioSoulActionMessage
-  | AgentStudioEvolutionActionMessage;
+  | AgentStudioEvolutionActionMessage
+  | AgentStudioLifecycleActionMessage;
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
@@ -134,6 +149,35 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
+  if (value.type === "refreshCanonicalProfile") {
+    return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      ? { type: "refreshCanonicalProfile", agent: value.agent }
+      : undefined;
+  }
+  if (value.type === "setCanonicalProfileEnabled") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "enabled"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.enabled === "boolean"
+      ? { type: "setCanonicalProfileEnabled", agent: value.agent, expectedRevision: value.expectedRevision, enabled: value.enabled }
+      : undefined;
+  }
+  if (value.type === "renameCanonicalProfile") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "newName"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.newName === "string" && AGENT_NAME_RE.test(value.newName)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "renameCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, newName: value.newName }
+      : undefined;
+  }
+  if (value.type === "forgetCanonicalProfile") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "confirmation"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.confirmation === "string" && AGENT_NAME_RE.test(value.confirmation)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "forgetCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, confirmation: value.confirmation }
+      : undefined;
+  }
   if (value.type === "refreshEvolution") {
     return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       ? { type: "refreshEvolution", agent: value.agent }
@@ -290,6 +334,23 @@ function isEvolutionCandidateDetail(raw: unknown): raw is AgentEvolutionCandidat
 export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
   const value = raw as Record<string, unknown>;
+  if (value.type === "canonicalProfileSnapshot") {
+    return exactKeys(value, ["type", "action", "snapshot"])
+      && ["refresh", "set-enabled", "rename"].includes(String(value.action))
+      && isAgentProfileStudioSnapshotV1(value.snapshot);
+  }
+  if (value.type === "canonicalProfileForgotten") {
+    return exactKeys(value, ["type", "agent", "agentId"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.agentId === "string" && PROFILE_ID_RE.test(value.agentId);
+  }
+  if (value.type === "canonicalProfileError") {
+    return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000
+      && typeof value.conflict === "boolean";
+  }
   if (value.type === "cwd") return exactKeys(value, ["type", "value"]) && typeof value.value === "string";
   if (value.type === "soulProfileStatus") return exactKeys(value, ["type", "status"]) && isSoulProfileStatusMessage(value.status);
   if (value.type === "soulProfileError") {

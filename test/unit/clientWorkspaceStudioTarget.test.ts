@@ -48,8 +48,17 @@ describe("ClientWorkspaceStudioTarget", () => {
         return workspaceExtensionQuerySuccessV1(query as never, snapshot);
       },
       invoke: async (_operationId, command) => {
-        expect(command).toMatchObject({ method: "extension.invoke", input: { action: "agent-profile.studio-commit", mutation: { agentName: "Ada", expectedRevision: snapshot.revision } } });
-        return workspaceExtensionCommandSuccessV1(command as never, { ...snapshot, revision: "c".repeat(64) });
+        if (command.method !== "extension.invoke") throw new Error("unexpected command");
+        if (command.input.action === "agent-profile.studio-commit") {
+          expect(command).toMatchObject({ input: { mutation: { agentName: "Ada", expectedRevision: snapshot.revision } } });
+          return workspaceExtensionCommandSuccessV1(command as never, { ...snapshot, revision: "c".repeat(64) });
+        }
+        expect(command).toMatchObject({ input: { action: "agent-profile.studio-lifecycle", mutation: { operation: "set-enabled", agentName: "Ada", expectedRevision: snapshot.revision, enabled: true } } });
+        return workspaceExtensionCommandSuccessV1(command as never, {
+          schemaVersion: 1,
+          kind: "snapshot",
+          snapshot: { ...snapshot, revision: "d".repeat(64), enabled: true },
+        });
       },
     });
     const target = new ClientWorkspaceStudioTarget(fake, { extensionUri: {} as StudioDeps["extensionUri"], operationId: () => "profile-studio-operation" });
@@ -57,6 +66,8 @@ describe("ClientWorkspaceStudioTarget", () => {
     await expect(target.inspectAgentProfileStudio("Ada")).resolves.toEqual(snapshot);
     await expect(target.commitAgentProfileStudio({ schemaVersion: 1, kind: "canonical", agentName: "Ada", expectedRevision: snapshot.revision, editable: snapshot.editable }))
       .resolves.toMatchObject({ revision: "c".repeat(64) });
+    await expect(target.commitAgentProfileStudioLifecycle({ schemaVersion: 1, operation: "set-enabled", agentName: "Ada", expectedRevision: snapshot.revision, enabled: true }))
+      .resolves.toMatchObject({ kind: "snapshot", snapshot: { revision: "d".repeat(64), enabled: true } });
   });
 
   it("loads forms locally but routes every save through one idempotency-keyed engine command", async () => {

@@ -12,6 +12,7 @@ import {
   SOUL_IMPORT_MAX_BYTES,
   agentStudioTitleFor,
   blankAgentFields,
+  canonicalAgentFields,
   computeAgentDirty,
   serializeAgentPatch,
   isAllowedSoulImportFileName,
@@ -35,6 +36,10 @@ import {
   replaceSoulMessage,
   refreshSoulMessage,
   refreshEvolutionMessage,
+  refreshCanonicalProfileMessage,
+  setCanonicalProfileEnabledMessage,
+  renameCanonicalProfileMessage,
+  forgetCanonicalProfileMessage,
   rejectEvolutionCandidateMessage,
   saveMessage,
 } from "./messages";
@@ -187,6 +192,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [evolutionDetail, setEvolutionDetail] = useState<AgentEvolutionCandidateDetailMessage | undefined>(undefined);
   const [evolutionBusy, setEvolutionBusy] = useState<string | undefined>(undefined);
   const [evolutionNotice, setEvolutionNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
+  const [profileBusy, setProfileBusy] = useState<string | undefined>(undefined);
+  const [profileNotice, setProfileNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
+  const [renameConfirmOpen, setRenameConfirmOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [forgetConfirmOpen, setForgetConfirmOpen] = useState(false);
+  const [forgetValue, setForgetValue] = useState("");
+  const [profileRetired, setProfileRetired] = useState(false);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<AgentStudioEntity | undefined>(undefined);
   const fieldsRef = useRef(fields);
@@ -195,6 +207,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const editRevisionRef = useRef(0);
   const deleteCancelButtonRef = useRef<HTMLButtonElement>(null);
   const replaceCancelButtonRef = useRef<HTMLButtonElement>(null);
+  const renameCancelButtonRef = useRef<HTMLButtonElement>(null);
+  const forgetCancelButtonRef = useRef<HTMLButtonElement>(null);
 
   const dirty = computeAgentDirty(entity, fields);
   dirtyRef.current = dirty;
@@ -229,6 +243,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setEvolutionDetail(undefined);
     setEvolutionBusy(undefined);
     setEvolutionNotice(undefined);
+    setProfileBusy(undefined);
+    setProfileNotice(undefined);
+    setRenameConfirmOpen(false);
+    setRenameValue("");
+    setForgetConfirmOpen(false);
+    setForgetValue("");
+    setProfileRetired(false);
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -274,6 +295,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEvolutionDetail(undefined);
       setEvolutionBusy(d.entity.name ? "overview" : undefined);
       setEvolutionNotice(undefined);
+      setProfileBusy(undefined);
+      setProfileNotice(undefined);
+      setRenameConfirmOpen(false);
+      setRenameValue("");
+      setForgetConfirmOpen(false);
+      setForgetValue("");
+      setProfileRetired(false);
       setReady(true);
       if (d.entity.name) {
         post(refreshSoulMessage(d.entity.name));
@@ -373,6 +401,37 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEvolutionBusy(undefined);
       if (d.conflict) setEvolutionDetail(undefined);
       setEvolutionNotice({ kind: "error", text: d.message });
+    } else if (d.type === "canonicalProfileSnapshot") {
+      const current = entityRef.current;
+      if (!current || current.storage !== "canonical") return;
+      const renamed = d.action === "rename" && current.name !== d.snapshot.agentName;
+      const nextFields = canonicalAgentFields(d.snapshot);
+      const updated = { ...current, profile: d.snapshot, fields: nextFields };
+      entityRef.current = updated;
+      fieldsRef.current = nextFields;
+      dirtyRef.current = false;
+      setEntity(updated);
+      setFields(nextFields);
+      setProfileBusy(undefined);
+      setRenameConfirmOpen(false);
+      setForgetConfirmOpen(false);
+      setProfileRetired(renamed);
+      setProfileNotice({
+        kind: "success",
+        text: renamed
+          ? `Renamed to ${d.snapshot.agentName}. Reopen the agent from the sidebar to continue editing.`
+          : d.action === "refresh" ? "Latest profile loaded." : d.snapshot.enabled ? "Agent enabled." : "Agent disabled.",
+      });
+    } else if (d.type === "canonicalProfileForgotten") {
+      if (entityRef.current?.name !== d.agent) return;
+      setProfileBusy(undefined);
+      setForgetConfirmOpen(false);
+      setProfileRetired(true);
+      setProfileNotice({ kind: "success", text: "Agent forgotten. Its recoverable retirement record was kept." });
+    } else if (d.type === "canonicalProfileError") {
+      if (entityRef.current?.name !== d.agent) return;
+      setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
+      setProfileNotice({ kind: "error", text: d.message });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incoming?.seq]);
@@ -392,6 +451,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   useEffect(() => {
     if (soulReplacePending) replaceCancelButtonRef.current?.focus();
   }, [soulReplacePending]);
+
+  useEffect(() => {
+    if (renameConfirmOpen) renameCancelButtonRef.current?.focus();
+  }, [renameConfirmOpen]);
+
+  useEffect(() => {
+    if (forgetConfirmOpen) forgetCancelButtonRef.current?.focus();
+  }, [forgetConfirmOpen]);
 
   if (!ready || !entity) {
     return (
@@ -434,6 +501,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
 
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];
   const canonical = fields.canonical !== undefined;
+  const canonicalSnapshot = entity.profile;
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
   const showHarnessRules = harnessRuntime === "claude";
@@ -517,6 +585,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       ? approveEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest)
       : rejectEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest));
   };
+  const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired;
+  const runCanonicalLifecycle = (label: string, message: object) => {
+    if (canonicalLifecycleDisabled) return;
+    setHostError(undefined);
+    setProfileNotice(undefined);
+    setProfileBusy(label);
+    post(message);
+  };
 
   const onSave = () => {
     if (frozenRef.current) return;
@@ -539,6 +615,77 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       regions={{
         fields: (
           <div class="ash-fields">
+            {canonical && mode === "edit" && (
+              <section class="ash-identity" aria-labelledby="ash-lifecycle-title">
+                <div class="ash-identity-heading">
+                  <div>
+                    <div class="ash-label" id="ash-lifecycle-title">Agent lifecycle</div>
+                    <div class="hint">Operational actions use the loaded profile revision and stay separate from form save.</div>
+                  </div>
+                  <span class={`ash-soul-state ${canonicalSnapshot?.enabled ? "ash-soul-state-active" : ""}`}>
+                    {profileRetired ? "Closed" : canonicalSnapshot?.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+                <div class="ash-identity-actions" role="group" aria-label="Agent lifecycle actions">
+                  <Button
+                    variant={canonicalSnapshot?.enabled ? "default" : "primary"}
+                    disabled={canonicalLifecycleDisabled}
+                    onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+                      canonicalSnapshot.enabled ? "Disabling agent" : "Enabling agent",
+                      setCanonicalProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
+                    )}
+                  >{canonicalSnapshot?.enabled ? "Disable agent" : "Enable agent"}</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle(
+                    "Refreshing profile",
+                    refreshCanonicalProfileMessage(canonicalSnapshot.agentName),
+                  )}>Refresh</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => {
+                    setRenameValue(canonicalSnapshot?.agentName ?? "");
+                    setRenameConfirmOpen(true);
+                    setForgetConfirmOpen(false);
+                  }}>Rename…</Button>
+                  <Button variant="danger" disabled={canonicalLifecycleDisabled} onClick={() => {
+                    setForgetValue("");
+                    setForgetConfirmOpen(true);
+                    setRenameConfirmOpen(false);
+                  }}>Forget…</Button>
+                </div>
+                {dirty && <div class="ash-soul-status">Save or discard form changes before a lifecycle action.</div>}
+                {renameConfirmOpen && canonicalSnapshot && (
+                  <div class="ash-soul-replace-confirm" aria-labelledby="ash-rename-confirm-title">
+                    <div class="ash-soul-replace-confirm-title" id="ash-rename-confirm-title">Rename this agent?</div>
+                    <label class="ash-label" for="ash-rename-value">New name</label>
+                    <Input id="ash-rename-value" value={renameValue} onInput={(event) => setRenameValue((event.currentTarget as HTMLInputElement).value)} />
+                    <div class="ash-soul-replace-confirm-actions">
+                      <Button ref={renameCancelButtonRef} onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
+                      <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
+                        "Renaming agent",
+                        renameCanonicalProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
+                      )}>Rename agent</Button>
+                    </div>
+                  </div>
+                )}
+                {forgetConfirmOpen && canonicalSnapshot && (
+                  <div class="ash-soul-delete-confirm" aria-labelledby="ash-forget-confirm-title">
+                    <div class="ash-soul-delete-confirm-title" id="ash-forget-confirm-title">Forget this agent?</div>
+                    <div>This retires the canonical profile and removes the declared agent. Type <strong>{canonicalSnapshot.agentName}</strong> to confirm.</div>
+                    <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
+                    <div class="ash-soul-delete-confirm-actions">
+                      <Button ref={forgetCancelButtonRef} onClick={() => setForgetConfirmOpen(false)}>Cancel</Button>
+                      <Button variant="danger" disabled={forgetValue !== canonicalSnapshot.agentName} onClick={() => runCanonicalLifecycle(
+                        "Forgetting agent",
+                        forgetCanonicalProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, forgetValue),
+                      )}>Forget agent</Button>
+                    </div>
+                  </div>
+                )}
+                {(profileBusy || profileNotice) && (
+                  <div class={`ash-evolution-notice ${profileNotice?.kind === "error" ? "ash-evolution-notice-error" : ""}`} role="status" aria-live="polite">
+                    {profileBusy ? `${profileBusy}…` : profileNotice?.text}
+                  </div>
+                )}
+              </section>
+            )}
             <div class="ash-group">
               <div class="ash-label">Quick add (detected on this machine)</div>
               <div class="ash-chips" role="group" aria-label="Quick add">

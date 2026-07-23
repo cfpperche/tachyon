@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   agentProfileStudioSnapshotSchemaV1,
+  agentProfileStudioLifecycleMutationSchemaV1,
+  agentProfileStudioLifecycleResultSchemaV1,
   createProfileFromStudioMutation,
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
@@ -93,5 +95,31 @@ describe("canonical Agent Studio projection", () => {
       prompt: { soul: "soul", evolution: "evolution", role: "tester" },
     });
     expect(() => patchProfileFromStudioMutation(mutation("e".repeat(64)), current)).toThrow("revision conflict");
+  });
+
+  it("keeps lifecycle operations strict, revisioned, and free of form fields", () => {
+    const setEnabled = {
+      schemaVersion: 1,
+      operation: "set-enabled",
+      agentName: "reviewer",
+      expectedRevision: "a".repeat(64),
+      enabled: true,
+    };
+    expect(agentProfileStudioLifecycleMutationSchemaV1.parse(setEnabled)).toEqual(setEnabled);
+    expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse({ ...setEnabled, editable: {} }).success).toBe(false);
+    expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse({
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: "reviewer",
+      expectedRevision: "stale",
+      confirmation: "reviewer",
+    }).success).toBe(false);
+    expect(agentProfileStudioLifecycleResultSchemaV1.safeParse({
+      schemaVersion: 1,
+      kind: "forgotten",
+      agentName: "reviewer",
+      agentId: "123e4567-e89b-42d3-a456-426614174000",
+      privatePath: "/secret",
+    }).success).toBe(false);
   });
 });

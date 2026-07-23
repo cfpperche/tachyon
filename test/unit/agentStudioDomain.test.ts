@@ -4,6 +4,7 @@ import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { SoulError } from "../../src/agents/soul.js";
 import { EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
+import type { AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 
 /**
  * t-610705 (SDD 410 Phase D, D1b) — the soul-profile/evolution domain-message DISPATCH+error-mapping
@@ -37,6 +38,20 @@ function ws(overrides: Partial<WorkspaceAgentStudioTarget> = {}): WorkspaceAgent
 
 function findType(posted: unknown[], type: string) {
   return posted.filter((m) => (m as { type?: string }).type === type);
+}
+
+function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentProfileStudioSnapshotV1 {
+  return {
+    schemaVersion: 1,
+    kind: "canonical",
+    agentName,
+    agentId: "123e4567-e89b-42d3-a456-426614174000",
+    revision,
+    enabled: false,
+    editable: { displayName: agentName, runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+    bindings: { environmentValueNames: [], secretNames: [], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, externalReferences: 0 },
+    provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
+  };
 }
 
 describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
@@ -238,5 +253,44 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     handleAgentStudioDomainMessage(target, ctx, envelope({ type: "approveEvolutionCandidate" as const, agent: "Ada", candidateId: candidate.id, expectedActiveVersion: 2 }));
     await flush();
     expect(findType(ctx.posted, "evolutionError").at(-1)).toMatchObject({ code: "evolution/promotion-conflict", conflict: true });
+  });
+
+  it("dispatches revisioned lifecycle actions and refreshes a redacted snapshot after a stale conflict", async () => {
+    const mutations: unknown[] = [];
+    const target = ws({
+      commitAgentProfileStudioLifecycle: async (mutation) => {
+        mutations.push(mutation);
+        if (mutation.expectedRevision === "a".repeat(64)) throw new Error("agent 'Ada' profile revision conflict at /private/path");
+        return { schemaVersion: 1, kind: "snapshot", snapshot: profileSnapshot("Ada", "c".repeat(64)) };
+      },
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada", "b".repeat(64)),
+    });
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "setCanonicalProfileEnabled" as const,
+      agent: "Ada",
+      expectedRevision: "a".repeat(64),
+      enabled: true,
+    }));
+    await flush();
+    expect(mutations).toEqual([expect.objectContaining({ operation: "set-enabled", agentName: "Ada", enabled: true })]);
+    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({
+      agent: "Ada",
+      code: "agent-profile/revision-conflict",
+      conflict: true,
+    });
+    expect(JSON.stringify(findType(ctx.posted, "canonicalProfileError").at(-1))).not.toContain("/private/path");
+    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1)).toMatchObject({ action: "refresh", snapshot: { revision: "b".repeat(64) } });
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "forgetCanonicalProfile" as const,
+      agent: "Ada",
+      expectedRevision: "b".repeat(64),
+      confirmation: "Bea",
+    }));
+    await flush();
+    expect(mutations).toHaveLength(2);
+    expect(mutations[1]).toMatchObject({ operation: "forget", confirmation: "Bea" });
   });
 });

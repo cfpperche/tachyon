@@ -290,7 +290,7 @@ export interface StudioMessageHooks {
 export async function handleStudioMessage(io: StudioHostIO, raw: unknown, hooks: StudioMessageHooks): Promise<boolean> {
   const b = binding;
   if (!b) return false;
-  const decoded = decodeStudioMessage<{ type: string; routeKey?: string; mountNonce?: string; patch?: unknown; editRevision?: number; dirty?: boolean }>(raw, ["browse", "cwd"]);
+  const decoded = decodeStudioMessage<{ type: string; routeKey?: string; mountNonce?: string; patch?: unknown; editRevision?: number; dirty?: boolean }>(raw, b.adapter.domainMessageNames);
   if (!decoded.ok || !decoded.message) return false;
   const msg = decoded.message;
   // t-610705 (Phase D, D0, round-5 blocker) — EVERY binding-scoped message must match the CURRENT

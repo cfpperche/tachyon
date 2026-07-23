@@ -356,6 +356,8 @@ export async function executeExtensionCommand(
       return json(await workspace.rollbackAgentProfileMigration(command.txid));
     case "agent-profile.studio-commit":
       return json(await workspace.commitAgentProfileStudio(command.mutation));
+    case "agent-profile.studio-lifecycle":
+      return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "config.command.delete":
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => deleteCommand(text ?? "", command.name),

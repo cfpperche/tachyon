@@ -29,6 +29,9 @@ import type {
 } from "./WorkspacePresentation.js";
 import {
   isAgentProfileStudioSnapshotV1,
+  agentProfileStudioLifecycleResultSchemaV1,
+  type AgentProfileStudioLifecycleMutationV1,
+  type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
@@ -147,6 +150,22 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     }
     this.refreshConfig();
     return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1> {
+    const result = await this.client.invoke(`agent-profile-studio-lifecycle:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.studio-lifecycle", mutation },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.studio-lifecycle") {
+      throw new Error("persistent engine returned a malformed canonical Agent Studio lifecycle result");
+    }
+    const parsed = agentProfileStudioLifecycleResultSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed canonical Agent Studio lifecycle result");
+    this.refreshConfig();
+    return structuredClone(parsed.data);
   }
 
   createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult> {

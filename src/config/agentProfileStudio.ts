@@ -30,6 +30,41 @@ export const agentProfileStudioMutationSchemaV1 = z.object({
 export type AgentProfileStudioEditableV1 = z.infer<typeof agentProfileStudioEditableSchemaV1>;
 export type AgentProfileStudioMutationV1 = z.infer<typeof agentProfileStudioMutationSchemaV1>;
 
+const studioAgentName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
+
+export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion("operation", [
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("set-enabled"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    enabled: z.boolean(),
+  }).strict(),
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("rename"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    newName: studioAgentName,
+  }).strict(),
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("forget"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    confirmation: studioAgentName,
+  }).strict(),
+]);
+
+export type AgentProfileStudioLifecycleMutationV1 = z.infer<typeof agentProfileStudioLifecycleMutationSchemaV1>;
+
+export const agentProfileStudioLifecycleResultSchemaV1 = z.union([
+  z.object({ schemaVersion: z.literal(1), kind: z.literal("snapshot"), snapshot: z.lazy(() => agentProfileStudioSnapshotSchemaV1) }).strict(),
+  z.object({ schemaVersion: z.literal(1), kind: z.literal("forgotten"), agentName: studioAgentName, agentId: z.string().uuid() }).strict(),
+]);
+
+export type AgentProfileStudioLifecycleResultV1 = z.infer<typeof agentProfileStudioLifecycleResultSchemaV1>;
+
 export const agentProfileStudioSnapshotSchemaV1 = z.object({
   schemaVersion: z.literal(1),
   kind: z.literal("canonical"),

@@ -398,6 +398,67 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
   }
 });
 
+it("runs canonical Agent Studio lifecycle actions with revision checks and explicit forget confirmation", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  const ws = await Workspace.createForTest(
+    root,
+    { host: new SharedSecretHost(mkdir(), new Map()), onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const created = await ws.commitAgentProfileStudio({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "reviewer",
+      editable: { displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer" },
+    });
+    await expect(ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "set-enabled",
+      agentName: "reviewer",
+      expectedRevision: "f".repeat(64),
+      enabled: true,
+    })).rejects.toThrow("revision conflict");
+    const enabled = await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "set-enabled",
+      agentName: "reviewer",
+      expectedRevision: created.revision,
+      enabled: true,
+    });
+    expect(enabled).toMatchObject({ kind: "snapshot", snapshot: { enabled: true } });
+    if (enabled.kind !== "snapshot") throw new Error("unreachable");
+    const renamed = await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "rename",
+      agentName: "reviewer",
+      expectedRevision: enabled.snapshot.revision,
+      newName: "maintainer",
+    });
+    expect(renamed).toMatchObject({ kind: "snapshot", snapshot: { agentName: "maintainer", agentId: created.agentId } });
+    if (renamed.kind !== "snapshot") throw new Error("unreachable");
+    await expect(ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: "maintainer",
+      expectedRevision: renamed.snapshot.revision,
+      confirmation: "reviewer",
+    })).rejects.toThrow("confirmation mismatch");
+    const forgotten = await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: "maintainer",
+      expectedRevision: renamed.snapshot.revision,
+      confirmation: "maintainer",
+    });
+    expect(forgotten).toEqual({ schemaVersion: 1, kind: "forgotten", agentName: "maintainer", agentId: created.agentId });
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("exports, imports and clones portable profiles through the Workspace boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();

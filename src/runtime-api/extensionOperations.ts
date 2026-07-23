@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ScheduleDef } from "../config/loadConfig.js";
 import { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "./stagedPayload.js";
-import { agentProfileStudioMutationSchemaV1 } from "../config/agentProfileStudio.js";
+import { agentProfileStudioLifecycleMutationSchemaV1, agentProfileStudioMutationSchemaV1 } from "../config/agentProfileStudio.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256);
@@ -55,7 +55,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
   "legacy-delivery.retirement-apply",
-  "agent-profile.migrate", "agent-profile.rollback", "agent-profile.studio-commit",
+  "agent-profile.migrate", "agent-profile.rollback", "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -134,6 +134,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("agent-profile.migrate"), agent: name, nonSecretEnv: z.array(envName).max(256) }).strict(),
   z.object({ action: z.literal("agent-profile.rollback"), txid: z.string().uuid() }).strict(),
   z.object({ action: z.literal("agent-profile.studio-commit"), mutation: agentProfileStudioMutationSchemaV1 }).strict(),
+  z.object({ action: z.literal("agent-profile.studio-lifecycle"), mutation: agentProfileStudioLifecycleMutationSchemaV1 }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),

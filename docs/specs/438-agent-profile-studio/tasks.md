@@ -9,6 +9,10 @@ _Generated from `plan.md` on 2026-07-22. Work top-to-bottom. Check boxes as task
 - [x] Create `t-293326` for enable/disable/rename/forget actions.
 - [x] Create `t-ecd405` for portable clone/import/export actions.
 - [x] Create `t-fa332a` for provenance UI, localization, accessibility and final proof.
+- [x] Complete `t-fdb422`: canonical redacted snapshot and CAS create/edit.
+- [x] Complete `t-293326`: revisioned enable/disable, rename and confirmed forget actions.
+- [ ] Complete `t-ecd405`: portable clone/import/export actions.
+- [ ] Complete `t-fa332a`: final presentation and proof.
 - [ ] Complete all four child Tasks without routing canonical writes through legacy YAML submit.
 
 ## Verification

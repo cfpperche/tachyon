@@ -59,6 +59,8 @@ import {
   createProfileFromStudioMutation,
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
+  type AgentProfileStudioLifecycleMutationV1,
+  type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
@@ -3565,10 +3567,13 @@ export class Workspace {
   }
 
   /** Recoverable retirement for a profile-backed declared agent. */
-  async forgetCanonicalProfileAgent(name: string): Promise<AgentProfileForgetResult> {
+  async forgetCanonicalProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
     const lifecycle = this.config?.agents[name]?.profileLifecycle;
     if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const inspected = await this.inspectAgentProfileLifecycle(name);
+    if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
+      throw new Error(`agent '${name}' profile revision conflict`);
+    }
     const wasOpen = this.terminals.has(name);
     if (wasOpen) this.terminals.close(name);
     try {
@@ -4755,6 +4760,27 @@ export class Workspace {
     return projectAgentProfileStudioSnapshot(result.snapshot);
   }
 
+  async commitAgentProfileStudioLifecycle(
+    mutation: AgentProfileStudioLifecycleMutationV1,
+  ): Promise<AgentProfileStudioLifecycleResultV1> {
+    if (mutation.operation === "set-enabled") {
+      const result = await this.commitAgentProfileLifecycle({
+        agentName: mutation.agentName,
+        operation: "set-enabled",
+        expectedRevision: mutation.expectedRevision,
+        enabled: mutation.enabled,
+      });
+      return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
+    }
+    if (mutation.operation === "rename") {
+      await this.renameAgent(mutation.agentName, mutation.newName, mutation.expectedRevision);
+      return { schemaVersion: 1, kind: "snapshot", snapshot: await this.inspectAgentProfileStudio(mutation.newName) };
+    }
+    if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
+    const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
+    return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
+  }
+
   async commitAgentProfileLifecycle(
     input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
   ): Promise<AgentProfileLifecycleCommitResult> {
@@ -5626,11 +5652,14 @@ export class Workspace {
    * pane is reopened under the new name (terminal titles can't change in place).
    * Attention state self-heals on the next tick; watchers rebuild on reload.
    */
-  async renameAgent(oldName: string, newName: string): Promise<void> {
+  async renameAgent(oldName: string, newName: string, expectedRevision?: string): Promise<void> {
     const profileLifecycle = this.config?.agents[oldName]?.profileLifecycle;
     if (profileLifecycle) {
-      const liveSnapshot = await this.manager.prepareCanonicalProfileRename(oldName, newName);
       const inspected = await this.inspectAgentProfileLifecycle(oldName);
+      if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
+        throw new Error(`agent '${oldName}' profile revision conflict`);
+      }
+      const liveSnapshot = await this.manager.prepareCanonicalProfileRename(oldName, newName);
       const wasOpen = this.terminals.has(oldName);
       if (wasOpen) this.terminals.close(oldName);
       try {
