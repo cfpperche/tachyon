@@ -19,18 +19,24 @@ import {
 } from "./protocol.js";
 import { buildCompanionMobileOpenUrl, buildCompanionPairQrPayload } from "./pairQr.js";
 
+export type CompanionPairBlockReason = "bridge_down" | "tailscale_required";
+
 export interface CompanionPairingServiceOptions {
   /** Human-readable workspace label for the extension UI. */
   engineLabel: string;
   /** Stable engine/workspace id (e.g. wsHash). */
   engineId: string;
-  /** Returns current primary base URL, or undefined if Bridge is down. */
+  /** Returns current primary base URL, or undefined if pairing is not possible. */
   getBaseUrl: () => string | undefined;
   /**
-   * Optional multi-URL candidates (loopback + LAN). Defaults to [getBaseUrl()].
-   * SDD 422 — Control QR / mobile multi-NIC selection.
+   * URL candidates for the pair payload (mobile: single Tailscale URL).
+   * Defaults to [getBaseUrl()] when omitted.
    */
   getBaseUrlCandidates?: () => string[] | undefined;
+  /**
+   * When getBaseUrl() is undefined, optional reason for Control (Tailscale vs Bridge).
+   */
+  getPairBlockReason?: () => CompanionPairBlockReason | undefined;
   now?: () => number;
   pairCodeTtlMs?: number;
   sessionTtlMs?: number;
@@ -99,8 +105,11 @@ export class CompanionPairingService {
    * Mint a new short-lived pair code. Invalidates any previous unused code.
    * Does not invalidate an existing companion session until a new pair succeeds.
    */
-  issuePairCode(): IssuedPairCode | { ok: false; reason: "bridge_down" } {
-    if (!this.options.getBaseUrl()) return { ok: false, reason: "bridge_down" };
+  issuePairCode(): IssuedPairCode | { ok: false; reason: CompanionPairBlockReason } {
+    const base = this.options.getBaseUrl();
+    if (!base) {
+      return { ok: false, reason: this.options.getPairBlockReason?.() ?? "bridge_down" };
+    }
     const code = newPairCode();
     const expiresAtMs = this.now() + this.pairCodeTtlMs;
     this.pending = { code, expiresAtMs };

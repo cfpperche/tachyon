@@ -672,6 +672,10 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
       failure: workspace.bridgeStartFailureInfo(),
     },
     companionLanAccess: workspace.config?.settings.companion?.lanAccess === true,
+    companionTailscaleReady:
+      workspace.config?.settings.companion?.lanAccess === true
+        ? !!(await import("../companion/lanReachability.js")).resolveTailscaleIPv4()
+        : undefined,
     transcriptPresence,
     mechanismOnlyDelivery: true,
   });

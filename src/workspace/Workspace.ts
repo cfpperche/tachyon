@@ -75,7 +75,9 @@ import {
   companionListenHost,
   companionPairBaseUrl,
   companionPairBaseUrlCandidates,
+  resolveTailscaleIPv4,
 } from "../companion/lanReachability.js";
+import type { CompanionPairBlockReason } from "../companion/CompanionPairingService.js";
 import { resolveCompanionMobileDist } from "../companion/mobileAppStatic.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
@@ -1530,14 +1532,22 @@ export class Workspace {
       getBaseUrl: () => {
         const port = this.bridge.listenerPort;
         if (port === undefined) return undefined;
-        const lanAccess = this.config?.settings.companion?.lanAccess === true;
-        return companionPairBaseUrl(port, lanAccess);
+        // lanAccess = mobile Companion via Tailscale (not multi-NIC Wi‑Fi).
+        const mobile = this.config?.settings.companion?.lanAccess === true;
+        return companionPairBaseUrl(port, mobile);
       },
       getBaseUrlCandidates: () => {
         const port = this.bridge.listenerPort;
         if (port === undefined) return undefined;
-        const lanAccess = this.config?.settings.companion?.lanAccess === true;
-        return companionPairBaseUrlCandidates(port, lanAccess);
+        const mobile = this.config?.settings.companion?.lanAccess === true;
+        return companionPairBaseUrlCandidates(port, mobile);
+      },
+      getPairBlockReason: () => {
+        if (this.bridge.listenerPort === undefined) return "bridge_down";
+        if (this.config?.settings.companion?.lanAccess === true && !resolveTailscaleIPv4()) {
+          return "tailscale_required";
+        }
+        return undefined;
       },
     });
     this.companionLive = new CompanionLiveSync({
@@ -2792,8 +2802,8 @@ export class Workspace {
   }
 
   /**
-   * SDD 414/422 — companion pair base URL (no path). Loopback by default;
-   * LAN IPv4 when settings.companion.lanAccess is true.
+   * SDD 414/422 — companion pair base URL (no path).
+   * Loopback when mobile off; Tailscale mesh IP when lanAccess (mobile) on.
    */
   companionBaseUrl(): string | undefined {
     const port = this.bridge.listenerPort;
@@ -2801,15 +2811,15 @@ export class Workspace {
     return companionPairBaseUrl(port, this.config?.settings.companion?.lanAccess === true);
   }
 
-  /** SDD 422 — all pair base URL candidates (for QR multi-NIC UI). */
+  /** SDD 422 — pair URL candidates (single Tailscale URL when mobile on). */
   companionBaseUrlCandidates(): string[] {
     const port = this.bridge.listenerPort;
     if (port === undefined) return [];
     return companionPairBaseUrlCandidates(port, this.config?.settings.companion?.lanAccess === true);
   }
 
-  /** SDD 414 — mint a short-lived pair code for Tachyon Companion. */
-  issueCompanionPairCode(): IssuedPairCode | { ok: false; reason: "bridge_down" } {
+  /** SDD 414/422 — mint a short-lived pair code for Tachyon Companion. */
+  issueCompanionPairCode(): IssuedPairCode | { ok: false; reason: CompanionPairBlockReason } {
     return this.companion.issuePairCode();
   }
 

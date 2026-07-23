@@ -423,12 +423,12 @@ export interface TachyonConfig {
     /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
     taskNotifications?: TaskNotificationSettingsInput;
     /**
-     * SDD 414/422 — Companion shells (browser tab tools + mobile LAN reachability).
+     * SDD 414/422 — Companion shells (browser tab tools + mobile via Tailscale).
      * Human opt-in: when tabTools is true, tools are always listed on the Bridge;
      * calls still require a paired Companion device (clear not_paired error otherwise).
-     * lanAccess (SDD 422): when true, Bridge binds 0.0.0.0 so LAN clients can reach
-     * /companion/v1 (default false = loopback-only). MCP still requires agent tokens.
-     * Default absent/false = tools not registered (no list pollution); loopback bind.
+     * lanAccess (SDD 422): when true, mobile Companion via Tailscale — Bridge binds 0.0.0.0 so mesh
+     * clients can reach /companion/*; pair QR uses Tailscale IP only (not multi-NIC Wi‑Fi).
+     * Default false = loopback-only (browser Companion). MCP still requires agent tokens.
      */
     companion?: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean };
   };

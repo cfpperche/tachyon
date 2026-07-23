@@ -5,6 +5,8 @@ settings:
   # List user_browser_* on the Bridge so agents can discover them; pair still required to execute.
   companion:
     tabTools: true
+    # SDD 422 mobile — Tailscale mesh (PC + phone same tailnet). Not multi-NIC Wi‑Fi.
+    lanAccess: true
     allowedHosts:
       - the-internet.herokuapp.com
       - "*.herokuapp.com"

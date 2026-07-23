@@ -483,7 +483,7 @@
             "lanAccess": {
               "type": "boolean",
               "default": false,
-              "description": "SDD 422: when true, the Bridge/companion HTTP listener binds all interfaces (0.0.0.0) so a phone on the LAN can reach /companion/v1. Default false keeps loopback-only (127.0.0.1). MCP on the same port still requires agent/bridge auth. Doctor warns when enabled."
+              "description": "SDD 422 mobile Companion: when true, enable phone pairing via Tailscale (PC + phone on the same tailnet). Bridge binds 0.0.0.0 so the mesh can reach /companion/v1 and /companion/app; pair QR uses the Tailscale IP only (not multi-NIC Wi‑Fi). Requires the Tailscale app on both devices. Default false = loopback-only (browser Companion / same host). MCP still requires agent/bridge auth. Doctor warns when enabled without Tailscale."
             }
           }
         },

@@ -253,7 +253,7 @@ export function setCompanionTabTools(text: string | undefined, enabled: boolean)
 }
 
 /**
- * SDD 422 — set settings.companion.lanAccess (phone LAN reachability).
+ * SDD 422 — set settings.companion.lanAccess (mobile Companion via Tailscale).
  * Persists explicit true/false so the opt-in is visible in tachyon.yml.
  */
 export function setCompanionLanAccess(text: string | undefined, enabled: boolean): EditResult {

@@ -57,7 +57,7 @@ describe("tachyon.schema.json — settings.companion", () => {
     expect(tabTools).toMatchObject({ type: "boolean", default: false });
     expect(tabTools?.description).toMatch(/user_browser_/);
     expect(lanAccess).toMatchObject({ type: "boolean", default: false });
-    expect(lanAccess?.description).toMatch(/LAN|lan|0\.0\.0\.0|loopback/i);
+    expect(lanAccess?.description).toMatch(/Tailscale|tailscale|0\.0\.0\.0|loopback/i);
     expect(Object.keys(companion?.properties ?? {}).sort()).toEqual([
       "allowedHosts",
       "lanAccess",

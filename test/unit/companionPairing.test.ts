@@ -44,19 +44,28 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     );
   });
 
-  it("includes LAN baseUrl candidates when provided (SDD 422)", () => {
+  it("uses single Tailscale baseUrl when candidates provided (SDD 422 mobile)", () => {
     const svc = new CompanionPairingService({
       engineLabel: "demo",
       engineId: "abc123",
-      getBaseUrl: () => "http://10.0.0.5:41000",
-      getBaseUrlCandidates: () => ["http://127.0.0.1:41000", "http://10.0.0.5:41000", "http://192.168.1.9:41000"],
+      getBaseUrl: () => "http://100.64.1.2:41000",
+      getBaseUrlCandidates: () => ["http://100.64.1.2:41000"],
     });
     const issued = svc.issuePairCode();
     if ("ok" in issued) throw new Error("expected success");
-    expect(issued.baseUrl).toBe("http://10.0.0.5:41000");
-    expect(issued.baseUrls[0]).toBe("http://10.0.0.5:41000");
-    expect(issued.baseUrls).toContain("http://127.0.0.1:41000");
-    expect(issued.baseUrls).toContain("http://192.168.1.9:41000");
+    expect(issued.baseUrl).toBe("http://100.64.1.2:41000");
+    expect(issued.baseUrls).toEqual(["http://100.64.1.2:41000"]);
+    expect(issued.openUrl.startsWith("http://100.64.1.2:41000/companion/app/#pair=")).toBe(true);
+  });
+
+  it("returns tailscale_required when block reason is set", () => {
+    const svc = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "abc123",
+      getBaseUrl: () => undefined,
+      getPairBlockReason: () => "tailscale_required",
+    });
+    expect(svc.issuePairCode()).toEqual({ ok: false, reason: "tailscale_required" });
   });
 
   it("pairs with a valid code and replaces a prior session (one active pair)", () => {

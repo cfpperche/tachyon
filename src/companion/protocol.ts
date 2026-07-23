@@ -82,13 +82,12 @@ export interface IssuedPairCode {
   code: string;
   expiresAt: string;
   /**
-   * Primary base URL (no path) for pairing — loopback when lanAccess is off;
-   * preferred LAN IPv4 when on (SDD 422).
+   * Primary base URL (no path) for pairing — loopback when mobile off;
+   * Tailscale mesh IP when settings.companion.lanAccess is on (SDD 422).
    */
   baseUrl: string;
   /**
-   * All base URL candidates (loopback + LAN IPv4s when lanAccess). Mobile QR and
-   * Control UI list these so multi-NIC hosts can pick a reachable address.
+   * Pair URL candidates. Mobile: single Tailscale URL only (no multi-NIC Wi‑Fi list).
    */
   baseUrls: string[];
   protocolVersion: number;
@@ -98,7 +97,7 @@ export interface IssuedPairCode {
   qrPayload: string;
   /**
    * URL the phone should open when scanning the QR (engine-served PWA + #pair= payload).
-   * Example: http://192.168.1.10:41000/companion/app/#pair=%7B%22type%22...
+   * Example: http://100.x.y.z:41000/companion/app/#pair=%7B%22type%22...
    */
   openUrl: string;
 }

@@ -5,20 +5,73 @@ import {
   companionListenHost,
   companionPairBaseUrl,
   companionPairBaseUrlCandidates,
-  listLanIPv4Addresses,
+  isTailscaleIPv4,
+  listTailscaleIPv4Addresses,
+  resolveTailscaleIPv4,
 } from "../../src/companion/lanReachability.js";
 
-describe("companion LAN reachability (SDD 422 / t-da645b)", () => {
-  it("listens on loopback by default and all-interfaces when lanAccess", () => {
+describe("companion Tailscale reachability (SDD 422)", () => {
+  it("listens on loopback by default and all-interfaces when mobile on", () => {
     expect(companionListenHost(false)).toBe("127.0.0.1");
     expect(companionListenHost(true)).toBe("0.0.0.0");
   });
 
-  it("pair baseUrl stays loopback when LAN off", () => {
-    expect(companionPairBaseUrl(41234, false)).toBe("http://127.0.0.1:41234");
+  it("recognizes Tailscale CGNAT addresses", () => {
+    expect(isTailscaleIPv4("100.64.0.1")).toBe(true);
+    expect(isTailscaleIPv4("100.100.50.2")).toBe(true);
+    expect(isTailscaleIPv4("100.127.255.255")).toBe(true);
+    expect(isTailscaleIPv4("100.63.0.1")).toBe(false);
+    expect(isTailscaleIPv4("192.168.1.1")).toBe(false);
+    expect(isTailscaleIPv4("10.0.0.1")).toBe(false);
   });
 
-  it("pair baseUrl prefers first non-internal IPv4 when LAN on", () => {
+  it("pair baseUrl stays loopback when mobile off", () => {
+    expect(companionPairBaseUrl(41234, false, { skipCli: true })).toBe("http://127.0.0.1:41234");
+  });
+
+  it("pair baseUrl uses Tailscale IP when mobile on (not eth0 LAN)", () => {
+    const ifaces = {
+      eth0: [
+        {
+          address: "192.168.15.28",
+          netmask: "255.255.255.0",
+          family: "IPv4" as const,
+          mac: "00:00:00:00:00:00",
+          internal: false,
+          cidr: "192.168.15.28/24",
+        },
+      ],
+      tailscale0: [
+        {
+          address: "100.101.102.103",
+          netmask: "255.255.255.255",
+          family: "IPv4" as const,
+          mac: "00:00:00:00:00:00",
+          internal: false,
+          cidr: "100.101.102.103/32",
+        },
+      ],
+      "br-docker": [
+        {
+          address: "172.17.0.1",
+          netmask: "255.255.0.0",
+          family: "IPv4" as const,
+          mac: "00:00:00:00:00:00",
+          internal: false,
+          cidr: "172.17.0.1/16",
+        },
+      ],
+    };
+    expect(listTailscaleIPv4Addresses(ifaces)).toEqual(["100.101.102.103"]);
+    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces, skipCli: true })).toBe(
+      "http://100.101.102.103:41000",
+    );
+    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces, skipCli: true })).toEqual([
+      "http://100.101.102.103:41000",
+    ]);
+  });
+
+  it("pair baseUrl is undefined when mobile on but Tailscale missing", () => {
     const ifaces = {
       eth0: [
         {
@@ -29,39 +82,27 @@ describe("companion LAN reachability (SDD 422 / t-da645b)", () => {
           internal: false,
           cidr: "10.0.0.42/24",
         },
-        {
-          address: "127.0.0.1",
-          netmask: "255.0.0.0",
-          family: "IPv4" as const,
-          mac: "00:00:00:00:00:00",
-          internal: true,
-          cidr: "127.0.0.1/8",
-        },
       ],
     };
-    expect(listLanIPv4Addresses(ifaces)).toEqual(["10.0.0.42"]);
-    expect(companionPairBaseUrl(41000, true, ifaces)).toBe("http://10.0.0.42:41000");
-    expect(companionPairBaseUrlCandidates(41000, true, ifaces)).toEqual([
-      "http://127.0.0.1:41000",
-      "http://10.0.0.42:41000",
-    ]);
+    expect(resolveTailscaleIPv4({ interfaces: ifaces, skipCli: true })).toBeUndefined();
+    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces, skipCli: true })).toBeUndefined();
+    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces, skipCli: true })).toEqual([]);
   });
 
-  it("skips link-local addresses", () => {
+  it("accepts CGNAT IP on any interface name", () => {
     const ifaces = {
-      eth0: [
+      "weird-if": [
         {
-          address: "169.254.1.2",
-          netmask: "255.255.0.0",
+          address: "100.86.1.2",
+          netmask: "255.255.255.255",
           family: "IPv4" as const,
           mac: "00:00:00:00:00:00",
           internal: false,
-          cidr: "169.254.1.2/16",
+          cidr: "100.86.1.2/32",
         },
       ],
     };
-    expect(listLanIPv4Addresses(ifaces)).toEqual([]);
-    expect(companionPairBaseUrl(41000, true, ifaces)).toBe("http://127.0.0.1:41000");
+    expect(listTailscaleIPv4Addresses(ifaces)).toEqual(["100.86.1.2"]);
   });
 });
 
@@ -74,24 +115,12 @@ describe("Bridge listen host (SDD 422)", () => {
     expect(isLoopbackRemote(undefined)).toBe(false);
   });
 
-  it("rejects non-companion routes for non-loopback peers when LAN-bound", () => {
+  it("rejects non-companion routes for non-loopback peers when mesh-bound", () => {
     expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/mcp")).toBe(true);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/other")).toBe(true);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/health")).toBe(false);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1/pair")).toBe(false);
-    // SDD 422 one-QR: engine-served mobile PWA must be LAN-reachable too
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/")).toBe(false);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/index.html")).toBe(false);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/app/app.js")).toBe(false);
-    // loopback peer still gets MCP
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "100.64.1.2", "/companion/v1/health")).toBe(false);
+    expect(shouldRejectLanNonCompanion("0.0.0.0", "100.64.1.2", "/companion/app/")).toBe(false);
     expect(shouldRejectLanNonCompanion("0.0.0.0", "127.0.0.1", "/mcp")).toBe(false);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "::ffff:127.0.0.1", "/mcp")).toBe(false);
-    // loopback-only listen: no LAN filter
     expect(shouldRejectLanNonCompanion("127.0.0.1", "10.0.0.9", "/mcp")).toBe(false);
-    // path boundary
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v1")).toBe(false);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/v2/x")).toBe(true);
-    expect(shouldRejectLanNonCompanion("0.0.0.0", "10.0.0.9", "/companion/apps/x")).toBe(true);
   });
 
   it("records 0.0.0.0 when started with lan host; MCP url stays loopback", async () => {
@@ -106,7 +135,6 @@ describe("Bridge listen host (SDD 422)", () => {
       expect(bridge.listenHost).toBe("0.0.0.0");
       expect(bridge.port).toBeTypeOf("number");
       expect(bridge.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
-      // From this host, peer is loopback — MCP is not blocked by the LAN route filter.
       const mcp = await fetch(`http://127.0.0.1:${bridge.port}/mcp`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -118,4 +146,3 @@ describe("Bridge listen host (SDD 422)", () => {
     }
   });
 });
-

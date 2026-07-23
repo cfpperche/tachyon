@@ -364,12 +364,12 @@ function strings(): CockpitStrings {
     companionPairUnavailable: t("Companion pairing unavailable — ensure the Bridge is listening."),
     companionPairQrLabel: t("Mobile QR"),
     companionPairQrHint: t(
-      "Scan with your phone camera — opens Companion Mobile on this engine and pairs automatically. Requires settings.companion.lanAccess: true on the same Wi‑Fi.",
+      "Scan with your phone camera — opens Companion Mobile and pairs automatically. PC and phone must be on the same Tailscale tailnet (settings.companion.lanAccess: true).",
     ),
-    companionPairCandidatesLabel: t("URL candidates"),
+    companionPairCandidatesLabel: t("URL"),
     companionCopyPayload: t("Copy QR payload"),
     companionLanAccessHint: t(
-      "Phone on Wi‑Fi needs settings.companion.lanAccess: true (Bridge rebinds; Doctor warns).",
+      "Mobile uses Tailscale only (not raw Wi‑Fi IPs). Install Tailscale on PC + phone, same account/tailnet, then generate a code.",
     ),
     devicesTitle: t("Connected devices"),
     devicesHint: t("Companion devices paired to this workspace engine (browser or mobile)."),

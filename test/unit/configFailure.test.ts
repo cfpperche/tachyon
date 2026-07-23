@@ -253,7 +253,7 @@ describe("doctor report", () => {
     expect(formatDoctorReport(report)).toContain("SYSTEMD_USER_UNAVAILABLE");
   });
 
-  it("warns when settings.companion.lanAccess is enabled (SDD 422)", () => {
+  it("warns when companion mobile (Tailscale) is enabled and ready (SDD 422)", () => {
     const report = buildDoctorReport({
       workspaceRoot: "/ws",
       configPath: "/ws/tachyon.yml",
@@ -266,14 +266,38 @@ describe("doctor report", () => {
       knownSessions: new Set(),
       bridge: { port: 41000, url: "http://127.0.0.1:41000/mcp", reachable: true },
       companionLanAccess: true,
+      companionTailscaleReady: true,
     });
     expect(report.findings).toContainEqual(
       expect.objectContaining({
-        id: "companion.lan_access",
+        id: "companion.mobile_tailscale",
         severity: "warn",
-        title: expect.stringMatching(/LAN access/i),
+        title: expect.stringMatching(/Tailscale/i),
       }),
     );
     expect(report.suggestions.some((s) => /lanAccess/i.test(s))).toBe(true);
+  });
+
+  it("errors when companion mobile is on but Tailscale is missing (SDD 422)", () => {
+    const report = buildDoctorReport({
+      workspaceRoot: "/ws",
+      configPath: "/ws/tachyon.yml",
+      configFileExists: true,
+      configValid: true,
+      configFailure: null,
+      lkg: null,
+      ledger: [],
+      liveSessions: new Set(),
+      knownSessions: new Set(),
+      bridge: { port: 41000, url: "http://127.0.0.1:41000/mcp", reachable: true },
+      companionLanAccess: true,
+      companionTailscaleReady: false,
+    });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        id: "companion.tailscale_required",
+        severity: "error",
+      }),
+    );
   });
 });

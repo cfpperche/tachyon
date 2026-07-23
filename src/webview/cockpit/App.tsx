@@ -418,8 +418,6 @@ function CompanionPairOfferCard({
     );
   }
 
-  const candidates = offer.baseUrls?.length ? offer.baseUrls : [offer.baseUrl];
-
   return (
     <div class="ck-pair-offer" data-testid="companion-pair-offer">
       {expired ? (
@@ -452,41 +450,11 @@ function CompanionPairOfferCard({
           {offer.baseUrl}
         </span>
       </div>
-      {candidates.length > 1 ? (
-        <div class="ck-pair-offer-candidates" data-testid="companion-pair-candidates">
-          <span class="ck-pair-offer-label">{s.companionPairCandidatesLabel}</span>
-          <ul class="ck-pair-offer-candidate-list">
-            {candidates.map((u) => (
-              <li key={u}>
-                <button
-                  type="button"
-                  class="ck-pair-offer-candidate ck-mono"
-                  data-testid="companion-pair-candidate"
-                  data-primary={u === offer.baseUrl ? "1" : "0"}
-                  title={u}
-                  onClick={() => onCopyText(u)}
-                >
-                  {u}
-                  {u === offer.baseUrl ? " ★" : ""}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
       {offer.openUrl ? (
         <div class="ck-pair-offer-row">
           <span class="ck-pair-offer-label">open</span>
           <span class="ck-pair-offer-url ck-mono" data-testid="companion-pair-open-url" title={offer.openUrl}>
             {offer.openUrl}
-          </span>
-        </div>
-      ) : null}
-      {offer.qrPayload ? (
-        <div class="ck-pair-offer-row">
-          <span class="ck-pair-offer-label">payload</span>
-          <span class="ck-pair-offer-url ck-mono" data-testid="companion-pair-payload" title={offer.qrPayload}>
-            {offer.qrPayload}
           </span>
         </div>
       ) : null}
@@ -511,13 +479,6 @@ function CompanionPairOfferCard({
         >
           {s.companionCopyCode}
         </Button>
-        <Button
-          variant="default"
-          data-testid="companion-pair-copy-url"
-          onClick={() => onCopyText(offer.baseUrl)}
-        >
-          {s.companionCopyUrl}
-        </Button>
         {offer.openUrl ? (
           <Button
             variant="default"
@@ -527,17 +488,15 @@ function CompanionPairOfferCard({
           >
             {s.companionCopyUrl}
           </Button>
-        ) : null}
-        {offer.qrPayload ? (
+        ) : (
           <Button
             variant="default"
-            data-testid="companion-pair-copy-payload"
-            disabled={expired}
-            onClick={() => onCopyText(offer.qrPayload!)}
+            data-testid="companion-pair-copy-url"
+            onClick={() => onCopyText(offer.baseUrl)}
           >
-            {s.companionCopyPayload}
+            {s.companionCopyUrl}
           </Button>
-        ) : null}
+        )}
         <Button
           variant="default"
           data-testid="companion-pair-copy-all"

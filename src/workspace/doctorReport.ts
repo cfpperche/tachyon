@@ -47,10 +47,12 @@ export interface DoctorReportInput {
     };
   };
   /**
-   * SDD 422 — settings.companion.lanAccess. When true, Bridge listens beyond loopback
-   * so phones can reach /companion/v1 (MCP on the same port still requires agent auth).
+   * SDD 422 — settings.companion.lanAccess (mobile via Tailscale). When true, Bridge
+   * binds beyond loopback; pair URLs use Tailscale IP only.
    */
   companionLanAccess?: boolean;
+  /** True when a Tailscale IPv4 was detected (only meaningful if companionLanAccess). */
+  companionTailscaleReady?: boolean;
   /** optional per-agent transcript/rollout presence for resumable rows */
   transcriptPresence?: ReadonlyMap<string, boolean>;
   now?: Date;
@@ -218,19 +220,32 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
     });
   }
 
-  // --- companion LAN (SDD 422 / t-da645b) ---
+  // --- companion mobile / Tailscale (SDD 422) ---
   if (input.companionLanAccess === true) {
-    findings.push({
-      id: "companion.lan_access",
-      severity: "warn",
-      title: "Companion LAN access is enabled",
-      detail:
-        "settings.companion.lanAccess=true — the Bridge listener binds all interfaces (0.0.0.0). " +
-        "Phones on the LAN can reach /companion/v1 (still need a pair code/session). " +
-        "MCP on the same port still requires agent/bridge auth. Disable when not on a trusted network.",
-      action: "Set settings.companion.lanAccess: false in tachyon.yml when finished using mobile Companion",
-    });
-    suggestions.push("Disable settings.companion.lanAccess when the phone is not needed");
+    if (input.companionTailscaleReady === false) {
+      findings.push({
+        id: "companion.tailscale_required",
+        severity: "error",
+        title: "Companion mobile needs Tailscale",
+        detail:
+          "settings.companion.lanAccess=true (mobile Companion) but no Tailscale IPv4 was detected. " +
+          "Install Tailscale on this machine and the phone, join the same tailnet, then retry pair. " +
+          "Wi‑Fi multi-IP pairing was removed — Tailscale is the only phone path.",
+        action: "Run `tailscale status` / `tailscale ip -4`, or set lanAccess: false if you only need loopback",
+      });
+      suggestions.push("Enable Tailscale (same tailnet on PC + phone) before pairing Companion Mobile");
+    } else {
+      findings.push({
+        id: "companion.mobile_tailscale",
+        severity: "warn",
+        title: "Companion mobile (Tailscale) is enabled",
+        detail:
+          "settings.companion.lanAccess=true — Bridge binds 0.0.0.0; pair QR uses the Tailscale IP only. " +
+          "Phone must be on the same tailnet. MCP still requires agent/bridge auth.",
+        action: "Set settings.companion.lanAccess: false when finished using mobile Companion",
+      });
+      suggestions.push("Disable settings.companion.lanAccess when the phone is not needed");
+    }
   }
 
   // dedupe suggestions
