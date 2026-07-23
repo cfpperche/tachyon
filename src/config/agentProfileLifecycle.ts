@@ -4,7 +4,12 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument, stringify } from "yaml";
 import { isValidAgentName } from "./nameValidation.js";
-import { agentProfileSchemaV1, type AgentProfileV1 } from "./agentProfileSchema.js";
+import {
+  agentProfileRelativePathError,
+  agentProfileSchemaV1,
+  type AgentProfileReferenceV1,
+  type AgentProfileV1,
+} from "./agentProfileSchema.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import {
   acquireAgentProfileTransactionLock,
@@ -17,7 +22,7 @@ import {
 } from "./agentProfileMigration.js";
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
-import { closeCanonicalAgentProfile, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
+import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR, PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
@@ -26,7 +31,10 @@ const LIFECYCLE_DIR = "lifecycle";
 const JOURNAL = "journal.json";
 const STAGED = "staged-agent.yml";
 const BACKUP = "backup-agent.yml";
+const ARTIFACTS = "artifacts";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
+const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md"]);
+const CREATE_ARTIFACT_MAX_BYTES = 64 * 1024;
 
 export type AgentProfileLifecycleOperation = "create" | "edit" | "set-enabled";
 export type AgentProfileLifecyclePhase =
@@ -54,6 +62,7 @@ export interface AgentProfileLifecycleJournal {
   targetAuthority: AgentProfileAuthorityRecord;
   priorConfigSha256: string;
   targetConfigSha256: string;
+  targetArtifacts?: Array<{ path: string; sha256: string }>;
   degradedReason?: string;
 }
 
@@ -88,6 +97,9 @@ export interface CommitAgentProfileLifecycleInput {
   patch?: AgentProfileCanonicalPatch;
   enabled?: boolean;
   createProfile?: Omit<AgentProfileV1, "schemaVersion" | "agentId">;
+  createProfileLocalReferences?: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">>;
+  /** V1 bundle import only: bounded profile-local authored files published with create. */
+  createArtifacts?: Array<{ path: string; text: string; sha256: string }>;
   authority: AgentProfileMigrationAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
@@ -230,8 +242,77 @@ function readJournal(txDir: string): AgentProfileLifecycleJournal {
     || typeof value.targetProfileSha256 !== "string" || !DIGEST_RE.test(value.targetProfileSha256)
     || typeof value.priorConfigSha256 !== "string" || !DIGEST_RE.test(value.priorConfigSha256)
     || typeof value.targetConfigSha256 !== "string" || !DIGEST_RE.test(value.targetConfigSha256)
-    || !value.targetAuthority || typeof value.createdAt !== "string") throw new Error("invalid lifecycle journal schema");
+    || !value.targetAuthority || typeof value.createdAt !== "string"
+    || (value.targetArtifacts !== undefined && (!Array.isArray(value.targetArtifacts)
+      || value.targetArtifacts.some((artifact) => !artifact || typeof artifact.path !== "string"
+        || !CREATE_ARTIFACT_NAMES.has(artifact.path)
+        || typeof artifact.sha256 !== "string" || !DIGEST_RE.test(artifact.sha256))))) {
+    throw new Error("invalid lifecycle journal schema");
+  }
   return value as AgentProfileLifecycleJournal;
+}
+
+function validateCreateArtifacts(input: CommitAgentProfileLifecycleInput): Array<{ path: string; text: string; sha256: string }> {
+  if (input.createArtifacts === undefined) return [];
+  if (input.operation !== "create") throw new Error("createArtifacts are allowed only for profile creation");
+  if (input.createArtifacts.length > CREATE_ARTIFACT_NAMES.size) throw new Error("too many lifecycle create artifacts");
+  const seen = new Set<string>();
+  return input.createArtifacts.map((artifact) => {
+    const pathError = agentProfileRelativePathError(artifact.path);
+    if (pathError || !CREATE_ARTIFACT_NAMES.has(artifact.path)) {
+      throw new Error(`invalid lifecycle create artifact '${artifact.path}': ${pathError ?? "unsupported portable document name"}`);
+    }
+    if (seen.has(artifact.path.toLowerCase())) throw new Error(`duplicate lifecycle create artifact '${artifact.path}'`);
+    seen.add(artifact.path.toLowerCase());
+    if (Buffer.byteLength(artifact.text, "utf8") > CREATE_ARTIFACT_MAX_BYTES) {
+      throw new Error(`lifecycle create artifact '${artifact.path}' exceeds ${CREATE_ARTIFACT_MAX_BYTES} UTF-8 bytes`);
+    }
+    const actual = digest(artifact.text);
+    if (actual !== artifact.sha256) throw new Error(`lifecycle create artifact '${artifact.path}' digest mismatch`);
+    return { ...artifact };
+  });
+}
+
+function publishCreateArtifacts(workspaceRoot: string, agentName: string, txDir: string, artifacts: readonly { path: string; sha256: string }[]): void {
+  if (artifacts.length === 0) return;
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) throw new Error(`canonical profile for '${agentName}' is missing while publishing artifacts`);
+  try {
+    const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
+    for (const artifact of artifacts) {
+      const staged = readPrivateFile(path.join(txDir, ARTIFACTS, artifact.path));
+      if (digest(staged) !== artifact.sha256) throw new Error(`staged lifecycle artifact '${artifact.path}' digest mismatch`);
+      writeNew(path.join(root, artifact.path), staged);
+    }
+  } finally { closeCanonicalAgentProfile(source); }
+}
+
+function artifactsMatch(workspaceRoot: string, agentName: string, artifacts: readonly { path: string; sha256: string }[]): boolean {
+  if (artifacts.length === 0) return true;
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return false;
+  try {
+    return artifacts.every((artifact) => {
+      try { return readAgentProfileReference(source, artifact.path, artifact.sha256).sha256 === artifact.sha256; }
+      catch { return false; }
+    });
+  } finally { closeCanonicalAgentProfile(source); }
+}
+
+function removeCreateArtifactsExact(workspaceRoot: string, agentName: string, artifacts: readonly { path: string; sha256: string }[]): void {
+  if (artifacts.length === 0) return;
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return;
+  try {
+    const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
+    for (const artifact of artifacts) {
+      const file = path.join(root, artifact.path);
+      try { fs.lstatSync(file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
+      readAgentProfileReference(source, artifact.path, artifact.sha256);
+      fs.unlinkSync(file);
+    }
+  } finally { closeCanonicalAgentProfile(source); }
 }
 
 function canonicalProfile(workspaceRoot: string, agentName: string): { profile: AgentProfileV1; text: string; sha256: string } | undefined {
@@ -311,8 +392,22 @@ export async function inspectAgentProfileLifecycle(input: {
 function targetProfile(input: CommitAgentProfileLifecycleInput, current?: AgentProfileV1): AgentProfileV1 {
   if (input.operation === "create") {
     if (!input.createProfile) throw new Error("createProfile is required for create");
-    return agentProfileSchemaV1.parse({ schemaVersion: 1, agentId: crypto.randomUUID(), ...input.createProfile });
+    const agentId = crypto.randomUUID();
+    const local = (input.createProfileLocalReferences ?? []).map((reference) => ({
+      ...reference,
+      scope: "profile" as const,
+      owner: agentId,
+    }));
+    return agentProfileSchemaV1.parse({
+      schemaVersion: 1,
+      agentId,
+      ...input.createProfile,
+      ...((input.createProfile.references?.length ?? 0) > 0 || local.length > 0
+        ? { references: [...(input.createProfile.references ?? []), ...local] }
+        : {}),
+    });
   }
+  if (input.createProfileLocalReferences !== undefined) throw new Error("createProfileLocalReferences are allowed only for profile creation");
   if (!current) throw new Error(`canonical profile for '${input.agentName}' is missing`);
   if (input.operation === "set-enabled") {
     if (typeof input.enabled !== "boolean") throw new Error("enabled is required for set-enabled");
@@ -348,7 +443,10 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
   try {
     const profileSha = currentProfileDigest(input.workspaceRoot, input.agentName);
     if (profileSha === journal.targetProfileSha256) {
-      if (journal.priorProfileSha256 === null) removeCanonicalProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
+      if (journal.priorProfileSha256 === null) {
+        removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
+        removeCanonicalProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
+      }
       else {
         const backup = readPrivateFile(path.join(txDir, BACKUP));
         if (digest(backup) !== journal.priorProfileSha256) throw new Error("profile backup digest mismatch");
@@ -397,6 +495,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       const current = await inspectAgentProfileLifecycle(input);
       if (!input.expectedRevision || input.expectedRevision !== current.revision) throw new Error(`agent '${input.agentName}' profile revision conflict`);
     }
+    const createArtifacts = validateCreateArtifacts(input);
     const profile = targetProfile(input, canonical?.profile);
     const profileText = stringify(profile);
     const targetSha = digest(profileText);
@@ -406,6 +505,10 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     txDir = path.join(root, txid);
     ensureSafeDirectory(input.workspaceRoot, txDir);
     writeNew(path.join(txDir, STAGED), profileText);
+    if (createArtifacts.length > 0) {
+      fs.mkdirSync(path.join(txDir, ARTIFACTS), { mode: 0o700 });
+      for (const artifact of createArtifacts) writeNew(path.join(txDir, ARTIFACTS, artifact.path), artifact.text);
+    }
     writeNew(path.join(txDir, "backup-tachyon.yml"), configBefore);
     if (canonical) writeNew(path.join(txDir, BACKUP), canonical.text);
     let journal: AgentProfileLifecycleJournal = {
@@ -422,12 +525,14 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       targetAuthority,
       priorConfigSha256: digest(configBefore),
       targetConfigSha256: digest(configTarget),
+      ...(createArtifacts.length > 0 ? { targetArtifacts: createArtifacts.map(({ path, sha256 }) => ({ path, sha256 })) } : {}),
     };
     writeJournal(txDir, journal);
     try {
       journal = transition(txDir, journal, "staged", input.onPhase);
       if (canonical) replaceCanonicalProfileExact(input.workspaceRoot, input.agentName, canonical.sha256, profileText);
       else publishCanonicalProfile(input.workspaceRoot, input.agentName, profileText);
+      publishCreateArtifacts(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
       journal = transition(txDir, journal, "profile-published", input.onPhase);
       if (priorAuthority) await input.authority.replace(targetAuthority, priorAuthority);
       else await input.authority.publish(targetAuthority, undefined);
@@ -477,7 +582,8 @@ export async function reconcileAgentProfileLifecycle(input: {
       if (journal.phase === "degraded") { degraded.push(entry); continue; }
       const release = acquireAgentProfileRecoveryLock(input.workspaceRoot, journal.agentName, journal.txid);
       try {
-        const profileTarget = currentProfileDigest(input.workspaceRoot, journal.agentName) === journal.targetProfileSha256;
+        const profileTarget = currentProfileDigest(input.workspaceRoot, journal.agentName) === journal.targetProfileSha256
+          && artifactsMatch(input.workspaceRoot, journal.agentName, journal.targetArtifacts ?? []);
         const authorityTarget = sameAuthority(await input.authority.read(journal.agentName), journal.targetAuthority);
         const configTarget = digest(input.config.read()) === journal.targetConfigSha256;
         if (profileTarget && authorityTarget && configTarget) {

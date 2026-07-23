@@ -356,6 +356,37 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   }
 });
 
+it("exports, imports and clones portable profiles through the Workspace boundary", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    const source = await ws.commitAgentProfileLifecycle({
+      agentName: "source",
+      operation: "create",
+      createProfile: { displayName: "Source", runtime: { adapter: "codex", executable: "codex" }, prompt: { role: "reviewer" } },
+    });
+    const exported = await ws.exportAgentProfileBundle("source");
+    const imported = await ws.importAgentProfileBundle("imported", exported.bytes);
+    const cloned = await ws.cloneCanonicalProfileAgent("source", "cloned");
+
+    expect(new Set([source.snapshot.agentId, imported.lifecycle.snapshot.agentId, cloned.lifecycle.snapshot.agentId]).size).toBe(3);
+    expect(ws.config?.agents.imported?.profileLifecycle?.enabled).toBe(false);
+    expect(ws.config?.agents.cloned?.profileLifecycle?.enabled).toBe(false);
+    expect(cloned.bundleSha256).toBe(exported.sha256);
+    await expect(ws.manager.spawn("imported")).rejects.toThrow("canonical agent profile is disabled");
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("renames a running canonical profile and keeps the same live session through the Workspace transaction boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();

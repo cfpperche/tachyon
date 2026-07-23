@@ -104,6 +104,31 @@ describe("agent profile lifecycle kernel", () => {
     expect(fs.readdirSync(path.join(root, ".tachyon", "agent-profile-migrations", "lifecycle"))).toEqual([]);
   });
 
+  it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    const content = "# Imported soul\n";
+    const artifact = { path: "SOUL.md", text: content, sha256: sha256(content) };
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: { ...initialProfile, prompt: { soul: "portable-soul" } },
+      createProfileLocalReferences: [{ id: "portable-soul", kind: "soul", path: artifact.path, mode: "pinned", sha256: artifact.sha256 }],
+      createArtifacts: [artifact],
+      authority,
+      config,
+      onPhase: (phase) => { if (phase === "profile-published") throw new Error("interrupt-artifact-create"); },
+    })).rejects.toThrow("interrupt-artifact-create");
+
+    expect(authority.records.has("codex")).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", artifact.path))).toBe(false);
+    expect(config.read()).toBe("agents: {}\n");
+  });
+
   it("checks revisions under lock and preserves authority-owned grants during canonical edits", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

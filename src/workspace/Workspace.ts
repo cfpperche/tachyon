@@ -48,6 +48,13 @@ import {
   reconcileAgentProfileForgets,
   type AgentProfileForgetResult,
 } from "../config/agentProfileForget.js";
+import {
+  clonePortableAgentProfile,
+  exportPortableAgentProfileBundle,
+  importPortableAgentProfileBundle,
+  type ImportPortableAgentProfileResult,
+  type PortableAgentProfileBytes,
+} from "../config/agentProfileBundle.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -4728,6 +4735,42 @@ export class Workspace {
       authority: this.profileAuthorityPort(),
       config: this.agentProfileLifecycleConfigPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(input.agentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async exportAgentProfileBundle(agentName: string): Promise<PortableAgentProfileBytes> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return exportPortableAgentProfileBundle({ workspaceRoot: this.workspaceRoot, snapshot });
+  }
+
+  async importAgentProfileBundle(agentName: string, bundle: string | Buffer): Promise<ImportPortableAgentProfileResult> {
+    await this.assertAgentStoppedForProfileMigration(agentName);
+    const result = await importPortableAgentProfileBundle({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      bundle,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(agentName, state),
+    });
+    this.rebuildWatches();
+    this.refreshAgentsViews();
+    return result;
+  }
+
+  async cloneCanonicalProfileAgent(sourceAgentName: string, destinationAgentName: string): Promise<ImportPortableAgentProfileResult> {
+    const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
+    await this.assertAgentStoppedForProfileMigration(destinationAgentName);
+    const result = await clonePortableAgentProfile({
+      workspaceRoot: this.workspaceRoot,
+      source,
+      destinationAgentName,
+      authority: this.profileAuthorityPort(),
+      config: this.agentProfileLifecycleConfigPort(),
+      activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
     });
     this.rebuildWatches();
     this.refreshAgentsViews();

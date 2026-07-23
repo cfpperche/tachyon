@@ -330,11 +330,17 @@ export async function executeExtensionCommand(
         (text) => addAgent(text, command.agent, command.cmd, command.kind),
         () => onViewsChanged("agents"),
       ));
-    case "config.agent.clone":
+    case "config.agent.clone": {
+      if (workspace.isCanonicalProfileAgent(command.agent)) {
+        await workspace.cloneCanonicalProfileAgent(command.agent, command.newName);
+        onViewsChanged("agents");
+        return json({ changed: true });
+      }
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => cloneAgent(text ?? "", command.agent, command.newName),
         () => onViewsChanged("agents"),
       ));
+    }
     case "config.agent.rename":
       await workspace.renameAgent(command.agent, command.newName);
       return json({ changed: true });
