@@ -29,3 +29,10 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 - Installed human dogfood remains required for create/edit/disable-enable/clone-export-import/rename/forget. The Dev Host correctly refused the monorepo root as a mutable test workspace; run this against an isolated canonical-profile fixture, never the live fleet.
+## Dev Host interactive dogfood hardening
+
+- Interactive dogfood exposed that the shared pointer could be replaced while a CDP session was
+  live. `t-b3553e` adds a pointer generation to session identity, refuses `point`/`point-clear` while
+  the recorded EDH process is alive, and makes every session verb abort if generation drifts.
+- This is harness integrity work required for trustworthy final lifecycle evidence; it does not
+  change the Agent Studio product contract.

@@ -10,6 +10,7 @@ import { fixtureEngineUnitName } from "../../scripts/dev-host/stop-bridge.mjs";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ESM CLI has no CJS .d.ts in the typecheck graph
 const {
   assertWorkspaceNotRepoRoot,
+  assertPointerSessionIdle,
   clear,
   ensurePortableLaunchConfig,
   fixtureNew,
@@ -194,6 +195,25 @@ describe("dev-host pointer", () => {
     expect(fs.existsSync(worktree)).toBe(true);
     expect(fs.existsSync(fixture)).toBe(true);
     expect((await status(repo, noopProbe)).armed).toBe(false);
+  });
+
+  it("refuses point and clear while a live interactive session owns the pointer", async () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({ edhPid: process.pid }));
+
+    expect(() => assertPointerSessionIdle(pointerRoot)).toThrow(/interactive headless session owns this pointer/);
+    expect(() => point({ repoRoot: repo, worktree, workspace: fixture })).toThrow(/interactive headless session owns this pointer/);
+    await expect(clear(repo, noopReconcile)).rejects.toThrow(/interactive headless session owns this pointer/);
+  });
+
+  it("reclaims a stale interactive session marker", () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    const sessionFile = path.join(pointerRoot, "session.json");
+    fs.writeFileSync(sessionFile, JSON.stringify({ edhPid: 2_147_483_647 }));
+    expect(() => assertPointerSessionIdle(pointerRoot)).not.toThrow();
+    expect(fs.existsSync(sessionFile)).toBe(false);
   });
 
   it("links node_modules from primary when worktree lacks them", () => {

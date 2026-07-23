@@ -36,6 +36,7 @@
  * See docs/runbooks/dev-host.md → "Interactive headless" / "Exploratory session".
  */
 import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -47,6 +48,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(here, "..", "..");
 const PTR = path.join(REPO, ".tachyon", "dev-host");
 const SESSION_FILE = path.join(PTR, "session.json");
+const META_FILE = path.join(PTR, "meta.json");
 const OUT_DIR = path.join(PTR, "session-out");
 
 /** Built-in frame alias: the Control webview. */
@@ -57,6 +59,25 @@ const die = (msg) => { out({ ok: false, error: msg }); process.exit(1); };
 
 function readSession() {
   try { return JSON.parse(fs.readFileSync(SESSION_FILE, "utf8")); } catch { return undefined; }
+}
+
+function readPointerGeneration() {
+  try {
+    const meta = JSON.parse(fs.readFileSync(META_FILE, "utf8"));
+    if (typeof meta.generation !== "string" || !meta.generation) {
+      die("Dev Host pointer has no generation — re-run point before starting a session");
+    }
+    return meta.generation;
+  } catch (error) {
+    die(`Dev Host pointer metadata unreadable — re-run point (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+
+function assertSessionStillOwnsPointer(session) {
+  const current = readPointerGeneration();
+  if (current !== session.pointerGeneration) {
+    die(`pointer changed during session (expected ${session.pointerGeneration}, found ${current}); aborting fail-closed`);
+  }
 }
 
 function httpJson(url) {
@@ -125,6 +146,7 @@ async function up(opts) {
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) die(`pointed extension has no dist/extension.js — build it (TACHYON_ENGINE_CHANNEL=dev npm run build)`);
   const workspaceDir = path.join(PTR, "workspace");
+  const pointerGeneration = readPointerGeneration();
 
   try { execFileSync("which", ["Xvfb"]); } catch { die("Xvfb required (apt install xvfb)"); }
   const codeBin = resolveCodeBin();
@@ -185,8 +207,9 @@ async function up(opts) {
   if (!version) die("CDP never came up — see session-out/host.log");
 
   const session = {
+    sessionId: randomUUID(),
     display: opts.display, port: opts.port, edhPid: edh.pid, xvfbPid: xvfb.pid,
-    outDir: OUT_DIR, extension: extensionPath, startedAt: new Date().toISOString(),
+    outDir: OUT_DIR, extension: extensionPath, pointerGeneration, startedAt: new Date().toISOString(),
   };
   fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
   // settle for extension activation
@@ -203,7 +226,8 @@ function down() {
   // hard kill after a beat
   setTimeout(() => {
     for (const pid of [s.edhPid, s.xvfbPid]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
-    fs.rmSync(SESSION_FILE, { force: true });
+    const current = readSession();
+    if (current?.sessionId === s.sessionId) fs.rmSync(SESSION_FILE, { force: true });
     out({ ok: true, down: true, killed: { edhPid: s.edhPid, xvfbPid: s.xvfbPid } });
   }, 1200);
 }
@@ -211,6 +235,7 @@ function down() {
 async function status() {
   const s = readSession();
   if (!s) return out({ ok: true, live: false });
+  const currentGeneration = readPointerGeneration();
   let alive = false;
   try { process.kill(s.edhPid, 0); alive = true; } catch { /* dead */ }
   let targets;
@@ -221,7 +246,7 @@ async function status() {
       await browser.disconnect();
     } catch (e) { targets = [`connect failed: ${e}`]; }
   }
-  out({ ok: true, live: alive, session: s, targets });
+  out({ ok: true, live: alive, ownsPointer: currentGeneration === s.pointerGeneration, session: s, targets });
 }
 
 // ---------- verbs against a live session ----------
@@ -229,6 +254,7 @@ async function status() {
 async function withBrowser(fn) {
   const s = readSession();
   if (!s) die("no live session — run: node scripts/dev-host/headless-session.mjs up");
+  assertSessionStillOwnsPointer(s);
   const browser = await connect(s);
   try { return await fn(browser, s); }
   finally { try { await browser.disconnect(); } catch { /* ignore */ } }

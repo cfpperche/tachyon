@@ -280,6 +280,10 @@ node scripts/dev-host/headless-session.mjs shot fleet             # → session-
 node scripts/dev-host/headless-session.mjs down                     # kill EDH + Xvfb
 ```
 
+While that session is live, `point` and `point-clear` refuse to replace its pointer. Every
+interactive verb also checks the pointer generation and aborts fail-closed if metadata was changed
+outside the CLI. Always finish with `down` before handing the shared pointer to another workflow.
+
 Verbs: `up`/`down`/`status`/`sleep`/`cmd`/`shot`/`frames`/`eval`/`click`/`click-testid`/`dom`/
 `spy-console`/`console`/`steps`. `<frame>` is the alias `control` (built-in Control-webview predicate)
 or any JS predicate string that returns truthy inside the target frame. `spy-console <frame>` installs

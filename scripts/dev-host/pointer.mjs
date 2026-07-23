@@ -23,6 +23,7 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
@@ -579,6 +580,7 @@ export function point(opts) {
   assertWorkspaceNotRepoRoot(workspace, repoRoot);
 
   const p = pathsOf(repoRoot);
+  assertPointerSessionIdle(p.root);
   ensureDir(p.root);
   ensureDir(p.userData);
   ensureDir(p.extensions);
@@ -605,6 +607,7 @@ export function point(opts) {
 
   const meta = {
     schemaVersion: 1,
+    generation: randomUUID(),
     kind: "dev-host",
     worktree,
     workspace,
@@ -837,12 +840,33 @@ export async function clear(repoRoot, opts = {}) {
   if (!fs.existsSync(p.root)) {
     return { cleared: false, reason: "already clear" };
   }
+  assertPointerSessionIdle(p.root);
   // Reconcile before touching storage: never wipe state/data out from under a live engine.
   const reconciled = await reconcileDevHostOccupant(repoRoot, opts);
   // Only remove pointer + isolation dirs under .tachyon/dev-host — never the worktree/fixture targets
   fs.rmSync(p.root, { recursive: true, force: true });
   const launch = restoreTemplateLaunchConfig(repoRoot);
   return { cleared: true, launch, reconciled };
+}
+
+/** Refuse destructive pointer changes while an interactive headless session owns it. */
+export function assertPointerSessionIdle(pointerRoot) {
+  const sessionFile = path.join(pointerRoot, "session.json");
+  if (!fs.existsSync(sessionFile)) return;
+  let session;
+  try { session = JSON.parse(fs.readFileSync(sessionFile, "utf8")); }
+  catch { throw new Error(`${SELF}: interactive session marker is unreadable; run headless-session.mjs down`); }
+  if (Number.isInteger(session.edhPid)) {
+    try {
+      process.kill(session.edhPid, 0);
+      throw new Error(
+        `${SELF}: interactive headless session owns this pointer (edhPid=${session.edhPid}); run headless-session.mjs down before point/point-clear`,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith(`${SELF}: interactive`)) throw error;
+    }
+  }
+  fs.rmSync(sessionFile, { force: true });
 }
 
 export function parseArgs(argv) {
