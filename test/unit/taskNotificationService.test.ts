@@ -16,15 +16,15 @@ const task: Task = {
 describe("TaskNotificationService (t-bae005)", () => {
   function setup(values: Record<string, { globalValue?: unknown; workspaceValue?: unknown }> = {}, yml?: TachyonConfig["settings"]["taskNotifications"]) {
     const notices: Array<{ message: string; level: string; actions: Array<{ label: string; run: () => void }> }> = [];
-    const focus = vi.fn();
+    const openTask = vi.fn();
     const host = {
       t: (message: string) => message,
       notify: (message: string, level: string, actions: Array<{ label: string; run: () => void }>) => notices.push({ message, level, actions }),
-      focusPrimaryView: focus,
+      openTask,
       getSettingInspect: (_section: string, key: string) => values[key] ?? {},
     } as unknown as EngineHost;
     const config = { settings: { taskNotifications: yml } } as TachyonConfig;
-    return { service: new TaskNotificationService("/ws", host, () => config), notices, focus };
+    return { service: new TaskNotificationService("/ws", "wshash01", host, () => config), notices, openTask };
   }
 
   it("does not let contributed defaults mask a disabled yml value", () => {
@@ -34,7 +34,7 @@ describe("TaskNotificationService (t-bae005)", () => {
   });
 
   it("uses explicit user values ahead of workspace/yml and offers a best-effort Open action", () => {
-    const { service, notices, focus } = setup({
+    const { service, notices, openTask } = setup({
       "taskNotifications.enabled": { globalValue: true, workspaceValue: false },
       "taskNotifications.dedupeWindowMs": { globalValue: 0 },
     }, { enabled: false });
@@ -44,6 +44,8 @@ describe("TaskNotificationService (t-bae005)", () => {
     expect(notices[0]).toMatchObject({ message: "Task created: Open me", level: "info" });
     expect(notices[0].actions[0].label).toBe("Open");
     notices[0].actions[0].run();
-    expect(focus).toHaveBeenCalledOnce();
+    // t-75fd3c — the Open action must deep-link to THIS task, not just focus the sidebar.
+    expect(openTask).toHaveBeenCalledOnce();
+    expect(openTask).toHaveBeenCalledWith("wshash01", task.id);
   });
 });

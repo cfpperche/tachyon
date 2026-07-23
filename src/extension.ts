@@ -2074,6 +2074,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // convenience: Control → Mission tab (same as tachyon.missionControl without pick when single-root)
     vscode.commands.registerCommand("tachyon.openControlMission", () => openCockpit(makeCockpitDeps(), { section: "mission" })),
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
+    // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
+    // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
+    vscode.commands.registerCommand("tachyon.openControlTask", (wsHash: string, taskId: string) =>
+      openCockpit(makeCockpitDeps(), { route: cockpitRoutes.taskDetail(wsHash, taskId) }),
+    ),
     vscode.commands.registerCommand("tachyon.getStarted", () =>
       vscode.commands.executeCommand("workbench.action.openWalkthrough", "cfpperche.tachyon#tachyon.welcome", false),
     ),
