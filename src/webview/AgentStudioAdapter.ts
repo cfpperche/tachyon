@@ -66,7 +66,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     }
     const def = this.ws.config?.agents[entityId];
     if (!def || def.kind !== "agent") return { status: "not-found" };
-    if (def.profileLifecycle) {
+    if (def.profileLifecycle || def.profilePointer) {
       try {
         const profile = await this.ws.inspectAgentProfileStudio(entityId);
         return { status: "ok", entity: { name: entityId, storage: "canonical", profile, fields: canonicalAgentFields(profile), ...reference } };

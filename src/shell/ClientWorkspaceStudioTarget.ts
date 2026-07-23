@@ -5,9 +5,10 @@ import { SoulError, isSoulErrorCode } from "../agents/soul.js";
 import {
   CONFIG_FILENAMES,
   inferKind,
-  loadConfigFile,
   type TachyonConfig,
 } from "../config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
+import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
@@ -432,8 +433,16 @@ function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
   for (const fileName of CONFIG_FILENAMES) {
     const file = path.join(workspaceRoot, fileName);
     if (!fs.existsSync(file)) continue;
-    const loaded = loadConfigFile(file);
-    return loaded.config ? { status: "valid", config: loaded.config } : { status: "invalid" };
+    const yamlText = fs.readFileSync(file, "utf8");
+    const loaded = parseProfileAwareConfigSyntax(yamlText);
+    if (!loaded.config) return { status: "invalid" };
+    const pointers = scanAgentProfilePointers(yamlText);
+    if (pointers.errors.length > 0) return { status: "invalid" };
+    for (const name of pointers.pointers.keys()) {
+      const def = loaded.config.agents[name];
+      if (def) def.profilePointer = true;
+    }
+    return { status: "valid", config: loaded.config };
   }
   return { status: "missing" };
 }

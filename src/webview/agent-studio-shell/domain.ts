@@ -153,7 +153,9 @@ export type AgentStudioInboundDomainMessage =
   | AgentStudioBundleActionMessage;
 
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
-  const keys = Object.keys(value).filter((key) => key !== "studioProtocolVersion").sort();
+  const keys = Object.keys(value)
+    .filter((key) => key !== "studioProtocolVersion" && key !== "routeKey" && key !== "mountNonce")
+    .sort();
   return keys.join("\0") === [...expected].sort().join("\0");
 }
 

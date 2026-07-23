@@ -29,6 +29,7 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 - Installed human dogfood remains required for create/edit/disable-enable/clone-export-import/rename/forget. The Dev Host correctly refused the monorepo root as a mutable test workspace; run this against an isolated canonical-profile fixture, never the live fleet.
+- Resolved 2026-07-23 — the isolated headless Dev Host run below completed the lifecycle proof.
 ## Dev Host interactive dogfood hardening
 
 - Interactive dogfood exposed that the shared pointer could be replaced while a CDP session was
@@ -36,3 +37,18 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
   the recorded EDH process is alive, and makes every session verb abort if generation drifts.
 - This is harness integrity work required for trustworthy final lifecycle evidence; it does not
   change the Agent Studio product contract.
+
+## Final Dev Host dogfood — 2026-07-23
+
+- The isolated headless Dev Host fixture completed canonical create, Fleet/Edit reload, enable,
+  rename, clone, 378-byte export, import, and confirmed forget. The resulting `agent.yml` files and
+  pointer-only `tachyon.yml` stanzas changed with each operation.
+- The run exposed and closed three integration gaps: the interactive pointer reservation now uses
+  the long-lived Xvfb PID when VS Code's launcher exits; runtime CLI attestation receives a
+  Dev-Host-only isolated profile home through the persistent engine allowlist; and the editor-side
+  config projection recognizes canonical `profile:` stanzas without treating them as legacy agents.
+- The installed-screen failure reported as “Profile status unavailable” plus Evolution stuck on
+  loading had one cause: Agent Studio's strict domain validator rejected the mandatory
+  `routeKey`/`mountNonce` safety metadata added by the shared studio host. Those routing fields are
+  now ignored only for payload-key comparison; arbitrary extra fields remain rejected. Real Dev
+  Host proof shows Soul as missing and Evolution version 0 instead of generic errors.

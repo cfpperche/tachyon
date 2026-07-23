@@ -49,6 +49,8 @@ const ENGINE_ENV_KEYS = [
   // Dev Host F5 sets these on the Extension Host for isolation; the engine owns tmux/worktrees
   // and must share them or attach/spawn land on the default fleet socket (/tmp).
   "TMUX_TMPDIR",
+  "TACHYON_DEV_HOST",
+  "TACHYON_DEV_HOST_PROFILE_HOME",
   "WSL_DISTRO_NAME",
   "WSL_INTEROP",
 ] as const;

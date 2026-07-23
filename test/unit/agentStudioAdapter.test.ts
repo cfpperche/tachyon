@@ -11,7 +11,7 @@ import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
  *  upsertAgent). formLogic.ts itself is untouched — this test proves the wrapping, not a reimplementation. */
 
 interface FakeAgents {
-  [name: string]: { cmd: string; kind: "agent" | "terminal"; watch: string[]; autostart: boolean; attention: { enabled: boolean }; profileLifecycle?: { agentId: string; enabled: boolean } };
+  [name: string]: { cmd: string; kind: "agent" | "terminal"; watch: string[]; autostart: boolean; attention: { enabled: boolean }; profileLifecycle?: { agentId: string; enabled: boolean }; profilePointer?: true };
 }
 
 function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
@@ -152,6 +152,19 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.profile?.bindings.secretNames).toEqual(["API_TOKEN"]);
     expect(JSON.stringify(result.entity)).not.toContain("secret-handle");
     expect(new AgentStudioAdapter(ws).revisionOf(result.entity)).toBe(snapshot.revision);
+  });
+
+  it("loads a shell-discovered canonical pointer through the engine snapshot", async () => {
+    const snapshot = profileSnapshot();
+    const { ws } = fakeWorkspace({
+      agents: { frontend: { cmd: "codex", kind: "agent", watch: [], autostart: false, attention: { enabled: true }, profilePointer: true } },
+      inspectResult: snapshot,
+    });
+    const result = await new AgentStudioAdapter(ws).load("frontend");
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unreachable");
+    expect(result.entity.storage).toBe("canonical");
+    expect(result.entity.profile?.revision).toBe(snapshot.revision);
   });
 
   it("reports not-found for a terminal-kind entry (coexistence: Terminal edits stay on the legacy form)", async () => {

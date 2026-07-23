@@ -100,6 +100,8 @@ describe("persistent engine supervisor", () => {
       HOME: path.join(root, "home"),
       PATH: "/usr/bin:/bin",
       LANG: "C.UTF-8",
+      TACHYON_DEV_HOST: "1",
+      TACHYON_DEV_HOST_PROFILE_HOME: path.join(root, "dev-host-profile-home"),
       OPENAI_API_KEY: "must-not-cross-the-launch-boundary",
     };
 
@@ -131,6 +133,8 @@ describe("persistent engine supervisor", () => {
       "--setenv=ELECTRON_RUN_AS_NODE=1",
       "--setenv=TACHYON_ENGINE_SERVICE=1",
       "--setenv=PATH=/usr/bin:/bin",
+      "--setenv=TACHYON_DEV_HOST=1",
+      `--setenv=TACHYON_DEV_HOST_PROFILE_HOME=${path.join(root, "dev-host-profile-home")}`,
     ]));
     expect(args.slice(-4)).toEqual(["--", input.nodePath, input.daemonModule, input.encodedOptions]);
     expect(args.join("\n")).not.toContain("OPENAI_API_KEY");

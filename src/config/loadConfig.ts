@@ -143,6 +143,8 @@ export interface ManagedEntryDef {
     canonicalSha256: string;
     authorityRevision: string;
   };
+  /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
+  profilePointer?: true;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity
    *  log while still loading the workspace project config. Claude/Codex; "transcript" is the only mode in v1. */

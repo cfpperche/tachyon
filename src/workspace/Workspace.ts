@@ -382,6 +382,17 @@ export interface WorkspaceSeams {
   agentProfileHomeDir?: string;
 }
 
+/** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
+export function resolveAgentProfileHomeDir(
+  seam: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (seam) return seam;
+  if (env.TACHYON_DEV_HOST !== "1") return undefined;
+  const candidate = env.TACHYON_DEV_HOST_PROFILE_HOME;
+  return typeof candidate === "string" && path.isAbsolute(candidate) ? candidate : undefined;
+}
+
 export interface BridgeStartFailureInfo {
   code: string;
   message: string;
@@ -646,7 +657,7 @@ export class Workspace {
     private readonly deps: WorkspaceDeps,
     seams: WorkspaceSeams = {},
   ) {
-    this.agentProfileHomeDir = seams.agentProfileHomeDir;
+    this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);

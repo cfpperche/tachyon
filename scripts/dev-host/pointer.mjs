@@ -513,6 +513,7 @@ export function portableDevHostLaunchConfig() {
     env: {
       TACHYON_DEV_HOST: "1",
       TACHYON_DEV_HOST_ENGINE_RUNTIME: "${workspaceFolder}/.tachyon/dev-host/runtime",
+      TACHYON_DEV_HOST_PROFILE_HOME: "${workspaceFolder}/.tachyon/dev-host/profile-home",
       TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
       XDG_CACHE_HOME: "${workspaceFolder}/.tachyon/dev-host/cache",
       XDG_STATE_HOME: "${workspaceFolder}/.tachyon/dev-host/state",
@@ -856,11 +857,15 @@ export function assertPointerSessionIdle(pointerRoot) {
   let session;
   try { session = JSON.parse(fs.readFileSync(sessionFile, "utf8")); }
   catch { throw new Error(`${SELF}: interactive session marker is unreadable; run headless-session.mjs down`); }
-  if (Number.isInteger(session.edhPid)) {
+  const livePids = [
+    ["edh", session.edhPid],
+    ["xvfb", session.xvfbPid],
+  ].filter(([, pid]) => Number.isInteger(pid));
+  for (const [kind, pid] of livePids) {
     try {
-      process.kill(session.edhPid, 0);
+      process.kill(pid, 0);
       throw new Error(
-        `${SELF}: interactive headless session owns this pointer (edhPid=${session.edhPid}); run headless-session.mjs down before point/point-clear`,
+        `${SELF}: interactive headless session owns this pointer (${kind}Pid=${pid}); run headless-session.mjs down before point/point-clear`,
       );
     } catch (error) {
       if (error instanceof Error && error.message.startsWith(`${SELF}: interactive`)) throw error;

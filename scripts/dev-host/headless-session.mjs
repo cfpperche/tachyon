@@ -156,6 +156,7 @@ async function up(opts) {
   const extDir = path.join(OUT_DIR, "extensions");
   fs.mkdirSync(path.join(udd, "User"), { recursive: true });
   fs.mkdirSync(extDir, { recursive: true });
+  fs.mkdirSync(path.join(PTR, "profile-home"), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(udd, "User", "settings.json"), JSON.stringify({
     "workbench.startupEditor": "none",
     "workbench.colorTheme": "Default Dark Modern",
@@ -179,6 +180,7 @@ async function up(opts) {
     DONT_PROMPT_WSL_INSTALL: "1",
     TACHYON_DEV_HOST: "1",
     TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(PTR, "runtime"),
+    TACHYON_DEV_HOST_PROFILE_HOME: path.join(PTR, "profile-home"),
     TMUX_TMPDIR: path.join(PTR, "tmux"),
     XDG_CACHE_HOME: path.join(PTR, "cache"),
     XDG_STATE_HOME: path.join(PTR, "state"),

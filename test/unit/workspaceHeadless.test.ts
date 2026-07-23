@@ -5,7 +5,7 @@ import path from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { Workspace } from "../../src/workspace/Workspace.js";
+import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -35,6 +35,23 @@ import { agentProfileAuthoritiesSecretKey } from "../../src/workspace/operationa
  * NO Electron, NO real tmux, NO bound Bridge port — proving config → managers → monitors → factory
  * lifecycle are wired together correctly. Substrate is injected via `Workspace.createForTest`.
  */
+
+describe("resolveAgentProfileHomeDir", () => {
+  it("uses an isolated absolute home only inside Dev Host", () => {
+    expect(resolveAgentProfileHomeDir(undefined, {
+      TACHYON_DEV_HOST: "1",
+      TACHYON_DEV_HOST_PROFILE_HOME: "/tmp/dev-host-profile-home",
+    })).toBe("/tmp/dev-host-profile-home");
+    expect(resolveAgentProfileHomeDir(undefined, {
+      TACHYON_DEV_HOST_PROFILE_HOME: "/tmp/dev-host-profile-home",
+    })).toBeUndefined();
+    expect(resolveAgentProfileHomeDir(undefined, {
+      TACHYON_DEV_HOST: "1",
+      TACHYON_DEV_HOST_PROFILE_HOME: "relative/home",
+    })).toBeUndefined();
+    expect(resolveAgentProfileHomeDir("/explicit/test-home", {})).toBe("/explicit/test-home");
+  });
+});
 
 /** In-memory EngineHost — every host touchpoint is a no-op/recorder; the engine can't tell it isn't vscode. */
 class FakeHost implements EngineHost {

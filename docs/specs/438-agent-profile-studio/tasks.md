@@ -12,8 +12,8 @@ _Generated from `plan.md` on 2026-07-22. Work top-to-bottom. Check boxes as task
 - [x] Complete `t-fdb422`: canonical redacted snapshot and CAS create/edit.
 - [x] Complete `t-293326`: revisioned enable/disable, rename and confirmed forget actions.
 - [x] Complete `t-ecd405`: portable clone/import/export actions.
-- [ ] Complete `t-fa332a`: final presentation is implemented and Visual QA is recorded; installed human dogfood remains.
-- [ ] Complete all four child Tasks without routing canonical writes through legacy YAML submit.
+- [x] Complete `t-fa332a`: final presentation, Visual QA and isolated Dev Host lifecycle dogfood.
+- [x] Complete all four child Tasks without routing canonical writes through legacy YAML submit.
 
 ## Verification
 
@@ -38,7 +38,7 @@ _Generated from `plan.md` on 2026-07-22. Work top-to-bottom. Check boxes as task
 
 **Dogfood:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts`
 
-**Human dogfood:** Installed Dev Host create/edit/disable-enable/clone-export-import/rename/forget flow after all child Tasks land.
+**Human dogfood:** Completed through the real headless Dev Host against an isolated fixture; see `notes.md`.
 
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under

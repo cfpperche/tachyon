@@ -24,6 +24,27 @@ afterEach(() => {
 });
 
 describe("ClientWorkspaceStudioTarget", () => {
+  it("keeps canonical profile pointers visible to the shell without legacy cmd", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-profile-pointer-"));
+    roots.push(root);
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
+      "utf8",
+    );
+    const identity = projectionIdentity(root);
+    const fake = new FakeWorkspaceClient({ identity, snapshot: projectionSnapshot(identity) });
+    const target = new ClientWorkspaceStudioTarget(fake, {
+      extensionUri: {} as StudioDeps["extensionUri"],
+    });
+
+    expect(target.config?.agents.codex).toMatchObject({
+      cmd: "codex",
+      kind: "agent",
+      profilePointer: true,
+    });
+  });
+
   it("routes canonical Studio inspect/commit through typed extension operations", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-profile-studio-"));
     roots.push(root);

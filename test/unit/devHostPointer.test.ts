@@ -207,6 +207,17 @@ describe("dev-host pointer", () => {
     await expect(clear(repo, noopReconcile)).rejects.toThrow(/interactive headless session owns this pointer/);
   });
 
+  it("keeps the reservation when the VS Code launcher exited but Xvfb is still live", () => {
+    point({ repoRoot: repo, worktree, workspace: fixture });
+    const pointerRoot = path.join(repo, ".tachyon", "dev-host");
+    fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({
+      edhPid: 2_147_483_647,
+      xvfbPid: process.pid,
+    }));
+
+    expect(() => assertPointerSessionIdle(pointerRoot)).toThrow(/xvfbPid=.*interactive|interactive.*xvfbPid=/);
+  });
+
   it("reclaims a stale interactive session marker", () => {
     point({ repoRoot: repo, worktree, workspace: fixture });
     const pointerRoot = path.join(repo, ".tachyon", "dev-host");
@@ -250,6 +261,7 @@ describe("dev-host pointer", () => {
     expect(cfg.env.TMUX_TMPDIR).toContain("${workspaceFolder}");
     expect(cfg.env.TACHYON_DEV_HOST).toBe("1");
     expect(cfg.env.TACHYON_DEV_HOST_ENGINE_RUNTIME).toContain("${workspaceFolder}");
+    expect(cfg.env.TACHYON_DEV_HOST_PROFILE_HOME).toBe("${workspaceFolder}/.tachyon/dev-host/profile-home");
     expect(cfg.env.XDG_CACHE_HOME).toContain("${workspaceFolder}");
     expect(cfg.env.XDG_STATE_HOME).toContain("${workspaceFolder}");
     expect(cfg.env.XDG_DATA_HOME).toContain("${workspaceFolder}");

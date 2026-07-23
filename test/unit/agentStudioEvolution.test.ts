@@ -131,6 +131,17 @@ describe("Agent Studio Evolution protocol and component contract", () => {
   it("accepts exact refresh/detail/action envelopes and rejects stale or extra fields", () => {
     expect(() => assertNoDomainNameCollision(AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)).not.toThrow();
     expect(validateAgentStudioInboundMessage(refreshEvolutionMessage("Ada"))).toEqual({ type: "refreshEvolution", agent: "Ada" });
+    expect(validateAgentStudioInboundMessage({
+      ...refreshEvolutionMessage("Ada"),
+      routeKey: "studio-edit:agent:Ada",
+      mountNonce: "mount-1",
+    })).toEqual({ type: "refreshEvolution", agent: "Ada" });
+    expect(validateAgentStudioInboundMessage({
+      ...refreshEvolutionMessage("Ada"),
+      routeKey: "studio-edit:agent:Ada",
+      mountNonce: "mount-1",
+      unexpected: true,
+    })).toBeUndefined();
     expect(validateAgentStudioInboundMessage(loadEvolutionCandidateMessage("Ada", "candidate-one")))
       .toEqual({ type: "loadEvolutionCandidate", agent: "Ada", candidateId: "candidate-one" });
     expect(validateAgentStudioInboundMessage(approveEvolutionCandidateMessage("Ada", "candidate-one", 3, "a".repeat(64))))
