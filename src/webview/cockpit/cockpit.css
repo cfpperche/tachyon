@@ -1130,6 +1130,8 @@ main.ck-main.ck-main--mission,
 .ck-wt-show-all { background: none; border: none; color: var(--ds-link); cursor: pointer; font-family: inherit; font-size: var(--ds-small); padding: var(--ds-2) var(--ds-3); text-align: left; }
 .ck-wt-unavailable { border: 1px solid color-mix(in srgb, var(--ds-err) 45%, var(--ds-border)); background: color-mix(in srgb, var(--ds-err) 10%, transparent); color: var(--ds-err); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); margin-bottom: var(--ds-4); font-size: var(--ds-small); }
 .ck-wt-unavailable-detail { color: var(--ds-muted); margin-top: var(--ds-1); }
+/* t-43c6fa — classifier reasons on a Delivery row (why it is in the state the badge claims). */
+.ck-dlv-reasons { display: block; color: var(--ds-muted); font-size: var(--ds-small); margin-top: var(--ds-1); }
 .ck-wt-batch-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: var(--ds-3); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); box-shadow: var(--ds-shadow-2); font-size: var(--ds-small); z-index: var(--ds-z-toast); }
 .ck-wt-confirm { position: fixed; inset: 0; background: var(--ds-scrim); display: flex; align-items: center; justify-content: center; z-index: var(--ds-z-dialog); }
 .ck-wt-confirm-card { max-width: 460px; width: calc(100% - var(--ds-6)); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-4); box-shadow: var(--ds-shadow-2); }

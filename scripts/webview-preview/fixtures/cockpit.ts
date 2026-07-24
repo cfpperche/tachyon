@@ -187,6 +187,9 @@ export const strings: CockpitStrings = {
   wtBlocked: "Blocked",
   wtOccupiedBy: "occupied by",
   wtShowAll: "Show all",
+  dlvMissingRef: "ref missing",
+  dlvLive: "agent live",
+  dlvUnmerged: "not in base",
 };
 
 const bundles: CockpitWorkspaceBundle[] = [
@@ -286,6 +289,8 @@ const bundles: CockpitWorkspaceBundle[] = [
         classification: { state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false },
       },
     ],
+    // t-43c6fa — one row per classification signal the tab now surfaces (spec 365), so the preview
+    // exercises the badges/reasons instead of only the happy path.
     deliveries: [
       {
         id: "gd-1",
@@ -295,6 +300,40 @@ const bundles: CockpitWorkspaceBundle[] = [
         worktreePath: "/cache/wt/b349073a/feature-x",
         folder: "tachyon",
         wsHash: "b349073a",
+        liveState: "live",
+        containedInBase: false,
+        missingRef: false,
+        clean: true,
+        safetyClass: "reload-safe",
+        reasons: ["agent grok-hermes is live in this worktree"],
+      },
+      {
+        id: "gd-2",
+        phase: "open",
+        branchRef: "tachyon/change/dropped-ref",
+        agent: "codex",
+        folder: "tachyon",
+        wsHash: "b349073a",
+        liveState: "not_live",
+        containedInBase: false,
+        missingRef: true,
+        clean: true,
+        reasons: ["branch ref no longer resolves — commits cannot be verified"],
+      },
+      {
+        id: "gd-3",
+        phase: "integrated",
+        branchRef: "tachyon/change/landed",
+        agent: "claude",
+        worktreePath: "/cache/wt/b349073a/landed",
+        folder: "tachyon",
+        wsHash: "b349073a",
+        liveState: "not_live",
+        containedInBase: true,
+        missingRef: false,
+        clean: true,
+        safetyClass: "reload-safe",
+        reasons: [],
       },
     ],
     approvals: [{ id: "a-0499c7", status: "pending", title: "Approve prune abandon" }],

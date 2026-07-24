@@ -35,7 +35,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
+  "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "agent-profile.migration-preview", "agent-profile.rollbackable", "agent-profile.studio-inspect", "agent-profile.studio-bundle-export",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
@@ -94,6 +94,7 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("worktrees.list") }).strict(),
   // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
   z.object({ action: z.literal("worktrees.classified") }).strict(),
+  z.object({ action: z.literal("deliveries.classified") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
   z.object({ action: z.literal("pipeline.inspect"), name: name.optional(), runId: text(128, 1).optional() }).strict(),

@@ -32,7 +32,6 @@ import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
-import { readGitDeliveriesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
@@ -1347,6 +1346,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           worktreesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
+        // t-43c6fa — the classified engine read is the ONE source for the Deliveries tab, exactly as
+        // spec 444 did for Worktrees. Engine unreachable → an EMPTY list plus a note, never
+        // unverified raw-disk rows. `readGitDeliveriesFromDisk` is deleted.
+        let deliveryRows: CockpitWorkspaceBundle["deliveries"] = [];
+        let deliveriesUnavailable: string | undefined;
+        try {
+          const classified = await extensionQuery(ws, { action: "deliveries.classified" });
+          const rows = (classified as { deliveries?: unknown[] })?.deliveries;
+          if (!Array.isArray(rows)) throw new Error("engine returned no deliveries payload");
+          deliveryRows = rows.map((row) => {
+            const d = row as Record<string, unknown>;
+            return {
+              id: String(d.id ?? ""),
+              phase: String(d.phase ?? "unknown"),
+              branchRef: String(d.branchRef ?? ""),
+              agent: d.agent != null ? String(d.agent) : undefined,
+              worktreePath: d.worktreePath != null ? String(d.worktreePath) : undefined,
+              folder: ws.folderName,
+              wsHash: ws.wsHash,
+              liveState: d.liveState != null ? String(d.liveState) : undefined,
+              containedInBase: typeof d.containedInBase === "boolean" ? d.containedInBase : undefined,
+              missingRef: typeof d.missingRef === "boolean" ? d.missingRef : undefined,
+              clean: typeof d.clean === "boolean" ? d.clean : undefined,
+              safetyClass: d.safetyClass != null ? String(d.safetyClass) : undefined,
+              reasons: Array.isArray(d.reasons) ? d.reasons.map((r) => String(r)) : undefined,
+            };
+          });
+        } catch (err) {
+          deliveriesUnavailable = err instanceof Error ? err.message : String(err);
+        }
+
         bundles.push({
           control: {
             folderName: ws.folderName,
@@ -1365,7 +1395,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           agents: agentRows,
           worktrees: worktreeRows,
           ...(worktreesUnavailable ? { worktreesUnavailable } : {}),
-          deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
+          deliveries: deliveryRows,
+          ...(deliveriesUnavailable ? { deliveriesUnavailable } : {}),
           approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
           tmux,
           ...(companion ? { companion } : {}),
