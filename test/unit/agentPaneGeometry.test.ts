@@ -38,7 +38,7 @@ describe("gridChanged", () => {
 });
 
 describe("sanitizeFontMetrics", () => {
-  it("clamps letterSpacing so TUIs do not look double-spaced", () => {
+  it("pins letterSpacing to 0 so TUIs do not look double-spaced", () => {
     const s = sanitizeFontMetrics({
       fontFamily: " Cascadia Mono ",
       fontSize: 14,
@@ -47,11 +47,11 @@ describe("sanitizeFontMetrics", () => {
       lineHeight: 1,
       letterSpacing: 8,
     });
-    expect(s.letterSpacing).toBe(2);
+    expect(s.letterSpacing).toBe(0);
     expect(s.fontFamily).toBe("Cascadia Mono");
   });
 
-  it("keeps lineHeight in a TUI-safe band", () => {
+  it("pins lineHeight to 1 for full-screen TUI packing", () => {
     expect(
       sanitizeFontMetrics({
         fontFamily: "monospace",
@@ -61,6 +61,6 @@ describe("sanitizeFontMetrics", () => {
         lineHeight: 3,
         letterSpacing: 0,
       }).lineHeight,
-    ).toBe(2);
+    ).toBe(1);
   });
 });

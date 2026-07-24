@@ -1,6 +1,8 @@
 /**
- * Agent pane layout — mirrors the xterm.js demo pattern:
- * absolute full-bleed host, no product chrome, no design-system font pollution.
+ * Agent pane layout — xterm.js demo pattern:
+ * host fills the editor; xterm sizes itself from cell metrics (do NOT stretch .xterm to 100%).
+ * Stretching .xterm width/height can hide under-fit grids in CDP box checks and fight the
+ * render service's explicit canvas/screen pixel sizes.
  * Cell metrics come ONLY from xterm options (not CSS font on body).
  */
 
@@ -12,6 +14,11 @@ body {
   padding: 0;
   overflow: hidden;
   background: #1e1e1e;
+  /* Prevent accidental proportional inheritance if DOM renderer spans leak styles. */
+  font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 14px;
+  letter-spacing: 0;
+  word-spacing: 0;
 }
 
 #root {
@@ -28,27 +35,19 @@ body {
   background: #1e1e1e;
 }
 
-/* FitAddon measures this box — must be the full editor area */
+/* FitAddon measures this box — full editor area, natural xterm child sizing */
 .agent-pane__term {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
 
-/* xterm.js fills the measured host */
 .agent-pane__term .xterm {
-  position: absolute;
-  inset: 0;
   padding: 0;
-  height: 100% !important;
-  width: 100% !important;
   font-variant-ligatures: none;
+  letter-spacing: 0;
 }
 
 .agent-pane__term .xterm-viewport {
   overflow-y: auto !important;
-}
-
-.agent-pane__term .xterm-screen {
-  height: 100%;
 }

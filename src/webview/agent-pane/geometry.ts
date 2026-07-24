@@ -43,7 +43,11 @@ export function gridChanged(a: GridSize, b: GridSize): boolean {
 
 /**
  * Clamp typography that breaks full-screen TUI layout when mis-copied from settings.
- * VS Code letterSpacing is pixels; values like 2+ make every glyph look double-spaced.
+ *
+ * letterSpacing MUST stay 0: xterm's DOM renderer pads each glyph with CSS letter-spacing
+ * so the glyph advance fills the cell; any extra option letterSpacing widens cells.
+ * Font stacks must include real mono fallbacks (see agentPaneFont.ensureMonoFontStack) —
+ * a proportional substitute sizes cells to 'W' and letter-spaces every other character.
  */
 export function sanitizeFontMetrics(input: {
   fontFamily: string;
@@ -54,19 +58,15 @@ export function sanitizeFontMetrics(input: {
   letterSpacing: number;
 }): typeof input {
   const fontSize = Number.isFinite(input.fontSize) && input.fontSize > 0 ? Math.min(72, Math.max(8, input.fontSize)) : 14;
-  // Prefer tight mono packing for TUI apps (Codex/Claude status bars).
-  const lineHeight = Number.isFinite(input.lineHeight) && input.lineHeight > 0
-    ? Math.min(2, Math.max(1, input.lineHeight))
-    : 1;
-  const letterSpacing = Number.isFinite(input.letterSpacing)
-    ? Math.min(2, Math.max(0, input.letterSpacing))
-    : 0;
+  const family = input.fontFamily.trim()
+    || "DejaVu Sans Mono, Liberation Mono, Menlo, Monaco, Consolas, 'Courier New', monospace";
   return {
-    fontFamily: input.fontFamily.trim() || "Menlo, Monaco, 'Courier New', monospace",
+    fontFamily: family,
     fontSize,
     fontWeight: input.fontWeight,
     fontWeightBold: input.fontWeightBold,
-    lineHeight,
-    letterSpacing,
+    // Full-screen TUI packing only.
+    lineHeight: 1,
+    letterSpacing: 0,
   };
 }

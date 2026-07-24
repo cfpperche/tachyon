@@ -9,9 +9,13 @@ export interface AgentPaneAppProps {
   onHostMessage: (handler: (msg: AgentPaneFromHost) => void) => () => void;
 }
 
-/** System mono stack — must exist without product @font-face (see agentPaneFont). */
+/**
+ * System mono stack — must exist without product @font-face (see agentPaneFont).
+ * Quoted multi-word faces so canvas measureText and CSS agree (proportional fallback
+ * was the root cause of double-spaced TUIs when a Windows-only face was missing).
+ */
 const FALLBACK_FONT: AgentPaneFontMetrics = {
-  fontFamily: "DejaVu Sans Mono, Liberation Mono, Menlo, Monaco, Consolas, 'Courier New', monospace",
+  fontFamily: '"DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace',
   fontSize: 14,
   fontWeight: "normal",
   fontWeightBold: "bold",
