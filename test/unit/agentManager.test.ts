@@ -6177,6 +6177,38 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     await manager.spawn("codex");
     expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
   });
+
+  it("t-ab9b40: a later-dispatched read wins the lastAgentStates cache even if an earlier-dispatched one resolves after it", async () => {
+    const config = configOf("agents:\n  a:\n    cmd: codex\n");
+    const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
+    const session = sessionName(HASH, "a");
+    type SessionMap = Map<string, { dead: boolean; exitCode?: number }>;
+    let resolveOlder!: (v: SessionMap | null) => void;
+    let resolveNewer!: (v: SessionMap | null) => void;
+    const older = new Promise<SessionMap | null>((r) => { resolveOlder = r; });
+    const newer = new Promise<SessionMap | null>((r) => { resolveNewer = r; });
+    const spy = vi
+      .spyOn(tmux, "sessionStates")
+      .mockImplementationOnce(() => older)
+      .mockImplementationOnce(() => newer);
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+
+    // Dispatch order: agentStates() (older) then runningAgentsStrict() (newer) — e.g. a
+    // LifecycleMonitor poll racing the rebind coordinator's boot scan.
+    const olderCall = manager.agentStates();
+    const newerCall = manager.runningAgentsStrict();
+
+    // Resolve OUT of dispatch order: the newer-dispatched read lands first.
+    resolveNewer(new Map([[session, { dead: false }]]));
+    await expect(newerCall).resolves.toEqual(["a"]);
+    // The older-dispatched read resolves last and must NOT clobber the cache the newer read wrote.
+    resolveOlder(new Map([[session, { dead: true, exitCode: 7 }]]));
+    await expect(olderCall).resolves.toEqual(new Map([["a", { dead: true, exitCode: 7 }]]));
+
+    // A third, ambiguous read (null) forces agentStates() to fall back to the cache — inspect it.
+    spy.mockImplementationOnce(() => Promise.resolve(null));
+    await expect(manager.agentStates()).resolves.toEqual(new Map([["a", { dead: false }]]));
+  });
 });
 
 describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
