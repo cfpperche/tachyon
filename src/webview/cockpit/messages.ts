@@ -236,6 +236,7 @@ export type CockpitAction =
   /** SDD 443 — Continue task in… (webview QuickPicker chose destination; host invokes only). */
   | { type: "fleetContinueTask"; name: string; toName: string; wsHash?: string }
   | { type: "revealPath"; path: string }
+  | { type: "openRuntimeConfigSource"; path: string }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
   | { type: "engineLogClear"; wsHash: string }

@@ -105,6 +105,8 @@ import {
   RUNTIME_OPS_SNAPSHOT,
   runtimeOpsSetProviderObservationAction,
 } from "../runtime-ops/messages";
+import { RUNTIME_CONFIG_SNAPSHOT } from "../runtime-config/messages";
+import type { CodexRuntimeConfigInventory } from "../../runtimeConfig/codexInventory";
 import type { InspectorAppProps } from "../inspector/App";
 import type { InspectorModel } from "../../inspector/model";
 import type { InspectorStrings } from "../inspector/messages";
@@ -178,6 +180,7 @@ function CockpitRoot() {
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
+  const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<CodexRuntimeConfigInventory | undefined>(undefined);
   const [inspectorStrings, setInspectorStrings] = useState<InspectorStrings | undefined>(undefined);
   const [inspectorModel, setInspectorModel] = useState<InspectorModel | undefined>(undefined);
   const [inspectorCaptures, setInspectorCaptures] = useState<Record<string, string>>({});
@@ -350,6 +353,8 @@ function CockpitRoot() {
         setValidationsError(raw.message);
       } else if (type === RUNTIME_OPS_SNAPSHOT && raw.snapshot) {
         setRuntimeSnapshot(raw.snapshot as RuntimeOpsSnapshot);
+      } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
+        setRuntimeConfigSnapshot(raw.snapshot as CodexRuntimeConfigInventory);
       } else if (type === "inspectorInit" && raw.strings) {
         setInspectorStrings(raw.strings as InspectorStrings);
       } else if (type === "inspectorModel" && raw.model) {
@@ -613,6 +618,8 @@ function CockpitRoot() {
       onRuntimeSetProviderObservation={(provider: RuntimeOpsProviderV2, enabled: boolean) =>
         post(runtimeOpsSetProviderObservationAction(provider, enabled))
       }
+      runtimeConfigSnapshot={runtimeConfigSnapshot}
+      onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
       inspector={inspectorProps}
       pluginsVm={pluginsVm}
       pluginsConsent={pluginsConsent}

@@ -79,6 +79,8 @@ import {
   isRuntimeOpsSetProviderObservationAction,
 } from "./runtime-ops/messages.js";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/types.js";
+import { runtimeConfigSnapshotMessage } from "./runtime-config/messages.js";
+import type { CodexRuntimeConfigInventory } from "../runtimeConfig/codexInventory.js";
 import {
   type InspectorStrings,
   type InspectorAction,
@@ -167,6 +169,12 @@ export interface CockpitRuntimeOps {
   configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
 }
 
+/** Read-only native runtime-config inventory. Editing is intentionally deferred to SDD 446 B. */
+export interface CockpitRuntimeConfig {
+  buildSnapshot: (wsHash?: string) => CodexRuntimeConfigInventory | undefined;
+  openSource: (sourcePath: string) => Promise<void>;
+}
+
 export interface CockpitInspector {
   snapshot: () => Promise<PaneSnapshot[]>;
   folderByHash: () => Map<string, string>;
@@ -202,6 +210,7 @@ export interface CockpitDeps {
   approvals: CockpitApprovals;
   validations: CockpitValidations;
   runtimeOps: CockpitRuntimeOps;
+  runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
   plugins: PluginsPanelManager;
   openSettings: () => void;
@@ -292,8 +301,8 @@ function strings(): CockpitStrings {
     runtimeTitle: t("Runtime Ops"),
     runtimeHint: t("Usage and rate limits (embedded)."),
     runtimeConfigTitle: t("Runtime Config"),
-    runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
-    runtimeConfigPrototype: t("Visual prototype"),
+  runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
+    runtimeConfigPrototype: t("Read-only inventory"),
     runtimeConfigGlobal: t("Global"),
     runtimeConfigWorkspace: t("Workspace"),
     runtimeConfigRuntime: t("Runtime"),
@@ -1195,6 +1204,16 @@ export async function openCockpit(
     }
   };
 
+  let runtimeConfigKnownPaths = new Set<string>();
+  const sendRuntimeConfig = async () => {
+    if (panel !== live || !isSection(currentRoute, "runtime-config")) return;
+    const epoch = navEpoch;
+    const snapshot = deps.runtimeConfig.buildSnapshot(controlWsHash);
+    if (panel !== live || navEpoch !== epoch || !snapshot) return;
+    runtimeConfigKnownPaths = new Set([snapshot.global.path, snapshot.workspace.path]);
+    live.webview.postMessage(runtimeConfigSnapshotMessage(snapshot));
+  };
+
   const sendInspector = async () => {
     if (panel !== live || !isSection(currentRoute, "tmux")) return;
     const epoch = navEpoch;
@@ -1549,6 +1568,7 @@ export async function openCockpit(
     else if (isSection(currentRoute, "handoff")) await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
+    else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
     else if (isSection(currentRoute, "tmux")) await sendInspector();
     else if (isSection(currentRoute, "plugins")) deps.plugins.refreshControlEmbed();
     else if (currentRoute.kind === "task-detail") await sendTaskDetail();
@@ -2021,6 +2041,15 @@ export async function openCockpit(
           return;
         case "revealPath":
           if (typeof c.path === "string" && c.path) deps.revealPath(c.path);
+          return;
+        case "openRuntimeConfigSource":
+          if (typeof c.path === "string" && runtimeConfigKnownPaths.has(c.path) && isSection(currentRoute, "runtime-config")) {
+            try {
+              await deps.runtimeConfig.openSource(c.path);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
           return;
         case "copyText":
           if (typeof c.text === "string") {

@@ -1,0 +1,27 @@
+# 446 — runtime-config-control — notes
+
+_Created 2026-07-24._
+
+_In-flight design memory — decisions, deviations, tradeoffs, and open questions surfaced **while building** that weren't pre-empted by `spec.md` or `plan.md`. Append-only by convention._
+
+## Design decisions
+
+_Choices made where the spec/plan was ambiguous. The decision + why this option over the others considered in the moment._
+
+- Slice A inventories only Codex `~/.codex/config.toml` and workspace `.codex/config.toml`. It reports the six scalar fields already measured by SDD 442, MCP server names, source revision/path, and non-MCP unknown key paths. It never sends file bytes, MCP command bodies, or environment values to the webview.
+- The agent list is explicitly labelled potential. This slice can identify Codex agents, but does not yet carry each canonical profile's family/source selection into Control; claiming an exact effective relationship would be misleading.
+- The source-file action is constrained host-side to the two paths emitted by the current snapshot, so a forged webview message cannot open arbitrary local files.
+
+## Deviations
+
+_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+
+## Tradeoffs
+
+_Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+
+- The approved visual prototype included simulated skills, hooks, extensions, per-item toggles, and Claude/Grok examples. They are removed from the shipping viewer until their native source formats and effective-launch behavior are measured. The viewer is intentionally smaller but truthful.
+
+## Open questions
+
+_Questions surfaced during the build with no answer yet. Owner or path to resolution if known._

@@ -40,6 +40,7 @@ import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 
 import type { StudioDispatch } from "../shared/studio/protocol";
+import type { CodexRuntimeConfigInventory } from "../../runtimeConfig/codexInventory";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 // t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
@@ -295,6 +296,8 @@ export interface CockpitAppProps {
   validationsDispatch: ValidationsDispatch;
   runtimeSnapshot?: RuntimeOpsSnapshot;
   onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+  runtimeConfigSnapshot?: CodexRuntimeConfigInventory;
+  onOpenRuntimeConfigSource: (path: string) => void;
   inspector: Pick<
     InspectorAppProps,
     "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
@@ -927,152 +930,22 @@ function WorktreesHygiene({
           </div>
         </div>
       ) : null}
-type RuntimeCapabilityKind = "Skills" | "MCPs" | "Hooks" | "Extensions";
 type RuntimeConfigScope = "global" | "workspace";
-type RuntimeCapabilityGroup = {
-  kind: RuntimeCapabilityKind;
-  items: Array<{ name: string; enabled: boolean; detail: string }>;
-};
-
-const RUNTIME_CONFIG_PROTOTYPE = {
-  codex: {
-    label: "OpenAI Codex",
-    source: "~/.codex/config.toml",
-    agents: ["codex", "reviewer", "architect"],
-    settings: [
-      { label: "Approval policy", value: "on-request", options: ["untrusted", "on-request", "never"] },
-      { label: "Sandbox mode", value: "workspace-write", options: ["read-only", "workspace-write", "danger-full-access"] },
-      { label: "Personality", value: "pragmatic", options: ["none", "pragmatic", "friendly"] },
-      { label: "Status line", value: "model · context · git branch", options: ["model · context · git branch", "model · context", "hidden"] },
-    ],
-    capabilities: [
-      { kind: "Skills" as const, items: [
-        { name: "review-guidelines", enabled: true, detail: "~/.agents/skills/review-guidelines" },
-        { name: "architecture", enabled: true, detail: "~/.agents/skills/architecture" },
-        { name: "docs", enabled: false, detail: "~/.agents/skills/docs" },
-      ] },
-      { kind: "MCPs" as const, items: [
-        { name: "tachyon_bridge", enabled: true, detail: "http://127.0.0.1:7421/mcp" },
-        { name: "github", enabled: true, detail: "stdio · github-mcp-server" },
-        { name: "browser", enabled: false, detail: "stdio · browser-tools" },
-      ] },
-      { kind: "Hooks" as const, items: [
-        { name: "SessionStart", enabled: true, detail: "1 command" },
-        { name: "Stop", enabled: true, detail: "1 command" },
-      ] },
-      { kind: "Extensions" as const, items: [
-        { name: "experimental-tools", enabled: false, detail: "native extension" },
-      ] },
-    ],
-    unknown: ["model_context_window", "model_auto_compact_token_limit", "notice.hide_full_access_warning"],
-    workspace: {
-      source: "/home/goat/tachyon/.codex/config.toml",
-      agents: ["codex", "reviewer"],
-      settings: [
-        { label: "Approval policy", value: "on-request", options: ["untrusted", "on-request", "never"] },
-        { label: "Sandbox mode", value: "workspace-write", options: ["read-only", "workspace-write", "danger-full-access"] },
-      ],
-      capabilities: [
-        { kind: "Skills" as const, items: [
-          { name: "tachyon-conventions", enabled: true, detail: "./.agents/skills/tachyon-conventions" },
-          { name: "release-check", enabled: true, detail: "./.agents/skills/release-check" },
-        ] },
-        { kind: "MCPs" as const, items: [
-          { name: "tachyon_bridge", enabled: true, detail: "workspace Bridge" },
-        ] },
-        { kind: "Hooks" as const, items: [
-          { name: "SessionStart", enabled: true, detail: "./scripts/session-context.sh" },
-          { name: "PostToolUse", enabled: false, detail: "./scripts/format-check.sh" },
-        ] },
-        { kind: "Extensions" as const, items: [] },
-      ],
-      unknown: ["project_doc_max_bytes"],
-    },
-  },
-  claude: {
-    label: "Claude Code",
-    source: "~/.claude/settings.json",
-    agents: ["claude", "claude-orca"],
-    settings: [
-      { label: "Permission mode", value: "default", options: ["default", "acceptEdits", "plan"] },
-      { label: "Output style", value: "concise", options: ["concise", "explanatory", "learning"] },
-    ],
-    capabilities: [
-      { kind: "Skills" as const, items: [{ name: "review", enabled: true, detail: "~/.claude/skills/review" }] },
-      { kind: "MCPs" as const, items: [{ name: "github", enabled: true, detail: "stdio · github-mcp-server" }] },
-      { kind: "Hooks" as const, items: [
-        { name: "SessionStart", enabled: true, detail: "1 command" },
-        { name: "PreToolUse", enabled: true, detail: "2 matchers" },
-      ] },
-      { kind: "Extensions" as const, items: [] },
-    ],
-    unknown: ["env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "attribution.commit"],
-    workspace: {
-      source: "/home/goat/tachyon/.claude/settings.json",
-      agents: ["claude"],
-      settings: [{ label: "Permission mode", value: "default", options: ["default", "acceptEdits", "plan"] }],
-      capabilities: [
-        { kind: "Skills" as const, items: [{ name: "tachyon-review", enabled: true, detail: "./.claude/skills/tachyon-review" }] },
-        { kind: "MCPs" as const, items: [{ name: "tachyon_bridge", enabled: true, detail: "workspace Bridge" }] },
-        { kind: "Hooks" as const, items: [{ name: "Stop", enabled: true, detail: "./scripts/verify.sh" }] },
-        { kind: "Extensions" as const, items: [] },
-      ],
-      unknown: [],
-    },
-  },
-  grok: {
-    label: "Grok CLI",
-    source: "~/.grok/config.json",
-    agents: ["grok"],
-    settings: [
-      { label: "Model", value: "grok-4.5", options: ["grok-4.5", "grok-4"] },
-      { label: "Interaction mode", value: "auto", options: ["auto", "confirm"] },
-    ],
-    capabilities: [
-      { kind: "Skills" as const, items: [{ name: "research", enabled: true, detail: "~/.grok/skills/research" }] },
-      { kind: "MCPs" as const, items: [{ name: "tachyon_bridge", enabled: true, detail: "workspace Bridge" }] },
-      { kind: "Hooks" as const, items: [] },
-      { kind: "Extensions" as const, items: [] },
-    ],
-    unknown: ["telemetry.mode"],
-    workspace: {
-      source: "/home/goat/tachyon/.grok/config.json",
-      agents: ["grok"],
-      settings: [{ label: "Interaction mode", value: "auto", options: ["auto", "confirm"] }],
-      capabilities: [
-        { kind: "Skills" as const, items: [{ name: "tachyon-review", enabled: true, detail: "./.grok/skills/tachyon-review" }] },
-        { kind: "MCPs" as const, items: [] },
-        { kind: "Hooks" as const, items: [] },
-        { kind: "Extensions" as const, items: [] },
-      ],
-      unknown: [],
-    },
-  },
-} satisfies Record<string, {
-  label: string;
-  source: string;
-  agents: string[];
-  settings: Array<{ label: string; value: string; options: string[] }>;
-  capabilities: RuntimeCapabilityGroup[];
-  unknown: string[];
-  workspace: {
-    source: string;
-    agents: string[];
-    settings: Array<{ label: string; value: string; options: string[] }>;
-    capabilities: RuntimeCapabilityGroup[];
-    unknown: string[];
-  };
-}>;
-
-function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
-  const [runtime, setRuntime] = useState<keyof typeof RUNTIME_CONFIG_PROTOTYPE>("codex");
+function RuntimeConfigInventory({
+  s,
+  snapshot,
+  onOpenSource,
+}: {
+  s: CockpitStrings;
+  snapshot?: CodexRuntimeConfigInventory;
+  onOpenSource: (path: string) => void;
+}) {
   const [scope, setScope] = useState<RuntimeConfigScope>("global");
   const [unknownOpen, setUnknownOpen] = useState(false);
-  const [capabilityState, setCapabilityState] = useState<Record<string, boolean>>({});
-  const runtimeConfig = RUNTIME_CONFIG_PROTOTYPE[runtime];
-  const config = scope === "global" ? runtimeConfig : runtimeConfig.workspace;
+  if (!snapshot) return <div class="ds-empty">Loading runtime configuration…</div>;
+  const config = snapshot[scope];
   return (
-    <div class="rcp-root" data-testid="control-runtime-config-prototype">
+    <div class="rcp-root" data-testid="control-runtime-config">
       <PageChrome
         title={s.runtimeConfigTitle}
         hint={s.runtimeConfigHint}
@@ -1082,12 +955,7 @@ function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
       <div class="rcp-toolbar">
         <div class="rcp-runtime-picker">
           <span class="rcp-eyebrow">{s.runtimeConfigRuntime}</span>
-          <KitSelect
-            aria-label={s.runtimeConfigRuntime}
-            value={runtime}
-            onValueChange={(value) => setRuntime(value as keyof typeof RUNTIME_CONFIG_PROTOTYPE)}
-            options={Object.entries(RUNTIME_CONFIG_PROTOTYPE).map(([value, item]) => ({ value, label: item.label }))}
-          />
+          <strong>OpenAI Codex</strong>
         </div>
         <div class="rcp-scope-picker">
           <span class="rcp-eyebrow">{s.runtimeConfigScope}</span>
@@ -1096,25 +964,23 @@ function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
               <span class="codicon codicon-globe" /> {s.runtimeConfigGlobal}
             </button>
             <button type="button" class={scope === "workspace" ? "active" : ""} onClick={() => setScope("workspace")}>
-              <span class="codicon codicon-folder" /> {s.runtimeConfigWorkspace}: tachyon
+              <span class="codicon codicon-folder" /> {s.runtimeConfigWorkspace}
             </button>
           </div>
         </div>
         <div class="rcp-source">
           <span class="rcp-eyebrow">{s.runtimeConfigSourceFile}</span>
-          <code>{config.source}</code>
+          <code>{config.path}</code>
         </div>
         <div class="rcp-toolbar-actions">
-          <Button variant="default">{s.runtimeConfigReload}</Button>
-          <Button variant="default">{s.runtimeConfigOpenFile}</Button>
-          <Button variant="primary" disabled>{s.runtimeConfigSave}</Button>
+          <Button variant="default" onClick={() => onOpenSource(config.path)}>{s.runtimeConfigOpenFile}</Button>
         </div>
       </div>
 
       <div class="rcp-impact">
-        <span>{s.runtimeConfigUsedBy}</span>
+        <span>{s.runtimeConfigUsedBy} (potential)</span>
         <div class="rcp-agent-list">
-          {config.agents.map((agent) => <Badge key={agent}>{agent}</Badge>)}
+          {snapshot.potentialAgents.length === 0 ? <span>{s.none}</span> : snapshot.potentialAgents.map((agent) => <Badge key={agent}>{agent}</Badge>)}
         </div>
       </div>
 
@@ -1123,63 +989,25 @@ function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
           <div class="rcp-card-head">
             <div>
               <span class="rcp-eyebrow">{s.runtimeConfigKnown}</span>
-              <h2>{runtimeConfig.label} · {scope === "global" ? s.runtimeConfigGlobal : s.runtimeConfigWorkspace}</h2>
+              <h2>OpenAI Codex · {scope === "global" ? s.runtimeConfigGlobal : s.runtimeConfigWorkspace}</h2>
             </div>
-            <Badge tone="ok">{config.settings.length} {s.runtimeConfigConfigured}</Badge>
+            <Badge tone={config.exists ? "ok" : "default"}>{config.exists ? `${config.knownSettings.length} ${s.runtimeConfigConfigured}` : "Not found"}</Badge>
           </div>
-          <div class="rcp-setting-list">
-            {config.settings.map((setting) => (
-              <label class="rcp-setting" key={setting.label}>
-                <span>{setting.label}</span>
-                <select value={setting.value} onChange={() => {}}>
-                  {setting.options.map((option) => <option key={option}>{option}</option>)}
-                </select>
-              </label>
-            ))}
-          </div>
+          {config.parseError ? <div class="rcp-capability-empty">Could not read this TOML file: {config.parseError}</div> : config.knownSettings.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : (
+            <div class="rcp-setting-list">{config.knownSettings.map((setting) => <div class="rcp-setting" key={setting.key}><span>{setting.label}</span><code>{setting.value}</code></div>)}</div>
+          )}
         </section>
 
         <section class="rcp-card">
           <div class="rcp-card-head">
             <div>
               <span class="rcp-eyebrow">{s.runtimeConfigCapabilities}</span>
-              <h2>{s.runtimeConfigCapabilitiesTitle}</h2>
+              <h2>MCP servers</h2>
             </div>
           </div>
           <div class="rcp-capability-list">
-            {config.capabilities.map((capability) => (
-              <div class="rcp-capability-group" key={capability.kind}>
-                <div class="rcp-capability-group-head">
-                  <span class={`codicon codicon-${capability.kind === "MCPs" ? "plug" : capability.kind === "Hooks" ? "zap" : capability.kind === "Extensions" ? "extensions" : "library"}`} />
-                  <strong>{capability.kind}</strong>
-                  <span>{capability.items.length} {s.runtimeConfigConfigured}</span>
-                </div>
-                {capability.items.length === 0 ? (
-                  <div class="rcp-capability-empty">{s.none}</div>
-                ) : capability.items.map((item) => {
-                  const key = `${runtime}:${scope}:${capability.kind}:${item.name}`;
-                  const enabled = capabilityState[key] ?? item.enabled;
-                  return (
-                    <div class="rcp-capability-item" key={item.name}>
-                      <div>
-                        <strong>{item.name}</strong>
-                        <span>{item.detail}</span>
-                      </div>
-                      <label class="rcp-switch">
-                        <input
-                          type="checkbox"
-                          checked={enabled}
-                          onChange={(event) => setCapabilityState((current) => ({
-                            ...current,
-                            [key]: (event.target as HTMLInputElement).checked,
-                          }))}
-                        />
-                        <span>{enabled ? s.runtimeConfigEnabled : s.runtimeConfigDisabled}</span>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
+            {config.mcpServers.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : config.mcpServers.map((name) => (
+              <div class="rcp-capability-item" key={name}><div><strong>{name}</strong><span>Configured in this source</span></div><Badge tone="ok">{s.runtimeConfigEnabled}</Badge></div>
             ))}
           </div>
         </section>
@@ -1188,18 +1016,18 @@ function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
           <div class="rcp-card-head">
             <div>
               <span class="rcp-eyebrow">{s.runtimeConfigOther}</span>
-              <h2>{config.unknown.length} {s.runtimeConfigDetected}</h2>
-              <p>{s.runtimeConfigOtherHint}</p>
+              <h2>{config.unknownKeys.length} {s.runtimeConfigDetected}</h2>
+              <p>Values are intentionally not shown here. Open the source file to inspect or edit them.</p>
             </div>
             <Button variant="default" onClick={() => setUnknownOpen((open) => !open)}>
               {s.runtimeConfigViewRaw}
             </Button>
           </div>
           {unknownOpen ? (
-            <pre>{config.unknown.join("\n")}</pre>
+            <pre>{config.unknownKeys.join("\n")}</pre>
           ) : (
             <div class="rcp-other-preview">
-              {config.unknown.map((key) => <code key={key}>{key}</code>)}
+              {config.unknownKeys.map((key) => <code key={key}>{key}</code>)}
             </div>
           )}
         </section>
@@ -1698,7 +1526,7 @@ export function App(p: CockpitAppProps) {
       </div>
     );
   } else if (section === "runtime-config") {
-    body = <RuntimeConfigPrototype s={s} />;
+    body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} onOpenSource={p.onOpenRuntimeConfigSource} />;
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">
