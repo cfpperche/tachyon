@@ -42,6 +42,7 @@ import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { ensureDevHostTmuxLaunchEnv } from "./pointer.mjs";
 
 const SELF = "dev-host-session";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -208,7 +209,8 @@ async function up(opts) {
     TACHYON_DEV_HOST: "1",
     TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
     TACHYON_DEV_HOST_PROFILE_HOME: path.join(slotRoot, "profile-home"),
-    TMUX_TMPDIR: path.join(slotRoot, "tmux"),
+    // Short AF_UNIX-safe path (deep worktree …/dev-host/tmux overflows sun_path).
+    TMUX_TMPDIR: ensureDevHostTmuxLaunchEnv(path.resolve(slotRoot, "../..")).tmuxTmpDir,
     XDG_CACHE_HOME: path.join(slotRoot, "cache"),
     XDG_STATE_HOME: path.join(slotRoot, "state"),
     XDG_DATA_HOME: path.join(slotRoot, "data"),

@@ -2,6 +2,7 @@
  * Layer-2 first-party agent pane host: WebviewPanel + xterm bundle + node-pty tmux attach.
  * Coexists with layer-1 integrated terminal (`Terminals`); does not replace it.
  * Slice 1: identity strip + stage/submit bar → 381-style tmux delivery.
+ * Slice 2: inject markers (webview) + selection → Pin.
  */
 import * as vscode from "vscode";
 import { TmuxAttachClient } from "../presentation/TmuxAttachClient.js";
@@ -12,6 +13,7 @@ import {
   AGENT_PANE_READY,
   AGENT_PANE_VIEW_TYPE,
   isAgentPaneToHost,
+  pinTitleFromSelection,
   type AgentPanePanelState,
   type AgentPaneToHost,
 } from "./agent-pane/protocol.js";
@@ -30,8 +32,13 @@ export interface AgentPaneOpenArgs {
    * `submit=true` → paste + Enter; false → stage only.
    */
   deliverText: (session: string, text: string, submit: boolean) => Promise<void>;
-  /** Open 381 prompt-template picker for this agent (QuickPick lives in extension host). */
-  openTemplateInject: (agent: string) => Promise<void>;
+  /**
+   * Open 381 prompt-template picker for this agent.
+   * Return true when a template was staged/submitted (not cancelled).
+   */
+  openTemplateInject: (agent: string) => Promise<boolean>;
+  /** Create a project pin from selected terminal text. */
+  createPinFromSelection: (text: string, agent: string) => Promise<{ id: string }>;
 }
 
 interface LivePane {
@@ -258,10 +265,34 @@ export class AgentPanePanelManager {
         return;
       }
       if (msg.type === "agent-pane/inject-template") {
-        void args.openTemplateInject(args.agent).catch((err) => {
+        void args.openTemplateInject(args.agent).then((ok) => {
+          if (ok) post({ type: "agent-pane/mark", kind: "template" });
+        }).catch((err) => {
           const message = err instanceof Error ? err.message : String(err);
           void vscode.window.showWarningMessage(message);
         });
+        return;
+      }
+      if (msg.type === "agent-pane/pin-selection") {
+        void (async () => {
+          try {
+            const title = pinTitleFromSelection(msg.text, args.agent);
+            if (!title) {
+              post({ type: "agent-pane/pin-result", ok: false, message: vscode.l10n.t("Nothing selected.") });
+              return;
+            }
+            const pin = await args.createPinFromSelection(msg.text, args.agent);
+            post({
+              type: "agent-pane/pin-result",
+              ok: true,
+              message: vscode.l10n.t("Pinned as {0}.", pin.id),
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            post({ type: "agent-pane/pin-result", ok: false, message });
+            void vscode.window.showWarningMessage(message);
+          }
+        })();
       }
     });
 

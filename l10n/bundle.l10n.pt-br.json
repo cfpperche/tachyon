@@ -595,5 +595,7 @@
   "Open which agent's pane?": "Abrir o painel de qual agente?",
   "Nothing to {0}.": "Nada para {0}.",
   "Staged into '{0}' (not submitted).": "Preparada em '{0}' (não enviada).",
-  "Submitted to '{0}'.": "Enviada para '{0}'."
+  "Submitted to '{0}'.": "Enviada para '{0}'.",
+  "Nothing selected.": "Nada selecionado.",
+  "Pinned as {0}.": "Fixado como {0}."
 }

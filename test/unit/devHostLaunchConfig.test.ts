@@ -73,6 +73,18 @@ describe("dev-host launch config (spec 448)", () => {
     }
   });
 
+  it("loads TMUX_TMPDIR from launch.env (short AF_UNIX path), not a deep workspaceFolder path", () => {
+    // Deep worktree …/.tachyon/dev-host/tmux/tmux-<uid>/tachyon exceeds sun_path (~108) and
+    // agent spawn fails with "File name too long". pointer writes a short runtime dir into launch.env.
+    const configs = readLaunchConfigurations();
+    const devHost = configs.find((c) => c.name === DEV_HOST_CONFIG)!;
+    expect(devHost.envFile, "envFile carries the short TMUX_TMPDIR").toBe(
+      "${workspaceFolder}/.tachyon/dev-host/launch.env",
+    );
+    const env = (devHost.env as Record<string, string>) ?? {};
+    expect(env.TMUX_TMPDIR, "committed launch.json must not hardcode a deep TMUX_TMPDIR").toBeUndefined();
+  });
+
   it("is not written by any script — it is committed, not generated", () => {
     const scriptsDir = path.join(repoRoot, "scripts");
     const offenders: string[] = [];

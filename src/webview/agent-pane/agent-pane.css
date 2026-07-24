@@ -179,8 +179,27 @@
   border-color: transparent;
 }
 
+/* Active xterm selection — not Claude reverse-video (that does not arm this). */
+.agent-pane__btn--armed {
+  border-color: #4ec9b0;
+  color: #4ec9b0;
+}
+
 .agent-pane__flash {
   font-size: 11px;
   color: var(--agent-pane-muted);
   padding: 0 var(--ds-1);
+}
+
+/* Slice 2 — inject markers (xterm decoration element, no PTY bytes) */
+.agent-pane__inject-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 10px;
+  line-height: 1;
+  pointer-events: none;
+  opacity: 0.95;
 }

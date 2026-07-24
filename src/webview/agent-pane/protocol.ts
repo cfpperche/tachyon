@@ -6,6 +6,8 @@
 export const AGENT_PANE_VIEW_TYPE = "tachyonAgentPane";
 export const AGENT_PANE_READY = "agent-pane/ready" as const;
 
+export type AgentPaneInjectKind = "stage" | "submit" | "template";
+
 export type AgentPaneToHost =
   | { type: typeof AGENT_PANE_READY }
   | { type: "agent-pane/input"; data: string }
@@ -15,7 +17,9 @@ export type AgentPaneToHost =
   /** Submit freeform text (paste + Enter) via hardened tmux path. */
   | { type: "agent-pane/submit"; text: string }
   /** Open the 381 template picker preselected for this pane's agent. */
-  | { type: "agent-pane/inject-template" };
+  | { type: "agent-pane/inject-template" }
+  /** Pin the current xterm selection into the project pin list (Slice 2). */
+  | { type: "agent-pane/pin-selection"; text: string };
 
 /** Typography + metrics aligned with VS Code integrated terminal settings. */
 export interface AgentPaneFontMetrics {
@@ -43,7 +47,10 @@ export type AgentPaneFromHost =
   | { type: "agent-pane/status"; status: string }
   | { type: "agent-pane/exit"; code: number | null; signal: string | null }
   /** Feedback after stage/submit (toast-in-pane). */
-  | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string };
+  | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string }
+  /** Place an inject marker at the current viewport line (no PTY bytes). */
+  | { type: "agent-pane/mark"; kind: AgentPaneInjectKind }
+  | { type: "agent-pane/pin-result"; ok: boolean; message: string };
 
 export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
   if (!value || typeof value !== "object") return false;
@@ -59,7 +66,18 @@ export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
     return typeof (value as { text?: unknown }).text === "string";
   }
   if (t === "agent-pane/inject-template") return true;
+  if (t === "agent-pane/pin-selection") {
+    return typeof (value as { text?: unknown }).text === "string";
+  }
   return false;
+}
+
+/** Build a short pin title from selected terminal text (pure). */
+export function pinTitleFromSelection(text: string, agent: string, maxLen = 160): string {
+  const one = text.replace(/\s+/g, " ").trim();
+  if (!one) return "";
+  const body = one.length > maxLen ? `${one.slice(0, Math.max(1, maxLen - 1))}…` : one;
+  return `[${agent}] ${body}`;
 }
 
 export interface AgentPanePanelState {

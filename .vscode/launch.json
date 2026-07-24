@@ -10,11 +10,11 @@
         "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
         "--disable-workspace-trust"
       ],
+      "envFile": "${workspaceFolder}/.tachyon/dev-host/launch.env",
       "env": {
         "TACHYON_DEV_HOST": "1",
         "TACHYON_DEV_HOST_ENGINE_RUNTIME": "${workspaceFolder}/.tachyon/dev-host/runtime",
         "TACHYON_DEV_HOST_PROFILE_HOME": "${workspaceFolder}/.tachyon/dev-host/profile-home",
-        "TMUX_TMPDIR": "${workspaceFolder}/.tachyon/dev-host/tmux",
         "XDG_CACHE_HOME": "${workspaceFolder}/.tachyon/dev-host/cache",
         "XDG_STATE_HOME": "${workspaceFolder}/.tachyon/dev-host/state",
         "XDG_DATA_HOME": "${workspaceFolder}/.tachyon/dev-host/data"

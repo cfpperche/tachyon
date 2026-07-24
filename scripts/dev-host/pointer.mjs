@@ -23,13 +23,94 @@
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
 
 const SELF = "dev-host";
 const DIR_NAME = "dev-host";
+
+/**
+ * AF_UNIX `sockaddr_un.sun_path` is typically 108 bytes incl. NUL. tmux places the
+ * socket at `$TMUX_TMPDIR/tmux-<uid>/<name>` — a deep worktree pointer like
+ * `…/worktrees/<id>/change/<slug>/.tachyon/dev-host/tmux/tmux-1000/tachyon` blows past
+ * that and agent spawn fails with `error connecting … (File name too long)`.
+ *
+ * Keep the *string* passed as TMUX_TMPDIR short (XDG_RUNTIME_DIR + hash of checkout).
+ * Budget ~100 bytes for the full socket path (matches engine control-socket gate).
+ */
+export const TMUX_SOCKET_PATH_BUDGET = 100;
+
+/**
+ * Private short TMUX_TMPDIR for this checkout's Dev Host (F5 + headless).
+ * Stable per checkout path so concurrent dogfoods do not share a socket server.
+ *
+ * @param {string} checkoutAbs
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string} absolute directory suitable for TMUX_TMPDIR
+ */
+export function devHostTmuxTmpDir(checkoutAbs, env = process.env) {
+  const checkout = path.resolve(checkoutAbs);
+  const id = createHash("sha256").update(checkout).digest("hex").slice(0, 12);
+  const runtime = String(env.XDG_RUNTIME_DIR || "").replace(/\/+$/, "") || path.join("/tmp", `tachyon-u${process.getuid?.() ?? 0}`);
+  const dir = path.join(runtime, "tachyon-dh", id, "tmux");
+  const uid = process.getuid?.() ?? 0;
+  const sock = path.join(dir, `tmux-${uid}`, "tachyon");
+  if (Buffer.byteLength(sock, "utf8") > TMUX_SOCKET_PATH_BUDGET) {
+    // Last-resort ultra-short layout (should not hit on normal Linux XDG_RUNTIME_DIR).
+    const fallback = path.join(runtime, "tdh", id.slice(0, 8));
+    const fallbackSock = path.join(fallback, `tmux-${uid}`, "tachyon");
+    if (Buffer.byteLength(fallbackSock, "utf8") > TMUX_SOCKET_PATH_BUDGET) {
+      throw new Error(
+        `${SELF}: cannot fit tmux socket under AF_UNIX budget (${Buffer.byteLength(fallbackSock, "utf8")} bytes): ${fallbackSock}`,
+      );
+    }
+    return fallback;
+  }
+  return dir;
+}
+
+/**
+ * Materialize short TMUX_TMPDIR + `.tachyon/dev-host/launch.env` for F5.
+ * launch.json loads this via envFile (cannot put absolute runtime paths in committed launch.json).
+ *
+ * @param {string} repoRoot checkout that owns the dev-host
+ * @returns {{ tmuxTmpDir: string, launchEnvPath: string }}
+ */
+export function ensureDevHostTmuxLaunchEnv(repoRoot) {
+  const root = path.resolve(repoRoot);
+  const base = devHostDir(root);
+  const tmuxTmpDir = devHostTmuxTmpDir(root);
+  fs.mkdirSync(tmuxTmpDir, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(base, { recursive: true, mode: 0o700 });
+  const launchEnvPath = path.join(base, "launch.env");
+  // Only TMUX_TMPDIR must be short/absolute; other F5 env stays in launch.json via ${workspaceFolder}.
+  fs.writeFileSync(launchEnvPath, `TMUX_TMPDIR=${tmuxTmpDir}\n`, { encoding: "utf8", mode: 0o600 });
+  // Keep a discoverable marker under the pointer (symlink → short dir). Do NOT set TMUX_TMPDIR to this
+  // symlink path — the long string would still overflow sun_path.
+  const marker = path.join(base, "tmux");
+  try {
+    const st = fs.lstatSync(marker);
+    if (st.isSymbolicLink()) {
+      const cur = fs.readlinkSync(marker);
+      if (path.resolve(path.dirname(marker), cur) !== tmuxTmpDir && cur !== tmuxTmpDir) {
+        fs.unlinkSync(marker);
+        fs.symlinkSync(tmuxTmpDir, marker);
+      }
+    } else {
+      fs.rmSync(marker, { recursive: true, force: true });
+      fs.symlinkSync(tmuxTmpDir, marker);
+    }
+  } catch (err) {
+    if (err && /** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") {
+      fs.symlinkSync(tmuxTmpDir, marker);
+    } else {
+      throw err;
+    }
+  }
+  return { tmuxTmpDir, launchEnvPath };
+}
 
 export function defaultRepoRoot(fromFile = fileURLToPath(import.meta.url)) {
   return path.resolve(path.dirname(fromFile), "../..");
@@ -554,9 +635,10 @@ export function point(opts) {
   ensureDir(p.base);
   ensureDir(p.userData);
   ensureDir(p.extensions);
-  ensureDir(p.tmux);
   ensureDir(p.cache);
   ensureDir(p.profileHome);
+  // Short AF_UNIX-safe TMUX_TMPDIR + launch.env (do not mkdir the long marker path as a real dir).
+  const { tmuxTmpDir, launchEnvPath } = ensureDevHostTmuxLaunchEnv(repoRoot);
 
   const nm = ensureNodeModules(worktree, primaryRepo);
   const tools = ensureWorktreeToolBin(worktree, primaryRepo);
@@ -585,6 +667,8 @@ export function point(opts) {
     extensionLink: p.extension,
     workspaceLink: p.workspace,
     workspaceMirror: true,
+    tmuxTmpDir,
+    launchEnv: launchEnvPath,
     spec: opts.spec ?? null,
     slug: opts.slug ?? null,
     packageName,
