@@ -1737,7 +1737,33 @@ describe("stable Bridge port", () => {
     await fetch(`http://127.0.0.1:${bridge.port}/not-mcp`);
     expect(completed).toHaveLength(1);
     expect(completed[0].slow).toBe(true);
+    expect(completed[0].requestKind).toBe("other");
     expect(bridge.getMetrics()).toMatchObject({ requests: 1, slowRequests: 1 });
+    await bridge.dispose();
+  });
+
+  it("classifies MCP stream and session requests without pretending they are tools", async () => {
+    const deps = {
+      workspaceRoot: "/tmp",
+      manager: undefined as never,
+      tmux: undefined as never,
+      pins: undefined as never,
+      tasks: undefined as never,
+      validations: undefined as never,
+      notify: () => {},
+    };
+    const completed: BridgeRequestCompleteInfo[] = [];
+    const bridge = new Bridge(deps, { onRequestComplete: (info) => completed.push(info), slowRequestMs: 0 });
+    await bridge.start();
+
+    await fetch(`http://127.0.0.1:${bridge.port}/mcp`, { method: "GET" });
+    await fetch(`http://127.0.0.1:${bridge.port}/mcp`, { method: "DELETE" });
+
+    expect(completed).toMatchObject([
+      { slow: true, requestKind: "mcp-stream", tool: undefined },
+      { slow: true, requestKind: "mcp-session", tool: undefined },
+    ]);
+    expect(bridge.getMetrics()).toMatchObject({ requests: 2, slowRequests: 2 });
     await bridge.dispose();
   });
 
@@ -1767,6 +1793,7 @@ describe("stable Bridge port", () => {
     expect(completed).toHaveLength(1);
     expect(completed[0]).toMatchObject({
       slow: true,
+      requestKind: "mcp-tool",
       tool: "wait_for_agent",
       claimedIdentity: "cxSlowBridge",
       caller: { kind: "legacy" },
