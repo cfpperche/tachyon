@@ -3046,10 +3046,25 @@ export class Workspace {
     ws.scheduler.activate();
     ws.ticker = setInterval(() => void ws.tick(), ATTENTION_POLL_MS);
 
-    // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start.
+    // Upgrade notice: MCP clients cache the Bridge tool schema at THEIR session start. t-e5910c —
+    // since t-016e8b, a wired/non-Delivery-bound survivor under the "auto" rebind policy self-heals
+    // within seconds without any user action, EITHER via a stale-session 404 reconnect on its next
+    // Bridge call OR via the spec-364 coordinator's proactive stop->resume (which only runs under
+    // "auto" — clientRebind.ts's onListenerReady returns before scheduleEnqueue under "notify").
+    // An idle agent making no calls under "notify" gets marked suspect but never proactively
+    // touched, so "notify" must be treated the same as "off" here: only "auto" is proactive enough
+    // to suppress the notice. The genuinely stuck cases: not Bridge-wired at all, the policy isn't
+    // "auto", or the execution is Delivery-bound (coordinator always leaves it running).
     const currentVersion = deps.host.appVersion();
     const lastVersion = deps.host.getState<string>(workspaceVersionStateKey(ws.wsHash));
-    if (lastVersion && lastVersion !== currentVersion && (await ws.manager.runningAgents()).length > 0) {
+    const runningAtBoot = await ws.manager.runningAgents();
+    const stragglers = runningAtBoot.filter((name) => {
+      const record = ws.ledger.get(name);
+      if (!isTachyonBridgeWiredRecord(record)) return true;
+      if (ws.bridgeClientRebindSettings().onHostGenerationBump !== "auto") return true;
+      return record !== undefined && ws.manager.rebindResumeDenied(name, record);
+    });
+    if (lastVersion && lastVersion !== currentVersion && stragglers.length > 0) {
       ws.host.notify(
         ws.t(
           "Tachyon was updated ({0} → {1}) — running agents keep the old Bridge tools until restarted (↻ in the sidebar)",
