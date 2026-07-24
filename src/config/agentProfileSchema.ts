@@ -223,6 +223,17 @@ export const agentProfileSchemaV1 = z.object({
   if (profile.prompt?.memory?.policy === "disabled" && profile.prompt.memory.reference) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["prompt", "memory", "reference"], message: "must be absent when memory policy is disabled" });
   }
+  // t-984061 — `runtime-managed` is specified (SDD 423) but has NO implementation: no code detects,
+  // enables, or disables a runtime's native memory, and `memoryLane` only consumes `human-approved`.
+  // Accepting it would let a human believe they had bounded a runtime's persistent prompt-writing
+  // authority while nothing is enforced. Refuse until a reader exists (architecture: t-d4c42e).
+  if (profile.prompt?.memory?.policy === "runtime-managed") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["prompt", "memory", "policy"],
+      message: "'runtime-managed' is specified but not implemented — no reader detects, enables or disables runtime-native memory, so declaring it would govern nothing; use 'disabled' or 'human-approved' (see t-d4c42e)",
+    });
+  }
   for (const [index, id] of (profile.capabilities?.skills ?? []).entries()) requireKind(id, ["capabilities", "skills", index], ["skill"]);
   for (const [index, id] of (profile.capabilities?.mcp ?? []).entries()) requireKind(id, ["capabilities", "mcp", index], ["mcp"]);
   for (const [index, id] of (profile.capabilities?.hooks ?? []).entries()) requireKind(id, ["capabilities", "hooks", index], ["hook"]);
