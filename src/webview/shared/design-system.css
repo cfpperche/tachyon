@@ -452,7 +452,14 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   position: fixed;
   inset: 0;
   z-index: var(--ds-z-dialog, 40);
-  background: var(--ds-scrim, color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%));
+  /* Soft glassmorphism scrim — frosted blur over the Control surface, not a flat black plate. */
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-background, var(--ds-scrim, #1e1e1e)) 42%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
   align-items: flex-start;
   justify-content: center;
   padding: 8% 12px 12px;
@@ -461,17 +468,57 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 .ds-qp.open {
   display: flex;
 }
+/* Fallback when backdrop-filter is unsupported — light dim without solid blackout. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-qp {
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-background, #1e1e1e) 62%,
+      transparent
+    );
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-qp {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--ds-scrim, color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%));
+  }
+}
 .ds-qp-panel {
   width: min(480px, 100%);
   max-height: min(70vh, 520px);
   display: flex;
   flex-direction: column;
-  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  /* Light glass card so it sits cleanly on the frosted scrim. */
+  background: color-mix(
+    in srgb,
+    var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background))) 88%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
   color: var(--vscode-quickInput-foreground, var(--ds-fg));
-  border: 1px solid var(--ds-focus, var(--ds-border));
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--ds-focus, var(--ds-border)) 55%, transparent);
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: var(--ds-shadow-2, 0 12px 36px rgba(0, 0, 0, 0.45));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--vscode-widget-shadow, #000) 12%, transparent),
+    0 16px 40px color-mix(in srgb, var(--vscode-widget-shadow, #000) 35%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-qp-panel {
+    background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-qp-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+    border: 1px solid var(--ds-focus, var(--ds-border));
+    border-radius: 6px;
+  }
 }
 .ds-qp-head {
   padding: 10px 12px 6px;
