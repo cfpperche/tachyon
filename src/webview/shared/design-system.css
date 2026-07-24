@@ -67,6 +67,7 @@
   --ds-z-dialog:  40;
   --ds-z-toast:   50;
   --ds-z-overlay: 60;
+  /* product toast stack (t-963b66) — bottom-center, above section chrome */
   --ds-scrim: color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%);
   --tachyon-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tachyon-font-reading: var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
@@ -637,3 +638,86 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   padding: 0 4px;
   margin-right: 3px;
 }
+
+/* ── Product Toast (t-963b66) — one stack for Control; not Attention ── */
+.ds-toast-host {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: var(--ds-z-toast, 50);
+  pointer-events: none;
+  max-width: min(420px, calc(100% - 24px));
+  width: max-content;
+}
+.ds-toast-stack {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: var(--ds-2, 8px);
+  pointer-events: none;
+}
+.ds-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-2, 8px);
+  padding: 8px 12px;
+  border-radius: var(--ds-radius, 4px);
+  font-size: 12.5px;
+  line-height: 1.35;
+  border: 1px solid var(--ds-border);
+  background: var(--ds-card, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  color: var(--ds-fg);
+  box-shadow: var(--ds-shadow-2, 0 8px 24px rgba(0, 0, 0, 0.28));
+}
+.ds-toast > .codicon {
+  flex: none;
+  margin-top: 1px;
+  opacity: 0.95;
+}
+.ds-toast-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ds-toast-ctx {
+  display: block;
+  font-size: 10px;
+  font-weight: var(--tachyon-weight-semibold, 600);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ds-muted);
+  margin-bottom: 2px;
+}
+.ds-toast-dismiss {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  border-radius: 3px;
+}
+.ds-toast-dismiss:hover {
+  opacity: 1;
+  background: var(--ds-hover);
+}
+.ds-toast--info {
+  border-color: color-mix(in srgb, var(--ds-info, var(--vscode-textLink-foreground)) 45%, var(--ds-border));
+}
+.ds-toast--info > .codicon { color: var(--ds-info, var(--vscode-textLink-foreground)); }
+.ds-toast--ok {
+  border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent);
+}
+.ds-toast--ok > .codicon { color: var(--ds-ok); }
+.ds-toast--warn {
+  border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent);
+}
+.ds-toast--warn > .codicon { color: var(--ds-warn); }
+.ds-toast--err {
+  border-color: color-mix(in srgb, var(--ds-err) 55%, transparent);
+}
+.ds-toast--err > .codicon { color: var(--ds-err); }

@@ -274,7 +274,8 @@ export type CompanionPairOffer =
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
   | { type: typeof MODEL; model: CockpitModel }
-  | { type: "toast"; text: string }
+  /** Product toast (t-963b66). `tone` optional for back-compat (defaults to info). */
+  | { type: "toast"; text: string; tone?: "info" | "ok" | "warn" | "err"; context?: string }
   | { type: "companionPairOffer"; offer: CompanionPairOffer }
   /** t-610705 (Phase D, D0) — host asks the mounted studio form to freeze and report its exact
    *  state; see `studioNavCheckpointAck` above. */
@@ -367,7 +368,17 @@ export const studioNavCheckpointAckAction = (txnId: string, dirty: boolean, edit
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
 export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });
-export const toastMessage = (text: string): CockpitHostMessage => ({ type: "toast", text });
+/** Host → webview product toast. Prefer tone: err on failures, ok on success. */
+export const toastMessage = (
+  text: string,
+  tone: "info" | "ok" | "warn" | "err" = "info",
+  context?: string,
+): CockpitHostMessage => ({
+  type: "toast",
+  text,
+  tone,
+  ...(context ? { context } : {}),
+});
 export const studioNavCheckpointMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavCheckpoint", txnId });
 export const studioNavAbortMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavAbort", txnId });
 export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHostMessage => ({

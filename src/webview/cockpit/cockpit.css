@@ -707,18 +707,7 @@ main.ck-main.ck-main--mission,
   color: var(--ds-muted);
 }
 
-.ck-toast {
-  position: fixed;
-  bottom: 12px;
-  right: 12px;
-  background: var(--vscode-notifications-background);
-  color: var(--vscode-notifications-foreground);
-  border: 1px solid var(--vscode-notifications-border);
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-family: inherit;
-}
+/* t-963b66 — shell toast is product ToastHost (.ds-toast*), not .ck-toast. */
 
 .ck-checked {
   margin-top: 14px;

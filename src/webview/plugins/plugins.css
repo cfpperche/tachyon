@@ -69,9 +69,7 @@
 .rtrow .rtname { font-weight: 600; }
 
 .busy { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: 20px; padding: 6px 16px; font-size: var(--ds-small); display: flex; align-items: center; gap: var(--ds-2); }
-.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 30; max-width: 80%; padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; cursor: pointer; display: flex; align-items: center; gap: var(--ds-2); border: 1px solid var(--ds-border); background: var(--ds-card); }
-.toast.ok { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); color: var(--ds-ok); }
-.toast.err { border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); color: var(--ds-err); }
+/* t-963b66 — result toast moved to product ToastHost (shared/ui + design-system .ds-toast*). */
 
 @media (max-width: 720px) {
   .installed-toolbar { grid-template-columns: 1fr; }
