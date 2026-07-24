@@ -2,6 +2,7 @@
 
 **Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-24 (Outros / unsupported-runtime fallback column — `t-f61ce8`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
+`src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
 It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
@@ -48,6 +49,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 | 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
+| 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
 
 Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only), and **cross-runtime task continuation** (SDD 443 / `t-7551f9`: host focused handoff + new session on another agent — **not** native resume; edit-`cmd` while live is fail-closed via `t-6d09e6`).
 
@@ -110,6 +112,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
 | 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
+| 14 Runtime Config (Control) | ✗ | ✓¶ | ✗ | ✗ | ✗ |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -122,6 +125,8 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 ¶ **Outros** is not a runtime brand — it is the honest fallback for commands **outside** first-class + secondary adapter coverage. Marks are justified in [§3.5](#35-outros--unsupported--generic-fallback). Do **not** read **✓** Restart as “first-class runtime”; it only means the host can kill and re-spawn the same declared command.
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes). Unsupported / generic: [§3.5](#35-outros--unsupported--generic-fallback).*
+
+¶ **Codex Runtime Config** provides global/workspace source provenance, six measured scalar values, MCP names and safe unknown-key names; Control edits only the measured subset through the native projection boundary and marks affected running agents pending.
 
 ### 3.1.1 Native configuration inheritance
 
@@ -152,6 +157,24 @@ lifecycle behavior and a dated test/task. Unknown stays unknown.
 
 Runtime-managed memory is tracked by `t-d4c42e`; agent-scoped Tachyon plugins remain separate. Both
 must still be visible here when they affect effective runtime behavior.
+
+### 3.1.2 Runtime Config (Control) eligibility
+
+This is distinct from **Native configuration parity** above. That row asks whether a private agent
+home preserves configuration behavior at launch. Runtime Config asks whether Control can truthfully
+inspect or change a native user/workspace source. A runtime is shown in Control's Runtime Config
+selector only when it has a row in this table — an installed executable, an ad-hoc command, or a
+runtime in the `Other` parity category is not enough.
+
+| Runtime eligible for selector | Global inventory | Workspace inventory | Measured settings | Individual tooling | Native writes | Pending / next launch | Evidence |
+|------------------------------|:----------------:|:-------------------:|:-----------------:|:------------------:|:-------------:|:---------------------:|----------|
+| Codex | ✓ `~/.codex/config.toml` | ✓ `.codex/config.toml` | ✓ six scalar keys | ✓ MCP names only | ✗ | ✗ | `src/runtimeConfig/codexInventory.ts`; `test/unit/codexRuntimeConfigInventory.test.ts`; Dev Host 2026-07-24; SDD 446 Slice A / `t-39cf89` |
+
+**Not eligible yet:** Claude, Grok, OpenCode, Pi, Hermes and every other detected runtime. Their
+native formats and launch effects may exist elsewhere in Tachyon, but Control has no measured
+Runtime Config adapter for them. Do not list them as disabled choices: absence communicates the
+honest contract, and their eventual addition must update this table and the applicable parity row
+in the same change.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
