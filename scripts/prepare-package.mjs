@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { classifyShipFile } from "./ship-boundary.mjs";
+import { classifyShipFile, engineManifestClosureViolations } from "./ship-boundary.mjs";
 import { assertStableBuildSource, assertStableEngineManifest } from "./engine-release-channel.mjs";
 
 const root = process.cwd();
@@ -32,6 +32,16 @@ for (const file of walk(dist)) {
     fs.rmSync(file);
     console.log(`pruned ${rel}`);
   }
+}
+
+// t-05a0b0 — the manifest above was written BEFORE the prune. The installed engine verifies it
+// fail-closed, so a manifest entry the prune removed (or altered) ships a VSIX that can never
+// activate. Fail the package here, deterministically, instead of on the user's Reload Window.
+const closureViolations = engineManifestClosureViolations(path.join(dist, "engine"), engineManifest);
+if (closureViolations.length > 0) {
+  throw new Error(
+    `engine manifest is not closed over the pack tree after pruning:\n  ${closureViolations.join("\n  ")}`,
+  );
 }
 
 // Provenance must describe the post-prune dist tree: exactly the bits vsce will ship.
