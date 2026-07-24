@@ -43,6 +43,23 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
   in the tab, never unverified rows ("dado não-confiável não é melhor que dado nenhum"). The same
   debt in `readGitDeliveriesFromDisk` (Deliveries tab) is out of scope and tracked as t-43c6fa.
 
+- **2026-07-24 — adversarial-review BLOCKER: unresolvable baseRef read as "contained".**
+  Reviewer confirmed (with the exact mechanism) a suspicion raised pre-review: `WorktreeManager.
+  status()` best-effort-coerces a failed `rev-list baseRef..HEAD` to `aheadOfBase: 0` and RESOLVES
+  — it never rejects for that failure mode — so classify.ts's rejection-only sentinel was dead code
+  and a deleted/gc'd/typo'd baseRef (spec 392's `register()` never validated it) classified a
+  worktree of unknown ancestry `ready-to-remove`. Worse: containment was only ever computed at
+  render time; `remove()` re-checks occupancy + uncommitted-dirt but not ancestry. Fixed in three
+  layers: (1) `WorktreeStatus.aheadProbeFailed` (additive optional field) distinguishes "0 ahead"
+  from "probe failed"; (2) classify.ts fails closed on it with a specific reason; (3) new
+  `ManagedWorktreeService.removeClassified()` re-runs the FULL classifier at execution time and is
+  what the `worktree.remove-managed` RPC now calls — all three safety signals re-validated at the
+  point of deletion. Tests re-pinned to the REAL non-throwing shape (unit + real-git with a
+  corrupted baseRef + PI-002 second case); the original throwing-mock case kept for the genuine
+  rejection path. PI gate: 2 invariants, 4 tests. Residual (recorded, not fixed here): `register()`
+  still accepts an unvalidated baseRef — now harmless for cleanup (classification fails closed) but
+  worth a validation at registration; folded into the spec's future-work rather than a new task.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._

@@ -91,7 +91,11 @@ export async function classifyManagedWorktree(
       hasUpstream: false,
     }),
   );
-  const probeFailed = status.aheadOfBase < 0;
+  // Two distinct probe-failure shapes, both fail-closed (adversarial-review blocker): the status()
+  // PROMISE rejecting (our own -1 sentinel above), and status() RESOLVING with aheadProbeFailed —
+  // WorktreeManager.status never rejects when `rev-list baseRef..HEAD` itself fails (unresolvable/
+  // deleted baseRef); it best-effort-coerces aheadOfBase to 0, which must never read as "contained".
+  const probeFailed = status.aheadOfBase < 0 || status.aheadProbeFailed === true;
   const dirty = probeFailed || status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
   const aheadOfBase = Math.max(0, status.aheadOfBase);
   const containedInBase = !probeFailed && (await isContainedInBase(git, entry.path, entry.baseRef, aheadOfBase));
@@ -109,8 +113,13 @@ export async function classifyManagedWorktree(
   }
 
   const reasons: string[] = [];
-  if (probeFailed) reasons.push("git status probe failed — treated as unsafe");
-  else if (dirty) reasons.push("worktree has uncommitted changes");
+  const statusRejected = status.aheadOfBase < 0;
+  const genuinelyDirty = status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
+  if (statusRejected) reasons.push("git status probe failed — treated as unsafe");
+  if (!statusRejected && status.aheadProbeFailed === true) {
+    reasons.push(`base ref '${entry.baseRef}' could not be resolved — ancestry unknown, treated as unsafe`);
+  }
+  if (!statusRejected && genuinelyDirty) reasons.push("worktree has uncommitted changes");
   if (!probeFailed && !containedInBase) reasons.push(`${aheadOfBase} commit(s) not contained in base`);
 
   if (reasons.length === 0) {

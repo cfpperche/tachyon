@@ -444,4 +444,46 @@ describe("spec 444 ManagedWorktreeService.listClassified (real git)", () => {
     expect(row?.classification.state).toBe("record-only");
     expect(row?.classification.pathExists).toBe(false);
   });
+
+  it("t-9f8dfc blocker fix: an unresolvable baseRef classifies needs-review, never ready-to-remove (real git, non-throwing probe)", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-bad-base", createdBy: "alice" });
+    // Simulate the real-world shape: a registered baseRef that no longer resolves (deleted branch,
+    // gc'd SHA, typo at register time — spec 392's register() never validated it). rev-list fails
+    // NON-throwing inside WorktreeManager.status; before the fix this read as 0-ahead => contained.
+    const store = JSON.parse(fs.readFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), "utf8")) as {
+      entries: Array<{ id: string; baseRef: string }>;
+    };
+    for (const e of store.entries) if (e.id === entry.id) e.baseRef = "refs/heads/never-existed";
+    fs.writeFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), JSON.stringify({ schemaVersion: 1, entries: store.entries }, null, 2));
+
+    const rows = await svc.listClassified({ kind: "change" });
+    const row = rows.find((r) => r.id === entry.id);
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.containedInBase).toBe(false);
+    expect(row?.classification.reasons.join(" ")).toMatch(/could not be resolved/);
+
+    // Defense-in-depth: the classification-gated removal refuses too — and the checkout survives.
+    const refused = await svc.removeClassified(entry.id, { actor: { kind: "human" } });
+    expect(refused.removed).toBe(false);
+    expect(refused.error).toMatch(/not ready-to-remove/);
+    expect(fs.existsSync(entry.path)).toBe(true);
+  });
+
+  it("t-9f8dfc: removeClassified removes a genuinely-safe checkout and refuses one that turned dirty since render", async () => {
+    const svc = service();
+    const clean = await svc.createChange({ slug: "rc-clean", createdBy: "alice" });
+    const turnsDirty = await svc.createChange({ slug: "rc-dirty", createdBy: "alice" });
+    // State changed between the UI's render-time verdict and the click: re-validation must refuse.
+    fs.writeFileSync(path.join(turnsDirty.path, "wip.txt"), "uncommitted\n");
+
+    const ok = await svc.removeClassified(clean.id, { actor: { kind: "human" } });
+    expect(ok.removed).toBe(true);
+    expect(fs.existsSync(clean.path)).toBe(false);
+
+    const refused = await svc.removeClassified(turnsDirty.id, { actor: { kind: "human" } });
+    expect(refused.removed).toBe(false);
+    expect(refused.error).toMatch(/uncommitted/);
+    expect(fs.existsSync(turnsDirty.path)).toBe(true);
+  });
 });

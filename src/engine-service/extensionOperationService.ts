@@ -445,7 +445,9 @@ export async function executeExtensionCommand(
       return json({ forgotten });
     }
     case "worktree.remove-managed": {
-      const result = await workspace.managedWorktrees.remove(command.id, {
+      // removeClassified re-runs the FULL classifier at execution time (occupancy + dirtiness +
+      // base-containment) — a render-time "ready-to-remove" verdict is never trusted at click time.
+      const result = await workspace.managedWorktrees.removeClassified(command.id, {
         actor: { kind: "human" },
         deleteBranch: command.deleteBranch === true,
       });

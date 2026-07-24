@@ -122,6 +122,31 @@ describe("classifyManagedWorktree", () => {
     expect(result.reasons).toEqual(["git status probe failed — treated as unsafe"]);
   });
 
+  it("t-9f8dfc blocker fix: status RESOLVING with aheadProbeFailed (unresolvable baseRef) also fails closed — the real WorktreeManager.status contract never rejects for this", async () => {
+    // WorktreeManager.status best-effort-coerces a failed `rev-list baseRef..HEAD` to
+    // aheadOfBase 0 and RESOLVES. Before the fix, 0 read as "contained" -> ready-to-remove for a
+    // worktree of unknown ancestry (adversarial-review confirmed data-loss path).
+    const result = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => ({ ...cleanStatus(0), aheadProbeFailed: true }) }),
+    );
+    expect(result.state).toBe("needs-review");
+    expect(result.containedInBase).toBe(false);
+    expect(result.reasons).toEqual(["base ref 'main' could not be resolved — ancestry unknown, treated as unsafe"]);
+  });
+
+  it("t-9f8dfc blocker fix: aheadProbeFailed plus real uncommitted changes reports both reasons", async () => {
+    const result = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => ({ ...cleanStatus(0), aheadProbeFailed: true, unstaged: 3 }) }),
+    );
+    expect(result.state).toBe("needs-review");
+    expect(result.reasons).toEqual([
+      "base ref 'main' could not be resolved — ancestry unknown, treated as unsafe",
+      "worktree has uncommitted changes",
+    ]);
+  });
+
   it("t-9f8dfc: a failed occupancy probe does not crash classification (best-effort, treated as unoccupied)", async () => {
     const result = await classifyManagedWorktree(
       entry(),

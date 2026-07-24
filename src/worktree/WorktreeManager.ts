@@ -235,6 +235,13 @@ export interface WorktreeStatus {
   detached: boolean;
   branch: string | null;
   aheadOfBase: number; // commits on HEAD not on baseRef
+  /**
+   * spec 444 — true when the `rev-list baseRef..HEAD` probe itself failed (unresolvable/deleted
+   * baseRef, corrupt repo), in which case `aheadOfBase` is a best-effort 0 that MUST NOT be read
+   * as "contained in base". The kill/dismiss confirmation UI ignores this; classify.ts fails
+   * closed on it (a silent 0 here once classified a worktree of unknown ancestry ready-to-remove).
+   */
+  aheadProbeFailed?: boolean;
   unpushed: number; // commits not on the upstream; equals aheadOfBase-ish when no upstream
   hasUpstream: boolean;
 }
@@ -728,11 +735,12 @@ export class WorktreeManager {
     const branchName = curProbe.code === 0 ? curProbe.stdout.trim() : null;
     const detached = branchName === "HEAD" || branchName === null;
     const ahead = await this.git(["rev-list", "--count", `${baseRef}..HEAD`], cwd);
-    const aheadOfBase = ahead.code === 0 ? Number.parseInt(ahead.stdout.trim() || "0", 10) || 0 : 0;
+    const aheadProbeFailed = ahead.code !== 0;
+    const aheadOfBase = aheadProbeFailed ? 0 : Number.parseInt(ahead.stdout.trim() || "0", 10) || 0;
     const up = await this.git(["rev-list", "--count", "@{upstream}..HEAD"], cwd);
     const hasUpstream = up.code === 0;
     const unpushed = hasUpstream ? Number.parseInt(up.stdout.trim() || "0", 10) || 0 : aheadOfBase;
-    return { staged, unstaged, untracked, conflicts, detached, branch: detached ? null : branchName, aheadOfBase, unpushed, hasUpstream };
+    return { staged, unstaged, untracked, conflicts, detached, branch: detached ? null : branchName, aheadOfBase, ...(aheadProbeFailed ? { aheadProbeFailed } : {}), unpushed, hasUpstream };
   }
 
   /**
