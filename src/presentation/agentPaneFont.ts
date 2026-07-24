@@ -32,9 +32,11 @@ export function resolveAgentPaneFontMetrics(
   const fontWeightBold = terminalCfg.get<string | number>("fontWeightBold", "bold") ?? "bold";
 
   const lineHeightRaw = terminalCfg.get<number>("lineHeight", 1);
+  // VS Code default is 1; >1 stretches rows and full-screen TUI status bars drift.
   const lineHeight = typeof lineHeightRaw === "number" && lineHeightRaw > 0 ? lineHeightRaw : 1;
 
   const letterSpacingRaw = terminalCfg.get<number>("letterSpacing", 0);
+  // VS Code letterSpacing is pixels; large values make TUIs look "double spaced".
   const letterSpacing = typeof letterSpacingRaw === "number" ? letterSpacingRaw : 0;
 
   return {

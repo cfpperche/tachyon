@@ -171,11 +171,15 @@ export class AgentPanePanelManager {
       }
     };
 
+    /**
+     * Start PTY only after the webview measured a real grid (post-font fit).
+     * Starting at a placeholder 120×40 then resizing makes full-screen TUIs
+     * draw status bars off-screen and never fully recover.
+     */
     const maybeStart = () => {
       if (!live.ready) return;
-      const cols = live.lastCols > 0 ? live.lastCols : 120;
-      const rows = live.lastRows > 0 ? live.lastRows : 40;
-      startAttach(cols, rows);
+      if (live.lastCols < 2 || live.lastRows < 1) return;
+      startAttach(live.lastCols, live.lastRows);
     };
 
     panel.webview.onDidReceiveMessage((raw: unknown) => {
@@ -195,7 +199,7 @@ export class AgentPanePanelManager {
           status: "connecting…",
           font,
         });
-        maybeStart();
+        // Do NOT attach yet — wait for first agent-pane/resize with measured cols×rows.
         return;
       }
       if (raw.type === "agent-pane/input") {
