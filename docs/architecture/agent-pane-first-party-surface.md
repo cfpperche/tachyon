@@ -205,13 +205,33 @@ Formal SDD (`docs/specs/NNN-…`) should be opened before Slice 1 lands; Slice 0
 
 ---
 
+## MVP implementation notes (t-610355, 2026-07-24)
+
+Started on branch `tachyon/change/agent-pane-first-party`.
+
+| Choice | Decision |
+|---|---|
+| Viewport | `@xterm/xterm` + `@xterm/addon-fit` in Preact webview `tachyonAgentPane` |
+| Transport | `script -qfc 'tmux … attach-session -d …'` userspace PTY (no `node-pty`; honors 186 native-module rejection for default path) |
+| Exclusive attach | **Yes (`-d`)** for MVP — same as layer 1; opening (2) detaches other clients |
+| Resize | `tmux resize-window -x -y` from FitAddon (script does not reliably forward SIGWINCH) |
+| Open path | Command **Tachyon: Open Agent Pane** (`tachyon.openAgentPane` / `…Item`); layer 1 remains **Open Agent Terminal** default |
+| Chrome (slice 1 start) | Identity strip + status + button to open integrated terminal |
+| Not yet | Stage/submit inject bar, markers, selection→pin, multi-agent mosaic |
+
+### Commands
+- `tachyon.openAgentPane` — palette pick agent → layer 2 pane  
+- `tachyon.openAgentPaneItem` — sidebar/item entry  
+- Pane button **Integrated terminal** → existing `terminal.open` path (layer 1)
+
 ## Open questions for implementers
 
-1. Exclusive vs shared attach when both (1) and (2) open the same tmux session  
-2. Editor-area WebviewPanel vs dedicated view container vs both  
-3. xterm.js vs ghostty-web (or other) for the viewport renderer  
+1. Exclusive vs shared attach when both (1) and (2) open the same tmux session — **MVP: exclusive**  
+2. Editor-area WebviewPanel vs dedicated view container vs both — **MVP: editor WebviewPanel**  
+3. xterm.js vs ghostty-web (or other) for the viewport renderer — **MVP: xterm.js**  
 4. Default surface for new agents after MVP dogfood  
 5. How far Slice 1 goes on i18n / design-system before annotations  
+6. Whether `script`-PTY fidelity is enough or we later allow optional node-pty
 
 ---
 

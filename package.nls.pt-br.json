@@ -105,5 +105,8 @@
   "command.reinjectContinuityItem": "Reinjetar continuidade",
   "command.injectPromptTemplate": "Injetar template de prompt…",
   "command.injectPromptTemplateItem": "Injetar template de prompt",
-  "view.pluginSurfaces": "Superfícies de plugin"
+  "view.pluginSurfaces": "Superfícies de plugin",
+  "command.openAgentPane": "Tachyon: Abrir painel do agente (próprio)",
+  "command.openAgentPaneItem": "Abrir painel do agente (próprio)",
+  "config.agentPane.enabled": "Habilita o painel de agente first-party (layer 2, webview+xterm). O terminal integrado do VS Code permanece o caminho padrão."
 }

@@ -33,6 +33,7 @@ import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
@@ -1677,6 +1678,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push({ dispose: () => terminals.dispose() });
 
+  // t-610355 — layer-2 first-party agent pane (webview + xterm). Additive; layer-1 integrated terminal stays default.
+  const agentPanes = new AgentPanePanelManager(context.extensionUri);
+  context.subscriptions.push({ dispose: () => agentPanes.dispose() });
+  const openAgentPane = async (agent: string, hash?: string): Promise<void> => {
+    const ws = targetOf(hash);
+    const projected = ws ? agentProjection(ws, agent) : undefined;
+    if (!ws) {
+      notify(vscode.l10n.t("Cannot open agent pane — workspace is not active"), "error");
+      return;
+    }
+    if (!projected) {
+      notify(vscode.l10n.t("Cannot open agent pane for '{0}' — agent is not in the live roster", agent), "error");
+      return;
+    }
+    await agentPanes.open({
+      agent,
+      session: projected.session,
+      title: agent,
+      wsHash: ws.wsHash,
+      openIntegrated: async (a, session, title) => {
+        await presentTerminal(ws, a, session, title);
+      },
+      resizeSession: async (session, cols, rows) => {
+        await terminalTmux.resizeWindow(session, cols, rows);
+      },
+    });
+    await ws.markAgentPaneSeen(agent);
+  };
+
   const versionValue = (context.extension.packageJSON as { version?: unknown }).version;
   const shellVersion = typeof versionValue === "string" && versionValue.trim() ? versionValue : "development";
   const shellReleasePolicy = engineShellReleasePolicy(
@@ -1857,6 +1887,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void openCockpit(makeCockpitDeps(), { route });
   });
   registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
+  registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
   // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
@@ -2549,6 +2580,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await presentTerminal(ws, agent, projected.session);
         // t-a39c7d — human eyes on pane: done(unseen) → idle.
         await ws.markAgentPaneSeen(agent);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
+    }),
+    // t-610355 — open layer-2 first-party agent pane (runtime TUI in Tachyon webview). Does not replace integrated terminal.
+    vscode.commands.registerCommand("tachyon.openAgentPaneItem", async (agent: string, hash?: string) => {
+      try {
+        await openAgentPane(agent, hash);
+      } catch (error) {
+        notify(error instanceof Error ? error.message : String(error), "error");
+      }
+    }),
+    vscode.commands.registerCommand("tachyon.openAgentPane", async () => {
+      const ws = await pickWorkspace();
+      if (!ws) return;
+      const agent = await pickAgent(ws, vscode.l10n.t("Open which agent's pane?"), true);
+      if (!agent) return;
+      try {
+        await openAgentPane(agent, ws.wsHash);
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), "error");
       }

@@ -587,5 +587,10 @@
   "⚠ {0} commit(s) ahead of base, {1} unpushed": "⚠ {0} commit(s) à frente da base, {1} não enviado(s)",
   "⚠ {0} commit(s) ahead of base, {1} unpushed — the branch is kept unless you confirm again": "⚠ {0} commit(s) à frente da base, {1} não enviado(s) — a branch é mantida a menos que você confirme de novo",
   "⚠ {0} uncommitted change(s) will be lost": "⚠ {0} alteração(ões) não commitada(s) será(ão) perdida(s)",
-  "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou"
+  "✓ '{0}' verified — {1} passed": "✓ '{0}' verificado — {1} passou",
+  "Agent pane attach failed: {0}": "Falha ao anexar o painel do agente: {0}",
+  "Agent pane for '{0}' was open before reload — reopen via Tachyon: Open Agent Pane.": "O painel do agente '{0}' estava aberto antes do reload — reabra via Tachyon: Open Agent Pane.",
+  "Cannot open agent pane for '{0}' — agent is not in the live roster": "Não é possível abrir o painel do agente '{0}' — o agente não está no roster ao vivo",
+  "Cannot open agent pane — workspace is not active": "Não é possível abrir o painel do agente — o workspace não está ativo",
+  "Open which agent's pane?": "Abrir o painel de qual agente?"
 }
