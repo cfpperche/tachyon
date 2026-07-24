@@ -38,8 +38,12 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 - [ ] `src/webview/cockpit/App.tsx`: Worktrees tab — group by classification, show `reasons`, gate
       actions per state, add batch selection + preview/confirm UI for the `record-only`/
       `ready-to-remove` groups.
-- [ ] `test/product-invariants/registry.json` + `PI-002-worktree-cleanup-commit-safety.test.ts`:
-      register per the maintainer's 2026-07-24 decision (spec.md Open questions).
+- [x] `test/product-invariants/registry.json` + `PI-002-worktree-cleanup-commit-safety.test.ts`:
+      registered per the maintainer's 2026-07-24 decision (spec.md Open questions). Two independent
+      oracles in one real-git test: the classifier never returns `ready-to-remove` for a commit not
+      contained in base, AND `git branch -d` independently refuses ("not fully merged") once the
+      worktree is removed — proven against a real repo, not fakes. `npm run test:invariants`:
+      "Product Invariant gate passed: 2 invariant(s), 3 test(s)." Governance doc catalog updated.
 
 ## Verification
 

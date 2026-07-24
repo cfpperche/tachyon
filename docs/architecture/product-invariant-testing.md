@@ -282,6 +282,30 @@ decision changes the promise.
 - **Ratification note:** promise evidence-source updated 2026-07-19 per maintainer-ratified decision (t-8bb9cd)
   after 9186c73b untracked the live workspace config; the fixed oracle and its strength are unchanged.
 
+### PI-002 — worktree cleanup commit safety
+
+- **Status / owner:** active / Tachyon maintainers.
+- **Promise:** a destructive worktree/branch cleanup action never discards unique, unmerged commits
+  without an explicit, informed override.
+- **Source:** `docs/specs/444-worktree-registry-hygiene/spec.md`.
+- **Executable evidence:** `test/product-invariants/PI-002-worktree-cleanup-commit-safety.test.ts` via
+  `npm run test:invariants`; active manifest entry in `test/product-invariants/registry.json`.
+- **Topology:** portable integration topology through a real, disposable git repository (`git init` +
+  a real committed unique change), driving the actual `ManagedWorktreeService`/`WorktreeManager`
+  product code — not a fake/mocked git layer.
+- **Environment / allowed variance:** supported repository Node environments with a real `git` binary
+  on `PATH`, on any OS; temporary directory roots and object SHAs may vary, but the classification
+  verdict and git's own branch-delete refusal may not.
+- **Fixed oracle:** git ancestry. A worktree carrying a commit not reachable from (and not
+  patch-equivalent to) its recorded base is never classified `ready-to-remove` by
+  `classifyManagedWorktree`, and `git branch -d` on that same branch independently refuses — two
+  distinct mechanisms agreeing the commit is not safe to lose, so the promise does not rest on
+  Tachyon's own classifier alone.
+- **Gates:** focused Product Invariants command, full verification and the distinct CI Product Invariants step.
+- **Ratification note:** registered 2026-07-24 (maintainer decision, t-9f8dfc) — formalizes a safety
+  property that was already an implicit design goal of spec 444's classifier and spec 365's
+  `commitsNotInBase`/`forceLoseCommits` precedent.
+
 Adding a product-global fallback, silently reading repository guidance, dropping provenance, reordering files,
 rewriting their content, or removing an active manifest/evidence link violates this invariant. A repository
 remains free to choose its own guidance explicitly.
