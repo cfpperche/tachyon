@@ -77,26 +77,33 @@ export function resolveSlotId(opts = {}) {
 }
 
 /**
- * F5 "Tachyon: Dev Host" always reads `${workspaceFolder}/.tachyon/dev-host` from the
- * **VS Code monorepo window** (primary checkout). When `point`/`point-status`/`point-clear`
- * are invoked from a linked git worktree checkout (`.git` is a file), the pointer must land
- * under the primary worktree — not under the feature worktree's own `.tachyon/dev-host`.
+ * Locate the PRIMARY checkout of this repository, for **borrowing dependencies only**.
+ *
+ * spec 448 — this used to be `resolveF5HostRepoRoot`, and it decided where the dev-host lived:
+ * a linked worktree was redirected to the primary monorepo so one shared `.tachyon/dev-host`
+ * could serve every checkout. The dev-host now belongs to the checkout it serves, so that job
+ * is gone. What remains is a real worktree→primary dependency: `ensureNodeModules` symlinks the
+ * primary's `node_modules` into a worktree that lacks one, and `ensureWorktreeToolBin` does the
+ * same for `.tachyon/bin`. Those still need to find the primary.
+ *
+ * Callers must NEVER use the result as a dev-host root. It answers exactly one question:
+ * "where can this checkout borrow installed dependencies from?"
  *
  * Pure for tests: pass `readGitCommonDir(checkout) => absolute .git path`.
  *
- * @returns {{ hostRepo: string, scriptRepo: string, redirected: boolean, warning?: string }}
+ * @returns {{ primaryRepo: string, checkout: string, redirected: boolean, warning?: string }}
  */
-export function resolveF5HostRepoRoot(fromCheckout, { readGitCommonDir } = {}) {
+export function resolvePrimaryRepoRoot(fromCheckout, { readGitCommonDir } = {}) {
   const scriptRepo = path.resolve(fromCheckout);
   const gitPath = path.join(scriptRepo, ".git");
   let isLinkedWorktree = false;
   try {
     isLinkedWorktree = fs.existsSync(gitPath) && fs.statSync(gitPath).isFile();
   } catch {
-    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+    return { primaryRepo: scriptRepo, checkout: scriptRepo, redirected: false };
   }
   if (!isLinkedWorktree) {
-    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+    return { primaryRepo: scriptRepo, checkout: scriptRepo, redirected: false };
   }
 
   const readCommon =
@@ -111,71 +118,64 @@ export function resolveF5HostRepoRoot(fromCheckout, { readGitCommonDir } = {}) {
     common = String(readCommon(scriptRepo) || "").trim();
   } catch (err) {
     return {
-      hostRepo: scriptRepo,
-      scriptRepo,
+      primaryRepo: scriptRepo,
+      checkout: scriptRepo,
       redirected: false,
-      warning: `linked worktree but git-common-dir failed (${err instanceof Error ? err.message : String(err)}); pointer stays under this checkout`,
+      warning: `linked worktree but git-common-dir failed (${err instanceof Error ? err.message : String(err)}); dependencies cannot be borrowed`,
     };
   }
   if (!common) {
     return {
-      hostRepo: scriptRepo,
-      scriptRepo,
+      primaryRepo: scriptRepo,
+      checkout: scriptRepo,
       redirected: false,
-      warning: "linked worktree but empty git-common-dir; pointer stays under this checkout",
+      warning: "linked worktree but empty git-common-dir; dependencies cannot be borrowed",
     };
   }
 
   // git-common-dir is <primary>/.git — primary checkout is its parent.
-  const hostRepo = path.resolve(path.dirname(common));
-  if (hostRepo === scriptRepo) {
-    return { hostRepo: scriptRepo, scriptRepo, redirected: false };
+  const primaryRepo = path.resolve(path.dirname(common));
+  if (primaryRepo === scriptRepo) {
+    return { primaryRepo: scriptRepo, checkout: scriptRepo, redirected: false };
   }
-  if (!fs.existsSync(path.join(hostRepo, "package.json"))) {
+  if (!fs.existsSync(path.join(primaryRepo, "package.json"))) {
     return {
-      hostRepo: scriptRepo,
-      scriptRepo,
+      primaryRepo: scriptRepo,
+      checkout: scriptRepo,
       redirected: false,
-      warning: `linked worktree primary ${hostRepo} has no package.json; pointer stays under this checkout`,
+      warning: `linked worktree primary ${primaryRepo} has no package.json; dependencies cannot be borrowed`,
     };
   }
-  return { hostRepo, scriptRepo, redirected: true };
+  return { primaryRepo, checkout: scriptRepo, redirected: true };
 }
 
 export function devHostDir(repoRoot) {
   return path.join(repoRoot, ".tachyon", DIR_NAME);
 }
 
-export function slotsDir(repoRoot) {
-  return path.join(devHostDir(repoRoot), SLOTS_SUBDIR);
-}
-
-export function activeLinkPath(repoRoot) {
-  return path.join(devHostDir(repoRoot), ACTIVE_LINK);
-}
-
 /**
- * Paths for one Dev Host slot (isolated pointer).
- * @param {string} repoRoot
- * @param {string} [slotId]
+ * Paths for this checkout's Dev Host (spec 448).
+ *
+ * Flat: the dev-host is owned by the checkout it serves, so there is exactly one per checkout and
+ * nothing to partition. `root` is kept as an alias of `base` so call sites that spoke in terms of a
+ * slot root keep reading naturally.
+ *
+ * @param {string} repoRoot the checkout that owns this dev-host
  */
-export function pathsOf(repoRoot, slotId = DEFAULT_SLOT) {
-  const slot = normalizeSlotId(slotId);
+export function pathsOf(repoRoot) {
   const base = devHostDir(repoRoot);
-  const root = path.join(base, SLOTS_SUBDIR, slot);
   return {
     base,
-    slotId: slot,
-    root,
-    extension: path.join(root, "extension"),
-    workspace: path.join(root, "workspace"),
-    runtime: path.join(root, "runtime"),
-    meta: path.join(root, "meta.json"),
-    userData: path.join(root, "user-data"),
-    extensions: path.join(root, "extensions"),
-    tmux: path.join(root, "tmux"),
-    cache: path.join(root, "cache"),
-    profileHome: path.join(root, "profile-home"),
+    root: base,
+    extension: path.join(base, "extension"),
+    workspace: path.join(base, "workspace"),
+    runtime: path.join(base, "runtime"),
+    meta: path.join(base, "meta.json"),
+    userData: path.join(base, "user-data"),
+    extensions: path.join(base, "extensions"),
+    tmux: path.join(base, "tmux"),
+    cache: path.join(base, "cache"),
+    profileHome: path.join(base, "profile-home"),
   };
 }
 
@@ -814,50 +814,31 @@ export function restoreTemplateLaunchConfig(repoRoot) {
  * @returns {object} meta written to disk
  */
 export function point(opts) {
+  // spec 448 — the dev-host is rooted in the checkout that owns it. `primaryRepo` is only where
+  // dependencies are borrowed from (node_modules / .tachyon/bin); it never selects the root.
   const repoRoot = path.resolve(opts.repoRoot);
-  const worktree = assertWorktreeLooksValid(opts.worktree);
+  const primaryRepo = path.resolve(opts.primaryRepo ?? opts.repoRoot);
+  const worktree = assertWorktreeLooksValid(opts.worktree ?? repoRoot);
   const workspace = assertWorkspaceDir(opts.workspace);
   assertWorkspaceNotRepoRoot(workspace, repoRoot);
 
-  migrateFlatPointerToSlots(repoRoot);
-
-  const slotId = resolveSlotId({
-    owner: opts.owner,
-    slot: opts.slot,
-    requireOwner: opts.requireOwner === true,
-    env: opts.env,
-  });
-  const p = pathsOf(repoRoot, slotId);
+  const p = pathsOf(repoRoot);
   assertPointerSessionIdle(p.root);
   ensureDir(p.base);
-  ensureDir(path.join(p.base, SLOTS_SUBDIR));
-  ensureDir(p.root);
   ensureDir(p.userData);
   ensureDir(p.extensions);
   ensureDir(p.tmux);
   ensureDir(p.cache);
   ensureDir(p.profileHome);
 
-  const nm = ensureNodeModules(worktree, repoRoot);
-  const tools = ensureWorktreeToolBin(worktree, repoRoot);
+  const nm = ensureNodeModules(worktree, primaryRepo);
+  const tools = ensureWorktreeToolBin(worktree, primaryRepo);
   // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
   replaceSymlink(p.extension, worktree);
   // Point at the Node executable running this CLI; the engine store will copy and hash that instead.
   replaceSymlink(p.runtime, fs.realpathSync(process.execPath));
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
   materializeWorkspaceMirror(p.workspace, workspace);
-
-  // Activate for F5 default: explicit flag, or human/default path (no owner).
-  // Agent slots with --owner do not steal active unless --activate or first slot ever.
-  const wantActivate =
-    opts.activate === true ||
-    (opts.activate !== false && (!opts.owner || slotId === DEFAULT_SLOT));
-  if (wantActivate) {
-    setActiveSlot(repoRoot, slotId);
-  } else if (!readActiveSlotId(repoRoot)) {
-    // First slot ever → become active so bare F5 still works.
-    setActiveSlot(repoRoot, slotId);
-  }
 
   let packageName = null;
   try {
@@ -866,14 +847,12 @@ export function point(opts) {
     /* ignore */
   }
 
-  const isActive = readActiveSlotId(repoRoot) === slotId;
-  const launchName = isActive ? LAUNCH_CONFIG_NAME : `${LAUNCH_CONFIG_NAME} · ${slotId}`;
-
   const meta = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generation: randomUUID(),
     kind: "dev-host",
-    slotId,
+    checkout: repoRoot,
+    primaryRepo,
     worktree,
     workspace,
     extensionLink: p.extension,
@@ -881,29 +860,22 @@ export function point(opts) {
     workspaceMirror: true,
     spec: opts.spec ?? null,
     slug: opts.slug ?? null,
-    owner: opts.owner ?? (slotId !== DEFAULT_SLOT ? slotId : null),
     packageName,
     sha: readShortSha(worktree),
     nodeModulesLinked: nm.linked,
     toolBinLinked: tools.linked,
     toolBinLinkCount: tools.count,
     preparedAt: new Date().toISOString(),
-    launchConfig: launchName,
+    launchConfig: LAUNCH_CONFIG_NAME,
     howTo: [
-      `Run and Debug → select "${launchName}"${isActive ? " (active F5 slot)" : " (or set active with point --activate)"}`,
-      "Press F5 (builds this slot's worktree, opens Extension Development Host on the fixture)",
+      `Open VS Code on THIS checkout (${repoRoot}) — the dev-host belongs to it`,
+      `Run and Debug → select "${LAUNCH_CONFIG_NAME}"`,
+      "Press F5 (builds this checkout, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
-      `When done: npm run dogfood:dev-host -- point-clear --owner ${opts.owner ?? slotId}`,
-      "Other agents' slots are untouched — use point-status --all to list",
+      "When done: npm run dogfood:dev-host -- point-clear",
+      "Other checkouts are untouched — each owns its own dev-host",
     ],
   };
-  fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
-  const launchPath = ensurePortableLaunchConfig(repoRoot);
-  if (launchPath) {
-    meta.launchJson = launchPath;
-    meta.launchNote =
-      "launch.json: default entry uses .tachyon/dev-host/active → slots/<id>; per-slot entries under slots/<id>/";
-  }
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return meta;
 }
@@ -1330,12 +1302,18 @@ export async function main(argv = process.argv.slice(2)) {
   const sub = args._[0] ?? "help";
   // Explicit --repo wins (tests / overrides). Otherwise, if this checkout is a linked
   // git worktree, redirect the F5 pointer host to the primary monorepo checkout.
+  // spec 448 — the dev-host is owned by THIS checkout. Previously `repoRoot` came from a redirect
+  // that sent a linked worktree back to the primary monorepo, so one shared dev-host served every
+  // checkout; that is exactly what this spec removes. The primary is still resolved, but only so
+  // dependencies (node_modules, .tachyon/bin) can be borrowed from it.
   const scriptRoot = args.repo ? path.resolve(args.repo) : defaultRepoRoot();
-  const host =
+  const repoRoot = scriptRoot;
+  const primary =
     args.repo != null
-      ? { hostRepo: scriptRoot, scriptRepo: scriptRoot, redirected: false }
-      : resolveF5HostRepoRoot(scriptRoot);
-  const repoRoot = host.hostRepo;
+      ? { primaryRepo: scriptRoot, checkout: scriptRoot, redirected: false }
+      : resolvePrimaryRepoRoot(scriptRoot);
+  const primaryRepo = primary.primaryRepo;
+  if (primary.warning) console.warn(`${SELF}: ${primary.warning}`);
   const agentish = looksLikeAgentProcess();
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
@@ -1358,23 +1336,17 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
     return 0;
   }
 
-  if (host.warning) {
-    console.error(`${SELF}: warning: ${host.warning}`);
-  }
-  if (host.redirected && (sub === "point" || sub === "status" || sub === "clear")) {
-    console.log(`${SELF}: F5 host is primary monorepo ${repoRoot}`);
-    console.log(`  (command ran from linked worktree ${host.scriptRepo})`);
-    console.log(`  pointer path: ${path.join(repoRoot, ".tachyon", DIR_NAME)}`);
+  if (primary.warning) {
+    console.error(`${SELF}: warning: ${primary.warning}`);
   }
 
   if (sub === "point") {
-    if (!args.worktree) {
-      throw new Error(`${SELF}: point requires --worktree`);
-    }
+    // spec 448 — the checkout you run in IS the target; --worktree is an explicit override only.
+    const worktree = args.worktree ?? repoRoot;
     let workspace = args.workspace;
     if (!workspace && args.fixture) {
       workspace = resolveFixturePath({
-        worktree: args.worktree,
+        worktree,
         repoRoot,
         fixture: args.fixture,
       });
@@ -1382,36 +1354,28 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
     if (!workspace) {
       throw new Error(`${SELF}: point requires --workspace PATH or --fixture SLUG`);
     }
-    const requireOwner =
-      args.requireOwner === true ||
-      (agentish && !args.owner && !args.slot && !process.env.TACHYON_AGENT_NAME && !process.env.TACHYON_DEV_HOST_SLOT);
-    const slug = args.slug ?? (args.fixture ? String(args.fixture).replace(/-dogfood$/, "") : null);
     const meta = point({
       repoRoot,
-      worktree: args.worktree,
+      primaryRepo,
+      worktree,
       workspace,
       spec: args.spec,
-      slug,
-      owner: args.owner,
-      slot: args.slot,
-      activate: args.activate,
-      requireOwner,
+      slug: args.slug ?? (args.fixture ? String(args.fixture).replace(/-dogfood$/, "") : null),
     });
     console.log(`${SELF}: armed`);
-    console.log(`  f5-host:   ${repoRoot}`);
-    console.log(`  slot:      ${meta.slotId}${meta.launchConfig === LAUNCH_CONFIG_NAME ? " (active F5)" : ""}`);
+    console.log(`  checkout:  ${repoRoot}`);
     console.log(`  worktree:  ${meta.worktree}`);
     console.log(`  workspace: ${meta.workspace}`);
     console.log(`  sha:       ${meta.sha}`);
-    if (meta.owner) console.log(`  owner:     ${meta.owner}`);
     if (meta.spec) console.log(`  spec:      ${meta.spec}`);
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
+    if (primary.redirected) console.log(`  deps from: ${primaryRepo} (borrowed node_modules/.tachyon/bin)`);
     console.log("");
-    console.log("  launch.json: portable ${workspaceFolder} paths via active/ + per-slot configs");
-    console.log(`  workspace:   real mirror under slots/${meta.slotId}/workspace`);
+    console.log("  launch.json: static, committed, ${workspaceFolder}/.tachyon/dev-host — nothing generated");
+    console.log("  workspace:   real mirror under .tachyon/dev-host/workspace");
     console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
     console.log("");
-    console.log("Human next step (from monorepo VS Code window):");
+    console.log("Human next step:");
     for (const line of meta.howTo) console.log(`  • ${line}`);
     return 0;
   }
@@ -1443,13 +1407,13 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
         console.log(`${SELF}: unarmed — no slots (npm run dogfood:dev-host -- point …)`);
       }
       console.log("---");
-      console.log(JSON.stringify({ ...all, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
+      console.log(JSON.stringify({ ...all, checkout: repoRoot, primaryRepo }, null, 2));
       return all.armed ? 0 : 1;
     }
     const st = await status(repoRoot, { owner: args.owner, slot: args.slot, slotId: args.slot });
     printStatus(st);
     console.log("---");
-    console.log(JSON.stringify({ ...st, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
+    console.log(JSON.stringify({ ...st, checkout: repoRoot, primaryRepo }, null, 2));
     return st.armed ? 0 : 1;
   }
 
@@ -1481,7 +1445,6 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
       console.log(`  engine: ${r.reconciled.engine?.state ?? r.reconciled.engine}`);
       console.log(`  bridge: ${r.reconciled.bridge?.state ?? r.reconciled.bridge}`);
     }
-    if (host.redirected) console.log(`  (cleared monorepo pointer at ${repoRoot})`);
     return 0;
   }
 
