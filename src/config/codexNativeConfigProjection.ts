@@ -5,7 +5,7 @@ import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
-import { removeCodexMcpServer } from "../registration/adapters.js";
+import { getCodexMcpServerBlock, removeCodexMcpServer } from "../registration/adapters.js";
 
 type ScalarFamily = "permissions" | "interface" | "featureFlags";
 type SourceName = "global" | "workspace";
@@ -42,13 +42,15 @@ export type CodexNativeConfigScope = "global" | "workspace";
 
 export type CodexNativeConfigChange =
   | { kind: "setting"; key: CodexEditableSettingKey; value: CodexEditableSettingValue }
-  | { kind: "disable-mcp"; name: string };
+  | { kind: "set-mcp-enabled"; name: string; enabled: boolean };
 
 export interface ApplyCodexNativeConfigChangeInput {
   workspaceRoot: string;
   scope: CodexNativeConfigScope;
   expectedRevision?: string;
-  change: CodexNativeConfigChange;
+  changes?: CodexNativeConfigChange[];
+  /** Transitional single-change spelling for callers outside the Control batch path. */
+  change?: CodexNativeConfigChange;
   homeDir?: string;
 }
 
@@ -167,20 +169,58 @@ export function applyCodexNativeConfigChange(input: ApplyCodexNativeConfigChange
     try { parse(before); } catch { throw new Error("This source is invalid TOML. Open the file to repair it before using Runtime Config."); }
   }
 
-  let after: string;
-  if (input.change.kind === "setting") {
-    if (!isEditableKey(input.change.key) || !validValue(input.change.key, input.change.value)) throw new Error("Unsupported Codex setting value.");
-    after = patchCodexSetting(before ?? "", input.change.key, input.change.value);
-  } else {
-    if (!/^[A-Za-z0-9_-]+$/.test(input.change.name)) throw new Error("Invalid MCP server name.");
+  const changes = input.changes ?? (input.change ? [input.change] : []);
+  if (changes.length === 0) throw new Error("No runtime configuration changes were supplied.");
+  let after = before ?? "";
+  for (const change of changes) {
+    if (change.kind === "setting") {
+      if (!isEditableKey(change.key) || !validValue(change.key, change.value)) throw new Error("Unsupported Codex setting value.");
+      after = patchCodexSetting(after, change.key, change.value);
+      continue;
+    }
+    if (!/^[A-Za-z0-9_-]+$/.test(change.name)) throw new Error("Invalid MCP server name.");
     if (before === undefined) throw new Error("This source does not contain that MCP server.");
-    after = removeCodexMcpServer(before, input.change.name);
-    if (after === before) throw new Error("This MCP server is no longer present. Reload the source before saving.");
+    after = setCodexMcpEnabled(after, change.name, change.enabled);
   }
   try { parse(after); } catch { throw new Error("The proposed change would produce invalid TOML."); }
   const mode = before === undefined ? undefined : fs.statSync(file).mode & 0o777;
   atomicWrite(file, after, actualRevision, mode);
   return { path: file, revision: digest(after) };
+}
+
+const DISABLED_MCP_MARKER = "# tachyon-disabled-mcp: ";
+
+function commentedMcpRange(text: string, name: string): { start: number; end: number } | undefined {
+  const lines = text.split("\n");
+  const marker = `${DISABLED_MCP_MARKER}${name}`;
+  const start = lines.findIndex((line) => line.trim() === marker);
+  if (start < 0) return undefined;
+  let end = start + 1;
+  while (end < lines.length && (lines[end].startsWith("# ") || lines[end].trim() === "#")) end++;
+  return { start, end };
+}
+
+function setCodexMcpEnabled(text: string, name: string, enabled: boolean): string {
+  const disabled = commentedMcpRange(text, name);
+  if (!enabled) {
+    if (disabled) return text;
+    const block = getCodexMcpServerBlock(text, name);
+    if (!block) throw new Error("This MCP server is no longer present. Reload the source before saving.");
+    const removed = removeCodexMcpServer(text, name);
+    const commented = block.trimEnd().split("\n").map((line) => `# ${line}`).join("\n");
+    const suffix = removed.endsWith("\n") ? "" : "\n";
+    return `${removed}${suffix}${DISABLED_MCP_MARKER}${name}\n${commented}\n`;
+  }
+  if (!disabled) {
+    const block = getCodexMcpServerBlock(text, name);
+    if (!block) throw new Error("This MCP server is no longer present. Reload the source before saving.");
+    return text;
+  }
+  const lines = text.split("\n");
+  const restored = lines.slice(disabled.start + 1, disabled.end)
+    .map((line) => line.startsWith("# ") ? line.slice(2) : line.slice(1))
+    .join("\n");
+  return [...lines.slice(0, disabled.start), restored, ...lines.slice(disabled.end)].join("\n");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

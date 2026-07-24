@@ -45,7 +45,7 @@ describe("Codex runtime configuration inventory", () => {
 
     expect(snapshot.global.knownSettings).toContainEqual({ key: "approval_policy", label: "Approval policy", value: "on-request", editValue: "on-request", editable: true });
     expect(snapshot.global.knownSettings).toContainEqual({ key: "sandbox_mode", label: "Sandbox mode", editable: true });
-    expect(snapshot.global.mcpServers).toEqual(["bridge"]);
+    expect(snapshot.global.mcpServers).toEqual([{ name: "bridge", enabled: true }]);
     expect(snapshot.global.unknownKeys).toEqual(["hooks.SessionStart.command", "model"]);
     expect(snapshot.global.internalStateCount).toBe(1);
     expect(JSON.stringify(snapshot)).not.toContain("contains-a-secret-argument");
@@ -122,7 +122,7 @@ describe("Codex runtime configuration inventory", () => {
     expect(fs.readFileSync(file, "utf8")).toBe('personality = "changed-elsewhere"\n');
   });
 
-  it("disables one MCP by removing only that server block", () => {
+  it("disables and re-enables one MCP without losing its original block", () => {
     const root = tempRoot();
     const file = path.join(root, ".codex", "config.toml");
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -142,12 +142,24 @@ describe("Codex runtime configuration inventory", () => {
       homeDir: path.join(root, "home"),
       scope: "workspace",
       expectedRevision: before.workspace.revision,
-      change: { kind: "disable-mcp", name: "remove_me" },
+      change: { kind: "set-mcp-enabled", name: "remove_me", enabled: false },
     });
 
     const after = fs.readFileSync(file, "utf8");
     expect(after).toContain('[mcp_servers.keep]\ncommand = "keep"');
-    expect(after).not.toContain("remove_me");
+    expect(after).toContain("# tachyon-disabled-mcp: remove_me");
+    expect(after).toContain('# [mcp_servers.remove_me]\n# command = "remove"');
     expect(after).toContain('model = "gpt-5"');
+
+    const disabled = inspectCodexRuntimeConfig({ workspaceRoot: root, homeDir: path.join(root, "home"), agents: {} });
+    expect(disabled.workspace.mcpServers).toContainEqual({ name: "remove_me", enabled: false });
+    applyCodexNativeConfigChange({
+      workspaceRoot: root,
+      homeDir: path.join(root, "home"),
+      scope: "workspace",
+      expectedRevision: disabled.workspace.revision,
+      change: { kind: "set-mcp-enabled", name: "remove_me", enabled: true },
+    });
+    expect(fs.readFileSync(file, "utf8")).toContain('[mcp_servers.remove_me]\ncommand = "remove"');
   });
 });

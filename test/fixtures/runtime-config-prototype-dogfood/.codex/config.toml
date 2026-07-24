@@ -20,5 +20,11 @@ command = "fixture-remove-not-executed"
 [hooks.state]
 trusted_hash = "runtime-managed-and-hidden"
 
+[hooks.SessionStart]
+command = "fixture-hook-not-executed"
+
+[skills.fixture_review]
+path = "./skills/review"
+
 [notice]
 hide_full_access_warning = true

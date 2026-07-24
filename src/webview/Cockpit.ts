@@ -173,8 +173,7 @@ export interface CockpitRuntimeOps {
 export interface CockpitRuntimeConfig {
   buildSnapshot: (wsHash?: string) => CodexRuntimeConfigInventory | undefined;
   openSource: (sourcePath: string) => Promise<void>;
-  saveSetting: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; key: string; value: unknown }) => Promise<void>;
-  disableMcp: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; name: string }) => Promise<void>;
+  saveChanges: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> }) => Promise<void>;
 }
 
 export interface CockpitInspector {
@@ -2057,34 +2056,17 @@ export async function openCockpit(
             }
           }
           return;
-        case "saveRuntimeConfigSetting":
-          if ((c.scope === "global" || c.scope === "workspace") && typeof c.key === "string" && isSection(currentRoute, "runtime-config")) {
+        case "saveRuntimeConfigChanges":
+          if ((c.scope === "global" || c.scope === "workspace") && Array.isArray(c.changes) && isSection(currentRoute, "runtime-config")) {
             try {
-              await deps.runtimeConfig.saveSetting({
+              await deps.runtimeConfig.saveChanges({
                 wsHash: controlWsHash,
                 scope: c.scope,
                 expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
-                key: c.key,
-                value: c.value,
+                changes: c.changes,
               });
               await sendRuntimeConfig();
               live.webview.postMessage(toastMessage("Runtime configuration saved."));
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
-            }
-          }
-          return;
-        case "disableRuntimeConfigMcp":
-          if ((c.scope === "global" || c.scope === "workspace") && typeof c.name === "string" && isSection(currentRoute, "runtime-config")) {
-            try {
-              await deps.runtimeConfig.disableMcp({
-                wsHash: controlWsHash,
-                scope: c.scope,
-                expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
-                name: c.name,
-              });
-              await sendRuntimeConfig();
-              live.webview.postMessage(toastMessage("MCP disabled in this source."));
             } catch (err) {
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }

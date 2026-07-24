@@ -4,9 +4,9 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Add controlled Global-home materialization to the Dev Host pointer and extension inventory.
-- [ ] Create the complete fixture sources and manual walkthrough.
-- [ ] Add regression tests for production-vs-Dev-Host source selection and source preservation.
+- [x] Add controlled Global-home materialization to the Dev Host pointer and extension inventory.
+- [x] Create the complete fixture sources and manual walkthrough, including preserved hooks and skills.
+- [x] Add regression tests for production-vs-Dev-Host source selection and source preservation.
 
 ## Verification
 

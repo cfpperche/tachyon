@@ -1506,20 +1506,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       openSource: async (sourcePath) => {
         await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
       },
-      saveSetting: async ({ wsHash, scope, expectedRevision, key, value }) => {
+      saveChanges: async ({ wsHash, scope, expectedRevision, changes }) => {
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
         if (!ws?.config) throw new Error("The selected workspace is unavailable.");
         applyCodexNativeConfigChange({
           workspaceRoot: ws.workspaceRoot,
           scope,
           expectedRevision,
-          change: { kind: "setting", key: key as CodexEditableSettingKey, value: value as string | boolean | string[] },
+          changes: changes.map((change) => change.kind === "setting"
+            ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
+            : change),
         });
-      },
-      disableMcp: async ({ wsHash, scope, expectedRevision, name }) => {
-        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
-        applyCodexNativeConfigChange({ workspaceRoot: ws.workspaceRoot, scope, expectedRevision, change: { kind: "disable-mcp", name } });
       },
     },
     inspector: (() => {

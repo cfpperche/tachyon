@@ -298,8 +298,7 @@ export interface CockpitAppProps {
   onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
   runtimeConfigSnapshot?: CodexRuntimeConfigInventory;
   onOpenRuntimeConfigSource: (path: string) => void;
-  onSaveRuntimeConfigSetting: (scope: RuntimeConfigScope, expectedRevision: string | undefined, key: string, value: unknown) => void;
-  onDisableRuntimeConfigMcp: (scope: RuntimeConfigScope, expectedRevision: string | undefined, name: string) => void;
+  onSaveRuntimeConfigChanges: (scope: RuntimeConfigScope, expectedRevision: string | undefined, changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }>) => void;
   inspector: Pick<
     InspectorAppProps,
     "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
@@ -937,25 +936,54 @@ function RuntimeConfigInventory({
   s,
   snapshot,
   onOpenSource,
-  onSaveSetting,
-  onDisableMcp,
+  onSaveChanges,
 }: {
   s: CockpitStrings;
   snapshot?: CodexRuntimeConfigInventory;
   onOpenSource: (path: string) => void;
-  onSaveSetting: (scope: RuntimeConfigScope, expectedRevision: string | undefined, key: string, value: unknown) => void;
-  onDisableMcp: (scope: RuntimeConfigScope, expectedRevision: string | undefined, name: string) => void;
+  onSaveChanges: (scope: RuntimeConfigScope, expectedRevision: string | undefined, changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }>) => void;
 }) {
   const [scope, setScope] = useState<RuntimeConfigScope>("global");
   const [unknownOpen, setUnknownOpen] = useState(false);
-  if (!snapshot) return <div class="ds-empty">Loading runtime configuration…</div>;
-  const config = snapshot[scope];
+  const [draftSettings, setDraftSettings] = useState<Record<string, string | boolean | string[]>>({});
+  const [draftMcp, setDraftMcp] = useState<Record<string, boolean>>({});
+  const config = snapshot?.[scope];
+  const snapshotKey = `${scope}:${config?.revision ?? "missing"}`;
+  useEffect(() => {
+    if (!config) return;
+    const settings: Record<string, string | boolean | string[]> = {};
+    for (const setting of config.knownSettings) {
+      if (setting.editValue !== undefined) settings[setting.key] = setting.editValue;
+    }
+    setDraftSettings(settings);
+    setDraftMcp(Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled])));
+  }, [snapshotKey]);
+  if (!config) return <div class="ds-empty">Loading runtime configuration…</div>;
+  const initialSettings: Record<string, string | boolean | string[]> = Object.fromEntries(config.knownSettings.filter((setting) => setting.editValue !== undefined).map((setting) => [setting.key, setting.editValue])) as Record<string, string | boolean | string[]>;
+  const initialMcp = Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled]));
+  const dirtySettings = Object.keys({ ...initialSettings, ...draftSettings }).some((key) => JSON.stringify(initialSettings[key]) !== JSON.stringify(draftSettings[key]));
+  const dirtyMcp = Object.keys({ ...initialMcp, ...draftMcp }).some((name) => initialMcp[name] !== draftMcp[name]);
+  const dirty = dirtySettings || dirtyMcp;
+  const save = () => {
+    const changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> = [];
+    for (const [key, value] of Object.entries(draftSettings)) {
+      if (JSON.stringify(initialSettings[key]) !== JSON.stringify(value)) changes.push({ kind: "setting", key, value });
+    }
+    for (const [name, enabled] of Object.entries(draftMcp)) {
+      if (initialMcp[name] !== enabled) changes.push({ kind: "set-mcp-enabled", name, enabled });
+    }
+    if (changes.length) onSaveChanges(scope, config.revision, changes);
+  };
+  const cancel = () => {
+    setDraftSettings(initialSettings);
+    setDraftMcp(initialMcp);
+  };
   return (
     <div class="rcp-root" data-testid="control-runtime-config">
       <PageChrome
         title={s.runtimeConfigTitle}
         hint={s.runtimeConfigHint}
-        actions={<Badge tone="warn">{s.runtimeConfigPrototype}</Badge>}
+        actions={<Badge tone="ok">Measured editor</Badge>}
       />
 
       <div class="rcp-toolbar">
@@ -1005,18 +1033,19 @@ function RuntimeConfigInventory({
             <div class="rcp-setting-list">{config.knownSettings.map((setting) => {
               const boolean = setting.key === "tui.status_line_use_colors" || setting.key === "features.terminal_resize_reflow";
               const statusLine = setting.key === "tui.status_line";
-              return <RuntimeConfigSettingEditor
-                key={`${scope}:${setting.key}:${config.revision ?? "new"}`}
-                setting={setting}
-                boolean={boolean}
-                statusLine={statusLine}
-                unsetLabel={s.runtimeConfigUnset}
-                saveLabel={s.runtimeConfigSave}
-                editable={setting.editable}
-                onSave={(value) => onSaveSetting(scope, config.revision, setting.key, value)}
-              />;
+              const raw = draftSettings[setting.key];
+              const value = Array.isArray(raw) ? raw.join(", ") : raw === undefined ? "" : String(raw);
+              return <div class="rcp-setting rcp-setting--editable" key={`${scope}:${setting.key}`}>
+                <label>{setting.label}</label>
+                <div class="rcp-setting-editor">
+                  {boolean ? <input type="checkbox" checked={raw === true} disabled={!setting.editable} onInput={(event) => setDraftSettings((previous) => ({ ...previous, [setting.key]: (event.currentTarget as HTMLInputElement).checked }))} /> : (
+                    <input value={value} disabled={!setting.editable} placeholder={setting.editable ? s.runtimeConfigUnset : "Unsupported value"} onInput={(event) => setDraftSettings((previous) => ({ ...previous, [setting.key]: statusLine ? (event.currentTarget as HTMLInputElement).value.split(",").map((item) => item.trim()).filter(Boolean) : (event.currentTarget as HTMLInputElement).value }))} />
+                  )}
+                </div>
+              </div>;
             })}</div>
           )}
+          <div class="rcp-card-actions"><Button variant="default" disabled={!dirty} onClick={cancel}>Cancel</Button><Button variant="primary" disabled={!dirty} onClick={save}>{s.runtimeConfigSave}</Button></div>
         </section>
 
         <section class="rcp-card">
@@ -1027,8 +1056,8 @@ function RuntimeConfigInventory({
             </div>
           </div>
           <div class="rcp-capability-list">
-            {config.mcpServers.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : config.mcpServers.map((name) => (
-              <div class="rcp-capability-item" key={name}><div><strong>{name}</strong><span>Configured in this source</span></div><Button variant="default" onClick={() => onDisableMcp(scope, config.revision, name)}>{s.runtimeConfigDisableMcp}</Button></div>
+            {config.mcpServers.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : config.mcpServers.map((server) => (
+              <div class="rcp-capability-item" key={server.name}><div><strong>{server.name}</strong><span>{server.enabled ? "Configured in this source" : "Disabled in this source"}</span></div><label class="rcp-toggle"><input type="checkbox" checked={draftMcp[server.name] ?? server.enabled} onInput={(event) => setDraftMcp((previous) => ({ ...previous, [server.name]: (event.currentTarget as HTMLInputElement).checked }))} /> {draftMcp[server.name] ?? server.enabled ? "Enabled" : "Disabled"}</label></div>
             ))}
           </div>
         </section>
@@ -1054,36 +1083,6 @@ function RuntimeConfigInventory({
       </div>
     </div>
   );
-}
-
-function RuntimeConfigSettingEditor({
-  setting,
-  boolean,
-  statusLine,
-  unsetLabel,
-  saveLabel,
-  editable,
-  onSave,
-}: {
-  setting: CodexRuntimeConfigInventory["global"]["knownSettings"][number];
-  boolean: boolean;
-  statusLine: boolean;
-  unsetLabel: string;
-  saveLabel: string;
-  editable: boolean;
-  onSave: (value: string | boolean | string[]) => void;
-}) {
-  const [value, setValue] = useState(() => Array.isArray(setting.editValue) ? setting.editValue.join(", ") : String(setting.editValue ?? ""));
-  const parsed = statusLine ? value.split(",").map((item) => item.trim()).filter(Boolean) : value;
-  return <div class="rcp-setting rcp-setting--editable">
-    <label>{setting.label}</label>
-    <div class="rcp-setting-editor">
-      {boolean ? <input type="checkbox" checked={value === "true"} disabled={!editable} onInput={(event) => setValue((event.currentTarget as HTMLInputElement).checked ? "true" : "false")} /> : (
-        <input value={value} disabled={!editable} placeholder={editable ? unsetLabel : "Unsupported value"} onInput={(event) => setValue((event.currentTarget as HTMLInputElement).value)} />
-      )}
-      <Button variant="default" disabled={!editable} onClick={() => onSave(boolean ? value === "true" : parsed)}>{saveLabel}</Button>
-    </div>
-  </div>;
 }
 
 export function App(p: CockpitAppProps) {
@@ -1576,7 +1575,7 @@ export function App(p: CockpitAppProps) {
       </div>
     );
   } else if (section === "runtime-config") {
-    body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} onOpenSource={p.onOpenRuntimeConfigSource} onSaveSetting={p.onSaveRuntimeConfigSetting} onDisableMcp={p.onDisableRuntimeConfigMcp} />;
+    body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} onOpenSource={p.onOpenRuntimeConfigSource} onSaveChanges={p.onSaveRuntimeConfigChanges} />;
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">
@@ -1804,8 +1803,6 @@ export function App(p: CockpitAppProps) {
           </div>
         ) : null}
       </main>
-
-
 
       {continuePick && m ? (() => {
         const from = continuePick.fromName;

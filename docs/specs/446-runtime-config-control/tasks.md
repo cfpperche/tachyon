@@ -6,8 +6,8 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 
 - [x] Slice A: establish typed runtime-config inventory/read boundary and replace static prototype
       with a live read-only Codex Global/Workspace view. No native writes.
-- [x] Slice B: extend the canonical SDD 442 adapter with atomic Codex scalar/MCP editing that
-      detects external source changes, preserves unowned data and reports parse/write errors.
+- [x] Slice B: extend the canonical SDD 442 adapter with one-panel atomic Codex scalar/MCP editing
+      that detects external source changes, preserves unowned data and reversibly comments MCP blocks.
 - [ ] Slice C: mark only affected running agents configuration-pending and acknowledge the change
       through successful Start/Restart/Resume materialization.
 - [ ] Slice D: measure and add Claude/Grok adapters independently; update parity evidence.

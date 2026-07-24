@@ -519,6 +519,29 @@ main.ck-main.ck-main--mission,
   font-size: 9px;
 }
 
+.rcp-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.rcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--ds-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.rcp-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
 .rcp-setting select {
   width: 100%;
   min-width: 0;
@@ -1074,7 +1097,6 @@ main.ck-main.ck-main--mission,
 }
 
 /* t-963b66 — shell toast is product ToastHost (.ds-toast*), not .ck-toast. */
-
 .ck-checked {
   margin-top: 14px;
   padding-top: 8px;

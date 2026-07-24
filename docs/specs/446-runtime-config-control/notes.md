@@ -17,8 +17,9 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
-- Slice B supports the six measured scalar fields and disabling an existing named Codex MCP by
-  removing only its source block. It deliberately does not provide an MCP creation/editor form:
+- Slice B supports the six measured scalar fields and reversible enable/disable of an existing named
+  Codex MCP by commenting its exact source block with a Tachyon marker. It deliberately does not
+  provide an MCP creation/editor form:
   command, arguments, transport and environment shapes have not been measured as a safe visual
   schema, and a generic form would either conceal important data or recreate an unbounded TOML editor.
 
@@ -29,6 +30,13 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 - The approved visual prototype included simulated skills, hooks, extensions, per-item toggles, and Claude/Grok examples. They are removed from the shipping viewer until their native source formats and effective-launch behavior are measured. The viewer is intentionally smaller but truthful.
 - A full SHA-256 revision travels with the content-free source inventory. This is not displayed as
   configuration; it is used only to reject a save if the native file changed after the page was read.
+
+## Implementation follow-up
+
+- Runtime Config keeps a draft per selected scope and commits all changed measured fields and MCP
+  toggles in one revision-checked atomic write. Cancel restores the last inventory snapshot.
+- The Control shell uses the shared Product Toast provider; the old per-cockpit toast stack is no
+  longer rendered.
 
 ## Open questions
 

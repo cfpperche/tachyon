@@ -25,11 +25,16 @@ export interface RuntimeConfigSourceInventory {
   revision?: string;
   modifiedAt?: string;
   knownSettings: RuntimeConfigKnownSetting[];
-  mcpServers: string[];
+  mcpServers: RuntimeConfigMcpServer[];
   unknownKeys: string[];
   /** Runtime-maintained records, intentionally summarized rather than listed. */
   internalStateCount: number;
   parseError?: string;
+}
+
+export interface RuntimeConfigMcpServer {
+  name: string;
+  enabled: boolean;
 }
 
 export interface CodexRuntimeConfigInventory {
@@ -83,6 +88,8 @@ function sourcePath(scope: RuntimeConfigScope, workspaceRoot: string, homeDir: s
     : path.join(workspaceRoot, ".codex", "config.toml");
 }
 
+const DISABLED_MCP_MARKER = /^# tachyon-disabled-mcp:\s*([A-Za-z0-9_-]+)\s*$/;
+
 function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir: string): RuntimeConfigSourceInventory {
   const file = sourcePath(scope, workspaceRoot, homeDir);
   let text: string;
@@ -123,6 +130,13 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
         : { key, label, value: displayValue(value), ...(typed !== undefined ? { editValue: typed, editable: true } : { editable: false }) };
     });
     const mcp = isRecord(parsed.mcp_servers) ? parsed.mcp_servers : {};
+    const disabled = text.split("\n")
+      .map((line) => line.match(DISABLED_MCP_MARKER)?.[1])
+      .filter((name): name is string => !!name);
+    const mcpServers = [...new Set([
+      ...Object.keys(mcp).map((name) => ({ name, enabled: true })),
+      ...disabled.map((name) => ({ name, enabled: false })),
+    ])].sort((left, right) => left.name.localeCompare(right.name));
     const allPaths = leafPaths(parsed);
     const internalStateCount = allPaths.filter((key) => key.startsWith("hooks.state.")).length;
     const unknownKeys = allPaths
@@ -131,7 +145,7 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
       // shown separately; their body is intentionally not surfaced in Control.
       .filter((key) => !key.startsWith("mcp_servers."))
       .filter((key) => !key.startsWith("hooks.state."));
-    return { ...base, knownSettings, mcpServers: Object.keys(mcp).sort(), unknownKeys: unknownKeys.sort(), internalStateCount };
+    return { ...base, knownSettings, mcpServers, unknownKeys: unknownKeys.sort(), internalStateCount };
   } catch (error) {
     return {
       ...base,

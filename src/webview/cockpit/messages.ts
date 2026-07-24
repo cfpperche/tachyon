@@ -241,8 +241,7 @@ export type CockpitAction =
   | { type: "fleetContinueTask"; name: string; toName: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "openRuntimeConfigSource"; path: string }
-  | { type: "saveRuntimeConfigSetting"; scope: "global" | "workspace"; expectedRevision?: string; key: string; value: unknown }
-  | { type: "disableRuntimeConfigMcp"; scope: "global" | "workspace"; expectedRevision?: string; name: string }
+  | { type: "saveRuntimeConfigChanges"; scope: "global" | "workspace"; expectedRevision?: string; changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
   | { type: "engineLogClear"; wsHash: string }
