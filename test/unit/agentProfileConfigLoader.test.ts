@@ -128,6 +128,31 @@ describe("loadProfileAwareConfig", () => {
     }).success).toBe(false);
   });
 
+  it("t-984061: refuses the unimplemented runtime-managed memory policy while keeping the implemented ones", () => {
+    const base = {
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "codex", executable: "codex" },
+    };
+    const withPolicy = (policy: string, extra: Record<string, unknown> = {}) =>
+      agentProfileSchemaV1.safeParse({ ...base, prompt: { memory: { policy, ...extra } } });
+
+    // The two policies that have a real reader stay accepted — this must not over-reject.
+    expect(withPolicy("disabled").success).toBe(true);
+    expect(withPolicy("human-approved").success).toBe(true);
+
+    // `runtime-managed` is specified by SDD 423 but nothing reads it: no code detects, enables or
+    // disables runtime-native memory. Accepting it would present governance that does not exist.
+    const refused = withPolicy("runtime-managed");
+    expect(refused.success).toBe(false);
+    if (refused.success) throw new Error("unreachable");
+    const issue = refused.error.issues.find((candidate) => candidate.path.join(".") === "prompt.memory.policy");
+    expect(issue?.message).toMatch(/not implemented/);
+
+    // The refusal is about the policy itself, so it holds regardless of any accompanying reference.
+    expect(withPolicy("runtime-managed", { reference: "selected-memory" }).success).toBe(false);
+  });
+
   it("fails closed when a profile authors policy before its adapter declares support", () => {
     const root = temporaryRoot("tachyon-agent-profile-native-policy-");
     const bytes = writeProfile(root, {
