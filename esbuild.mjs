@@ -405,8 +405,14 @@ rmSync("dist/engine", { recursive: true, force: true });
 mkdirSync("dist/engine/media", { recursive: true });
 copyFileSync("media/clipboard-copy.sh", "dist/engine/media/clipboard-copy.sh");
 // SDD 422 — Companion Mobile PWA served by Bridge at /companion/app/*
+// t-05a0b0: never stage sourcemaps — the ship boundary prunes .map from the VSIX, so a staged
+// map would enter the engine manifest and leave the installed bundle failing closed on a
+// promised file the package no longer contains (0.56.102 activation crash).
 if (existsSync("media/companion-mobile/index.html")) {
-  cpSync("media/companion-mobile", "dist/engine/media/companion-mobile", { recursive: true });
+  cpSync("media/companion-mobile", "dist/engine/media/companion-mobile", {
+    recursive: true,
+    filter: (src) => !src.endsWith(".map"),
+  });
 }
 buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");

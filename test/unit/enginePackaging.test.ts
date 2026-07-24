@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { verifyStagedBundle } from "../../src/engine-service/engineBundleStore.js";
 import {
@@ -40,9 +42,12 @@ describe("persistent engine packaging", () => {
     expect(parsed.protocol).toEqual({ min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     expect(parsed.entrypoint).toBe("engine-daemon.cjs");
     // Core daemon + clipboard helper + companion-mobile PWA (SDD 422; full tree so app.js is not 404).
+    // t-05a0b0: sourcemaps are NEVER staged — the ship boundary prunes .map from the VSIX, so a
+    // staged map would leave the installed manifest promising a file the package lacks.
     const companionMobile = fs
       .readdirSync("media/companion-mobile")
       .filter((name) => !name.startsWith("."))
+      .filter((name) => !name.endsWith(".map"))
       .filter((name) => fs.statSync(path.join("media/companion-mobile", name)).isFile())
       .sort()
       .map((name) => `media/companion-mobile/${name}`);
@@ -76,5 +81,46 @@ describe("persistent engine packaging", () => {
     }
     expect(stderr).toContain("missing persistent engine daemon options");
     expect(fs.readFileSync(daemon, "utf8")).not.toMatch(/require\(["']vscode["']\)/);
+  });
+
+  it("t-05a0b0: every manifest entry survives the ship boundary — a promised file must never be pruned from the VSIX", async () => {
+    // 0.56.102 shipped a manifest referencing companion-mobile app.js.map, which prepare-package
+    // pruned (.map is a dev artifact); the installed activation then failed closed on ENOENT.
+    // This ties the built manifest to the boundary INSIDE the suite, so verify:full catches the
+    // inconsistency long before packaging does.
+    const { classifyShipFile } = await import("../../scripts/ship-boundary.mjs");
+    const pruned = builtManifest.files
+      .map((file) => `dist/engine/${file.path}`)
+      .filter((rel) => classifyShipFile(rel) !== "allowed");
+    expect(pruned).toEqual([]);
+  });
+
+  it("t-05a0b0: engineManifestClosureViolations reports missing and altered manifest entries", async () => {
+    const { engineManifestClosureViolations } = await import("../../scripts/ship-boundary.mjs");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-closure-"));
+    try {
+      fs.mkdirSync(path.join(dir, "media"), { recursive: true });
+      fs.writeFileSync(path.join(dir, "engine-daemon.cjs"), "ok");
+      const sha = (body: string) => createHash("sha256").update(body).digest("hex");
+      const manifest = {
+        files: [
+          { path: "engine-daemon.cjs", sha256: sha("ok") },
+          { path: "media/app.js.map", sha256: sha("gone") },
+        ],
+      };
+      expect(engineManifestClosureViolations(dir, manifest)).toEqual([
+        "media/app.js.map: missing from the pack tree (pruned or never staged)",
+      ]);
+
+      fs.writeFileSync(path.join(dir, "media", "app.js.map"), "tampered");
+      expect(engineManifestClosureViolations(dir, manifest)).toEqual([
+        "media/app.js.map: sha256 mismatch vs manifest",
+      ]);
+
+      fs.writeFileSync(path.join(dir, "media", "app.js.map"), "gone");
+      expect(engineManifestClosureViolations(dir, manifest)).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
