@@ -63,6 +63,34 @@ afterAll(async () => {
   for (const d of tmpDirs) await fs.rm(d, { recursive: true, force: true }).catch(() => undefined);
 });
 
+describe.skipIf(!liveRun || !grokOk)("probe live smoke — real grok end-to-end (opt-in, t-7426de)", () => {
+  it(
+    "a real freeform probe via ProbeService returns a terminal envelope with a captured message",
+    async () => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "probe-smoke-grok-"));
+      tmpDirs.push(root);
+      const service = new ProbeService({
+        adapters: new Map([["grok", createGrokAdapter()]]),
+        store: new ProbeStore(root),
+      });
+      const { runId, done } = await service.launch({
+        runtime: "grok",
+        archetype: "freeform",
+        brief: { task: "Reply with exactly the single word OK and nothing else." },
+        cwd: process.cwd(),
+        timeoutMs: 120_000,
+      });
+      const env = await done;
+      expect(env.runId).toBe(runId);
+      expect(env.status).toBe("completed");
+      expect(env.result?.reason).toBe("ok");
+      expect(env.result?.lastMessage.toUpperCase()).toContain("OK");
+      expect((await service.read(runId))?.runId).toBe(runId);
+    },
+    140_000,
+  );
+});
+
 describe.skipIf(!liveRun || !codexOk)("probe live smoke — real codex end-to-end (opt-in)", () => {
   it(
     "a real freeform probe returns a terminal envelope with a captured message",
