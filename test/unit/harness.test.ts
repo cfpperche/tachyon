@@ -628,6 +628,42 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.realpathSync(path.join(suppressed.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
+  it("canonical Codex selector projection rewrites only typed selector keys on every launch", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    fs.writeFileSync(path.join(codexHome, "config.toml"), [
+      'model = "ambient-model"',
+      'approval_policy = "never"',
+      '[mcp_servers.secret]',
+      'command = "do-not-copy"',
+    ].join("\n"));
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const projection = {
+      adapter: "codex" as const,
+      selectors: {
+        model: "gpt-5.6",
+        provider: "openai",
+        reasoningEffort: "high",
+        serviceTier: "fast",
+      },
+    };
+
+    const first = mgr.materializeCanonicalCodexHome("coder", codex, projection);
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).toBe([
+      'model = "gpt-5.6"',
+      'model_provider = "openai"',
+      'model_reasoning_effort = "high"',
+      'service_tier = "fast"',
+      "",
+    ].join("\n"));
+    expect(fs.realpathSync(path.join(first.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
+
+    fs.writeFileSync(path.join(first.home, "config.toml"), 'approval_policy = "never"\n');
+    mgr.materializeCanonicalCodexHome("coder", codex, projection);
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("approval_policy");
+  });
+
   it("t-e2ebe3 review fix: opencode materializeHomeOnly returns all three XDG vars pointing at the config/data/state subdirs (not just XDG_CONFIG_HOME at the home root)", () => {
     const opencode = adapterForRuntime("opencode")!;
     const opencodeDataHome = path.join(path.dirname(realHome), "realopencodedata");

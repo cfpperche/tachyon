@@ -132,6 +132,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   for (const [agentName, definition] of projected) {
     const {
       profileCapabilities: _profileCapabilities,
+      profileNativeConfig: _profileNativeConfig,
       profileEvolution: _profileEvolution,
       profileLifecycle: _profileLifecycle,
       ...publicDefinition
@@ -151,6 +152,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   });
   for (const [agentName, definition] of projected) {
     if (definition.profileCapabilities) parsed.config.agents[agentName]!.profileCapabilities = definition.profileCapabilities;
+    if (definition.profileNativeConfig) parsed.config.agents[agentName]!.profileNativeConfig = definition.profileNativeConfig;
     if (definition.profileEvolution) parsed.config.agents[agentName]!.profileEvolution = definition.profileEvolution;
     if (definition.profileLifecycle) parsed.config.agents[agentName]!.profileLifecycle = definition.profileLifecycle;
   }

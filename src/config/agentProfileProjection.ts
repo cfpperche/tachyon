@@ -20,7 +20,11 @@ import {
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
-import { validateAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
+import {
+  projectAgentNativeConfig,
+  resolveAgentNativeConfigSupport,
+  validateAgentNativeConfigPolicy,
+} from "./agentNativeConfigPolicy.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
@@ -193,7 +197,14 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
   if (!(["codex", "pi", "grok", "claude"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
     return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi', 'grok' and 'claude' executables"];
   }
-  if (profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier) {
+  const hasRuntimeSelectors = Boolean(
+    profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier,
+  );
+  const selectorPolicy = profile.nativeConfig?.selectors;
+  if (hasRuntimeSelectors && (
+    !selectorPolicy
+    || resolveAgentNativeConfigSupport(profile.runtime.adapter, "selectors", selectorPolicy).support !== "supported"
+  )) {
     return ["profile/native-attestation: runtime selector migration requires a later measured projector"];
   }
   const expected = profileRuntimeInspectorFor(profile.runtime.adapter)!;
@@ -246,10 +257,7 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     if (blockers.length > 0) return blockers;
   }
 
-  const runtime = {
-    adapter: profile.runtime.adapter,
-    executable: profile.runtime.executable,
-  };
+  const runtime = { ...profile.runtime };
   return {
     adapter: profile.runtime.adapter,
     exhaustive: true,
@@ -400,6 +408,8 @@ function projectDefinition(
   if (resolved.capabilityProjection) {
     projected.profileCapabilities = { ...resolved.capabilityProjection, effectiveProfileSha256: resolved.effectiveSha256 };
   }
+  const nativeConfigProjection = projectAgentNativeConfig(definition);
+  if (nativeConfigProjection) projected.profileNativeConfig = nativeConfigProjection;
   projected.profileLifecycle = {
     enabled: definition.lifecycle?.enabled ?? true,
     agentId: resolved.agentId!,

@@ -919,6 +919,9 @@ export class Workspace {
         // spec 357 - codex defaults to a lifetime-scoped private CODEX_HOME so same-cwd agents cannot
         // bind to each other's rollout transcripts.
         if (adapter.runtime === "codex") {
+          if (def.profileNativeConfig) {
+            return this.harness.materializeCanonicalCodexHome(name, adapter, def.profileNativeConfig, cwd);
+          }
           // Canonical profiles own their forming inputs. Their private CODEX_HOME must not inherit
           // selectors/capabilities from the account-wide config that the profile inspector suppresses.
           return this.harness.materializeHomeOnly(name, adapter, cwd, {

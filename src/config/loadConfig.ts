@@ -22,6 +22,7 @@ import {
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
+import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -138,6 +139,8 @@ export interface ManagedEntryDef {
   harness?: HarnessDef;
   /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
   profileCapabilities?: ResolvedAgentCapabilityProjection;
+  /** Internal typed native-config projection. Raw runtime config bytes are never carried here. */
+  profileNativeConfig?: ResolvedAgentNativeConfigProjection;
   /** Internal canonical-profile lifecycle snapshot. It cannot be authored in tachyon.yml. */
   profileLifecycle?: {
     enabled: boolean;

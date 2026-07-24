@@ -55,4 +55,19 @@ describe("agent native configuration support admission", () => {
       "profile/native-config-unsupported: undeclared test tuple for 'selectors'",
     ]);
   });
+
+  it("declares only the measured Codex agent-selector tuple, independent of lifecycle order", () => {
+    const policy: AgentNativeConfigPolicyV1 = {
+      source: "agent",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["resume", "fresh", "restart"],
+    };
+    expect(validateAgentNativeConfigPolicy("codex", { selectors: policy })).toEqual([]);
+    expect(validateAgentNativeConfigPolicy("codex", {
+      selectors: { ...policy, lifecycle: [...policy.lifecycle, "fork"] },
+    })).toEqual([
+      "profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'selectors'",
+    ]);
+  });
 });

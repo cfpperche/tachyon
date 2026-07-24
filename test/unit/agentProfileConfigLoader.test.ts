@@ -143,9 +143,52 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, authority(bytes));
 
     expect(result.config).toBeUndefined();
-    expect(result.errors).toEqual([
-      "agents.codex.profile: profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'permissions'",
-    ]);
+    expect(result.errors[0]).toContain("has not declared native configuration support for 'permissions'");
+  });
+
+  it("projects typed Codex selectors only under the exact agent-owned policy", () => {
+    const root = temporaryRoot("tachyon-agent-profile-codex-selectors-");
+    const bytes = writeProfile(root, {
+      runtime: {
+        adapter: "codex",
+        executable: "codex",
+        model: "gpt-5.6",
+        provider: "openai",
+        reasoningEffort: "high",
+        serviceTier: "fast",
+      },
+      nativeConfig: {
+        selectors: {
+          source: "agent",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
+    });
+    const result = load(root, authority(bytes));
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "codex",
+      selectors: {
+        model: "gpt-5.6",
+        provider: "openai",
+        reasoningEffort: "high",
+        serviceTier: "fast",
+      },
+    });
+  });
+
+  it("rejects typed Codex selectors without their explicit native policy", () => {
+    const root = temporaryRoot("tachyon-agent-profile-codex-selector-no-policy-");
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" },
+    });
+    const result = load(root, authority(bytes));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("runtime selector migration requires a later measured projector");
   });
 
   it("projects a literal Claude profile through its closed private-home contract", () => {

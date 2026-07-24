@@ -22,6 +22,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
+import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
@@ -1677,6 +1678,33 @@ export class HarnessManager {
       return { home, env: { [h.configHomeEnv]: dirs.config, [h.xdg.dataEnv]: dirs.data, [h.xdg.stateEnv]: dirs.state }, args: [] };
     }
     return { home, env: { [h.configHomeEnv]: home }, args: [] };
+  }
+
+  /** Rebuild the closed, typed Codex selector projection on every canonical launch. */
+  materializeCanonicalCodexHome(
+    agent: string,
+    adapter: ResumeAdapter,
+    projection: ResolvedAgentNativeConfigProjection,
+    cwd?: string,
+  ): MaterializedHarness {
+    if (adapter.runtime !== "codex" || projection.adapter !== "codex") {
+      throw new Error(`runtime '${adapter.runtime}' is not compatible with the Codex native configuration projection`);
+    }
+    const home = this.materializeHome(agent, adapter, cwd);
+    const configPath = path.join(home, "config.toml");
+    const values: Array<[string, string | undefined]> = [
+      ["model", projection.selectors.model],
+      ["model_provider", projection.selectors.provider],
+      ["model_reasoning_effort", projection.selectors.reasoningEffort],
+      ["service_tier", projection.selectors.serviceTier],
+    ];
+    const content = values
+      .filter((entry): entry is [string, string] => entry[1] !== undefined)
+      .map(([key, value]) => `${key} = ${tomlString(value)}`)
+      .join("\n");
+    if (content.length > 0) atomicWrite(configPath, `${content}\n`);
+    else fs.rmSync(configPath, { force: true });
+    return { home, env: { CODEX_HOME: home }, args: [] };
   }
 
   /**

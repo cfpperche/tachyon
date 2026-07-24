@@ -540,6 +540,7 @@ function prospectiveProjection(
 function runtimeBehaviorDefinition(definition: AgentDef): AgentDef {
   const {
     profileCapabilities: _profileCapabilities,
+    profileNativeConfig: _profileNativeConfig,
     profileLifecycle: _profileLifecycle,
     profileEvolution: _profileEvolution,
     ...publicDefinition
