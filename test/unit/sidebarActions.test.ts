@@ -10,7 +10,9 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(a).toContain("stop"); expect(a).toContain("kill"); expect(a).toContain("restart"); expect(a).not.toContain("spawn");
     expect(a[0]).toBe("activity"); // spec 238 — the cockpit is the primary action for an AI agent with a pane
     expect(a[1]).toBe("probes"); // spec 322 — durable per-agent probe history sits with its sibling record view
-    expect(a[2]).toBe("inspect"); // the raw terminal follows as the escape hatch
+    expect(a[2]).toBe("inspect"); // integrated terminal
+    expect(a[3]).toBe("openPane"); // t-610355 — first-party agent pane next to it
+    expect(primaryActions(A({ status: "running" }))).toEqual(["activity", "inspect", "openPane"]);
     expect(primaryActions(A({ status: "running" }))).not.toContain("stop");
     expect(primaryActions(A({ status: "running" }))).not.toContain("kill");
     expect(moreActions(A({ status: "running" }))).toContain("stop");
@@ -24,27 +26,31 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(["activity"]);
     expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
   });
-  it("crashed → inspect + kill + restart", () => {
-    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "kill", "restart"]));
+  it("crashed → inspect + openPane + kill + restart", () => {
+    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "openPane", "kill", "restart"]));
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("stop");
   });
-  it("stopped → spawn; + resume only when resumable; NO inspect (no pane to open)", () => {
+  it("stopped → spawn; + resume only when resumable; NO inspect/openPane (no pane to open)", () => {
     expect(actionsFor(A({ status: "stopped" }))).toContain("spawn");
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("resume");
     expect(actionsFor(A({ status: "stopped", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("kill");
     expect(actionsFor(A({ status: "stopped" }))).not.toContain("inspect");
+    expect(actionsFor(A({ status: "stopped" }))).not.toContain("openPane");
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
+    expect(primaryActions(A({ status: "stopped" }))).not.toContain("openPane");
   });
-  it("clean exit (stopped + exited) → no Open terminal; Activity/Restart/Resume, NOT spawn", () => {
+  it("clean exit (stopped + exited) → no Open terminal/pane; Activity/Restart/Resume, NOT spawn", () => {
     const a = actionsFor(A({ status: "stopped", exited: true }));
     expect(a).toEqual(expect.arrayContaining(["activity", "restart"]));
     expect(a).not.toContain("inspect");
+    expect(a).not.toContain("openPane");
     expect(a).not.toContain("stop");
     expect(a).not.toContain("spawn");
     const inline = primaryActions(A({ status: "stopped", exited: true, resumable: true }));
     expect(inline).toEqual(["activity"]);
     expect(inline).not.toContain("inspect");
+    expect(inline).not.toContain("openPane");
     expect(inline).not.toContain("kill");
     expect(moreActions(A({ status: "stopped", exited: true, resumable: true }))).toEqual(expect.arrayContaining(["restart", "resume"]));
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
@@ -55,6 +61,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
     expect(actionsFor(a)).toContain("remove");
     expect(actionsFor(a)).not.toContain("inspect");
+    expect(actionsFor(a)).not.toContain("openPane");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
     expect(primaryActions(a)).toEqual(["activity"]);
@@ -99,8 +106,8 @@ describe("sidebar action matrix (spec 237)", () => {
   });
   it("stop-failed → live pane actions stay available for retry or forced kill", () => {
     const a = A({ status: "stop-failed" });
-    expect(actionsFor(a)).toEqual(expect.arrayContaining(["inspect", "stop", "kill", "restart"]));
-    expect(primaryActions(a)).toEqual(["activity", "inspect"]);
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["inspect", "openPane", "stop", "kill", "restart"]));
+    expect(primaryActions(a)).toEqual(["activity", "inspect", "openPane"]);
     expect(moreActions(a)).toEqual(expect.arrayContaining(["probes", "stop", "kill", "restart"]));
   });
   it("resume offered on crashed when resumable (mirrors the tree)", () => {
@@ -183,7 +190,7 @@ describe("sidebar action matrix (spec 237)", () => {
       A({ status: "crashed", resumable: true }),
       A({ status: "crashed", resumable: true, adhoc: true, canDismiss: true }),
     ]) {
-      expect(primaryActions(a).filter((id) => !["activity", "inspect"].includes(id))).toEqual([]);
+      expect(primaryActions(a).filter((id) => !["activity", "inspect", "openPane"].includes(id))).toEqual([]);
       const more = moreActions(a);
       for (const id of unsafe) {
         if (actionsFor(a).includes(id)) expect(more).toContain(id);

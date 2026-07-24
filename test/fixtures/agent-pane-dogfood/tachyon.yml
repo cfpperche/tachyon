@@ -1,0 +1,19 @@
+# t-610355 dogfood — layer-2 first-party agent pane.
+# Real coding-agent runtimes only. Never bash-as-agent (fake TUI / command-not-found garbage).
+#
+# Start `dogfood` (or another row) from the sidebar if not already running; open pane via
+# the terminal icon next to "Open terminal" (eye).
+agents:
+  dogfood:
+    cmd: grok
+    autostart: true
+  claude:
+    cmd: claude
+    autostart: false
+  codex:
+    cmd: codex
+    autostart: false
+
+commands:
+  hello:
+    cmd: "echo agent-pane-dogfood-ok"

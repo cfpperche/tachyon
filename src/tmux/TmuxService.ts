@@ -1088,6 +1088,16 @@ export class TmuxService {
     await this.run(["pipe-pane", "-t", `=${target}:`]);
   }
 
+  /**
+   * Resize the session's window to cols×rows (layer-2 agent pane FitAddon).
+   * Used when a first-party viewport owns geometry instead of a VS Code terminal client.
+   */
+  async resizeWindow(name: string, cols: number, rows: number): Promise<void> {
+    const x = Math.max(2, Math.floor(cols));
+    const y = Math.max(1, Math.floor(rows));
+    await this.run(["resize-window", "-t", `=${name}:`, "-x", String(x), "-y", String(y)]);
+  }
+
   /** Redraws every client attached to a session (fixes blank panes after hidden attaches). */
   async refreshClients(name: string): Promise<void> {
     try {

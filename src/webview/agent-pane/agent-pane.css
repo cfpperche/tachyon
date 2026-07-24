@@ -1,0 +1,185 @@
+/**
+ * Agent pane layout — identity chrome + xterm host + stage bar.
+ * Cell metrics come ONLY from xterm options (not CSS font on body).
+ * Do NOT load design-system.css (Tachyon Mono @font-face breaks cell metrics).
+ * Spacing tokens below mirror design-system.css --ds-* literals.
+ */
+
+:root {
+  --ds-1: 4px;
+  --ds-2: 8px;
+  --ds-3: 12px;
+  --ds-4: 16px;
+  --agent-pane-pad: var(--ds-2);
+  --agent-pane-bg: var(--vscode-editor-background, #1e1e1e);
+  --agent-pane-fg: var(--vscode-editor-foreground, #cccccc);
+  --agent-pane-muted: var(--vscode-descriptionForeground, #858585);
+  --agent-pane-border: var(--vscode-widget-border, color-mix(in srgb, var(--agent-pane-fg) 18%, transparent));
+  --agent-pane-input-bg: var(--vscode-input-background, #3c3c3c);
+  --agent-pane-input-fg: var(--vscode-input-foreground, #cccccc);
+  --agent-pane-btn-bg: var(--vscode-button-secondaryBackground, #3a3d41);
+  --agent-pane-btn-fg: var(--vscode-button-secondaryForeground, #cccccc);
+  --agent-pane-btn-primary-bg: var(--vscode-button-background, #0e639c);
+  --agent-pane-btn-primary-fg: var(--vscode-button-foreground, #ffffff);
+  --agent-pane-focus: var(--vscode-focusBorder, #007fd4);
+}
+
+html,
+body {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--agent-pane-bg);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  word-spacing: 0;
+  color: var(--agent-pane-fg);
+}
+
+#root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--agent-pane-bg);
+}
+
+.agent-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  padding: var(--agent-pane-pad);
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--agent-pane-bg);
+}
+
+/* ── identity strip (Slice 1) ── */
+.agent-pane__identity {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-2);
+  min-height: 22px;
+  padding: 0 var(--ds-1);
+  color: var(--agent-pane-muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.agent-pane__agent {
+  color: var(--agent-pane-fg);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-pane__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+  text-align: right;
+}
+
+/* FitAddon measures this box — flex child, not absolute full-bleed */
+.agent-pane__term {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.agent-pane__term .xterm {
+  padding: 0;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
+}
+
+.agent-pane__term .xterm-viewport {
+  overflow-y: auto !important;
+}
+
+/* ── stage / submit bar (Slice 1 → 381 delivery) ── */
+.agent-pane__stage {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  border-top: 1px solid var(--agent-pane-border);
+  padding-top: var(--ds-2);
+}
+
+.agent-pane__draft {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 2.5em;
+  max-height: 8em;
+  margin: 0;
+  padding: var(--ds-2);
+  border: 1px solid var(--agent-pane-border);
+  border-radius: 4px;
+  background: var(--agent-pane-input-bg);
+  color: var(--agent-pane-input-fg);
+  font: inherit;
+  font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.agent-pane__draft:focus {
+  outline: 1px solid var(--agent-pane-focus);
+  outline-offset: 0;
+}
+
+.agent-pane__draft:disabled {
+  opacity: 0.55;
+}
+
+.agent-pane__stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ds-2);
+}
+
+.agent-pane__btn {
+  appearance: none;
+  border: 1px solid var(--agent-pane-border);
+  border-radius: 4px;
+  background: var(--agent-pane-btn-bg);
+  color: var(--agent-pane-btn-fg);
+  font: inherit;
+  font-size: 11px;
+  padding: var(--ds-1) var(--ds-2);
+  cursor: pointer;
+}
+
+.agent-pane__btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.agent-pane__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.agent-pane__btn--primary {
+  background: var(--agent-pane-btn-primary-bg);
+  color: var(--agent-pane-btn-primary-fg);
+  border-color: transparent;
+}
+
+.agent-pane__flash {
+  font-size: 11px;
+  color: var(--agent-pane-muted);
+  padding: 0 var(--ds-1);
+}

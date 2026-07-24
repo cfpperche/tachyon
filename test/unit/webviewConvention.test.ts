@@ -90,6 +90,7 @@ describe("webview convention (spec 279)", () => {
       tachyonCommandStudioShell: "COMMAND_STUDIO_SHELL_VIEW_TYPE",
       tachyonRunbookStudioShell: "RUNBOOK_STUDIO_SHELL_VIEW_TYPE",
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
+      tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
     };
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];

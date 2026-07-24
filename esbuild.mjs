@@ -111,7 +111,8 @@ const extension = {
   platform: "node",
   format: "cjs",
   target: "node20",
-  external: ["vscode"],
+  // node-pty is a native addon — must load from node_modules at runtime (layer-2 agent pane).
+  external: ["vscode", "node-pty"],
   define: nodeDefines,
   sourcemap: true,
   logLevel: "info",
@@ -269,6 +270,13 @@ const pinPreview = {
   ...sidebar,
   entryPoints: ["src/webview/pin-preview/main.tsx"],
   outfile: "dist/webview/pin-preview.js",
+};
+
+// t-610355 — layer-2 first-party agent pane (xterm.js viewport; never imports vscode)
+const agentPane = {
+  ...sidebar,
+  entryPoints: ["src/webview/agent-pane/main.tsx"],
+  outfile: "dist/webview/agent-pane.js",
 };
 
 // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio bundle (spec 255) was retired: Pin
@@ -440,6 +448,8 @@ copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spe
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/cockpit/cockpit.css", "dist/webview/cockpit.css"); // Cockpit desktop POC
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
+copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"); // t-610355 — xterm.js styles
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
@@ -474,7 +484,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
