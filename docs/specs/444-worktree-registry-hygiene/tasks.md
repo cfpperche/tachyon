@@ -23,8 +23,11 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
       per entry (parallelized; one entry's classification failure doesn't fail the batch — caught
       per-entry, rendered `needs-review: classification failed`). 5 real-git integration tests added
       to `managedWorktree.test.ts` (clean, dirty, ahead, occupied, tombstone) — 21/21 in the file.
-- [ ] `src/bridge/tools.ts`: register `worktree_hygiene` (read-only, reuses `list_worktrees`'s
-      auth/filter shape, returns classified rows).
+- [x] `src/bridge/tools.ts`: register `worktree_hygiene` (read-only, reuses `list_worktrees`'s
+      auth/filter shape, returns classified rows via `listClassified()`). Catalog test updated
+      (71→72 canonical tools); real behavioral coverage lives in `managedWorktree.test.ts`'s
+      `listClassified()` suite, same precedent as `list_worktrees`/`create_worktree`'s own coverage
+      split. 68/68 in `bridge.test.ts`.
 - [ ] `src/extension.ts`: `CockpitDeps.collect()`'s worktree line switches to `listClassified()`;
       `readManagedWorktreesFromDisk` becomes the fail-closed fallback only (classifier threw).
 - [ ] `src/webview/cockpit/messages.ts`: add `worktreeRemove`, `worktreeForgetRecord`,
