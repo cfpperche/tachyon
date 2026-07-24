@@ -14,9 +14,9 @@ Clients stay in `cfpperche/tachyon-companion` (`apps/mobile` + shared `protocol`
 
 | Item | Detail |
 |---|---|
-| Setting | `settings.companion.lanAccess` (boolean, default `false`) — schema + YamlConfigEditor / Control Companion section |
-| Bind | When true, companion (or Bridge listener) reachable on LAN; when false, keep `127.0.0.1` only |
-| Pair issue payload | Include `baseUrl` candidates (LAN IPs + port) + pair code + `protocolVersion` for QR |
+| Setting | `settings.companion.lanAccess` (boolean, default `false`) — enables **mobile via Tailscale** |
+| Bind | When true, Bridge `0.0.0.0` + pair URL = Tailscale IP; when false, `127.0.0.1` only |
+| Pair issue payload | Single mesh `baseUrl` + pair code + `protocolVersion` + `openUrl` for QR |
 | Control UI | QR + copy base URL; Connected devices already supports `kind` |
 | Doctor | Warn when LAN access is on |
 | Static (optional) | Serve built `apps/mobile` under e.g. `/companion/app/` for one-process dogfood |
@@ -25,7 +25,7 @@ Clients stay in `cfpperche/tachyon-companion` (`apps/mobile` + shared `protocol`
 
 ### B — Concurrent sessions (M4)
 
-Today pairing may replace the previous session. Stretch: allow **one browser + one mobile** (or multi-session registry). If expensive, ship last-pair-wins with explicit UI warning and track multi-session as follow-up.
+**v1 decision (2026-07-23):** ship **last-pair-wins** (one active companion session; new pair replaces prior browser or mobile). Concurrent browser+mobile is an explicit follow-up, not a v1 bar.
 
 ### C — `apps/mobile` PWA
 

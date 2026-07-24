@@ -13,13 +13,13 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 ## Phase 1 — ADE reachability
 
 - [x] `t-da645b` — `settings.companion.lanAccess` + bind + doctor
-- [x] `t-0e1f58` — pair QR + baseUrl candidates in Control
-- [ ] Connected devices shows mobile kind (smoke with slice 3)
+- [x] `t-0e1f58` — pair QR + baseUrl in Control
+- [x] Connected devices shows mobile kind (human dogfood 2026-07-23: *Tachyon Companion Mobile*)
 
 ## Phase 2 — Session policy (M4)
 
-- [ ] Decide implement: browser+mobile concurrent **or** document last-pair-wins for v1
-- [ ] If concurrent: pairing registry supports both without silent kill of the other shell
+- [x] **v1 = last-pair-wins** (documented in cookbook + notes; code already one active session)
+- [ ] Follow-up: concurrent browser+mobile registry (not v1)
 
 ## Phase 3 — apps/mobile PWA
 
@@ -28,16 +28,24 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 ## Phase 4 — Serve & dogfood
 
-- [x] Engine serves mobile static at `/companion/app/*` (one-QR dogfood; worktree `companion-mobile-one-qr`)
-- [x] Control QR encodes `openUrl` → phone camera opens PWA + auto-pair via `#pair=`
-- [x] Mobile reachability = Tailscale only (`lanAccess` opt-in; no multi-NIC Wi‑Fi list)
-- [ ] PRIVACY / README install (“Add to Home Screen”)
-- [x] `t-900149` — human dogfood (Tailscale mesh + phone); evidence under `.tachyon/evidence/companion-mobile/`
+- [x] Engine serves mobile static at `/companion/app/*`
+- [x] Control QR encodes `openUrl` → phone auto-pair via `#pair=`
+- [x] Mobile reachability = Tailscale only (`lanAccess` opt-in)
+- [x] Operator cookbook + privacy/A2HS minimal notes (`cookbook.md`)
+- [x] `t-900149` — human dogfood (Tailscale mesh + phone)
 
 ## Verification
 
-**Verify:** unit tests for Tailscale pair baseUrl + `lanAccess` schema (worktree).  
-**Dogfood:** headless scenario `companion-one-qr.mjs` + human phone on same tailnet.  
-**Human dogfood (PASS 2026-07-23):** Tailscale on PC+phone → QR → auto-pair → fleet/prompt/approvals → unpair.  
-**Visual QA:** screenshots under `.tachyon/evidence/companion-mobile/`.  
-**Cookbook:** yes (operator path: Tailscale + Control pair QR) — add at ship.  
+**Verify:** unit tests for Tailscale pair baseUrl + packaging.  
+**Dogfood:** headless `companion-one-qr.mjs` + human phone on same tailnet (**PASS 2026-07-23**).  
+**Cookbook:** `docs/specs/422-companion-mobile-v1/cookbook.md`.
+
+## Follow-ups (out of v1 ship bar)
+
+| Item | Notes |
+|------|--------|
+| Concurrent browser+mobile sessions | M4 stretch |
+| Headscale / self-host mesh | Same client path as Tailscale |
+| A2HS polish / deeper PRIVACY | Optional install UX |
+| TLS on companion HTTP | Deferred v1.1 |
+| Merge trail → main | Ship step for this branch |
