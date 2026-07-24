@@ -2,11 +2,14 @@
 
 _Created 2026-07-24._
 
-**Status:** draft
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
-     placeholders, and missing dogfood proof or opt-out). -->
+**Status:** shipped
+**Closure:** Merged to main 2026-07-24 (e2fa3da1, t-55a5ac). The dev-host is rooted in the checkout
+that owns it; slots, `active`, the primary-monorepo redirect for the dev-host root, and the per-slot
+rewriting of a tracked `launch.json` are deleted (`pointer.mjs` 1501 → 1032 lines). Retired flags fail
+immediately naming their replacement. Two structural guards keep the layout from returning:
+`devHostNoSlots.test.ts` (bans the layout, both proved non-vacuous) and `devHostLaunchConfig.test.ts`
+(pins the F5 wiring the headless harness cannot reach). verify:full green in isolation (503 files, 5649 passed at e2fa3da1) and green again on the combined main after the agent-pane merge and its two follow-up fixes (507 files, 5679 passed).
+Migration done: 583M of orphan slots reclaimed from the primary and its `launch.json` restored.
 
 ## Intent
 
@@ -39,44 +42,44 @@ being policy and becomes structure: there is no shared dev-host left to dominate
 
 ## Acceptance criteria
 
-- [ ] **Scenario: two agents dogfood at the same time without coordinating**
+- [x] **Scenario: two agents dogfood at the same time without coordinating**
   - **Given** agents A and B working in two different worktrees, each having armed a dev-host
   - **When** both run their EDH (headless or F5) at the same time
   - **Then** each one launches against its own checkout's `.tachyon/dev-host/`, neither observes nor
     mutates the other's state, and neither had to choose or be assigned a slot identifier
 
-- [ ] **Scenario: arming a dev-host never dirties a tracked file**
+- [x] **Scenario: arming a dev-host never dirties a tracked file**
   - **Given** any checkout with a clean working tree
   - **When** an agent or a human arms a dev-host there (points a worktree, creates a fixture, runs the
     headless harness)
   - **Then** `git status --porcelain` reports exactly what it reported before — every byte written
     lands under the gitignored `.tachyon/`
 
-- [ ] **Scenario: removing a worktree reclaims its dev-host**
+- [x] **Scenario: removing a worktree reclaims its dev-host**
   - **Given** a worktree whose dev-host holds materialized state (extension, workspace, VS Code data)
   - **When** the worktree is removed through the managed path (`remove_worktree`)
   - **Then** that dev-host's bytes are gone with it, with no separate cleanup step and no orphaned
     directory left in the primary monorepo
 
-- [ ] **Scenario: the headless harness targets its own checkout**
+- [x] **Scenario: the headless harness targets its own checkout**
   - **Given** the headless dev-host harness invoked from inside a worktree
   - **When** it resolves where to launch the EDH from
   - **Then** it resolves that worktree's own `.tachyon/dev-host/`, with no `active` symlink
     indirection and no redirect to the primary monorepo
 
-- [ ] **Scenario: a retired flag fails loudly with the replacement**
+- [x] **Scenario: a retired flag fails loudly with the replacement**
   - **Given** an agent prompt, script, or runbook step still passing `--owner` or `--slot`
   - **When** the command runs
   - **Then** it fails with a message naming the replacement flow rather than silently ignoring the
     flag or half-arming a dev-host
 
-- [ ] `.vscode/launch.json` is byte-identical in every checkout, is written by no script, and its Dev
+- [x] `.vscode/launch.json` is byte-identical in every checkout, is written by no script, and its Dev
       Host entry resolves through `${workspaceFolder}/.tachyon/dev-host/…`.
-- [ ] No source, script, test, or doc references `.tachyon/dev-host/active` or a `slots/` layout,
+- [x] No source, script, test, or doc references `.tachyon/dev-host/active` or a `slots/` layout,
       enforced by a test so the layout cannot be reintroduced silently.
-- [ ] `docs/runbooks/dev-host.md` describes the one flow (arm inside your worktree, open VS Code
+- [x] `docs/runbooks/dev-host.md` describes the one flow (arm inside your worktree, open VS Code
       there, F5) and states that worktrees grow by the size of their dev-host.
-- [ ] The migration leaves no residue: the slot entries currently dirtying the primary checkout's
+- [x] The migration leaves no residue: the slot entries currently dirtying the primary checkout's
       `launch.json` are gone, and pre-existing `slots/` directories are reclaimed or documented as
       manually reclaimable.
 
