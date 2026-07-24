@@ -496,6 +496,7 @@ export interface AgentProfileLabels {
   nativeConfigTitle: string;
   nativeConfigHelp: string;
   nativeConfigEmpty: string;
+  supported: string;
   unsupported: string;
 }
 
@@ -603,6 +604,7 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     nativeConfigTitle: t("Native configuration"),
     nativeConfigHelp: t("Supported choices are projected into the agent's private runtime home. Raw runtime files and credentials are never shown here."),
     nativeConfigEmpty: t("No native configuration policy is authored for this agent."),
+    supported: t("Supported"),
     unsupported: t("Unsupported"),
   };
 }

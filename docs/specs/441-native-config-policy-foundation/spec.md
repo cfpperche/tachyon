@@ -3,7 +3,7 @@
 _Created 2026-07-23._
 
 **Status:** shipped
-**Closure:** shared schema, fail-closed projection admission, canonical Studio round-trip and content-free provenance shipped in task `t-96ebad`; focused tests, typecheck and full verification passed.
+**Closure:** shared schema, fail-closed projection admission, canonical Studio round-trip and content-free provenance shipped in task `t-96ebad`; task `t-e05e00` hardened the adapter support seam and mixed-support contract before the first adapter slice.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -40,6 +40,9 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **Then** it shows each family’s authored choice, support state and projection lifecycle without exposing secrets or mutable runtime state
 - [x] Existing profiles without native policy retain byte-compatible behavior.
 - [x] Memory, plugins, credentials, transcripts, caches and runtime state are not absorbed into the authored policy.
+- [x] Adapter support decisions evaluate the exact family/source/treatment/refresh/lifecycle tuple.
+- [x] Any unsupported authored tuple rejects the whole projection; supported tuples are never partially applied.
+- [x] Omitted and empty native policy are equivalent no-policy states.
 
 ## Non-goals
 

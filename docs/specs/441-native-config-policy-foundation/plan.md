@@ -49,3 +49,10 @@ copy in the existing dark Dev Host surface.
 - `src/config/agentProfileProjection.ts`
 - `src/config/agentProfileStudio.ts`
 - `src/webview/agent-studio-shell/App.tsx`
+
+## Hardening amendment — t-e05e00
+
+The empty catalog remains the production default, but support is now a closed
+`supported | unsupported` decision over the exact policy tuple. Validation rejects
+the complete projection when any authored tuple is unsupported. A synthetic resolver
+tests the extension seam without shipping a fake runtime materializer.

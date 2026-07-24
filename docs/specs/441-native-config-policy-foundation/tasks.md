@@ -18,8 +18,11 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Unsupported policy fails with a stable diagnostic.
 - [x] Studio domain and projection tests cover the new snapshot shape.
 - [x] Typecheck and full verification pass.
+- [x] Harden the adapter support seam with exact-tuple supported/unsupported decisions.
+- [x] Prove supported-only, mixed-support, omitted and empty-policy behavior.
+- [x] Document the nine measured architecture areas to eight families plus lifecycle mapping.
 
-**Verify:** `npx vitest run test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
+**Verify:** `npx vitest run test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:

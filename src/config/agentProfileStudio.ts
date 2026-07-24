@@ -147,7 +147,7 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
       treatment: z.enum(["exclude", "snapshot", "overlay", "external"]),
       refresh: z.enum(["create-once", "every-launch", "runtime-owned"]),
       lifecycle: z.array(z.enum(["fresh", "restart", "resume", "fork"])).min(1).max(4),
-      support: z.literal("unsupported"),
+      support: z.enum(["supported", "unsupported"]),
       reason: z.string().min(1).max(512),
     }).strict()).max(8).optional(),
   }).strict(),

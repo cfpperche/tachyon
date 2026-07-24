@@ -793,7 +793,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                         <code>{entry.family}</code>
                         <span>{entry.source} · {entry.treatment} · {entry.refresh}</span>
                         <span>{entry.lifecycle.join(", ")}</span>
-                        <span class="ash-native-config-unsupported" title={entry.reason}>{profileLabels.unsupported}</span>
+                        <span class={`ash-native-config-${entry.support}`} title={entry.reason}>
+                          {entry.support === "supported" ? profileLabels.supported : profileLabels.unsupported}
+                        </span>
                       </div>
                     ))}
                 </div>

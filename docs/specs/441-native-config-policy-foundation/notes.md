@@ -17,6 +17,11 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 
 - Installed visual inspection was deferred to the first adapter slice: no combination is supported yet, so production profiles cannot exercise a populated row, and the user explicitly excluded the beta desktop harness.
 
+## Adversarial hardening
+
+- Claude Fable correctly identified that a literal-only `unsupported` result was a stub rather than an adapter extension seam. Task `t-e05e00` widened the closed decision, kept deny-by-default production behavior and proved exact-tuple/mixed-support admission with a synthetic resolver.
+- Authentication and memory remain schema families because parity must measure them. Their bytes/state remain outside authored policy.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._

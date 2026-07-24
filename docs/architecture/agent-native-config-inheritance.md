@@ -66,6 +66,27 @@ Each adapter must measure these families independently:
 For each family, evidence must name the real source, projection target, mutable state, credential
 involvement and behavior on fresh/restart/resume/fork. Unknown remains unknown.
 
+The common schema maps those measured areas as follows:
+
+| Measured area | Schema family or dimension |
+|---|---|
+| model, provider, reasoning, service tier | `selectors` |
+| approval, sandbox, trust | `permissions` |
+| UI, status line, personality/instructions | `interface` |
+| hooks, MCP, skills, native extensions/plugins | `tooling` |
+| feature flags | `featureFlags` |
+| authentication and external authority | `authentication` |
+| runtime-managed memory | `memory` |
+| caches, notices and telemetry | `diagnostics` |
+| fresh/restart/resume/fork consistency | `lifecycle` on every family policy |
+
+`authentication` and `memory` describe policy and parity, not embedded authority or runtime state.
+Credentials remain external and runtime-managed memory remains owned by `t-d4c42e`.
+
+Support is declared for the exact family/source/treatment/refresh/lifecycle tuple. An undeclared tuple
+is unsupported. If any authored tuple is unsupported, the entire canonical projection is rejected;
+Tachyon never partially materializes the supported subset.
+
 ## Current measured baseline
 
 | Runtime | Current native-config behavior | Status |
