@@ -103,7 +103,10 @@ export class AgentPanePanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("xterm.css"), uri("agent-pane.css")],
+      // No design-system.css: it injects "Tachyon Mono" @font-face without webview-safe font
+      // URLs, so xterm measures a missing face → wrong cell size → broken TUI (CDP: 300×150 box).
+      // Only xterm + full-bleed layout CSS — same isolation as xtermjs.org demos.
+      styles: [uri("xterm.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
       persistedState: {

@@ -9,8 +9,9 @@ export interface AgentPaneAppProps {
   onHostMessage: (handler: (msg: AgentPaneFromHost) => void) => () => void;
 }
 
+/** System mono stack — must exist without product @font-face (see agentPaneFont). */
 const FALLBACK_FONT: AgentPaneFontMetrics = {
-  fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+  fontFamily: "DejaVu Sans Mono, Liberation Mono, Menlo, Monaco, Consolas, 'Courier New', monospace",
   fontSize: 14,
   fontWeight: "normal",
   fontWeightBold: "bold",
@@ -28,31 +29,26 @@ function applyFont(term: Terminal, font: AgentPaneFontMetrics): void {
   term.options.letterSpacing = s.letterSpacing;
 }
 
-/** Wait until document fonts used by the terminal stack are ready (or timeout). */
 async function waitForFonts(fontFamily: string, fontSize: number): Promise<void> {
   const fonts = (document as Document & { fonts?: FontFaceSet }).fonts;
   if (!fonts?.ready) return;
   try {
-    // Load a concrete face size so metrics stabilize before FitAddon measures cells.
     const primary = fontFamily.split(",")[0]?.trim().replace(/^['"]|['"]$/g, "") ?? "monospace";
     await Promise.race([
       fonts.load(`${fontSize}px "${primary}"`),
+      fonts.load(`${fontSize}px ${primary}`),
       fonts.ready,
-      new Promise<void>((r) => setTimeout(r, 800)),
+      new Promise<void>((r) => setTimeout(r, 600)),
     ]);
     await fonts.ready;
   } catch {
-    /* ignore — fall through with best-effort metrics */
+    /* best-effort */
   }
 }
 
 /**
- * Full-bleed xterm. Geometry protocol:
- * 1) host sends init.font
- * 2) apply font + wait fonts.ready
- * 3) FitAddon.fit() → cols/rows
- * 4) post resize → host starts/resizes node-pty to the same grid
- * Never report geometry before fonts are applied (avoids wrong TUI layout / missing status bar).
+ * Full-bleed xterm (xtermjs.org-style host). Geometry:
+ * fonts ready → fit container (absolute inset 0) → report cols×rows → host PTY resize.
  */
 export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const termHostRef = useRef<HTMLDivElement>(null);
@@ -70,10 +66,10 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       cursorBlink: true,
       fontFamily: FALLBACK_FONT.fontFamily,
       fontSize: FALLBACK_FONT.fontSize,
-      fontWeight: FALLBACK_FONT.fontWeight as "normal",
-      fontWeightBold: FALLBACK_FONT.fontWeightBold as "bold",
-      lineHeight: FALLBACK_FONT.lineHeight,
-      letterSpacing: FALLBACK_FONT.letterSpacing,
+      fontWeight: "normal",
+      fontWeightBold: "bold",
+      lineHeight: 1,
+      letterSpacing: 0,
       theme: {
         background: "#1e1e1e",
         foreground: "#cccccc",
@@ -106,6 +102,8 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const reportGrid = (force = false) => {
       if (disposed || !fontReady) return;
+      // Host must have non-zero box (absolute fill) before measuring.
+      if (el.clientWidth < 32 || el.clientHeight < 32) return;
       try {
         fit.fit();
       } catch {
@@ -118,16 +116,16 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       postMessage({ type: "agent-pane/resize", cols: next.cols, rows: next.rows });
     };
 
-    const scheduleReport = (force = false) => {
+    const scheduleReport = () => {
       if (resizeTimer !== undefined) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => reportGrid(force), 40);
+      resizeTimer = setTimeout(() => reportGrid(false), 50);
     };
 
     const dataDisp = term.onData((data) => {
       postMessage({ type: "agent-pane/input", data });
     });
 
-    const ro = new ResizeObserver(() => scheduleReport(false));
+    const ro = new ResizeObserver(() => scheduleReport());
     ro.observe(el);
 
     const unsub = onHostMessage((msg) => {
@@ -138,10 +136,12 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
           await waitForFonts(font.fontFamily, font.fontSize);
           if (disposed) return;
           fontReady = true;
-          // Double rAF so layout has real pixel size after font change.
+          // Three rAFs: layout absolute fill → font metrics → fit
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-              if (!disposed) reportGrid(true);
+              requestAnimationFrame(() => {
+                if (!disposed) reportGrid(true);
+              });
             });
           });
         })();
@@ -161,7 +161,6 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       }
     });
 
-    // Ready only — do not fit/resize until host font init (geometry must match TUI).
     postMessage({ type: "agent-pane/ready" });
 
     return () => {

@@ -1,42 +1,47 @@
-/* Layer-2 first-party agent pane — full-bleed xterm, no chrome */
+/**
+ * Agent pane layout — mirrors the xterm.js demo pattern:
+ * absolute full-bleed host, no product chrome, no design-system font pollution.
+ * Cell metrics come ONLY from xterm options (not CSS font on body).
+ */
 
 html,
-body,
-#root {
+body {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: var(--vscode-editor-background, #1e1e1e);
-  color: var(--vscode-editor-foreground, #cccccc);
+  background: #1e1e1e;
+}
+
+#root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #1e1e1e;
 }
 
 .agent-pane {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  width: 100%;
-  min-height: 0;
-  min-width: 0;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #1e1e1e;
 }
 
+/* FitAddon measures this box — must be the full editor area */
 .agent-pane__term {
-  flex: 1 1 auto;
-  height: 100%;
-  width: 100%;
-  min-height: 0;
-  min-width: 0;
-  padding: 0;
-  margin: 0;
-  box-sizing: border-box;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
 }
 
-/* xterm fills the entire host; font is set via xterm options (not CSS) so cell metrics match PTY */
+/* xterm.js fills the measured host */
 .agent-pane__term .xterm {
+  position: absolute;
+  inset: 0;
+  padding: 0;
   height: 100% !important;
   width: 100% !important;
-  padding: 0;
   font-variant-ligatures: none;
 }
 

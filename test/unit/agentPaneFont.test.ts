@@ -32,19 +32,29 @@ describe("resolveAgentPaneFontMetrics", () => {
     expect(m.fontSize).toBe(15);
   });
 
+  it("rejects Tachyon Mono (missing @font-face in bare webview) for system stack", () => {
+    const m = resolveAgentPaneFontMetrics(
+      cfg({ fontFamily: "Tachyon Mono, monospace", fontSize: 14 }),
+    );
+    expect(m.fontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
+  });
+
   it("uses default stack when both empty", () => {
     const m = resolveAgentPaneFontMetrics(cfg({}), cfg({}));
     expect(m.fontFamily).toBe(DEFAULT_TERMINAL_FONT_FAMILY);
     expect(m.fontSize).toBe(14);
   });
 
-  it("passes lineHeight and letterSpacing from terminal settings", () => {
-    const m = resolveAgentPaneFontMetrics(
-      cfg({ fontSize: 12, lineHeight: 1.2, letterSpacing: 1, fontWeight: "400", fontWeightBold: "700" }),
+  it("passes mild lineHeight/letterSpacing; clamps TUI-unsafe values", () => {
+    const mild = resolveAgentPaneFontMetrics(
+      cfg({ fontSize: 12, lineHeight: 1.1, letterSpacing: 1, fontWeight: "400", fontWeightBold: "700" }),
     );
-    expect(m.lineHeight).toBe(1.2);
-    expect(m.letterSpacing).toBe(1);
-    expect(m.fontWeight).toBe("400");
-    expect(m.fontWeightBold).toBe("700");
+    expect(mild.lineHeight).toBe(1.1);
+    expect(mild.letterSpacing).toBe(1);
+    const wild = resolveAgentPaneFontMetrics(
+      cfg({ fontSize: 12, lineHeight: 2, letterSpacing: 8 }),
+    );
+    expect(wild.lineHeight).toBe(1);
+    expect(wild.letterSpacing).toBe(0);
   });
 });
