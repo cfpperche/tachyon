@@ -30,50 +30,9 @@ import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop
 
 const SELF = "dev-host";
 const DIR_NAME = "dev-host";
-/** Multi-slot v1 (t-efe06d): each owner/agent keeps an isolated pointer under slots/<id>/. */
-export const DEFAULT_SLOT = "default";
-const SLOTS_SUBDIR = "slots";
-const ACTIVE_LINK = "active";
 
 export function defaultRepoRoot(fromFile = fileURLToPath(import.meta.url)) {
   return path.resolve(path.dirname(fromFile), "../..");
-}
-
-/** Sanitize slot id: agents/owners map 1:1; human path uses DEFAULT_SLOT. */
-export function normalizeSlotId(raw) {
-  const s = String(raw ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-  if (!s || s === "." || s === "..") {
-    throw new Error(`${SELF}: invalid slot id '${raw}'`);
-  }
-  return s;
-}
-
-/**
- * Resolve which slot to use.
- * Priority: explicit slot → owner → env TACHYON_DEV_HOST_SLOT → env TACHYON_AGENT_NAME → default.
- * When `requireOwner` and no owner/slot/agent env, throws (agent fail-closed).
- */
-export function resolveSlotId(opts = {}) {
-  const env = opts.env ?? process.env;
-  if (opts.slot != null && String(opts.slot).trim()) return normalizeSlotId(opts.slot);
-  if (opts.owner != null && String(opts.owner).trim()) return normalizeSlotId(opts.owner);
-  if (env.TACHYON_DEV_HOST_SLOT && String(env.TACHYON_DEV_HOST_SLOT).trim()) {
-    return normalizeSlotId(env.TACHYON_DEV_HOST_SLOT);
-  }
-  if (env.TACHYON_AGENT_NAME && String(env.TACHYON_AGENT_NAME).trim()) {
-    return normalizeSlotId(env.TACHYON_AGENT_NAME);
-  }
-  if (opts.requireOwner) {
-    throw new Error(
-      `${SELF}: agents must pass --owner (or set TACHYON_AGENT_NAME / TACHYON_DEV_HOST_SLOT); refusing unscoped last-writer-wins point`,
-    );
-  }
-  return DEFAULT_SLOT;
 }
 
 /**
@@ -179,65 +138,6 @@ export function pathsOf(repoRoot) {
   };
 }
 
-/** True if the pre-multi-slot flat layout is present (meta + extension at base root). */
-export function isFlatPointerLayout(repoRoot) {
-  const base = devHostDir(repoRoot);
-  return fs.existsSync(path.join(base, "meta.json")) || fs.existsSync(path.join(base, "extension"));
-}
-
-/**
- * One-shot migrate flat `.tachyon/dev-host/{extension,workspace,…}` → `slots/default/`.
- * Returns { migrated, slotId } .
- */
-export function migrateFlatPointerToSlots(repoRoot) {
-  const base = devHostDir(path.resolve(repoRoot));
-  if (!fs.existsSync(base)) return { migrated: false, slotId: null };
-  if (fs.existsSync(path.join(base, SLOTS_SUBDIR))) {
-    // Already multi-slot; leave any leftover flat files alone until clear.
-    return { migrated: false, slotId: null };
-  }
-  if (!isFlatPointerLayout(repoRoot)) return { migrated: false, slotId: null };
-
-  const dest = path.join(base, SLOTS_SUBDIR, DEFAULT_SLOT);
-  ensureDir(path.join(base, SLOTS_SUBDIR));
-  ensureDir(dest);
-  const moveNames = [
-    "extension",
-    "workspace",
-    "runtime",
-    "meta.json",
-    "user-data",
-    "extensions",
-    "tmux",
-    "cache",
-    "state",
-    "data",
-    "profile-home",
-    "session.json",
-  ];
-  for (const name of moveNames) {
-    const from = path.join(base, name);
-    const to = path.join(dest, name);
-    if (!fs.existsSync(from)) continue;
-    try {
-      fs.renameSync(from, to);
-    } catch {
-      // Cross-device or busy: copy+rm best effort
-      try {
-        fs.cpSync(from, to, { recursive: true });
-        fs.rmSync(from, { recursive: true, force: true });
-      } catch {
-        /* leave in place; slot may be partial */
-      }
-    }
-  }
-  setActiveSlot(repoRoot, DEFAULT_SLOT);
-  console.error(
-    `${SELF}: migrated legacy flat pointer → slots/${DEFAULT_SLOT}/ (t-efe06d multi-slot). Re-point per agent with --owner to avoid clobber.`,
-  );
-  return { migrated: true, slotId: DEFAULT_SLOT };
-}
-
 /** Remove path if present (symlink-safe — never follow a dangling active → slots/*). */
 function rmIfPresent(p) {
   try {
@@ -251,72 +151,6 @@ function rmIfPresent(p) {
     if (err && /** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return;
     /* best-effort for replace */
   }
-}
-
-/** Point `active` symlink at slots/<slotId> for the default F5 launch entry. */
-export function setActiveSlot(repoRoot, slotId) {
-  const slot = normalizeSlotId(slotId);
-  const base = devHostDir(repoRoot);
-  const target = path.join(base, SLOTS_SUBDIR, slot);
-  if (!fs.existsSync(target)) {
-    throw new Error(`${SELF}: cannot activate missing slot '${slot}' (${target})`);
-  }
-  ensureDir(base);
-  const link = activeLinkPath(repoRoot);
-  // Must unlink (not rm -r): a dangling active → deleted slot used to leave EEXIST on rewrite.
-  rmIfPresent(link);
-  // Relative link so the monorepo tree stays relocatable
-  fs.symlinkSync(path.join(SLOTS_SUBDIR, slot), link);
-  return link;
-}
-
-export function readActiveSlotId(repoRoot) {
-  const link = activeLinkPath(repoRoot);
-  try {
-    if (!fs.lstatSync(link).isSymbolicLink()) return null;
-    const raw = fs.readlinkSync(link);
-    const base = path.basename(raw.replace(/\\/g, "/"));
-    return base && base !== "." && base !== ".." ? normalizeSlotId(base) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Ensure `active` points at a living slot (or is removed).
- * Call after clear/migrate so F5 never follows a dangling symlink.
- * @returns {string|null} active slot id after reconcile
- */
-export function reconcileActiveSlot(repoRoot) {
-  const resolved = path.resolve(repoRoot);
-  const ids = listSlotIds(resolved);
-  const link = activeLinkPath(resolved);
-  if (ids.length === 0) {
-    try {
-      fs.rmSync(link, { force: true });
-    } catch {
-      /* ignore */
-    }
-    return null;
-  }
-  const current = readActiveSlotId(resolved);
-  const currentAlive =
-    current != null && ids.includes(current) && fs.existsSync(pathsOf(resolved, current).root);
-  if (currentAlive) return current;
-  setActiveSlot(resolved, ids[0]);
-  return ids[0];
-}
-
-/** List slot ids that have meta.json. */
-export function listSlotIds(repoRoot) {
-  const dir = slotsDir(repoRoot);
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir, { withFileTypes: true })
-    .filter((d) => d.isDirectory())
-    .map((d) => d.name)
-    .filter((name) => fs.existsSync(path.join(dir, name, "meta.json")))
-    .sort();
 }
 
 /** Refuse monorepo root as the opened EDH workspace. */
@@ -776,31 +610,14 @@ export function point(opts) {
 export async function status(repoRoot, opts = {}) {
   const probeEngine = opts.probeEngine ?? probeFixtureEngine;
   const resolved = path.resolve(repoRoot);
-  migrateFlatPointerToSlots(resolved);
-  let slotId;
-  if (opts.slotId != null && String(opts.slotId).trim()) {
-    slotId = normalizeSlotId(opts.slotId);
-  } else if (opts.slot != null && String(opts.slot).trim()) {
-    slotId = normalizeSlotId(opts.slot);
-  } else if (opts.owner != null && String(opts.owner).trim()) {
-    slotId = normalizeSlotId(opts.owner);
-  } else {
-    slotId = readActiveSlotId(resolved) ?? DEFAULT_SLOT;
-  }
-  const activeId = readActiveSlotId(resolved);
-  const p = pathsOf(resolved, slotId);
+  // spec 448 — one dev-host per checkout: nothing to select, nothing to mark active.
+  const p = pathsOf(resolved);
   if (!fs.existsSync(p.meta)) {
-    const slots = listSlotIds(resolved);
     return {
       armed: false,
       broken: true,
-      reason: slots.length
-        ? `no meta for slot '${slotId}' — armed slots: ${slots.join(", ")} (point-status --all)`
-        : "no meta.json — run: npm run dogfood:dev-host -- point …",
-      slotId,
-      active: activeId === slotId,
-      activeSlotId: activeId,
-      slots,
+      reason: "no meta.json — run: npm run dogfood:dev-host -- point …",
+      checkout: resolved,
       warnings: [],
     };
   }
@@ -812,9 +629,7 @@ export async function status(repoRoot, opts = {}) {
       armed: false,
       broken: true,
       reason: `meta.json unreadable: ${err instanceof Error ? err.message : String(err)}`,
-      slotId,
-      active: activeId === slotId,
-      activeSlotId: activeId,
+      checkout: resolved,
       warnings: [],
     };
   }
@@ -924,10 +739,7 @@ export async function status(repoRoot, opts = {}) {
   return {
     armed: !criticalBroken && extOk && wsOk && worktreeExists,
     broken: criticalBroken,
-    slotId,
-    active: activeId === slotId,
-    activeSlotId: activeId,
-    slots: listSlotIds(resolved),
+    checkout: resolved,
     meta,
     extensionResolves,
     runtimePath: runtimeOk ? fs.realpathSync(p.runtime) : null,
@@ -945,24 +757,6 @@ export async function status(repoRoot, opts = {}) {
   };
 }
 
-/** Doctor for every armed slot (point-status --all). */
-export async function statusAll(repoRoot, opts = {}) {
-  const resolved = path.resolve(repoRoot);
-  migrateFlatPointerToSlots(resolved);
-  const ids = listSlotIds(resolved);
-  const activeSlotId = readActiveSlotId(resolved);
-  const items = [];
-  for (const id of ids) {
-    items.push(await status(resolved, { ...opts, slotId: id }));
-  }
-  return {
-    armed: items.some((s) => s.armed),
-    activeSlotId,
-    slots: items,
-    slotIds: ids,
-  };
-}
-
 /** Pretty-print doctor lines for humans/agents (stdout). */
 export function printStatus(st) {
   if (!st.armed && st.reason && !st.meta) {
@@ -970,7 +764,6 @@ export function printStatus(st) {
     return;
   }
   console.log(`${SELF}: ${st.armed ? "armed" : "BROKEN / not ready"}`);
-  if (st.slotId) console.log(`  slot:           ${st.slotId}${st.active ? "  (active F5)" : ""}`);
   if (st.meta?.owner) console.log(`  owner:          ${st.meta.owner}`);
   if (st.meta?.spec) console.log(`  spec:           ${st.meta.spec}`);
   if (st.meta?.slug) console.log(`  slug:           ${st.meta.slug}`);
@@ -1053,32 +846,41 @@ export function assertPointerSessionIdle(pointerRoot) {
   fs.rmSync(sessionFile, { force: true });
 }
 
+/**
+ * Flags retired by spec 448, with the replacement each one maps to.
+ *
+ * These fail immediately rather than warning for a release — the maintainer's explicit call
+ * (2026-07-24). A silent no-op would be worse than a hard stop here: the caller would believe it had
+ * armed a scoped dev-host and then be pointed at a different directory than the one that launches.
+ */
+const RETIRED_FLAGS = Object.freeze({
+  "--owner": "the dev-host now belongs to the checkout you run in — cd to your worktree and drop --owner",
+  "--slot": "slots were removed; each checkout has exactly one dev-host — cd to your worktree and drop --slot",
+  "--activate": "there is no `active` pointer to select any more — the checkout you run in is the target",
+  "--no-activate": "there is no `active` pointer to select any more — the checkout you run in is the target",
+  "--require-owner": "ownership is structural now (one dev-host per checkout), so there is nothing to require",
+  "--all": "there is only ever one dev-host per checkout, so `point-clear` already clears all of it",
+});
+
 export function parseArgs(argv) {
   const out = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    if (RETIRED_FLAGS[a]) {
+      throw new Error(`${SELF}: ${a} was removed by spec 448 — ${RETIRED_FLAGS[a]}`);
+    }
     if (
       a === "--worktree" ||
       a === "--workspace" ||
       a === "--fixture" ||
       a === "--spec" ||
       a === "--slug" ||
-      a === "--owner" ||
-      a === "--slot" ||
       a === "--intent" ||
       a === "--repo"
     ) {
       const v = argv[++i];
       if (v === undefined) throw new Error(`${SELF}: ${a} requires a value`);
       out[a.slice(2)] = v;
-    } else if (a === "--all") {
-      out.all = true;
-    } else if (a === "--activate") {
-      out.activate = true;
-    } else if (a === "--no-activate") {
-      out.activate = false;
-    } else if (a === "--require-owner") {
-      out.requireOwner = true;
     } else if (a.startsWith("--")) {
       throw new Error(`${SELF}: unknown flag ${a}`);
     } else {
@@ -1197,21 +999,7 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
   }
 
   if (sub === "status") {
-    if (args.all) {
-      const all = await statusAll(repoRoot);
-      console.log(`${SELF}: ${all.slotIds.length} slot(s)${all.activeSlotId ? ` · active=${all.activeSlotId}` : ""}`);
-      for (const st of all.slots) {
-        console.log("");
-        printStatus(st);
-      }
-      if (all.slotIds.length === 0) {
-        console.log(`${SELF}: unarmed — no slots (npm run dogfood:dev-host -- point …)`);
-      }
-      console.log("---");
-      console.log(JSON.stringify({ ...all, checkout: repoRoot, primaryRepo }, null, 2));
-      return all.armed ? 0 : 1;
-    }
-    const st = await status(repoRoot, { owner: args.owner, slot: args.slot, slotId: args.slot });
+    const st = await status(repoRoot);
     printStatus(st);
     console.log("---");
     console.log(JSON.stringify({ ...st, checkout: repoRoot, primaryRepo }, null, 2));
@@ -1219,29 +1007,8 @@ Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 
   }
 
   if (sub === "clear") {
-    if (
-      agentish &&
-      !args.all &&
-      !args.owner &&
-      !args.slot &&
-      !process.env.TACHYON_AGENT_NAME &&
-      !process.env.TACHYON_DEV_HOST_SLOT
-    ) {
-      throw new Error(
-        `${SELF}: agents must pass --owner (or --slot / TACHYON_AGENT_NAME) for point-clear; use --all only when intentionally freeing every slot`,
-      );
-    }
-    const r = await clear(repoRoot, {
-      owner: args.owner,
-      slot: args.slot,
-      all: args.all === true,
-      requireOwner: args.requireOwner === true,
-    });
-    if (r.all) {
-      console.log(`${SELF}: ${r.cleared ? "cleared all slots" : r.reason}`);
-    } else {
-      console.log(`${SELF}: ${r.cleared ? `cleared slot '${r.slotId}'` : r.reason}`);
-    }
+    const r = await clear(repoRoot);
+    console.log(`${SELF}: ${r.cleared ? `cleared dev-host of ${r.checkout}` : r.reason}`);
     if (r.reconciled) {
       console.log(`  engine: ${r.reconciled.engine?.state ?? r.reconciled.engine}`);
       console.log(`  bridge: ${r.reconciled.bridge?.state ?? r.reconciled.bridge}`);
