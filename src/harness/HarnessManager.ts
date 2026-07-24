@@ -364,7 +364,8 @@ export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: 
   const privateHomes = listWorkspaceGrokPrivateHomes(workspaceRoot);
   let promoted = false;
   let bestPrivate: string | undefined;
-  let bestRank = { mtimeMs: 0, createTimeMs: 0 };
+  // t-381750 — must match AuthCredentialRank after t-6c8437 (expiresAtMs + accessValid).
+  let bestRank: AuthCredentialRank = { mtimeMs: 0, createTimeMs: 0, expiresAtMs: 0, accessValid: false };
 
   for (const home of privateHomes) {
     const privateAuth = path.join(home, "auth.json");
