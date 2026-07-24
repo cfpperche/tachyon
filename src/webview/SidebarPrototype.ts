@@ -46,7 +46,7 @@ const COLLAPSED_KEYS_KEY = "tachyon.sidebar.collapsed";
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
  *  not an item). */
-const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "activity" | "probes">, string> = {
+const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" | "probes">, string> = {
   stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
@@ -432,6 +432,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (id === "inspect") { void vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, ws.wsHash); return; }
+    // t-610355 — layer-2 first-party pane (next to integrated terminal open on the row)
+    if (id === "openPane") { void vscode.commands.executeCommand("tachyon.openAgentPaneItem", agent, ws.wsHash); return; }
     if (id === "activity") { void vscode.commands.executeCommand("tachyon.openAgentActivity", agent, ws.wsHash); return; } // spec 238
     if (id === "probes") { void vscode.commands.executeCommand("tachyon.openProbes", ws.wsHash, agent); return; } // spec 322 — this agent's probes only
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
