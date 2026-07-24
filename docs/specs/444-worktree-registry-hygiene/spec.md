@@ -2,11 +2,13 @@
 
 _Created 2026-07-24._
 
-**Status:** draft
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
-     placeholders, and missing dogfood proof or opt-out). -->
+**Status:** shipped
+**Closure:** Merged to main 2026-07-24 (aa96c784, t-9f8dfc). classifyManagedWorktree +
+ManagedWorktreeService.listClassified()/removeClassified() drive a real Worktrees tab in Control
+(ready-to-remove / needs-review / occupied / record-only), replacing the raw disk read
+(`readManagedWorktreesFromDisk` deleted). PI-002 registered. verify:full green pre- and post-merge
+(5639 passed). Pixel-accurate screenshot taken post-merge via the fixed webview-preview harness
+(t-e085bc) confirming the real rendered UI matches the approved mockup.
 
 ## Intent
 
@@ -42,7 +44,7 @@ action against a path that does not exist.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: a registry-only tombstone never offers Reveal as if the path existed**
+- [x] **Scenario: a registry-only tombstone never offers Reveal as if the path existed**
   - **Given** a `ManagedWorktreeEntry` whose `path` does not exist on disk (the current 12 live
     tombstones: `spec376-dogfood-impl`, `salvagecleanup1`, `visualqa-072`, `impl-240a3b`,
     `companion-tab-tools-v2-foundation`, `companion-tab-tools-v2-p0`, `agent-evolution`,
@@ -53,7 +55,7 @@ action against a path that does not exist.
   - **Then** it is classified `record-only` (or equivalent), Reveal/Copy-path are not offered, and
     the row instead offers a `Forget record` action
 
-- [ ] **Scenario: a clean, unoccupied, base-contained checkout is ready to remove**
+- [x] **Scenario: a clean, unoccupied, base-contained checkout is ready to remove**
   - **Given** a real git worktree whose path exists, git status is clean, it is not occupied by a
     live agent, it has zero commits not already contained in its recorded base, and it carries no
     unique work
@@ -62,7 +64,7 @@ action against a path that does not exist.
     confirmed, calls `ManagedWorktreeService.remove`/the `remove_worktree` Bridge path (occupancy
     fail-closed, as today) and leaves git + the registry consistent afterward
 
-- [ ] **Scenario: a dirty, ahead, unknown-ancestry, non-owned-branch, or occupied checkout blocks
+- [x] **Scenario: a dirty, ahead, unknown-ancestry, non-owned-branch, or occupied checkout blocks
     destructive cleanup with a stated reason**
   - **Given** a real checkout matching any one of: uncommitted changes, commits not contained in its
     base, an occupying live agent, or (for branch deletion specifically) a branch Tachyon did not
@@ -74,14 +76,14 @@ action against a path that does not exist.
     entry (dirty, 0 ahead) is the running example: it must land as `needs-review: dirty`, never
     `ready-to-remove` and never silently treated as a tombstone
 
-- [ ] **Scenario: local branch deletion is opt-in and ownership-gated**
+- [x] **Scenario: local branch deletion is opt-in and ownership-gated**
   - **Given** a `ready-to-remove` (or user-confirmed `needs-review`) checkout with a local branch
   - **When** the human removes the checkout
   - **Then** the local branch is deleted only with explicit consent in the same action and only when
     `tachyonCreatedBranch` is true; a non-Tachyon-owned branch is never offered for deletion; no
     remote branch or ref is ever touched by any action this spec introduces
 
-- [ ] **Scenario: batch cleanup only ever acts on entries the classifier already marked safe**
+- [x] **Scenario: batch cleanup only ever acts on entries the classifier already marked safe**
   - **Given** a multi-select batch cleanup action (if built) with a preview step
   - **When** the human confirms
   - **Then** only entries already classified `record-only` (forget) or `ready-to-remove` (remove)
@@ -90,16 +92,16 @@ action against a path that does not exist.
     (e.g., an agent starts occupying a path mid-preview) causes that one entry to drop out of the
     batch rather than being force-removed
 
-- [ ] Classification is computed by the engine (`ManagedWorktreeService` or a sibling module), never
+- [x] Classification is computed by the engine (`ManagedWorktreeService` or a sibling module), never
       inferred by the webview from raw JSON; Control's Worktrees tab consumes the classified result,
       not `disk.ts`'s current unfiltered `readManagedWorktreesFromDisk` pass-through (that reader is
       either replaced or demoted to a fallback that is never trusted for action-gating).
-- [ ] A path becoming inaccessible mid-remove is a stated failure/needs-review outcome, never
+- [x] A path becoming inaccessible mid-remove is a stated failure/needs-review outcome, never
       silently reported as a successful removal (no ambiguous success on a missing path).
-- [ ] Tests cover: tombstone (missing path), clean ready-to-remove, dirty, unique/unmerged commits
+- [x] Tests cover: tombstone (missing path), clean ready-to-remove, dirty, unique/unmerged commits
       ahead of base, non-Tachyon-owned branch, occupied, and a concurrency case where the entry's
       real state changes between a batch preview computation and its confirm step.
-- [ ] `PI-002` ("a destructive worktree/branch cleanup action never discards unique, unmerged commits
+- [x] `PI-002` ("a destructive worktree/branch cleanup action never discards unique, unmerged commits
       without an explicit, informed override") is registered in
       `test/product-invariants/registry.json` with a passing evidence test, per the maintainer's
       2026-07-24 decision to formalize this safety promise (see Open questions).
