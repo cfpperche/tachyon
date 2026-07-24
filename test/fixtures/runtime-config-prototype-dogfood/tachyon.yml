@@ -1,0 +1,14 @@
+# Dogfood fixture for SDD 446 Slice A. Agents stay stopped: Runtime Config is a
+# source-inventory surface and must not require a live session.
+settings:
+  maxAgents: 8
+
+agents:
+  codex:
+    cmd: codex
+    autostart: false
+    attention: false
+  codex-reviewer:
+    cmd: codex
+    autostart: false
+    attention: false

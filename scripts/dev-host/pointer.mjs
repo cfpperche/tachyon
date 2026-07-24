@@ -636,7 +636,12 @@ export function point(opts) {
   ensureDir(p.userData);
   ensureDir(p.extensions);
   ensureDir(p.cache);
-  ensureDir(p.profileHome);
+  // A fixture may seed a disposable runtime home for native-runtime configuration.
+  // This makes Dev Host's Runtime Config Global scope controlled rather than ambient.
+  fs.rmSync(p.profileHome, { recursive: true, force: true });
+  const seededProfileHome = path.join(workspace, ".runtime-config-global-home");
+  if (fs.existsSync(seededProfileHome)) fs.cpSync(seededProfileHome, p.profileHome, { recursive: true });
+  else ensureDir(p.profileHome);
   // Short AF_UNIX-safe TMUX_TMPDIR + launch.env (do not mkdir the long marker path as a real dir).
   const { tmuxTmpDir, launchEnvPath } = ensureDevHostTmuxLaunchEnv(repoRoot);
 

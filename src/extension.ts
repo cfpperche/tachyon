@@ -1496,7 +1496,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       buildSnapshot: (wsHash) => {
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
         if (!ws?.config) return undefined;
-        return inspectCodexRuntimeConfig({ workspaceRoot: ws.workspaceRoot, agents: ws.config.agents });
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        return inspectCodexRuntimeConfig({
+          workspaceRoot: ws.workspaceRoot,
+          agents: ws.config.agents,
+          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
+        });
       },
       openSource: async (sourcePath) => {
         await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });

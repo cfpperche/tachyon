@@ -1,0 +1,21 @@
+# Controlled Global source for Runtime Config Dev Host dogfood.
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+personality = "focused"
+global_unknown = "must-survive"
+
+[tui]
+status_line = ["global", "model", "context"]
+status_line_use_colors = false
+
+[features]
+terminal_resize_reflow = false
+
+[mcp_servers.fixture_keep]
+command = "fixture-keep-not-executed"
+
+[mcp_servers.fixture_remove]
+command = "fixture-remove-not-executed"
+
+[hooks.state]
+trusted_hash = "runtime-managed-and-hidden"

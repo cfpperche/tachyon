@@ -1,0 +1,24 @@
+# Workspace source for Control → Runtime Config dogfood.
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+personality = "pragmatic"
+model = "gpt-5-codex"
+
+[tui]
+status_line = ["model", "context", "git-branch"]
+status_line_use_colors = true
+
+[features]
+terminal_resize_reflow = true
+
+[mcp_servers.fixture_keep]
+command = "fixture-keep-not-executed"
+
+[mcp_servers.fixture_remove]
+command = "fixture-remove-not-executed"
+
+[hooks.state]
+trusted_hash = "runtime-managed-and-hidden"
+
+[notice]
+hide_full_access_warning = true
