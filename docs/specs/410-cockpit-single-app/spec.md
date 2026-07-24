@@ -2,7 +2,23 @@
 
 _Created 2026-07-18._
 
-**Status:** draft
+**Status:** shipped
+
+**Closure:** 2026-07-24 — Phases B–E complete (`tasks.md`): foundation guard extends `WEBVIEW_SURFACES`
+(`editorHome` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
+Ops, Validations, Plugins, tmux inspector, Board, task detail/handoff/probes as subroutes, 7
+studios) migrated to one host path with the old panel retired or dropped from the manifest; sidebar
+stayed a separate bundle throughout; `cockpitBundleBudget.test.ts` and `webviewConvention.test.ts`
+green; CSS co-load pattern (`lazySectionStyles`) landed and is enforced by
+`lazySectionStyles.test.ts`/`cockpitCssParity.test.ts`; the Phase C multi-instance decision
+(subroutes, not tabs) is recorded in `plan.md`'s Key decisions table; STYLEGUIDE cross-links the
+two-app rule. "Did we forget anything" audit 2026-07-22 cross-checked `plan.md`'s full scope against
+the live `surfaces.ts` manifest and found zero gaps (2 real drifts caught and fixed same day: dead
+Approvals bundle, stale plan.md multi-instance text). Visual QA accepted via real production usage
+per migrated surface (maintainer decision, 2026-07-22) — no formal Approvals-vs-Fleet A/B recorded.
+Standing exceptions (not debt): sidebar (by design, the other app), pin-preview (static, out of
+"full-page editor" scope), 2 dev-only spec-350 fakes, plugin surfaces (security isolation) — see
+`surfaces.ts`. Full suite green throughout (469 files / 5378 tests as of the Phase E audit).
 <!-- Updated 2026-07-19: fable ACCEPT-WITH-CHANGES — P0s folded (surfaces.ts guard, multi-instance, bundle budget). -->
 
 ## Intent
@@ -31,7 +47,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
 
 ### Foundation (must ship before bulk migration)
 
-- [ ] **Scenario: the foundation guard is the single source of truth for webview surfaces**
+- [x] **Scenario: the foundation guard is the single source of truth for webview surfaces**
   - **Given** `src/webview/surfaces.ts` (`WEBVIEW_SURFACES`, spec 279) and
     `test/unit/webviewConvention.test.ts` already enforce `main.tsx` / esbuild entry / serializer
     coverage for every registered webview surface
@@ -45,7 +61,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
   - **And** `MIGRATED_VIEWS` (spec 282) is updated in the same PR when a migrated view directory is
     removed or renamed
 
-- [ ] **Scenario: cockpit shell is the only page chrome for native sections**
+- [x] **Scenario: cockpit shell is the only page chrome for native sections**
   - **Given** cockpit is open on a **native** section (rendered in-tree, not a legacy embed)
   - **When** the section body mounts
   - **Then** the page header is `PageChrome` only: title = `--ds-title`, hint = `--ds-small`
@@ -53,13 +69,13 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
   - **And** product actions use kit `Button` / `IconButton` (`.ds-btn` single box); surface CSS
     must not redefine bare `button` or override `.ds-btn` metrics
 
-- [ ] **Scenario: sidebar remains a separate app**
+- [x] **Scenario: sidebar remains a separate app**
   - **Given** the Tachyon sidebar webview
   - **When** the extension loads
   - **Then** it still uses the sidebar bundle and density chrome (`.act` / native hits)
   - **And** cockpit work does not require loading the sidebar into the editor panel tree
 
-- [ ] **Scenario: section navigation is durable**
+- [x] **Scenario: section navigation is durable**
   - **Given** cockpit is open on section S
   - **When** the webview is hidden/shown or the panel is restored after reload (serializer path)
   - **Then** section S is restored exactly, using the existing `CockpitPanelState.section` +
@@ -67,7 +83,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
   - **And** if S no longer exists (retired section), cockpit falls back to `"overview"` and this
     fallback is asserted by a unit test
 
-- [ ] **Scenario: cockpit bundle growth is gated, not just measured**
+- [x] **Scenario: cockpit bundle growth is gated, not just measured**
   - **Given** `dist/webview/cockpit.js` is ~244KB today and several migration targets are larger
     individually (e.g. activity ~648KB, task-detail ~644KB, handoff ~640KB)
   - **When** a surface migrates into cockpit's Preact tree
@@ -77,7 +93,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
     **≤ 350 KB** uncompressed on disk (or the documented successor number if measured baseline moves);
     each migration PR records dist sizes before/after; exceeding budget without code-split is a failed gate
 
-- [ ] **Scenario: multi-instance surfaces have an explicit cockpit hosting design**
+- [x] **Scenario: multi-instance surfaces have an explicit cockpit hosting design**
   - **Given** Task detail, Handoff, and Probes today support N concurrent panel instances
     (`Map`-keyed managers)
   - **When** Phase C proposes migrating a multi-instance surface into “a cockpit section”
@@ -87,7 +103,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
     change stated explicitly)
   - **And** the choice is in plan.md’s Key decisions table (not deferred to implementation start)
 
-- [ ] **Scenario: CSS co-load shrinks as sections go native**
+- [x] **Scenario: CSS co-load shrinks as sections go native**
   - **Given** cockpit today co-loads multiple product stylesheets in its shell
   - **When** a Control-family section becomes native in-tree
   - **Then** its standalone sheet is no longer unconditionally injected for all sections (only when
@@ -97,7 +113,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
 
 ### Incremental migration (per surface — pattern)
 
-- [ ] **Scenario: a migrated surface has one host path**
+- [x] **Scenario: a migrated surface has one host path**
   - **Given** surface X has completed its migration task under this spec
   - **When** the human opens X via Control or the product command
   - **Then** X renders inside the cockpit Preact tree (or a documented thin host / multi-instance
@@ -107,7 +123,7 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
   - **And** `WEBVIEW_SURFACES` + convention tests reflect the new host
   - **And** visual QA evidence is recorded for page **shell** vs Fleet (pad, title, buttons)
 
-- [ ] **Scenario: legacy bundle removal is explicit**
+- [x] **Scenario: legacy bundle removal is explicit**
   - **Given** surface X is fully in-tree and no host opens its old entry
   - **When** the migration task closes
   - **Then** the old `main.tsx`/build entry is removed or marked retired on `WEBVIEW_SURFACES` with
@@ -115,11 +131,11 @@ a re-do of already-marked STYLEGUIDE chrome pilots — those remain the visual b
 
 ### Static facts
 
-- [ ] Spec + plan + tasks under `docs/specs/410-cockpit-single-app/`.
-- [ ] Inventory cites spec 279 `WEBVIEW_SURFACES` + App.tsx counts; Approvals dual path noted.
-- [ ] STYLEGUIDE cross-links the two-app rule.
-- [ ] Foundation has **Verify** including `webviewConvention.test.ts`.
-- [ ] Fable review folded (`docs/reviews/cockpit-single-app-410-fable.md`).
+- [x] Spec + plan + tasks under `docs/specs/410-cockpit-single-app/`.
+- [x] Inventory cites spec 279 `WEBVIEW_SURFACES` + App.tsx counts; Approvals dual path noted.
+- [x] STYLEGUIDE cross-links the two-app rule.
+- [x] Foundation has **Verify** including `webviewConvention.test.ts`.
+- [x] Fable review folded (`docs/reviews/cockpit-single-app-410-fable.md`).
 
 ## Non-goals
 
