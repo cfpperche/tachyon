@@ -6,21 +6,21 @@
       "type": "extensionHost",
       "request": "launch",
       "args": [
-        "${workspaceFolder}/.tachyon/dev-host/active/workspace",
-        "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/active/extension",
+        "${workspaceFolder}/.tachyon/dev-host/workspace",
+        "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
         "--disable-workspace-trust"
       ],
       "env": {
         "TACHYON_DEV_HOST": "1",
-        "TACHYON_DEV_HOST_ENGINE_RUNTIME": "${workspaceFolder}/.tachyon/dev-host/active/runtime",
-        "TACHYON_DEV_HOST_PROFILE_HOME": "${workspaceFolder}/.tachyon/dev-host/active/profile-home",
-        "TMUX_TMPDIR": "${workspaceFolder}/.tachyon/dev-host/active/tmux",
-        "XDG_CACHE_HOME": "${workspaceFolder}/.tachyon/dev-host/active/cache",
-        "XDG_STATE_HOME": "${workspaceFolder}/.tachyon/dev-host/active/state",
-        "XDG_DATA_HOME": "${workspaceFolder}/.tachyon/dev-host/active/data"
+        "TACHYON_DEV_HOST_ENGINE_RUNTIME": "${workspaceFolder}/.tachyon/dev-host/runtime",
+        "TACHYON_DEV_HOST_PROFILE_HOME": "${workspaceFolder}/.tachyon/dev-host/profile-home",
+        "TMUX_TMPDIR": "${workspaceFolder}/.tachyon/dev-host/tmux",
+        "XDG_CACHE_HOME": "${workspaceFolder}/.tachyon/dev-host/cache",
+        "XDG_STATE_HOME": "${workspaceFolder}/.tachyon/dev-host/state",
+        "XDG_DATA_HOME": "${workspaceFolder}/.tachyon/dev-host/data"
       },
       "outFiles": [
-        "${workspaceFolder}/.tachyon/dev-host/active/extension/dist/**/*.js"
+        "${workspaceFolder}/.tachyon/dev-host/extension/dist/**/*.js"
       ],
       "preLaunchTask": "tachyon: build-dev-host",
       "presentation": {

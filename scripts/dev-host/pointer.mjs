@@ -693,113 +693,6 @@ function readShortSha(worktreeAbs) {
 
 const LAUNCH_CONFIG_NAME = "Tachyon: Dev Host";
 
-/**
- * Portable F5 shape. Default config uses `active` symlink → slots/<id>.
- * Per-slot configs use slots/<id>/ so concurrent agents can F5 without clobber.
- * @param {{ slotId?: string, label?: string }} [opts]
- */
-export function portableDevHostLaunchConfig(opts = {}) {
-  // Do NOT set --extensions-dir / --user-data-dir: empty private dirs drop
-  // ms-vscode-remote.remote-wsl on the local (Windows) side of the EDH window.
-  // Do NOT write absolute machine paths: they force a fresh WSL re-entry
-  // ("Disconnected from WSL" / "Extension 'WSL' is required").
-  const slotId = opts.slotId ? normalizeSlotId(opts.slotId) : null;
-  const rel = slotId
-    ? `\${workspaceFolder}/.tachyon/dev-host/slots/${slotId}`
-    : "${workspaceFolder}/.tachyon/dev-host/active";
-  const name = slotId
-    ? `${LAUNCH_CONFIG_NAME} · ${slotId}`
-    : LAUNCH_CONFIG_NAME;
-  return {
-    name,
-    type: "extensionHost",
-    request: "launch",
-    args: [
-      `${rel}/workspace`,
-      `--extensionDevelopmentPath=${rel}/extension`,
-      "--disable-workspace-trust",
-    ],
-    env: {
-      TACHYON_DEV_HOST: "1",
-      ...(slotId ? { TACHYON_DEV_HOST_SLOT: slotId } : {}),
-      TACHYON_DEV_HOST_ENGINE_RUNTIME: `${rel}/runtime`,
-      TACHYON_DEV_HOST_PROFILE_HOME: `${rel}/profile-home`,
-      TMUX_TMPDIR: `${rel}/tmux`,
-      XDG_CACHE_HOME: `${rel}/cache`,
-      XDG_STATE_HOME: `${rel}/state`,
-      XDG_DATA_HOME: `${rel}/data`,
-    },
-    outFiles: [`${rel}/extension/dist/**/*.js`],
-    preLaunchTask: "tachyon: build-dev-host",
-    presentation: {
-      hidden: false,
-      group: "dogfood",
-      order: slotId ? 2 : 1,
-    },
-  };
-}
-
-/**
- * Ensure launch.json Dev Host entry uses the portable template (never machine-local paths).
- * @deprecated name kept as alias — prefer ensurePortableLaunchConfig
- */
-export function writeAbsoluteLaunchConfig(repoRoot, _worktreeAbs, _workspaceAbs) {
-  return ensurePortableLaunchConfig(repoRoot);
-}
-
-/** Write / restore portable Dev Host launch entries (default active + per-slot). */
-export function ensurePortableLaunchConfig(repoRoot) {
-  const launchPath = path.join(repoRoot, ".vscode", "launch.json");
-  if (!fs.existsSync(launchPath)) {
-    // Tests and bare checkouts without .vscode — pointer still works for CLI status.
-    return null;
-  }
-  const raw = fs.readFileSync(launchPath, "utf8");
-  let doc;
-  try {
-    doc = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`${SELF}: ${launchPath} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!Array.isArray(doc.configurations)) {
-    throw new Error(`${SELF}: ${launchPath} has no configurations array`);
-  }
-  const wanted = [portableDevHostLaunchConfig()];
-  for (const slotId of listSlotIds(repoRoot)) {
-    if (slotId === DEFAULT_SLOT) continue; // default covered by active entry + explicit if needed
-    wanted.push(portableDevHostLaunchConfig({ slotId }));
-  }
-  // Always include default slot entry when it exists (named), so agents can F5 without flipping active.
-  if (listSlotIds(repoRoot).includes(DEFAULT_SLOT)) {
-    wanted.push(portableDevHostLaunchConfig({ slotId: DEFAULT_SLOT }));
-  }
-  // Dedupe by name
-  const byName = new Map();
-  for (const c of wanted) byName.set(c.name, c);
-  const keepNames = new Set(byName.keys());
-  // Drop stale "Tachyon: Dev Host · *" configs not in keepNames
-  doc.configurations = doc.configurations.filter((c) => {
-    if (!c || typeof c.name !== "string") return true;
-    if (c.name === LAUNCH_CONFIG_NAME) return false; // replace
-    if (c.name.startsWith(`${LAUNCH_CONFIG_NAME} · `)) return false; // regenerate
-    return true;
-  });
-  // Insert our configs at front in stable order
-  const ordered = [byName.get(LAUNCH_CONFIG_NAME), ...[...byName.values()].filter((c) => c.name !== LAUNCH_CONFIG_NAME)].filter(
-    Boolean,
-  );
-  doc.configurations = [...ordered, ...doc.configurations];
-  fs.mkdirSync(path.dirname(launchPath), { recursive: true });
-  fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
-  return launchPath;
-}
-
-/** Restore portable template paths (idempotent with ensurePortableLaunchConfig). */
-export function restoreTemplateLaunchConfig(repoRoot) {
-  const launchPath = ensurePortableLaunchConfig(repoRoot);
-  if (!launchPath) return { restored: false, reason: "no launch.json" };
-  return { restored: true, path: launchPath };
-}
 
 /**
  * Point one Dev Host slot at a worktree + fixture (t-efe06d multi-slot).
@@ -1122,110 +1015,18 @@ export async function reconcileDevHostOccupant(slotRoot, opts = {}) {
  */
 export async function clear(repoRoot, opts = {}) {
   const resolved = path.resolve(repoRoot);
-  migrateFlatPointerToSlots(resolved);
   const base = devHostDir(resolved);
 
-  if (opts.all) {
-    if (!fs.existsSync(base)) {
-      return { cleared: false, reason: "already clear", all: true };
-    }
-    const ids = listSlotIds(resolved);
-    // Also include slot dirs that exist without meta (partial failures)
-    let dirIds = [];
-    try {
-      if (fs.existsSync(slotsDir(resolved))) {
-        dirIds = fs
-          .readdirSync(slotsDir(resolved), { withFileTypes: true })
-          .filter((d) => d.isDirectory())
-          .map((d) => d.name);
-      }
-    } catch {
-      /* ignore */
-    }
-    const unique = [...new Set([...ids, ...dirIds])];
-    const reconciledAll = [];
-    for (const id of unique) {
-      const p = pathsOf(resolved, id);
-      if (!fs.existsSync(p.root)) continue;
-      assertPointerSessionIdle(p.root);
-      reconciledAll.push({ slotId: id, ...(await reconcileDevHostOccupant(p.root, opts)) });
-    }
-    // Flat leftovers (pre-migrate race)
-    if (isFlatPointerLayout(resolved)) {
-      assertPointerSessionIdle(base);
-      reconciledAll.push({ slotId: "(flat)", ...(await reconcileDevHostOccupant(base, opts)) });
-    }
-    fs.rmSync(base, { recursive: true, force: true });
-    const launch = restoreTemplateLaunchConfig(resolved);
-    return {
-      cleared: true,
-      all: true,
-      slots: unique,
-      launch,
-      reconciled: reconciledAll[0] ?? { engine: { state: "absent" }, bridge: { state: "absent" } },
-      reconciledAll,
-    };
+  // spec 448 — one dev-host per checkout, so clearing is unconditional: there is no slot to select
+  // and no `active` link to retarget. `--all` is accepted as a no-op alias for callers that still
+  // pass it, because "all" and "this one" are now the same set.
+  if (!fs.existsSync(base)) {
+    return { cleared: false, reason: "already clear" };
   }
-
-  // Explicit owner/slot/env → that slot. Bare human clear → active, else default.
-  // opts.env isolates tests from the real agent process env when set (even to {}).
-  const env = opts.env !== undefined ? opts.env : process.env;
-  let slotId;
-  if (opts.slot != null && String(opts.slot).trim()) {
-    slotId = normalizeSlotId(opts.slot);
-  } else if (opts.owner != null && String(opts.owner).trim()) {
-    slotId = normalizeSlotId(opts.owner);
-  } else if (env.TACHYON_DEV_HOST_SLOT && String(env.TACHYON_DEV_HOST_SLOT).trim()) {
-    slotId = normalizeSlotId(env.TACHYON_DEV_HOST_SLOT);
-  } else if (env.TACHYON_AGENT_NAME && String(env.TACHYON_AGENT_NAME).trim()) {
-    slotId = normalizeSlotId(env.TACHYON_AGENT_NAME);
-  } else {
-    slotId = readActiveSlotId(resolved) ?? DEFAULT_SLOT;
-  }
-
-  if (opts.requireOwner === true) {
-    resolveSlotId({
-      owner: opts.owner,
-      slot: opts.slot,
-      requireOwner: true,
-      env,
-    });
-  }
-
-  const p = pathsOf(resolved, slotId);
-  if (!fs.existsSync(p.root)) {
-    // Nothing for this slot — if base is empty/orphan, treat as already clear
-    if (!fs.existsSync(base) || (listSlotIds(resolved).length === 0 && !isFlatPointerLayout(resolved))) {
-      if (fs.existsSync(base) && listSlotIds(resolved).length === 0) {
-        // empty multi-slot shell
-        try {
-          fs.rmSync(base, { recursive: true, force: true });
-        } catch {
-          /* ignore */
-        }
-      }
-      return { cleared: false, reason: "already clear", slotId };
-    }
-    return { cleared: false, reason: `slot '${slotId}' not armed`, slotId };
-  }
-
-  assertPointerSessionIdle(p.root);
-  // Reconcile before touching storage: never wipe state/data out from under a live engine.
-  const reconciled = await reconcileDevHostOccupant(p.root, opts);
-  fs.rmSync(p.root, { recursive: true, force: true });
-
-  // Always heal active: retarget to a living slot or drop the dangling link (t-efe06d).
-  const activeAfter = reconcileActiveSlot(resolved);
-
-  // Last slot gone → wipe base (active, slots/, leftovers) for a clean unarmed tree
-  if (listSlotIds(resolved).length === 0) {
-    if (fs.existsSync(base)) {
-      fs.rmSync(base, { recursive: true, force: true });
-    }
-  }
-
-  const launch = restoreTemplateLaunchConfig(resolved);
-  return { cleared: true, slotId, activeSlotId: activeAfter, launch, reconciled };
+  assertPointerSessionIdle(base);
+  const reconciled = await reconcileDevHostOccupant(base, opts);
+  fs.rmSync(base, { recursive: true, force: true });
+  return { cleared: true, checkout: resolved, reconciled };
 }
 
 /** Refuse destructive pointer changes while an interactive headless session owns it. */
