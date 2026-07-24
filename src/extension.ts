@@ -32,7 +32,7 @@ import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
-import { readGitDeliveriesFromDisk, readManagedWorktreesFromDisk } from "./cockpit/disk.js";
+import { readGitDeliveriesFromDisk } from "./cockpit/disk.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
@@ -1318,6 +1318,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           /* engine without companion.status (older) or offline */
         }
 
+        // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
+        // unreachable → an EMPTY list plus a note, never unverified raw-disk rows (maintainer-
+        // ratified: untrusted data is not better than no data). The raw reader is deleted.
+        let worktreeRows: CockpitWorkspaceBundle["worktrees"] = [];
+        let worktreesUnavailable: string | undefined;
+        try {
+          const classified = await extensionQuery(ws, { action: "worktrees.classified" });
+          const rows = (classified as { worktrees?: unknown[] })?.worktrees;
+          if (!Array.isArray(rows)) throw new Error("engine returned no worktrees payload");
+          worktreeRows = rows.map((row) => {
+            const e = row as Record<string, unknown>;
+            return {
+              id: String(e.id ?? ""),
+              kind: String(e.kind ?? ""),
+              path: String(e.path ?? ""),
+              branch: String(e.branch ?? ""),
+              status: String(e.status ?? ""),
+              slug: e.slug != null ? String(e.slug) : undefined,
+              agent: e.agent != null ? String(e.agent) : undefined,
+              folder: ws.folderName,
+              wsHash: ws.wsHash,
+              classification: e.classification as CockpitWorkspaceBundle["worktrees"][number]["classification"],
+            };
+          });
+        } catch (err) {
+          worktreesUnavailable = err instanceof Error ? err.message : String(err);
+        }
+
         bundles.push({
           control: {
             folderName: ws.folderName,
@@ -1334,7 +1362,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             notes: [],
           },
           agents: agentRows,
-          worktrees: readManagedWorktreesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
+          worktrees: worktreeRows,
+          ...(worktreesUnavailable ? { worktreesUnavailable } : {}),
           deliveries: readGitDeliveriesFromDisk(ws.workspaceRoot, { folder: ws.folderName, wsHash: ws.wsHash }),
           approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
           tmux,

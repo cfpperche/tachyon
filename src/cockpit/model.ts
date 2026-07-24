@@ -127,6 +127,9 @@ export interface CockpitWorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
   agents: CockpitAgentRow[];
   worktrees: CockpitWorktreeRow[];
+  /** spec 444 — the classified engine read failed (engine unreachable). The tab shows an honest
+   *  error state for this workspace instead of unverified raw rows. */
+  worktreesUnavailable?: string;
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
   tmux?: { state: string; version?: string };
@@ -182,6 +185,8 @@ export interface CockpitModel {
   };
   fleet: CockpitAgentRow[];
   worktrees: CockpitWorktreeRow[];
+  /** spec 444 — folders whose classified worktree read failed (engine unreachable), with reasons. */
+  worktreesUnavailable?: Array<{ folder: string; reason: string }>;
   deliveries: CockpitDeliveryRow[];
   approvals: CockpitApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
@@ -217,6 +222,9 @@ export function buildCockpitModel(
     })),
   );
   const worktrees = scoped.flatMap((b) => b.worktrees);
+  const worktreesUnavailable = scoped.flatMap((b) =>
+    b.worktreesUnavailable ? [{ folder: b.control.folderName, reason: b.worktreesUnavailable }] : [],
+  );
   const deliveries = scoped.flatMap((b) => b.deliveries);
   const approvals = scoped.flatMap((b) => b.approvals);
   const tmux = scoped.map((b) => ({
@@ -272,6 +280,7 @@ export function buildCockpitModel(
     },
     fleet,
     worktrees,
+    ...(worktreesUnavailable.length > 0 ? { worktreesUnavailable } : {}),
     deliveries,
     approvals,
     tmux,
