@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneToHost } from "./protocol";
+import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneInjectKind, AgentPaneToHost } from "./protocol";
 import { gridChanged, sanitizeFontMetrics, type GridSize } from "./geometry";
 
 export interface AgentPaneAppProps {
@@ -9,11 +9,6 @@ export interface AgentPaneAppProps {
   onHostMessage: (handler: (msg: AgentPaneFromHost) => void) => () => void;
 }
 
-/**
- * System mono stack — must exist without product @font-face (see agentPaneFont).
- * Quoted multi-word faces so canvas measureText and CSS agree (proportional fallback
- * was the root cause of double-spaced TUIs when a Windows-only face was missing).
- */
 const FALLBACK_FONT: AgentPaneFontMetrics = {
   fontFamily: '"DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace',
   fontSize: 14,
@@ -21,6 +16,18 @@ const FALLBACK_FONT: AgentPaneFontMetrics = {
   fontWeightBold: "bold",
   lineHeight: 1,
   letterSpacing: 0,
+};
+
+const MARK_GLYPH: Record<AgentPaneInjectKind, string> = {
+  stage: "·",
+  submit: "▸",
+  template: "◇",
+};
+
+const MARK_COLOR: Record<AgentPaneInjectKind, string> = {
+  stage: "#4ec9b0",
+  submit: "#569cd6",
+  template: "#c586c0",
 };
 
 function applyFont(term: Terminal, font: AgentPaneFontMetrics): void {
@@ -50,17 +57,44 @@ async function waitForFonts(fontFamily: string, fontSize: number): Promise<void>
   }
 }
 
+/** Place a non-PTY inject marker + overview ruler tick at the current bottom line. */
+export function placeInjectMarker(
+  term: Terminal,
+  kind: AgentPaneInjectKind,
+  keep: { markers: IMarker[]; decorations: IDecoration[] },
+): void {
+  const marker = term.registerMarker(0);
+  if (!marker) return;
+  keep.markers.push(marker);
+  const color = MARK_COLOR[kind];
+  const decoration = term.registerDecoration({
+    marker,
+    overviewRulerOptions: { color, position: "center" },
+  });
+  if (!decoration) return;
+  keep.decorations.push(decoration);
+  decoration.onRender((el) => {
+    el.classList.add("agent-pane__inject-mark");
+    el.dataset.kind = kind;
+    el.title = `Inject: ${kind}`;
+    el.textContent = MARK_GLYPH[kind];
+    el.style.color = color;
+  });
+}
+
 /**
- * Layer-2 agent pane: identity chrome + xterm viewport + stage/submit bar (381 path).
- * Geometry: fonts ready → fit term host → report cols×rows → host PTY resize.
+ * Layer-2 agent pane: identity + xterm + stage bar + Slice 2 markers / pin selection.
  */
 export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const termHostRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<Terminal | null>(null);
+  const marksRef = useRef<{ markers: IMarker[]; decorations: IDecoration[] }>({ markers: [], decorations: [] });
   const [agent, setAgent] = useState("…");
   const [status, setStatus] = useState("connecting…");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [hasSelection, setHasSelection] = useState(false);
 
   useEffect(() => {
     const el = termHostRef.current;
@@ -79,6 +113,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       fontWeightBold: "bold",
       lineHeight: 1,
       letterSpacing: 0,
+      overviewRulerWidth: 14,
       theme: {
         background: "#1e1e1e",
         foreground: "#cccccc",
@@ -105,6 +140,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       convertEol: false,
       scrollback: 5000,
     });
+    termRef.current = term;
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
@@ -131,6 +167,9 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const dataDisp = term.onData((data) => {
       postMessage({ type: "agent-pane/input", data });
+    });
+    const selDisp = term.onSelectionChange(() => {
+      if (!disposed) setHasSelection(!!term.getSelection()?.trim());
     });
 
     const ro = new ResizeObserver(() => scheduleReport());
@@ -169,7 +208,16 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         setFlash(msg.message);
         if (msg.ok && (msg.mode === "stage" || msg.mode === "submit")) {
           setDraft("");
+          placeInjectMarker(term, msg.mode, marksRef.current);
         }
+        return;
+      }
+      if (msg.type === "agent-pane/mark") {
+        placeInjectMarker(term, msg.kind, marksRef.current);
+        return;
+      }
+      if (msg.type === "agent-pane/pin-result") {
+        setFlash(msg.message);
         return;
       }
       if (msg.type === "agent-pane/exit") {
@@ -190,6 +238,11 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       unsub();
       ro.disconnect();
       dataDisp.dispose();
+      selDisp.dispose();
+      for (const d of marksRef.current.decorations) d.dispose();
+      for (const m of marksRef.current.markers) m.dispose();
+      marksRef.current = { markers: [], decorations: [] };
+      termRef.current = null;
       term.dispose();
     };
   }, [postMessage, onHostMessage]);
@@ -206,6 +259,16 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     setBusy(true);
     setFlash(null);
     postMessage(mode === "stage" ? { type: "agent-pane/stage", text } : { type: "agent-pane/submit", text });
+  };
+
+  const pinSelection = () => {
+    const term = termRef.current;
+    const text = term?.getSelection() ?? "";
+    if (!text.trim()) {
+      setFlash("Nothing selected.");
+      return;
+    }
+    postMessage({ type: "agent-pane/pin-selection", text });
   };
 
   return (
@@ -226,7 +289,6 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
           disabled={busy}
           onInput={(e) => setDraft((e.currentTarget as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
-            // Mod+Enter = submit (product hotkey); plain Enter keeps newlines in the stage box.
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
               deliver("submit");
@@ -234,6 +296,15 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
           }}
         />
         <div class="agent-pane__stage-actions">
+          <button
+            type="button"
+            class="agent-pane__btn"
+            disabled={!hasSelection}
+            title="Pin the selected terminal text to the project checklist"
+            onClick={pinSelection}
+          >
+            Pin selection
+          </button>
           <button
             type="button"
             class="agent-pane__btn"

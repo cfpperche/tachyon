@@ -34,6 +34,7 @@ import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
+import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
@@ -499,8 +500,9 @@ function wsOf<T extends { ws?: WorkspacePresentationTarget; workspaceHash?: stri
 }
 
 
-/** spec 381 — shell selection/confirmation; the persistent engine revalidates and delivers. */
-async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAgent?: string): Promise<void> {
+/** spec 381 — shell selection/confirmation; the persistent engine revalidates and delivers.
+ *  Returns true only when inject completed (false on cancel / empty catalog / refused). */
+async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAgent?: string): Promise<boolean> {
   const catalog = jsonObject(await extensionQuery(ws, { action: "prompt.catalog" }), "prompt.catalog");
   const relDir = typeof catalog.relDir === "string" ? catalog.relDir : ".tachyon/prompts";
   const skippedCount = typeof catalog.skippedCount === "number" ? catalog.skippedCount : 0;
@@ -522,7 +524,7 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
   if (templates.length === 0) {
     const skipHint = skippedCount > 0 ? vscode.l10n.t(" ({0} file(s) skipped)", skippedCount) : "";
     notify(vscode.l10n.t("No prompt templates in {0}/ — add <id>.md files there.{1}", relDir, skipHint), "warn");
-    return;
+    return false;
   }
 
   const tplPick = await vscode.window.showQuickPick(
@@ -534,20 +536,20 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
     })),
     { title: vscode.l10n.t("Inject prompt template"), placeHolder: vscode.l10n.t("Choose a template") },
   );
-  if (!tplPick) return;
+  if (!tplPick) return false;
   const template = tplPick.template;
 
   let agentName = preselectedAgent;
   if (!agentName) {
     if (targets.length === 0) {
       notify(vscode.l10n.t("No running AI agent available for prompt injection."), "warn");
-      return;
+      return false;
     }
     const agentPick = await vscode.window.showQuickPick(
       targets.map((target) => ({ label: target.name, description: target.description })),
       { title: vscode.l10n.t("Send to agent"), placeHolder: vscode.l10n.t("Choose a running AI agent") },
     );
-    if (!agentPick) return;
+    if (!agentPick) return false;
     agentName = agentPick.label;
   }
 
@@ -571,7 +573,7 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
       placeHolder: vscode.l10n.t("Stage or submit?"),
     },
   );
-  if (!modePick) return;
+  if (!modePick) return false;
   const submit = modePick.mode === "submit";
 
   const actionLabel = submit ? vscode.l10n.t("Submit") : vscode.l10n.t("Stage");
@@ -583,7 +585,7 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
     [actionLabel],
     { modal: true, detail: previewBody(template.body) },
   );
-  if (ok !== actionLabel) return;
+  if (ok !== actionLabel) return false;
 
   try {
     await extensionInvoke(ws, {
@@ -596,8 +598,10 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
     notify(submit
       ? vscode.l10n.t("Prompt template '{0}' submitted to '{1}'.", template.title, agentName)
       : vscode.l10n.t("Prompt template '{0}' staged into '{1}' (not submitted).", template.title, agentName));
+    return true;
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error), "warn");
+    return false;
   }
 }
 
@@ -1709,8 +1713,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           await terminalTmux.sendKeys(session, text, false);
         }
       },
-      openTemplateInject: async (agentName) => {
-        await injectPromptTemplateFlow(ws, agentName);
+      openTemplateInject: async (agentName) => injectPromptTemplateFlow(ws, agentName),
+      createPinFromSelection: async (text, agentName) => {
+        const title = pinTitleFromSelection(text, agentName);
+        if (!title) throw new Error(vscode.l10n.t("Nothing selected."));
+        const created = await extensionInvoke(ws, {
+          action: "pin.create",
+          text: title,
+          by: "human",
+          done: false,
+        });
+        refreshAll();
+        // Engine returns pin payload; tolerate shape variations.
+        const row = created && typeof created === "object" ? created as { id?: unknown } : {};
+        const id = typeof row.id === "string" ? row.id : "pin";
+        return { id };
       },
     });
     await ws.markAgentPaneSeen(agent);

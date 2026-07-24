@@ -161,13 +161,19 @@ These are reasons **(1) stays first-class**, not arguments against (2).
 - Bidirectional I/O; FitAddon after measured font grid; mono font-stack fallbacks; DS `--ds-2` pad  
 - Exit criteria met: Claude/Codex/Grok TUI readable in (2) (Grok OAuth wall separate: `t-6c8437`)  
 
-### Slice 1 — MVP product pane — **in progress on worktree**
+### Slice 1 — MVP product pane — **landed main (t-610355)**
 
 - Open agent in (2) via sidebar (layer 1 remains default open path)  
 - Identity strip (agent name, attach status)  
 - Stage/submit bar + Template… → 381 QuickPick; freeform stage/submit via tmux `sendKeys` / `sendSubmittedLine`  
 - Default remains (1) until dogfood flips preference  
 - Formal multi-spec SDD deferred; this architecture note is SoT for Slice 1 scope  
+
+### Slice 2 — Operator annotations — **in progress (t-9b75bc)**
+
+- Inject **markers** (xterm decoration + overview ruler) on stage/submit/template — no PTY pollution  
+- **Pin selection** from the xterm buffer → project pin list (`pin.create`)  
+- Share deferred (Pin first)  
 
 ### Slice 2 — Operator annotations
 
