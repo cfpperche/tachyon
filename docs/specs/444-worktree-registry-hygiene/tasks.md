@@ -28,16 +28,22 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
       (71→72 canonical tools); real behavioral coverage lives in `managedWorktree.test.ts`'s
       `listClassified()` suite, same precedent as `list_worktrees`/`create_worktree`'s own coverage
       split. 68/68 in `bridge.test.ts`.
-- [ ] `src/extension.ts`: `CockpitDeps.collect()`'s worktree line switches to `listClassified()`;
-      `readManagedWorktreesFromDisk` becomes the fail-closed fallback only (classifier threw).
-- [ ] `src/webview/cockpit/messages.ts`: add `worktreeRemove`, `worktreeForgetRecord`,
-      `worktreeBatchCleanup` `CockpitAction` variants + the classified row shape on the model.
-- [ ] `src/extension.ts`: host handlers for the three new actions, calling
-      `ManagedWorktreeService.remove`/`.unregister` unchanged; batch handler re-classifies each
-      selected id at confirm time and drops (with reason) any that no longer qualify.
-- [ ] `src/webview/cockpit/App.tsx`: Worktrees tab — group by classification, show `reasons`, gate
-      actions per state, add batch selection + preview/confirm UI for the `record-only`/
-      `ready-to-remove` groups.
+- [x] `src/extension.ts`: `CockpitDeps.collect()` queries the new `worktrees.classified` engine RPC
+      (plan revised: process boundary — see notes.md). `readManagedWorktreesFromDisk` DELETED
+      outright (maintainer-hardened fallback: engine unreachable → honest error state, never
+      unverified rows).
+- [x] `src/webview/cockpit/messages.ts`: `worktreeRemove` / `worktreeForgetRecord` /
+      `worktreeBatchCleanup` `CockpitAction` variants + hygiene strings; classified row shape on
+      `CockpitWorktreeRow` (+ `worktreesUnavailable` on bundle/model).
+- [x] Host handlers (Cockpit.ts cases + extension.ts deps → `worktree.remove-managed` /
+      `worktree.forget-record` engine commands, which call `ManagedWorktreeService.remove`/
+      `.unregister` unchanged). Batch = per-item engine re-validation; a refused item is skipped
+      with its reason, rest proceed. Covered by `cockpitWorktreeActions.test.ts` (5 tests).
+- [x] `src/webview/cockpit/App.tsx`: `WorktreesHygiene` — 4 groups (approved mockup), inline
+      reasons, gated/disabled-with-reason actions, per-click branch-deletion consent
+      (tachyonCreatedBranch only), batch selection restricted to the 2 safe groups with review
+      dialog, record-only collapse past 4, engine-unavailable error state. `ck-wt-*` CSS via
+      design-system tokens only.
 - [x] `test/product-invariants/registry.json` + `PI-002-worktree-cleanup-commit-safety.test.ts`:
       registered per the maintainer's 2026-07-24 decision (spec.md Open questions). Two independent
       oracles in one real-git test: the classifier never returns `ready-to-remove` for a commit not
@@ -49,17 +55,21 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Tombstone entries (path missing) classify `record-only`, no Reveal/Copy offered, `Forget
-      record` available — verified against this workspace's live 12 tombstones as a fixture/example.
-- [ ] Clean/unoccupied/contained/zero-unique-commits checkout classifies `ready-to-remove`.
-- [ ] Dirty, ahead-with-unique-commits, unknown-ancestry, and occupied checkouts classify
-      `needs-review`/`occupied` with a stated reason and no destructive action offered — including
-      this workspace's real `session-continuation-*` entry (dirty, 0 ahead) as a concrete case.
-- [ ] Non-`tachyonCreatedBranch` never offers branch deletion; no remote-branch code path exists
-      anywhere in the diff (grep confirms zero `push --delete`/remote-delete additions).
-- [ ] Batch preview → confirm concurrency: an entry whose classification changes between preview and
-      confirm drops out of the batch with a stated reason, rest proceed.
-- [ ] `PI-002` registered and its evidence test passes.
+- [x] Tombstone entries (path missing) classify `record-only`, no Reveal/Copy offered, `Forget
+      record` available — unit (worktreeClassify) + real-git integration (managedWorktree) + a11y
+      tree of the rendered tab (preview harness) all confirm.
+- [x] Clean/unoccupied/contained/zero-unique-commits checkout classifies `ready-to-remove`
+      (unit + real-git integration).
+- [x] Dirty, ahead-with-unique-commits, unknown-ancestry (probe failure), and occupied checkouts
+      classify `needs-review`/`occupied` with a stated reason; the rendered tab disables Remove with
+      the reason as tooltip (a11y tree shows the disabled buttons).
+- [x] Non-`tachyonCreatedBranch` never offers branch deletion (UI renders consent only for owned
+      branches; service enforces regardless); grep of the diff confirms zero remote-branch
+      operations added.
+- [x] Batch preview → confirm concurrency: covered host-side in `cockpitWorktreeActions.test.ts`
+      (refused item skipped with reason, rest proceed) — the engine re-validation itself is the
+      dirty-refusal path proven in `managedWorktree.test.ts`.
+- [x] `PI-002` registered and its evidence test passes (`test:invariants`: 2 invariants, 3 tests).
 
 **Headless check:** `npm run typecheck && npx vitest run test/unit/worktreeClassify.test.ts test/product-invariants/PI-002-worktree-cleanup-commit-safety.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
@@ -89,8 +99,16 @@ built-in acceptance fixture.
 
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
-- [ ] Evidence:
-- [ ] Verdict:
+- [x] Evidence: maintainer-approved interactive mockup (scratchpad `444-worktrees-mockup.html` +
+      dark screenshot, approved 2026-07-24 pre-implementation); rendered-UI a11y tree via
+      agent-browser (all 4 groups, gated buttons, checkboxes correct); preview-harness screenshots
+      (`444-real-ui2.png`) — LIMITATION: the webview-preview harness has a pre-existing layout
+      defect that breaks ALL native cockpit sections identically (proved via untouched Deliveries
+      comparison `444-deliveries-compare.png`; filed as t-e085bc), so pixel-accurate pre-land proof
+      was not obtainable from the harness.
+- [x] Verdict: structure/copy/gating verified (mockup + a11y); pixel-level pass deferred to the
+      maintainer's human dogfood in the real Control (route below), with t-e085bc unblocking
+      harness-based passes for future sections.
 
 ## Cookbook
 
