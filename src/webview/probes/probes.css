@@ -4,22 +4,24 @@
    webview's own <body> WAS the page. Control's <body> is shared by every section, so a bare `body`
    rule would leak padding onto the whole shell whenever probes.css co-loads; scoped to the surface's
    own root instead (same fix class as every other embedded surface's host-padding override). */
+/* t-ca31c2 follow-up — bare h1/table/th/td/code also leaked after a Probes visit (same co-load, never
+   unload contract as rich-doc's main leak). Everything lives under .probes-root. */
 .probes-root { padding: var(--ds-4); }
-h1 { font-size: var(--ds-large, 1.2em); margin: 0 0 var(--ds-3); }
-.counts { display: flex; gap: var(--ds-3); margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
-.counts .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
-.counts .fail { color: var(--vscode-testing-iconFailed, #f85149); }
-.counts .run { color: var(--vscode-charts-blue, #4daafc); }
-table { border-collapse: collapse; width: 100%; font-size: var(--ds-small); }
-th, td { border-bottom: 1px solid var(--ds-border); padding: 5px 9px; text-align: left; vertical-align: top; }
-th { color: var(--ds-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--ds-micro); }
-.mono { font-family: var(--ds-mono); }
-.age { color: var(--ds-muted); white-space: nowrap; }
-.exc { color: var(--ds-muted); max-width: 420px; overflow-wrap: anywhere; }
-.st.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
-.st.fail { color: var(--vscode-testing-iconFailed, #f85149); }
-.st.run { color: var(--vscode-charts-blue, #4daafc); }
-.empty, .error { color: var(--ds-muted); max-width: 540px; margin: 48px auto; text-align: center; }
-.error { color: var(--vscode-testing-iconFailed, #f85149); }
-.empty .hint { font-size: var(--ds-small); }
-code { font-family: var(--ds-mono); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
+.probes-root h1 { font-size: var(--ds-large, 1.2em); margin: 0 0 var(--ds-3); }
+.probes-root .counts { display: flex; gap: var(--ds-3); margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
+.probes-root .counts .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+.probes-root .counts .fail { color: var(--vscode-testing-iconFailed, #f85149); }
+.probes-root .counts .run { color: var(--vscode-charts-blue, #4daafc); }
+.probes-root table { border-collapse: collapse; width: 100%; font-size: var(--ds-small); }
+.probes-root th, .probes-root td { border-bottom: 1px solid var(--ds-border); padding: 5px 9px; text-align: left; vertical-align: top; }
+.probes-root th { color: var(--ds-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; font-size: var(--ds-micro); }
+.probes-root .mono { font-family: var(--ds-mono); }
+.probes-root .age { color: var(--ds-muted); white-space: nowrap; }
+.probes-root .exc { color: var(--ds-muted); max-width: 420px; overflow-wrap: anywhere; }
+.probes-root .st.ok { color: var(--vscode-testing-iconPassed, #3fb950); }
+.probes-root .st.fail { color: var(--vscode-testing-iconFailed, #f85149); }
+.probes-root .st.run { color: var(--vscode-charts-blue, #4daafc); }
+.probes-root .empty, .probes-root .error { color: var(--ds-muted); max-width: 540px; margin: 48px auto; text-align: center; }
+.probes-root .error { color: var(--vscode-testing-iconFailed, #f85149); }
+.probes-root .empty .hint { font-size: var(--ds-small); }
+.probes-root code { font-family: var(--ds-mono); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }

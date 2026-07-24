@@ -1,14 +1,15 @@
 /**
- * t-e085bc / t-ca31c2 — no webview stylesheet may style bare LAYOUT elements (html/body/main/
- * aside/header/footer/nav/section/article) unless it is an allowlisted owner of that element.
+ * t-e085bc / t-ca31c2 — no co-loadable webview stylesheet may style bare document elements
+ * (layout + common typography/chrome) unless it is an allowlisted owner of that element.
  *
  * Why this exists: Control lazily co-loads section/studio stylesheets and NEVER unloads them
  * (lazySectionStyles is additive by design). A bare `main { display: grid; ... 260px }` in
  * rich-doc.css therefore leaked into `main.ck-main` after any Task/Pin Studio visit and shredded
  * every NATIVE cockpit section (the embeds survived only because `.ck-main--embed` sets its own
- * display) — the exact "CSS breaks after leaving Pin Studio" field report. Class selectors are
- * already conventionally prefixed per-surface; ELEMENT selectors are the invisible leak this
- * guard closes.
+ * display) — the exact "CSS breaks after leaving Pin Studio" field report. Follow-up audit also
+ * found bare `h1`/`table`/`code` in probes.css and bare `details` in Agent/Terminal Studio shells
+ * (same co-load contract). Class selectors are conventionally prefixed per-surface; bare ELEMENT
+ * selectors are the invisible leak this guard closes.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -16,9 +17,9 @@ import { describe, expect, it } from "vitest";
 
 const WEBVIEW_ROOT = path.resolve("src/webview");
 
-/** Sheets that legitimately own bare layout elements, with the reason. */
+/** Sheets that legitimately own bare document elements, with the reason. */
 const BARE_ELEMENT_OWNERS: Record<string, string> = {
-  "shared/design-system.css": "the ONE base sheet every webview links first — owns body defaults by contract",
+  "shared/design-system.css": "the ONE base sheet every webview links first — owns body/button/a/select defaults by contract",
   "shared/vscode-theme.css": "theme token bridge — may restyle base elements for vendor parity",
   "cockpit/cockpit.css": "the Control shell owner — pins html/body with !important, linked last by contract",
   "sidebar/sidebar.css": "standalone sidebar app — sole stylesheet of its own document",
@@ -26,7 +27,13 @@ const BARE_ELEMENT_OWNERS: Record<string, string> = {
   "pin-preview/pin-preview.css": "standalone-by-standing-exception (SDD 410: static preview, never co-loaded into Control) — owns its own document",
 };
 
-const LAYOUT_ELEMENTS = ["html", "body", "main", "aside", "header", "footer", "nav", "section", "article"];
+/** Layout + typography/chrome elements that stomp the shared Control document when left bare. */
+const BARE_DOCUMENT_ELEMENTS = [
+  "html", "body", "main", "aside", "header", "footer", "nav", "section", "article",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+  "p", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td",
+  "pre", "code", "blockquote", "hr", "details", "summary",
+];
 
 function cssFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -50,31 +57,42 @@ function selectorLists(css: string): string[] {
   return selectors;
 }
 
-/** Does any compound in the selector list target a bare layout element (no class/id/attr qualifier)? */
-function bareLayoutOffenders(selectorList: string): string[] {
+/**
+ * True when a compound is class/id/attr-scoped (not a bare element).
+ * `.probes-root h1` is safe (scoped ancestor); bare `h1` / `main` is the leak.
+ */
+function compoundIsScoped(compound: string): boolean {
+  return /[.#\[]/.test(compound);
+}
+
+/** Does any complex selector style a bare document element with no scoped ancestor? */
+function bareDocumentOffenders(selectorList: string): string[] {
   return selectorList
     .split(",")
     .map((s) => s.trim())
     .filter((sel) => {
-      // Only the FINAL compound of each complex selector actually receives the styles.
-      const finalCompound = sel.split(/[\s>+~]+/).filter(Boolean).at(-1) ?? "";
+      const compounds = sel.split(/[\s>+~]+/).filter(Boolean);
+      if (compounds.length === 0) return false;
+      // Any class/id/attr in the chain scopes descendants (surface root pattern).
+      if (compounds.some(compoundIsScoped)) return false;
+      const finalCompound = compounds.at(-1) ?? "";
       const element = finalCompound.match(/^([a-zA-Z][a-zA-Z0-9-]*)/)?.[1]?.toLowerCase();
-      if (!element || !LAYOUT_ELEMENTS.includes(element)) return false;
-      // Qualified (main.ck-main, body[data-x], main:has(...)) is scoped enough; bare is the leak.
+      if (!element || !BARE_DOCUMENT_ELEMENTS.includes(element)) return false;
+      // Final is bare element (or bare + pseudo only) and no scoped ancestor → leak.
       const rest = finalCompound.slice(element.length);
-      return rest === "" || /^::?[a-zA-Z-]+$/.test(rest); // bare, or bare + pseudo only
+      return rest === "" || /^::?[a-zA-Z-]+(\([^)]*\))?$/.test(rest);
     });
 }
 
-describe("webview CSS scope guard (t-e085bc)", () => {
-  it("no co-loadable webview sheet styles bare layout elements", () => {
+describe("webview CSS scope guard (t-e085bc / t-ca31c2)", () => {
+  it("no co-loadable webview sheet styles bare document elements", () => {
     const offenders: string[] = [];
     for (const file of cssFiles(WEBVIEW_ROOT)) {
       const rel = path.relative(WEBVIEW_ROOT, file).split(path.sep).join("/");
       if (rel in BARE_ELEMENT_OWNERS) continue;
       const css = fs.readFileSync(file, "utf8");
       for (const list of selectorLists(css)) {
-        for (const bare of bareLayoutOffenders(list)) {
+        for (const bare of bareDocumentOffenders(list)) {
           offenders.push(`${rel}: "${bare}" (in "${list}")`);
         }
       }
