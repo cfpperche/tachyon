@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneToHost } from "./protocol";
@@ -51,11 +51,16 @@ async function waitForFonts(fontFamily: string, fontSize: number): Promise<void>
 }
 
 /**
- * Full-bleed xterm (xtermjs.org-style host). Geometry:
- * fonts ready → fit container (absolute inset 0) → report cols×rows → host PTY resize.
+ * Layer-2 agent pane: identity chrome + xterm viewport + stage/submit bar (381 path).
+ * Geometry: fonts ready → fit term host → report cols×rows → host PTY resize.
  */
 export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const termHostRef = useRef<HTMLDivElement>(null);
+  const [agent, setAgent] = useState("…");
+  const [status, setStatus] = useState("connecting…");
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
 
   useEffect(() => {
     const el = termHostRef.current;
@@ -106,7 +111,6 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const reportGrid = (force = false) => {
       if (disposed || !fontReady) return;
-      // Host must have non-zero box (absolute fill) before measuring.
       if (el.clientWidth < 32 || el.clientHeight < 32) return;
       try {
         fit.fit();
@@ -134,13 +138,14 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const unsub = onHostMessage((msg) => {
       if (msg.type === "agent-pane/init") {
+        setAgent(msg.agent);
+        setStatus(msg.status);
         void (async () => {
           const font = sanitizeFontMetrics(msg.font ?? FALLBACK_FONT);
           applyFont(term, font);
           await waitForFonts(font.fontFamily, font.fontSize);
           if (disposed) return;
           fontReady = true;
-          // Three rAFs: layout absolute fill → font metrics → fit
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
@@ -155,8 +160,20 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         term.write(msg.data);
         return;
       }
-      if (msg.type === "agent-pane/status") return;
+      if (msg.type === "agent-pane/status") {
+        setStatus(msg.status);
+        return;
+      }
+      if (msg.type === "agent-pane/delivery") {
+        setBusy(false);
+        setFlash(msg.message);
+        if (msg.ok && (msg.mode === "stage" || msg.mode === "submit")) {
+          setDraft("");
+        }
+        return;
+      }
       if (msg.type === "agent-pane/exit") {
+        setStatus("detached");
         term.writeln(
           "\r\n\x1b[33m[Tachyon] attach ended"
           + (msg.signal ? ` (signal ${msg.signal})` : msg.code !== null && msg.code !== undefined ? ` (code ${msg.code})` : "")
@@ -177,9 +194,76 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     };
   }, [postMessage, onHostMessage]);
 
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), 4000);
+    return () => clearTimeout(t);
+  }, [flash]);
+
+  const deliver = (mode: "stage" | "submit") => {
+    const text = draft;
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setFlash(null);
+    postMessage(mode === "stage" ? { type: "agent-pane/stage", text } : { type: "agent-pane/submit", text });
+  };
+
   return (
     <div class="agent-pane">
+      <header class="agent-pane__identity" aria-label="Agent identity">
+        <span class="agent-pane__agent" title={agent}>{agent}</span>
+        <span class="agent-pane__status" title={status}>{status}</span>
+      </header>
+
       <div class="agent-pane__term" ref={termHostRef} />
+
+      <footer class="agent-pane__stage" aria-label="Stage and submit">
+        <textarea
+          class="agent-pane__draft"
+          rows={2}
+          placeholder="Stage text into the agent composer…"
+          value={draft}
+          disabled={busy}
+          onInput={(e) => setDraft((e.currentTarget as HTMLTextAreaElement).value)}
+          onKeyDown={(e) => {
+            // Mod+Enter = submit (product hotkey); plain Enter keeps newlines in the stage box.
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              deliver("submit");
+            }
+          }}
+        />
+        <div class="agent-pane__stage-actions">
+          <button
+            type="button"
+            class="agent-pane__btn"
+            disabled={busy}
+            title="Open prompt template picker (spec 381)"
+            onClick={() => postMessage({ type: "agent-pane/inject-template" })}
+          >
+            Template…
+          </button>
+          <button
+            type="button"
+            class="agent-pane__btn"
+            disabled={busy || !draft.trim()}
+            title="Paste without Enter — review in the TUI composer"
+            onClick={() => deliver("stage")}
+          >
+            Stage
+          </button>
+          <button
+            type="button"
+            class="agent-pane__btn agent-pane__btn--primary"
+            disabled={busy || !draft.trim()}
+            title="Paste + Enter (Ctrl/Cmd+Enter). Refused by host when the agent is busy."
+            onClick={() => deliver("submit")}
+          >
+            Submit
+          </button>
+        </div>
+        {flash ? <div class="agent-pane__flash" role="status">{flash}</div> : null}
+      </footer>
     </div>
   );
 }

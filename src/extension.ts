@@ -1701,6 +1701,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       resizeSession: async (session, cols, rows) => {
         await terminalTmux.resizeWindow(session, cols, rows);
       },
+      // Same hardened tmux delivery as prompt.inject (381) — stage without Enter / submit with Enter.
+      deliverText: async (session, text, submit) => {
+        if (submit) {
+          await terminalTmux.sendSubmittedLine(session, text);
+        } else {
+          await terminalTmux.sendKeys(session, text, false);
+        }
+      },
+      openTemplateInject: async (agentName) => {
+        await injectPromptTemplateFlow(ws, agentName);
+      },
     });
     await ws.markAgentPaneSeen(agent);
   };

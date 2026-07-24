@@ -9,7 +9,13 @@ export const AGENT_PANE_READY = "agent-pane/ready" as const;
 export type AgentPaneToHost =
   | { type: typeof AGENT_PANE_READY }
   | { type: "agent-pane/input"; data: string }
-  | { type: "agent-pane/resize"; cols: number; rows: number };
+  | { type: "agent-pane/resize"; cols: number; rows: number }
+  /** Stage freeform text into the agent composer (381 delivery, no Enter). */
+  | { type: "agent-pane/stage"; text: string }
+  /** Submit freeform text (paste + Enter) via hardened tmux path. */
+  | { type: "agent-pane/submit"; text: string }
+  /** Open the 381 template picker preselected for this pane's agent. */
+  | { type: "agent-pane/inject-template" };
 
 /** Typography + metrics aligned with VS Code integrated terminal settings. */
 export interface AgentPaneFontMetrics {
@@ -35,7 +41,9 @@ export type AgentPaneFromHost =
     }
   | { type: "agent-pane/data"; data: string }
   | { type: "agent-pane/status"; status: string }
-  | { type: "agent-pane/exit"; code: number | null; signal: string | null };
+  | { type: "agent-pane/exit"; code: number | null; signal: string | null }
+  /** Feedback after stage/submit (toast-in-pane). */
+  | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string };
 
 export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
   if (!value || typeof value !== "object") return false;
@@ -47,6 +55,10 @@ export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
     const rows = (value as { rows?: unknown }).rows;
     return typeof cols === "number" && typeof rows === "number" && cols > 0 && rows > 0;
   }
+  if (t === "agent-pane/stage" || t === "agent-pane/submit") {
+    return typeof (value as { text?: unknown }).text === "string";
+  }
+  if (t === "agent-pane/inject-template") return true;
   return false;
 }
 

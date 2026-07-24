@@ -1,6 +1,7 @@
 /**
  * Layer-2 first-party agent pane host: WebviewPanel + xterm bundle + node-pty tmux attach.
  * Coexists with layer-1 integrated terminal (`Terminals`); does not replace it.
+ * Slice 1: identity strip + stage/submit bar → 381-style tmux delivery.
  */
 import * as vscode from "vscode";
 import { TmuxAttachClient } from "../presentation/TmuxAttachClient.js";
@@ -12,6 +13,7 @@ import {
   AGENT_PANE_VIEW_TYPE,
   isAgentPaneToHost,
   type AgentPanePanelState,
+  type AgentPaneToHost,
 } from "./agent-pane/protocol.js";
 
 export { AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./agent-pane/protocol.js";
@@ -23,6 +25,13 @@ export interface AgentPaneOpenArgs {
   wsHash?: string;
   /** Apply window size to the tmux session (cols × rows) — backup when PTY resize is not enough. */
   resizeSession: (session: string, cols: number, rows: number) => Promise<void>;
+  /**
+   * Deliver freeform stage/submit into the agent session (same tmux path as prompt.inject).
+   * `submit=true` → paste + Enter; false → stage only.
+   */
+  deliverText: (session: string, text: string, submit: boolean) => Promise<void>;
+  /** Open 381 prompt-template picker for this agent (QuickPick lives in extension host). */
+  openTemplateInject: (agent: string) => Promise<void>;
 }
 
 interface LivePane {
@@ -83,7 +92,6 @@ export class AgentPanePanelManager {
         enableFindWidget: true,
       },
     );
-    // Same glyph as sidebar openPane action (codicon "terminal")
     panel.iconPath = panelIcon(this.extensionUri, "terminal");
 
     const live: LivePane = {
@@ -103,9 +111,7 @@ export class AgentPanePanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      // No design-system.css: it injects "Tachyon Mono" @font-face without webview-safe font
-      // URLs, so xterm measures a missing face → wrong cell size → broken TUI (CDP: 300×150 box).
-      // Only xterm + full-bleed layout CSS — same isolation as xtermjs.org demos.
+      // No design-system.css: Tachyon Mono @font-face breaks xterm cell metrics.
       styles: [uri("xterm.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
@@ -154,7 +160,6 @@ export class AgentPanePanelManager {
       });
       live.attach = attach;
       try {
-        // exclusive -d matches Terminals.open so we own geometry like the integrated terminal.
         attach.start({
           session: args.session,
           cols,
@@ -174,22 +179,45 @@ export class AgentPanePanelManager {
       }
     };
 
-    /**
-     * Start PTY only after the webview measured a real grid (post-font fit).
-     * Starting at a placeholder 120×40 then resizing makes full-screen TUIs
-     * draw status bars off-screen and never fully recover.
-     */
     const maybeStart = () => {
       if (!live.ready) return;
       if (live.lastCols < 2 || live.lastRows < 1) return;
       startAttach(live.lastCols, live.lastRows);
     };
 
+    const handleDelivery = async (mode: "stage" | "submit", text: string) => {
+      const trimmed = text.trimEnd();
+      if (!trimmed) {
+        post({
+          type: "agent-pane/delivery",
+          ok: false,
+          mode,
+          message: vscode.l10n.t("Nothing to {0}.", mode),
+        });
+        return;
+      }
+      try {
+        await args.deliverText(args.session, text, mode === "submit");
+        post({
+          type: "agent-pane/delivery",
+          ok: true,
+          mode,
+          message: mode === "submit"
+            ? vscode.l10n.t("Submitted to '{0}'.", args.agent)
+            : vscode.l10n.t("Staged into '{0}' (not submitted).", args.agent),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        post({ type: "agent-pane/delivery", ok: false, mode, message });
+        void vscode.window.showWarningMessage(message);
+      }
+    };
+
     panel.webview.onDidReceiveMessage((raw: unknown) => {
       if (!isAgentPaneToHost(raw)) return;
-      if (raw.type === AGENT_PANE_READY) {
+      const msg: AgentPaneToHost = raw;
+      if (msg.type === AGENT_PANE_READY) {
         live.ready = true;
-        // Match integrated terminal typography (xterm cannot use CSS vars for measurement).
         const font = resolveAgentPaneFontMetrics(
           vscode.workspace.getConfiguration("terminal.integrated"),
           vscode.workspace.getConfiguration("editor"),
@@ -202,24 +230,38 @@ export class AgentPanePanelManager {
           status: "connecting…",
           font,
         });
-        // Do NOT attach yet — wait for first agent-pane/resize with measured cols×rows.
         return;
       }
-      if (raw.type === "agent-pane/input") {
-        live.attach?.write(raw.data);
+      if (msg.type === "agent-pane/input") {
+        live.attach?.write(msg.data);
         return;
       }
-      if (raw.type === "agent-pane/resize") {
-        live.lastCols = raw.cols;
-        live.lastRows = raw.rows;
+      if (msg.type === "agent-pane/resize") {
+        live.lastCols = msg.cols;
+        live.lastRows = msg.rows;
         if (live.started && live.attach?.alive) {
-          live.attach.resize(raw.cols, raw.rows);
-          void args.resizeSession(args.session, raw.cols, raw.rows).catch(() => {
+          live.attach.resize(msg.cols, msg.rows);
+          void args.resizeSession(args.session, msg.cols, msg.rows).catch(() => {
             /* best-effort */
           });
         } else {
           maybeStart();
         }
+        return;
+      }
+      if (msg.type === "agent-pane/stage") {
+        void handleDelivery("stage", msg.text);
+        return;
+      }
+      if (msg.type === "agent-pane/submit") {
+        void handleDelivery("submit", msg.text);
+        return;
+      }
+      if (msg.type === "agent-pane/inject-template") {
+        void args.openTemplateInject(args.agent).catch((err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          void vscode.window.showWarningMessage(message);
+        });
       }
     });
 

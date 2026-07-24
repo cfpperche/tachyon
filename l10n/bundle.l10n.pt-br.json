@@ -592,5 +592,8 @@
   "Agent pane for '{0}' was open before reload — reopen via Tachyon: Open Agent Pane.": "O painel do agente '{0}' estava aberto antes do reload — reabra via Tachyon: Open Agent Pane.",
   "Cannot open agent pane for '{0}' — agent is not in the live roster": "Não é possível abrir o painel do agente '{0}' — o agente não está no roster ao vivo",
   "Cannot open agent pane — workspace is not active": "Não é possível abrir o painel do agente — o workspace não está ativo",
-  "Open which agent's pane?": "Abrir o painel de qual agente?"
+  "Open which agent's pane?": "Abrir o painel de qual agente?",
+  "Nothing to {0}.": "Nada para {0}.",
+  "Staged into '{0}' (not submitted).": "Preparada em '{0}' (não enviada).",
+  "Submitted to '{0}'.": "Enviada para '{0}'."
 }

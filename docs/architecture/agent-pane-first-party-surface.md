@@ -1,8 +1,8 @@
 # Agent pane: first-party surface (layer 2) alongside VS Code integrated terminal (layer 1)
 
-**Status:** product decision recorded 2026-07-24 · implementation task tracks build  
+**Status:** product decision recorded 2026-07-24 · **Slice 0 viewport human-approved**; **Slice 1** identity + stage/submit bar on worktree `tachyon/change/agent-pane-first-party` (task `t-610355`)  
 **Related research:** Mission Control task `t-5726dc` (evaluation framing)  
-**Related product:** spec 381 prompt-templates (inject already dogfoods on layer 1)
+**Related product:** spec 381 prompt-templates (inject already dogfoods on layer 1; layer-2 stage bar reuses the same tmux delivery)
 
 ---
 
@@ -155,20 +155,19 @@ These are reasons **(1) stays first-class**, not arguments against (2).
 
 ## Suggested ship slices (not a formal SDD yet)
 
-### Slice 0 — Spike (time-boxed)
+### Slice 0 — Spike (time-boxed) — **done 2026-07-24 (human dogfood)**
 
-- Webview panel + xterm.js + attach **existing** tmux session for one fixture agent  
-- Bidirectional I/O (keys → tmux, capture/stream → xterm)  
-- Prove resize, focus, basic paste  
-- Side-by-side open of same session in (1) and (2) (read-only second attach or exclusive attach — decide in spike)  
-- Exit criteria: human can type in runtime TUI through (2) for 5 minutes without obvious fidelity break  
+- Webview panel + xterm.js + attach **existing** tmux session (node-pty, exclusive `-d`)  
+- Bidirectional I/O; FitAddon after measured font grid; mono font-stack fallbacks; DS `--ds-2` pad  
+- Exit criteria met: Claude/Codex/Grok TUI readable in (2) (Grok OAuth wall separate: `t-6c8437`)  
 
-### Slice 1 — MVP product pane
+### Slice 1 — MVP product pane — **in progress on worktree**
 
-- Open agent in (2) **or** (1) (setting + action)  
-- Identity strip (agent name, status)  
-- Stage/submit bar wired to existing inject/delivery path (381)  
+- Open agent in (2) via sidebar (layer 1 remains default open path)  
+- Identity strip (agent name, attach status)  
+- Stage/submit bar + Template… → 381 QuickPick; freeform stage/submit via tmux `sendKeys` / `sendSubmittedLine`  
 - Default remains (1) until dogfood flips preference  
+- Formal multi-spec SDD deferred; this architecture note is SoT for Slice 1 scope  
 
 ### Slice 2 — Operator annotations
 
