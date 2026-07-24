@@ -814,6 +814,37 @@ describe("git-hook target — load + preview + fingerprint (spec 264)", () => {
     expect(a.plugin!.gitHooks[0].content.toString()).toContain("exec");
   });
 
+  it("spec 448 follow-up: pre-push is a first-class event, and an unknown event still fails closed", async () => {
+    // The dispatcher/registry were always generic over events — only the manifest allowlist named one.
+    // pre-push is what lets a plugin gate what LANDS (a direct push had no gate; delegated work has verify_task).
+    const dir = tmp("tachyon-plugin-");
+    fs.writeFileSync(
+      path.join(dir, "tachyon-plugin.json"),
+      JSON.stringify({
+        name: "vg",
+        version: "1.0.0",
+        description: "landing gate",
+        gitHooks: { "pre-push": { leaf: "githooks/gate.sh" } },
+      }),
+    );
+    fs.mkdirSync(path.join(dir, "githooks"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "githooks/gate.sh"), "#!/bin/sh\nexit 0\n");
+
+    const loaded = loadPlugin(dir);
+    expect(loaded.errors).toEqual([]);
+    // A pre-push-only plugin is a valid capability on its own, with no runtime declared.
+    expect(loaded.plugin!.gitHooks).toHaveLength(1);
+    expect(loaded.plugin!.gitHooks[0]).toMatchObject({ event: "pre-push", srcRel: "githooks/gate.sh" });
+
+    // Widening the allowlist must not turn it into "anything goes".
+    const bogus = tmp("tachyon-plugin-");
+    fs.writeFileSync(
+      path.join(bogus, "tachyon-plugin.json"),
+      JSON.stringify({ name: "bg", version: "1.0.0", description: "x", gitHooks: { "post-receive": { argv: ["true"] } } }),
+    );
+    expect(loadPlugin(bogus).errors.length).toBeGreaterThan(0);
+  });
+
   it("loadPlugin fails closed when a script leaf is missing from the payload", async () => {
     expect(loadPlugin(makeGitHookPlugin({ missingLeaf: true })).errors.some((e) => /leaf 'githooks\/scan.sh' not found/.test(e))).toBe(true);
   });
