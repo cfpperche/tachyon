@@ -303,13 +303,14 @@ main.ck-main.ck-main--mission,
 
 .rcp-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(250px, 1.2fr) auto;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(235px, 1fr) minmax(210px, 1fr) auto;
   align-items: end;
   gap: 12px;
   padding: 12px;
 }
 
 .rcp-runtime-picker,
+.rcp-scope-picker,
 .rcp-source {
   display: grid;
   gap: 5px;
@@ -318,6 +319,41 @@ main.ck-main.ck-main--mission,
 
 .rcp-runtime-picker .ds-select-trigger {
   width: 100%;
+}
+
+.rcp-segmented {
+  display: flex;
+  min-height: 26px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+}
+
+.rcp-segmented button {
+  flex: 1 1 auto;
+  border: 0;
+  border-right: 1px solid var(--ds-border);
+  background: transparent;
+  color: var(--ds-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.rcp-segmented button:last-child {
+  border-right: 0;
+}
+
+.rcp-segmented button.active {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.rcp-segmented .codicon {
+  margin-right: 3px;
+  font-size: 10px;
 }
 
 .rcp-eyebrow {
@@ -403,7 +439,7 @@ main.ck-main.ck-main--mission,
 }
 
 .rcp-setting,
-.rcp-capability {
+.rcp-capability-group {
   background: var(--vscode-editor-background);
   min-height: 38px;
 }
@@ -430,7 +466,8 @@ main.ck-main.ck-main--mission,
   padding: 0 7px;
 }
 
-.rcp-capability {
+.rcp-capability-group-head,
+.rcp-capability-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -438,33 +475,56 @@ main.ck-main.ck-main--mission,
   padding: 7px 8px;
 }
 
-.rcp-capability-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: 8px;
+.rcp-capability-group-head {
+  justify-content: flex-start;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 78%, var(--vscode-editor-background));
+  color: var(--ds-muted);
 }
 
-.rcp-capability-main > .codicon {
+.rcp-capability-group-head > .codicon {
   color: var(--vscode-textLink-foreground);
 }
 
-.rcp-capability-main div {
+.rcp-capability-group-head strong {
+  color: var(--vscode-foreground);
+  font-size: 10px;
+}
+
+.rcp-capability-group-head > span:last-child {
+  margin-left: auto;
+  font-size: 9px;
+}
+
+.rcp-capability-item {
+  min-height: 34px;
+  padding-left: 28px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.rcp-capability-item > div {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.rcp-capability-main strong {
+.rcp-capability-item strong {
   font-size: 10px;
+  font-weight: 600;
 }
 
-.rcp-capability-main div > span {
+.rcp-capability-item > div > span {
   overflow: hidden;
   color: var(--ds-muted);
   font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rcp-capability-empty {
+  padding: 7px 28px;
+  border-top: 1px solid var(--ds-border);
+  color: var(--ds-muted);
+  font-size: 9px;
 }
 
 .rcp-switch {

@@ -57,6 +57,11 @@ export interface CockpitStrings {
   runtimeConfigHint: string;
   runtimeConfigPrototype: string;
   runtimeConfigGlobal: string;
+  runtimeConfigWorkspace: string;
+  runtimeConfigRuntime: string;
+  runtimeConfigScope: string;
+  runtimeConfigCapabilitiesTitle: string;
+  runtimeConfigDetected: string;
   runtimeConfigKnown: string;
   runtimeConfigCapabilities: string;
   runtimeConfigOther: string;
