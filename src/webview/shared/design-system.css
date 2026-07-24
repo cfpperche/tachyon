@@ -445,3 +445,148 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
     animation: none;
   }
 }
+
+/* ── QuickPicker (product in-webview pick list; replaces vscode showQuickPick) ── */
+.ds-qp {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-dialog, 40);
+  background: var(--ds-scrim, color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%));
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8% 12px 12px;
+  box-sizing: border-box;
+}
+.ds-qp.open {
+  display: flex;
+}
+.ds-qp-panel {
+  width: min(480px, 100%);
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  color: var(--vscode-quickInput-foreground, var(--ds-fg));
+  border: 1px solid var(--ds-focus, var(--ds-border));
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: var(--ds-shadow-2, 0 12px 36px rgba(0, 0, 0, 0.45));
+}
+.ds-qp-head {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--ds-border);
+}
+.ds-qp-title {
+  font-size: 13px;
+  font-weight: var(--tachyon-weight-semibold, 600);
+  color: var(--ds-fg);
+}
+.ds-qp-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ds-muted);
+  line-height: 1.35;
+}
+.ds-qp-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ds-border);
+  color: var(--ds-fg);
+  outline: none;
+  font-size: 13px;
+  font-family: inherit;
+}
+.ds-qp-input::placeholder {
+  color: var(--vscode-input-placeholderForeground, var(--ds-muted));
+}
+.ds-qp-input:focus {
+  box-shadow: inset 0 -1px 0 var(--ds-focus);
+}
+.ds-qp-results {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.ds-qp-empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: var(--ds-muted);
+  opacity: 0.85;
+}
+.ds-qp-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+.ds-qp-item.sel {
+  background: var(--vscode-list-activeSelectionBackground, var(--ds-hover));
+  color: var(--vscode-list-activeSelectionForeground, var(--ds-fg));
+}
+.ds-qp-item.sel .ds-qp-desc,
+.ds-qp-item.sel .ds-qp-detail {
+  color: inherit;
+  opacity: 0.8;
+}
+.ds-qp-item.disabled {
+  opacity: var(--ds-disabled-opacity, 0.5);
+  cursor: not-allowed;
+}
+.ds-qp-item.disabled.sel {
+  background: var(--vscode-list-inactiveSelectionBackground, var(--ds-hover));
+}
+.ds-qp-item-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.ds-qp-label {
+  flex: 0 1 auto;
+  font-size: 13px;
+  font-weight: var(--tachyon-weight-medium, 500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-qp-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--ds-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+.ds-qp-detail {
+  font-size: 11px;
+  color: var(--ds-muted);
+  line-height: 1.3;
+}
+.ds-qp-foot {
+  display: flex;
+  gap: 14px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--ds-border);
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+.ds-qp-foot kbd {
+  font-family: inherit;
+  border: 1px solid var(--ds-border);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 3px;
+}

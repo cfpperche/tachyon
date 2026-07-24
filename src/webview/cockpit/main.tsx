@@ -540,7 +540,9 @@ function Root() {
       onFleetActivity={(name, wsHash) => post(fleetActivityAction(name, wsHash))}
       onFleetProbes={(name, wsHash) => post(fleetProbesAction(name, wsHash))}
       onFleetAgentStudio={(name, wsHash) => post(fleetAgentStudioAction(name, wsHash))}
-      onFleetContinueTask={(name, wsHash) => post(fleetContinueTaskAction(name, wsHash))}
+      onFleetContinueTask={(fromName, toName, wsHash) =>
+        post(fleetContinueTaskAction(fromName, toName, wsHash))
+      }
       onRevealPath={(path) => post(revealPathAction(path))}
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}

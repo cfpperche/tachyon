@@ -43,6 +43,7 @@ never be import-confused:**
 | `ListRow` | `state: idle\|hover\|selected\|current` | Control-style card/list rows |
 | `DenseRow` | `dot?`, `name`, `sub?`, `meta?`, `actions?` | Sidebar-density rows |
 | `EmptyState` | `kind: empty\|loading\|error`, `message`, `action?` | Empty/loading/error bodies — never a bare "No items" `<div>` |
+| `QuickPicker` | `open`, `title`, `items`, `onSelect`, `onClose` | In-webview filterable pick list (product replacement for `vscode.window.showQuickPick` when the surface already owns candidates) |
 
 ### Kit (`../shared/ui/kit`) — the authoring API for NEW UI
 

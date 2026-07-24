@@ -207,8 +207,8 @@ export interface CockpitDeps {
   /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
   fleetStart: (name: string, wsHash?: string) => Promise<void>;
   fleetStop: (name: string, wsHash?: string) => Promise<void>;
-  /** SDD 443 — continue unfinished task on another agent (host picks dest). */
-  fleetContinueTask: (fromName: string, wsHash?: string) => Promise<void>;
+  /** SDD 443 — continue unfinished task on another agent (webview already picked dest). */
+  fleetContinueTask: (fromName: string, toName: string, wsHash?: string) => Promise<void>;
   fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
@@ -331,6 +331,16 @@ function strings(): CockpitStrings {
     openProbes: t("Probes"),
     editAgent: t("Edit"),
     continueTask: t("Continue task in…"),
+    continueTaskPickTitle: t("Continue task from {0} in…"),
+    continueTaskPickSubtitle: t(
+      "Starts a new session on the destination with a focused handoff — not a native resume of the source session.",
+    ),
+    continueTaskPickPlaceholder: t("Filter destination agents…"),
+    continueTaskPickEmpty: t("No other declared agent to continue into"),
+    continueTaskDestStopped: t("stopped"),
+    continueTaskDestRunning: t("running — stop first"),
+    continueTaskDestDetail: t("New session with focused handoff from {0}"),
+    continueTaskNoDest: t("No other declared agent to continue into (need a stopped destination)."),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
     copyId: t("Copy id"),
@@ -1856,9 +1866,13 @@ export async function openCockpit(
           }
           return;
         case "fleetContinueTask":
-          if (typeof c.name === "string") {
+          if (typeof c.name === "string" && typeof c.toName === "string") {
             try {
-              await deps.fleetContinueTask(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              await deps.fleetContinueTask(
+                c.name,
+                c.toName,
+                typeof c.wsHash === "string" ? c.wsHash : undefined,
+              );
               await sendModel();
               live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started")));
             } catch (err) {
