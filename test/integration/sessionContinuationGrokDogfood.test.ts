@@ -75,6 +75,7 @@ class DogfoodHost {
   webviewRoot(): unknown {
     return undefined;
   }
+  onViewsChanged(): void {}
 }
 
 describe.skipIf(!grokAvailable() || !tmuxAvailable())(

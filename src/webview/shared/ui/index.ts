@@ -22,3 +22,8 @@ export {
   type EmptyStateProps,
   type EmptyStateKind,
 } from "./patterns";
+export {
+  QuickPicker,
+  type QuickPickerItem,
+  type QuickPickerProps,
+} from "./QuickPicker";

@@ -98,6 +98,18 @@ export interface CockpitStrings {
   openActivity: string;
   openProbes: string;
   editAgent: string;
+  /** SDD 443 — continue unfinished task on another agent (new session + handoff). */
+  continueTask: string;
+  /** QuickPicker title: "Continue task from {0} in…" */
+  continueTaskPickTitle: string;
+  /** Honesty line under the picker title. */
+  continueTaskPickSubtitle: string;
+  continueTaskPickPlaceholder: string;
+  continueTaskPickEmpty: string;
+  continueTaskDestStopped: string;
+  continueTaskDestRunning: string;
+  continueTaskDestDetail: string;
+  continueTaskNoDest: string;
   reveal: string;
   copyPath: string;
   copyId: string;
@@ -170,6 +182,8 @@ export type CockpitAction =
   /** t-610705 (Phase D, D1c) — Fleet's own "Edit" button, opening the agent's definition in Agent or
    *  Terminal Studio (same kind-routed dispatch as the sidebar's `tachyon.editAgentStudioItem`). */
   | { type: "fleetAgentStudio"; name: string; wsHash?: string }
+  /** SDD 443 — Continue task in… (webview QuickPicker chose destination; host invokes only). */
+  | { type: "fleetContinueTask"; name: string; toName: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
@@ -269,6 +283,16 @@ export const fleetProbesAction = (name: string, wsHash?: string): CockpitAction 
 export const fleetAgentStudioAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetAgentStudio",
   name,
+  ...(wsHash ? { wsHash } : {}),
+});
+export const fleetContinueTaskAction = (
+  name: string,
+  toName: string,
+  wsHash?: string,
+): CockpitAction => ({
+  type: "fleetContinueTask",
+  name,
+  toName,
   ...(wsHash ? { wsHash } : {}),
 });
 export const revealPathAction = (path: string): CockpitAction => ({ type: "revealPath", path });
