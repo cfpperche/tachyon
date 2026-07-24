@@ -493,6 +493,10 @@ export interface AgentProfileLabels {
   capabilities: string;
   promptInputs: string;
   profileIdentity: string;
+  nativeConfigTitle: string;
+  nativeConfigHelp: string;
+  nativeConfigEmpty: string;
+  unsupported: string;
 }
 
 /** Human-visible copy is translated by the extension host and projected in the load entity. */
@@ -596,6 +600,10 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     present: t("Present"), absent: t("Absent"), active: t("Active"), inactive: t("Inactive"), grants: t("Grants"),
     bindingsTitle: t("Bound profile data"), environmentValues: t("Environment values"), secrets: t("Secret references"),
     externalReferences: t("External references"), capabilities: t("Capabilities"), promptInputs: t("Prompt inputs"), profileIdentity: t("Profile identity"),
+    nativeConfigTitle: t("Native configuration"),
+    nativeConfigHelp: t("Supported choices are projected into the agent's private runtime home. Raw runtime files and credentials are never shown here."),
+    nativeConfigEmpty: t("No native configuration policy is authored for this agent."),
+    unsupported: t("Unsupported"),
   };
 }
 
@@ -608,6 +616,7 @@ export interface AgentStudioCanonicalContext {
   expectedRevision?: string;
   displayName: string;
   runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
+  nativeConfig: NonNullable<AgentProfileStudioSnapshotV1["editable"]["nativeConfig"]>;
 }
 
 export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalContext };
@@ -671,6 +680,7 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
     ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
     displayName: snapshot?.editable.displayName ?? "",
     runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
+    nativeConfig: structuredClone(snapshot?.editable.nativeConfig ?? {}),
   };
   return fields;
 }
@@ -715,6 +725,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         branch: fields.branch.trim(),
       },
       isolation: fields.isolate ? "transcript" : "",
+      nativeConfig: structuredClone(fields.canonical.nativeConfig),
     },
   };
 }

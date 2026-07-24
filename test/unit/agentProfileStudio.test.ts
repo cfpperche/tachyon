@@ -76,6 +76,7 @@ describe("canonical Agent Studio projection", () => {
       lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
       worktree: { enabled: true, branch: "feature/reviewer" },
       isolation: "transcript",
+      nativeConfig: {},
     });
     expect(projected.bindings).toMatchObject({
       environmentValueNames: ["PUBLIC"],
@@ -99,6 +100,34 @@ describe("canonical Agent Studio projection", () => {
       lifecycle: { enabled: false, watch: ["test/**"] },
       workspace: { cwd: "apps/tester" },
     });
+  });
+
+  it("round-trips authored native policy and exposes only content-free support provenance", () => {
+    const current = lifecycleSnapshot();
+    current.profile.nativeConfig = {
+      permissions: {
+        source: "workspace",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "resume"],
+      },
+    };
+    const projected = projectAgentProfileStudioSnapshot(current);
+
+    expect(projected.editable.nativeConfig).toEqual(current.profile.nativeConfig);
+    expect(projected.provenance.nativeConfig).toEqual([{
+      family: "permissions",
+      source: "workspace",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["fresh", "resume"],
+      support: "unsupported",
+      reason: "runtime adapter 'codex' has not declared native configuration support for 'permissions'",
+    }]);
+
+    const edited = mutation(current.revision);
+    edited.editable.nativeConfig = projected.editable.nativeConfig;
+    expect(patchProfileFromStudioMutation(edited, current).nativeConfig).toEqual(current.profile.nativeConfig);
   });
 
   it("builds a narrow edit while retaining unrelated prompt bindings and rejects stale revisions", () => {

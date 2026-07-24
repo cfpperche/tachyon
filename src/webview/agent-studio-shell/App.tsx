@@ -358,6 +358,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 ...(patch.expectedRevision ? { expectedRevision: patch.expectedRevision } : {}),
                 displayName: patch.editable.displayName,
                 runtime: { ...patch.editable.runtime },
+                nativeConfig: structuredClone(patch.editable.nativeConfig ?? {}),
               },
             }
           : patch;
@@ -781,6 +782,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   <span>{profileLabels.capabilities}: {Object.values(canonicalSnapshot.bindings.capabilities).reduce((sum, count) => sum + count, 0)}</span>
                   <span>{profileLabels.promptInputs}: {Object.entries(canonicalSnapshot.bindings.prompt).filter(([key, value]) => key !== "memoryPolicy" && value === true).length}</span>
                   <span>{profileLabels.profileIdentity}: <code>{canonicalSnapshot.agentId.slice(0, 8)}…</code></span>
+                </div>
+                <div class="ash-native-config">
+                  <div class="ash-label">{profileLabels.nativeConfigTitle}</div>
+                  <div class="hint">{profileLabels.nativeConfigHelp}</div>
+                  {(canonicalSnapshot.provenance.nativeConfig ?? []).length === 0
+                    ? <div class="ash-native-config-empty">{profileLabels.nativeConfigEmpty}</div>
+                    : canonicalSnapshot.provenance.nativeConfig!.map((entry) => (
+                      <div class="ash-native-config-row" key={entry.family}>
+                        <code>{entry.family}</code>
+                        <span>{entry.source} · {entry.treatment} · {entry.refresh}</span>
+                        <span>{entry.lifecycle.join(", ")}</span>
+                        <span class="ash-native-config-unsupported" title={entry.reason}>{profileLabels.unsupported}</span>
+                      </div>
+                    ))}
                 </div>
               </section>
             )}

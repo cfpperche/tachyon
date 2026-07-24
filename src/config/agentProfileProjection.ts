@@ -20,6 +20,7 @@ import {
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
+import { validateAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
@@ -352,6 +353,7 @@ function projectDefinition(
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {
     errors.push("profile/projection: secret injection belongs to a later slice");
   }
+  errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
   if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.memory) {
     errors.push("profile/projection: Soul, instructions and memory belong to t-a2827d");
   }

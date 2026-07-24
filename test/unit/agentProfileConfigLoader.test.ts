@@ -14,6 +14,7 @@ import {
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
 } from "../../src/config/agentProfileProjection.js";
+import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import { scanAgentProfilePointers } from "../../src/config/agentProfilePointer.js";
 import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
@@ -97,6 +98,56 @@ describe("agent profile pointer syntax", () => {
 });
 
 describe("loadProfileAwareConfig", () => {
+  it("accepts the closed native configuration policy shape and rejects duplicate lifecycle phases", () => {
+    const profile = {
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "codex", executable: "codex" },
+      nativeConfig: {
+        permissions: {
+          source: "workspace",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "resume"],
+        },
+      },
+    };
+    expect(agentProfileSchemaV1.safeParse(profile).success).toBe(true);
+    expect(agentProfileSchemaV1.safeParse({
+      ...profile,
+      nativeConfig: {
+        permissions: {
+          ...profile.nativeConfig.permissions,
+          lifecycle: ["fresh", "fresh"],
+        },
+      },
+    }).success).toBe(false);
+    expect(agentProfileSchemaV1.safeParse({
+      ...profile,
+      nativeConfig: { unsupportedFamily: profile.nativeConfig.permissions },
+    }).success).toBe(false);
+  });
+
+  it("fails closed when a profile authors policy before its adapter declares support", () => {
+    const root = temporaryRoot("tachyon-agent-profile-native-policy-");
+    const bytes = writeProfile(root, {
+      nativeConfig: {
+        permissions: {
+          source: "workspace",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "resume"],
+        },
+      },
+    });
+    const result = load(root, authority(bytes));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors).toEqual([
+      "agents.codex.profile: profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'permissions'",
+    ]);
+  });
+
   it("projects a literal Claude profile through its closed private-home contract", () => {
     const root = temporaryRoot("tachyon-agent-profile-claude-");
     const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });
