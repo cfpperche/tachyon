@@ -19,8 +19,10 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
       probe failures fail closed to `needs-review`, never `ready-to-remove`. 8/8 unit tests green
       (`test/unit/worktreeClassify.test.ts`): tombstone, clean, dirty, unique-commits,
       cherry-equivalent-still-safe, occupied-wins-over-dirty, failed-status-probe, failed-occupancy-probe.
-- [ ] `ManagedWorktreeService.ts`: add `listClassified()` wrapping `list()` + `classifyManagedWorktree`
-      per entry (parallelized; one entry's classification failure doesn't fail the batch).
+- [x] `ManagedWorktreeService.ts`: add `listClassified()` wrapping `list()` + `classifyManagedWorktree`
+      per entry (parallelized; one entry's classification failure doesn't fail the batch — caught
+      per-entry, rendered `needs-review: classification failed`). 5 real-git integration tests added
+      to `managedWorktree.test.ts` (clean, dirty, ahead, occupied, tombstone) — 21/21 in the file.
 - [ ] `src/bridge/tools.ts`: register `worktree_hygiene` (read-only, reuses `list_worktrees`'s
       auth/filter shape, returns classified rows).
 - [ ] `src/extension.ts`: `CockpitDeps.collect()`'s worktree line switches to `listClassified()`;

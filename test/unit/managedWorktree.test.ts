@@ -358,3 +358,90 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(fs.existsSync(entry2.path)).toBe(true);
   });
 });
+
+/** spec 444 — listClassified() real-git integration (the classify.ts unit suite covers the pure logic). */
+describe("spec 444 ManagedWorktreeService.listClassified (real git)", () => {
+  const dirs: string[] = [];
+  let repo: string;
+  let base: string;
+
+  const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8" });
+
+  function mkRepo(): string {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "mw-classify-repo-"));
+    dirs.push(d);
+    git(["init", "-b", "main"], d);
+    git(["config", "user.email", "t@t.dev"], d);
+    git(["config", "user.name", "T"], d);
+    fs.writeFileSync(path.join(d, "README.md"), "hi\n");
+    git(["add", "-A"], d);
+    git(["commit", "-m", "init"], d);
+    return d;
+  }
+
+  function service(occupancy: () => Promise<undefined | { state: "live"; agent: string; cwd: string }> = async () => undefined) {
+    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const manager = new WorktreeManager({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings, occupancy });
+    return new ManagedWorktreeService({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings, manager, occupancy });
+  }
+
+  beforeEach(() => {
+    repo = mkRepo();
+    base = fs.mkdtempSync(path.join(os.tmpdir(), "mw-classify-base-"));
+    dirs.push(base);
+  });
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it("t-9f8dfc: a fresh, clean, unoccupied change worktree classifies ready-to-remove", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-clean", createdBy: "alice" });
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.id).toBe(entry.id);
+    expect(row?.classification.state).toBe("ready-to-remove");
+    expect(row?.classification.containedInBase).toBe(true);
+  });
+
+  it("t-9f8dfc: an uncommitted change classifies needs-review with a stated reason", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-dirty", createdBy: "alice" });
+    fs.writeFileSync(path.join(entry.path, "wip.txt"), "uncommitted\n");
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.reasons.join(" ")).toMatch(/uncommitted/);
+  });
+
+  it("t-9f8dfc: a new commit ahead of base classifies needs-review with a commit count", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-ahead", createdBy: "alice" });
+    fs.writeFileSync(path.join(entry.path, "new.txt"), "unique work\n");
+    git(["add", "-A"], entry.path);
+    git(["commit", "-m", "unique work"], entry.path);
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.aheadOfBase).toBe(1);
+    expect(row?.classification.containedInBase).toBe(false);
+  });
+
+  it("t-9f8dfc: a live occupant classifies occupied even on an otherwise-clean worktree", async () => {
+    let occ: { state: "live"; agent: string; cwd: string } | undefined;
+    const svc = service(async () => occ);
+    const entry = await svc.createChange({ slug: "classify-occupied", createdBy: "alice" });
+    occ = { state: "live", agent: "other", cwd: entry.path };
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("occupied");
+    expect(row?.classification.occupant?.agent).toBe("other");
+  });
+
+  it("t-9f8dfc: an abandoned tombstone (path gone) classifies record-only, never ready-to-remove", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-gone", createdBy: "alice" });
+    fs.rmSync(entry.path, { recursive: true, force: true });
+    const rows = await svc.listClassified({ kind: "change" });
+    const row = rows.find((r) => r.id === entry.id);
+    expect(row?.status).toBe("abandoned"); // reconcileStore flips it on the same list() pass
+    expect(row?.classification.state).toBe("record-only");
+    expect(row?.classification.pathExists).toBe(false);
+  });
+});

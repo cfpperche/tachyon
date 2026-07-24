@@ -15,6 +15,7 @@ import {
   pathFor,
   resolveBase,
 } from "./WorktreeManager.js";
+import { classifyManagedWorktree, type WorktreeClassification } from "./classify.js";
 import {
   abandonMissingEntries,
   assertManagedSlug,
@@ -78,6 +79,44 @@ export class ManagedWorktreeService {
     const { store, changed } = abandonMissingEntries(loaded);
     if (changed) this.save(store);
     return store;
+  }
+
+  /**
+   * spec 444 — `list()` plus a fail-closed classification per entry (see `classify.ts`). A single
+   * entry's classifier throwing (a bug, not an ordinary probe failure — `classifyManagedWorktree`
+   * already fail-closes probe failures to `needs-review` internally) never silently reports that
+   * entry as safe: it renders as `needs-review` with a stated `classification failed` reason instead
+   * of failing the whole batch.
+   */
+  async listClassified(filter?: {
+    kind?: ManagedWorktreeKind;
+    status?: ManagedWorktreeEntry["status"];
+  }): Promise<Array<ManagedWorktreeEntry & { classification: WorktreeClassification }>> {
+    const entries = this.list(filter);
+    return Promise.all(
+      entries.map(async (entry) => {
+        try {
+          const classification = await classifyManagedWorktree(entry, {
+            git: this.git,
+            status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
+            occupancy: this.opts.occupancy,
+          });
+          return { ...entry, classification };
+        } catch (err) {
+          return {
+            ...entry,
+            classification: {
+              state: "needs-review" as const,
+              reasons: [`classification failed: ${err instanceof Error ? err.message : String(err)}`],
+              pathExists: fs.existsSync(entry.path),
+              dirty: true,
+              aheadOfBase: 0,
+              containedInBase: false,
+            },
+          };
+        }
+      }),
+    );
   }
 
   list(filter?: { kind?: ManagedWorktreeKind; status?: ManagedWorktreeEntry["status"] }): ManagedWorktreeEntry[] {
