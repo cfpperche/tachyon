@@ -3,6 +3,9 @@
  * Cell metrics come ONLY from xterm options (not CSS font on body).
  * Do NOT load design-system.css (Tachyon Mono @font-face breaks cell metrics).
  * Spacing tokens below mirror design-system.css --ds-* literals.
+ *
+ * t-953471 / t-e085bc: never style bare `html`/`body` — Control co-loads sheets and never
+ * unloads them. Scope everything under `#root` / `.agent-pane`.
  */
 
 :root {
@@ -24,26 +27,19 @@
   --agent-pane-focus: var(--vscode-focusBorder, #007fd4);
 }
 
-html,
-body {
-  height: 100%;
-  width: 100%;
+/* Standalone webview document root — class/id scoped (not bare html/body). */
+#root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   margin: 0;
   padding: 0;
-  overflow: hidden;
   background: var(--agent-pane-bg);
   font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 12px;
   letter-spacing: 0;
   word-spacing: 0;
   color: var(--agent-pane-fg);
-}
-
-#root {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--agent-pane-bg);
 }
 
 .agent-pane {
@@ -56,6 +52,11 @@ body {
   box-sizing: border-box;
   overflow: hidden;
   background: var(--agent-pane-bg);
+  font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: 0;
+  word-spacing: 0;
+  color: var(--agent-pane-fg);
 }
 
 /* ── identity strip (Slice 1) ── */

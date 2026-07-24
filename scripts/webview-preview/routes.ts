@@ -281,6 +281,8 @@ export const ROUTES: Record<string, Route> = {
 /** Converted webviews may opt out only with a written reason. */
 export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
   "plugin-host": "Spec 349 T10 relay needs a runtime-installed plugin payload and nonce-stamped srcdoc; covered by focused relay tests until T13 fixtures land.",
+  // t-953471 / t-610355 — live xterm + node-pty tmux attach; no static fixture VM without a PTY host.
+  "agent-pane": "Layer-2 agent pane needs a live node-pty attach to a tmux session; not renderable as a static preview fixture. Covered by unit (agentPane*) + Dev Host dogfood (t-610355).",
 };
 
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
