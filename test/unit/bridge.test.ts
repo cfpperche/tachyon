@@ -244,7 +244,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 71 canonical tools, including managed worktree registry tools", async () => {
+  it("exposes exactly the 72 canonical tools, including managed worktree registry tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -256,6 +256,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "close_validation",
       "complete_node",
       "complete_pin",
+      "continue_task",
       "continuity_status",
       "create_pin",
       "create_task",
