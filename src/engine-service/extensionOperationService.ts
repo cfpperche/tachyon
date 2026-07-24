@@ -334,11 +334,12 @@ export async function executeExtensionCommand(
     case "config.health":
       return configHealth(workspace);
     case "companion.unpair": {
-      // Host Control: force-revoke active Companion session (no device bearer required).
-      const result = workspace.companion.forceUnpair();
-      if (result.sessionToken) {
+      // Host Control: force-revoke Companion session(s). Optional deviceId clears one row.
+      const deviceId = typeof command.deviceId === "string" ? command.deviceId : undefined;
+      const result = workspace.companion.forceUnpair(deviceId);
+      for (const token of result.sessionTokens) {
         try {
-          workspace.companionLive.dropSession(result.sessionToken);
+          workspace.companionLive.dropSession(token);
         } catch {
           /* best-effort */
         }

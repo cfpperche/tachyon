@@ -68,7 +68,7 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     expect(svc.issuePairCode()).toEqual({ ok: false, reason: "tailscale_required" });
   });
 
-  it("pairs with a valid code and replaces a prior session (one active pair)", () => {
+  it("same-kind pair replaces prior session only (422 one-per-kind)", () => {
     const svc = new CompanionPairingService({
       engineLabel: "demo",
       engineId: "abc123",
@@ -104,11 +104,61 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     });
     expect(second.ok).toBe(true);
     if (!second.ok) return;
+    expect("replacedSessionToken" in second && second.replacedSessionToken).toBe(first.sessionToken);
     expect(svc.status(first.sessionToken).status).toBe("error");
     expect(svc.status(second.sessionToken).status).toBe("connected");
+    expect(svc.hasPairedKind("browser")).toBe(true);
+    expect(svc.tokensForKind("browser")).toEqual([second.sessionToken]);
   });
 
-  it("forceUnpair clears the session for host Control revoke", () => {
+  it("browser and mobile sessions co-exist; same-kind replace leaves the other intact", () => {
+    const svc = new CompanionPairingService({
+      engineLabel: "demo",
+      engineId: "abc123",
+      getBaseUrl: () => "http://127.0.0.1:1",
+    });
+    const codeBrowser = svc.issuePairCode();
+    if ("ok" in codeBrowser) throw new Error("expected code");
+    const browser = svc.pair({
+      pairCode: codeBrowser.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "ext", version: "1" },
+    });
+    if (!browser.ok) throw new Error("browser pair failed");
+
+    const codeMobile = svc.issuePairCode();
+    if ("ok" in codeMobile) throw new Error("expected code");
+    const mobile = svc.pair({
+      pairCode: codeMobile.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "mobile", name: "phone", version: "1" },
+    });
+    if (!mobile.ok) throw new Error("mobile pair failed");
+
+    expect(svc.hasPairedKind("browser")).toBe(true);
+    expect(svc.hasPairedKind("mobile")).toBe(true);
+    expect(svc.status(browser.sessionToken).status).toBe("connected");
+    expect(svc.status(mobile.sessionToken).status).toBe("connected");
+    expect(svc.listDevices()).toHaveLength(2);
+    expect(svc.tokensForKind("browser")).toEqual([browser.sessionToken]);
+    expect(svc.tokensForKind("mobile")).toEqual([mobile.sessionToken]);
+
+    // Replacing browser must not kill mobile.
+    const codeBrowser2 = svc.issuePairCode();
+    if ("ok" in codeBrowser2) throw new Error("expected code");
+    const browser2 = svc.pair({
+      pairCode: codeBrowser2.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "ext2", version: "2" },
+    });
+    if (!browser2.ok) throw new Error("browser re-pair failed");
+    expect(svc.status(browser.sessionToken).status).toBe("error");
+    expect(svc.status(browser2.sessionToken).status).toBe("connected");
+    expect(svc.status(mobile.sessionToken).status).toBe("connected");
+    expect(svc.listDevices().map((d) => d.kind).sort()).toEqual(["browser", "mobile"]);
+  });
+
+  it("forceUnpair clears all or one device by id", () => {
     const svc = new CompanionPairingService({
       engineLabel: "demo",
       engineId: "abc123",
@@ -116,19 +166,34 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     });
     const issued = svc.issuePairCode();
     if ("ok" in issued) throw new Error("expected code");
-    const paired = svc.pair({
+    const browser = svc.pair({
       pairCode: issued.code,
       protocolVersion: COMPANION_PROTOCOL_VERSION,
       client: { kind: "browser", name: "Tachyon Companion", version: "0.4.8" },
     });
-    expect(paired.ok).toBe(true);
-    if (!paired.ok) return;
+    expect(browser.ok).toBe(true);
+    if (!browser.ok) return;
+    const mCode = svc.issuePairCode();
+    if ("ok" in mCode) throw new Error("expected code");
+    const mobile = svc.pair({
+      pairCode: mCode.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "mobile", name: "phone", version: "1" },
+    });
+    if (!mobile.ok) throw new Error("mobile pair failed");
+    const browserId = svc.listDevices().find((d) => d.kind === "browser")!.id;
+    const one = svc.forceUnpair(browserId);
+    expect(one).toMatchObject({ ok: true, hadSession: true, sessionToken: browser.sessionToken });
+    expect(one.sessionTokens).toEqual([browser.sessionToken]);
+    expect(svc.hasPairedKind("browser")).toBe(false);
+    expect(svc.hasPairedKind("mobile")).toBe(true);
+
     const cleared = svc.forceUnpair();
     expect(cleared.hadSession).toBe(true);
-    expect(cleared.sessionToken).toBe(paired.sessionToken);
+    expect(cleared.sessionTokens).toEqual([mobile.sessionToken]);
     expect(svc.hasPairedDevice()).toBe(false);
     expect(svc.listDevices()).toEqual([]);
-    expect(svc.forceUnpair()).toEqual({ ok: true, hadSession: false });
+    expect(svc.forceUnpair()).toEqual({ ok: true, hadSession: false, sessionTokens: [] });
   });
 
   it("rejects wrong code, expired code, and protocol mismatch", () => {
@@ -185,7 +250,9 @@ describe("CompanionPairingService (SDD 414 slice 2)", () => {
     });
     if (!paired.ok) throw new Error("pair failed");
     expect(svc.unpair(paired.sessionToken)).toEqual({ ok: true });
-    expect(svc.status(paired.sessionToken).status).toBe("disconnected");
+    // Token-scoped status: revoked token is unknown → error (not bare disconnected).
+    expect(svc.status(paired.sessionToken).status).toBe("error");
+    expect(svc.status(undefined).status).toBe("disconnected");
   });
 
   it("reports hasPairedDevice only while a session is live", () => {
@@ -448,6 +515,95 @@ describe("Companion HTTP loopback (SDD 414)", () => {
     server.close();
     live.closeAll();
     tab.closeAll();
+  });
+
+  it("pushEvent onlyTokens isolates tab.command to browser sessions", async () => {
+    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
+    const pairing = new CompanionPairingService({
+      engineLabel: "ws",
+      engineId: "hash",
+      getBaseUrl: () => "http://127.0.0.1:1",
+    });
+    const live = new CompanionLiveSync({
+      statusOf: (token) => pairing.status(token),
+      listAgents: async () => [],
+      heartbeatMs: 60_000,
+      debounceMs: 5,
+    });
+    const server = http.createServer((req, res) => {
+      void handleCompanionHttp(req, res, {
+        pairing,
+        live,
+        ops: {
+          listActiveAgents: async () => [],
+          sendPrompt: async (agent) => ({ ok: true, status: "notified", agent }),
+        },
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => resolve());
+    });
+    const port = (server.address() as AddressInfo).port;
+    const base = `http://127.0.0.1:${port}`;
+
+    const bCode = pairing.issuePairCode();
+    if ("ok" in bCode) throw new Error("expected code");
+    const browser = pairing.pair({
+      pairCode: bCode.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "browser", name: "b", version: "0" },
+    });
+    if (!browser.ok) throw new Error("browser pair failed");
+    const mCode = pairing.issuePairCode();
+    if ("ok" in mCode) throw new Error("expected code");
+    const mobile = pairing.pair({
+      pairCode: mCode.code,
+      protocolVersion: COMPANION_PROTOCOL_VERSION,
+      client: { kind: "mobile", name: "m", version: "0" },
+    });
+    if (!mobile.ok) throw new Error("mobile pair failed");
+
+    const collect = async (token: string, ms: number) => {
+      const ac = new AbortController();
+      const res = await fetch(`${base}/companion/v1/events`, {
+        headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+        signal: ac.signal,
+      });
+      expect(res.status).toBe(200);
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      const end = Date.now() + ms;
+      while (Date.now() < end) {
+        const remaining = end - Date.now();
+        if (remaining <= 0) break;
+        const read = reader.read();
+        const raced = await Promise.race([
+          read.then((r) => ({ kind: "chunk" as const, r })),
+          new Promise<{ kind: "timeout" }>((resolve) => setTimeout(() => resolve({ kind: "timeout" }), remaining)),
+        ]);
+        if (raced.kind === "timeout") break;
+        if (raced.r.done) break;
+        buf += dec.decode(raced.r.value, { stream: true });
+      }
+      ac.abort();
+      return buf;
+    };
+
+    // Attach both streams, then push tab.command browser-only (Workspace policy).
+    const browserBufP = collect(browser.sessionToken, 400);
+    const mobileBufP = collect(mobile.sessionToken, 400);
+    await new Promise((r) => setTimeout(r, 40));
+    live.pushEvent("tab.command", { id: "cmd1", kind: "snapshot" }, pairing.tokensForKind("browser"));
+    live.pushEvent("approvals.changed", { n: 1 }); // shared fan-out
+    const [browserBuf, mobileBuf] = await Promise.all([browserBufP, mobileBufP]);
+    expect(browserBuf).toMatch(/event: tab\.command/);
+    expect(mobileBuf).not.toMatch(/event: tab\.command/);
+    expect(browserBuf).toMatch(/event: approvals\.changed/);
+    expect(mobileBuf).toMatch(/event: approvals\.changed/);
+
+    server.close();
+    live.closeAll();
   });
 
   it("streams live snapshots on GET /companion/v1/events (SSE)", async () => {

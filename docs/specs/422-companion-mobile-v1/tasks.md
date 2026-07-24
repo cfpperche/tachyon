@@ -18,8 +18,8 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 ## Phase 2 — Session policy (M4)
 
-- [x] **v1 = last-pair-wins** (documented in cookbook + notes; code already one active session)
-- [ ] Follow-up: concurrent browser+mobile registry (not v1)
+- [x] **v1 = last-pair-wins** (shipped first; documented in cookbook + notes)
+- [x] **t-44dfb6:** concurrent one-per-kind (browser + mobile); same-kind replace; SSE tab.command isolation; Control unpair by deviceId
 
 ## Phase 3 — apps/mobile PWA
 
@@ -44,7 +44,7 @@ _Board umbrella: `t-af2c9b`. Research: `t-619157` done. Product card: `t-fe52f0`
 
 | Item | Notes |
 |------|--------|
-| Concurrent browser+mobile sessions | M4 stretch |
+| Concurrent browser+mobile sessions | M4 — **t-44dfb6 done** (one per kind) |
 | Headscale / self-host mesh | Same client path as Tailscale |
 | A2HS polish / deeper PRIVACY | Optional install UX |
 | TLS on companion HTTP | Deferred v1.1 |

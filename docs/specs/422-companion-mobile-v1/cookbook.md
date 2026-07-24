@@ -42,14 +42,29 @@ settings:
 
 ## Session policy (v1)
 
-**Last-pair-wins:** the engine keeps **one** companion session. A new successful pair (browser or mobile) **replaces** the previous session; the old client gets unpaired/expired on next use. Concurrent browser+mobile is **not** v1 — follow-up if needed.
+**Session policy (t-44dfb6):** the engine keeps **at most one browser and one mobile** session. Pairing the same kind **replaces** that kind only; the other kind stays live. Control **Unpair** on a device row revokes that row; omit device id to clear all. `tab.command` SSE is **browser-only** (mobile does not receive tab tool traffic).
 
-## Privacy / PWA install (minimal)
+## Privacy / PWA install (t-bd281f)
 
-- Pair secrets live in the phone browser (**session token** in `localStorage` under a companion key; pair code only in the URL hash until auto-pair clears it).
-- Prefer a **trusted device**; unpair when done.
-- **Add to Home Screen** (iOS Share → Add to Home Screen / Android browser menu) is optional polish — the mobile web app works in a normal tab after pair.
-- No cloud relay: traffic is PC ↔ phone on the **Tailscale mesh** (or loopback for same-host browser companion).
+### What is stored on the phone
+- **Session token** in `localStorage` (companion key) after a successful pair. Treat the phone like a second Control shell for this engine until you unpair or the session TTL expires.
+- **Pair code** only appears in the URL hash (`#pair=…`) long enough for auto-pair; it is not a long-lived secret.
+- No Tachyon cloud: traffic is **PC ↔ phone on the Tailscale mesh** (or loopback for same-host browser companion). Mesh HTTP is cleartext on the CGNAT path (TLS is a later residual).
+
+### Add to Home Screen (optional)
+The engine serves a web app at `/companion/app/` with `manifest.webmanifest` + service worker. A normal tab works after pair; A2HS is polish for a home-screen icon.
+
+| Platform | Steps |
+|----------|--------|
+| **iOS Safari** | Open the paired URL → Share → **Add to Home Screen** → Add. Prefer Safari (not in-app browsers) so storage and A2HS behave predictably. |
+| **Android Chrome** | Open the paired URL → menu ⋮ → **Install app** / **Add to Home screen**. |
+
+After install, open from the icon (same origin as the Tailscale base URL). If you re-pair with a new engine/port, unpair first or clear site data for the old origin.
+
+### Unpair hygiene
+1. Phone **Unpair**, or Control → Connected devices → **Unpair** on that row (other kind stays paired).
+2. On a shared/borrowed phone: unpair + clear site data for the Companion origin before handing it back.
+3. Turning off `settings.companion.lanAccess` stops new Tailscale pair URLs; existing sessions still expire or unpair explicitly.
 
 ## Failure modes
 

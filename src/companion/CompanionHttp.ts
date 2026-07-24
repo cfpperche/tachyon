@@ -190,10 +190,20 @@ export async function handleCompanionHttp(
       }
       const result = pairing.pair(body);
       if (result.ok && live) {
-        // New pair invalidates previous session tokens — close all live streams.
-        live.closeAll();
+        // Same-kind replace only — do not kill the other kind's SSE (422 multi-session).
+        const replaced =
+          "replacedSessionToken" in result && typeof result.replacedSessionToken === "string"
+            ? result.replacedSessionToken
+            : undefined;
+        if (replaced) live.dropSession(replaced);
       }
-      json(res, result.ok ? 200 : 400, result);
+      // Strip server-only field from the wire response (mobile clients ignore unknown keys, but keep payload clean).
+      if (result.ok && "replacedSessionToken" in result) {
+        const { replacedSessionToken: _r, ...wire } = result;
+        json(res, 200, wire);
+      } else {
+        json(res, result.ok ? 200 : 400, result);
+      }
       return true;
     }
 

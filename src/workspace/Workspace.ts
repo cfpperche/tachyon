@@ -1669,7 +1669,14 @@ export class Workspace {
       listAgents: () => this.companionListActiveAgents(),
     });
     this.companionTab = new CompanionTabChannel({
-      push: (event, data) => this.companionLive.pushEvent(event, data),
+      push: (event, data) => {
+        // tab.command must not leak to mobile SSE (probe t-44dfb6).
+        if (event === "tab.command") {
+          this.companionLive.pushEvent(event, data, this.companion.tokensForKind("browser"));
+          return;
+        }
+        this.companionLive.pushEvent(event, data);
+      },
     });
     this.bridge = new Bridge(
       {
@@ -1704,7 +1711,8 @@ export class Workspace {
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
-        companionBrowserPaired: () => this.companion.hasPairedDevice(),
+        // Tab tools require a browser companion session (not mobile-only pair).
+        companionBrowserPaired: () => this.companion.hasPairedKind("browser"),
         companionRefHints: (tabId, ref) => this.companionTabRefs.hintsFor(tabId, ref),
         companionTabTabsList: (opts) => this.companionTab.requestTabsList(opts?.timeoutMs),
         companionTabSnapshot: async (opts) => {

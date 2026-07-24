@@ -216,8 +216,8 @@ export interface CockpitDeps {
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
   /** SDD 420 — settings.companion.allowedHosts for one workspace engine. */
   setCompanionAllowedHosts: (wsHash: string, hosts: string[]) => Promise<void>;
-  /** SDD 414 — host-authoritative unpair of the active Companion device. */
-  unpairCompanionDevice: (wsHash: string) => Promise<void>;
+  /** SDD 414/422 — host-authoritative unpair; deviceId clears one row, omit clears all. */
+  unpairCompanionDevice: (wsHash: string, deviceId?: string) => Promise<void>;
   /**
    * SDD 414 — mint short-lived pair code + baseUrl (same as tachyon.pairCompanion / companion.pair-code).
    * Result is pushed as a one-shot webview message — not polled into CockpitModel.
@@ -1926,7 +1926,8 @@ export async function openCockpit(
         case "unpairCompanionDevice":
           if (typeof c.wsHash === "string" && c.wsHash) {
             try {
-              await deps.unpairCompanionDevice(c.wsHash);
+              const deviceId = typeof c.deviceId === "string" && c.deviceId ? c.deviceId : undefined;
+              await deps.unpairCompanionDevice(c.wsHash, deviceId);
               await sendModel();
               live.webview.postMessage(toastMessage(vscode.l10n.t("Companion device unpaired")));
             } catch (err) {

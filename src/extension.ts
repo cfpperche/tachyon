@@ -1489,10 +1489,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.allowedHosts", hosts });
     },
-    unpairCompanionDevice: async (wsHash) => {
+    unpairCompanionDevice: async (wsHash, deviceId) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
-      await extensionInvoke(ws, { action: "companion.unpair" });
+      await extensionInvoke(ws, {
+        action: "companion.unpair",
+        ...(deviceId ? { deviceId } : {}),
+      });
     },
     issueCompanionPairCode: async (wsHash) => {
       const ws = byHash(wsHash);

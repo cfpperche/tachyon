@@ -25,7 +25,7 @@ Clients stay in `cfpperche/tachyon-companion` (`apps/mobile` + shared `protocol`
 
 ### B — Concurrent sessions (M4)
 
-**v1 decision (2026-07-23):** ship **last-pair-wins** (one active companion session; new pair replaces prior browser or mobile). Concurrent browser+mobile is an explicit follow-up, not a v1 bar.
+**v1 decision (2026-07-23):** ship **last-pair-wins** first. **Follow-up t-44dfb6 (2026-07-24):** one **browser** + one **mobile** concurrent (`Map` by `client.kind`); same-kind replace only; `tab.command` → browser tokens only; Control unpair optional `deviceId`.
 
 ### C — `apps/mobile` PWA
 

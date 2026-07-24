@@ -10,7 +10,8 @@ _**Maintainer ratified M1–M8** 2026-07-21 (conversation)._
 **Board:** umbrella `t-af2c9b` · product card `t-fe52f0` (frente 2) · research `t-619157` done · parent browser 414 shipped · dogfood `t-900149` done  
 **Kind:** product SDD (Companion mobile external shell) — PWA + Tailscale pair + narrow fleet controls  
 **Out of trail:** `t-784bc8` Runtime API extraction · browser residual `t-cb36c5` · reopen 414/420  
-**Shipped-partial residual:** concurrent browser+mobile sessions; Headscale; deeper A2HS/PRIVACY; TLS v1.1  
+**Shipped-partial residual:** Headscale; deeper A2HS/PRIVACY; TLS v1.1  
+**Landed after partial:** concurrent one-per-kind browser+mobile (`t-44dfb6`)  
 
 ## Intent
 
@@ -41,7 +42,7 @@ This spec defines **Tachyon Companion Mobile v1**: a **local-first web app / ins
 | M1 | Form | PWA / local web in `apps/mobile` |
 | M2 | Network | Opt-in bind + QR pair; **phone path = Tailscale mesh only** (v1) |
 | M3 | Protocol | Reuse `/companion/v1` + existing pair; `client.kind=mobile` |
-| M4 | Concurrent devices | **v1 = last-pair-wins** (one session); concurrent browser+mobile deferred |
+| M4 | Concurrent devices | **one browser + one mobile** (`t-44dfb6`); same-kind replace |
 | M5 | Caps v1 | Roster + attention + prompt + approvals only |
 | M6 | ADE scope | Minimal: LAN flag, QR/baseUrl, static mobile assets if needed |
 | M7 | Spec vehicle | **This SDD** (new); not fold into 414 |

@@ -156,16 +156,26 @@ export class CompanionLiveSync {
   }
 
   /**
-   * Push an out-of-band SSE event to all live clients (e.g. tab.command).
+   * Push an out-of-band SSE event to live clients (e.g. tab.command, approvals.changed).
    * Does not advance agent-list snapshots.
+   *
+   * @param onlyTokens when set, deliver only to those session tokens (e.g. browser-only tab.command).
+   *   When omitted, fan-out to all live clients (shared fleet snapshot side-channels).
    */
-  pushEvent(event: string, data: unknown): void {
+  pushEvent(event: string, data: unknown, onlyTokens?: ReadonlySet<string> | string[]): void {
+    const allow =
+      onlyTokens === undefined
+        ? undefined
+        : onlyTokens instanceof Set
+          ? onlyTokens
+          : new Set(onlyTokens);
     const at = new Date(this.now()).toISOString();
     const payload =
       data && typeof data === "object" && !Array.isArray(data)
         ? { ...(data as Record<string, unknown>), seq: ++this.seq, at }
         : { data, seq: ++this.seq, at };
     for (const c of [...this.clients]) {
+      if (allow && !allow.has(c.token)) continue;
       if (!writeSse(c.res, event, payload)) {
         this.clients.delete(c);
       }

@@ -1,7 +1,12 @@
 /**
- * Companion pairing authority (SDD 414 slice 2).
+ * Companion pairing authority (SDD 414 slice 2 + 422 multi-kind).
  * Issues short-lived pair codes and companion-scoped session tokens.
  * Distinct from agent Bridge tokens — never reuse TACHYON_BRIDGE_TOKEN.
+ *
+ * Session policy (422 M4 follow-up t-44dfb6, probe-reviewed):
+ * - At most one **browser** and one **mobile** session concurrently (keyed by client.kind).
+ * - Pairing the same kind replaces that kind only; the other kind is left intact.
+ * - status/authorize/unpair are token-scoped (caller's session only).
  */
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -20,6 +25,7 @@ import {
 import { buildCompanionMobileOpenUrl, buildCompanionPairQrPayload } from "./pairQr.js";
 
 export type CompanionPairBlockReason = "bridge_down" | "tailscale_required";
+export type CompanionClientKind = CompanionClientInfo["kind"];
 
 export interface CompanionPairingServiceOptions {
   /** Human-readable workspace label for the extension UI. */
@@ -56,6 +62,10 @@ interface ActiveSession {
   pairedAtMs: number;
 }
 
+export type PairOutcome =
+  | (Extract<PairResponse, { ok: true }> & { replacedSessionToken?: string })
+  | Extract<PairResponse, { ok: false }>;
+
 function safeEqualStr(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
@@ -76,9 +86,14 @@ function newSessionToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function isClientKind(v: unknown): v is CompanionClientKind {
+  return v === "browser" || v === "mobile";
+}
+
 export class CompanionPairingService {
   private pending: PendingCode | undefined;
-  private session: ActiveSession | undefined;
+  /** At most one session per client.kind (browser | mobile). */
+  private readonly sessions = new Map<CompanionClientKind, ActiveSession>();
   private readonly now: () => number;
   private readonly pairCodeTtlMs: number;
   private readonly sessionTtlMs: number;
@@ -103,7 +118,7 @@ export class CompanionPairingService {
 
   /**
    * Mint a new short-lived pair code. Invalidates any previous unused code.
-   * Does not invalidate an existing companion session until a new pair succeeds.
+   * Does not invalidate existing companion sessions until a new pair succeeds.
    */
   issuePairCode(): IssuedPairCode | { ok: false; reason: CompanionPairBlockReason } {
     const base = this.options.getBaseUrl();
@@ -130,7 +145,6 @@ export class CompanionPairingService {
       .map((u) => u.replace(/\/+$/, ""))
       .filter(Boolean);
     const baseUrls = candidates.length > 0 ? [...new Set([baseUrl, ...candidates])] : [baseUrl];
-    // Prefer primary first in the list for stable UI ordering.
     const ordered = [baseUrl, ...baseUrls.filter((u) => u !== baseUrl)];
     const exp = expiresAtMs ?? this.now() + this.pairCodeTtlMs;
     const protocolVersion = COMPANION_PROTOCOL_VERSION;
@@ -151,9 +165,12 @@ export class CompanionPairingService {
     };
   }
 
-  pair(body: PairRequestBody): PairResponse {
-    // Do not sweep pending codes here — pair() reports expired_code explicitly.
-    if (this.session && this.now() > this.session.expiresAtMs) this.session = undefined;
+  /**
+   * Pair a companion client. Same-kind replace only (browser vs mobile can co-exist).
+   * Returns replacedSessionToken when a prior same-kind session was evicted (for SSE drop).
+   */
+  pair(body: PairRequestBody): PairOutcome {
+    this.sweepSessionsOnly();
     if (body.protocolVersion !== COMPANION_PROTOCOL_VERSION) {
       return {
         ok: false,
@@ -169,6 +186,14 @@ export class CompanionPairingService {
         message: "Companion HTTP surface is not listening (engine/Bridge down).",
       };
     }
+    const kind = body.client?.kind;
+    if (!isClientKind(kind)) {
+      return {
+        ok: false,
+        code: "unknown",
+        message: "client.kind must be 'browser' or 'mobile'.",
+      };
+    }
     const offered = body.pairCode?.trim().toUpperCase() ?? "";
     if (!this.pending) {
       return {
@@ -177,7 +202,6 @@ export class CompanionPairingService {
         message: "No active pair code. Generate a new code in Tachyon (Pair Companion).",
       };
     }
-    // Expiry before match so a late submit of the real code gets expired_code, not a silent wipe + invalid.
     if (this.now() > this.pending.expiresAtMs) {
       this.pending = undefined;
       return {
@@ -193,44 +217,54 @@ export class CompanionPairingService {
         message: "Pair code does not match. Check the code shown in Tachyon.",
       };
     }
-    // One active pair: replace any prior session.
+
+    const prev = this.sessions.get(kind);
+    const replacedSessionToken = prev?.token;
     const token = newSessionToken();
     const expiresAtMs = this.now() + this.sessionTtlMs;
-    this.session = {
+    this.sessions.set(kind, {
       id: randomBytes(6).toString("hex"),
       token,
       expiresAtMs,
-      client: body.client,
+      client: {
+        kind,
+        name: typeof body.client.name === "string" ? body.client.name : kind,
+        version: typeof body.client.version === "string" ? body.client.version : "0",
+      },
       pairedAtMs: this.now(),
-    };
+    });
     this.pending = undefined;
     return {
       ok: true,
       sessionToken: token,
       expiresAt: new Date(expiresAtMs).toISOString(),
       engine: this.engineIdentity(),
+      ...(replacedSessionToken ? { replacedSessionToken } : {}),
     };
   }
 
   unpair(sessionToken: string | undefined): { ok: true } | { ok: false; code: "unpaired" | "expired"; message: string } {
     this.sweep();
-    if (!sessionToken || !this.session) {
-      this.session = undefined;
-      return { ok: true };
-    }
-    if (!safeEqualStr(sessionToken, this.session.token)) {
+    if (!sessionToken) return { ok: true };
+    const hit = this.findByToken(sessionToken);
+    if (!hit) {
       return { ok: false, code: "unpaired", message: "Unknown companion session." };
     }
-    this.session = undefined;
+    this.sessions.delete(hit.kind);
     return { ok: true };
   }
 
+  /**
+   * Status for the caller's session only (token-scoped).
+   * Unknown token → error (not "the other device's" status).
+   */
   status(sessionToken: string | undefined): ConnectionStatus {
     this.sweep();
-    if (!sessionToken || !this.session) {
+    if (!sessionToken) {
       return { status: "disconnected", protocolVersion: COMPANION_PROTOCOL_VERSION };
     }
-    if (!safeEqualStr(sessionToken, this.session.token)) {
+    const hit = this.findByToken(sessionToken);
+    if (!hit) {
       return {
         status: "error",
         lastError: "Unknown companion session.",
@@ -240,42 +274,66 @@ export class CompanionPairingService {
     return {
       status: "connected",
       engine: this.engineIdentity(),
-      expiresAt: new Date(this.session.expiresAtMs).toISOString(),
+      expiresAt: new Date(hit.session.expiresAtMs).toISOString(),
       protocolVersion: COMPANION_PROTOCOL_VERSION,
     };
   }
 
-  /** True when bearer is a live companion session (for future capture/approvals). */
+  /** True when bearer is a live companion session. */
   authorizeSession(sessionToken: string | undefined): boolean {
     this.sweep();
-    if (!sessionToken || !this.session) return false;
-    return safeEqualStr(sessionToken, this.session.token);
+    if (!sessionToken) return false;
+    return this.findByToken(sessionToken) !== undefined;
   }
 
   /**
-   * True when a Companion device is currently paired (session not expired).
-   * Used to gate agent-facing browser tools so they only appear when a device exists.
+   * Kind of the session that owns this token (for SSE filtering / tab tools).
+   */
+  sessionKind(sessionToken: string | undefined): CompanionClientKind | undefined {
+    this.sweep();
+    if (!sessionToken) return undefined;
+    return this.findByToken(sessionToken)?.kind;
+  }
+
+  /** Session tokens currently paired for a kind (0–1). */
+  tokensForKind(kind: CompanionClientKind): string[] {
+    this.sweep();
+    const s = this.sessions.get(kind);
+    return s ? [s.token] : [];
+  }
+
+  /**
+   * True when any Companion device is paired.
+   * Prefer {@link hasPairedKind} for capability gates.
    */
   hasPairedDevice(): boolean {
     this.sweep();
-    return this.session !== undefined;
+    return this.sessions.size > 0;
   }
 
+  /** True when a session of this kind is live (not expired). */
+  hasPairedKind(kind: CompanionClientKind): boolean {
+    this.sweep();
+    return this.sessions.has(kind);
+  }
+
+  /** Prefer browser client when both present (legacy single-client call sites). */
   activeClient(): CompanionClientInfo | undefined {
     this.sweep();
-    return this.session?.client;
+    return this.sessions.get("browser")?.client ?? this.sessions.get("mobile")?.client;
   }
 
   /**
-   * Host Control view: 0–1 device rows (array shaped for future multi-device).
+   * Host Control view: 0–2 device rows (one per kind).
    * `isLive` reports whether the session has an open companion SSE stream.
    */
   listDevices(isLive?: (sessionToken: string) => boolean): CompanionDeviceRow[] {
     this.sweep();
-    const s = this.session;
-    if (!s) return [];
-    return [
-      {
+    const rows: CompanionDeviceRow[] = [];
+    for (const kind of ["browser", "mobile"] as const) {
+      const s = this.sessions.get(kind);
+      if (!s) continue;
+      rows.push({
         id: s.id,
         kind: s.client.kind,
         name: s.client.name,
@@ -283,25 +341,58 @@ export class CompanionPairingService {
         pairedAt: new Date(s.pairedAtMs).toISOString(),
         expiresAt: new Date(s.expiresAtMs).toISOString(),
         live: isLive?.(s.token) === true,
-      },
-    ];
+      });
+    }
+    return rows;
   }
 
   /**
-   * Host-authoritative unpair (Control). Does not require the device's session token.
-   * Returns the cleared token so callers can drop SSE clients.
+   * Host-authoritative unpair. Optional deviceId clears one row; omit clears all.
+   * Returns every cleared token so callers can drop SSE clients.
    */
-  forceUnpair(): { ok: true; hadSession: boolean; sessionToken?: string } {
+  forceUnpair(deviceId?: string): { ok: true; hadSession: boolean; sessionTokens: string[]; sessionToken?: string } {
     this.sweep();
-    if (!this.session) return { ok: true, hadSession: false };
-    const sessionToken = this.session.token;
-    this.session = undefined;
-    return { ok: true, hadSession: true, sessionToken };
+    if (deviceId) {
+      for (const [kind, s] of this.sessions) {
+        if (s.id !== deviceId) continue;
+        this.sessions.delete(kind);
+        return {
+          ok: true,
+          hadSession: true,
+          sessionTokens: [s.token],
+          sessionToken: s.token,
+        };
+      }
+      return { ok: true, hadSession: false, sessionTokens: [] };
+    }
+    if (this.sessions.size === 0) return { ok: true, hadSession: false, sessionTokens: [] };
+    const sessionTokens = [...this.sessions.values()].map((s) => s.token);
+    this.sessions.clear();
+    return {
+      ok: true,
+      hadSession: true,
+      sessionTokens,
+      sessionToken: sessionTokens[0],
+    };
+  }
+
+  private findByToken(sessionToken: string): { kind: CompanionClientKind; session: ActiveSession } | undefined {
+    for (const [kind, s] of this.sessions) {
+      if (safeEqualStr(sessionToken, s.token)) return { kind, session: s };
+    }
+    return undefined;
+  }
+
+  private sweepSessionsOnly(): void {
+    const t = this.now();
+    for (const [kind, s] of [...this.sessions]) {
+      if (t > s.expiresAtMs) this.sessions.delete(kind);
+    }
   }
 
   private sweep(): void {
     const t = this.now();
     if (this.pending && t > this.pending.expiresAtMs) this.pending = undefined;
-    if (this.session && t > this.session.expiresAtMs) this.session = undefined;
+    this.sweepSessionsOnly();
   }
 }

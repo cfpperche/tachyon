@@ -254,8 +254,8 @@ export interface CockpitAppProps {
   onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
   /** SDD 420 — settings.companion.allowedHosts for the scoped workspace. */
   onSetCompanionAllowedHosts: (wsHash: string, hosts: string[]) => void;
-  /** SDD 414 — host unpair of the active Companion device. */
-  onUnpairCompanionDevice: (wsHash: string) => void;
+  /** SDD 414/422 — host unpair; deviceId clears one row, omit clears all. */
+  onUnpairCompanionDevice: (wsHash: string, deviceId?: string) => void;
   /** SDD 414 — mint pair code (result arrives as companionPairOffer prop). */
   onIssueCompanionPairCode: (wsHash: string) => void;
   /** Ephemeral pair offer from host (not polled model). */
@@ -1274,7 +1274,7 @@ export function App(p: CockpitAppProps) {
                           <Button
                             variant="default"
                             data-testid="companion-device-unpair"
-                            onClick={() => p.onUnpairCompanionDevice(companion.wsHash)}
+                            onClick={() => p.onUnpairCompanionDevice(companion.wsHash, d.id)}
                           >
                             {s.devicesUnpair}
                           </Button>

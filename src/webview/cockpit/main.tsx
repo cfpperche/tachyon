@@ -544,7 +544,7 @@ function Root() {
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
       onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
       onSetCompanionAllowedHosts={(wsHash, hosts) => post(setCompanionAllowedHostsAction(wsHash, hosts))}
-      onUnpairCompanionDevice={(wsHash) => post(unpairCompanionDeviceAction(wsHash))}
+      onUnpairCompanionDevice={(wsHash, deviceId) => post(unpairCompanionDeviceAction(wsHash, deviceId))}
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
       companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}

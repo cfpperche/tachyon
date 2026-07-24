@@ -129,8 +129,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("proposal.reject"), id: text(64, 1) }).strict(),
   z.object({ action: z.literal("approval.resolve"), id: text(128, 1), decision }).strict(),
   z.object({ action: z.literal("config.health") }).strict(),
-  /** Host Control: revoke the active Companion session without the device token. */
-  z.object({ action: z.literal("companion.unpair") }).strict(),
+  /** Host Control: revoke Companion session(s) without the device token. Optional deviceId = one row. */
+  z.object({
+    action: z.literal("companion.unpair"),
+    deviceId: text(64, 1).optional(),
+  }).strict(),
   z.object({ action: z.literal("config.agent.add"), agent: name, cmd: text(16_384, 1), kind: z.enum(["agent", "terminal"]).optional() }).strict(),
   z.object({ action: z.literal("config.agent.clone"), agent: name, newName: name }).strict(),
   z.object({ action: z.literal("config.agent.rename"), agent: name, newName: name }).strict(),
