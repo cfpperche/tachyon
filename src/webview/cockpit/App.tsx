@@ -23,7 +23,7 @@ import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/
 import type { MissionControlVM } from "../mission-control/messages";
 import type { TaskDetailDispatch } from "../task-detail/App";
 import type { TaskDetailVM } from "../task-detail/messages";
-import type { ActivityDispatch } from "../activity/App";
+import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
 import type { HandoffDispatch } from "../handoff/App";
@@ -278,6 +278,9 @@ export interface CockpitAppProps {
   activityPrepended: boolean;
   activityImages: Record<string, string>;
   activityDispatch: ActivityDispatch;
+  /** t-a983e1 — host-listed targets for Activity share → agent QuickPicker. */
+  pendingShareAgentTargets?: PendingShareAgentTargets | null;
+  onConsumeShareAgentTargets?: () => void;
   /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
   probesVm?: ProbesVM;
   /** t-610705 (Phase C.3) — the Handoff section. */
@@ -726,7 +729,15 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.kind === "agent-activity" ? (
-            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
+            <ActivityApp
+              vm={p.activityVm}
+              prepended={p.activityPrepended}
+              images={p.activityImages}
+              dispatch={p.activityDispatch}
+              scrollContainer={activityScrollRef}
+              pendingShareAgentTargets={p.pendingShareAgentTargets}
+              onConsumeShareAgentTargets={p.onConsumeShareAgentTargets}
+            />
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
