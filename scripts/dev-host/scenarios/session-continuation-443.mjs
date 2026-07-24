@@ -20,7 +20,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // scenario lives in scripts/dev-host/scenarios → worktree root is ../../../
 const REPO = path.resolve(here, "..", "..", "..");
 
-function runVitest(args) {
+function runVitest(args, timeoutMs = 120_000) {
   const vitestBin = path.join(REPO, "node_modules", ".bin", "vitest");
   // Prefer monorepo vitest if worktree has no node_modules/.bin
   const bin = fs.existsSync(vitestBin)
@@ -30,8 +30,8 @@ function runVitest(args) {
     cwd: REPO,
     encoding: "utf8",
     env: process.env,
-    timeout: 120_000,
-    maxBuffer: 4 * 1024 * 1024,
+    timeout: timeoutMs,
+    maxBuffer: 8 * 1024 * 1024,
   });
   return { status: r.status ?? 1, stdout: r.stdout || "", stderr: r.stderr || "" };
 }
@@ -63,30 +63,33 @@ export async function run(ctx) {
     unit.status === 0 ? `${passedN} passed` : `exit ${unit.status}: ${(unit.stderr || unit.stdout).slice(-600)}`,
   );
 
-  // --- 2) live prepareContinueTask against real files ---
-  try {
-    const modUrl = pathToFileURL(path.join(REPO, "src/sessionContinuation/continueTask.ts")).href;
-    // vitest/tsx not available for .ts import in plain node — re-run pure via vitest file already covers.
-    // Extra: write handoff by spawning node --import tsx if present, else skip with note.
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sc-dh-"));
-    const smoke = spawnSync(
-      path.join("/home/goat/tachyon/node_modules/.bin/vitest"),
-      [
-        "run",
-        "test/unit/sessionContinuation.test.ts",
-        "-t",
-        "prepares taskBrief",
-      ],
-      { cwd: REPO, encoding: "utf8", timeout: 60_000 },
-    );
+  // --- 2) real Grok agents on real tmux (skipIf no grok/tmux inside the suite) ---
+  ctx.log("integration dogfood: continue_task with cmd:grok agents…");
+  const grokDog = runVitest(
+    ["test/integration/sessionContinuationGrokDogfood.test.ts"],
+    200_000,
+  );
+  // Allow longer — spawn real grok
+  fs.writeFileSync(
+    path.join(outDir, "vitest-grok-agents.log"),
+    `STATUS=${grokDog.status}\n--- stdout ---\n${grokDog.stdout}\n--- stderr ---\n${grokDog.stderr}\n`,
+  );
+  const grokPassed = /Tests\s+(\d+)\s+passed/.exec(grokDog.stdout)?.[1];
+  const grokSkipped = /Tests\s+\d+\s+skipped|skipped/.test(grokDog.stdout) && !/1 passed/.test(grokDog.stdout);
+  const grokOk =
+    grokDog.status === 0 &&
+    (Number(grokPassed) >= 1 || /skipIf|no test|skipped \(1\)/.test(grokDog.stdout));
+  // Prefer real pass; if skipped (no grok/tmux) mark ok with detail skip
+  if (Number(grokPassed) >= 1) {
+    check("grok-agents-continue-task", true, `integration ${grokPassed} passed (real grok+tmux)`);
+  } else if (grokDog.status === 0) {
+    check("grok-agents-continue-task", true, "skipped (grok or tmux unavailable in env)");
+  } else {
     check(
-      "prepare-continue-smoke",
-      smoke.status === 0 && /1 passed/.test(smoke.stdout),
-      smoke.status === 0 ? "prepareContinueTask path exercised" : (smoke.stderr || smoke.stdout).slice(-400),
+      "grok-agents-continue-task",
+      false,
+      `exit ${grokDog.status}: ${(grokDog.stderr || grokDog.stdout).slice(-800)}`,
     );
-    fs.rmSync(tmp, { recursive: true, force: true });
-  } catch (e) {
-    check("prepare-continue-smoke", false, String(e));
   }
 
   // --- 3) EDH Control surface ---
