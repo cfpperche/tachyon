@@ -44,6 +44,7 @@ never be import-confused:**
 | `DenseRow` | `dot?`, `name`, `sub?`, `meta?`, `actions?` | Sidebar-density rows |
 | `EmptyState` | `kind: empty\|loading\|error`, `message`, `action?` | Empty/loading/error bodies — never a bare "No items" `<div>` |
 | `QuickPicker` | `open`, `title`, `items`, `onSelect`, `onClose` | In-webview filterable pick list (product replacement for `vscode.window.showQuickPick` when the surface already owns candidates) |
+| `ToastProvider` / `useToast` | `show({ message, tone?, context?, durationMs? })` | Product toast stack for Control (shell + Board + Plugins). **Not** Attention. Mount Provider once on Control root. |
 
 ### Kit (`../shared/ui/kit`) — the authoring API for NEW UI
 

@@ -2,7 +2,7 @@ import { useMemo, useState } from "preact/hooks";
 import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction } from "../../plugins/viewModel";
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
-import type { Toast, ConfirmPayload } from "./messages";
+import type { ConfirmPayload } from "./messages";
 import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "./consentViewAcks";
 import { Button, IconButton, Tabs, Badge, PageChrome, EmptyState, Input } from "../shared/ui";
 import { KitSelect, KitDropdown, KitDropdownTrigger, KitDropdownContent, KitDropdownItem } from "../shared/ui/kit";
@@ -505,7 +505,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
   );
 }
 
-export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewModel; consent?: ConsentVM; busy?: string; toast?: Toast; dispatch: PluginsDispatch }) {
+export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; consent?: ConsentVM; busy?: string; dispatch: PluginsDispatch }) {
   const [tab, setTab] = useState<"installed" | "market">("installed");
   const [spec, setSpec] = useState("");
   const [filter, setFilter] = useState("");
@@ -611,11 +611,7 @@ export function App({ vm, consent, busy, toast, dispatch }: { vm?: PluginsViewMo
       {/* key by consent identity so a new consent REMOUNTS with fresh Keep/Replace state (no stale Replace+ack leak). */}
       {consent && <ConsentDrawer key={consent.token} vm={consent} dispatch={dispatch} />}
       {busy && <div class="busy"><span class="codicon codicon-loading" /> {busy}</div>}
-      {toast && (
-        <div class={`toast ${toast.ok ? "ok" : "err"}`} onClick={() => dispatch.dismissToast()}>
-          <Icon name={toast.ok ? "check" : "error"} /> {toast.message}
-        </div>
-      )}
+      {/* t-963b66 — result feedback uses product ToastHost (shell); no local .toast slot. */}
     </div>
   );
 }

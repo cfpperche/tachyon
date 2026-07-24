@@ -156,12 +156,9 @@
   .validation-close input { grid-column: 1 / -1; }
 }
 
-/* dogfood round 2 (#2) — toasts were a floating blue box off in the corner; the house pattern (Plugins view,
-   plugins.css's .toast) is bottom-CENTERED. Same position/shape here, kept as a stack (mission-control can
-   raise more than one rejection in flight) instead of Plugins' single-slot toast. */
-.toasts { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: var(--ds-2); z-index: 30; max-width: 80%; }
-.toast { display: flex; align-items: center; gap: var(--ds-2); padding: var(--ds-2) 16px; border-radius: var(--ds-radius); font-size: 12.5px; border: 1px solid color-mix(in srgb, var(--ds-info) 50%, transparent); background: var(--ds-card); color: var(--ds-info); }
-.toast.error { border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); color: var(--ds-err); }
+/* t-963b66 — Board toasts moved to product ToastHost (shared/ui + design-system .ds-toast*). */
+
+/* (local .toasts/.toast removed) */
 
 /* t-c0e711 — the card's right-click menu. Same design-system language as the sidebar's "more" menu
    (sidebar/App.tsx's MoreMenu, sidebar.css) — a full-screen transparent backdrop for click-outside-to-close,

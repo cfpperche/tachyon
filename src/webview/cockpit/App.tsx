@@ -38,7 +38,7 @@ import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
-import type { Toast as PluginsToast } from "../plugins/messages";
+
 import type { StudioDispatch } from "../shared/studio/protocol";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
@@ -230,7 +230,6 @@ const ALL_WORKSPACES = "__all__";
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
   strings: CockpitStrings | undefined;
-  toast?: string;
   auto: boolean;
   onToggleAuto: (on: boolean) => void;
   onRefresh: () => void;
@@ -303,7 +302,6 @@ export interface CockpitAppProps {
   pluginsVm?: PluginsViewModel;
   pluginsConsent?: ConsentVM;
   pluginsBusy?: string;
-  pluginsToast?: PluginsToast;
   pluginsDispatch: PluginsDispatch;
   /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
    *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
@@ -1412,7 +1410,6 @@ export function App(p: CockpitAppProps) {
             vm={p.pluginsVm}
             consent={p.pluginsConsent}
             busy={p.pluginsBusy}
-            toast={p.pluginsToast}
             dispatch={p.pluginsDispatch}
           />
         </Suspense>
@@ -1625,7 +1622,7 @@ export function App(p: CockpitAppProps) {
         ) : null}
       </main>
 
-      {p.toast ? <div class="ck-toast">{p.toast}</div> : null}
+
 
       {continuePick && m ? (() => {
         const from = continuePick.fromName;

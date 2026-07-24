@@ -1832,9 +1832,9 @@ export async function openCockpit(
             const bundles = await deps.collect();
             const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview" }));
             await vscode.env.clipboard.writeText(text);
-            live.webview.postMessage(toastMessage(s.copied));
+            live.webview.postMessage(toastMessage(s.copied, "ok"));
           } catch (err) {
-            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
           }
           return;
         }
@@ -1850,7 +1850,7 @@ export async function openCockpit(
               await deps.fleetStart(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
               await sendModel();
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1860,7 +1860,7 @@ export async function openCockpit(
               await deps.fleetStop(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
               await sendModel();
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1870,10 +1870,10 @@ export async function openCockpit(
           if (typeof c.id === "string") {
             try {
               const refusal = await deps.worktreeRemove(c.id, c.deleteBranch === true, typeof c.wsHash === "string" ? c.wsHash : undefined);
-              if (refusal) live.webview.postMessage(toastMessage(refusal));
+              if (refusal) live.webview.postMessage(toastMessage(refusal, "warn"));
               await sendModel();
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1881,10 +1881,10 @@ export async function openCockpit(
           if (typeof c.id === "string") {
             try {
               const refusal = await deps.worktreeForgetRecord(c.id, typeof c.wsHash === "string" ? c.wsHash : undefined);
-              if (refusal) live.webview.postMessage(toastMessage(refusal));
+              if (refusal) live.webview.postMessage(toastMessage(refusal, "warn"));
               await sendModel();
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1911,7 +1911,7 @@ export async function openCockpit(
           const summary = skipped.length > 0
             ? vscode.l10n.t("Cleanup: {0} done, {1} skipped — {2}", done, skipped.length, skipped.join("; "))
             : vscode.l10n.t("Cleanup: {0} done", done);
-          live.webview.postMessage(toastMessage(summary));
+          live.webview.postMessage(toastMessage(summary, "info"));
           await sendModel();
           return;
         }
@@ -1920,7 +1920,7 @@ export async function openCockpit(
             try {
               await deps.fleetTerminal(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1986,9 +1986,9 @@ export async function openCockpit(
                 typeof c.wsHash === "string" ? c.wsHash : undefined,
               );
               await sendModel();
-              live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started")));
+              live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started"), "ok"));
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -1998,14 +1998,14 @@ export async function openCockpit(
         case "copyText":
           if (typeof c.text === "string") {
             await vscode.env.clipboard.writeText(c.text);
-            live.webview.postMessage(toastMessage(s.copied));
+            live.webview.postMessage(toastMessage(s.copied, "ok"));
           }
           return;
         case "openConfigFile":
           try {
             await deps.openConfigFile(typeof c.wsHash === "string" ? c.wsHash : undefined);
           } catch (err) {
-            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
           }
           return;
         case "engineLogClear":
@@ -2013,9 +2013,9 @@ export async function openCockpit(
             try {
               await deps.clearEngineLog(c.wsHash);
               await sendModel();
-              live.webview.postMessage(toastMessage("Log cleared"));
+              live.webview.postMessage(toastMessage("Log cleared", "ok"));
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -2024,7 +2024,7 @@ export async function openCockpit(
             try {
               deps.openEngineJournal(c.wsHash);
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -2038,10 +2038,11 @@ export async function openCockpit(
                   c.enabled
                     ? vscode.l10n.t("Companion tab tools listed for agents")
                     : vscode.l10n.t("Companion tab tools hidden from agents"),
+                "ok",
                 ),
               );
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -2056,10 +2057,11 @@ export async function openCockpit(
                   hosts.length === 0
                     ? vscode.l10n.t("Companion allowed hosts cleared (all hosts)")
                     : vscode.l10n.t("Companion allowed hosts updated ({0})", String(hosts.length)),
+                "ok",
                 ),
               );
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -2069,9 +2071,9 @@ export async function openCockpit(
               const deviceId = typeof c.deviceId === "string" && c.deviceId ? c.deviceId : undefined;
               await deps.unpairCompanionDevice(c.wsHash, deviceId);
               await sendModel();
-              live.webview.postMessage(toastMessage(vscode.l10n.t("Companion device unpaired")));
+              live.webview.postMessage(toastMessage(vscode.l10n.t("Companion device unpaired"), "ok"));
             } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;
@@ -2082,7 +2084,7 @@ export async function openCockpit(
               live.webview.postMessage({ type: "companionPairOffer", offer });
               if (offer.ok) {
                 live.webview.postMessage(
-                  toastMessage(vscode.l10n.t("Companion pair code ready (expires soon)")),
+                  toastMessage(vscode.l10n.t("Companion pair code ready (expires soon)"), "ok"),
                 );
               }
             } catch (err) {
@@ -2090,7 +2092,7 @@ export async function openCockpit(
                 type: "companionPairOffer",
                 offer: { ok: false, reason: err instanceof Error ? err.message : String(err) },
               });
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }
           }
           return;

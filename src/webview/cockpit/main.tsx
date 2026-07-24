@@ -1,6 +1,7 @@
 import { render } from "preact";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { ToastProvider, useToast, type ToastTone } from "../shared/ui";
 import { App } from "./App";
 import {
   INIT,
@@ -146,9 +147,17 @@ const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
   r?.kind === "studio-new" || r?.kind === "studio-edit";
 
 function Root() {
+  return (
+    <ToastProvider>
+      <CockpitRoot />
+    </ToastProvider>
+  );
+}
+
+function CockpitRoot() {
+  const toastApi = useToast();
   const [strings, setStrings] = useState<CockpitStrings | undefined>(undefined);
   const [model, setModel] = useState<CockpitModel | undefined>(undefined);
-  const [toast, setToast] = useState<string | undefined>(undefined);
   /** Ephemeral pair offer — not stored in polled model. */
   const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
@@ -176,7 +185,6 @@ function Root() {
   const [pluginsVm, setPluginsVm] = useState<PluginsViewModel | undefined>(undefined);
   const [pluginsConsent, setPluginsConsent] = useState<ConsentVM | undefined>(undefined);
   const [pluginsBusy, setPluginsBusy] = useState<string | undefined>(undefined);
-  const [pluginsToast, setPluginsToast] = useState<{ ok: boolean; message: string } | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -184,7 +192,6 @@ function Root() {
   const [studioIncoming, setStudioIncoming] = useState<{ seq: number; message: unknown } | undefined>(undefined);
   const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
-  const toastTimer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
   const taskErrorSeqCounter = useRef(0);
   /**
@@ -358,13 +365,29 @@ function Root() {
       } else if (type === BUSY) {
         setPluginsBusy(typeof raw.label === "string" ? raw.label : "Working…");
       } else if (type === RESULT) {
-        setPluginsToast({ ok: !!raw.ok, message: String(raw.message ?? "") });
+        // t-963b66 — Plugins ops land on the product Toast stack (not a local .toast slot).
+        const msg = String(raw.message ?? "");
+        if (msg) {
+          toastApi.show({
+            message: msg,
+            tone: raw.ok ? "ok" : "err",
+            context: "Plugins",
+            durationMs: raw.ok ? undefined : 0,
+          });
+        }
         setPluginsBusy(undefined);
         setPluginsConsent(undefined);
       } else if (type === "toast" && typeof raw.text === "string") {
-        setToast(raw.text);
-        if (toastTimer.current) clearTimeout(toastTimer.current);
-        toastTimer.current = window.setTimeout(() => setToast(undefined), 2200);
+        const toneRaw = typeof raw.tone === "string" ? raw.tone : "info";
+        const tone: ToastTone =
+          toneRaw === "ok" || toneRaw === "warn" || toneRaw === "err" || toneRaw === "info"
+            ? toneRaw
+            : "info";
+        toastApi.show({
+          message: raw.text,
+          tone,
+          ...(typeof raw.context === "string" && raw.context ? { context: raw.context } : {}),
+        });
       } else if (type === "companionPairOffer" && raw.offer && typeof raw.offer === "object") {
         setCompanionPairOffer(raw.offer as CompanionPairOffer);
       } else if (isStudioFreezeBusMessage(raw)) {
@@ -386,9 +409,8 @@ function Root() {
     else window.postMessage(readyMessage(), "*");
     return () => {
       window.removeEventListener("message", onMsg);
-      if (toastTimer.current) clearTimeout(toastTimer.current);
     };
-  }, []);
+  }, [toastApi]);
 
   useEffect(() => {
     if (timer.current) {
@@ -492,13 +514,13 @@ function Root() {
         setPluginsConsent(undefined);
         post({ type: "cancel" });
       },
-      dismissToast: () => setPluginsToast(undefined),
+      dismissToast: () => toastApi.clear(),
       openConfig: (name: string) => post({ type: "openConfig", name }),
       openDocs: (name: string) => post({ type: "openDocs", name }),
       installExternal: (externalTool: string, pluginName?: string) =>
         post({ type: "installExternal", externalTool, ...(pluginName ? { pluginName } : {}) }),
     }),
-    [],
+    [toastApi],
   );
 
   const inspectorProps: Pick<
@@ -539,7 +561,6 @@ function Root() {
     <App
       model={model}
       strings={strings}
-      toast={toast}
       auto={auto}
       onToggleAuto={setAuto}
       onRefresh={() => post(refreshAction())}
@@ -596,7 +617,6 @@ function Root() {
       pluginsVm={pluginsVm}
       pluginsConsent={pluginsConsent}
       pluginsBusy={pluginsBusy}
-      pluginsToast={pluginsToast}
       pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
         // t-610705 (Phase C.1) — a plain setSection always lands on that section's own top-level

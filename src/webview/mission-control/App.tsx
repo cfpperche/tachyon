@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Badge, Button, Icon, Input, IconButton, PageChrome, Select } from "../shared/ui";
+import { Badge, Button, Icon, Input, IconButton, PageChrome, Select, useToastOptional } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
@@ -48,10 +48,9 @@ const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 const ALL_AGENTS = "__all__";
 const FLIP_CARD_ANIMATION_MS = 260;
 
-let toastSeq = 0;
-interface Toast { id: number; message: string; tone: "error" | "info" }
-
 export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
+  // Optional: Control shell wraps ToastProvider; preview harness may not.
+  const toast = useToastOptional();
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
   const [showDropped, setShowDropped] = useState(false);
   // t-2ab324 — toolbar toggle-filter replacing the always-on AwaitingHumanStrip: OFF leaves the board untouched,
@@ -61,7 +60,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
   // filters the board (debounced) — so typing feels immediate while `buildBoardModel` isn't re-run per keystroke.
   const [searchInput, setSearchInput] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [toasts, setToasts] = useState<Toast[]>([]);
   const [liveSnapshot, setLiveSnapshot] = useState<BoardSnapshot | undefined>(undefined);
   const [editSessions, setEditSessions] = useState<Record<string, EditSession>>({});
   const drag = useRef<DragSession | null>(null);
@@ -90,10 +88,13 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
     setLiveSnapshot(snapshot);
   };
 
-  const pushToast = (message: string, tone: Toast["tone"] = "error") => {
-    const id = ++toastSeq;
-    setToasts((t) => [...t, { id, message, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
+  // t-963b66 — product ToastHost (shell); Board no longer owns a local stack.
+  const pushToast = (message: string, tone: "error" | "info" = "error") => {
+    toast.show({
+      message,
+      tone: tone === "error" ? "err" : "info",
+      context: "Board",
+    });
   };
 
   // dueto F3 — a push arriving mid-drag is HELD (not applied to the DOM) until the drag ends; the drop itself
@@ -427,10 +428,6 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCopyId={(id) => { dispatch.copyTaskId(id); pushToast(`Copied ${id}`, "info"); }}
           />
         )}
-      </div>
-
-      <div class="toasts" role="status" aria-live="polite">
-        {toasts.map((t) => <div key={t.id} class={`toast ${t.tone}`}><Icon name={t.tone === "error" ? "error" : "check"} /> {t.message}</div>)}
       </div>
 
       <CardMenu menu={cardMenu} onRun={runCardAction} onClose={() => setCardMenu(null)} />
