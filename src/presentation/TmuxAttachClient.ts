@@ -1,18 +1,21 @@
 /**
  * Layer-2 agent pane transport: attach to an existing Tachyon tmux session through a
- * userspace PTY helper (`script -qfc …`) so we avoid a native `node-pty` dependency
- * (spec 186 rejected node-pty for the default path; layer 2 is additive and optional).
+ * **real PTY** (`node-pty`), matching VS Code integrated terminal semantics.
  *
- * Output/input ride the attach client stream. Resize is applied out-of-band via
- * `tmux resize-window` (script does not reliably forward SIGWINCH).
+ * Why node-pty (not `script`/pipes):
+ * - Extension Host has no controlling TTY; pipes leave TERM dumb and TUIs die
+ *   ("open terminal failed: terminal does not support clear").
+ * - Spec 186 rejected node-pty for the *default* path (layer 1 = integrated terminal).
+ *   Layer 2 owns the viewport, so it must own a PTY client — same model as Ghostty-in-webview.
+ *
+ * Attach args mirror `Terminals.open`: `tmux -u -S <socket> attach-session -d -t =<session>`.
  */
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { attachSocketPath } from "./Terminals.js";
 import { utf8LocaleEnv } from "../tmux/TmuxService.js";
 
 export interface TmuxAttachClientHandlers {
   onData: (chunk: string) => void;
-  onExit: (code: number | null, signal: NodeJS.Signals | null) => void;
+  onExit: (code: number | null, signal: number | null) => void;
   onError?: (err: Error) => void;
 }
 
@@ -24,104 +27,163 @@ export interface TmuxAttachClientOptions {
   exclusive?: boolean;
   /** Absolute tmux socket; defaults to `attachSocketPath()`. */
   socket?: string;
-  /** Injectable spawn for tests. */
-  spawnImpl?: typeof spawn;
   /** Injectable env. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Injectable pty spawn (tests). Signature mirrors node-pty's spawn.
+   * Production uses `require("node-pty").spawn`.
+   */
+  ptySpawn?: PtySpawn;
 }
 
-/** Build the shell command run under `script -qfc`. Exported for unit tests. */
+/** Minimal node-pty surface we depend on (keeps unit tests free of the native module). */
+export type PtySpawn = (
+  file: string,
+  args: string[],
+  options: {
+    name?: string;
+    cols?: number;
+    rows?: number;
+    cwd?: string;
+    env?: NodeJS.ProcessEnv;
+  },
+) => PtyProcess;
+
+export interface PtyProcess {
+  write(data: string): void;
+  resize(cols: number, rows: number): void;
+  kill(signal?: string): void;
+  onData(cb: (data: string) => void): { dispose?: () => void } | void;
+  onExit(cb: (e: { exitCode: number; signal?: number }) => void): { dispose?: () => void } | void;
+}
+
+/** Build tmux attach argv (no shell). Exported for unit tests. */
+export function buildAttachArgv(opts: {
+  socket: string;
+  session: string;
+  exclusive: boolean;
+}): { file: string; args: string[] } {
+  const args = ["-u", "-S", opts.socket, "attach-session"];
+  if (opts.exclusive) args.push("-d");
+  args.push("-t", `=${opts.session}`);
+  return { file: "tmux", args };
+}
+
+/** @deprecated shell form kept only for older tests — prefer buildAttachArgv. */
 export function buildAttachShellCommand(opts: {
   socket: string;
   session: string;
   exclusive: boolean;
 }): string {
-  const socket = shellSingleQuote(opts.socket);
-  const session = shellSingleQuote(`=${opts.session}`);
-  const detach = opts.exclusive ? " -d" : "";
-  return `tmux -u -S ${socket} attach-session${detach} -t ${session}`;
+  const { file, args } = buildAttachArgv(opts);
+  return [file, ...args.map(shellSingleQuote)].join(" ");
 }
 
 export function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function loadPtySpawn(): PtySpawn {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const pty = require("node-pty") as { spawn: PtySpawn };
+  if (typeof pty?.spawn !== "function") {
+    throw new Error("node-pty is not available (native module failed to load)");
+  }
+  return pty.spawn;
+}
+
 /**
- * Live attach client for one session. One process; dispose kills it (detaches; does not kill the session).
+ * Live attach client for one session. dispose() kills the PTY client only —
+ * it never kills the underlying tmux session / agent process.
  */
 export class TmuxAttachClient {
-  private child: ChildProcessWithoutNullStreams | null = null;
+  private proc: PtyProcess | null = null;
   private disposed = false;
 
   constructor(private readonly handlers: TmuxAttachClientHandlers) {}
 
   get alive(): boolean {
-    return this.child !== null && !this.disposed;
+    return this.proc !== null && !this.disposed;
   }
 
   start(opts: TmuxAttachClientOptions): void {
     if (this.disposed) throw new Error("TmuxAttachClient is disposed");
-    if (this.child) throw new Error("TmuxAttachClient already started");
+    if (this.proc) throw new Error("TmuxAttachClient already started");
 
     const socket = opts.socket ?? attachSocketPath(opts.env);
     const exclusive = opts.exclusive !== false;
-    const cmd = buildAttachShellCommand({ socket, session: opts.session, exclusive });
-    const spawnImpl = opts.spawnImpl ?? spawn;
-    // Extension Host spawns without a controlling TTY → inherited TERM is often unset or "dumb".
-    // tmux/script then fail immediately with "open terminal failed: terminal does not support clear"
-    // and the webview shows a black pane. Force a real terminal type for the attach client PTY.
+    const cols = Math.max(2, Math.floor(opts.cols));
+    const rows = Math.max(1, Math.floor(opts.rows));
+    const { file, args } = buildAttachArgv({ socket, session: opts.session, exclusive });
+
     const baseEnv = opts.env ?? process.env;
+    // Force a capable terminal identity — Extension Host has no TTY inheritance.
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
       ...utf8LocaleEnv(baseEnv),
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
-      COLUMNS: String(Math.max(2, opts.cols)),
-      LINES: String(Math.max(1, opts.rows)),
     };
 
-    const child = spawnImpl("script", ["-qfc", cmd, "/dev/null"], {
-      stdio: ["pipe", "pipe", "pipe"],
-      env,
-    }) as ChildProcessWithoutNullStreams;
+    const spawnPty = opts.ptySpawn ?? loadPtySpawn();
+    let proc: PtyProcess;
+    try {
+      proc = spawnPty(file, args, {
+        name: "xterm-256color",
+        cols,
+        rows,
+        env,
+      });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      this.handlers.onError?.(error);
+      throw error;
+    }
 
-    this.child = child;
+    this.proc = proc;
 
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      if (!this.disposed) this.handlers.onData(chunk);
+    proc.onData((data) => {
+      if (!this.disposed) this.handlers.onData(data);
     });
-    child.stderr.on("data", (chunk: string) => {
-      // script occasionally writes diagnostics to stderr; surface as data so xterm can show them
-      if (!this.disposed && chunk.trim()) this.handlers.onData(chunk);
-    });
-    child.on("error", (err) => {
-      this.handlers.onError?.(err instanceof Error ? err : new Error(String(err)));
-    });
-    child.on("exit", (code, signal) => {
-      this.child = null;
-      if (!this.disposed) this.handlers.onExit(code, signal);
+    proc.onExit(({ exitCode, signal }) => {
+      this.proc = null;
+      if (!this.disposed) {
+        this.handlers.onExit(
+          typeof exitCode === "number" ? exitCode : null,
+          typeof signal === "number" ? signal : null,
+        );
+      }
     });
   }
 
   write(data: string): void {
-    if (!this.child?.stdin.writable) return;
-    this.child.stdin.write(data);
+    if (!this.proc || this.disposed) return;
+    try {
+      this.proc.write(data);
+    } catch {
+      /* PTY may already be dead */
+    }
+  }
+
+  /** Resize the PTY client (and thus the tmux window when this client is the active size leader). */
+  resize(cols: number, rows: number): void {
+    if (!this.proc || this.disposed) return;
+    const c = Math.max(2, Math.floor(cols));
+    const r = Math.max(1, Math.floor(rows));
+    try {
+      this.proc.resize(c, r);
+    } catch {
+      /* ignore */
+    }
   }
 
   dispose(): void {
     this.disposed = true;
-    const child = this.child;
-    this.child = null;
-    if (!child) return;
+    const proc = this.proc;
+    this.proc = null;
+    if (!proc) return;
     try {
-      child.stdin.end();
-    } catch {
-      /* ignore */
-    }
-    try {
-      child.kill("SIGTERM");
+      proc.kill();
     } catch {
       /* ignore */
     }

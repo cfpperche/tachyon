@@ -212,9 +212,9 @@ Started on branch `tachyon/change/agent-pane-first-party`.
 | Choice | Decision |
 |---|---|
 | Viewport | `@xterm/xterm` + `@xterm/addon-fit` in Preact webview `tachyonAgentPane` |
-| Transport | `script -qfc 'tmux … attach-session -d …'` userspace PTY (no `node-pty`; honors 186 native-module rejection for default path) |
-| Exclusive attach | **Yes (`-d`)** for MVP — same as layer 1; opening (2) detaches other clients |
-| Resize | `tmux resize-window -x -y` from FitAddon (script does not reliably forward SIGWINCH) |
+| Transport | **`node-pty`** real PTY → `tmux -u -S <socket> attach-session -d -t =<session>` (same shape as layer-1 `Terminals.open`). Spec 186 still rejects node-pty for the *default* path; layer 2 owns the viewport so it must own a PTY. `script`/pipes rejected — TERM dumb → black pane. |
+| Exclusive attach | **Yes (`-d`)** for MVP — same as layer 1; opening (2) detaches other clients (and vice versa) |
+| Resize | `node-pty` `resize(cols,rows)` + backup `tmux resize-window` from FitAddon |
 | Open path | Command **Tachyon: Open Agent Pane** (`tachyon.openAgentPane` / `…Item`); layer 1 remains **Open Agent Terminal** default |
 | Chrome (slice 1 start) | Identity strip + status + button to open integrated terminal |
 | Not yet | Stage/submit inject bar, markers, selection→pin, multi-agent mosaic |

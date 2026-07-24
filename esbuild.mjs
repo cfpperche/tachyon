@@ -111,7 +111,8 @@ const extension = {
   platform: "node",
   format: "cjs",
   target: "node20",
-  external: ["vscode"],
+  // node-pty is a native addon — must load from node_modules at runtime (layer-2 agent pane).
+  external: ["vscode", "node-pty"],
   define: nodeDefines,
   sourcemap: true,
   logLevel: "info",

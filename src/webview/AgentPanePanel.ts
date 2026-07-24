@@ -1,5 +1,5 @@
 /**
- * Layer-2 first-party agent pane host: WebviewPanel + xterm bundle + tmux attach client.
+ * Layer-2 first-party agent pane host: WebviewPanel + xterm bundle + node-pty tmux attach.
  * Coexists with layer-1 integrated terminal (`Terminals`); does not replace it.
  */
 import * as vscode from "vscode";
@@ -20,7 +20,7 @@ export interface AgentPaneOpenArgs {
   session: string;
   title?: string;
   wsHash?: string;
-  /** Apply window size to the tmux session (cols × rows). */
+  /** Apply window size to the tmux session (cols × rows) — backup when PTY resize is not enough. */
   resizeSession: (session: string, cols: number, rows: number) => Promise<void>;
 }
 
@@ -31,6 +31,10 @@ interface LivePane {
   title: string;
   attach: TmuxAttachClient | null;
   ready: boolean;
+  /** Last FitAddon size — used to start attach only once we know geometry. */
+  lastCols: number;
+  lastRows: number;
+  started: boolean;
 }
 
 export class AgentPanePanelManager {
@@ -78,7 +82,7 @@ export class AgentPanePanelManager {
         enableFindWidget: true,
       },
     );
-    // Same glyph as sidebar openPane action (codicon "terminal") — light/dark SVG pair under media/icons/
+    // Same glyph as sidebar openPane action (codicon "terminal")
     panel.iconPath = panelIcon(this.extensionUri, "terminal");
 
     const live: LivePane = {
@@ -88,6 +92,9 @@ export class AgentPanePanelManager {
       title,
       attach: null,
       ready: false,
+      lastCols: 0,
+      lastRows: 0,
+      started: false,
     };
     this.byAgent.set(args.agent, live);
 
@@ -113,15 +120,24 @@ export class AgentPanePanelManager {
     };
 
     const startAttach = (cols: number, rows: number) => {
+      if (live.started && live.attach?.alive) {
+        live.attach.resize(cols, rows);
+        void args.resizeSession(args.session, cols, rows).catch(() => {
+          /* best-effort */
+        });
+        return;
+      }
+
       live.attach?.dispose();
       const attach = new TmuxAttachClient({
         onData: (chunk) => post({ type: "agent-pane/data", data: chunk }),
         onExit: (code, signal) => {
           live.attach = null;
+          live.started = false;
           post({
             type: "agent-pane/exit",
             code,
-            signal: signal ?? null,
+            signal: signal !== null && signal !== undefined ? String(signal) : null,
           });
           post({ type: "agent-pane/status", status: "detached" });
         },
@@ -134,21 +150,31 @@ export class AgentPanePanelManager {
       });
       live.attach = attach;
       try {
+        // exclusive -d matches Terminals.open so we own geometry like the integrated terminal.
         attach.start({
           session: args.session,
           cols,
           rows,
           exclusive: true,
         });
+        live.started = true;
         post({ type: "agent-pane/status", status: "attached" });
         void args.resizeSession(args.session, cols, rows).catch(() => {
           /* best-effort */
         });
       } catch (err) {
+        live.started = false;
         const message = err instanceof Error ? err.message : String(err);
         post({ type: "agent-pane/status", status: `error: ${message}` });
         void vscode.window.showErrorMessage(vscode.l10n.t("Agent pane attach failed: {0}", message));
       }
+    };
+
+    const maybeStart = () => {
+      if (!live.ready) return;
+      const cols = live.lastCols > 0 ? live.lastCols : 120;
+      const rows = live.lastRows > 0 ? live.lastRows : 40;
+      startAttach(cols, rows);
     };
 
     panel.webview.onDidReceiveMessage((raw: unknown) => {
@@ -162,8 +188,7 @@ export class AgentPanePanelManager {
           title,
           status: "connecting…",
         });
-        // Default size until first resize from the webview fit addon
-        startAttach(120, 40);
+        maybeStart();
         return;
       }
       if (raw.type === "agent-pane/input") {
@@ -171,9 +196,16 @@ export class AgentPanePanelManager {
         return;
       }
       if (raw.type === "agent-pane/resize") {
-        void args.resizeSession(args.session, raw.cols, raw.rows).catch(() => {
-          /* best-effort */
-        });
+        live.lastCols = raw.cols;
+        live.lastRows = raw.rows;
+        if (live.started && live.attach?.alive) {
+          live.attach.resize(raw.cols, raw.rows);
+          void args.resizeSession(args.session, raw.cols, raw.rows).catch(() => {
+            /* best-effort */
+          });
+        } else {
+          maybeStart();
+        }
       }
     });
 
