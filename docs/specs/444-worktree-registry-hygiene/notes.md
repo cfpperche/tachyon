@@ -67,3 +67,11 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Dogfood log
+
+### 2026-07-24T16:30:15Z — fail (0/1) — source: tasks.md — commit: 8ed2c4020e42a88255c99292c8ff0209820a9dc9
+- `npx vitest run test/unit/worktreeClassify.test.ts` — fail
+
+### 2026-07-24T16:30:41Z — pass (1/1) — source: tasks.md — commit: 8ed2c4020e42a88255c99292c8ff0209820a9dc9
+- `npx vitest run test/unit/worktreeClassify.test.ts` — pass
