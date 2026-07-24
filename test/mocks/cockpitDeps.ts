@@ -40,6 +40,8 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     fleetContinueTask: async (_from, _to) => {},
     fleetTerminal: async () => {},
     revealPath: () => {},
+    worktreeRemove: async () => undefined,
+    worktreeForgetRecord: async () => undefined,
     openConfigFile: async () => {},
     clearEngineLog: async () => {},
     openEngineJournal: () => {},

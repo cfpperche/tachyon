@@ -91,6 +91,8 @@
   "Catch up if missed (daily only)": "Recuperar se perdido (só diário)",
   "Choose a running AI agent": "Escolha um agente de IA em execução",
   "Choose a template": "Escolha um template",
+  "Cleanup: {0} done": "Limpeza: {0} concluído(s)",
+  "Cleanup: {0} done, {1} skipped — {2}": "Limpeza: {0} concluído(s), {1} pulado(s) — {2}",
   "Clone '{0}' as…": "Clonar '{0}' como…",
   "Clone…": "Clonar…",
   "Closed": "Encerrado",

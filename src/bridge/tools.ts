@@ -988,6 +988,31 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "worktree_hygiene",
+    {
+      description:
+        "spec 444 — list Tachyon-managed worktree registry entries WITH a fail-closed hygiene " +
+        "classification per entry: record-only (path gone), ready-to-remove (clean, unoccupied, " +
+        "no unique commits vs its recorded base), needs-review (dirty and/or unique commits, with " +
+        "a stated reason), or occupied (a live agent holds it). Read-only — never mutates the " +
+        "registry or any checkout. Slower than list_worktrees (probes git per entry); prefer " +
+        "list_worktrees for identity-only reads on a hot path.",
+      inputSchema: {
+        kind: z.enum(["agent", "change"]).optional(),
+        status: z.enum(["active", "abandoned"]).optional(),
+      },
+    },
+    async ({ kind, status }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        return ok(JSON.stringify(await deps.managedWorktrees.listClassified({ kind, status }), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "get_worktree",
     {
       description: "Get one managed worktree by id or absolute path.",

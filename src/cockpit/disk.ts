@@ -1,36 +1,17 @@
 /**
  * Host-side (Node) disk reads for Cockpit collect — never import from webview bundles.
+ *
+ * spec 444 (t-9f8dfc): `readManagedWorktreesFromDisk` was DELETED — a POC-era raw-JSON reader
+ * (commit 656f6393, zero tests, lenient parallel parser, `catch {} → []`) that bypassed
+ * `loadManagedWorktreeStore`'s fail-closed validation. The Worktrees tab now reads the engine's
+ * `worktrees.classified` RPC (ManagedWorktreeService: validated loader + reconcile + classifier);
+ * engine unreachable shows an honest error state, never unverified rows. Its sibling below carries
+ * the same debt for the Deliveries tab — tracked as t-43c6fa, deliberately untouched here.
  */
 
 import fs from "node:fs";
 import path from "node:path";
-import type { CockpitDeliveryRow, CockpitWorktreeRow } from "./model.js";
-
-/** Best-effort read of managed worktree registry from a workspace root. */
-export function readManagedWorktreesFromDisk(
-  workspaceRoot: string,
-  meta?: { folder?: string; wsHash?: string },
-): CockpitWorktreeRow[] {
-  const file = path.join(workspaceRoot, ".tachyon", "managed-worktrees.json");
-  try {
-    if (!fs.existsSync(file)) return [];
-    const raw = JSON.parse(fs.readFileSync(file, "utf8")) as { entries?: Array<Record<string, unknown>> };
-    const entries = Array.isArray(raw.entries) ? raw.entries : [];
-    return entries.map((e, i) => ({
-      id: String(e.id ?? `mw-${i}`),
-      kind: String(e.kind ?? "unknown"),
-      path: String(e.path ?? ""),
-      branch: String(e.branch ?? ""),
-      status: String(e.status ?? "active"),
-      slug: e.slug != null ? String(e.slug) : undefined,
-      agent: e.agent != null ? String(e.agent) : undefined,
-      ...(meta?.folder ? { folder: meta.folder } : {}),
-      ...(meta?.wsHash ? { wsHash: meta.wsHash } : {}),
-    }));
-  } catch {
-    return [];
-  }
-}
+import type { CockpitDeliveryRow } from "./model.js";
 
 /** Best-effort list of git-delivery JSON files under .tachyon/git-deliveries if present. */
 export function readGitDeliveriesFromDisk(

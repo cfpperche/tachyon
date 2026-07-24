@@ -358,3 +358,132 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(fs.existsSync(entry2.path)).toBe(true);
   });
 });
+
+/** spec 444 — listClassified() real-git integration (the classify.ts unit suite covers the pure logic). */
+describe("spec 444 ManagedWorktreeService.listClassified (real git)", () => {
+  const dirs: string[] = [];
+  let repo: string;
+  let base: string;
+
+  const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8" });
+
+  function mkRepo(): string {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "mw-classify-repo-"));
+    dirs.push(d);
+    git(["init", "-b", "main"], d);
+    git(["config", "user.email", "t@t.dev"], d);
+    git(["config", "user.name", "T"], d);
+    fs.writeFileSync(path.join(d, "README.md"), "hi\n");
+    git(["add", "-A"], d);
+    git(["commit", "-m", "init"], d);
+    return d;
+  }
+
+  function service(occupancy: () => Promise<undefined | { state: "live"; agent: string; cwd: string }> = async () => undefined) {
+    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const manager = new WorktreeManager({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings, occupancy });
+    return new ManagedWorktreeService({ workspaceRoot: repo, wsHash: "h", getSettings: () => settings, manager, occupancy });
+  }
+
+  beforeEach(() => {
+    repo = mkRepo();
+    base = fs.mkdtempSync(path.join(os.tmpdir(), "mw-classify-base-"));
+    dirs.push(base);
+  });
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  it("t-9f8dfc: a fresh, clean, unoccupied change worktree classifies ready-to-remove", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-clean", createdBy: "alice" });
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.id).toBe(entry.id);
+    expect(row?.classification.state).toBe("ready-to-remove");
+    expect(row?.classification.containedInBase).toBe(true);
+  });
+
+  it("t-9f8dfc: an uncommitted change classifies needs-review with a stated reason", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-dirty", createdBy: "alice" });
+    fs.writeFileSync(path.join(entry.path, "wip.txt"), "uncommitted\n");
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.reasons.join(" ")).toMatch(/uncommitted/);
+  });
+
+  it("t-9f8dfc: a new commit ahead of base classifies needs-review with a commit count", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-ahead", createdBy: "alice" });
+    fs.writeFileSync(path.join(entry.path, "new.txt"), "unique work\n");
+    git(["add", "-A"], entry.path);
+    git(["commit", "-m", "unique work"], entry.path);
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.aheadOfBase).toBe(1);
+    expect(row?.classification.containedInBase).toBe(false);
+  });
+
+  it("t-9f8dfc: a live occupant classifies occupied even on an otherwise-clean worktree", async () => {
+    let occ: { state: "live"; agent: string; cwd: string } | undefined;
+    const svc = service(async () => occ);
+    const entry = await svc.createChange({ slug: "classify-occupied", createdBy: "alice" });
+    occ = { state: "live", agent: "other", cwd: entry.path };
+    const [row] = await svc.listClassified({ kind: "change" });
+    expect(row?.classification.state).toBe("occupied");
+    expect(row?.classification.occupant?.agent).toBe("other");
+  });
+
+  it("t-9f8dfc: an abandoned tombstone (path gone) classifies record-only, never ready-to-remove", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-gone", createdBy: "alice" });
+    fs.rmSync(entry.path, { recursive: true, force: true });
+    const rows = await svc.listClassified({ kind: "change" });
+    const row = rows.find((r) => r.id === entry.id);
+    expect(row?.status).toBe("abandoned"); // reconcileStore flips it on the same list() pass
+    expect(row?.classification.state).toBe("record-only");
+    expect(row?.classification.pathExists).toBe(false);
+  });
+
+  it("t-9f8dfc blocker fix: an unresolvable baseRef classifies needs-review, never ready-to-remove (real git, non-throwing probe)", async () => {
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-bad-base", createdBy: "alice" });
+    // Simulate the real-world shape: a registered baseRef that no longer resolves (deleted branch,
+    // gc'd SHA, typo at register time — spec 392's register() never validated it). rev-list fails
+    // NON-throwing inside WorktreeManager.status; before the fix this read as 0-ahead => contained.
+    const store = JSON.parse(fs.readFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), "utf8")) as {
+      entries: Array<{ id: string; baseRef: string }>;
+    };
+    for (const e of store.entries) if (e.id === entry.id) e.baseRef = "refs/heads/never-existed";
+    fs.writeFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), JSON.stringify({ schemaVersion: 1, entries: store.entries }, null, 2));
+
+    const rows = await svc.listClassified({ kind: "change" });
+    const row = rows.find((r) => r.id === entry.id);
+    expect(row?.classification.state).toBe("needs-review");
+    expect(row?.classification.containedInBase).toBe(false);
+    expect(row?.classification.reasons.join(" ")).toMatch(/could not be resolved/);
+
+    // Defense-in-depth: the classification-gated removal refuses too — and the checkout survives.
+    const refused = await svc.removeClassified(entry.id, { actor: { kind: "human" } });
+    expect(refused.removed).toBe(false);
+    expect(refused.error).toMatch(/not ready-to-remove/);
+    expect(fs.existsSync(entry.path)).toBe(true);
+  });
+
+  it("t-9f8dfc: removeClassified removes a genuinely-safe checkout and refuses one that turned dirty since render", async () => {
+    const svc = service();
+    const clean = await svc.createChange({ slug: "rc-clean", createdBy: "alice" });
+    const turnsDirty = await svc.createChange({ slug: "rc-dirty", createdBy: "alice" });
+    // State changed between the UI's render-time verdict and the click: re-validation must refuse.
+    fs.writeFileSync(path.join(turnsDirty.path, "wip.txt"), "uncommitted\n");
+
+    const ok = await svc.removeClassified(clean.id, { actor: { kind: "human" } });
+    expect(ok.removed).toBe(true);
+    expect(fs.existsSync(clean.path)).toBe(false);
+
+    const refused = await svc.removeClassified(turnsDirty.id, { actor: { kind: "human" } });
+    expect(refused.removed).toBe(false);
+    expect(refused.error).toMatch(/uncommitted/);
+    expect(fs.existsSync(turnsDirty.path)).toBe(true);
+  });
+});
