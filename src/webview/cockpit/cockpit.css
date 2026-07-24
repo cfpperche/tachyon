@@ -287,7 +287,8 @@ main.ck-main.ck-main--mission,
   box-sizing: border-box;
 }
 
-/* t-41fb0a — visual-only Runtime Config prototype. */
+/* SDD 446 — Runtime Config inventory. Uses Control's PageChrome/Button/Badge primitives;
+   these rules only compose the source-specific inventory into the same control rhythm. */
 .rcp-root {
   width: 100%;
   max-width: 1180px;
@@ -303,27 +304,43 @@ main.ck-main.ck-main--mission,
 
 .rcp-toolbar {
   display: grid;
-  grid-template-columns: minmax(150px, 0.7fr) minmax(235px, 1fr) minmax(210px, 1fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(235px, 1fr) minmax(260px, 1.2fr) auto;
+  align-items: start;
   gap: 12px;
   padding: 12px;
 }
 
-.rcp-runtime-picker,
-.rcp-scope-picker,
-.rcp-source {
+.rcp-toolbar-field,
+.rcp-toolbar-action {
   display: grid;
+  grid-template-rows: 12px 32px;
   gap: 5px;
   min-width: 0;
 }
 
-.rcp-runtime-picker .ds-select-trigger {
-  width: 100%;
+.rcp-toolbar-action .ds-btn {
+  height: 32px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.rcp-toolbar-value {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .rcp-segmented {
   display: flex;
-  min-height: 26px;
+  min-height: 32px;
   overflow: hidden;
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius);
@@ -338,7 +355,7 @@ main.ck-main.ck-main--mission,
   color: var(--ds-muted);
   cursor: pointer;
   font-family: inherit;
-  font-size: 9px;
+  font-size: 10px;
   white-space: nowrap;
 }
 
@@ -364,18 +381,11 @@ main.ck-main.ck-main--mission,
   text-transform: uppercase;
 }
 
-.rcp-source code {
+.rcp-source-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--vscode-textLink-foreground);
-  font-size: 11px;
-}
-
-.rcp-toolbar-actions {
-  display: flex;
-  gap: 5px;
-  align-items: center;
 }
 
 .rcp-impact {
@@ -404,6 +414,8 @@ main.ck-main.ck-main--mission,
 .rcp-card {
   min-width: 0;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .rcp-card-head {
@@ -450,7 +462,15 @@ main.ck-main.ck-main--mission,
   align-items: center;
   gap: 10px;
   padding: 5px 8px;
+  font-size: 11px;
+}
+
+.rcp-setting code {
+  overflow: hidden;
+  color: var(--vscode-textLink-foreground);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rcp-setting select {
@@ -560,6 +580,16 @@ main.ck-main.ck-main--mission,
   padding: 4px 6px;
 }
 
+.rcp-runtime-state {
+  margin-bottom: 8px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--vscode-textLink-foreground);
+  background: color-mix(in srgb, var(--vscode-textBlockQuote-background) 82%, transparent);
+  color: var(--ds-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .rcp-card--other pre {
   margin: 0;
   line-height: 1.6;
@@ -570,10 +600,6 @@ main.ck-main.ck-main--mission,
   .rcp-toolbar,
   .rcp-grid {
     grid-template-columns: 1fr;
-  }
-
-  .rcp-toolbar-actions {
-    flex-wrap: wrap;
   }
 
   .rcp-card--other {

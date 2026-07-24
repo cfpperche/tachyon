@@ -321,7 +321,7 @@ function strings(): CockpitStrings {
     runtimeConfigReload: t("Reload"),
     runtimeConfigOpenFile: t("Open file"),
     runtimeConfigSave: t("Save changes"),
-    runtimeConfigViewRaw: t("View raw"),
+    runtimeConfigViewRaw: t("View keys"),
     tmuxTitle: t("tmux"),
     tmuxHint: t("Server inspector (embedded)."),
     pluginsTitle: t("Plugins"),

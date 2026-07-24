@@ -11,6 +11,7 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 - Slice A inventories only Codex `~/.codex/config.toml` and workspace `.codex/config.toml`. It reports the six scalar fields already measured by SDD 442, MCP server names, source revision/path, and non-MCP unknown key paths. It never sends file bytes, MCP command bodies, or environment values to the webview.
 - The agent list is explicitly labelled potential. This slice can identify Codex agents, but does not yet carry each canonical profile's family/source selection into Control; claiming an exact effective relationship would be misleading.
 - The source-file action is constrained host-side to the two paths emitted by the current snapshot, so a forged webview message cannot open arbitrary local files.
+- Runtime-managed `hooks.state.*` records are counted and summarized separately. They are not useful human configuration and their many trust hashes must not drown out actual unknown settings.
 
 ## Deviations
 

@@ -29,6 +29,8 @@ describe("Codex runtime configuration inventory", () => {
       'command = "contains-a-secret-argument"',
       '[hooks.SessionStart]',
       'command = "also-hidden"',
+      '[hooks.state]',
+      'trusted_hash = "runtime-managed"',
     ].join("\n"));
 
     const snapshot = inspectCodexRuntimeConfig({
@@ -43,8 +45,10 @@ describe("Codex runtime configuration inventory", () => {
     expect(snapshot.global.knownSettings).toEqual([{ key: "approval_policy", label: "Approval policy", value: "on-request" }]);
     expect(snapshot.global.mcpServers).toEqual(["bridge"]);
     expect(snapshot.global.unknownKeys).toEqual(["hooks.SessionStart.command", "model"]);
+    expect(snapshot.global.internalStateCount).toBe(1);
     expect(JSON.stringify(snapshot)).not.toContain("contains-a-secret-argument");
     expect(JSON.stringify(snapshot)).not.toContain("also-hidden");
+    expect(JSON.stringify(snapshot)).not.toContain("runtime-managed");
     expect(snapshot.potentialAgents).toEqual(["codex"]);
     expect(snapshot.workspace.exists).toBe(false);
     expect(snapshot.global.revision).toMatch(/^[a-f0-9]{12}$/);

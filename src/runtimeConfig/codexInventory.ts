@@ -22,6 +22,8 @@ export interface RuntimeConfigSourceInventory {
   knownSettings: RuntimeConfigKnownSetting[];
   mcpServers: string[];
   unknownKeys: string[];
+  /** Runtime-maintained records, intentionally summarized rather than listed. */
+  internalStateCount: number;
   parseError?: string;
 }
 
@@ -78,7 +80,7 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
     text = fs.readFileSync(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return { scope, path: file, exists: false, knownSettings: [], mcpServers: [], unknownKeys: [] };
+      return { scope, path: file, exists: false, knownSettings: [], mcpServers: [], unknownKeys: [], internalStateCount: 0 };
     }
     return {
       scope,
@@ -87,6 +89,7 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
       knownSettings: [],
       mcpServers: [],
       unknownKeys: [],
+      internalStateCount: 0,
       parseError: error instanceof Error ? error.message : String(error),
     };
   }
@@ -105,18 +108,22 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
       return value === undefined ? [] : [{ key, label, value: displayValue(value) }];
     });
     const mcp = isRecord(parsed.mcp_servers) ? parsed.mcp_servers : {};
-    const unknownKeys = leafPaths(parsed)
+    const allPaths = leafPaths(parsed);
+    const internalStateCount = allPaths.filter((key) => key.startsWith("hooks.state.")).length;
+    const unknownKeys = allPaths
       .filter((key) => !KNOWN_SETTINGS.some((known) => known.key === key))
       // MCP details may contain commands or environment references. Their names are
       // shown separately; their body is intentionally not surfaced in Control.
-      .filter((key) => !key.startsWith("mcp_servers."));
-    return { ...base, knownSettings, mcpServers: Object.keys(mcp).sort(), unknownKeys: unknownKeys.sort() };
+      .filter((key) => !key.startsWith("mcp_servers."))
+      .filter((key) => !key.startsWith("hooks.state."));
+    return { ...base, knownSettings, mcpServers: Object.keys(mcp).sort(), unknownKeys: unknownKeys.sort(), internalStateCount };
   } catch (error) {
     return {
       ...base,
       knownSettings: [],
       mcpServers: [],
       unknownKeys: [],
+      internalStateCount: 0,
       parseError: error instanceof Error ? error.message : String(error),
     };
   }

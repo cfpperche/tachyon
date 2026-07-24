@@ -953,11 +953,11 @@ function RuntimeConfigInventory({
       />
 
       <div class="rcp-toolbar">
-        <div class="rcp-runtime-picker">
+        <div class="rcp-toolbar-field">
           <span class="rcp-eyebrow">{s.runtimeConfigRuntime}</span>
-          <strong>OpenAI Codex</strong>
+          <div class="rcp-toolbar-value">OpenAI Codex</div>
         </div>
-        <div class="rcp-scope-picker">
+        <div class="rcp-toolbar-field">
           <span class="rcp-eyebrow">{s.runtimeConfigScope}</span>
           <div class="rcp-segmented" role="group" aria-label={s.runtimeConfigScope}>
             <button type="button" class={scope === "global" ? "active" : ""} onClick={() => setScope("global")}>
@@ -968,11 +968,12 @@ function RuntimeConfigInventory({
             </button>
           </div>
         </div>
-        <div class="rcp-source">
+        <div class="rcp-toolbar-field">
           <span class="rcp-eyebrow">{s.runtimeConfigSourceFile}</span>
-          <code>{config.path}</code>
+          <code class="rcp-toolbar-value rcp-source-value">{config.path}</code>
         </div>
-        <div class="rcp-toolbar-actions">
+        <div class="rcp-toolbar-action">
+          <span class="rcp-eyebrow" aria-hidden="true">&nbsp;</span>
           <Button variant="default" onClick={() => onOpenSource(config.path)}>{s.runtimeConfigOpenFile}</Button>
         </div>
       </div>
@@ -1017,18 +1018,17 @@ function RuntimeConfigInventory({
             <div>
               <span class="rcp-eyebrow">{s.runtimeConfigOther}</span>
               <h2>{config.unknownKeys.length} {s.runtimeConfigDetected}</h2>
-              <p>Values are intentionally not shown here. Open the source file to inspect or edit them.</p>
+              <p>Values stay in the source file. This view lists only keys that are not yet editable in Control.</p>
             </div>
             <Button variant="default" onClick={() => setUnknownOpen((open) => !open)}>
               {s.runtimeConfigViewRaw}
             </Button>
           </div>
-          {unknownOpen ? (
+          {config.internalStateCount > 0 ? <div class="rcp-runtime-state">{config.internalStateCount} runtime-managed hook records are hidden from this inventory.</div> : null}
+          {config.unknownKeys.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : unknownOpen ? (
             <pre>{config.unknownKeys.join("\n")}</pre>
           ) : (
-            <div class="rcp-other-preview">
-              {config.unknownKeys.map((key) => <code key={key}>{key}</code>)}
-            </div>
+            <div class="rcp-other-preview">{config.unknownKeys.slice(0, 8).map((key) => <code key={key}>{key}</code>)}</div>
           )}
         </section>
       </div>
