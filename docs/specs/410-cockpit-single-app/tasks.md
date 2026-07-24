@@ -153,8 +153,8 @@ landing gates with security probes._
       should be converted (only the approved standing exceptions: plugin surfaces, 2 dev-only
       fakes); found + fixed one real drift (`standalone-multi` dead type, `43164ebb`).
 - [x] Optional cookbook via `sdd-cookbook.sh`. Added `c973b8fc`.
-- [ ] Closure line on spec when agreed tranche ships. Deliberately deferred (maintainer, 2026-07-22)
-      — waiting for Phase E to be genuinely finished, not just Phase D. The one item left in this file.
+- [x] Closure line on spec when agreed tranche ships. Added 2026-07-24 (`spec.md` Status: shipped) —
+      Phase E genuinely finished (cookbook + audit both closed with zero open findings).
 
 ## Verification
 
