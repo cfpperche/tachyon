@@ -206,6 +206,7 @@ import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
 import { claudeAdapter } from "../probe/adapters/claude.js";
 import { codexAdapter } from "../probe/adapters/codex.js";
+import { grokAdapter } from "../probe/adapters/grok.js";
 import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
@@ -1616,6 +1617,7 @@ export class Workspace {
       adapters: new Map([
         ["claude", claudeAdapter],
         ["codex", codexAdapter],
+        ["grok", grokAdapter],
       ]),
       store: this.probeStore,
       onComplete: (env) => {

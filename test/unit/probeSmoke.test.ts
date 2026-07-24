@@ -5,11 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { createClaudeAdapter } from "../../src/probe/adapters/claude.js";
 import { createCodexAdapter } from "../../src/probe/adapters/codex.js";
+import { createGrokAdapter } from "../../src/probe/adapters/grok.js";
 import { ProbeService } from "../../src/probe/ProbeService.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
 
 /**
- * Spec 257 (D5) — live capability smoke against the REAL claude/codex CLIs, gated on binary
+ * Spec 257 (D5) — live capability smoke against the REAL claude/codex/grok CLIs, gated on binary
  * availability (CI safety — skipped when the binary is absent, like tmux.real.test.ts). This is the
  * automated complement to the golden-fixture adapter tests: it proves detectCapability() invokes the
  * actual CLI and records a real version, not a mock. The `--version` probe is offline + free.
@@ -29,6 +30,7 @@ function binaryAvailable(cmd: string): boolean {
 
 const claudeOk = binaryAvailable("claude");
 const codexOk = binaryAvailable("codex");
+const grokOk = binaryAvailable("grok");
 const liveRun = process.env.PROBE_LIVE_SMOKE === "1";
 
 describe.skipIf(!claudeOk)("probe live smoke — real claude capability (D5)", () => {
@@ -42,6 +44,14 @@ describe.skipIf(!claudeOk)("probe live smoke — real claude capability (D5)", (
 describe.skipIf(!codexOk)("probe live smoke — real codex capability (D5)", () => {
   it("detectCapability invokes the real codex CLI and records a version", async () => {
     const cap = await createCodexAdapter().detectCapability();
+    expect(cap.available).toBe(true);
+    expect(cap.binaryVersion && cap.binaryVersion.length).toBeTruthy();
+  });
+});
+
+describe.skipIf(!grokOk)("probe live smoke — real grok capability (D5 / t-7426de)", () => {
+  it("detectCapability invokes the real grok CLI and records a version", async () => {
+    const cap = await createGrokAdapter().detectCapability();
     expect(cap.available).toBe(true);
     expect(cap.binaryVersion && cap.binaryVersion.length).toBeTruthy();
   });

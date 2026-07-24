@@ -1,5 +1,9 @@
 # Spec 257 — Notes
 
+## Post-ship residual — Grok runtime (t-7426de, 2026-07-24)
+
+v1 shipped claude + codex only (D10). **t-7426de** adds `src/probe/adapters/grok.ts` (Grok Build `-p --output-format json`), registers it on `ProbeService`, extends Bridge `probe_agent` `runtime` enum with `"grok"`, golden-fixture unit tests + binary-gated `probeSmoke` `--version`, and Cap 13 on `docs/runtimes/parity.md`. OpenCode/Pi/Hermes still out of scope.
+
 ## Why this exists (design origin)
 
 Tachyon's A2A surface (`spawn_agent` / `wait_for_agent` / `read_output`) is built for **one** execution shape: a persistent CLI in a tmux pane, observed by scraping. That is the right model for a teammate you watch — and the wrong one for a **bounded probe** whose value is a clean captured answer.

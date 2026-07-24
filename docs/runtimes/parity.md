@@ -47,6 +47,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 10 | **Label / profile** | `runtimeProfile` entry with enough for UI/governance: at least isolation + stop; `label` when present. “Full” means the sections peers use (composer, permission, model aliases) — not a marketing adjective. |
 | 11 | **Restart** | Kill + respawn with same definition; Bridge re-injected. |
 | 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
+| 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 
 Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), and **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only).
 
@@ -108,12 +109,15 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
 | 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ |
+| 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
 † **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
 
 ‡ **Pi default private home + exact resource harness exist.** SDD 406 snapshots declared workspace-local extensions/skills/prompts/themes/packages into the per-agent home, disables automatic discovery and passes only explicit private CLI paths. Remote package acquisition/global inheritance remain intentionally unsupported.
+
+§ **Grok headless probe** (`t-7426de`, SDD 257): `src/probe/adapters/grok.ts` — `grok -p --output-format json`, golden fixtures + binary-gated `--version` smoke. Live model call remains opt-in (`PROBE_LIVE_SMOKE=1`). OpenCode / Pi / Hermes adapters deferred.
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes).*
 
@@ -210,6 +214,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Activity | `sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl` | `grokNormalizer` + `transcriptPath` + file-tail in `ActivityLogWriter` (sessionId from parent dir) | **✓** 2026-07-12 unit `grokNormalizer.test.ts` + `logWriter` Grok rotation (t-9874be) |
 | Permission inject | `--permission-mode`, `--always-approve` (measured on CLI) | profile **records** modes/flags; **nothing applies them** at spawn (`alwaysApproveFlag` has zero readers) | **✗** |
 | Profile | `label: "Grok"` + isolation + stop | `runtimeProfile.grok` — isolation still **`project-scoped`** (stale note: “private config-home wiring is not declared here yet”) | label ✓; isolation field lag |
+| Headless probe | `grok -p --output-format json` (+ `--json-schema` for archetypes) | `src/probe/adapters/grok.ts` + `ProbeService` + `probe_agent` enum | **✓** t-7426de unit + binary-gated `--version` smoke |
 
 **Grok Bridge note:** private `GROK_HOME` (e.g. `.tachyon/bridge-mcp/<agent>.grok`) is the runtime’s native config surface with a redirected home — not a bypass.  
 **Grok isolation note:** Bridge/harness materialization ≠ `runtimeProfile.isolation: private-home`. Governance still treats Grok as project-scoped unless `isolatedWorktree` / `def.harness`.  
@@ -323,6 +328,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-24 | **Cap 13 Headless probe:** matrix row for SDD 257 `probe_agent` adapters. Claude/Codex ✓ (shipped 0.40.0); Grok ✓ via `t-7426de` (`adapters/grok.ts`); OpenCode/Pi/Hermes ✗ deferred. |
 | 2026-07-18 | **Pi OAuth interim safety (SDD 408):** at most one live Pi process per workspace across Spawn/Resume/Restart/Fork until upstream shared-auth support ships; 394 unit tests + human dogfood `v-591729`. |
 | 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |
 | 2026-07-19 | **Startup-brief semantics (SDD 411):** long aggregate onboarding is labelled `startup brief`, carries a bounded typed layer inventory, distinguishes missing/unstructured/`DELIVERABLE`/`DONE_WHEN` task state, and retains pointer-only freshness semantics across positional and Hermes TUI delivery. |
