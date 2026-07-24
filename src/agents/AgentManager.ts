@@ -801,6 +801,12 @@ export class AgentManager {
    * null (an ambiguous list-panes error), so a transient tmux hiccup can't read as "every
    * agent vanished" (t-3a3a14). */
   private lastAgentStates = new Map<string, { dead: boolean; exitCode?: number }>();
+  /** t-ab9b40: dispatch-order sequence for tmux reads that may write lastAgentStates. */
+  private tmuxReadSeq = 0;
+  /** Sequence number of the read that produced the CURRENT lastAgentStates — a read dispatched
+   * before it must not clobber the cache on a slow resolve (last-writer-wins by RESOLVE order,
+   * not dispatch order, would let a stale concurrent read win the race). */
+  private tmuxReadAppliedSeq = 0;
   private readonly launchPreflight: RuntimeLaunchPreflightPort;
   private readonly launchReadiness: LaunchReadinessPort;
   /** A session becomes assignable only after a positive readiness observation. */
@@ -1068,16 +1074,32 @@ export class AgentManager {
    * instead of an empty map, so callers (LifecycleMonitor included) don't read a
    * transient tmux error as every agent having vanished.
    */
-  async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
+  /**
+   * Shared tmux read for agentStates/runningAgentsStrict. t-ab9b40: two concurrent callers (e.g.
+   * LifecycleMonitor's poll and the rebind coordinator's boot scan) can dispatch in one order and
+   * RESOLVE in another — a plain "always overwrite on success" cache write would let the
+   * older-dispatched read clobber a newer one that already landed. Each read is stamped with a
+   * dispatch-order sequence number; the write is applied only if no later-dispatched read has
+   * already applied. Self-heals on the next successful read either way.
+   */
+  private async readAgentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }> | null> {
+    const seq = ++this.tmuxReadSeq;
     const sessions = await this.opts.tmux.sessionStates(this.prefix);
-    if (sessions === null) return this.lastAgentStates;
+    if (sessions === null) return null;
     const out = new Map<string, { dead: boolean; exitCode?: number }>();
     for (const [session, state] of sessions) {
       const agent = agentFromSession(this.opts.wsHash, session);
       if (agent !== null) out.set(agent, state);
     }
-    this.lastAgentStates = out;
+    if (seq > this.tmuxReadAppliedSeq) {
+      this.lastAgentStates = out;
+      this.tmuxReadAppliedSeq = seq;
+    }
     return out;
+  }
+
+  async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
+    return (await this.readAgentStates()) ?? this.lastAgentStates;
   }
 
   /** Agents whose process is ALIVE — crashed dead panes don't count. */
@@ -1090,17 +1112,11 @@ export class AgentManager {
    * t-016e8b: like runningAgents, but an ambiguous tmux read surfaces as null instead of the
    * last known-good snapshot — which on a fresh engine process is an empty Map, so the
    * "protection" would read as "no agents" exactly when rebind scans the boot inventory.
-   * A successful read still refreshes lastAgentStates.
+   * A successful read still refreshes lastAgentStates (subject to the t-ab9b40 freshness guard).
    */
   async runningAgentsStrict(): Promise<string[] | null> {
-    const sessions = await this.opts.tmux.sessionStates(this.prefix);
-    if (sessions === null) return null;
-    const out = new Map<string, { dead: boolean; exitCode?: number }>();
-    for (const [session, state] of sessions) {
-      const agent = agentFromSession(this.opts.wsHash, session);
-      if (agent !== null) out.set(agent, state);
-    }
-    this.lastAgentStates = out;
+    const out = await this.readAgentStates();
+    if (out === null) return null;
     return [...out.entries()].filter(([, s]) => !s.dead).map(([agent]) => agent);
   }
 

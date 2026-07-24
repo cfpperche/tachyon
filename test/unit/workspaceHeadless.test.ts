@@ -8,7 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
@@ -28,7 +28,7 @@ import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 import { stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
-import { agentProfileAuthoritiesSecretKey } from "../../src/workspace/operationalStateKeys.js";
+import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -2689,6 +2689,97 @@ describe("Workspace — vanished-child poke re-check (t-3a3a14c)", () => {
     await flush();
     expect(sent.get(parentSession)).toBe(exitPoke("child3", "7"));
     ws.dispose();
+  });
+});
+
+describe("Workspace — upgrade notice scoped to genuine stragglers (t-e5910c)", () => {
+  const OLD_VERSION = "0.0.0-old";
+  const UPGRADE_NOTICE_SNIPPET = "keep the old Bridge tools until restarted";
+
+  async function bootWithSurvivor(opts: { record: Record<string, unknown>; tachyonYaml?: string }) {
+    const root = mkdir();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? "agents:\n  placeholder:\n    cmd: sh\n", "utf8");
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "sessions.json"),
+      JSON.stringify({ sessions: { survivor: { cwd: root, ...opts.record } } }),
+      "utf8",
+    );
+    const host = new FakeHost(mkdir());
+    host.setState(workspaceVersionStateKey(workspaceHash(root)), OLD_VERSION);
+    const { tmux, sessions } = fakeTmux();
+    sessions.add(sessionName(workspaceHash(root), "survivor"));
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    return { ws, host };
+  }
+
+  it("suppresses the notice for a wired, non-Delivery-bound survivor under the default (auto) rebind policy", async () => {
+    const { ws, host } = await bootWithSurvivor({
+      record: { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s1" }, declared: true, updatedAt: "t" },
+    });
+    try {
+      expect(host.notices.some((n) => n.message.includes(UPGRADE_NOTICE_SNIPPET))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("still warns for a survivor that is not Bridge-wired at all (explicit opt-out)", async () => {
+    const { ws, host } = await bootWithSurvivor({
+      record: {
+        def: { cmd: "codex", kind: "agent" },
+        resume: { runtime: "codex", sessionId: "s1" },
+        bridgeClient: { boundGeneration: 0, wired: false },
+        declared: true,
+        updatedAt: "t",
+      },
+    });
+    try {
+      expect(host.notices.some((n) => n.message.includes(UPGRADE_NOTICE_SNIPPET))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("still warns when the rebind policy is off (the coordinator never touches anyone)", async () => {
+    const { ws, host } = await bootWithSurvivor({
+      record: { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s1" }, declared: true, updatedAt: "t" },
+      tachyonYaml: 'agents:\n  placeholder:\n    cmd: sh\nsettings:\n  bridgeClientRebind:\n    onHostGenerationBump: "off"\n',
+    });
+    try {
+      expect(host.notices.some((n) => n.message.includes(UPGRADE_NOTICE_SNIPPET))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("still warns when the rebind policy is notify (marks suspect but never proactively stops/resumes — an idle survivor gets no automatic fix)", async () => {
+    const { ws, host } = await bootWithSurvivor({
+      record: { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s1" }, declared: true, updatedAt: "t" },
+      tachyonYaml: 'agents:\n  placeholder:\n    cmd: sh\nsettings:\n  bridgeClientRebind:\n    onHostGenerationBump: "notify"\n',
+    });
+    try {
+      expect(host.notices.some((n) => n.message.includes(UPGRADE_NOTICE_SNIPPET))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("still warns for a Delivery-bound wired survivor (the coordinator always leaves it running)", async () => {
+    const { ws, host } = await bootWithSurvivor({
+      record: {
+        def: { cmd: "codex", kind: "agent" },
+        resume: { runtime: "codex", sessionId: "s1" },
+        declared: true,
+        delivery: { deliveryId: "d-1", segmentId: "seg-0", executionNonce: "nonce-1" },
+        updatedAt: "t",
+      },
+    });
+    try {
+      expect(host.notices.some((n) => n.message.includes(UPGRADE_NOTICE_SNIPPET))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
   });
 });
 
