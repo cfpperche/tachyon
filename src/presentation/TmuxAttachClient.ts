@@ -67,9 +67,15 @@ export class TmuxAttachClient {
     const exclusive = opts.exclusive !== false;
     const cmd = buildAttachShellCommand({ socket, session: opts.session, exclusive });
     const spawnImpl = opts.spawnImpl ?? spawn;
-    const env = {
-      ...opts.env,
-      ...utf8LocaleEnv(opts.env),
+    // Extension Host spawns without a controlling TTY → inherited TERM is often unset or "dumb".
+    // tmux/script then fail immediately with "open terminal failed: terminal does not support clear"
+    // and the webview shows a black pane. Force a real terminal type for the attach client PTY.
+    const baseEnv = opts.env ?? process.env;
+    const env: NodeJS.ProcessEnv = {
+      ...baseEnv,
+      ...utf8LocaleEnv(baseEnv),
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
       COLUMNS: String(Math.max(2, opts.cols)),
       LINES: String(Math.max(1, opts.rows)),
     };
