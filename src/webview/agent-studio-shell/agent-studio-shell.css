@@ -93,10 +93,13 @@
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
 .checks label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .hint { color: var(--ds-muted); font-size: var(--ds-small); }
-details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
-details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
-details > .ds-input, details > select, details > textarea, details > .hint, details > .ash-chips, details > .check { margin-top: var(--ds-2); }
-details > .ash-label { margin-top: var(--ds-3); }
+/* t-ca31c2 follow-up — bare `details` leaked into Runtime Ops (and any other Control surface that
+   uses <details>) after Agent Studio co-load. Scope under the studio fields root. */
+.ash-fields details, .ash-evolution details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+.ash-fields details > summary, .ash-evolution details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.ash-fields details > .ds-input, .ash-fields details > select, .ash-fields details > textarea,
+.ash-fields details > .hint, .ash-fields details > .ash-chips, .ash-fields details > .check { margin-top: var(--ds-2); }
+.ash-fields details > .ash-label { margin-top: var(--ds-3); }
 
 @media (max-width: 720px) {
   .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff, .ash-profile-source-grid { grid-template-columns: 1fr; }

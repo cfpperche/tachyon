@@ -11,10 +11,12 @@
 .tsh-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); font-size: var(--ds-small); }
 .tsh-check-grid label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .hint { color: var(--ds-muted); font-size: var(--ds-small); }
-details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
-details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
-details > .ds-input, details > textarea, details > .hint, details > .tsh-chips, details > .check { margin-top: var(--ds-2); }
-details > .tsh-label { margin-top: var(--ds-3); }
+/* t-ca31c2 follow-up — bare `details` would leak after Terminal Studio co-load; scope to fields. */
+.tsh-fields details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+.tsh-fields details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.tsh-fields details > .ds-input, .tsh-fields details > textarea, .tsh-fields details > .hint,
+.tsh-fields details > .tsh-chips, .tsh-fields details > .check { margin-top: var(--ds-2); }
+.tsh-fields details > .tsh-label { margin-top: var(--ds-3); }
 
 @media (max-width: 720px) {
   .tsh-grid-compact, .tsh-check-grid { grid-template-columns: 1fr; }
