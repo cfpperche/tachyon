@@ -45,28 +45,71 @@ export function imageDataMessage(wsHash: string, agent: string, id: string, data
   return { type: IMAGE_DATA, wsHash, agent, id, dataUri };
 }
 
+/**
+ * host → webview: candidate agents for "Send to agent" (t-a983e1).
+ * Webview already owns the product QuickPicker; host listed targets and posts this one-shot.
+ */
+export const SHARE_AGENT_TARGETS = "shareAgentTargets" as const;
+export interface ShareAgentTargetRow {
+  name: string;
+  description: string;
+}
+export interface ShareAgentTargetsMessage {
+  type: typeof SHARE_AGENT_TARGETS;
+  sequence: number;
+  key: string;
+  targets: ShareAgentTargetRow[];
+}
+export function shareAgentTargetsMessage(
+  sequence: number,
+  key: string,
+  targets: ShareAgentTargetRow[],
+): ShareAgentTargetsMessage {
+  return { type: SHARE_AGENT_TARGETS, sequence, key, targets };
+}
+
 /** the union the Activity webview listens for (host → webview). */
-export type ActivityHostMessage = ActivityMessage | ImageDataMessage;
+export type ActivityHostMessage = ActivityMessage | ImageDataMessage | ShareAgentTargetsMessage;
+
+/** External share channel — chosen in-webview QuickPicker (not vscode.showQuickPick). */
+export type ExternalShareChannel = "email" | "whatsapp";
 
 /** webview → host: user requested an external share for one rendered Activity item. */
 export const SHARE_EXTERNAL = "shareExternal" as const;
 /** webview → host: user requested copying one rendered Activity item to the clipboard. */
 export const COPY_SHARE_TEXT = "copyShareText" as const;
-/** webview → host: user requested pasting one rendered Activity item into another Tachyon agent. */
+/**
+ * webview → host: paste Activity item into another agent.
+ * - without `toAgent`: prepare — host lists running targets and posts SHARE_AGENT_TARGETS
+ * - with `toAgent`: execute — host confirms + pastes (revalidates still-live)
+ */
 export const SHARE_TO_AGENT = "shareToAgent" as const;
 export interface ActivityShareMessage {
   type: typeof SHARE_EXTERNAL | typeof COPY_SHARE_TEXT | typeof SHARE_TO_AGENT;
   sequence: number;
   key: string;
+  /** Required for SHARE_EXTERNAL (webview QuickPicker already chose). */
+  channel?: ExternalShareChannel;
+  /** Optional on SHARE_TO_AGENT: absent = list targets; present = execute paste. */
+  toAgent?: string;
 }
-export function shareExternalMessage(sequence: number, key: string): ActivityShareMessage {
-  return { type: SHARE_EXTERNAL, sequence, key };
+export function shareExternalMessage(
+  sequence: number,
+  key: string,
+  channel: ExternalShareChannel,
+): ActivityShareMessage {
+  return { type: SHARE_EXTERNAL, sequence, key, channel };
 }
 export function copyShareTextMessage(sequence: number, key: string): ActivityShareMessage {
   return { type: COPY_SHARE_TEXT, sequence, key };
 }
-export function shareToAgentMessage(sequence: number, key: string): ActivityShareMessage {
-  return { type: SHARE_TO_AGENT, sequence, key };
+export function shareToAgentMessage(sequence: number, key: string, toAgent?: string): ActivityShareMessage {
+  return {
+    type: SHARE_TO_AGENT,
+    sequence,
+    key,
+    ...(toAgent ? { toAgent } : {}),
+  };
 }
 
 /** the union the Activity webview posts back to the host. */

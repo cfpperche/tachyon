@@ -244,7 +244,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 72 canonical tools, including managed worktree registry tools", async () => {
+  it("exposes exactly the 73 canonical tools, including managed worktree registry tools", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -256,6 +256,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "close_validation",
       "complete_node",
       "complete_pin",
+      "continue_task",
       "continuity_status",
       "create_pin",
       "create_task",
@@ -1738,7 +1739,33 @@ describe("stable Bridge port", () => {
     await fetch(`http://127.0.0.1:${bridge.port}/not-mcp`);
     expect(completed).toHaveLength(1);
     expect(completed[0].slow).toBe(true);
+    expect(completed[0].requestKind).toBe("other");
     expect(bridge.getMetrics()).toMatchObject({ requests: 1, slowRequests: 1 });
+    await bridge.dispose();
+  });
+
+  it("classifies MCP stream and session requests without pretending they are tools", async () => {
+    const deps = {
+      workspaceRoot: "/tmp",
+      manager: undefined as never,
+      tmux: undefined as never,
+      pins: undefined as never,
+      tasks: undefined as never,
+      validations: undefined as never,
+      notify: () => {},
+    };
+    const completed: BridgeRequestCompleteInfo[] = [];
+    const bridge = new Bridge(deps, { onRequestComplete: (info) => completed.push(info), slowRequestMs: 0 });
+    await bridge.start();
+
+    await fetch(`http://127.0.0.1:${bridge.port}/mcp`, { method: "GET" });
+    await fetch(`http://127.0.0.1:${bridge.port}/mcp`, { method: "DELETE" });
+
+    expect(completed).toMatchObject([
+      { slow: true, requestKind: "mcp-stream", tool: undefined },
+      { slow: true, requestKind: "mcp-session", tool: undefined },
+    ]);
+    expect(bridge.getMetrics()).toMatchObject({ requests: 2, slowRequests: 2 });
     await bridge.dispose();
   });
 
@@ -1768,6 +1795,7 @@ describe("stable Bridge port", () => {
     expect(completed).toHaveLength(1);
     expect(completed[0]).toMatchObject({
       slow: true,
+      requestKind: "mcp-tool",
       tool: "wait_for_agent",
       claimedIdentity: "cxSlowBridge",
       caller: { kind: "legacy" },

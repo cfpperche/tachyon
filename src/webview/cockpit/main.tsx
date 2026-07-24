@@ -14,6 +14,7 @@ import {
   switchControlWorkspaceAction,
   fleetStartAction,
   fleetStopAction,
+  fleetContinueTaskAction,
   fleetTerminalAction,
   fleetActivityAction,
   fleetProbesAction,
@@ -44,14 +45,16 @@ import {
   notePrototypeAction,
   type TaskDetailVM,
 } from "../task-detail/messages";
-import type { ActivityDispatch } from "../activity/App";
+import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import {
   ACTIVITY,
   IMAGE_DATA,
+  SHARE_AGENT_TARGETS,
   copyShareTextMessage,
   shareExternalMessage,
   shareToAgentMessage,
+  type ExternalShareChannel,
 } from "../activity/messages";
 import type { ProbesVM } from "../probes/messages";
 import { PROBES } from "../probes/messages";
@@ -157,6 +160,8 @@ function Root() {
   const [activityVm, setActivityVm] = useState<ActivityViewModel | undefined>(undefined);
   const [activityPrepended, setActivityPrepended] = useState(false);
   const [activityImages, setActivityImages] = useState<Record<string, string>>({});
+  /** t-a983e1 — host-listed agents for Activity "Send to agent" product QuickPicker. */
+  const [pendingShareAgentTargets, setPendingShareAgentTargets] = useState<PendingShareAgentTargets | null>(null);
   const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
   const [handoffVm, setHandoffVm] = useState<HandoffViewModel | undefined>(undefined);
   const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
@@ -315,6 +320,13 @@ function Root() {
           const dataUri = raw.dataUri;
           setActivityImages((prev) => (prev[id] ? prev : { ...prev, [id]: dataUri }));
         }
+      } else if (type === SHARE_AGENT_TARGETS && typeof raw.sequence === "number" && typeof raw.key === "string") {
+        const targets = Array.isArray(raw.targets)
+          ? (raw.targets as Array<{ name?: string; description?: string }>)
+              .filter((t) => typeof t.name === "string" && t.name)
+              .map((t) => ({ name: t.name!, description: typeof t.description === "string" ? t.description : "" }))
+          : [];
+        setPendingShareAgentTargets({ sequence: raw.sequence, key: raw.key, targets });
       } else if (type === PROBES && raw.vm) {
         setProbesVm(raw.vm as ProbesVM);
       } else if (type === HANDOFF && raw.vm) {
@@ -423,8 +435,9 @@ function Root() {
       terminal: () => post({ type: "terminal" }),
       loadOlder: () => post({ type: "loadOlder" }),
       copyShareText: (sequence, key) => post(copyShareTextMessage(sequence, key)),
-      shareExternal: (sequence, key) => post(shareExternalMessage(sequence, key)),
-      shareToAgent: (sequence, key) => post(shareToAgentMessage(sequence, key)),
+      shareExternal: (sequence, key, channel: ExternalShareChannel) =>
+        post(shareExternalMessage(sequence, key, channel)),
+      shareToAgent: (sequence, key, toAgent?) => post(shareToAgentMessage(sequence, key, toAgent)),
     }),
     [],
   );
@@ -539,6 +552,9 @@ function Root() {
       onFleetActivity={(name, wsHash) => post(fleetActivityAction(name, wsHash))}
       onFleetProbes={(name, wsHash) => post(fleetProbesAction(name, wsHash))}
       onFleetAgentStudio={(name, wsHash) => post(fleetAgentStudioAction(name, wsHash))}
+      onFleetContinueTask={(fromName, toName, wsHash) =>
+        post(fleetContinueTaskAction(fromName, toName, wsHash))
+      }
       onRevealPath={(path) => post(revealPathAction(path))}
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
@@ -559,6 +575,8 @@ function Root() {
       activityPrepended={activityPrepended}
       activityImages={activityImages}
       activityDispatch={activityDispatch}
+      pendingShareAgentTargets={pendingShareAgentTargets}
+      onConsumeShareAgentTargets={() => setPendingShareAgentTargets(null)}
       probesVm={probesVm}
       handoffVm={handoffVm}
       handoffDispatch={handoffDispatch}

@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { parseDocument } from "yaml";
 import type { AgentDef } from "./loadConfig.js";
@@ -25,6 +26,8 @@ import {
   resolveAgentNativeConfigSupport,
   validateAgentNativeConfigPolicy,
 } from "./agentNativeConfigPolicy.js";
+import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import { projectCodexScalarNativeConfig } from "./codexNativeConfigProjection.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
@@ -176,6 +179,61 @@ function inspectEmptyFileAt(root: string, segments: string[]): string | undefine
   }
 }
 
+function readNativeConfigTextAt(root: string, segments: string[]): { text?: string; error?: string } {
+  const label = path.join(root, ...segments);
+  const noFollow = fs.constants.O_NOFOLLOW;
+  const directory = fs.constants.O_DIRECTORY;
+  const nonBlock = fs.constants.O_NONBLOCK;
+  if (typeof noFollow !== "number" || typeof directory !== "number" || typeof nonBlock !== "number") {
+    return { error: `profile/native-config-source: no-follow reading is unsupported for ${label}` };
+  }
+  const opened: number[] = [];
+  try {
+    const canonicalRoot = fs.realpathSync.native(root);
+    let parent = fs.openSync(canonicalRoot, fs.constants.O_RDONLY | directory | noFollow | nonBlock);
+    opened.push(parent);
+    for (const segment of segments.slice(0, -1)) {
+      const candidate = `${descriptorPath(parent)}/${segment}`;
+      let child: number;
+      try {
+        child = fs.openSync(candidate, fs.constants.O_RDONLY | directory | noFollow | nonBlock);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+        return { error: `profile/native-config-source: cannot safely read ${label}` };
+      }
+      if (!fs.fstatSync(child).isDirectory()) {
+        closeQuietly(child);
+        return { error: `profile/native-config-source: ancestry is not a regular no-follow directory: ${label}` };
+      }
+      opened.push(child);
+      parent = child;
+    }
+    const candidate = `${descriptorPath(parent)}/${segments.at(-1)!}`;
+    let file: number;
+    try {
+      file = fs.openSync(candidate, fs.constants.O_RDONLY | noFollow | nonBlock);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+      return { error: `profile/native-config-source: cannot safely read ${label}` };
+    }
+    opened.push(file);
+    const before = fs.fstatSync(file, { bigint: true });
+    if (!before.isFile()) return { error: `profile/native-config-source: source is not a regular no-follow file: ${label}` };
+    if (before.size > BigInt(NATIVE_CONFIG_MAX_BYTES)) return { error: `profile/native-config-source: source exceeds the read limit: ${label}` };
+    const text = fs.readFileSync(file, "utf8");
+    const after = fs.fstatSync(file, { bigint: true });
+    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
+      || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
+      return { error: `profile/native-config-source: source changed during reading: ${label}` };
+    }
+    return { text };
+  } catch {
+    return { error: `profile/native-config-source: cannot safely read ${label}` };
+  } finally {
+    for (const fd of opened.reverse()) closeQuietly(fd);
+  }
+}
+
 function parseCanonicalProfile(workspaceRoot: string, agentName: string): { profile?: AgentProfileV1; errors: string[] } {
   let source: CanonicalAgentProfileSource | undefined;
   try {
@@ -225,9 +283,10 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     // (`inheritNativeConfig:false`). A file left there by a legacy launch is a
     // stale projection, not an effective native input. Workspace config remains
     // effective and must still be empty under this inspector.
-    const candidates: Array<[string, string[]]> = [
-      [input.workspaceRoot, [".codex", "config.toml"]],
-    ];
+    const workspaceSelected = Object.values(profile.nativeConfig ?? {}).some((policy) => policy?.source === "workspace");
+    const candidates: Array<[string, string[]]> = workspaceSelected
+      ? []
+      : [[input.workspaceRoot, [".codex", "config.toml"]]];
     const blockers: string[] = [];
     for (const [root, segments] of candidates) {
       const blocker = inspectEmptyFileAt(root, segments);
@@ -351,6 +410,7 @@ function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: Ag
 function projectDefinition(
   resolved: ResolvedAgentProfile,
   evolutionSelector?: { profileId: string; selectorSha256: string },
+  nativeConfigProjection?: ResolvedAgentNativeConfigProjection,
 ): AgentDef | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
@@ -408,7 +468,6 @@ function projectDefinition(
   if (resolved.capabilityProjection) {
     projected.profileCapabilities = { ...resolved.capabilityProjection, effectiveProfileSha256: resolved.effectiveSha256 };
   }
-  const nativeConfigProjection = projectAgentNativeConfig(definition);
   if (nativeConfigProjection) projected.profileNativeConfig = nativeConfigProjection;
   projected.profileLifecycle = {
     enabled: definition.lifecycle?.enabled ?? true,
@@ -431,6 +490,31 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   }
   const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
+  let nativeConfigProjection = projectAgentNativeConfig(parsed.profile);
+  if (parsed.profile.runtime.adapter === "codex") {
+    const selectedSources = new Set(
+      Object.values(parsed.profile.nativeConfig ?? {})
+        .map((policy) => policy?.source)
+        .filter((source): source is "global" | "workspace" => source === "global" || source === "workspace"),
+    );
+    const sourceTexts: { global?: string; workspace?: string } = {};
+    for (const source of selectedSources) {
+      const read = source === "global"
+        ? readNativeConfigTextAt(input.homeDir ?? os.homedir(), [".codex", "config.toml"])
+        : readNativeConfigTextAt(input.workspaceRoot, [".codex", "config.toml"]);
+      if (read.error) return { ok: false, errors: [read.error] };
+      if (read.text !== undefined) sourceTexts[source] = read.text;
+    }
+    const scalar = projectCodexScalarNativeConfig(
+      parsed.profile,
+      sourceTexts,
+      nativeConfigProjection ?? { adapter: "codex", selectors: {} },
+    );
+    if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
+    if (parsed.profile.nativeConfig && Object.keys(parsed.profile.nativeConfig).length > 0) {
+      nativeConfigProjection = scalar.projection;
+    }
+  }
   const evolutionSelector = readEvolutionSelector(input.workspaceRoot, input.agentName, parsed.profile);
   if (Array.isArray(evolutionSelector)) return { ok: false, errors: evolutionSelector };
   const resolved = resolveAgentProfile({
@@ -442,7 +526,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     externalReferences: externalReferences as ExternalProfileReference[],
   });
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
-  const definition = projectDefinition(resolved.value, evolutionSelector);
+  const definition = projectDefinition(resolved.value, evolutionSelector, nativeConfigProjection);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
   return { ok: true, definition, resolved: resolved.value };
 }

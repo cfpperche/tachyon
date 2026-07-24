@@ -32,6 +32,18 @@ export interface ResolvedAgentNativeConfigProjection {
     reasoningEffort?: string;
     serviceTier?: string;
   };
+  permissions?: {
+    approvalPolicy?: string;
+    sandboxMode?: string;
+  };
+  interface?: {
+    personality?: string;
+    statusLine?: string[];
+    statusLineUseColors?: boolean;
+  };
+  featureFlags?: {
+    terminalResizeReflow?: boolean;
+  };
 }
 
 export function projectAgentNativeConfig(
@@ -71,6 +83,19 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
     return {
       support: "supported",
       reason: "Codex declares typed agent selectors for fresh, restart and resume",
+    };
+  }
+  if (
+    adapter === "codex"
+    && (family === "permissions" || family === "interface" || family === "featureFlags")
+    && (policy.source === "global" || policy.source === "workspace")
+    && policy.treatment === "overlay"
+    && policy.refresh === "every-launch"
+    && hasExactLifecycle(policy.lifecycle, CODEX_AGENT_SELECTOR_LIFECYCLE)
+  ) {
+    return {
+      support: "supported",
+      reason: `Codex declares filtered ${policy.source} ${family} projection for fresh, restart and resume`,
     };
   }
   return {

@@ -60,9 +60,12 @@ export interface BridgeToolCallInfo {
   claimedIdentity?: string;
 }
 
+export type BridgeRequestKind = "mcp-tool" | "mcp-stream" | "mcp-session" | "mcp-protocol" | "other";
+
 export interface BridgeRequestCompleteInfo {
   durationMs: number;
   slow: boolean;
+  requestKind: BridgeRequestKind;
   tool?: string;
   claimedIdentity?: string;
   caller?: BridgeDeps["caller"];
@@ -224,6 +227,7 @@ export class Bridge {
     const startedAt = Date.now();
     let caller: BridgeDeps["caller"];
     let toolCall: BridgeToolCallInfo | undefined;
+    let requestKind: BridgeRequestKind = "other";
     const done = () => {
       const durationMs = Date.now() - startedAt;
       const slow = durationMs >= (this.options.slowRequestMs ?? 10_000);
@@ -237,6 +241,7 @@ export class Bridge {
       this.options.onRequestComplete?.({
         durationMs,
         slow,
+        requestKind,
         tool: toolCall?.tool,
         claimedIdentity: toolCall?.claimedIdentity,
         caller,
@@ -247,6 +252,15 @@ export class Bridge {
       if (!res.writableEnded) done();
     });
     const url = (req.url ?? "").split("?")[0] ?? "";
+    if (url === BRIDGE_PATH) {
+      requestKind = req.method === "GET"
+        ? "mcp-stream"
+        : req.method === "DELETE"
+          ? "mcp-session"
+          : req.method === "POST"
+            ? "mcp-protocol"
+            : "other";
+    }
     // SDD 422 — when listening on all interfaces, only companion paths are allowed from
     // non-loopback peers (/companion/v1/* API + /companion/app/* mobile PWA). MCP stays loopback-only.
     if (shouldRejectLanNonCompanion(this._listenHost, req.socket.remoteAddress, url)) {
@@ -329,6 +343,7 @@ export class Bridge {
 
       const body = await readJsonBody(req);
       toolCall = extractToolCall(body);
+      if (toolCall) requestKind = "mcp-tool";
       if (caller.kind === "legacy" && this.options.onLegacyCall) {
         const call = toolCall;
         if (call) this.options.onLegacyCall(call);

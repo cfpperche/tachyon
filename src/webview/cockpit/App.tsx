@@ -17,14 +17,14 @@ import {
   type CompanionPairOffer,
 } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
-import { Button, Badge, ListRow, PageChrome, EmptyState } from "../shared/ui";
+import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
 import type { TaskDetailDispatch } from "../task-detail/App";
 import type { TaskDetailVM } from "../task-detail/messages";
-import type { ActivityDispatch } from "../activity/App";
+import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
 import type { HandoffDispatch } from "../handoff/App";
@@ -248,6 +248,8 @@ export interface CockpitAppProps {
    *  agent-less `tachyon.openProbes` command / the sidebar tree's context menu). */
   onFleetProbes: (name: string, wsHash?: string) => void;
   onFleetAgentStudio: (name: string, wsHash?: string) => void;
+  /** SDD 443 — webview QuickPicker already chose destination; host only invokes. */
+  onFleetContinueTask: (fromName: string, toName: string, wsHash?: string) => void;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
@@ -277,6 +279,9 @@ export interface CockpitAppProps {
   activityPrepended: boolean;
   activityImages: Record<string, string>;
   activityDispatch: ActivityDispatch;
+  /** t-a983e1 — host-listed targets for Activity share → agent QuickPicker. */
+  pendingShareAgentTargets?: PendingShareAgentTargets | null;
+  onConsumeShareAgentTargets?: () => void;
   /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
   probesVm?: ProbesVM;
   /** t-610705 (Phase C.3) — the Handoff section. */
@@ -932,6 +937,8 @@ export function App(p: CockpitAppProps) {
   // the same order every render (the Activity subroute needs the actual overflow:auto ancestor for
   // its scroll math — window/document.body no longer work now that the standalone panel is retired).
   const activityScrollRef = useRef<HTMLDivElement>(null);
+  // SDD 443 — in-webview QuickPicker for Continue task (replaces vscode.showQuickPick).
+  const [continuePick, setContinuePick] = useState<{ fromName: string; wsHash?: string } | null>(null);
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
@@ -1002,7 +1009,15 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
         <Suspense fallback={<SectionFallback />}>
           {activeRoute.kind === "agent-activity" ? (
-            <ActivityApp vm={p.activityVm} prepended={p.activityPrepended} images={p.activityImages} dispatch={p.activityDispatch} scrollContainer={activityScrollRef} />
+            <ActivityApp
+              vm={p.activityVm}
+              prepended={p.activityPrepended}
+              images={p.activityImages}
+              dispatch={p.activityDispatch}
+              scrollContainer={activityScrollRef}
+              pendingShareAgentTargets={p.pendingShareAgentTargets}
+              onConsumeShareAgentTargets={p.onConsumeShareAgentTargets}
+            />
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
@@ -1249,6 +1264,15 @@ export function App(p: CockpitAppProps) {
                     <Button variant="default" onClick={() => p.onFleetProbes(a.name, a.wsHash)}>
                       {s.openProbes}
                     </Button>
+                    {a.declared !== false && a.kind !== "terminal" ? (
+                      <Button
+                        variant="default"
+                        data-testid="fleet-continue-task"
+                        onClick={() => setContinuePick({ fromName: a.name, wsHash: a.wsHash })}
+                      >
+                        {s.continueTask}
+                      </Button>
+                    ) : null}
                     {a.declared !== false ? (
                       <Button variant="default" onClick={() => p.onFleetAgentStudio(a.name, a.wsHash)}>
                         {s.editAgent}
@@ -1602,6 +1626,49 @@ export function App(p: CockpitAppProps) {
       </main>
 
       {p.toast ? <div class="ck-toast">{p.toast}</div> : null}
+
+      {continuePick && m ? (() => {
+        const from = continuePick.fromName;
+        const wsHash = continuePick.wsHash;
+        // Same workspace only when scoped; exclude source, terminal, ad-hoc.
+        const candidates = m.fleet
+          .filter((row) => row.name !== from)
+          .filter((row) => !wsHash || row.wsHash === wsHash)
+          .filter((row) => row.kind !== "terminal")
+          .filter((row) => row.declared !== false)
+          .slice()
+          .sort((a, b) => Number(!!a.running) - Number(!!b.running));
+        const items: QuickPickerItem[] = candidates.map((row) => ({
+          id: `${row.wsHash ?? ""}:${row.name}`,
+          label: row.name,
+          description: row.running ? s.continueTaskDestRunning : s.continueTaskDestStopped,
+          detail: row.running
+            ? s.continueTaskDestRunning
+            : s.continueTaskDestDetail.replace("{0}", from),
+          disabled: !!row.running,
+          disabledReason: s.continueTaskDestRunning,
+        }));
+        const title = s.continueTaskPickTitle.includes("{0}")
+          ? s.continueTaskPickTitle.replace("{0}", from)
+          : `${s.continueTaskPickTitle} ${from}`;
+        return (
+          <QuickPicker
+            open
+            data-testid="fleet-continue-picker"
+            title={title}
+            subtitle={s.continueTaskPickSubtitle}
+            placeholder={s.continueTaskPickPlaceholder}
+            emptyText={s.continueTaskPickEmpty}
+            items={items}
+            onClose={() => setContinuePick(null)}
+            onSelect={(item) => {
+              const toName = item.label;
+              setContinuePick(null);
+              p.onFleetContinueTask(from, toName, wsHash);
+            }}
+          />
+        );
+      })() : null}
     </div>
   );
 }

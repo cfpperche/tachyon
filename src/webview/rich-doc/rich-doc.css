@@ -1,6 +1,12 @@
 /* spec 339 — entity-neutral rich-doc editor styles, extracted from pin-studio.css so pin-studio and
-   task-studio share one stylesheet. Shared tokens live in design-system.css (.ds-*). */
-  body { padding: 0; background: var(--vscode-editor-background); }
+   task-studio share one stylesheet. Shared tokens live in design-system.css (.ds-*).
+
+   t-e085bc/t-ca31c2 — NO bare layout-element selectors (body/main/aside) in this sheet. It is
+   lazily co-loaded into the Control panel and never unloaded, so a bare `main { display: grid;
+   1fr 260px }` leaked into `main.ck-main` and shredded every NATIVE cockpit section after a
+   Task/Pin Studio visit (the embeds survived only because `.ck-main--embed` sets its own display).
+   The grid the old `main` rule provided is `.sf-body`'s job (studio-frame.css) — it was a dead
+   duplicate from the retired standalone panel; the visuals column is now `.rd-visuals`. */
   .studio { min-height: 100vh; display: flex; flex-direction: column; }
   .bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-3) var(--ds-4); border-bottom: 1px solid var(--ds-border); background: var(--vscode-editor-background); }
   .bar > div:first-child { min-width: 220px; flex: 1; }
@@ -13,7 +19,6 @@
   .toolbar button:hover, .slash button:hover { background: var(--vscode-toolbar-hoverBackground, rgba(128,128,128,.16)); }
   .slash { position: fixed; top: 105px; left: var(--ds-4); z-index: 5; display: grid; min-width: 210px; padding: 6px; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); box-shadow: 0 8px 24px rgba(0,0,0,.28); }
   .slash button { justify-content: flex-start; width: 100%; }
-  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: var(--ds-4); max-width: 1180px; width: 100%; margin: 0 auto; padding: var(--ds-4); box-sizing: border-box; }
   .editor-shell { min-height: 58vh; border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-editorWidget-background)); }
   .rich-doc-editor { min-height: 58vh; padding: 22px 24px; outline: 0; font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
   .rich-doc-editor p { margin: 0 0 8px; }
@@ -26,7 +31,7 @@
   .rich-doc-editor code { font-family: var(--ds-mono); }
   .rich-doc-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
   .rich-doc-editor li[data-type="taskItem"] { display: flex; gap: 8px; }
-  aside { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
+  .rd-visuals { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
   .drop { width: 100%; display: flex; gap: 8px; align-items: center; justify-content: center; min-height: 64px; border: 1px dashed var(--ds-border); border-radius: var(--ds-radius); background: transparent; color: var(--ds-muted); cursor: pointer; }
   .drop:hover { border-color: var(--ds-accent); color: var(--vscode-foreground); }
   .att-head { margin: var(--ds-4) 0 var(--ds-2); font-size: var(--ds-small); color: var(--ds-muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
@@ -57,6 +62,5 @@
   @media (max-width: 820px) {
     .bar { align-items: flex-start; flex-direction: column; }
     .actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; }
-    main { grid-template-columns: 1fr; }
-    aside { border-left: 0; border-top: 1px solid var(--ds-border); padding: var(--ds-4) 0 0; }
+    .rd-visuals { border-left: 0; border-top: 1px solid var(--ds-border); padding: var(--ds-4) 0 0; }
   }

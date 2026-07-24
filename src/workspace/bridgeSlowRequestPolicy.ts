@@ -23,6 +23,7 @@ export class BridgeSlowRequestToastPolicy {
 
   decide(info: BridgeRequestCompleteInfo): BridgeSlowRequestToast | undefined {
     if (!info.slow) return undefined;
+    if (info.requestKind !== "mcp-tool") return undefined;
     if (info.tool && LONG_RUNNING_TOOLS.has(info.tool)) return undefined;
     if (info.durationMs < (this.options.extremeSlowMs ?? BRIDGE_EXTREME_SLOW_REQUEST_MS)) return undefined;
 

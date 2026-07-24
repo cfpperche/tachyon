@@ -1697,11 +1697,29 @@ export class HarnessManager {
       ["model_provider", projection.selectors.provider],
       ["model_reasoning_effort", projection.selectors.reasoningEffort],
       ["service_tier", projection.selectors.serviceTier],
+      ["approval_policy", projection.permissions?.approvalPolicy],
+      ["sandbox_mode", projection.permissions?.sandboxMode],
+      ["personality", projection.interface?.personality],
     ];
-    const content = values
+    const lines = values
       .filter((entry): entry is [string, string] => entry[1] !== undefined)
-      .map(([key, value]) => `${key} = ${tomlString(value)}`)
-      .join("\n");
+      .map(([key, value]) => `${key} = ${tomlString(value)}`);
+    if (projection.interface?.statusLine !== undefined || projection.interface?.statusLineUseColors !== undefined) {
+      if (lines.length > 0) lines.push("");
+      lines.push("[tui]");
+      if (projection.interface.statusLine !== undefined) {
+        lines.push(`status_line = ${tomlValue(projection.interface.statusLine)}`);
+      }
+      if (projection.interface.statusLineUseColors !== undefined) {
+        lines.push(`status_line_use_colors = ${tomlValue(projection.interface.statusLineUseColors)}`);
+      }
+    }
+    if (projection.featureFlags?.terminalResizeReflow !== undefined) {
+      if (lines.length > 0) lines.push("");
+      lines.push("[features]");
+      lines.push(`terminal_resize_reflow = ${tomlValue(projection.featureFlags.terminalResizeReflow)}`);
+    }
+    const content = lines.join("\n");
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
     return { home, env: { CODEX_HOME: home }, args: [] };

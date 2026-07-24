@@ -45,10 +45,12 @@ import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
 import {
   activityMessage,
   imageDataMessage,
+  shareAgentTargetsMessage,
   SHARE_EXTERNAL,
   COPY_SHARE_TEXT,
   SHARE_TO_AGENT,
   type ActivityWebviewMessage,
+  type ExternalShareChannel,
 } from "./activity/messages.js";
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
 import type { ActivityViewModel } from "../activity/activityView.js";
@@ -207,6 +209,8 @@ export interface CockpitDeps {
   /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
   fleetStart: (name: string, wsHash?: string) => Promise<void>;
   fleetStop: (name: string, wsHash?: string) => Promise<void>;
+  /** SDD 443 — continue unfinished task on another agent (webview already picked dest). */
+  fleetContinueTask: (fromName: string, toName: string, wsHash?: string) => Promise<void>;
   fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
   revealPath: (fsPath: string) => void;
   /** spec 444 — Worktrees hygiene actions. Engine re-validates fail-closed on every call; the
@@ -332,6 +336,17 @@ function strings(): CockpitStrings {
     openActivity: t("Activity"),
     openProbes: t("Probes"),
     editAgent: t("Edit"),
+    continueTask: t("Continue task in…"),
+    continueTaskPickTitle: t("Continue task from {0} in…"),
+    continueTaskPickSubtitle: t(
+      "Starts a new session on the destination with a focused handoff — not a native resume of the source session.",
+    ),
+    continueTaskPickPlaceholder: t("Filter destination agents…"),
+    continueTaskPickEmpty: t("No other declared agent to continue into"),
+    continueTaskDestStopped: t("stopped"),
+    continueTaskDestRunning: t("running — stop first"),
+    continueTaskDestDetail: t("New session with focused handoff from {0}"),
+    continueTaskNoDest: t("No other declared agent to continue into (need a stopped destination)."),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
     copyId: t("Copy id"),
@@ -1346,18 +1361,20 @@ export async function openCockpit(
     notify("Activity share text copied.");
   };
 
-  const shareActivityExternal = async (agent: string, sequence: unknown, key: unknown): Promise<void> => {
+  // t-a983e1 — channel chosen in-webview product QuickPicker (no vscode.showQuickPick).
+  const shareActivityExternal = async (
+    agent: string,
+    sequence: unknown,
+    key: unknown,
+    channel: ExternalShareChannel,
+  ): Promise<void> => {
     const payload = resolveActivityShareOrNotify(agent, sequence, key);
     if (!payload) return;
-    const picked = await vscode.window.showQuickPick([
-      { label: "Email", id: "email" as const, description: "Open a mail draft" },
-      { label: "WhatsApp", id: "whatsapp" as const, description: "Open WhatsApp Web" },
-    ], { placeHolder: "Share Activity item" });
-    if (!picked) return;
+    const label = channel === "email" ? "Email" : "WhatsApp";
     const preview = payload.text.length > 1400 ? `${payload.text.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : payload.text;
-    const ok = await showNotification(`Share this Activity item via ${picked.label}?`, "info", ["Open"], { modal: true, detail: preview });
+    const ok = await showNotification(`Share this Activity item via ${label}?`, "info", ["Open"], { modal: true, detail: preview });
     if (ok !== "Open") return;
-    if (picked.id === "email") {
+    if (channel === "email") {
       const subject = encodeURIComponent(`Tachyon Activity from ${agent}`);
       const body = encodeURIComponent(payload.urlText);
       await vscode.env.openExternal(vscode.Uri.parse(`mailto:?subject=${subject}&body=${body}`));
@@ -1374,36 +1391,56 @@ export async function openCockpit(
     }));
   };
 
-  const shareActivityToAgent = async (wsHash: string, sourceAgent: string, sequence: unknown, key: unknown): Promise<void> => {
-    const payload = resolveActivityShareOrNotify(sourceAgent, sequence, key);
-    if (!payload) return;
+  /** Prepare path: list targets → post SHARE_AGENT_TARGETS for in-webview QuickPicker. */
+  const prepareShareActivityToAgent = async (
+    wsHash: string,
+    sourceAgent: string,
+    sequence: unknown,
+    key: unknown,
+  ): Promise<void> => {
+    if (typeof sequence !== "number" || typeof key !== "string" || !key) return;
+    // Ensure the share payload still resolves (same warn as execute path).
+    if (!resolveActivityShareOrNotify(sourceAgent, sequence, key)) return;
     const ws = resolveActivityWs(wsHash);
     if (!ws) return;
-    // t-610705 (Phase C.2, hardening dueto probe-2d90286d MAJOR) — this flow spans a QuickPick + a
-    // modal confirm, both genuinely user-paced; capture the binding generation now and recheck
-    // before the actual side effect (ws.sendAgentInput) so navigating away mid-flow silently
-    // abandons the paste instead of sending it into whatever agent/workspace is now on screen.
-    const myGeneration = activityBinding?.generation;
     const targets = await runningActivityAgentTargets(ws, sourceAgent);
     if (targets.length === 0) {
       notify("No other running Tachyon agent is available for this Activity share.");
       return;
     }
-    const picked = await vscode.window.showQuickPick(targets.map((t) => ({ label: t.name, description: t.description })), { placeHolder: "Send Activity item to agent" });
-    if (!picked) return;
+    live.webview.postMessage(shareAgentTargetsMessage(sequence, key, targets));
+  };
+
+  // t-a983e1 — destination already chosen in-webview; host revalidates + modal confirm + paste.
+  const shareActivityToAgent = async (
+    wsHash: string,
+    sourceAgent: string,
+    sequence: unknown,
+    key: unknown,
+    toAgent: string,
+  ): Promise<void> => {
+    const payload = resolveActivityShareOrNotify(sourceAgent, sequence, key);
+    if (!payload) return;
+    const ws = resolveActivityWs(wsHash);
+    if (!ws) return;
+    // t-610705 (Phase C.2, hardening dueto probe-2d90286d MAJOR) — this flow spans a user-paced
+    // QuickPicker + modal confirm; capture the binding generation now and recheck before the
+    // actual side effect (ws.sendAgentInput) so navigating away mid-flow silently abandons the
+    // paste instead of sending it into whatever agent/workspace is now on screen.
+    const myGeneration = activityBinding?.generation;
     if (activityBinding?.generation !== myGeneration) return;
-    const stillLive = (await runningActivityAgentTargets(ws, sourceAgent)).some((t) => t.name === picked.label);
+    const stillLive = (await runningActivityAgentTargets(ws, sourceAgent)).some((t) => t.name === toAgent);
     if (!stillLive) {
-      notify(`Agent '${picked.label}' is no longer available.`, "warn");
+      notify(`Agent '${toAgent}' is no longer available.`, "warn");
       return;
     }
     const prompt = internalSharePrompt(payload);
     const preview = prompt.length > 1400 ? `${prompt.slice(0, 1400).trimEnd()}\n\n[preview truncated]` : prompt;
-    const ok = await showNotification(`Paste Activity context into '${picked.label}'?`, "info", ["Paste"], { modal: true, detail: preview });
+    const ok = await showNotification(`Paste Activity context into '${toAgent}'?`, "info", ["Paste"], { modal: true, detail: preview });
     if (ok !== "Paste") return;
     if (activityBinding?.generation !== myGeneration) return;
-    await ws.sendAgentInput(picked.label, prompt, false);
-    notify(`Activity context pasted into '${picked.label}' (not submitted).`);
+    await ws.sendAgentInput(toAgent, prompt, false);
+    notify(`Activity context pasted into '${toAgent}' (not submitted).`);
   };
 
   const handleActivityAction = async (m: Partial<ActivityWebviewMessage>): Promise<boolean> => {
@@ -1426,11 +1463,21 @@ export async function openCockpit(
       return true;
     }
     if (m.type === SHARE_EXTERNAL) {
-      void shareActivityExternal(route.agent, m.sequence, m.key);
+      const channel = m.channel === "email" || m.channel === "whatsapp" ? m.channel : undefined;
+      if (!channel) {
+        notify("Share channel missing — pick Email or WhatsApp in the Activity picker.", "warn");
+        return true;
+      }
+      void shareActivityExternal(route.agent, m.sequence, m.key, channel);
       return true;
     }
     if (m.type === SHARE_TO_AGENT) {
-      void shareActivityToAgent(route.wsHash, route.agent, m.sequence, m.key);
+      if (typeof m.toAgent === "string" && m.toAgent) {
+        void shareActivityToAgent(route.wsHash, route.agent, m.sequence, m.key, m.toAgent);
+      } else {
+        // Prepare: push targets for product QuickPicker (t-a983e1).
+        void prepareShareActivityToAgent(route.wsHash, route.agent, m.sequence, m.key);
+      }
       return true;
     }
     return false;
@@ -1927,6 +1974,21 @@ export async function openCockpit(
               });
             } else if (ws) {
               notify(`'${c.name}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
+            }
+          }
+          return;
+        case "fleetContinueTask":
+          if (typeof c.name === "string" && typeof c.toName === "string") {
+            try {
+              await deps.fleetContinueTask(
+                c.name,
+                c.toName,
+                typeof c.wsHash === "string" ? c.wsHash : undefined,
+              );
+              await sendModel();
+              live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started")));
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }
           }
           return;

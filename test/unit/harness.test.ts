@@ -628,7 +628,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.realpathSync(path.join(suppressed.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
-  it("canonical Codex selector projection rewrites only typed selector keys on every launch", () => {
+  it("canonical Codex projection rewrites only typed allowlisted keys on every launch", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
     fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
@@ -647,6 +647,18 @@ describe("HarnessManager materialize (fs)", () => {
         reasoningEffort: "high",
         serviceTier: "fast",
       },
+      permissions: {
+        approvalPolicy: "on-request",
+        sandboxMode: "workspace-write",
+      },
+      interface: {
+        personality: "pragmatic",
+        statusLine: ["model", "git-branch"],
+        statusLineUseColors: false,
+      },
+      featureFlags: {
+        terminalResizeReflow: true,
+      },
     };
 
     const first = mgr.materializeCanonicalCodexHome("coder", codex, projection);
@@ -655,13 +667,24 @@ describe("HarnessManager materialize (fs)", () => {
       'model_provider = "openai"',
       'model_reasoning_effort = "high"',
       'service_tier = "fast"',
+      'approval_policy = "on-request"',
+      'sandbox_mode = "workspace-write"',
+      'personality = "pragmatic"',
+      "",
+      "[tui]",
+      'status_line = ["model", "git-branch"]',
+      "status_line_use_colors = false",
+      "",
+      "[features]",
+      "terminal_resize_reflow = true",
       "",
     ].join("\n"));
     expect(fs.realpathSync(path.join(first.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
 
     fs.writeFileSync(path.join(first.home, "config.toml"), 'approval_policy = "never"\n');
     mgr.materializeCanonicalCodexHome("coder", codex, projection);
-    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("approval_policy");
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).toContain('approval_policy = "on-request"');
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("do-not-copy");
   });
 
   it("t-e2ebe3 review fix: opencode materializeHomeOnly returns all three XDG vars pointing at the config/data/state subdirs (not just XDG_CONFIG_HOME at the home root)", () => {

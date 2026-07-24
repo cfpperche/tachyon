@@ -1,7 +1,7 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-23 (native configuration inheritance inventory)
-**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`INSTRUCTION_ARG`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-24 (Outros / unsupported-runtime fallback column — `t-f61ce8`)
+**Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
 It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
@@ -49,7 +49,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 
-Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), and **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only).
+Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only), and **cross-runtime task continuation** (SDD 443 / `t-7551f9`: host focused handoff + new session on another agent — **not** native resume; edit-`cmd` while live is fail-closed via `t-6d09e6`).
 
 ### Soul identity delivery
 
@@ -95,21 +95,21 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 ### 3.1 Summary table
 
-| Capability | Claude | Codex | OpenCode | Grok | Pi |
-|------------|:------:|:-----:|:--------:|:----:|:--:|
-| 1 Brief | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ | ✓* |
-| 3 Attention | ✓ | ✓ | ~ | ~ | ✓ |
-| 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 5 Fork | ✓ | ✗ | ✓ | ✓ | ✓ |
-| 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ |
-| 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ |
-| 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 9 Permission inject | ~ | ~ | ~ | **✗** | ✓ |
-| 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ |
-| 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ |
-| 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ |
+| Capability | Claude | Codex | OpenCode | Grok | Pi | **Outros** |
+|------------|:------:|:-----:|:--------:|:----:|:--:|:----------:|
+| 1 Brief | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**¶ |
+| 2 Bridge MCP | ✓ | ✓ | ✓ | ✓ | ✓* | **✗**¶ |
+| 3 Attention | ✓ | ✓ | ~ | ~ | ✓ | **~**¶ |
+| 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
+| 5 Fork | ✓ | ✗ | ✓ | ✓ | ✓ | **✗** |
+| 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ | **✗** / **—** |
+| 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ | **~**¶ |
+| 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
+| 9 Permission inject | ~ | ~ | ~ | **✗** | ✓ | **✗** |
+| 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ | **✗**¶ |
+| 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
+| 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ | **✗** |
+| 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -119,7 +119,9 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 § **Grok headless probe** (`t-7426de`, SDD 257): `src/probe/adapters/grok.ts` — `grok -p --output-format json`, golden fixtures + binary-gated `--version` smoke. Live model call remains opt-in (`PROBE_LIVE_SMOKE=1`). OpenCode / Pi / Hermes adapters deferred.
 
-*Secondary adapters: [§3.3](#33-secondary-runtimes).*
+¶ **Outros** is not a runtime brand — it is the honest fallback for commands **outside** first-class + secondary adapter coverage. Marks are justified in [§3.5](#35-outros--unsupported--generic-fallback). Do **not** read **✓** Restart as “first-class runtime”; it only means the host can kill and re-spawn the same declared command.
+
+*Secondary adapters: [§3.3](#33-secondary-runtimes). Unsupported / generic: [§3.5](#35-outros--unsupported--generic-fallback).*
 
 ### 3.1.1 Native configuration inheritance
 
@@ -269,6 +271,84 @@ These diverge; the summary table alone cannot show them:
 | OpenCode permission | delegated non-harness path can write permission block | harness generation site currently **dead code** |
 | User-defined hooks | supported only where a native materializer runs | OpenCode/Grok/Hermes reject `harness.hooks` rather than silently dropping them |
 
+### 3.5 Outros — unsupported / generic fallback
+
+**Purpose:** make “it runs in a pane” unconfusable with “first-class runtime.”  
+**Board:** `t-f61ce8` (docs only — no new adapters).  
+**Verified against code:** 2026-07-24 · seams listed in the doc header.
+
+#### 3.5.1 Who is “Outros”?
+
+Anyone who is **not** a first-class matrix column (§3.1) and **not** a filled secondary row (§3.3). In practice:
+
+| Bucket | Examples | How Tachyon classifies today |
+|--------|----------|------------------------------|
+| **A. Known basename, thin / no family adapters** | `aider`, `goose`, `amp`, `cursor-agent`, `copilot`, `verboo` (in `KNOWN_AI_CLIS` for kind inference) but **not** in `ResumeRuntime` / `RUNTIME_BY_BIN` | `inferKind` → **agent**; no resume/fork/Bridge family path |
+| **B. Renamed binary / path alias** | `~/bin/my-claude`, `claude-custom` if basename ≠ catalog | Basename-driven selection fails → treated as unknown CLI |
+| **C. Shell wrappers** | `bash -lc '…'`, custom scripts that hide the real binary | Opening-prompt + adapters **do not** unwrap; `openingPromptCapability` → `unsupported` |
+| **D. Package launchers** | `npx …`, `bunx …`, `pnpx …`, `env VAR=… cmd` | `resolveBinary` / `resolveRuntimeBinary` may recover a basename when the launcher shape is recognized; otherwise Outros |
+| **E. Completely unknown CLI declared under `agents:`** | `my-bot --serve` with explicit `kind: agent` or inferred agent | Spawned as a managed pane; no family wiring |
+| **F. Terminals** | `agents:` entries inferred/forced **terminal** (servers, shells, builds) | Lifecycle yes; AI product seams no (by design) |
+
+**Not Outros:** Gemini / Antigravity / Qwen / Continue / Hermes — those are **secondary** (§3.3): partial adapters exist; promote by walking §2, not by inventing a fake “generic Claude.”
+
+#### 3.5.2 Classification contract (code → product language)
+
+| Mechanism | Seam | Outros behavior |
+|-----------|------|-----------------|
+| Kind inference | `inferKind` / `KNOWN_AI_CLIS` | Basename in the list → default **agent** (attention on); else **terminal**. Explicit `kind:` wins. |
+| Runtime id | `runtimeOf` / `RUNTIME_BY_BIN` | Unknown basename → `null` (no `ResumeRuntime`) |
+| Opening prompt / Soul | `runtimePromptAdapter`, `openingPromptCapability`, `composeCommand` | No adapter → instructions **stored but not delivered** (`composeCommand` returns bare `cmd`); Soul **fails closed** with a direct-command diagnostic |
+| Bridge | `AgentManager.withRuntimeBridge` | Only `claude` / `codex` / `opencode` / `grok` / `hermes` / `pi` (and harness fold) inject MCP/home. All other binaries: `{ wired: false }` — **no silent MCP** |
+| Resume / fork | `adapterFor` / `resumeCommand` / `forkCommand` | No adapter → host must not claim session continuity |
+| Graceful stop | `gracefulStopForCommand` | Falls through to `DEFAULT_GRACEFUL_STOP` (C-c, C-c, C-d; `source: assumed`, `verified: false`) |
+| Isolation | `isolationMechanismForCommand` | No profile → `mechanism: "none"` (non-AI cmd) or `"unknown"` if a runtime id existed without profile |
+| Activity | named normalizers | No normalizer → no durable structured Activity from a native store |
+| Headless probe | `ProbeService` adapters | Not registered → `probe_agent` cannot target that runtime |
+| Restart | host kill + spawn same definition | **Available** for declared managed entries (product host path), independent of CLI family |
+
+#### 3.5.3 Capability marks (Outros column) — evidence
+
+| # | Cap | Mark | Why (honest) |
+|---|-----|:----:|--------------|
+| 1 | Brief | **✗** | No `runtimePromptAdapter` → startup brief / `instructions` not appended (`composeCommand`). Not “partial delivery.” |
+| 2 | Bridge MCP | **✗** | `withRuntimeBridge` returns `wired: false` for non-family binaries. Agent may still run; it does **not** get Tachyon Bridge tools. |
+| 3 | Attention | **~** | Shared pane patterns still run for **agent** kind; no composer/rate-limit **identity**, no measured stop for that CLI. Terminals often have attention off by default. |
+| 4 | Resume | **✗** | No `ResumeAdapter`. |
+| 5 | Fork | **✗** | No `forkCommand`. |
+| 6 | Harness | **✗** / **—** | Private-home materializers are family-specific. Unknown CLI + `harness:` is not a supported first-class path; do not imply isolation. |
+| 7 | Graceful stop | **~** | Assumed key sequence only (`DEFAULT_GRACEFUL_STOP`); not measured per CLI. |
+| 8 | Activity | **✗** | No named transcript normalizer / reader. |
+| 9 | Permission inject | **✗** | No reader applies a native permission posture. |
+| 10 | Label / profile | **✗** | No `runtimeProfile` entry → no first-class label/isolation/composer block. |
+| 11 | Restart | **✓** | Host-level: stop process + spawn the same managed definition again. **Not** “native restart semantics.” |
+| 12 | Native config parity | **✗** | No private projection policy. |
+| 13 | Headless probe | **✗** | No `HeadlessCaptureAdapter`. |
+
+#### 3.5.4 UI / diagnostics contract (do not confuse operators)
+
+| Must say | Must **not** say |
+|----------|------------------|
+| Managed pane / declared agent or terminal | “Supported runtime” / first-class parity peer |
+| Bridge: not wired (when `wired: false`) | Implied MCP tool list for unknown CLIs |
+| Resume/fork unavailable | Session continuity for arbitrary CLIs |
+| Instructions/Soul unsupported for this command | Silent drop of Soul as success |
+| Generic stop sequence (assumed) | Measured graceful stop for that binary |
+
+Product surfaces (Fleet kind badge, Doctor, spawn errors, Soul diagnostics) should prefer the **opening-prompt capability** and **Bridge wired** bits over guessing from the command string.
+
+#### 3.5.5 Gaps → follow-ups (only if prioritized)
+
+Documentation task **does not** open adapters. Concrete gaps (open a normal task only when scheduled):
+
+| Gap | Notes |
+|-----|--------|
+| Catalog drift | `KNOWN_AI_CLIS` includes basenames with no resume/Bridge family — kind=agent is optimistic |
+| Wrapper unwrap | Shell wrappers never resolve to a family without an explicit product design |
+| UI copy audit | Ensure Control/Fleet never implies first-class for Outros (spot-check when touching Fleet chrome) |
+
+No Product Invariant change. No new adapter in this task.
+
 ---
 
 ## 4. How to update this document
@@ -277,7 +357,8 @@ These diverge; the summary table alone cannot show them:
 2. **What:** update the summary mark, the per-runtime seam row, and a **concrete** verification token (date · CLI version · test path · task id). Bump the doc header `Last verified` when the matrix substance changes.  
 3. **How to mark ✓:** (a) unit/integration coverage that pins the wiring, **or** (b) dated dogfood with observable proof. If neither exists, use `~` or `✗`.  
 4. **Gaps:** open a **normal** board task when prioritized — never a permanent matrix owner task.  
-5. **Disputes:** code wins; fix the doc in the same change set when possible.
+5. **Disputes:** code wins; fix the doc in the same change set when possible.  
+6. **Outros (§3.5):** when changing `KNOWN_AI_CLIS`, `runtimeOf` / `RUNTIME_BY_BIN`, `withRuntimeBridge` family branches, `composeCommand` / opening-prompt adapters, or `DEFAULT_GRACEFUL_STOP`, re-check the Outros column and §3.5 evidence. Do not promote a CLI into Claude/Codex/… columns without native measurements.
 
 ### Open gaps (as of 2026-07-16)
 

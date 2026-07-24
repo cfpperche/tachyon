@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { createContext } from "preact";
+import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ComponentChildren, RefObject } from "preact";
 import type { ActivityItem, ActivityViewModel } from "../../activity/activityView";
 import { MarkdownView, linkify } from "./markdown";
 import { highlight } from "./markdownEngine";
-import { Badge, Button, EmptyState, IconButton, Input, PageChrome } from "../shared/ui";
+import { Badge, Button, EmptyState, IconButton, Input, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
+import type { ExternalShareChannel, ShareAgentTargetRow } from "./messages";
 import {
   ACTIVITY_FILTER_CATEGORIES,
   ACTIVITY_FILTER_LABELS,
@@ -26,9 +28,24 @@ export interface ActivityDispatch {
   terminal(): void;
   loadOlder(): void;
   copyShareText(sequence: number, key: string): void;
-  shareExternal(sequence: number, key: string): void;
-  shareToAgent(sequence: number, key: string): void;
+  /**
+   * t-a983e1 — channel already chosen in product QuickPicker.
+   * Host only confirms + opens mailto / WhatsApp.
+   */
+  shareExternal(sequence: number, key: string, channel: ExternalShareChannel): void;
+  /**
+   * t-a983e1 — without toAgent: host lists targets (SHARE_AGENT_TARGETS).
+   * With toAgent: host confirms + pastes into that agent.
+   */
+  shareToAgent(sequence: number, key: string, toAgent?: string): void;
 }
+
+/** Host-pushed agent list for the in-webview send-to-agent QuickPicker. */
+export type PendingShareAgentTargets = {
+  sequence: number;
+  key: string;
+  targets: ShareAgentTargetRow[];
+};
 
 const ICON: Record<ActivityItem["kind"], string> = {
   message: "comment", command: "terminal", nudge: "sparkle", injected: "arrow-circle-down", thinking: "lightbulb", image: "device-camera",
@@ -91,6 +108,18 @@ function TypeFilters({
   );
 }
 
+const EXTERNAL_SHARE_ITEMS: QuickPickerItem[] = [
+  { id: "email", label: "Email", description: "Open a mail draft", detail: "mailto: with Activity text as body" },
+  { id: "whatsapp", label: "WhatsApp", description: "Open WhatsApp Web", detail: "wa.me with Activity text" },
+];
+
+/** t-a983e1 — App sets openers; ShareActions (nested deep in feed rows) read them. */
+type ShareUi = {
+  openExternal: (sequence: number, key: string) => void;
+  requestAgentTargets: (sequence: number, key: string) => void;
+};
+const ShareUiContext = createContext<ShareUi | null>(null);
+
 function ShareActions({
   it,
   dispatch,
@@ -103,6 +132,7 @@ function ShareActions({
   onToggleRaw?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const shareUi = useContext(ShareUiContext);
   if (!it.shareKey && !onToggleRaw) return null;
   const click = (fn: () => void) => (e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); setOpen(false); fn(); };
   return (
@@ -130,11 +160,23 @@ function ShareActions({
                 <span class="codicon codicon-copy" />
                 <span>Copy share text</span>
               </Button>
-              <Button role="menuitem" onClick={click(() => dispatch.shareExternal(it.sequence, it.shareKey!))}>
+              <Button
+                role="menuitem"
+                onClick={click(() => {
+                  if (shareUi) shareUi.openExternal(it.sequence, it.shareKey!);
+                  else dispatch.shareExternal(it.sequence, it.shareKey!, "email");
+                })}
+              >
                 <span class="codicon codicon-share" />
                 <span>Share externally</span>
               </Button>
-              <Button role="menuitem" onClick={click(() => dispatch.shareToAgent(it.sequence, it.shareKey!))}>
+              <Button
+                role="menuitem"
+                onClick={click(() => {
+                  if (shareUi) shareUi.requestAgentTargets(it.sequence, it.shareKey!);
+                  else dispatch.shareToAgent(it.sequence, it.shareKey!);
+                })}
+              >
                 <span class="codicon codicon-send" />
                 <span>Send to Tachyon agent</span>
               </Button>
@@ -326,7 +368,16 @@ function ActivityLine({ it, dispatch, cv }: { it: ActivityItem; dispatch: Activi
  * component owns everything ELSE — including the scroll/prepend machinery that used to live in
  * main.tsx, now retargeted at `scrollContainer` (Control's embed host div) instead of window.
  */
-export function App({ vm, prepended, dispatch, images, scrollContainer, backLink }: {
+export function App({
+  vm,
+  prepended,
+  dispatch,
+  images,
+  scrollContainer,
+  backLink,
+  pendingShareAgentTargets,
+  onConsumeShareAgentTargets,
+}: {
   vm?: ActivityViewModel;
   /** True when THIS vm push paged in older items at the top (scroll-anchor case) — travels as its
    *  own prop, set together with `vm` by the same host message, never inferred from vm alone. */
@@ -336,11 +387,48 @@ export function App({ vm, prepended, dispatch, images, scrollContainer, backLink
   scrollContainer: RefObject<HTMLDivElement>;
   /** t-bf3498 — the route's "← Fleet" back-link, rendered under the "Activity" title. */
   backLink?: ComponentChildren;
+  /**
+   * t-a983e1 — host listed share targets; open product QuickPicker.
+   * Cleared via onConsumeShareAgentTargets after the picker opens / closes.
+   */
+  pendingShareAgentTargets?: PendingShareAgentTargets | null;
+  onConsumeShareAgentTargets?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [zoom, setZoom] = useState<string | null>(null);
   const [filters, setFilters] = useState<ActivityFilterState>(() => readStoredFilters());
   const [atBottom, setAtBottom] = useState(true);
+  // t-a983e1 — product QuickPicker state (replaces vscode.showQuickPick for Activity share).
+  type SharePick =
+    | { kind: "external"; sequence: number; key: string }
+    | { kind: "agent"; sequence: number; key: string; items: QuickPickerItem[] };
+  const [sharePick, setSharePick] = useState<SharePick | null>(null);
+
+  const shareUi = useMemo<ShareUi>(
+    () => ({
+      openExternal: (sequence, key) => setSharePick({ kind: "external", sequence, key }),
+      // Host lists targets → SHARE_AGENT_TARGETS → pendingShareAgentTargets prop opens the picker.
+      requestAgentTargets: (sequence, key) => dispatch.shareToAgent(sequence, key),
+    }),
+    [dispatch],
+  );
+
+  // Host-pushed agent targets → open product QuickPicker.
+  useEffect(() => {
+    if (!pendingShareAgentTargets) return;
+    const { sequence, key, targets } = pendingShareAgentTargets;
+    setSharePick({
+      kind: "agent",
+      sequence,
+      key,
+      items: targets.map((t) => ({
+        id: t.name,
+        label: t.name,
+        description: t.description,
+      })),
+    });
+    onConsumeShareAgentTargets?.();
+  }, [pendingShareAgentTargets, onConsumeShareAgentTargets]);
   // Chat sticks to the newest message — but only when the user is already near the bottom (don't yank them
   // back while they scroll up to read history).
   const stick = useRef(true);
@@ -441,6 +529,7 @@ export function App({ vm, prepended, dispatch, images, scrollContainer, backLink
   };
 
   return (
+    <ShareUiContext.Provider value={shareUi}>
     <>
     <div>
       <PageChrome
@@ -524,7 +613,43 @@ export function App({ vm, prepended, dispatch, images, scrollContainer, backLink
     {!atBottom && vm.items.length > 0 && (
       <Button class="jump" icon="arrow-down" title="Jump to latest" onClick={jumpToLatest}>Latest</Button>
     )}
+    {sharePick?.kind === "external" ? (
+      <QuickPicker
+        open
+        data-testid="activity-share-external-picker"
+        title="Share Activity item"
+        subtitle="Opens Email or WhatsApp with the item text (preview confirm on host)."
+        placeholder="Filter…"
+        items={EXTERNAL_SHARE_ITEMS}
+        emptyText="No share channels"
+        onClose={() => setSharePick(null)}
+        onSelect={(item) => {
+          const channel = item.id === "whatsapp" ? "whatsapp" : "email";
+          const { sequence, key } = sharePick;
+          setSharePick(null);
+          dispatch.shareExternal(sequence, key, channel as ExternalShareChannel);
+        }}
+      />
+    ) : null}
+    {sharePick?.kind === "agent" ? (
+      <QuickPicker
+        open
+        data-testid="activity-share-agent-picker"
+        title="Send Activity item to agent"
+        subtitle="Pastes focused context into the destination (not submitted)."
+        placeholder="Filter agents…"
+        emptyText="No other running agents"
+        items={sharePick.items}
+        onClose={() => setSharePick(null)}
+        onSelect={(item) => {
+          const { sequence, key } = sharePick;
+          setSharePick(null);
+          dispatch.shareToAgent(sequence, key, item.label);
+        }}
+      />
+    ) : null}
     </>
+    </ShareUiContext.Provider>
   );
 }
 

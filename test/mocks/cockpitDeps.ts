@@ -37,6 +37,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     openDoctor: () => {},
     fleetStart: async () => {},
     fleetStop: async () => {},
+    fleetContinueTask: async (_from, _to) => {},
     fleetTerminal: async () => {},
     revealPath: () => {},
     worktreeRemove: async () => undefined,

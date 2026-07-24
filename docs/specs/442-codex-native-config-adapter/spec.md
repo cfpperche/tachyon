@@ -46,6 +46,12 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 - [ ] Authentication stays externally linked and no credential, token, runtime state, notices,
   trust cache, hook trust state or memory bytes enter canonical policy or generated config.
 - [ ] Agent Studio exposes policy and content-free provenance, never source TOML bytes.
+- [ ] **Scenario: a human composes runtime tooling by source**
+  - **Given** hooks, MCPs, skills or native extensions discovered at global, workspace or agent scope
+  - **When** the human enables or disables one available item for a canonical agent
+  - **Then** the agent profile persists that selection, the private runtime harness receives the
+    resulting effective composition, and Agent Studio shows both each contributing source and the
+    effective set at any later time
 - [ ] The Codex row in `docs/runtimes/parity.md` names evidence per shipped family.
 
 ## Non-goals
@@ -55,9 +61,12 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 - Mirror the full upstream Codex configuration schema in `agent.yml`.
 - Copy global or workspace TOML wholesale.
 - Support Codex fork, which the measured runtime adapter does not expose.
+- Treat a human-enabled hook, MCP or skill as an approval workflow or attempt to infer whether the
+  human should accept its risk. The product must make the composition visible; the human decides.
 
 ## Open questions
 
-- The first scalar allowlist requires human review before the global/workspace slice lands.
 - Agent-sourced permissions/interface/feature flags remain unsupported until their authority model is
   explicitly decided; the typed selector fields are the only safe agent source in the first slice.
+- Slice C still needs to measure the Codex storage and launch mechanics for each tooling kind before
+  declaring an adapter tuple supported.

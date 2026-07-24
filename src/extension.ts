@@ -1481,6 +1481,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fleetStop: async (name, wsHash) => {
       await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: wsHash });
     },
+    // SDD 443 — webview QuickPicker already chose toName; host revalidates against live list.
+    fleetContinueTask: async (fromName, toName, wsHash) => {
+      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      if (!toName || toName === fromName) {
+        throw new Error("Continue task requires a different destination agent");
+      }
+      const listed = await extensionQuery(ws, { action: "agents.list" });
+      const rows = Array.isArray(listed) ? listed : [];
+      type AgentRow = { name?: string; running?: boolean; kind?: string; declared?: boolean };
+      const dest = rows
+        .map((r) => r as AgentRow)
+        .find((r) => r.name === toName);
+      if (!dest || typeof dest.name !== "string") {
+        throw new Error(`destination agent '${toName}' not found`);
+      }
+      if (dest.kind === "terminal") {
+        throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
+      }
+      if (dest.declared === false) {
+        throw new Error(`destination '${toName}' is ad-hoc (not declared in tachyon.yml)`);
+      }
+      if (dest.running) {
+        throw new Error(`destination '${toName}' is running — stop it first`);
+      }
+      const result = jsonObject(
+        await extensionInvoke(ws, {
+          action: "agent.continue-task",
+          fromAgent: fromName,
+          toAgent: toName,
+          reason: "continued from Control Fleet",
+        }),
+        "agent.continue-task",
+      );
+      if (result.ok !== true) {
+        throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
+      }
+      const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
+      void vscode.window.showInformationMessage(
+        handoff
+          ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
+          : vscode.l10n.t("Continued {0} → {1}", fromName, toName),
+      );
+    },
     fleetTerminal: async (name, wsHash) => {
       await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
     },

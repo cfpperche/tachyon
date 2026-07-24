@@ -1,8 +1,12 @@
 /* spec 335 — Mission Control board styles. Visual language ported from the approved prototype
    (/tmp/mission-control/index.html, pin p-96da7e) onto the real design-system tokens (.ds-*). */
 
-html, body { height: 100%; }
-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+/* t-e085bc — the bare `html, body { height }` / `body { display: flex; ... }` rules were removed:
+   standalone-era leftovers (the Board is Control-embedded since SDD 410 Phase B #6), and this sheet
+   co-loads into the Control panel forever once visited — a bare `body { display: flex }` restyles
+   the SHELL's body. cockpit.css (linked last) already pins html/body height/overflow/padding with
+   !important. Bare layout-element selectors are banned in co-loadable sheets — see
+   webviewCssScope.test.ts. */
 /* dogfood round 2 (#4) — the shared shell's #root (shell.ts) carries no height of its own, so `.mc-root`'s
    `height: 100%` resolved against an unsized parent and shrank to content: columns ended at their content
    height instead of filling the view, leaving the board's horizontal scrollbar stranded mid-screen. Same fix

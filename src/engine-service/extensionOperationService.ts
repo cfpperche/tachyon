@@ -433,6 +433,13 @@ export async function executeExtensionCommand(
       ));
     case "agent.fork":
       return forkAgent(workspace, activityLog, command.agent);
+    case "agent.continue-task":
+      return json(await workspace.continueTaskAcrossRuntime({
+        fromAgent: command.fromAgent,
+        toAgent: command.toAgent,
+        reason: command.reason,
+        taskSummary: command.taskSummary,
+      }));
     case "worktree.remove":
       return removeAgentWorktree(workspace, command.agent, true);
     case "worktree.delete-branch":

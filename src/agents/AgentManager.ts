@@ -1109,6 +1109,16 @@ export class AgentManager {
   }
 
   /**
+   * t-6d09e6 — best-effort sync liveness from the last successful tmux inventory (no I/O).
+   * Used by sync config writers (Agent Studio) that cannot await agentStates(). Prefer
+   * runningAgents() when async is available; unknown → false (not running).
+   */
+  isKnownAliveSync(name: string): boolean {
+    const s = this.lastAgentStates.get(name);
+    return s !== undefined && !s.dead;
+  }
+
+  /**
    * t-016e8b: like runningAgents, but an ambiguous tmux read surfaces as null instead of the
    * last known-good snapshot — which on a fresh engine process is an empty Map, so the
    * "protection" would read as "no agents" exactly when rebind scans the boot inventory.
