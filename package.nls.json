@@ -105,5 +105,8 @@
   "command.reinjectContinuityItem": "Re-inject Continuity",
   "command.injectPromptTemplate": "Inject Prompt Template…",
   "command.injectPromptTemplateItem": "Inject Prompt Template",
-  "view.pluginSurfaces": "Plugin Surfaces"
+  "view.pluginSurfaces": "Plugin Surfaces",
+  "command.openAgentPane": "Tachyon: Open Agent Pane",
+  "command.openAgentPaneItem": "Open Agent Pane",
+  "config.agentPane.enabled": "Enable the first-party agent pane (layer 2, webview+xterm). VS Code integrated terminal remains the default open path."
 }

@@ -95,6 +95,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // reasoning as the other retired panels: any still-persisted pre-migration window state.
   // pin-preview is hosted in SidebarPrototype.previewPin but renders via its own preact bundle (spec 279 Lane E).
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true, editorHome: "sidebar" },
+  // t-610355 — layer-2 first-party agent pane (runtime TUI in Tachyon webview + xterm; additive to integrated terminal)
+  { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, editorHome: "standalone" },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
   // The standalone Mission Control (Board) panel was retired (t-610705, SDD 410 Phase B #6, 2026-07-20) —

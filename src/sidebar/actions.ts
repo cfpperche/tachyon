@@ -7,7 +7,7 @@ import type { AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "probes" | "inspect" | "stop" | "kill"
+  | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill"
   | "restart" | "restartNew" | "restartForceNew"
   | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "remove";
@@ -16,6 +16,8 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
   probes: { icon: "beaker", label: "Probes" },
   inspect: { icon: "eye", label: "Open terminal" },
+  // t-610355 — layer-2 first-party pane (webview+xterm); sits next to integrated-terminal open
+  openPane: { icon: "terminal", label: "Open agent pane" },
   stop: { icon: "primitive-square", label: "Stop graceful" },
   kill: { icon: "debug-disconnect", label: "Kill forced" },
   // spec 389 — one-click default (graceful+resume); variants live next to it in ⋯, no VS Code QuickPick.
@@ -66,7 +68,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (canViewActivity(a)) out.push("probes");
   if (a.status === "stopping") return [...out, "remove"];
   if (hasPane(a)) {
-    if (!isCleanExitPostmortem(a)) out.push("inspect");
+    if (!isCleanExitPostmortem(a)) out.push("inspect", "openPane");
     if (isRunning(a)) out.push("stop", "kill");
     else out.push("kill");
     if (canRestart(a)) out.push("restart", "restartNew", "restartForceNew");
@@ -86,13 +88,14 @@ export function actionsFor(a: AgentVM): ActionId[] {
 }
 
 /** The curated subset shown inline on the row (the rest live behind "more"). Keep one-click actions to
- *  read-only surfaces only: durable Activity and the raw terminal/output view. Lifecycle/destructive actions
- *  (start/stop/restart/resume/kill/remove) need the deliberate extra click through the overflow menu. */
+ *  read-only surfaces only: durable Activity and the raw terminal/output view (integrated + first-party pane).
+ *  Lifecycle/destructive actions (start/stop/restart/resume/kill/remove) need the deliberate extra click
+ *  through the overflow menu. */
 export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (a.status === "stopping") return out;
-  if (hasPane(a) && !isCleanExitPostmortem(a)) out.push("inspect");
+  if (hasPane(a) && !isCleanExitPostmortem(a)) out.push("inspect", "openPane");
   return out;
 }
 
