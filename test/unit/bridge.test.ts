@@ -1641,6 +1641,45 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const wrongMethod = await fetch(bridge.url!, { method: "DELETE" });
     expect(wrongMethod.status).toBe(404);
   });
+
+  it("t-016e8b: a session id from a previous Bridge process gets 404 on POST so the client re-initializes instead of hanging", async () => {
+    const staleHeaders = {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      "mcp-session-id": "00000000-0000-4000-8000-00000000dead",
+    };
+    const post = await fetch(bridge.url!, {
+      method: "POST",
+      headers: staleHeaders,
+      body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list", params: {} }),
+    });
+    expect(post.status).toBe(404);
+    expect(await post.json()).toEqual({ error: "MCP session not found" });
+
+    const sse = await fetch(bridge.url!, { headers: { accept: "text/event-stream", "mcp-session-id": staleHeaders["mcp-session-id"] } });
+    expect(sse.status).toBe(404);
+
+    // A re-initialize still carrying the stale id is EXEMPT — it is how a reconnecting
+    // client mints its new session (mirrors the SDK's own session-validation gate).
+    const reinit = await fetch(bridge.url!, {
+      method: "POST",
+      headers: staleHeaders,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 10,
+        method: "initialize",
+        params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "stale-reconnect", version: "1.0" } },
+      }),
+    });
+    expect(reinit.status).toBe(200);
+    const mintedSession = reinit.headers.get("mcp-session-id");
+    expect(mintedSession).toBeTruthy();
+    expect(mintedSession).not.toBe(staleHeaders["mcp-session-id"]);
+
+    // Live sessions on the same server are untouched.
+    const tools = await client.listTools();
+    expect(tools.tools.length).toBeGreaterThan(0);
+  });
 });
 
 describe("stable Bridge port", () => {

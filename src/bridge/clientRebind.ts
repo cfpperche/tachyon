@@ -44,6 +44,12 @@ const POST_RESUME_STABILITY_MS = 1_500;
  * inventory settle before the authoritative second scan. */
 const HOST_INVENTORY_SETTLE_MS = 100;
 
+/** t-016e8b: a cold-boot tmux read can fail ambiguously (null) while the server is still
+ * settling after an engine upgrade — and a single 100ms rescan lost that race, leaving
+ * survivors with half-open MCP clients until the NEXT generation bump. Rescan with backoff
+ * while the read stays ambiguous; the first confirmed inventory (empty or not) ends the loop. */
+const INVENTORY_RESCAN_DELAYS_MS = [HOST_INVENTORY_SETTLE_MS, 1_000, 5_000, 15_000];
+
 /** A young capture-runtime survivor may publish its resumable session shortly after the new engine
  * starts.  Wait only at the non-destructive preflight boundary; never extend teardown timeouts. */
 const RESUME_READINESS_WAIT_MS = 5_000;
@@ -59,6 +65,7 @@ export type RebindResumeReadiness =
 
 export interface RebindAuditEvent {
   at: string;
+  /** Agent name, or "*" for a whole-inventory scan event. */
   agent: string;
   reason: RebindReason;
   fromGeneration: number;
@@ -69,6 +76,10 @@ export interface RebindAuditEvent {
   hardKill?: boolean;
   attempts?: number;
   waitedMs?: number;
+  /** phase "scan": running inventory size, or null when the tmux read was ambiguous. */
+  running?: number | null;
+  /** phase "scan": how many agents this scan newly marked suspect. */
+  marked?: number;
 }
 
 export interface BridgeClientRebindDeps {
@@ -80,6 +91,10 @@ export interface BridgeClientRebindDeps {
   getLedger: (name: string) => SessionRecord | undefined;
   /** Currently running managed names (alive process, not dead pane). */
   listRunning: () => Promise<string[]>;
+  /** t-016e8b: like listRunning, but reports an ambiguous tmux read as null instead of a
+   * (possibly cold-empty) cached snapshot, so boot-time scans can retry rather than trust it.
+   * Optional — when absent, scans fall back to listRunning and treat its result as authoritative. */
+  listRunningStrict?: () => Promise<string[] | null>;
   /** Entry kind — terminal-kind is never a rebind candidate. */
   kindOf: (name: string) => "agent" | "terminal";
   /** Still RUNNING? (preflight + wait loops). */
@@ -248,7 +263,9 @@ export class BridgeClientRebindCoordinator {
       return;
     }
     const G = this.bumpGeneration();
-    const suspects = await this.markSuspects(G);
+    const inventory = await this.readInventory();
+    const suspects = await this.markSuspects(G, inventory ?? undefined);
+    this.auditScan(G, "host_generation_bump", inventory, suspects.length);
 
     if (settings.onHostGenerationBump === "notify") {
       if (suspects.length > 0) {
@@ -268,9 +285,10 @@ export class BridgeClientRebindCoordinator {
    * Reconstruct `suspect` from durable ledger + currently running agents.
    * Skips terminal-kind, non-wired, already at/above G, and agents already rebinding
    * (those get pending_recheck only).
+   * @param runningArg pre-read inventory (backoff scans read once and share); falls back to listRunning.
    */
-  async markSuspects(G: number): Promise<string[]> {
-    const running = await this.deps.listRunning();
+  async markSuspects(G: number, runningArg?: string[]): Promise<string[]> {
+    const running = runningArg ?? (await this.deps.listRunning());
     const marked: string[] = [];
     for (const name of running) {
       if (this.deps.kindOf(name) !== "agent") continue;
@@ -355,6 +373,26 @@ export class BridgeClientRebindCoordinator {
     return bridgeGenerationStateKey(this.deps.workspaceHash, this.deps.bridgeInstanceId);
   }
 
+  /** Strict inventory when wired (null = ambiguous read, retry-worthy); listRunning otherwise. */
+  private async readInventory(): Promise<string[] | null> {
+    if (this.deps.listRunningStrict) return this.deps.listRunningStrict();
+    return this.deps.listRunning();
+  }
+
+  /** t-016e8b: every suspect scan leaves an audit line — an empty or ambiguous inventory at a
+   * generation bump must be diagnosable after the fact, never silent. */
+  private auditScan(G: number, reason: RebindReason, inventory: string[] | null, marked: number): void {
+    this.audit({
+      at: new Date((this.deps.now ?? Date.now)()).toISOString(),
+      agent: "*",
+      reason,
+      fromGeneration: G,
+      phase: "scan",
+      running: inventory === null ? null : inventory.length,
+      marked,
+    });
+  }
+
   private ensure(name: string): AgentRuntime {
     let rt = this.agents.get(name);
     if (!rt) {
@@ -372,15 +410,28 @@ export class BridgeClientRebindCoordinator {
     const run = async (): Promise<void> => {
       this.generationBumpGraceTimer = undefined;
       if (this.disposed) return;
-      // Default grace remains zero.  Give only the host inventory a short bounded settle,
-      // then rescan: an alive session missed by the activation-time snapshot must not keep
-      // its half-open MCP client forever.  A configured positive grace already provides
-      // this settle window.
-      if (graceMs <= 0) await (this.deps.sleep ?? sleepDefault)(HOST_INVENTORY_SETTLE_MS);
-      if (this.disposed) return;
-      const lateSuspects = await this.markSuspects(G);
-      await this.enqueueStillSuspect([...new Set([...names, ...lateSuspects])], G, reason);
-      await this.drain();
+      // Default grace remains zero.  An alive session missed by the activation-time snapshot
+      // must not keep its half-open MCP client forever — and a cold-boot tmux read can be
+      // ambiguous (null), so one fixed settle is not enough (t-016e8b).  Rescan on the bounded
+      // backoff schedule while the read stays ambiguous; the first CONFIRMED inventory — empty
+      // or not — ends the loop (a confirmed zero-agent boot must not burn the whole schedule).
+      // Each scan is audited, so an all-empty or all-ambiguous bump is never silent.
+      const all = new Set(names);
+      for (let i = 0; i < INVENTORY_RESCAN_DELAYS_MS.length; i++) {
+        // A configured positive grace already provided the first settle window.
+        const delay = i === 0 && graceMs > 0 ? 0 : INVENTORY_RESCAN_DELAYS_MS[i]!;
+        if (delay > 0) await (this.deps.sleep ?? sleepDefault)(delay);
+        if (this.disposed) return;
+        const inventory = await this.readInventory();
+        const lateSuspects = await this.markSuspects(G, inventory ?? undefined);
+        for (const name of lateSuspects) all.add(name);
+        this.auditScan(G, reason, inventory, lateSuspects.length);
+        if (all.size > 0) {
+          await this.enqueueStillSuspect([...all], G, reason);
+          await this.drain();
+        }
+        if (inventory !== null) return;
+      }
     };
     if (graceMs <= 0) return run();
     return new Promise((resolve) => {
@@ -398,11 +449,29 @@ export class BridgeClientRebindCoordinator {
       if (!rt || rt.clientState !== "suspect" || rt.suspectGeneration !== G) continue;
       if (!(await this.deps.isRunning(name))) {
         rt.clientState = "cancelled";
+        this.audit({
+          at: new Date((this.deps.now ?? Date.now)()).toISOString(),
+          agent: name,
+          reason,
+          fromGeneration: G,
+          phase: "enqueue_skip",
+          finalState: "cancelled",
+          error: "not running (exited before rebind)",
+        });
         continue;
       }
       // Re-check durable stamp — manual resume may have healed.
       if (!isWiredSuspect(this.deps.getLedger(name), G)) {
         rt.clientState = "ok";
+        this.audit({
+          at: new Date((this.deps.now ?? Date.now)()).toISOString(),
+          agent: name,
+          reason,
+          fromGeneration: G,
+          phase: "enqueue_skip",
+          finalState: "ok",
+          error: "already bound to current generation",
+        });
         continue;
       }
       still.push(name);

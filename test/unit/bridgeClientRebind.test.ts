@@ -878,4 +878,72 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(deps.hardKills).toContain("a");
     expect(deps.resumes).toContain("a");
   });
+
+  it("t-016e8b: boot scans retry with backoff while the strict inventory is ambiguous, then rebind", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "audit.jsonl");
+    const ledger = new Map([
+      ["codex", baseRecord({ def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s1" }, bridgeClient: { boundGeneration: 0, wired: true } })],
+    ]);
+    const running = new Set(["codex"]);
+    const sleeps: number[] = [];
+    const deps = makeDeps({ ledger, running, auditPath, onSleep: (ms) => sleeps.push(ms) });
+    // A fresh engine process: the cached (non-strict) read is cold-empty, the strict read is
+    // ambiguous twice (tmux still settling after the upgrade), then answers with the survivor.
+    deps.listRunning = async () => [];
+    const strictResults: Array<string[] | null> = [null, null, ["codex"]];
+    deps.listRunningStrict = async () => (strictResults.length > 0 ? (strictResults.shift() as string[] | null) : ["codex"]);
+
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+
+    expect(deps.resumes).toEqual(["codex"]);
+    expect(c.getClientState("codex")).toBe("ok");
+    const scans = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((l) => JSON.parse(l) as { phase: string; agent: string; running?: number | null; marked?: number })
+      .filter((e) => e.phase === "scan");
+    // initial bump scan + first (100ms) rescan both ambiguous, third scan finds the survivor
+    expect(scans.length).toBe(3);
+    expect(scans[0]).toMatchObject({ agent: "*", running: null, marked: 0 });
+    expect(scans[2]).toMatchObject({ agent: "*", running: 1, marked: 1 });
+    expect(sleeps).toContain(1_000); // backoff engaged past the fixed settle
+  });
+
+  it("t-016e8b: an all-empty generation bump audits every scan instead of staying silent", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "audit.jsonl");
+    const deps = makeDeps({ ledger: new Map(), running: new Set(), auditPath });
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+
+    const scans = fs.readFileSync(auditPath, "utf8").trim().split("\n")
+      .map((l) => JSON.parse(l) as { phase: string; running?: number | null; marked?: number })
+      .filter((e) => e.phase === "scan");
+    // initial bump scan + one settle rescan — a CONFIRMED empty inventory ends the backoff
+    // early (zero-agent boots are common and must not burn the whole schedule), but both
+    // scans still leave audit lines.
+    expect(scans.length).toBe(2);
+    for (const scan of scans) expect(scan).toMatchObject({ running: 0, marked: 0 });
+    expect(deps.resumes).toEqual([]);
+  });
+
+  it("t-016e8b: a suspect that exits before enqueue is audited as enqueue_skip, not dropped silently", async () => {
+    const auditDir = tmpDir();
+    dirs.push(auditDir);
+    const auditPath = path.join(auditDir, "audit.jsonl");
+    const ledger = new Map([["gone", baseRecord({ bridgeClient: { boundGeneration: 0, wired: true } })]]);
+    // Inventory lists the survivor, but it is no longer running by the per-name recheck.
+    const deps = makeDeps({ ledger, running: new Set(), auditPath });
+    deps.listRunningStrict = async () => ["gone"];
+
+    const c = new BridgeClientRebindCoordinator(deps);
+    await c.onListenerReady();
+
+    expect(deps.resumes).toEqual([]);
+    expect(c.getClientState("gone")).toBe("cancelled");
+    const events = fs.readFileSync(auditPath, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { phase: string; agent: string; finalState?: string });
+    expect(events.some((e) => e.phase === "enqueue_skip" && e.agent === "gone" && e.finalState === "cancelled")).toBe(true);
+  });
 });

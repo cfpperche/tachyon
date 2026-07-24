@@ -2,6 +2,7 @@ import http from "node:http";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "../companion/CompanionHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
 import { resolveCaller, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
@@ -79,9 +80,10 @@ export function derivePort(wsHash: string): number {
 
 /**
  * The Bridge — Tachyon's engine-owned MCP server. Listens on a loopback port for
- * the lifetime of the persistent workspace engine. Stateless streamable-HTTP: each POST gets a
- * fresh transport + McpServer pair, so no session bookkeeping; durable state lives
- * in tmux, not here.
+ * the lifetime of the persistent workspace engine. Streamable-HTTP with in-process session
+ * bookkeeping: an initialize POST mints a transport + McpServer pair kept in `sessions`;
+ * a session id from a previous process gets 404 so clients re-initialize. Durable state
+ * lives in tmux, not here.
  */
 export class Bridge {
   private server?: http.Server;
@@ -334,6 +336,22 @@ export class Bridge {
       if (existing) {
         await existing.transport.handleRequest(req, res, body);
         return;
+      }
+
+      // A session id with no live transport here was minted by a previous Bridge process
+      // (engine restart/upgrade). Answer 404 — per the streamable-HTTP spec the client MUST
+      // then re-initialize. Falling through to a fresh transport instead leaves the caller
+      // waiting out its own tool-call timeout on a response it can never correlate
+      // (t-016e8b: surviving agents hung 300s per call after an engine upgrade). An initialize
+      // request is exempt — it is how a reconnecting client mints its NEW session, whatever
+      // stale id its transport still attaches (mirrors the SDK's own session-validation gate).
+      if (typeof sessionId === "string") {
+        const messages = Array.isArray(body) ? body : [body];
+        if (!messages.some(isInitializeRequest)) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "MCP session not found" }));
+          return;
+        }
       }
 
       const transport = new StreamableHTTPServerTransport({
