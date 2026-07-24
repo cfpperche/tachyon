@@ -185,6 +185,10 @@ export interface CockpitStrings {
   wtBlocked: string;
   wtOccupiedBy: string;
   wtShowAll: string;
+  /** t-43c6fa — Deliveries tab classification badges (spec 365 signals, now actually surfaced). */
+  dlvMissingRef: string;
+  dlvLive: string;
+  dlvUnmerged: string;
 }
 
 export type CockpitAction =

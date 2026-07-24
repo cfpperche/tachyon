@@ -1,6 +1,8 @@
 /**
  * Cockpit (desktop POC) — project sysadmin in the editor.
- * Pure model only (safe for webview + host). Disk readers live in cockpit/disk.ts (host only).
+ * Pure model only (safe for webview + host). There are no disk readers left beside it: `cockpit/disk.ts`
+ * was deleted once its last raw-JSON reader went away (spec 444 took the worktree one, t-43c6fa the
+ * delivery one). Both tabs now read the engine's validated, classified RPC.
  * Top tabs only (no webview left rail). Does not replace VS Code/Tachyon sidebar.
  */
 
@@ -87,6 +89,18 @@ export interface CockpitDeliveryRow {
   worktreePath?: string;
   folder?: string;
   wsHash?: string;
+  /**
+   * t-43c6fa — spec 365's fail-closed classification, now that this row comes from the engine's
+   * validated store instead of a raw-JSON disk parse. Absent only when the engine omitted it.
+   * `reasons` is what lets the tab explain a state instead of just labelling it (the spec 444
+   * lesson: never show a status the human cannot act on).
+   */
+  liveState?: string;
+  containedInBase?: boolean;
+  missingRef?: boolean;
+  clean?: boolean;
+  safetyClass?: string;
+  reasons?: string[];
 }
 
 export interface CockpitApprovalRow {
@@ -133,6 +147,8 @@ export interface CockpitWorkspaceBundle {
    *  error state for this workspace instead of unverified raw rows. */
   worktreesUnavailable?: string;
   deliveries: CockpitDeliveryRow[];
+  /** t-43c6fa — same contract as `worktreesUnavailable`, for the Deliveries classified read. */
+  deliveriesUnavailable?: string;
   approvals: CockpitApprovalRow[];
   tmux?: { state: string; version?: string };
   companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
@@ -190,6 +206,8 @@ export interface CockpitModel {
   /** spec 444 — folders whose classified worktree read failed (engine unreachable), with reasons. */
   worktreesUnavailable?: Array<{ folder: string; reason: string }>;
   deliveries: CockpitDeliveryRow[];
+  /** t-43c6fa — folders whose classified delivery read failed (engine unreachable), with reasons. */
+  deliveriesUnavailable?: Array<{ folder: string; reason: string }>;
   approvals: CockpitApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
   /**
@@ -228,6 +246,9 @@ export function buildCockpitModel(
     b.worktreesUnavailable ? [{ folder: b.control.folderName, reason: b.worktreesUnavailable }] : [],
   );
   const deliveries = scoped.flatMap((b) => b.deliveries);
+  const deliveriesUnavailable = scoped.flatMap((b) =>
+    b.deliveriesUnavailable ? [{ folder: b.control.folderName, reason: b.deliveriesUnavailable }] : [],
+  );
   const approvals = scoped.flatMap((b) => b.approvals);
   const tmux = scoped.map((b) => ({
     folder: b.control.folderName,
@@ -284,6 +305,7 @@ export function buildCockpitModel(
     worktrees,
     ...(worktreesUnavailable.length > 0 ? { worktreesUnavailable } : {}),
     deliveries,
+    ...(deliveriesUnavailable.length > 0 ? { deliveriesUnavailable } : {}),
     approvals,
     tmux,
     ...(companion ? { companion } : {}),

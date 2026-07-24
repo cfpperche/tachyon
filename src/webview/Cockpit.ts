@@ -430,6 +430,9 @@ function strings(): CockpitStrings {
     wtBlocked: t("Blocked"),
     wtOccupiedBy: t("occupied by"),
     wtShowAll: t("Show all"),
+    dlvMissingRef: t("ref missing"),
+    dlvLive: t("agent live"),
+    dlvUnmerged: t("not in base"),
   };
 }
 

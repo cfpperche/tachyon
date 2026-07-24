@@ -1334,8 +1334,22 @@ export function App(p: CockpitAppProps) {
   } else if (section === "deliveries") {
     body = (
       <ModuleChrome title={s.deliveriesTitle} hint={s.deliveriesHint}>
+        {/* t-43c6fa — engine unreachable is its own state, never an empty list that reads as
+            "no deliveries". Mirrors the Worktrees tab (spec 444). */}
+        {m.deliveriesUnavailable && m.deliveriesUnavailable.length > 0 ? (
+          <div class="ck-wt-unavailable" role="alert">
+            {s.wtEngineUnavailable}
+            {m.deliveriesUnavailable.map((u) => (
+              <div key={u.folder} class="ck-mono ck-wt-unavailable-detail">
+                {u.folder}: {u.reason}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {m.deliveries.length === 0 ? (
-          <EmptyState kind="empty" message={s.noneListed} />
+          m.deliveriesUnavailable && m.deliveriesUnavailable.length > 0 ? null : (
+            <EmptyState kind="empty" message={s.noneListed} />
+          )
         ) : (
           <div class="ck-card-list" data-testid="control-deliveries">
             {m.deliveries.map((d) => (
@@ -1345,6 +1359,9 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name ck-mono">{d.id}</span>
                     <Badge tone={["pruned", "abandoned"].includes(d.phase) ? "default" : "ok"}>{d.phase}</Badge>
+                    {d.missingRef ? <Badge tone="warn">{s.dlvMissingRef}</Badge> : null}
+                    {d.liveState === "live" ? <Badge tone="info">{s.dlvLive}</Badge> : null}
+                    {d.containedInBase === false && !d.missingRef ? <Badge tone="warn">{s.dlvUnmerged}</Badge> : null}
                   </>
                 }
                 meta={
@@ -1362,7 +1379,15 @@ export function App(p: CockpitAppProps) {
                     {d.folder ? <span>{d.folder}</span> : null}
                   </>
                 }
-                detail={d.worktreePath ? <span class="ck-mono">{d.worktreePath}</span> : undefined}
+                detail={
+                  <>
+                    {d.worktreePath ? <span class="ck-mono">{d.worktreePath}</span> : null}
+                    {/* Spec 444 lesson: never show a state the human cannot act on — say why. */}
+                    {d.reasons && d.reasons.length > 0 ? (
+                      <span class="ck-dlv-reasons">{d.reasons.join(" · ")}</span>
+                    ) : null}
+                  </>
+                }
                 actions={
                   <>
                     <Button variant="default" onClick={() => p.onCopyText(d.id)}>
