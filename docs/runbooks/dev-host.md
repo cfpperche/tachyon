@@ -442,6 +442,25 @@ npm run dogfood:dev-host -- point-clear --all     # free the whole environment
 **Human:** Run and Debug → **Tachyon: Dev Host** → **F5**. Drive only the EDH window.
 **Agents:** same, or pick **Tachyon: Dev Host · $owner** so concurrent dogfood does not steal `active`.
 
+### After land (required cleanup)
+
+When the feature is **merged to main** (or dogfood for that change is finished), free the slot
+**before** discarding the worktree. Do **not** leave a pointed worktree after land.
+
+| Step | Command / action |
+|------|------------------|
+| 1 | Close the EDH window for that feature (if open) |
+| 2 | `npm run dogfood:dev-host -- point-clear --owner <owner\|slug>` — only **your** slot |
+| 3 | `npm run dogfood:dev-host -- point-status --all` — confirm your slot is gone; leave others alone |
+| 4 | Remove the feature worktree (registry / `git worktree remove` as your land flow requires) |
+| 5 | Prune local branch / registry entry if the project flow says so |
+
+**Order:** prefer **point-clear → then worktree remove**. If the path disappears first, `point-status`
+reports **broken** and a persistent engine may still be alive under that slot.
+
+**Do not** use `point-clear --all` as routine post-land — that wipes every agent’s slot on the machine.
+Reserve `--all` for intentional full environment reset.
+
 ### Fixture intents (do not confuse)
 
 | Intent | Expect | Metrics peek? |
@@ -454,7 +473,7 @@ npm run dogfood:dev-host -- point-clear --all     # free the whole environment
 1. `--workspace` / resolved fixture must not be the monorepo root (script refuses).
 2. Do not reload / reinstall VSIX in the fleet window for this path.
 3. Specs document steps under `**Human dogfood:**` in `tasks.md` (not a free-floating `DOGFOOD.md`).
-4. After `git worktree remove` of a pointed worktree, run **`point-clear --owner …`** (or re-point). `point-status` reports **broken** if the worktree path is gone.
+4. **After land / after dogfood:** `point-clear --owner …` then remove the worktree (see **After land** above). If the worktree is already gone, still run **point-clear** so the slot and engine are not left stale.
 5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease. Map lease owner → slot id when both apply.
 6. F5 host is always the **primary monorepo checkout**. When `point` runs from a linked worktree,
    the CLI redirects the pointer there automatically; a pointer only under the feature worktree's

@@ -19,6 +19,8 @@ const {
   materializeWorkspaceMirror,
   pathsOf,
   point,
+  readActiveSlotId,
+  reconcileActiveSlot,
   resolveF5HostRepoRoot,
   resolveFixturePath,
   resolveSlotId,
@@ -361,6 +363,21 @@ describe("dev-host pointer", () => {
       const all = await clear(repo, { ...noopReconcile, all: true });
       expect(all.cleared).toBe(true);
       expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
+    });
+
+    it("clear of the active slot retargets active to a remaining owner", async () => {
+      arm({ owner: "keep-me", activate: true });
+      arm({ owner: "drop-me", activate: true });
+      expect(readActiveSlotId(repo)).toBe("drop-me");
+
+      const cleared = await clear(repo, { ...noopReconcile, owner: "drop-me" });
+      expect(cleared.cleared).toBe(true);
+      expect(listSlotIds(repo)).toEqual(["keep-me"]);
+      expect(readActiveSlotId(repo)).toBe("keep-me");
+      expect(cleared.activeSlotId).toBe("keep-me");
+      // Dangling path must not remain
+      expect(fs.existsSync(pathsOf(repo, "drop-me").root)).toBe(false);
+      expect(reconcileActiveSlot(repo)).toBe("keep-me");
     });
 
     it("migrates legacy flat pointer into slots/default", () => {

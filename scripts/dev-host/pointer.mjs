@@ -238,6 +238,21 @@ export function migrateFlatPointerToSlots(repoRoot) {
   return { migrated: true, slotId: DEFAULT_SLOT };
 }
 
+/** Remove path if present (symlink-safe — never follow a dangling active → slots/*). */
+function rmIfPresent(p) {
+  try {
+    const st = fs.lstatSync(p);
+    if (st.isSymbolicLink() || st.isFile()) {
+      fs.unlinkSync(p);
+      return;
+    }
+    fs.rmSync(p, { recursive: true, force: true });
+  } catch (err) {
+    if (err && /** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return;
+    /* best-effort for replace */
+  }
+}
+
 /** Point `active` symlink at slots/<slotId> for the default F5 launch entry. */
 export function setActiveSlot(repoRoot, slotId) {
   const slot = normalizeSlotId(slotId);
@@ -248,12 +263,8 @@ export function setActiveSlot(repoRoot, slotId) {
   }
   ensureDir(base);
   const link = activeLinkPath(repoRoot);
-  try {
-    fs.lstatSync(link);
-    fs.rmSync(link, { recursive: true, force: true });
-  } catch {
-    /* missing */
-  }
+  // Must unlink (not rm -r): a dangling active → deleted slot used to leave EEXIST on rewrite.
+  rmIfPresent(link);
   // Relative link so the monorepo tree stays relocatable
   fs.symlinkSync(path.join(SLOTS_SUBDIR, slot), link);
   return link;
@@ -269,6 +280,31 @@ export function readActiveSlotId(repoRoot) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Ensure `active` points at a living slot (or is removed).
+ * Call after clear/migrate so F5 never follows a dangling symlink.
+ * @returns {string|null} active slot id after reconcile
+ */
+export function reconcileActiveSlot(repoRoot) {
+  const resolved = path.resolve(repoRoot);
+  const ids = listSlotIds(resolved);
+  const link = activeLinkPath(resolved);
+  if (ids.length === 0) {
+    try {
+      fs.rmSync(link, { force: true });
+    } catch {
+      /* ignore */
+    }
+    return null;
+  }
+  const current = readActiveSlotId(resolved);
+  const currentAlive =
+    current != null && ids.includes(current) && fs.existsSync(pathsOf(resolved, current).root);
+  if (currentAlive) return current;
+  setActiveSlot(resolved, ids[0]);
+  return ids[0];
 }
 
 /** List slot ids that have meta.json. */
@@ -1206,27 +1242,8 @@ export async function clear(repoRoot, opts = {}) {
   const reconciled = await reconcileDevHostOccupant(p.root, opts);
   fs.rmSync(p.root, { recursive: true, force: true });
 
-  // Retarget or drop active symlink
-  if (readActiveSlotId(resolved) === slotId) {
-    const remaining = listSlotIds(resolved);
-    if (remaining.length > 0) {
-      try {
-        setActiveSlot(resolved, remaining[0]);
-      } catch {
-        try {
-          fs.rmSync(activeLinkPath(resolved), { force: true });
-        } catch {
-          /* ignore */
-        }
-      }
-    } else {
-      try {
-        fs.rmSync(activeLinkPath(resolved), { force: true });
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  // Always heal active: retarget to a living slot or drop the dangling link (t-efe06d).
+  const activeAfter = reconcileActiveSlot(resolved);
 
   // Last slot gone → wipe base (active, slots/, leftovers) for a clean unarmed tree
   if (listSlotIds(resolved).length === 0) {
@@ -1236,7 +1253,7 @@ export async function clear(repoRoot, opts = {}) {
   }
 
   const launch = restoreTemplateLaunchConfig(resolved);
-  return { cleared: true, slotId, launch, reconciled };
+  return { cleared: true, slotId, activeSlotId: activeAfter, launch, reconciled };
 }
 
 /** Refuse destructive pointer changes while an interactive headless session owns it. */
