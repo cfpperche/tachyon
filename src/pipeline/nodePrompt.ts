@@ -1,15 +1,17 @@
 /**
  * spec 231 — pure assembly of a pipeline node's spawn prompt.
  *
- * Extracted out of `Workspace.ts` so the composition is unit-tested (memory
- * `feedback_logic_in_vscode_layer_escapes_ci` — still the right general rule for genuinely
- * vscode-bound code such as panel/provider hosts). The whole point of the extraction is the
- * EQUIVALENCE LOCK: a node with a `task` and no run input / no upstream summaries must produce
- * EXACTLY today's string (`${task}\n\n${GUIDANCE}`), so the 230 engine stays byte-identical.
+ * Extracted out of `Workspace.ts` so the composition is unit-tested. Keeping logic that CI cannot
+ * reach out of the vscode layer is still the right general rule for genuinely vscode-bound code
+ * (panel/provider hosts). The whole point of the extraction is the EQUIVALENCE LOCK: a node with a
+ * `task` and no run input / no upstream summaries must produce EXACTLY today's string
+ * (`${task}\n\n${GUIDANCE}`), so the 230 engine stays byte-identical.
  *
- * t-93dbf2 — this header used to add "(which CI cannot import)" about `Workspace.ts`. That has NOT
- * been true since spec 233 introduced the host port: `Workspace.ts` imports no `vscode` (it calls
- * the injected `VsCodeHost` instead) and 27 `test/unit` files import it, most as a value. The
+ * t-93dbf2 — this header used to add "(which CI cannot import)" about `Workspace.ts`, citing a
+ * memory that no longer exists. Measured 2026-07-24: `Workspace.ts` imports no `vscode` (spec 233
+ * gave it the injected `VsCodeHost` port instead), and 9 `test/unit` files import it as a VALUE,
+ * i.e. vitest actually loads and runs the module. (25 files reference it in total, but the other 16
+ * are `import type` — erased at compile time, so they prove nothing about importability.) The
  * extraction above remains correct on its own merits — a pure module with an equivalence lock is
  * better than inline assembly — but do NOT cite an import barrier that no longer exists as the
  * reason to move logic out of, or avoid touching, `Workspace.ts`.
