@@ -4,6 +4,7 @@
  */
 import * as vscode from "vscode";
 import { TmuxAttachClient } from "../presentation/TmuxAttachClient.js";
+import { resolveAgentPaneFontMetrics } from "../presentation/agentPaneFont.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { panelIcon } from "./shared/panelIcon.js";
 import {
@@ -181,12 +182,18 @@ export class AgentPanePanelManager {
       if (!isAgentPaneToHost(raw)) return;
       if (raw.type === AGENT_PANE_READY) {
         live.ready = true;
+        // Match integrated terminal typography (xterm cannot use CSS vars for measurement).
+        const font = resolveAgentPaneFontMetrics(
+          vscode.workspace.getConfiguration("terminal.integrated"),
+          vscode.workspace.getConfiguration("editor"),
+        );
         post({
           type: "agent-pane/init",
           agent: args.agent,
           session: args.session,
           title,
           status: "connecting…",
+          font,
         });
         maybeStart();
         return;

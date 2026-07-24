@@ -11,6 +11,19 @@ export type AgentPaneToHost =
   | { type: "agent-pane/input"; data: string }
   | { type: "agent-pane/resize"; cols: number; rows: number };
 
+/** Typography + metrics aligned with VS Code integrated terminal settings. */
+export interface AgentPaneFontMetrics {
+  /** Resolved CSS font-family stack (no CSS vars — xterm cannot measure them). */
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: string | number;
+  fontWeightBold: string | number;
+  /** Multiplier, VS Code `terminal.integrated.lineHeight` (default 1). */
+  lineHeight: number;
+  /** Pixel letter-spacing, VS Code `terminal.integrated.letterSpacing` (default 0). */
+  letterSpacing: number;
+}
+
 export type AgentPaneFromHost =
   | {
       type: "agent-pane/init";
@@ -18,6 +31,7 @@ export type AgentPaneFromHost =
       session: string;
       title: string;
       status: string;
+      font: AgentPaneFontMetrics;
     }
   | { type: "agent-pane/data"; data: string }
   | { type: "agent-pane/status"; status: string }

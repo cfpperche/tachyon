@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "preact/hooks";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import type { AgentPaneFromHost, AgentPaneToHost } from "./protocol";
+import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneToHost } from "./protocol";
 
 export interface AgentPaneAppProps {
   postMessage: (msg: AgentPaneToHost) => void;
@@ -9,9 +9,28 @@ export interface AgentPaneAppProps {
   onHostMessage: (handler: (msg: AgentPaneFromHost) => void) => () => void;
 }
 
+/** Fallback when host has not yet sent font metrics (first paint before init). */
+const FALLBACK_FONT: AgentPaneFontMetrics = {
+  fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+  fontSize: 14,
+  fontWeight: "normal",
+  fontWeightBold: "bold",
+  lineHeight: 1,
+  letterSpacing: 0,
+};
+
+function applyFont(term: Terminal, font: AgentPaneFontMetrics): void {
+  // xterm accepts string | number for fontWeight*; cast through unknown for the union.
+  term.options.fontFamily = font.fontFamily;
+  term.options.fontSize = font.fontSize;
+  term.options.fontWeight = font.fontWeight as never;
+  term.options.fontWeightBold = font.fontWeightBold as never;
+  term.options.lineHeight = font.lineHeight;
+  term.options.letterSpacing = font.letterSpacing;
+}
+
 /**
- * Full-bleed xterm viewport — no chrome. Geometry is reported to the host so the
- * node-pty attach client matches the integrated terminal's cols×rows.
+ * Full-bleed xterm viewport — typography comes from host (terminal.integrated.*).
  */
 export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const termHostRef = useRef<HTMLDivElement>(null);
@@ -22,9 +41,13 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const term = new Terminal({
       cursorBlink: true,
-      fontFamily: "var(--vscode-editor-font-family, Menlo, Monaco, 'Courier New', monospace)",
-      fontSize: 13,
-      // Solid defaults — CSS variables can resolve empty in webview and hide output.
+      fontFamily: FALLBACK_FONT.fontFamily,
+      fontSize: FALLBACK_FONT.fontSize,
+      fontWeight: FALLBACK_FONT.fontWeight as "normal",
+      fontWeightBold: FALLBACK_FONT.fontWeightBold as "bold",
+      lineHeight: FALLBACK_FONT.lineHeight,
+      letterSpacing: FALLBACK_FONT.letterSpacing,
+      // Solid theme defaults (CSS vars are unreliable for xterm cell measurement).
       theme: {
         background: "#1e1e1e",
         foreground: "#cccccc",
@@ -54,7 +77,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
-    // Defer first fit so the layout has real pixel size (avoids 0×0 → wrong TUI geometry).
+
     const fitSoon = () => {
       try {
         fit.fit();
@@ -75,7 +98,14 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     ro.observe(el);
 
     const unsub = onHostMessage((msg) => {
-      if (msg.type === "agent-pane/init") return;
+      if (msg.type === "agent-pane/init") {
+        if (msg.font) {
+          applyFont(term, msg.font);
+          // Font metrics change cell size → re-fit and re-report geometry to PTY.
+          fitSoon();
+        }
+        return;
+      }
       if (msg.type === "agent-pane/data") {
         term.write(msg.data);
         return;
