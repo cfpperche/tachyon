@@ -1018,6 +1018,9 @@ function RuntimeConfigInventory({
           {snapshot.potentialAgents.length === 0 ? <span>{s.none}</span> : snapshot.potentialAgents.map((agent) => <Badge key={agent}>{agent}</Badge>)}
         </div>
       </div>
+      {(snapshot.pendingAgents?.length ?? 0) > 0 ? <div class="rcp-global-warning" data-testid="runtime-config-pending">
+        Current sessions still use the previous source. The next Start, Restart or Resume will apply this change: {snapshot.pendingAgents!.join(", ")}.
+      </div> : null}
       {scope === "global" ? <div class="rcp-global-warning">{s.runtimeConfigGlobalWarning}</div> : null}
 
       <div class="rcp-grid">

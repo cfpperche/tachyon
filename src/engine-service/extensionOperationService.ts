@@ -585,6 +585,10 @@ export async function executeExtensionCommand(
       onViewsChanged("agents");
       return json({ changed: true, provider: command.provider, enabled: command.enabled });
     }
+    case "runtime-config.mark-pending": {
+      const agents = await workspace.markRuntimeConfigPending(command.scope, command.revision);
+      return json({ changed: agents.length > 0, agents });
+    }
     case "handoff.note":
       workspace.handoffStore.appendNote({
         agent: "tachyon",

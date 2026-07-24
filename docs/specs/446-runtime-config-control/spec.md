@@ -38,7 +38,7 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **Then** the canonical native-config adapter atomically updates only that measured entry,
     detects a changed source before writing, preserves unrelated source data, refreshes the
     displayed inventory, and reports any parse/write failure without partial output
-- [ ] **Scenario: saved runtime configuration waits for a running agent**
+- [x] **Scenario: saved runtime configuration waits for a running agent**
   - **Given** an agent is already running with an earlier runtime composition
   - **When** its selected global or workspace source changes
   - **Then** Control marks that agent configuration-pending; its current session is not interrupted,

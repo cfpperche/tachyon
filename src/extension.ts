@@ -1500,6 +1500,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return inspectCodexRuntimeConfig({
           workspaceRoot: ws.workspaceRoot,
           agents: ws.config.agents,
+          pendingAgents: ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name),
           ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
         });
       },
@@ -1509,14 +1510,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       saveChanges: async ({ wsHash, scope, expectedRevision, changes }) => {
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
         if (!ws?.config) throw new Error("The selected workspace is unavailable.");
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
         applyCodexNativeConfigChange({
           workspaceRoot: ws.workspaceRoot,
           scope,
           expectedRevision,
           changes: changes.map((change) => change.kind === "setting"
             ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
-            : change),
+              : change),
         });
+        const snapshot = inspectCodexRuntimeConfig({
+            workspaceRoot: ws.workspaceRoot,
+            agents: ws.config.agents,
+            ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
+        });
+        const revision = snapshot[scope].revision;
+        if (revision) {
+          await ws.extension.invoke({ action: "runtime-config.mark-pending", scope, revision });
+          await ws.client.sync();
+        }
       },
     },
     inspector: (() => {

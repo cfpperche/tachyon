@@ -37,6 +37,10 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
   toggles in one revision-checked atomic write. Cancel restores the last inventory snapshot.
 - The Control shell uses the shared Product Toast provider; the old per-cockpit toast stack is no
   longer rendered.
+- Slice C keeps freshness in the engine: a successful save marks only running canonical Codex agents
+  whose profile selects the changed global/workspace source. The active session is not interrupted;
+  the pending flag is cleared by the existing successful spawn callback used by Start, Restart, and
+  Resume, which also emits a concise launch-boundary notice.
 
 ## Open questions
 

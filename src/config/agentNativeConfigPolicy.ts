@@ -26,6 +26,8 @@ export interface AgentNativeConfigPolicyPreview {
 
 export interface ResolvedAgentNativeConfigProjection {
   adapter: "codex";
+  /** Source ownership is retained so lifecycle freshness can identify affected agents. */
+  sources?: Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
   selectors: {
     model?: string;
     provider?: string;
@@ -50,7 +52,12 @@ export function projectAgentNativeConfig(
   profile: Pick<AgentProfileV1, "runtime" | "nativeConfig">,
 ): ResolvedAgentNativeConfigProjection | undefined {
   if (!profile.nativeConfig?.selectors || profile.runtime.adapter !== "codex") return undefined;
-  return {
+  const sources = Object.fromEntries(
+      Object.entries(profile.nativeConfig ?? {})
+        .filter((entry): entry is [AgentNativeConfigFamily, AgentNativeConfigPolicyV1] => Boolean(entry[1]))
+        .map(([family, policy]) => [family, policy.source]),
+    ) as Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
+  const projection: ResolvedAgentNativeConfigProjection = {
     adapter: "codex",
     selectors: {
       ...(profile.runtime.model ? { model: profile.runtime.model } : {}),
@@ -59,6 +66,9 @@ export function projectAgentNativeConfig(
       ...(profile.runtime.serviceTier ? { serviceTier: profile.runtime.serviceTier } : {}),
     },
   };
+  // Internal lifecycle metadata must not alter the established serialized projection contract.
+  Object.defineProperty(projection, "sources", { value: sources, enumerable: false, configurable: false });
+  return projection;
 }
 
 const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(["fresh", "restart", "resume"]);

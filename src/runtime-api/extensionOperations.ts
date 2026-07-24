@@ -53,6 +53,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "bridge.restart", "bridge.stop", "config.health",
   "companion.unpair",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
+  "runtime-config.mark-pending",
   "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
   "evolution.approve", "evolution.reject",
@@ -228,6 +229,11 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("runtime-ops.provider.configure"),
     provider: z.enum(["codex", "claude"]),
     enabled: z.boolean(),
+  }).strict(),
+  z.object({
+    action: z.literal("runtime-config.mark-pending"),
+    scope: z.enum(["global", "workspace"]),
+    revision: z.string().regex(/^[0-9a-f]{64}$/),
   }).strict(),
   z.object({
     action: z.literal("prompt.inject"),

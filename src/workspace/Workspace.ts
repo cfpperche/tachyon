@@ -571,6 +571,8 @@ export class Workspace {
    *  child is gone or the same name now refers to a later session. */
   private readonly agentIncarnations = new Map<string, number>();
   private readonly agentIncarnationCounters = new Map<string, number>();
+  /** SDD 446 C — running agents keep their current session until the next lifecycle boundary. */
+  private readonly runtimeConfigPending = new Map<string, { scope: "global" | "workspace"; revision: string }>();
   private readonly noticeQueue = new NoticeQueue();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
@@ -1071,6 +1073,11 @@ export class Workspace {
         this.noticeQueue.clear(name);
         this.adhocBackstop.reset(name);
         this.completionHints.clear(name);
+        const pending = this.runtimeConfigPending.get(name);
+        if (pending) {
+          this.runtimeConfigPending.delete(name);
+          this.host.notify(this.t("'{0}' started with refreshed {1} runtime configuration", name, pending.scope), "info");
+        }
         this.refreshAgentsViews();
       },
       onStopping: (name) => {
@@ -3178,6 +3185,27 @@ export class Workspace {
     } catch {
       /* best-effort */
     }
+  }
+
+  /** Mark only live canonical Codex agents whose profile selects this source. */
+  async markRuntimeConfigPending(scope: "global" | "workspace", revision: string): Promise<string[]> {
+    const live = await this.manager.list();
+    const affected: string[] = [];
+    for (const agent of live) {
+      if (!agent.running || agent.kind !== "agent") continue;
+      const def = this.config?.agents[agent.name];
+      if (def?.profileNativeConfig?.adapter !== "codex") continue;
+      const selected = Object.values(def.profileNativeConfig.sources ?? {}).includes(scope);
+      if (!selected) continue;
+      this.runtimeConfigPending.set(agent.name, { scope, revision });
+      affected.push(agent.name);
+    }
+    if (affected.length > 0) this.refreshAgentsViews();
+    return affected.sort();
+  }
+
+  runtimeConfigPendingAgents(): string[] {
+    return [...this.runtimeConfigPending.keys()].sort();
   }
 
   /** SDD 414 / t-a45c6b — pending human-approval requests for Companion UI. */

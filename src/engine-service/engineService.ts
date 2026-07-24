@@ -632,6 +632,7 @@ async function buildProjections(
         crashed: agent.crashed,
         ...(attention ? { attention } : {}),
         ...(live?.unseen ? { unseen: true } : {}),
+        ...(workspace.runtimeConfigPendingAgents().includes(agent.name) ? { configurationPending: true } : {}),
         ...(agent.exitCode !== undefined ? { exitCode: agent.exitCode } : {}),
         ...(agent.parent ? { parent: boundedText(agent.parent, 128) } : {}),
         ...(agent.delegator ? { delegator: boundedText(agent.delegator, 128) } : {}),

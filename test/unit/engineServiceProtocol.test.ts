@@ -160,6 +160,11 @@ describe("persistent engine protocol", () => {
     expect(isExtensionQueryV1({ action: "agent-profile.migration-preview", agent: "codex", nonSecretEnv: ["BAD-NAME"] })).toBe(false);
   });
 
+  it("validates the runtime-config freshness command", () => {
+    expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", scope: "workspace", revision: "a".repeat(64) })).toBe(true);
+    expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", scope: "workspace", revision: "bad" })).toBe(false);
+  });
+
   it("derives one stable bundle id independent of file declaration order", () => {
     const a = { path: "engine.cjs", sha256: hash("engine"), executable: true };
     const b = { path: "assets/helper.js", sha256: hash("helper") };

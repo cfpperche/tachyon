@@ -23,6 +23,14 @@ describe("workspace presentation projection", () => {
     expect(projected).not.toHaveProperty("futureProjection");
   });
 
+  it("preserves the configuration-pending lifecycle marker", () => {
+    const identity = projectionIdentity("/tmp/tachyon-projection-workspace");
+    const projected = projectWorkspacePresentation(projectionSnapshot(identity, 1, [
+      projectedAgent("codex", { running: true, configurationPending: true }),
+    ]));
+    expect(projected.agents.items[0]?.configurationPending).toBe(true);
+  });
+
   it("refuses contradictory, duplicate and identity-crossed projections", () => {
     const identity = projectionIdentity("/tmp/tachyon-projection-workspace");
     const contradictory = projectionSnapshot(identity);

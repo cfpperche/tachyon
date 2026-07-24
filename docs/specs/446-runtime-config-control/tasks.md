@@ -8,7 +8,7 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
       with a live read-only Codex Global/Workspace view. No native writes.
 - [x] Slice B: extend the canonical SDD 442 adapter with one-panel atomic Codex scalar/MCP editing
       that detects external source changes, preserves unowned data and reversibly comments MCP blocks.
-- [ ] Slice C: mark only affected running agents configuration-pending and acknowledge the change
+- [x] Slice C: mark only affected running agents configuration-pending and acknowledge the change
       through successful Start/Restart/Resume materialization.
 - [ ] Slice D: measure and add Claude/Grok adapters independently; update parity evidence.
 
@@ -19,7 +19,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Global/workspace provenance and individual tooling inventory are rendered from real source
       inputs, not fixture data.
 - [x] Known writes preserve unrelated keys and fail closed for malformed/unsafe sources.
-- [ ] A running affected agent remains live but is visibly pending until its next successful launch.
+- [x] A running affected agent remains live but is visibly pending until its next successful launch.
 - [ ] Existing canonical private-home and auth boundaries remain unchanged.
 
 **Verify:** `npx vitest run test/unit/runtimeConfig*.test.ts test/unit/cockpit.test.ts test/unit/cockpitRoute.test.ts`

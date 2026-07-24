@@ -42,6 +42,7 @@ export interface CodexRuntimeConfigInventory {
   global: RuntimeConfigSourceInventory;
   workspace: RuntimeConfigSourceInventory;
   potentialAgents: string[];
+  pendingAgents?: string[];
 }
 
 const KNOWN_SETTINGS: ReadonlyArray<{ key: CodexEditableSettingKey; label: string }> = [
@@ -166,6 +167,7 @@ export function inspectCodexRuntimeConfig(input: {
   workspaceRoot: string;
   agents: Record<string, AgentDef>;
   homeDir?: string;
+  pendingAgents?: string[];
 }): CodexRuntimeConfigInventory {
   const homeDir = input.homeDir ?? os.homedir();
   return {
@@ -176,5 +178,6 @@ export function inspectCodexRuntimeConfig(input: {
       .filter(([, definition]) => definition.profileNativeConfig?.adapter === "codex" || /^codex(?:\s|$)/.test(definition.cmd.trim()))
       .map(([name]) => name)
       .sort(),
+    pendingAgents: [...(input.pendingAgents ?? [])].sort(),
   };
 }
