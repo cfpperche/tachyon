@@ -30,10 +30,37 @@ Ran against the real inverted code (T2/T3), not a mock. In the linked worktree
 Checking `frames`/`eval` alone would NOT have proven this — a VS Code window opens whether or not the
 extension loads. The activation line in `exthost.log` is the evidence that matters.
 
-**Still owned by the maintainer:** the Remote-WSL *window* attach. Headless runs under Xvfb and has no
-Remote-WSL, so it cannot show whether opening a VS Code window on a linked worktree keeps the WSL
-connection. Everything mechanical below that (path resolution, extension load, EDH boot, workspace
-selection) is now proven. The residual is one human F5.
+**Human half — PASSED 2026-07-24 (maintainer).** F5 on `Tachyon: Dev Host (devhost-owned-by-worktree)`
+opened an `[Extension Development Host]` window with `[WSL: …]` still in the title bar — **no
+`Disconnected from WSL`, from a linked worktree**. R1 is closed: the assumption the whole design rested
+on holds. Confirmed a second time after the T6 fix, with real workspace content and populated Tachyon
+views.
+
+First attempt failed and the fault was mine — see "launch.json path drift" below.
+
+### launch.json path drift — my miss, and what it exposed (2026-07-24)
+
+I invited the maintainer to F5 after T2/T3 but *before* T6. `launch.json` still resolved through
+`.tachyon/dev-host/active/…`, which the inversion had removed, so VS Code got a non-existent path:
+the EDH opened a phantom empty "workspace" and the Tachyon sidebar rendered blank.
+
+The systemic part is worth more than the fix: **the headless harness could not have caught this and
+structurally cannot.** `headless-session.mjs` launches VS Code through the CLI with paths it computes
+itself and never reads `launch.json`. F5 and headless are two independent wirings to the same goal, so
+a green headless run is not evidence about the maintainer's actual path. Filed as **t-6bc30d**;
+`devHostLaunchConfig.test.ts` closes the path-drift class here but is static analysis, not proof that
+F5 boots.
+
+### The `.code-workspace` follow-up is dead — the maintainer already has it (2026-07-24)
+
+`spec.md` listed a generated, gitignored `.code-workspace` as a conditional follow-up so one window
+could reach every worktree's dev-host. The maintainer's screenshot shows they **already run a
+multi-root workspace** (`tachyon` + `runtime-config-visual-prototype` + `devhost-owned-by-worktree`),
+and VS Code already disambiguates launch configs by folder: `Tachyon: Dev Host (devhost-owned-by-worktree)`.
+
+So with a static per-checkout `launch.json`, the menu listing every worktree's dev-host **comes for
+free** — no generation, no extra file, and no need to switch windows. The follow-up is removed from
+non-goals rather than left as a standing invitation to build something already solved.
 
 ## Deviations
 

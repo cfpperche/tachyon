@@ -82,10 +82,10 @@ being policy and becomes structure: there is no shared dev-host left to dominate
 
 ## Non-goals
 
-- **A single-window menu of every worktree's dev-host.** The maintainer accepted opening VS Code in
-  the agent's worktree (2026-07-24). A generated, gitignored `.code-workspace` listing the monorepo
-  plus active worktrees remains a *conditional* follow-up — to be created only if that flow proves
-  uncomfortable in practice. Building it pre-emptively pays complexity for a need not yet observed.
+- **Generating a `.code-workspace` to get a single-window menu.** Dropped 2026-07-24, not deferred:
+  the maintainer already runs a multi-root workspace, and VS Code already disambiguates launch configs
+  by folder (`Tachyon: Dev Host (devhost-owned-by-worktree)`). A static per-checkout `launch.json`
+  therefore yields the every-worktree menu for free, in one window. There is nothing left to build.
 - **Changing what a dev-host contains** (extension build, fixture seeding, engine runtime layout).
   This spec moves ownership; it does not redesign the payload.
 - **Sharing or deduplicating dev-host bytes between worktrees.** Disk-sharing strategy belongs to
