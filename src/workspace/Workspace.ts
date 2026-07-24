@@ -90,6 +90,7 @@ import {
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
+import { gateCmdRuntimeChange } from "../agents/cmdRuntimeGate.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -1979,6 +1980,7 @@ export class Workspace {
         listEvidence: (agent) => this.listEvidence(agent),
         // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
         reanchor: async (agent) => this.reanchor(agent),
+        continueTask: (input) => this.continueTaskAcrossRuntime(input),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
@@ -3451,6 +3453,71 @@ export class Workspace {
   markAgentPaneSeen(agent: string): void {
     this.monitor.markSeen(agent);
     this.completionHints.markSeen(agent);
+  }
+
+  /**
+   * t-7551f9 — continue an unfinished task on another declared agent (new session + focused handoff).
+   * Source agent is left as-is. Destination must be stopped. Not native resume / not cmd migration.
+   */
+  async continueTaskAcrossRuntime(input: {
+    fromAgent: string;
+    toAgent: string;
+    reason?: string;
+    taskSummary?: string;
+  }): Promise<{
+    ok: true;
+    handoffId: string;
+    handoffPath: string;
+    fromAgent: string;
+    toAgent: string;
+    fromRuntime: string;
+    toRuntime: string;
+  }> {
+    const { prepareContinueTask } = await import("../sessionContinuation/continueTask.js");
+    const fromDef = this.manager.defOf(input.fromAgent) ?? this.config?.agents[input.fromAgent];
+    const toDef = this.manager.defOf(input.toAgent) ?? this.config?.agents[input.toAgent];
+    if (!fromDef?.cmd) throw new Error(`unknown source agent '${input.fromAgent}'`);
+    if (!toDef?.cmd) throw new Error(`unknown destination agent '${input.toAgent}'`);
+    if (this.manager.kindOf(input.toAgent) !== "agent" && this.manager.kindOf(input.toAgent) !== undefined) {
+      /* kind may be undefined for declared-only not in manager maps */
+    }
+    const running = new Set(await this.manager.runningAgents());
+    const rec = this.ledger.get(input.fromAgent);
+    const prep = prepareContinueTask({
+      workspaceRoot: this.workspaceRoot,
+      fromAgent: input.fromAgent,
+      fromCmd: fromDef.cmd,
+      toAgent: input.toAgent,
+      toCmd: toDef.cmd,
+      reason: input.reason,
+      taskSummary: input.taskSummary,
+      sourceTranscriptPath: rec?.resume?.sessionId
+        ? undefined // path resolution is runtime-specific; optional later
+        : undefined,
+      workspaceNote: this.workspaceRoot,
+      toAgentRunning: running.has(input.toAgent),
+    });
+    if (!prep.ok) throw new Error(prep.message);
+    await this.manager.spawn(input.toAgent, { taskBrief: prep.taskBrief, reveal: true });
+    this.deps.onViewsChanged("agents");
+    this.host.notify(
+      this.t(
+        "Continued task: {0} → {1} (new session; handoff {2})",
+        input.fromAgent,
+        input.toAgent,
+        prep.packet.id,
+      ),
+      "info",
+    );
+    return {
+      ok: true,
+      handoffId: prep.packet.id,
+      handoffPath: prep.packet.relPath,
+      fromAgent: input.fromAgent,
+      toAgent: input.toAgent,
+      fromRuntime: prep.packet.fromRuntime,
+      toRuntime: prep.packet.toRuntime,
+    };
   }
 
   /**
@@ -5711,6 +5778,21 @@ export class Workspace {
         return [this.t("can't change '{0}' between agent and terminal by editing — delete it and recreate", submit.editingName)];
       }
     }
+    // t-6d09e6 — cmd/runtime identity change is not session migration.
+    let clearResumeOnSave = false;
+    if (kind === "agent" && submit.editingName) {
+      const prev = this.config?.agents[submit.editingName];
+      if (prev && typeof prev.cmd === "string" && typeof submit.state.cmd === "string") {
+        const gate = gateCmdRuntimeChange({
+          agent: submit.editingName,
+          prevCmd: prev.cmd,
+          nextCmd: submit.state.cmd,
+          running: this.manager.isKnownAliveSync(submit.editingName),
+        });
+        if (!gate.ok) return [gate.message];
+        clearResumeOnSave = gate.clearResume;
+      }
+    }
     const entry = toEntry(submit.state);
     const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
     const doUpsert = (text: string | undefined) =>
@@ -5742,6 +5824,20 @@ export class Workspace {
       () => this.deps.onViewsChanged(kind === "schedule" ? "schedules" : isScheduleOrCommandOrRunbook ? "commands" : "agents"),
     );
     if (!ok) return [this.t("could not write tachyon.yml — see the notification")];
+    if (clearResumeOnSave && submit.editingName) {
+      try {
+        this.ledger.clearResume(submit.editingName);
+        this.host.notify(
+          this.t(
+            "Runtime for '{0}' changed — native resume cleared. Start is a fresh session (not a migrated conversation).",
+            submit.editingName,
+          ),
+          "info",
+        );
+      } catch {
+        /* best-effort */
+      }
+    }
     if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
     // F2 (dogfood): a freshly-CREATED agent declared autostart:true should start now —
     // not only on the next workspace open. Targeted to the create path (editingName

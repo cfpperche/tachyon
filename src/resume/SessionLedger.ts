@@ -285,6 +285,19 @@ export class SessionLedger {
   }
 
   /**
+   * t-6d09e6 — drop the resume block when cmd/runtime identity changes so the next start is a
+   * fresh conversation on the new CLI. Keeps def/worktree/lineage; native sessions are not migrated.
+   */
+  clearResume(name: string): void {
+    const all = this.all();
+    const rec = all.get(name);
+    if (!rec?.resume) return;
+    const { resume: _drop, ...rest } = rec;
+    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    this.write(all);
+  }
+
+  /**
    * spec 210 — drop the worktree block after the worktree is removed, keeping the row, AND
    * reset cwd off the now-deleted worktree path back to the workspace root (review fix:
    * resume() uses record.cwd directly, so a stale worktree cwd would spawn in a deleted dir).
