@@ -247,6 +247,8 @@ export interface CockpitAppProps {
    *  agent-less `tachyon.openProbes` command / the sidebar tree's context menu). */
   onFleetProbes: (name: string, wsHash?: string) => void;
   onFleetAgentStudio: (name: string, wsHash?: string) => void;
+  /** SDD 443 — host picks another agent and continues the task there. */
+  onFleetContinueTask: (name: string, wsHash?: string) => void;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
@@ -969,6 +971,15 @@ export function App(p: CockpitAppProps) {
                     <Button variant="default" onClick={() => p.onFleetProbes(a.name, a.wsHash)}>
                       {s.openProbes}
                     </Button>
+                    {a.declared !== false && a.kind !== "terminal" ? (
+                      <Button
+                        variant="default"
+                        data-testid="fleet-continue-task"
+                        onClick={() => p.onFleetContinueTask(a.name, a.wsHash)}
+                      >
+                        {s.continueTask}
+                      </Button>
+                    ) : null}
                     {a.declared !== false ? (
                       <Button variant="default" onClick={() => p.onFleetAgentStudio(a.name, a.wsHash)}>
                         {s.editAgent}

@@ -207,6 +207,8 @@ export interface CockpitDeps {
   /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
   fleetStart: (name: string, wsHash?: string) => Promise<void>;
   fleetStop: (name: string, wsHash?: string) => Promise<void>;
+  /** SDD 443 — continue unfinished task on another agent (host picks dest). */
+  fleetContinueTask: (fromName: string, wsHash?: string) => Promise<void>;
   fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
@@ -328,6 +330,7 @@ function strings(): CockpitStrings {
     openActivity: t("Activity"),
     openProbes: t("Probes"),
     editAgent: t("Edit"),
+    continueTask: t("Continue task in…"),
     reveal: t("Reveal"),
     copyPath: t("Copy path"),
     copyId: t("Copy id"),
@@ -1849,6 +1852,17 @@ export async function openCockpit(
               });
             } else if (ws) {
               notify(`'${c.name}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
+            }
+          }
+          return;
+        case "fleetContinueTask":
+          if (typeof c.name === "string") {
+            try {
+              await deps.fleetContinueTask(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              await sendModel();
+              live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started")));
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }
           }
           return;

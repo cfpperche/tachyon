@@ -1451,6 +1451,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fleetStop: async (name, wsHash) => {
       await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: wsHash });
     },
+    fleetContinueTask: async (fromName, wsHash) => {
+      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      const listed = await extensionQuery(ws, { action: "agents.list" });
+      const rows = Array.isArray(listed) ? listed : [];
+      type AgentRow = { name?: string; running?: boolean; kind?: string; declared?: boolean };
+      const candidates = rows
+        .map((r) => r as AgentRow)
+        .filter((r) => typeof r.name === "string" && r.name !== fromName)
+        .filter((r) => r.kind !== "terminal")
+        .filter((r) => r.declared !== false);
+      if (candidates.length === 0) {
+        throw new Error(
+          `no other declared agent to continue into (need a stopped destination besides '${fromName}')`,
+        );
+      }
+      // Prefer stopped destinations (continue_task fails if dest is running).
+      const sorted = [...candidates].sort((a, b) => Number(!!a.running) - Number(!!b.running));
+      const pick = await vscode.window.showQuickPick(
+        sorted.map((r) => ({
+          label: r.name!,
+          description: r.running ? vscode.l10n.t("running — stop first") : vscode.l10n.t("stopped"),
+          detail: r.running
+            ? vscode.l10n.t("Destination must be stopped for a new session")
+            : vscode.l10n.t("New session with focused handoff from {0}", fromName),
+          name: r.name!,
+          running: !!r.running,
+        })),
+        {
+          title: vscode.l10n.t("Continue task from {0} in…", fromName),
+          placeHolder: vscode.l10n.t("Pick destination agent (new session, not native resume)"),
+        },
+      );
+      if (!pick) return;
+      if (pick.running) {
+        throw new Error(`destination '${pick.name}' is running — stop it first`);
+      }
+      const result = jsonObject(
+        await extensionInvoke(ws, {
+          action: "agent.continue-task",
+          fromAgent: fromName,
+          toAgent: pick.name,
+          reason: "continued from Control Fleet",
+        }),
+        "agent.continue-task",
+      );
+      if (result.ok !== true) {
+        throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
+      }
+      const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
+      void vscode.window.showInformationMessage(
+        handoff
+          ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, pick.name, handoff)
+          : vscode.l10n.t("Continued {0} → {1}", fromName, pick.name),
+      );
+    },
     fleetTerminal: async (name, wsHash) => {
       await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
     },

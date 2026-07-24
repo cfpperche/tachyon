@@ -99,6 +99,7 @@ export const strings: CockpitStrings = {
   openActivity: "Activity",
   openProbes: "Probes",
   editAgent: "Edit",
+  continueTask: "Continue task in…",
   reveal: "Reveal",
   copyPath: "Copy path",
   copyId: "Copy id",

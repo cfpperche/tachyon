@@ -7,4 +7,4 @@
 - [x] Focused handoff writer + prepareContinueTask + unit tests
 - [x] Workspace.continueTaskAcrossRuntime + extension op + Bridge `continue_task`
 - [x] SDD scaffold + parity open-gap note
-- [ ] Optional UI entry in Control fleet menu (follow-up if not wired this slice)
+- [x] Control Fleet UI: **Continue task in…** per declared agent → QuickPick dest → `agent.continue-task`

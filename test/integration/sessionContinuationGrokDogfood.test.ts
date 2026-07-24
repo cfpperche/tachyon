@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
-import { TmuxService, defaultExecutor, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { gateCmdRuntimeChange } from "../../src/agents/cmdRuntimeGate.js";
 
@@ -74,6 +74,7 @@ class DogfoodHost {
   webviewRoot(): unknown {
     return undefined;
   }
+  onViewsChanged(): void {}
 }
 
 describe.skipIf(!grokAvailable() || !tmuxAvailable())(
