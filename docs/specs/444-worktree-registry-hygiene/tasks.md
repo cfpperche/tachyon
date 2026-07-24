@@ -4,16 +4,21 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] `src/worktree/classify.ts`: define `WorktreeClassification` (the five states + a `reasons:
-      string[]` field) and `classifyManagedWorktree(entry, deps)`. Start with path existence
-      (`record-only` if missing) — this alone already fixes the tombstone Reveal/Copy bug.
-- [ ] `classify.ts`: dirty/ahead-of-base via `WorktreeManager.status()` for real checkouts.
-- [ ] `classify.ts`: occupancy via `AgentManager.worktreeOccupant(entry.path)`.
-- [ ] `classify.ts`: ported minimal containment check (`merge-base --is-ancestor` + `git cherry`
-      patch-equivalence fallback, mirroring `git-delivery/classify.ts`'s `containedInBase` logic
-      against primitive `(cwd, baseRef, branch)` args — no import from `git-delivery/`).
-- [ ] `classify.ts`: compose the above into the five-state verdict + human-readable `reasons`;
-      unknown/probe-failure states fail closed to `needs-review`, never `ready-to-remove`.
+- [x] `src/worktree/classify.ts`: define `WorktreeClassification` (four algorithmic states — `active`
+      stays the separate, unchanged registry `status` field, see notes.md — + a `reasons: string[]`
+      field) and `classifyManagedWorktree(entry, deps)`. Path existence (`record-only` if missing)
+      alone already fixes the tombstone Reveal/Copy bug.
+- [x] `classify.ts`: dirty/ahead-of-base via the injected `status(cwd, baseRef)` probe (same shape as
+      `WorktreeManager.status()`).
+- [x] `classify.ts`: occupancy via the injected `occupancy(worktreePath)` probe (same shape as
+      `AgentManager.worktreeOccupant`); a live occupant always overrides dirty/needs-review.
+- [x] `classify.ts`: ported minimal containment check (`aheadOfBase === 0` as the primary signal +
+      `git cherry` patch-equivalence fallback when ahead, mirroring `git-delivery/classify.ts`'s
+      `patchesAllInBase` — no import from `git-delivery/`).
+- [x] `classify.ts`: compose the above into the four-state verdict + human-readable `reasons`;
+      probe failures fail closed to `needs-review`, never `ready-to-remove`. 8/8 unit tests green
+      (`test/unit/worktreeClassify.test.ts`): tombstone, clean, dirty, unique-commits,
+      cherry-equivalent-still-safe, occupied-wins-over-dirty, failed-status-probe, failed-occupancy-probe.
 - [ ] `ManagedWorktreeService.ts`: add `listClassified()` wrapping `list()` + `classifyManagedWorktree`
       per entry (parallelized; one entry's classification failure doesn't fail the batch).
 - [ ] `src/bridge/tools.ts`: register `worktree_hygiene` (read-only, reuses `list_worktrees`'s
