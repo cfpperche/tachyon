@@ -122,6 +122,25 @@ describe("Codex runtime configuration inventory", () => {
     expect(fs.readFileSync(file, "utf8")).toBe('personality = "changed-elsewhere"\n');
   });
 
+  it("allows Codex runtime-owned hook state to change between inventory and save", () => {
+    const root = tempRoot();
+    const home = path.join(root, "home");
+    const file = path.join(home, ".codex", "config.toml");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'approval_policy = "on-request"\n[hooks.state]\ntrusted_hash = "one"\n');
+    const before = inspectCodexRuntimeConfig({ workspaceRoot: root, homeDir: home, agents: {} });
+    fs.writeFileSync(file, 'approval_policy = "on-request"\n[hooks.state]\ntrusted_hash = "two"\n');
+    applyCodexNativeConfigChange({
+      workspaceRoot: root,
+      homeDir: home,
+      scope: "global",
+      expectedRevision: before.global.revision,
+      changes: [{ kind: "setting", key: "personality", value: "focused" }],
+    });
+    expect(fs.readFileSync(file, "utf8")).toContain('trusted_hash = "two"');
+    expect(fs.readFileSync(file, "utf8")).toContain('personality = "focused"');
+  });
+
   it("disables and re-enables one MCP without losing its original block", () => {
     const root = tempRoot();
     const file = path.join(root, ".codex", "config.toml");

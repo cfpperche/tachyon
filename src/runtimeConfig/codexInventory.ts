@@ -1,10 +1,9 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { AgentDef } from "../config/loadConfig.js";
-import type { CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
+import { codexNativeConfigRevision, type CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
 
 export type RuntimeConfigScope = "global" | "workspace";
 
@@ -117,7 +116,7 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
     scope,
     path: file,
     exists: true,
-    revision: createHash("sha256").update(text).digest("hex"),
+    revision: codexNativeConfigRevision(text),
     modifiedAt: stat.mtime.toISOString(),
   } as const;
   try {

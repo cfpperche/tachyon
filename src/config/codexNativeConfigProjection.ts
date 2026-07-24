@@ -63,6 +63,25 @@ function digest(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+/**
+ * Codex updates hooks.state while sessions are alive. Those records are runtime-owned and hidden
+ * from Control, so they must not make an otherwise unrelated human edit look stale.
+ */
+export function codexNativeConfigRevision(text: string | undefined): string | undefined {
+  if (text === undefined) return undefined;
+  try {
+    const parsed = parse(text) as Record<string, unknown>;
+    const stable = structuredClone(parsed);
+    const hooks = stable.hooks;
+    if (hooks && typeof hooks === "object" && !Array.isArray(hooks)) {
+      delete (hooks as Record<string, unknown>).state;
+    }
+    return digest(JSON.stringify(stable));
+  } catch {
+    return digest(text);
+  }
+}
+
 function nativeConfigPath(scope: CodexNativeConfigScope, workspaceRoot: string, homeDir: string): string {
   return scope === "global"
     ? path.join(homeDir, ".codex", "config.toml")
@@ -145,7 +164,7 @@ function atomicWrite(file: string, text: string, expectedRevision: string | unde
     fs.writeFileSync(temporary, text, { encoding: "utf8", mode: mode ?? 0o600, flush: true });
     if (mode !== undefined) fs.chmodSync(temporary, mode);
     const current = readEditableText(file);
-    if ((current === undefined ? undefined : digest(current)) !== expectedRevision) {
+    if (codexNativeConfigRevision(current) !== expectedRevision) {
       throw new Error("The source changed before it could be saved. Reload it before trying again.");
     }
     fs.renameSync(temporary, file);
@@ -163,7 +182,7 @@ export function applyCodexNativeConfigChange(input: ApplyCodexNativeConfigChange
   const homeDir = input.homeDir ?? os.homedir();
   const file = nativeConfigPath(input.scope, input.workspaceRoot, homeDir);
   const before = readEditableText(file);
-  const actualRevision = before === undefined ? undefined : digest(before);
+  const actualRevision = codexNativeConfigRevision(before);
   if (actualRevision !== input.expectedRevision) throw new Error("The source changed since it was opened. Reload it before saving.");
   if (before !== undefined) {
     try { parse(before); } catch { throw new Error("This source is invalid TOML. Open the file to repair it before using Runtime Config."); }
@@ -185,7 +204,7 @@ export function applyCodexNativeConfigChange(input: ApplyCodexNativeConfigChange
   try { parse(after); } catch { throw new Error("The proposed change would produce invalid TOML."); }
   const mode = before === undefined ? undefined : fs.statSync(file).mode & 0o777;
   atomicWrite(file, after, actualRevision, mode);
-  return { path: file, revision: digest(after) };
+  return { path: file, revision: codexNativeConfigRevision(after)! };
 }
 
 const DISABLED_MCP_MARKER = "# tachyon-disabled-mcp: ";
