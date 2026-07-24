@@ -89,11 +89,14 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const termHostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const marksRef = useRef<{ markers: IMarker[]; decorations: IDecoration[] }>({ markers: [], decorations: [] });
+  /** Last non-empty xterm selection — survives focus steal when clicking the Pin button. */
+  const lastSelectionRef = useRef("");
   const [agent, setAgent] = useState("…");
   const [status, setStatus] = useState("connecting…");
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  /** True while xterm has an active (non-empty) selection — visual affordance only. */
   const [hasSelection, setHasSelection] = useState(false);
 
   useEffect(() => {
@@ -169,7 +172,14 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       postMessage({ type: "agent-pane/input", data });
     });
     const selDisp = term.onSelectionChange(() => {
-      if (!disposed) setHasSelection(!!term.getSelection()?.trim());
+      if (disposed) return;
+      // Application mouse mode (Claude/Codex TUIs) often paints reverse-video "selection" and
+      // copies to the clipboard itself — that is NOT term.getSelection(). Real xterm selection
+      // needs Shift+drag (or happens when mouse reporting is off). Cache non-empty selections so
+      // clicking Pin does not lose them when focus moves to the footer button.
+      const s = term.getSelection()?.trim() ?? "";
+      if (s) lastSelectionRef.current = s;
+      setHasSelection(!!s);
     });
 
     const ro = new ResizeObserver(() => scheduleReport());
@@ -262,13 +272,27 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   };
 
   const pinSelection = () => {
-    const term = termRef.current;
-    const text = term?.getSelection() ?? "";
-    if (!text.trim()) {
-      setFlash("Nothing selected.");
-      return;
-    }
-    postMessage({ type: "agent-pane/pin-selection", text });
+    void (async () => {
+      const term = termRef.current;
+      let text = (term?.getSelection() ?? "").trim() || lastSelectionRef.current.trim();
+      // Claude's own mouse select shows "copied N chars to clipboard" — pin that when xterm
+      // has no selection (application mouse mode ate the drag).
+      if (!text && typeof navigator !== "undefined" && navigator.clipboard?.readText) {
+        try {
+          text = (await navigator.clipboard.readText()).trim();
+        } catch {
+          /* webview clipboard-read denied — fall through to hint */
+        }
+      }
+      if (!text) {
+        setFlash(
+          "Nothing to pin. Shift+drag in the pane (agent mouse mode steals selection), or copy text first then Pin.",
+        );
+        return;
+      }
+      lastSelectionRef.current = text;
+      postMessage({ type: "agent-pane/pin-selection", text });
+    })();
   };
 
   return (
@@ -298,9 +322,15 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         <div class="agent-pane__stage-actions">
           <button
             type="button"
-            class="agent-pane__btn"
-            disabled={!hasSelection}
-            title="Pin the selected terminal text to the project checklist"
+            class={`agent-pane__btn${hasSelection ? " agent-pane__btn--armed" : ""}`}
+            disabled={busy}
+            title={
+              hasSelection
+                ? "Pin the selected terminal text to the project checklist"
+                : "Pin selection (or clipboard). Tip: Shift+drag if the agent captures the mouse — blue TUI highlight alone is not an xterm selection."
+            }
+            // Keep focus on the terminal so an active xterm selection is not cleared on click.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={pinSelection}
           >
             Pin selection

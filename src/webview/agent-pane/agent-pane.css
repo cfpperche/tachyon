@@ -179,6 +179,12 @@
   border-color: transparent;
 }
 
+/* Active xterm selection — not Claude reverse-video (that does not arm this). */
+.agent-pane__btn--armed {
+  border-color: #4ec9b0;
+  color: #4ec9b0;
+}
+
 .agent-pane__flash {
   font-size: 11px;
   color: var(--agent-pane-muted);
