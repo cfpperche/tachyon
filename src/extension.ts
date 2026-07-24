@@ -1339,6 +1339,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               agent: e.agent != null ? String(e.agent) : undefined,
               folder: ws.folderName,
               wsHash: ws.wsHash,
+              tachyonCreatedBranch: e.tachyonCreatedBranch === true,
               classification: e.classification as CockpitWorkspaceBundle["worktrees"][number]["classification"],
             };
           });
@@ -1485,6 +1486,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     revealPath: (fsPath) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
+    },
+    // spec 444 — Worktrees hygiene. Return value = human-readable refusal (undefined = success);
+    // the engine's ManagedWorktreeService re-validates fail-closed on every call.
+    worktreeRemove: async (id, deleteBranch, wsHash) => {
+      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+      if (!ws) throw new Error("no Tachyon workspace attached");
+      const result = jsonObject(
+        await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
+        "worktree.remove-managed",
+      );
+      if (result.removed === true) return undefined;
+      return String(result.error ?? "removal refused");
+    },
+    worktreeForgetRecord: async (id, wsHash) => {
+      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+      if (!ws) throw new Error("no Tachyon workspace attached");
+      const result = jsonObject(
+        await extensionInvoke(ws, { action: "worktree.forget-record", id }),
+        "worktree.forget-record",
+      );
+      if (result.forgotten === true) return undefined;
+      return `record not found or refused: ${id}`;
     },
     openConfigFile: async (wsHash) => {
       const ws = wsHash ? byHash(wsHash) : workspaces()[0];

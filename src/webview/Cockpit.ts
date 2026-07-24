@@ -209,6 +209,10 @@ export interface CockpitDeps {
   fleetStop: (name: string, wsHash?: string) => Promise<void>;
   fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
   revealPath: (fsPath: string) => void;
+  /** spec 444 — Worktrees hygiene actions. Engine re-validates fail-closed on every call; the
+   *  returned string is a human-readable refusal reason (undefined = succeeded). */
+  worktreeRemove: (id: string, deleteBranch: boolean, wsHash?: string) => Promise<string | undefined>;
+  worktreeForgetRecord: (id: string, wsHash?: string) => Promise<string | undefined>;
   openConfigFile: (wsHash?: string) => Promise<void>;
   clearEngineLog: (wsHash: string) => Promise<void>;
   openEngineJournal: (wsHash: string) => void;
@@ -388,6 +392,29 @@ function strings(): CockpitStrings {
     adhoc: t("ad-hoc"),
     agent: t("agent"),
     change: t("change"),
+    wtReadyTitle: t("Ready to remove"),
+    wtReadyDesc: t("Clean, unoccupied, and every commit is already in its base branch. Safe to delete."),
+    wtReviewTitle: t("Needs review"),
+    wtReviewDesc: t("Blocked from cleanup — read the reason before touching these by hand."),
+    wtOccupiedTitle: t("Occupied"),
+    wtOccupiedDesc: t("A live agent holds this checkout right now."),
+    wtRecordTitle: t("Record-only"),
+    wtRecordDesc: t("The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row."),
+    wtRemoveCheckout: t("Remove checkout"),
+    wtForgetRecord: t("Forget record"),
+    wtAlsoDeleteBranch: t("Also delete local branch"),
+    wtSelectAll: t("Select all"),
+    wtClearSelection: t("Clear"),
+    wtSelected: t("selected"),
+    wtReviewConfirm: t("Review & confirm…"),
+    wtConfirmTitle: t("Confirm cleanup"),
+    wtConfirmBody: t("Each entry is re-checked at execution — one whose state changed is skipped with a reason, the rest proceed."),
+    wtConfirmRun: t("Run cleanup"),
+    wtCancel: t("Cancel"),
+    wtEngineUnavailable: t("Engine unavailable — registry not shown (unverified data is never displayed)."),
+    wtBlocked: t("Blocked"),
+    wtOccupiedBy: t("occupied by"),
+    wtShowAll: t("Show all"),
   };
 }
 
@@ -1790,6 +1817,57 @@ export async function openCockpit(
             }
           }
           return;
+        // spec 444 — Worktrees hygiene. The engine re-validates every call fail-closed; a refusal
+        // (state changed since render) surfaces as a toast, never a forced removal.
+        case "worktreeRemove":
+          if (typeof c.id === "string") {
+            try {
+              const refusal = await deps.worktreeRemove(c.id, c.deleteBranch === true, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              if (refusal) live.webview.postMessage(toastMessage(refusal));
+              await sendModel();
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "worktreeForgetRecord":
+          if (typeof c.id === "string") {
+            try {
+              const refusal = await deps.worktreeForgetRecord(c.id, typeof c.wsHash === "string" ? c.wsHash : undefined);
+              if (refusal) live.webview.postMessage(toastMessage(refusal));
+              await sendModel();
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "worktreeBatchCleanup": {
+          // Each item re-validates independently engine-side — a refused item drops out of the
+          // batch with its reason; the rest proceed (spec 444's preview/confirm concurrency rule).
+          const items = Array.isArray(c.items) ? c.items : [];
+          const skipped: string[] = [];
+          let done = 0;
+          for (const item of items) {
+            if (!item || typeof item !== "object") continue;
+            const { id, op, wsHash } = item as { id?: unknown; op?: unknown; wsHash?: unknown };
+            if (typeof id !== "string" || (op !== "remove" && op !== "forget")) continue;
+            try {
+              const refusal = op === "remove"
+                ? await deps.worktreeRemove(id, false, typeof wsHash === "string" ? wsHash : undefined)
+                : await deps.worktreeForgetRecord(id, typeof wsHash === "string" ? wsHash : undefined);
+              if (refusal) skipped.push(`${id}: ${refusal}`);
+              else done += 1;
+            } catch (err) {
+              skipped.push(`${id}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          const summary = skipped.length > 0
+            ? vscode.l10n.t("Cleanup: {0} done, {1} skipped — {2}", done, skipped.length, skipped.join("; "))
+            : vscode.l10n.t("Cleanup: {0} done", done);
+          live.webview.postMessage(toastMessage(summary));
+          await sendModel();
+          return;
+        }
         case "fleetTerminal":
           if (typeof c.name === "string") {
             try {

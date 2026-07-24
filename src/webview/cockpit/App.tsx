@@ -5,6 +5,7 @@ import {
   COCKPIT_SECTION_ORDER,
   type CockpitModel,
   type CockpitSectionId,
+  type CockpitWorktreeRow,
 } from "../../cockpit/model";
 import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
@@ -647,6 +648,285 @@ function ModuleChrome({
   );
 }
 
+/** spec 444 — hygiene classification groups, in action-priority order. */
+const WT_GROUPS = ["ready-to-remove", "needs-review", "occupied", "record-only"] as const;
+type WtGroup = (typeof WT_GROUPS)[number];
+const WT_RECORD_COLLAPSE_AT = 4;
+
+/** Fail-closed: a row the engine did not classify is NEVER treated as safe. */
+function wtGroupOf(row: CockpitWorktreeRow): WtGroup {
+  return row.classification?.state ?? "needs-review";
+}
+
+function WtGroupHead({ group, title, count, action }: { group: WtGroup; title: string; count: number; action?: ComponentChildren }) {
+  return (
+    <div class="ck-wt-group-head">
+      <span class={`ck-wt-dot ck-wt-dot-${group}`} aria-hidden="true" />
+      <span class="ck-wt-group-title">{title}</span>
+      <span class="ck-wt-group-count">{count}</span>
+      {action ? <span class="ck-wt-group-action">{action}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * spec 444 — the Worktrees tab body: classification-grouped rows, per-row blocked reasons, gated
+ * actions, and batch cleanup restricted to the two provably-safe groups. All destructive dispatch
+ * goes through `onPost` to the host, where the engine re-validates fail-closed per call.
+ */
+function WorktreesHygiene({
+  s,
+  rows,
+  unavailable,
+  onRevealPath,
+  onCopyText,
+  onPost,
+}: {
+  s: CockpitStrings;
+  rows: CockpitWorktreeRow[];
+  unavailable?: Array<{ folder: string; reason: string }>;
+  onRevealPath: (path: string) => void;
+  onCopyText: (text: string) => void;
+  onPost: (action: CockpitAction) => void;
+}) {
+  const [selected, setSelected] = useState<Record<string, "remove" | "forget">>({});
+  const [confirming, setConfirming] = useState(false);
+  const [showAllRecords, setShowAllRecords] = useState(false);
+  const [branchConsent, setBranchConsent] = useState<Record<string, boolean>>({});
+
+  const byGroup = new Map<WtGroup, CockpitWorktreeRow[]>(WT_GROUPS.map((g) => [g, []]));
+  for (const row of rows) byGroup.get(wtGroupOf(row))!.push(row);
+  // Selection survives model refreshes only while the row is still in its safe group.
+  const stillSafe = (id: string, op: "remove" | "forget"): boolean => {
+    const row = rows.find((r) => r.id === id);
+    return !!row && wtGroupOf(row) === (op === "remove" ? "ready-to-remove" : "record-only");
+  };
+  const selection = Object.entries(selected).filter(([id, op]) => stillSafe(id, op));
+  const toggle = (id: string, op: "remove" | "forget") =>
+    setSelected((prev) => {
+      const next = { ...prev };
+      if (next[id]) delete next[id];
+      else next[id] = op;
+      return next;
+    });
+  const selectAll = (group: "ready-to-remove" | "record-only", op: "remove" | "forget") =>
+    setSelected((prev) => {
+      const next = { ...prev };
+      for (const row of byGroup.get(group)!) next[row.id] = op;
+      return next;
+    });
+  const runBatch = () => {
+    onPost({
+      type: "worktreeBatchCleanup",
+      items: selection.map(([id, op]) => {
+        const row = rows.find((r) => r.id === id);
+        return { id, op, ...(row?.wsHash ? { wsHash: row.wsHash } : {}) };
+      }),
+    });
+    setSelected({});
+    setConfirming(false);
+  };
+
+  const groupMeta: Record<WtGroup, { title: string; desc: string }> = {
+    "ready-to-remove": { title: s.wtReadyTitle, desc: s.wtReadyDesc },
+    "needs-review": { title: s.wtReviewTitle, desc: s.wtReviewDesc },
+    occupied: { title: s.wtOccupiedTitle, desc: s.wtOccupiedDesc },
+    "record-only": { title: s.wtRecordTitle, desc: s.wtRecordDesc },
+  };
+
+  const renderRow = (row: CockpitWorktreeRow, group: WtGroup) => {
+    const reasons = row.classification?.reasons ?? [];
+    const selectable = group === "ready-to-remove" || group === "record-only";
+    const op: "remove" | "forget" = group === "ready-to-remove" ? "remove" : "forget";
+    const occupant = row.classification?.occupant;
+    return (
+      <ListRow
+        key={row.id}
+        leading={
+          selectable ? (
+            <input
+              type="checkbox"
+              class="ck-wt-check"
+              checked={!!selected[row.id]}
+              onChange={() => toggle(row.id, op)}
+              aria-label={`${row.slug || row.agent || row.id}`}
+            />
+          ) : undefined
+        }
+        title={
+          <>
+            <span class="name">{row.slug || row.agent || row.id}</span>
+            <Badge tone={row.status === "active" ? "ok" : "default"}>{row.status}</Badge>
+            <Badge>{row.kind === "agent" ? s.agent : row.kind === "change" ? s.change : row.kind}</Badge>
+          </>
+        }
+        meta={
+          <>
+            {row.branch ? (
+              <span>
+                {s.branch}: <span class="ck-mono">{row.branch}</span>
+              </span>
+            ) : null}
+            {row.folder ? <span>{row.folder}</span> : null}
+            {group === "occupied" && occupant ? (
+              <span class="ck-wt-reason-occupied">
+                {s.wtOccupiedBy} <b>{occupant.agent}</b> ({occupant.state})
+              </span>
+            ) : null}
+            {group === "needs-review" && reasons.length > 0 ? (
+              <span class="ck-wt-reason-warn">⚠ {reasons.join("; ")}</span>
+            ) : null}
+            {group === "record-only" ? <span class="ck-wt-reason-muted">{reasons.join("; ")}</span> : null}
+          </>
+        }
+        detail={group !== "record-only" && row.path ? <span class="ck-mono">{row.path}</span> : undefined}
+        actions={
+          group === "record-only" ? (
+            <Button variant="default" onClick={() => onPost({ type: "worktreeForgetRecord", id: row.id, ...(row.wsHash ? { wsHash: row.wsHash } : {}) })}>
+              {s.wtForgetRecord}
+            </Button>
+          ) : group === "ready-to-remove" ? (
+            <>
+              {row.tachyonCreatedBranch ? (
+                <label class="ck-wt-branch-consent">
+                  <input
+                    type="checkbox"
+                    checked={!!branchConsent[row.id]}
+                    onChange={() => setBranchConsent((prev) => ({ ...prev, [row.id]: !prev[row.id] }))}
+                  />
+                  {s.wtAlsoDeleteBranch}
+                </label>
+              ) : null}
+              <Button
+                variant="default"
+                onClick={() =>
+                  onPost({
+                    type: "worktreeRemove",
+                    id: row.id,
+                    ...(branchConsent[row.id] ? { deleteBranch: true } : {}),
+                    ...(row.wsHash ? { wsHash: row.wsHash } : {}),
+                  })
+                }
+              >
+                {s.wtRemoveCheckout}
+              </Button>
+              <Button variant="default" onClick={() => onRevealPath(row.path)}>
+                {s.reveal}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="default" disabled title={`${s.wtBlocked}: ${reasons.join("; ") || group}`}>
+                {s.wtRemoveCheckout}
+              </Button>
+              {row.path ? (
+                <>
+                  <Button variant="default" onClick={() => onRevealPath(row.path)}>
+                    {s.reveal}
+                  </Button>
+                  <Button variant="default" onClick={() => onCopyText(row.path)}>
+                    {s.copyPath}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          )
+        }
+      />
+    );
+  };
+
+  const recordRows = byGroup.get("record-only")!;
+  const visibleRecords = showAllRecords ? recordRows : recordRows.slice(0, WT_RECORD_COLLAPSE_AT);
+
+  return (
+    <div data-testid="control-worktrees">
+      {unavailable && unavailable.length > 0 ? (
+        <div class="ck-wt-unavailable" role="alert">
+          {s.wtEngineUnavailable}
+          {unavailable.map((u) => (
+            <div key={u.folder} class="ck-mono ck-wt-unavailable-detail">
+              {u.folder}: {u.reason}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {rows.length === 0 && (!unavailable || unavailable.length === 0) ? (
+        <EmptyState kind="empty" message={s.noneListed} />
+      ) : null}
+      {WT_GROUPS.map((group) => {
+        const groupRows = group === "record-only" ? visibleRecords : byGroup.get(group)!;
+        const total = byGroup.get(group)!.length;
+        if (total === 0) return null;
+        return (
+          <section key={group} class="ck-wt-group">
+            <WtGroupHead
+              group={group}
+              title={groupMeta[group].title}
+              count={total}
+              action={
+                group === "ready-to-remove" || group === "record-only" ? (
+                  <Button variant="default" onClick={() => selectAll(group, group === "ready-to-remove" ? "remove" : "forget")}>
+                    {s.wtSelectAll}
+                  </Button>
+                ) : undefined
+              }
+            />
+            <p class="ck-wt-group-desc">{groupMeta[group].desc}</p>
+            <div class="ck-card-list">
+              {groupRows.map((row) => renderRow(row, group))}
+              {group === "record-only" && !showAllRecords && recordRows.length > WT_RECORD_COLLAPSE_AT ? (
+                <button class="ck-wt-show-all" onClick={() => setShowAllRecords(true)}>
+                  {s.wtShowAll} ({recordRows.length})
+                </button>
+              ) : null}
+            </div>
+          </section>
+        );
+      })}
+      {selection.length > 0 && !confirming ? (
+        <div class="ck-wt-batch-bar">
+          <span>
+            <b>{selection.length}</b> {s.wtSelected}
+          </span>
+          <Button variant="default" onClick={() => setSelected({})}>
+            {s.wtClearSelection}
+          </Button>
+          <Button variant="primary" onClick={() => setConfirming(true)}>
+            {s.wtReviewConfirm}
+          </Button>
+        </div>
+      ) : null}
+      {confirming && selection.length > 0 ? (
+        <div class="ck-wt-confirm" role="dialog" aria-modal="true">
+          <div class="ck-wt-confirm-card">
+            <h3>{s.wtConfirmTitle}</h3>
+            <p>{s.wtConfirmBody}</p>
+            <ul>
+              {selection.map(([id, op]) => {
+                const row = rows.find((r) => r.id === id);
+                return (
+                  <li key={id}>
+                    {row?.slug || row?.agent || id} — {op === "remove" ? s.wtRemoveCheckout : s.wtForgetRecord}
+                  </li>
+                );
+              })}
+            </ul>
+            <div class="ck-wt-confirm-actions">
+              <Button variant="default" onClick={() => setConfirming(false)}>
+                {s.wtCancel}
+              </Button>
+              <Button variant="primary" onClick={runBatch}>
+                {s.wtConfirmRun}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function App(p: CockpitAppProps) {
   // t-610705 (Phase C.2) — declared BEFORE the `!s` early return below so this hook always runs in
   // the same order every render (the Activity subroute needs the actual overflow:auto ancestor for
@@ -1019,52 +1299,14 @@ export function App(p: CockpitAppProps) {
   } else if (section === "worktrees") {
     body = (
       <ModuleChrome title={s.worktreesTitle} hint={s.worktreesHint}>
-        {m.worktrees.length === 0 ? (
-          <EmptyState kind="empty" message={s.noneListed} />
-        ) : (
-          <div class="ck-card-list" data-testid="control-worktrees">
-            {m.worktrees.map((w) => (
-              <ListRow
-                key={w.id}
-                title={
-                  <>
-                    <span class="name">{w.slug || w.id}</span>
-                    <Badge tone={w.status === "active" ? "ok" : "default"}>{w.status}</Badge>
-                    <Badge>{w.kind === "agent" ? s.agent : w.kind === "change" ? s.change : w.kind}</Badge>
-                  </>
-                }
-                meta={
-                  <>
-                    {w.branch ? (
-                      <span>
-                        {s.branch}: <span class="ck-mono">{w.branch}</span>
-                      </span>
-                    ) : null}
-                    {w.agent ? (
-                      <span>
-                        {s.agent}: {w.agent}
-                      </span>
-                    ) : null}
-                    {w.folder ? <span>{w.folder}</span> : null}
-                  </>
-                }
-                detail={w.path ? <span class="ck-mono">{w.path}</span> : undefined}
-                actions={
-                  w.path ? (
-                    <>
-                      <Button variant="default" onClick={() => p.onRevealPath(w.path)}>
-                        {s.reveal}
-                      </Button>
-                      <Button variant="default" onClick={() => p.onCopyText(w.path)}>
-                        {s.copyPath}
-                      </Button>
-                    </>
-                  ) : undefined
-                }
-              />
-            ))}
-          </div>
-        )}
+        <WorktreesHygiene
+          s={s}
+          rows={m.worktrees}
+          unavailable={m.worktreesUnavailable}
+          onRevealPath={p.onRevealPath}
+          onCopyText={p.onCopyText}
+          onPost={p.onPost}
+        />
       </ModuleChrome>
     );
   } else if (section === "deliveries") {

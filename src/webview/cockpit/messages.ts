@@ -149,6 +149,30 @@ export interface CockpitStrings {
   adhoc: string;
   agent: string;
   change: string;
+  /** spec 444 — Worktrees hygiene groups + actions. */
+  wtReadyTitle: string;
+  wtReadyDesc: string;
+  wtReviewTitle: string;
+  wtReviewDesc: string;
+  wtOccupiedTitle: string;
+  wtOccupiedDesc: string;
+  wtRecordTitle: string;
+  wtRecordDesc: string;
+  wtRemoveCheckout: string;
+  wtForgetRecord: string;
+  wtAlsoDeleteBranch: string;
+  wtSelectAll: string;
+  wtClearSelection: string;
+  wtSelected: string;
+  wtReviewConfirm: string;
+  wtConfirmTitle: string;
+  wtConfirmBody: string;
+  wtConfirmRun: string;
+  wtCancel: string;
+  wtEngineUnavailable: string;
+  wtBlocked: string;
+  wtOccupiedBy: string;
+  wtShowAll: string;
 }
 
 export type CockpitAction =
@@ -197,7 +221,18 @@ export type CockpitAction =
    *  back so the host can detect a stale/queued click (design-dueto probe-12f603f3 major finding: a
    *  delayed click from pin A processed after a fast navigation to pin B would otherwise navigate to
    *  B's returnRoute instead of being silently dropped). See Cockpit.ts's "navigateReturn" case. */
-  | { type: "navigateReturn"; routeKey: string };
+  | { type: "navigateReturn"; routeKey: string }
+  /** spec 444 — remove a classified-safe checkout by registry id. The engine re-validates
+   *  fail-closed (occupancy, dirty, ownership) on every call; a stale UI verdict is refused, never
+   *  forced through. `deleteBranch` is explicit per-click consent, honored only for
+   *  Tachyon-created branches (service-enforced). */
+  | { type: "worktreeRemove"; id: string; deleteBranch?: boolean; wsHash?: string }
+  /** spec 444 — forget a record-only tombstone row (registry only; disk untouched). */
+  | { type: "worktreeForgetRecord"; id: string; wsHash?: string }
+  /** spec 444 — batch cleanup: each item is an individual forget/remove the engine re-validates
+   *  independently, so an entry whose state changed since the preview drops out with a stated
+   *  reason instead of failing (or forcing) the whole batch. */
+  | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
 /** Ephemeral pair offer — not part of the polled CockpitModel. */
 export type CompanionPairOffer =

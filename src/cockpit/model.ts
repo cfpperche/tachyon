@@ -67,6 +67,8 @@ export interface CockpitWorktreeRow {
   agent?: string;
   folder?: string;
   wsHash?: string;
+  /** spec 444 — branch-deletion consent is offered only when Tachyon created the branch. */
+  tachyonCreatedBranch?: boolean;
   /**
    * spec 444 — fail-closed hygiene classification (see `src/worktree/classify.ts`). Computed
    * host-side in `CockpitDeps.collect()` before this row reaches `buildCockpitModel` (a pure,
