@@ -47,8 +47,6 @@ export interface DevHostMeta {
   preparedAt: string;
   launchConfig: string;
   howTo: string[];
-  launchJson?: string;
-  launchNote?: string;
   [key: string]: unknown;
 }
 
@@ -93,19 +91,7 @@ export interface DevHostStatusOptions {
 export interface DevHostClearResult {
   cleared: boolean;
   reason?: string;
-  launch?: { restored: boolean; reason?: string; path?: string };
   reconciled?: DevHostReconcileResult;
-}
-
-export interface LaunchConfig {
-  name: string;
-  type: string;
-  request: string;
-  args: string[];
-  env: Record<string, string>;
-  outFiles: string[];
-  preLaunchTask: string;
-  presentation: { hidden: boolean; group: string; order: number };
 }
 
 export function defaultRepoRoot(fromFile?: string): string;
@@ -134,18 +120,15 @@ export function fixtureNew(opts: DevHostFixtureNewOptions): {
   intent: string;
   spec: string | null;
 };
-export function portableDevHostLaunchConfig(): LaunchConfig;
 export function printStatus(st: DevHostStatus): void;
-/** @deprecated Prefer ensurePortableLaunchConfig */
-export function writeAbsoluteLaunchConfig(
-  repoRoot: string,
-  worktreeAbs?: string,
-  workspaceAbs?: string,
-): string | null;
-export function ensurePortableLaunchConfig(repoRoot: string): string | null;
-export function restoreTemplateLaunchConfig(
-  repoRoot: string,
-): { restored: boolean; reason?: string; path?: string };
+/**
+ * spec 448 — locates the PRIMARY checkout so this one can borrow `node_modules` / `.tachyon/bin`.
+ * It never selects a dev-host root: the dev-host belongs to the checkout it serves.
+ */
+export function resolvePrimaryRepoRoot(
+  fromCheckout: string,
+  opts?: { readGitCommonDir?: (checkout: string) => string },
+): { primaryRepo: string; checkout: string; redirected: boolean; warning?: string };
 export function point(opts: DevHostPointOptions): DevHostMeta;
 export function status(repoRoot: string, opts?: DevHostStatusOptions): Promise<DevHostStatus>;
 export function clear(repoRoot: string, opts?: DevHostReconcileOptions): Promise<DevHostClearResult>;

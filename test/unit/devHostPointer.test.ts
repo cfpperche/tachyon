@@ -12,20 +12,13 @@ const {
   assertWorkspaceNotRepoRoot,
   assertPointerSessionIdle,
   clear,
-  DEFAULT_SLOT,
-  ensurePortableLaunchConfig,
   fixtureNew,
-  listSlotIds,
   materializeWorkspaceMirror,
   pathsOf,
   point,
-  readActiveSlotId,
-  reconcileActiveSlot,
-  resolveF5HostRepoRoot,
+  resolvePrimaryRepoRoot,
   resolveFixturePath,
-  resolveSlotId,
   status,
-  statusAll,
 } = pointerMod as any;
 
 /** clear()/status() default to the real systemctl/Bridge socket; tests that don't exercise
@@ -87,58 +80,84 @@ describe("dev-host pointer", () => {
     expect(() => assertWorkspaceNotRepoRoot(repo, repo)).toThrow(/refusing workspace=repo root/);
   });
 
-  it("resolveF5HostRepoRoot keeps a normal checkout as the F5 host", () => {
+  it("resolvePrimaryRepoRoot keeps a normal checkout as its own primary", () => {
     // Real dir .git (or absent) ⇒ not a linked worktree
     fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
-    const r = resolveF5HostRepoRoot(repo);
-    expect(r.hostRepo).toBe(path.resolve(repo));
-    expect(r.scriptRepo).toBe(path.resolve(repo));
+    const r = resolvePrimaryRepoRoot(repo);
+    expect(r.primaryRepo).toBe(path.resolve(repo));
+    expect(r.checkout).toBe(path.resolve(repo));
     expect(r.redirected).toBe(false);
   });
 
-  it("resolveF5HostRepoRoot redirects linked worktree to primary monorepo", () => {
+  it("resolvePrimaryRepoRoot finds the primary from a linked worktree — for dependencies only", () => {
     const primary = repo;
     const linked = worktree;
     // Linked worktree marker: .git is a file, not a directory
     fs.writeFileSync(path.join(linked, ".git"), `gitdir: ${path.join(primary, ".git", "worktrees", "feature")}\n`);
     fs.mkdirSync(path.join(primary, ".git"), { recursive: true });
-    const r = resolveF5HostRepoRoot(linked, {
+    const r = resolvePrimaryRepoRoot(linked, {
       readGitCommonDir: () => path.join(primary, ".git"),
     });
     expect(r.redirected).toBe(true);
-    expect(r.hostRepo).toBe(path.resolve(primary));
-    expect(r.scriptRepo).toBe(path.resolve(linked));
+    expect(r.primaryRepo).toBe(path.resolve(primary));
+    expect(r.checkout).toBe(path.resolve(linked));
+    // spec 448 — the caller borrows node_modules/.tachyon/bin from primaryRepo. It must NOT be used
+    // as a dev-host root; the inversion test below pins that.
   });
 
-  it("point from linked-worktree script root still arms monorepo when host is redirected", () => {
-    // Simulate agent cwd=worktree: F5 host must be monorepo (repo), extension → worktree
-    const meta = arm({
-      spec: "control-monolith-embed",
-      slug: "control-embed",
+  it("spec 448: point arms the checkout it runs in, NOT the primary monorepo", () => {
+    // This is the inversion. It previously asserted the opposite ("still arms monorepo when host is
+    // redirected"): a linked worktree used to be redirected so one shared dev-host served everyone.
+    const meta = point({
+      repoRoot: worktree, // the checkout being armed
+      primaryRepo: repo, // only where dependencies are borrowed from
+      worktree,
+      workspace: fixture,
+      spec: "448",
+      slug: "devhost-owned-by-worktree",
     });
-    const p = pathsOf(repo, DEFAULT_SLOT);
-    expect(fs.existsSync(p.extension)).toBe(true);
+
+    const p = pathsOf(worktree);
+    expect(fs.existsSync(p.meta)).toBe(true);
     expect(fs.realpathSync(p.extension)).toBe(path.resolve(worktree));
-    expect(meta.worktree).toBe(path.resolve(worktree));
-    expect(meta.slotId).toBe(DEFAULT_SLOT);
-    // Feature worktree must NOT be required to hold the F5 pointer
-    expect(fs.existsSync(path.join(worktree, ".tachyon", "dev-host", "meta.json"))).toBe(false);
+    expect(meta.checkout).toBe(path.resolve(worktree));
+
+    // The primary must be left completely alone — this is what kept it permanently dirty before.
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
+
+    // No slot layout, no active symlink.
+    expect(fs.existsSync(path.join(worktree, ".tachyon", "dev-host", "slots"))).toBe(false);
+    expect(fs.existsSync(path.join(worktree, ".tachyon", "dev-host", "active"))).toBe(false);
+  });
+
+  it("spec 448 scenario 1: two checkouts arm independently, with no slot identifier", () => {
+    const other = path.join(repo, "wt-other");
+    const otherFixture = path.join(other, "test", "fixtures", "other-dogfood");
+    writePkg(other);
+    fs.mkdirSync(otherFixture, { recursive: true });
+    fs.writeFileSync(path.join(otherFixture, "tachyon.yml"), "agents:\n  b:\n    cmd: y\n");
+
+    point({ repoRoot: worktree, primaryRepo: repo, worktree, workspace: fixture });
+    point({ repoRoot: other, primaryRepo: repo, worktree: other, workspace: otherFixture });
+
+    // Each dev-host points at its own checkout — neither clobbered the other, and neither had to be
+    // told who it belongs to. Isolation is structural, not a naming convention.
+    expect(fs.realpathSync(pathsOf(worktree).extension)).toBe(path.resolve(worktree));
+    expect(fs.realpathSync(pathsOf(other).extension)).toBe(path.resolve(other));
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
   });
 
   it("points extension symlink + workspace mirror and writes meta", async () => {
     const meta = arm({
       spec: "381",
       slug: "prompt-templates",
-      owner: "test",
     });
     expect(meta.worktree).toBe(path.resolve(worktree));
     expect(meta.workspace).toBe(path.resolve(fixture));
-    expect(meta.slotId).toBe("test");
-    // First slot becomes active F5 even with --owner
     expect(meta.launchConfig).toBe("Tachyon: Dev Host");
     expect(meta.workspaceMirror).toBe(true);
 
-    const p = pathsOf(repo, "test");
+    const p = pathsOf(repo);
     expect(fs.lstatSync(p.extension).isSymbolicLink()).toBe(true);
     expect(fs.lstatSync(p.runtime).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(p.runtime)).toBe(fs.realpathSync(process.execPath));
@@ -146,9 +165,11 @@ describe("dev-host pointer", () => {
     expect(fs.lstatSync(p.workspace).isSymbolicLink()).toBe(false);
     expect(fs.statSync(p.workspace).isDirectory()).toBe(true);
     expect(fs.realpathSync(p.extension)).toBe(path.resolve(worktree));
-    // Flat layout must not be used
-    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host", "extension"))).toBe(false);
-    expect(fs.lstatSync(path.join(repo, ".tachyon", "dev-host", "active")).isSymbolicLink()).toBe(true);
+    // spec 448 — inverted: flat IS the layout now. This assertion used to demand the opposite,
+    // because the dev-host lived under slots/<id>/ with an `active` symlink selecting one.
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host", "extension"))).toBe(true);
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host", "active"))).toBe(false);
+    expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host", "slots"))).toBe(false);
 
     // Authoritative config is a real disposable copy: the engine opens it no-follow and dogfood
     // mutations must not write back into a tracked fixture. Non-authoritative files stay linked.
@@ -171,10 +192,9 @@ describe("dev-host pointer", () => {
       kind: "tachyon-dev-host",
     });
 
-    const st = await status(repo, { ...noopProbe, owner: "test" });
+    const st = await status(repo, noopProbe);
     expect(st.armed).toBe(true);
     expect(st.broken).toBe(false);
-    expect(st.slotId).toBe("test");
     expect(st.meta?.spec).toBe("381");
     expect(st.workspaceIsMirror).toBe(true);
     expect(st.workspaceResolves).toBe(path.resolve(fixture));
@@ -223,7 +243,7 @@ describe("dev-host pointer", () => {
 
   it("refuses point and clear while a live interactive session owns the pointer", async () => {
     arm();
-    const pointerRoot = pathsOf(repo, DEFAULT_SLOT).root;
+    const pointerRoot = pathsOf(repo).root;
     fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({ edhPid: process.pid }));
 
     expect(() => assertPointerSessionIdle(pointerRoot)).toThrow(/interactive headless session owns this pointer/);
@@ -233,7 +253,7 @@ describe("dev-host pointer", () => {
 
   it("keeps the reservation when the VS Code launcher exited but Xvfb is still live", () => {
     arm();
-    const pointerRoot = pathsOf(repo, DEFAULT_SLOT).root;
+    const pointerRoot = pathsOf(repo).root;
     fs.writeFileSync(path.join(pointerRoot, "session.json"), JSON.stringify({
       edhPid: 2_147_483_647,
       xvfbPid: process.pid,
@@ -244,7 +264,7 @@ describe("dev-host pointer", () => {
 
   it("reclaims a stale interactive session marker", () => {
     arm();
-    const pointerRoot = pathsOf(repo, DEFAULT_SLOT).root;
+    const pointerRoot = pathsOf(repo).root;
     const sessionFile = path.join(pointerRoot, "session.json");
     fs.writeFileSync(sessionFile, JSON.stringify({ edhPid: 2_147_483_647 }));
     expect(() => assertPointerSessionIdle(pointerRoot)).not.toThrow();
@@ -259,53 +279,9 @@ describe("dev-host pointer", () => {
     expect(fs.realpathSync(wtNm)).toBe(path.resolve(repo, "node_modules"));
   });
 
-  it("keeps portable ${workspaceFolder} paths in launch.json (never machine absolutes)", async () => {
-    const vscode = path.join(repo, ".vscode");
-    fs.mkdirSync(vscode, { recursive: true });
-    fs.writeFileSync(
-      path.join(vscode, "launch.json"),
-      JSON.stringify({
-        version: "0.2.0",
-        configurations: [{
-          name: "Tachyon: Dev Host",
-          type: "extensionHost",
-          request: "launch",
-          // Simulate a dirty absolute-path rewrite from older point()
-          args: ["/tmp/absolute/fixture", "--extensionDevelopmentPath=/tmp/absolute/wt"],
-        }],
-      }, null, 2),
-    );
-    arm({ spec: "381" });
-    const launch = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
-    const cfg = launch.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
-    // Default F5 entry uses active → slots/<id> (multi-slot t-efe06d)
-    expect(cfg.args[0]).toBe("${workspaceFolder}/.tachyon/dev-host/active/workspace");
-    expect(cfg.args[1]).toBe("--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/active/extension");
-    expect(cfg.args.some((a: string) => a.includes("--extensions-dir"))).toBe(false);
-    expect(cfg.args.some((a: string) => a.includes("--user-data-dir"))).toBe(false);
-    expect(cfg.env.TMUX_TMPDIR).toContain("${workspaceFolder}");
-    expect(cfg.env.TMUX_TMPDIR).toContain("/active/");
-    expect(cfg.env.TACHYON_DEV_HOST).toBe("1");
-    expect(cfg.env.TACHYON_DEV_HOST_ENGINE_RUNTIME).toContain("${workspaceFolder}");
-    expect(cfg.env.TACHYON_DEV_HOST_PROFILE_HOME).toBe("${workspaceFolder}/.tachyon/dev-host/active/profile-home");
-    expect(cfg.env.XDG_CACHE_HOME).toContain("${workspaceFolder}");
-    expect(cfg.env.XDG_STATE_HOME).toContain("${workspaceFolder}");
-    expect(cfg.env.XDG_DATA_HOME).toContain("${workspaceFolder}");
-    expect(cfg.outFiles[0]).toContain("${workspaceFolder}");
-    // No absolute machine paths leaked into the committed template
-    expect(JSON.stringify(cfg)).not.toContain(path.resolve(fixture));
-    expect(JSON.stringify(cfg)).not.toContain(path.resolve(worktree));
-
-    const cleared = await clear(repo, noopReconcile);
-    expect(cleared.cleared).toBe(true);
-    const restored = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
-    const cfg2 = restored.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host");
-    expect(cfg2.args[0]).toContain("${workspaceFolder}");
-    expect(cfg2.args[0]).toContain("/active/");
-  });
 
   it("materializeWorkspaceMirror replaces a prior symlink workspace", () => {
-    const mirror = path.join(repo, ".tachyon", "dev-host", "slots", DEFAULT_SLOT, "workspace");
+    const mirror = path.join(repo, ".tachyon", "dev-host", "workspace");
     fs.mkdirSync(path.dirname(mirror), { recursive: true });
     fs.symlinkSync(fixture, mirror);
     expect(fs.lstatSync(mirror).isSymbolicLink()).toBe(true);
@@ -314,113 +290,6 @@ describe("dev-host pointer", () => {
     expect(fs.existsSync(path.join(mirror, "README.md"))).toBe(true);
   });
 
-  it("ensurePortableLaunchConfig is a no-op without launch.json", () => {
-    expect(ensurePortableLaunchConfig(repo)).toBeNull();
-  });
-
-  describe("t-efe06d: multi-slot isolation", () => {
-    it("resolveSlotId prefers owner/slot/env and fail-closes with requireOwner", () => {
-      // Isolate from the real agent process env (TACHYON_AGENT_NAME etc.)
-      expect(resolveSlotId({ env: {} })).toBe(DEFAULT_SLOT);
-      expect(resolveSlotId({ owner: "Grok.Agent", env: {} })).toBe("grok.agent");
-      expect(resolveSlotId({ slot: "product-toast", env: {} })).toBe("product-toast");
-      expect(resolveSlotId({ env: { TACHYON_AGENT_NAME: "alice" } })).toBe("alice");
-      expect(() => resolveSlotId({ requireOwner: true, env: {} })).toThrow(/must pass --owner/);
-    });
-
-    it("two owners arm independent slots without clobber", async () => {
-      const fixtureB = path.join(worktree, "test", "fixtures", "other-dogfood");
-      fs.mkdirSync(fixtureB, { recursive: true });
-      fs.writeFileSync(path.join(fixtureB, "tachyon.yml"), "agents: {}\n");
-
-      const a = arm({
-        owner: "agent-a",
-        slug: "a",
-      });
-      const b = arm({
-        workspace: fixtureB,
-        owner: "agent-b",
-        slug: "b",
-      });
-      expect(a.slotId).toBe("agent-a");
-      expect(b.slotId).toBe("agent-b");
-      expect(listSlotIds(repo)).toEqual(["agent-a", "agent-b"]);
-
-      const stA = await status(repo, { ...noopProbe, owner: "agent-a" });
-      const stB = await status(repo, { ...noopProbe, owner: "agent-b" });
-      expect(stA.armed).toBe(true);
-      expect(stB.armed).toBe(true);
-      expect(stA.workspaceResolves).toBe(path.resolve(fixture));
-      expect(stB.workspaceResolves).toBe(path.resolve(fixtureB));
-      expect(fs.realpathSync(pathsOf(repo, "agent-a").extension)).toBe(path.resolve(worktree));
-
-      const clearedB = await clear(repo, { ...noopReconcile, owner: "agent-b" });
-      expect(clearedB.cleared).toBe(true);
-      expect(clearedB.slotId).toBe("agent-b");
-      expect(listSlotIds(repo)).toEqual(["agent-a"]);
-      expect((await status(repo, { ...noopProbe, owner: "agent-a" })).armed).toBe(true);
-
-      const all = await clear(repo, { ...noopReconcile, all: true });
-      expect(all.cleared).toBe(true);
-      expect(fs.existsSync(path.join(repo, ".tachyon", "dev-host"))).toBe(false);
-    });
-
-    it("clear of the active slot retargets active to a remaining owner", async () => {
-      arm({ owner: "keep-me", activate: true });
-      arm({ owner: "drop-me", activate: true });
-      expect(readActiveSlotId(repo)).toBe("drop-me");
-
-      const cleared = await clear(repo, { ...noopReconcile, owner: "drop-me" });
-      expect(cleared.cleared).toBe(true);
-      expect(listSlotIds(repo)).toEqual(["keep-me"]);
-      expect(readActiveSlotId(repo)).toBe("keep-me");
-      expect(cleared.activeSlotId).toBe("keep-me");
-      // Dangling path must not remain
-      expect(fs.existsSync(pathsOf(repo, "drop-me").root)).toBe(false);
-      expect(reconcileActiveSlot(repo)).toBe("keep-me");
-    });
-
-    it("migrates legacy flat pointer into slots/default", () => {
-      const base = path.join(repo, ".tachyon", "dev-host");
-      fs.mkdirSync(base, { recursive: true });
-      fs.symlinkSync(worktree, path.join(base, "extension"));
-      fs.mkdirSync(path.join(base, "workspace"), { recursive: true });
-      fs.writeFileSync(
-        path.join(base, "meta.json"),
-        JSON.stringify({ schemaVersion: 1, kind: "dev-host", worktree, workspace: fixture }),
-      );
-      arm({ owner: "fresh" });
-      expect(fs.existsSync(path.join(base, "extension"))).toBe(false);
-      expect(fs.existsSync(pathsOf(repo, "fresh").meta)).toBe(true);
-    });
-
-    it("statusAll lists every armed slot", async () => {
-      arm({ owner: "one" });
-      arm({ owner: "two" });
-      const all = await statusAll(repo, noopProbe);
-      expect(all.slotIds.sort()).toEqual(["one", "two"]);
-      expect(all.slots).toHaveLength(2);
-      expect(all.armed).toBe(true);
-    });
-
-    it("per-owner launch config is generated alongside active entry", () => {
-      const vscode = path.join(repo, ".vscode");
-      fs.mkdirSync(vscode, { recursive: true });
-      fs.writeFileSync(
-        path.join(vscode, "launch.json"),
-        JSON.stringify({ version: "0.2.0", configurations: [] }, null, 2),
-      );
-      arm();
-      arm({ owner: "agent-x" });
-      const launch = JSON.parse(fs.readFileSync(path.join(vscode, "launch.json"), "utf8"));
-      const names = launch.configurations.map((c: { name: string }) => c.name);
-      expect(names).toContain("Tachyon: Dev Host");
-      expect(names).toContain("Tachyon: Dev Host · agent-x");
-      const per = launch.configurations.find((c: { name: string }) => c.name === "Tachyon: Dev Host · agent-x");
-      expect(per.args[0]).toContain("/slots/agent-x/workspace");
-      expect(per.env.TACHYON_DEV_HOST_SLOT).toBe("agent-x");
-    });
-  });
 
   describe("t-e357dc: stale persistent-engine reconciliation", () => {
     // Per-slot mirror workspace is fixed across F5 sessions for that slot, so a persistent engine
@@ -428,7 +297,7 @@ describe("dev-host pointer", () => {
 
     it("stops a stale foreign occupant before wiping storage", async () => {
       arm();
-      const slotRoot = pathsOf(repo, DEFAULT_SLOT).root;
+      const slotRoot = pathsOf(repo).root;
       const base = path.join(repo, ".tachyon", "dev-host");
       const expectedUnitName = fixtureEngineUnitName(slotRoot);
       const calls: Array<{ fn: string; root: string; storagePresent: boolean }> = [];
@@ -477,7 +346,7 @@ describe("dev-host pointer", () => {
 
     it("refuses to wipe storage when the stale occupant cannot be safely stopped (bounded cleanup failure)", async () => {
       arm();
-      const slotRoot = pathsOf(repo, DEFAULT_SLOT).root;
+      const slotRoot = pathsOf(repo).root;
       const stopEngine = async () => {
         throw new Error("fixture EDH is still running; close it before cleanup");
       };
@@ -490,7 +359,7 @@ describe("dev-host pointer", () => {
 
     it("never targets a normal (non-Dev-Host) workspace's engine identity", () => {
       arm();
-      const slotRoot = pathsOf(repo, DEFAULT_SLOT).root;
+      const slotRoot = pathsOf(repo).root;
       const normalWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "normal-workspace-"));
       fs.mkdirSync(path.join(normalWorkspace, "workspace"), { recursive: true });
 

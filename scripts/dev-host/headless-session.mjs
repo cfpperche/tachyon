@@ -51,21 +51,12 @@ const SESSION_FILE = path.join(PTR, "session.json");
 const OUT_DIR = path.join(PTR, "session-out");
 
 /**
- * Multi-slot (t-efe06d): live F5 pointer is `.tachyon/dev-host/active` → `slots/<id>/`.
- * Legacy flat layout keeps extension/workspace/meta.json directly under dev-host/.
- * Headless must resolve the same root launch.json's `active` entry uses.
+ * spec 448 — the dev-host belongs to the checkout this script lives in, so its root is just
+ * `<checkout>/.tachyon/dev-host`. This replaces an `active` → `slots/<id>/` resolution: there is
+ * exactly one dev-host per checkout now, so there is nothing to select.
  */
 function resolvePointerSlotRoot(repoRoot = REPO) {
-  const root = path.join(repoRoot, ".tachyon", "dev-host");
-  const active = path.join(root, "active");
-  try {
-    if (fs.lstatSync(active).isSymbolicLink() || fs.existsSync(active)) {
-      return fs.realpathSync(active);
-    }
-  } catch {
-    /* no active — fall through */
-  }
-  return root;
+  return path.join(repoRoot, ".tachyon", "dev-host");
 }
 
 /** Built-in frame alias: the Control webview. */
