@@ -1,0 +1,11 @@
+# t-610355 dogfood — layer-2 first-party agent pane.
+# Autostart bash agent so Open Agent Pane has a live tmux session after F5.
+agents:
+  dogfood:
+    cmd: bash
+    kind: agent
+    autostart: true
+
+commands:
+  hello:
+    cmd: "echo agent-pane-dogfood-ok"
