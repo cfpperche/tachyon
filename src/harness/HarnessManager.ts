@@ -185,40 +185,83 @@ function isReadableNoFollowJsonObjectFile(file: string): boolean {
   }
 }
 
+/** Rank fields for comparing Grok/Hermes auth.json candidates (t-2b0a08 / t-6c8437). */
+export interface AuthCredentialRank {
+  mtimeMs: number;
+  createTimeMs: number;
+  /** Latest `expires_at` across entries; 0 if none. */
+  expiresAtMs: number;
+  /**
+   * Access token still within `expires_at` (or no expiry field → treat as valid).
+   * Expired host auth must lose to a non-expired private refresh even when mtimes confuse us.
+   */
+  accessValid: boolean;
+}
+
 /**
  * Grok (and Hermes) write `auth.json` via create+rename under a redirected home, which **replaces**
  * a symlink with a regular file. OIDC refresh tokens are typically single-use / rotate: each private
  * home can end up with a *different* live key, and only the newest is valid server-side.
- * Ranking uses OIDC `create_time` when present (more accurate than mtime after copies).
+ * Ranking: non-expired access preferred, then OIDC `create_time`, then mtime (t-6c8437).
  */
-export function authCredentialRank(file: string): { mtimeMs: number; createTimeMs: number } {
+export function authCredentialRank(file: string, nowMs: number = Date.now()): AuthCredentialRank {
   let mtimeMs = 0;
   try {
     mtimeMs = fs.statSync(file).mtimeMs;
   } catch {
-    return { mtimeMs: 0, createTimeMs: 0 };
+    return { mtimeMs: 0, createTimeMs: 0, expiresAtMs: 0, accessValid: false };
   }
   let createTimeMs = 0;
+  let expiresAtMs = 0;
+  let sawExpires = false;
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       for (const value of Object.values(parsed)) {
         if (!value || typeof value !== "object" || Array.isArray(value)) continue;
         const ct = (value as { create_time?: unknown }).create_time;
-        if (typeof ct !== "string") continue;
-        const ms = Date.parse(ct);
-        if (Number.isFinite(ms) && ms > createTimeMs) createTimeMs = ms;
+        if (typeof ct === "string") {
+          const ms = Date.parse(ct);
+          if (Number.isFinite(ms) && ms > createTimeMs) createTimeMs = ms;
+        }
+        const exp = (value as { expires_at?: unknown }).expires_at;
+        if (typeof exp === "string") {
+          const ms = Date.parse(exp);
+          if (Number.isFinite(ms)) {
+            sawExpires = true;
+            if (ms > expiresAtMs) expiresAtMs = ms;
+          }
+        }
       }
     }
   } catch {
     /* rank by mtime only */
   }
-  return { mtimeMs, createTimeMs };
+  // No expires_at (legacy test fixtures) → do not punish; OIDC entries with past expiry lose.
+  const accessValid = !sawExpires || expiresAtMs > nowMs;
+  return { mtimeMs, createTimeMs, expiresAtMs, accessValid };
 }
 
-function authRankBetter(a: { mtimeMs: number; createTimeMs: number }, b: { mtimeMs: number; createTimeMs: number }): boolean {
+export function authRankBetter(a: AuthCredentialRank, b: AuthCredentialRank): boolean {
+  if (a.accessValid !== b.accessValid) return a.accessValid;
   if (a.createTimeMs !== b.createTimeMs) return a.createTimeMs > b.createTimeMs;
   return a.mtimeMs > b.mtimeMs;
+}
+
+/**
+ * True when any workspace private Grok home has replaced the auth symlink with a regular file
+ * (OIDC refresh in-session). Cheap signal to run harvest without waiting for stop/kill (t-6c8437).
+ */
+export function privateGrokAuthNeedsHarvest(workspaceRoot: string): boolean {
+  for (const home of listWorkspaceGrokPrivateHomes(workspaceRoot)) {
+    try {
+      const st = fs.lstatSync(path.join(home, "auth.json"));
+      if (st.isFile() && !st.isSymbolicLink()) return true;
+    } catch {
+      /* missing — skip */
+    }
+  }
+  return false;
 }
 
 /**
@@ -774,6 +817,10 @@ export function realClaudeJsonPath(env: NodeJS.ProcessEnv = process.env, homeDir
 const ONBOARDING_SEED_KEYS = ["hasCompletedOnboarding", "lastOnboardingVersion", "hasIdeOnboardingBeenShown", "userID", "oauthAccount", "firstStartTime"];
 
 export class HarnessManager {
+  /** t-6c8437 — throttle in-session harvest so agent-list ticks stay cheap. */
+  private lastGrokHarvestMs = 0;
+  private static readonly GROK_HARVEST_MIN_INTERVAL_MS = 5_000;
+
   constructor(
     private readonly workspaceRoot: string,
     private readonly realHome: string = realConfigHome(),
@@ -2132,7 +2179,22 @@ export class HarnessManager {
    * is not stranded in one agent home until the next spawn of *that* agent.
    */
   reconcileGrokAuthFromWorkspace(): { promoted: boolean; relinked: number } {
+    this.lastGrokHarvestMs = Date.now();
     return reconcileWorkspaceGrokAuth(this.workspaceRoot, this.realGrokHome);
+  }
+
+  /**
+   * t-6c8437 — harvest while a Grok agent is still running.
+   * OIDC refresh replaces the private auth symlink mid-session; waiting for stop/kill left
+   * `~/.grok/auth.json` expired and sibling / Dev Host agents on the login wall.
+   * No-op when no private regular auth exists or when called inside the throttle window.
+   */
+  maybeHarvestGrokAuthFromWorkspace(nowMs: number = Date.now()): { promoted: boolean; relinked: number } | null {
+    // Only throttle forward in time (tests may inject small clocks; materialize stamps wall-clock).
+    const elapsed = nowMs - this.lastGrokHarvestMs;
+    if (elapsed >= 0 && elapsed < HarnessManager.GROK_HARVEST_MIN_INTERVAL_MS) return null;
+    if (!privateGrokAuthNeedsHarvest(this.workspaceRoot)) return null;
+    return this.reconcileGrokAuthFromWorkspace();
   }
 
   materializeBridgeMcpGrok(

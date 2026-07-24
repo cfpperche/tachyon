@@ -896,6 +896,73 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"GROK"}');
   });
 
+  it("t-6c8437: prefer non-expired private auth over expired real even when create_time is older", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-expired");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    // Real: newer create_time but access already expired (revoked refresh sibling case).
+    fs.writeFileSync(
+      realAuth,
+      JSON.stringify({
+        "https://auth.x.ai::x": {
+          key: "EXPIRED_KEY",
+          create_time: "2026-07-24T18:00:00.000Z",
+          expires_at: "2026-07-24T01:00:00.000Z",
+        },
+      }),
+    );
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge);
+    const privateAuth = path.join(home, "auth.json");
+    fs.unlinkSync(privateAuth);
+    // Private: older create_time but still-valid access — must win (login wall otherwise).
+    fs.writeFileSync(
+      privateAuth,
+      JSON.stringify({
+        "https://auth.x.ai::x": {
+          key: "FRESH_KEY",
+          create_time: "2026-07-23T12:00:00.000Z",
+          expires_at: "2099-01-01T00:00:00.000Z",
+        },
+      }),
+    );
+    const result = mgr.reconcileGrokAuthFromWorkspace();
+    expect(result.promoted).toBe(true);
+    const real = JSON.parse(fs.readFileSync(realAuth, "utf8")) as { "https://auth.x.ai::x": { key: string } };
+    expect(real["https://auth.x.ai::x"].key).toBe("FRESH_KEY");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+  });
+
+  it("t-6c8437: maybeHarvestGrokAuthFromWorkspace promotes when private auth is a regular file", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-live-harvest");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(realAuth, JSON.stringify({ t: { key: "OLD", create_time: "2026-01-01T00:00:00.000Z" } }));
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const home = mgr.materializeBridgeMcpGrok("solo", {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    });
+    const privateAuth = path.join(home, "auth.json");
+    fs.unlinkSync(privateAuth);
+    fs.writeFileSync(privateAuth, JSON.stringify({ t: { key: "LIVE", create_time: "2026-06-01T00:00:00.000Z" } }));
+    // After materialize's harvest stamp, jump past the throttle window.
+    const t0 = Date.now() + 60_000;
+    const first = mgr.maybeHarvestGrokAuthFromWorkspace(t0);
+    expect(first).not.toBeNull();
+    expect(first!.promoted).toBe(true);
+    expect(JSON.parse(fs.readFileSync(realAuth, "utf8")).t.key).toBe("LIVE");
+    // Throttled second call within interval.
+    const second = mgr.maybeHarvestGrokAuthFromWorkspace(t0 + 100);
+    expect(second).toBeNull();
+  });
+
   it("reconcileWorkspaceGrokAuth promotes the freshest multi-agent OIDC key and re-symlinks every private home", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-multi");
     fs.mkdirSync(realGrokHome, { recursive: true });

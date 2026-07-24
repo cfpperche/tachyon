@@ -3162,6 +3162,12 @@ export class Workspace {
 
   /** Sidebar agents view + Companion live agent list (SSE). Safe before companionLive is constructed. */
   refreshAgentsViews(): void {
+    // t-6c8437 — promote in-session Grok OIDC refreshes without waiting for stop/kill.
+    try {
+      this.harness.maybeHarvestGrokAuthFromWorkspace();
+    } catch {
+      /* best-effort; never block the agents view on auth I/O */
+    }
     try {
       this.deps.onViewsChanged("agents");
     } catch {
