@@ -180,6 +180,78 @@ describe("loadProfileAwareConfig", () => {
     });
   });
 
+  it("projects only approved Codex scalar values from the selected global source", () => {
+    const root = temporaryRoot("tachyon-agent-profile-codex-scalars-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-codex-global-");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".codex", "config.toml"), [
+      'approval_policy = "on-request"',
+      'sandbox_mode = "workspace-write"',
+      'model_provider = "must-not-project"',
+      '[tui]',
+      'status_line = ["model", "git-branch"]',
+      'status_line_use_colors = false',
+      '[features]',
+      'terminal_resize_reflow = true',
+      'memories = true',
+    ].join("\n"));
+    const scalarPolicy = {
+      source: "global",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["fresh", "restart", "resume"],
+    };
+    const bytes = writeProfile(root, {
+      nativeConfig: {
+        permissions: scalarPolicy,
+        interface: scalarPolicy,
+        featureFlags: scalarPolicy,
+      },
+    });
+
+    const result = load(root, authority(bytes), { homeDir });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "codex",
+      selectors: {},
+      permissions: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+      interface: {
+        statusLine: ["model", "git-branch"],
+        statusLineUseColors: false,
+      },
+      featureFlags: { terminalResizeReflow: true },
+    });
+    expect(JSON.stringify(result.config?.agents.codex.profileNativeConfig)).not.toContain("must-not-project");
+    expect(JSON.stringify(result.config?.agents.codex.profileNativeConfig)).not.toContain("memories");
+  });
+
+  it("fails closed when selected workspace config contains an ambient unapproved key", () => {
+    const root = temporaryRoot("tachyon-agent-profile-codex-workspace-scalars-");
+    fs.mkdirSync(path.join(root, ".codex"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".codex", "config.toml"), [
+      'approval_policy = "never"',
+      'model = "ambient-model"',
+    ].join("\n"));
+    const bytes = writeProfile(root, {
+      nativeConfig: {
+        permissions: {
+          source: "workspace",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
+    });
+
+    const result = load(root, authority(bytes));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors).toContain(
+      "agents.codex.profile: profile/native-config-key: source 'workspace' key 'model' is outside the selected family allowlist",
+    );
+  });
+
   it("rejects typed Codex selectors without their explicit native policy", () => {
     const root = temporaryRoot("tachyon-agent-profile-codex-selector-no-policy-");
     const bytes = writeProfile(root, {

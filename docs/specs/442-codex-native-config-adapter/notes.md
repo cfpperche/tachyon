@@ -14,6 +14,18 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   renders only `model`, `model_provider`, `model_reasoning_effort` and `service_tier`.
 - Every materialization atomically replaces the private `config.toml`; authentication remains an
   external symlink created by the existing private-home boundary.
+- The human ratified Slice B's closed allowlist: `approval_policy`, `sandbox_mode`, `personality`,
+  `tui.status_line`, `tui.status_line_use_colors` and `features.terminal_resize_reflow`.
+  Memory, auth/provider redirects, hooks/trust, telemetry/notify, notices and all other flags remain
+  excluded.
+- Global config is parsed and filtered because the private `CODEX_HOME` suppresses the ambient
+  global file. Workspace config remains visible to Codex itself, so selecting a workspace family
+  fails closed if `.codex/config.toml` contains any leaf outside the explicitly selected family
+  allowlists.
+- Missing selected keys stay absent in the generated file and therefore use Codex defaults; there
+  is no cross-source fallback.
+- TOML parsing uses `@iarna/toml`; `smol-toml` was rejected because its ESM-only package shape is
+  incompatible with Tachyon's current CommonJS extension build.
 
 ## Deviations
 
@@ -27,5 +39,4 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
-- Before Slice B, the human must review the first global/workspace scalar allowlist. Missing keys
-  will use Codex defaults; they will not fall through to another source.
+- Slice C still needs a separate trust and materialization review for tooling-shaped configuration.

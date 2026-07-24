@@ -5,7 +5,7 @@ _Generated from `plan.md` on 2026-07-23. Work top-to-bottom. Check boxes as task
 ## Implementation
 
 - [x] Slice A: typed agent selector projection and exact support declaration.
-- [ ] Slice B: reviewed global/workspace scalar-family parser and allowlist.
+- [x] Slice B: reviewed global/workspace scalar-family parser and allowlist.
 - [ ] Slice C: tooling projection with independent trust/materialization rules.
 - [ ] Slice D: lifecycle dogfood and per-family parity evidence.
 
@@ -19,7 +19,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Auth remains external and source state/credentials never enter generated config.
 - [ ] Fresh/restart/resume regenerate equivalent projection.
 
-**Verify:** `npx vitest run test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts`
+**Verify:** `npx vitest run test/unit/codexNativeConfigProjection.test.ts test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:

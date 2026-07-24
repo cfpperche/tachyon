@@ -70,4 +70,26 @@ describe("agent native configuration support admission", () => {
       "profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'selectors'",
     ]);
   });
+
+  it("accepts only the measured Codex scalar tuples from global or workspace sources", () => {
+    const policy: AgentNativeConfigPolicyV1 = {
+      source: "global",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["resume", "fresh", "restart"],
+    };
+    expect(validateAgentNativeConfigPolicy("codex", {
+      permissions: policy,
+      interface: { ...policy, source: "workspace" },
+      featureFlags: policy,
+    })).toEqual([]);
+
+    expect(validateAgentNativeConfigPolicy("codex", {
+      permissions: { ...policy, source: "agent" },
+      interface: { ...policy, lifecycle: [...policy.lifecycle, "fork"] },
+    })).toEqual([
+      "profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'permissions'",
+      "profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'interface'",
+    ]);
+  });
 });
