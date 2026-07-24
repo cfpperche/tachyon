@@ -4,7 +4,20 @@
  * Stretching .xterm width/height can hide under-fit grids in CDP box checks and fight the
  * render service's explicit canvas/screen pixel sizes.
  * Cell metrics come ONLY from xterm options (not CSS font on body).
+ *
+ * We intentionally do NOT load design-system.css here (Tachyon Mono @font-face breaks cell
+ * metrics). Spacing tokens below mirror design-system.css --ds-* literals.
  */
+
+/* design-system.css spacing scale (keep in sync) */
+:root {
+  --ds-1: 4px;
+  --ds-2: 8px;
+  --ds-3: 12px;
+  --ds-4: 16px;
+  /* Minimal chrome around the terminal host (tight external pad on the 4/8 grid). */
+  --agent-pane-pad: var(--ds-2);
+}
 
 html,
 body {
@@ -13,7 +26,7 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #1e1e1e;
+  background: var(--vscode-editor-background, #1e1e1e);
   /* Prevent accidental proportional inheritance if DOM renderer spans leak styles. */
   font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 14px;
@@ -25,21 +38,23 @@ body {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #1e1e1e;
+  background: var(--vscode-editor-background, #1e1e1e);
 }
 
 .agent-pane {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: #1e1e1e;
+  background: var(--vscode-editor-background, #1e1e1e);
+  box-sizing: border-box;
 }
 
-/* FitAddon measures this box — full editor area, natural xterm child sizing */
+/* FitAddon measures this box — inset by DS min pad so TUI grid fits the inner area */
 .agent-pane__term {
   position: absolute;
-  inset: 0;
+  inset: var(--agent-pane-pad);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
 .agent-pane__term .xterm {
