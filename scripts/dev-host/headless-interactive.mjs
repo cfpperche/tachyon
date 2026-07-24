@@ -90,18 +90,13 @@ function httpJson(url) {
   });
 }
 
-/** Multi-slot: active → slots/<id>/; legacy flat keeps paths under dev-host/. */
+/**
+ * spec 448 — the dev-host belongs to the checkout this script lives in, so its root is just
+ * `<checkout>/.tachyon/dev-host`. This replaces an `active` → `slots/<id>/` resolution: there is
+ * exactly one dev-host per checkout now, so there is nothing to select.
+ */
 function resolvePointerSlotRoot(repoRoot) {
-  const root = path.join(repoRoot, ".tachyon", "dev-host");
-  const active = path.join(root, "active");
-  try {
-    if (fs.lstatSync(active).isSymbolicLink() || fs.existsSync(active)) {
-      return fs.realpathSync(active);
-    }
-  } catch {
-    /* fall through */
-  }
-  return root;
+  return path.join(repoRoot, ".tachyon", "dev-host");
 }
 
 async function main() {

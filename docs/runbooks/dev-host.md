@@ -310,7 +310,7 @@ desktop EDH still interrupts an active session or an F5 dogfood already on scree
 | Mode | Command | When |
 |------|---------|------|
 | **Automated / agent** | `npm run dogfood:dev-host -- headless` | Default for agents — Xvfb, no desktop focus |
-| **Human F5 (preferred GUI)** | `point` … then F5 `Tachyon: Dev Host` | Multi-slot (`slots/<owner>/`); default/active for single human; agents use `--owner` |
+| **Human F5 (preferred GUI)** | `point` from your checkout, then F5 `Tachyon: Dev Host` | One dev-host per checkout (spec 448); no slots, no owner flag |
 | **Secondary desktop GUI** | `launch --gui` or `TACHYON_DEV_HOST_GUI=1 … launch` | Explicit only; prints warnings if F5 is armed or caller is an agent |
 
 Without `--gui` / `TACHYON_DEV_HOST_GUI=1`, `launch` **fails closed** and points at the safe routes above.
@@ -412,54 +412,55 @@ npm run dogfood:dev-host -- fixture-new --slug my-feature --spec 393 --intent fo
   --worktree /path/to/worktree
 # Force-add .tachyon seeds (gitignored): git add -f test/fixtures/my-feature-dogfood/.tachyon
 
-# From monorepo root *or* a linked feature worktree (short form with --fixture).
-# Linked worktrees auto-redirect the pointer to the primary monorepo — F5 always reads
-# monorepo/.tachyon/dev-host, never the feature worktree's own pointer dir.
-#
-# Multi-slot (t-efe06d): each agent arms an isolated slots/<owner>/ — no last-writer-wins clobber.
-# Humans may omit --owner (slot "default"). Agents MUST pass --owner "$TACHYON_AGENT_NAME".
+# Run this FROM the checkout you want to dogfood — the dev-host belongs to it (spec 448).
+# Every checkout (monorepo or linked worktree) has exactly one dev-host at
+# <checkout>/.tachyon/dev-host/. There is no slot to pick and no `active` pointer to set, so two
+# agents working in two worktrees cannot collide: isolation is structural, not a naming convention.
+cd /path/to/your/worktree
 npm run dogfood:dev-host -- point \
-  --worktree /path/to/worktree \
   --fixture my-feature \
   --spec 393 \
-  --slug my-feature \
-  --owner "$TACHYON_AGENT_NAME"
+  --slug my-feature
 
-npm run dogfood:dev-host -- point-status          # doctor for active (or --owner / --slot)
-npm run dogfood:dev-host -- point-status --all    # list every armed slot
-npm run dogfood:dev-host -- point-clear --owner "$TACHYON_AGENT_NAME"   # free only your slot
-npm run dogfood:dev-host -- point-clear --all     # free the whole environment
+npm run dogfood:dev-host -- point-status          # doctor for this checkout's dev-host
+npm run dogfood:dev-host -- point-clear           # free this checkout's dev-host
 ```
+
+**Removed by spec 448, no deprecation window** — each fails immediately naming its replacement:
+`--owner`, `--slot`, `--activate`, `--no-activate`, `--require-owner`, `--all`. (`lane.mjs --owner`
+is unrelated: that is a *lease* owner and still required.)
 
 | Piece | Location |
 |-------|----------|
-| Stable F5 config | monorepo `.vscode/launch.json` → **Tachyon: Dev Host** (paths via `.tachyon/dev-host/active/…`) |
-| Per-agent F5 | **Tachyon: Dev Host · &lt;slot&gt;** → `slots/&lt;slot&gt;/` (also sets `TACHYON_DEV_HOST_SLOT`) |
-| Pointer (local) | **monorepo** `.tachyon/dev-host/slots/&lt;id&gt;/` + `active` symlink (legacy flat layout migrates once → `slots/default`) |
-| Extension bits | worktree via `--extensionDevelopmentPath=…/extension` |
-| Opened folder | per-slot mirror of isolated **fixture** (never monorepo root) |
+| F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** — static, committed, identical in every checkout, written by no script |
+| Dev-host | `<checkout>/.tachyon/dev-host/` (gitignored) — one per checkout |
+| Extension bits | this checkout via `--extensionDevelopmentPath=…/extension` |
+| Opened folder | mirror of the isolated **fixture** (never a repo root) |
+| Borrowed from primary | `node_modules` and `.tachyon/bin`, symlinked when this checkout lacks them |
 
-**Human:** Run and Debug → **Tachyon: Dev Host** → **F5**. Drive only the EDH window.
-**Agents:** same, or pick **Tachyon: Dev Host · $owner** so concurrent dogfood does not steal `active`.
+**To dogfood:** open VS Code **on that checkout** and press **F5** → **Tachyon: Dev Host**. Drive only
+the EDH window. In a multi-root window VS Code disambiguates per folder, so the dropdown reads
+**Tachyon: Dev Host (my-worktree)** and you can reach every worktree's dev-host without switching
+windows — no extra configuration.
+
+**Disk:** a worktree now carries its own dev-host (~100s of MB once VS Code writes its data dir).
+That is the trade for lifecycle: removing the worktree reclaims it, instead of leaving an orphaned
+slot behind in the monorepo as the old layout did.
 
 ### After land (required cleanup)
 
-When the feature is **merged to main** (or dogfood for that change is finished), free the slot
-**before** discarding the worktree. Do **not** leave a pointed worktree after land.
+Free the dev-host **before** discarding the worktree. Do **not** leave a pointed worktree after land.
 
 | Step | Command / action |
 |------|------------------|
 | 1 | Close the EDH window for that feature (if open) |
-| 2 | `npm run dogfood:dev-host -- point-clear --owner <owner\|slug>` — only **your** slot |
-| 3 | `npm run dogfood:dev-host -- point-status --all` — confirm your slot is gone; leave others alone |
-| 4 | Remove the feature worktree (registry / `git worktree remove` as your land flow requires) |
-| 5 | Prune local branch / registry entry if the project flow says so |
+| 2 | `npm run dogfood:dev-host -- point-clear` — from that checkout |
+| 3 | `npm run dogfood:dev-host -- point-status` — confirm it is gone |
+| 4 | Remove the worktree (registry / `git worktree remove` as your land flow requires) |
 
 **Order:** prefer **point-clear → then worktree remove**. If the path disappears first, `point-status`
-reports **broken** and a persistent engine may still be alive under that slot.
-
-**Do not** use `point-clear --all` as routine post-land — that wipes every agent’s slot on the machine.
-Reserve `--all` for intentional full environment reset.
+reports **broken** and a persistent engine may still be alive under it. Removing the worktree does
+reclaim the bytes either way — but the engine still needs stopping.
 
 ### Fixture intents (do not confuse)
 

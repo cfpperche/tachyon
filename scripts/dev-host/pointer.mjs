@@ -920,21 +920,26 @@ export async function main(argv = process.argv.slice(2)) {
   const agentish = looksLikeAgentProcess();
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
-    console.log(`Usage:
-  npm run dogfood:dev-host -- point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME] [--slot ID] [--activate|--no-activate]
-  npm run dogfood:dev-host -- point --worktree PATH --fixture SLUG [--spec NNN] [--slug SLUG] [--owner NAME]
-  npm run dogfood:dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics] [--worktree PATH]
-  npm run dogfood:dev-host -- point-status [--owner NAME] [--slot ID] [--all]
-  npm run dogfood:dev-host -- point-clear [--owner NAME] [--slot ID] [--all]
+    console.log(`Usage (run from the checkout you want to dogfood):
+  npm run dogfood:dev-host -- point --fixture SLUG [--spec NNN] [--slug SLUG]
+  npm run dogfood:dev-host -- point --workspace PATH [--spec NNN] [--slug SLUG]
+  npm run dogfood:dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics]
+  npm run dogfood:dev-host -- point-status
+  npm run dogfood:dev-host -- point-clear
 
-Multi-slot (t-efe06d): each owner keeps slots/<id>/ under <monorepo>/.tachyon/dev-host/.
-  active → symlink to the default F5 slot; launch.json also has "Tachyon: Dev Host · <slot>".
-  Agents: pass --owner $TACHYON_AGENT_NAME (or set TACHYON_AGENT_NAME / TACHYON_DEV_HOST_SLOT).
-  Humans: omit --owner → slot "default". point-clear --all frees the whole environment.
+spec 448: the dev-host belongs to the checkout it serves — <checkout>/.tachyon/dev-host/.
+  Every checkout (monorepo or linked worktree) has exactly one, so there is no slot to pick and
+  no 'active' pointer to set. Two agents in two worktrees cannot collide by construction.
 
-Stable F5 config name: "Tachyon: Dev Host" (reads .tachyon/dev-host/active/…)
-Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 finds the pointer.
---fixture resolves test/fixtures/<slug> or <slug>-dogfood under worktree, then monorepo.
+  Dogfood your work: cd to YOUR worktree, point, then open VS Code THERE and press F5.
+  In a multi-root window VS Code labels each folder's entry, e.g. "Tachyon: Dev Host (my-worktree)".
+
+Removed (spec 448, no deprecation window): --owner, --slot, --activate, --no-activate,
+  --require-owner, --all. Each now fails with the replacement named.
+
+--worktree is optional and defaults to the current checkout; pass it only to arm a different one.
+--fixture resolves test/fixtures/<slug> or <slug>-dogfood under this checkout, then the primary.
+Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary checkout when absent.
 `);
     return 0;
   }
