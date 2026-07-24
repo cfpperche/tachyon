@@ -9,8 +9,11 @@ Ship the adapter in independently reviewable slices:
 1. Project typed profile selectors from `source: agent` into a generated private Codex config.
 2. Parse global/workspace config with a deny-by-default per-family allowlist for permissions,
    interface and feature flags.
-3. Add tooling projection for hooks, MCP, skills and native extensions without absorbing Tachyon
-   plugin ownership.
+3. Add human-configurable tooling composition for hooks, MCPs, skills and native extensions. Each
+   item can be selected from global, workspace or agent scope; persist those selections in the
+   agent profile, materialize the effective set in its private runtime harness, and expose both
+   source inventory and effective composition in Agent Studio. This does not absorb Tachyon plugin
+   ownership.
 4. Prove fresh/restart/resume behavior and update the parity matrix.
 
 The common support resolver declares exact tuples. The chosen source owns its whole family: missing
@@ -29,8 +32,12 @@ _Each decision + why this option over the alternatives considered. Record reject
   rejected whole-file copying because it leaks state, trust and credentials.
 - **Whole-projection admission** — one unsupported tuple/key blocks all writes; rejected partial
   materialization because the resulting behavior would not match the profile.
-- **Separate tooling slice** — hooks/MCP/skills/extensions have different trust and file shapes from
-  scalar config; rejected one giant parser/materializer change.
+- **Human-owned tooling choice** — the Studio must let a human enable or disable available global,
+  workspace and agent-scoped hooks/MCPs/skills/extensions for an agent, then show the effective
+  result. Rejected a policy engine that attempts to classify or approve the human's risk decision;
+  the product provides explicit composition and visibility instead.
+- **Separate tooling slice** — hooks/MCPs/skills/extensions have different file shapes from scalar
+  config; rejected one giant parser/materializer change.
 
 ## Files touched
 
@@ -52,8 +59,10 @@ _Each decision + why this option over the alternatives considered. Record reject
 
 ## Visual impact
 
-No new editing controls in the first slice. Existing read-only policy/provenance rows may show
-`Supported`; verify this in the first installed adapter dogfood, not with the excluded beta desktop harness.
+Slice C adds Agent Studio composition controls and an always-visible inventory. For every tooling
+kind, the surface must show: available global/workspace/agent sources, the human's enabled/disabled
+choice, and the resulting effective composition. It is not merely a read-only provenance surface.
+Verify this in installed dogfood, not with the excluded beta desktop harness.
 
 ## Sources consulted
 

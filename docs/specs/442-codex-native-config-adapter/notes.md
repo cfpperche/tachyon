@@ -39,4 +39,8 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
-- Slice C still needs a separate trust and materialization review for tooling-shaped configuration.
+- Slice C contract: hooks, MCPs, skills and native extensions are runtime tooling that a human can
+  compose per agent from global, workspace and agent sources. The profile persists enabled/disabled
+  selections; the private harness receives only the effective composition; Agent Studio always
+  shows the available source inventory and effective result. Tachyon does not add a policy engine
+  that judges the human's risk choice. Plugins remain outside this slice.

@@ -6,7 +6,9 @@ _Generated from `plan.md` on 2026-07-23. Work top-to-bottom. Check boxes as task
 
 - [x] Slice A: typed agent selector projection and exact support declaration.
 - [x] Slice B: reviewed global/workspace scalar-family parser and allowlist.
-- [ ] Slice C: tooling projection with independent trust/materialization rules.
+- [ ] Slice C: human-configurable global/workspace/agent tooling composition, private-harness
+      materialization, and Agent Studio source/effective inventory for hooks, MCPs, skills and
+      native extensions.
 - [ ] Slice D: lifecycle dogfood and per-family parity evidence.
 
 ## Verification
