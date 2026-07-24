@@ -39,16 +39,28 @@ describe("persistent engine packaging", () => {
     expect(parsed.engineVersion).toBe(JSON.parse(fs.readFileSync("package.json", "utf8")).version);
     expect(parsed.protocol).toEqual({ min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     expect(parsed.entrypoint).toBe("engine-daemon.cjs");
+    // Core daemon + clipboard helper + companion-mobile PWA (SDD 422; full tree so app.js is not 404).
+    const companionMobile = fs
+      .readdirSync("media/companion-mobile")
+      .filter((name) => !name.startsWith("."))
+      .filter((name) => fs.statSync(path.join("media/companion-mobile", name)).isFile())
+      .sort()
+      .map((name) => `media/companion-mobile/${name}`);
     expect(parsed.files.map((file) => file.path)).toEqual([
       "engine-daemon.cjs",
       "pi-bridge-extension.mjs",
       "media/clipboard-copy.sh",
+      ...companionMobile,
     ]);
     expect(engineBundleId(parsed)).toMatch(/^[a-f0-9]{64}$/);
     expect(() => verifyStagedBundle(root, parsed)).not.toThrow();
     expect(fs.readFileSync(path.join(root, "media", "clipboard-copy.sh"))).toEqual(
       fs.readFileSync("media/clipboard-copy.sh"),
     );
+    expect(fs.readFileSync(path.join(root, "media", "companion-mobile", "index.html"))).toEqual(
+      fs.readFileSync("media/companion-mobile/index.html"),
+    );
+    expect(fs.existsSync(path.join(root, "media", "companion-mobile", "app.js"))).toBe(true);
     const piExtension = fs.readFileSync(path.join(root, "pi-bridge-extension.mjs"), "utf8");
     expect(piExtension).toContain("TACHYON_AGENT_BRIDGE_TOKEN");
     expect(piExtension).not.toContain(process.env.TACHYON_AGENT_BRIDGE_TOKEN ?? "never-a-real-token");

@@ -10,9 +10,11 @@
  *
  * `lanAccess` name is historical; semantics are "mobile Companion enabled (via Tailscale)".
  * Self-hosted Headscale later: same Tailscale client, different login-server — no second pair path.
+ *
+ * Detection is pure OS interface enumeration (no sync child_process — cx wedge / event-loop policy).
+ * Operator recovery still uses `tailscale ip -4` manually (doctor copy); we do not shell out here.
  */
 
-import { execFileSync } from "node:child_process";
 import os from "node:os";
 
 /** Host argument for `server.listen`. */
@@ -58,49 +60,19 @@ export function listTailscaleIPv4Addresses(
 }
 
 /**
- * Best-effort: `tailscale ip -4` when the CLI is on PATH.
- * Never throws; returns undefined if missing/failed.
- */
-export function detectTailscaleIPv4FromCli(
-  exec: typeof execFileSync = execFileSync,
-): string | undefined {
-  try {
-    const raw = exec("tailscale", ["ip", "-4"], {
-      encoding: "utf8",
-      timeout: 2500,
-      windowsHide: true,
-    });
-    const line = String(raw)
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .find((s) => s.length > 0);
-    if (line && isTailscaleIPv4(line)) return line;
-    // Some builds print a non-CGNAT address; still accept a single IPv4 token.
-    if (line && /^\d{1,3}(\.\d{1,3}){3}$/.test(line)) return line;
-  } catch {
-    /* CLI absent or not logged in */
-  }
-  return undefined;
-}
-
-/**
  * Resolve Tailscale IPv4 for mobile pair URLs.
- * Order: injected override → interfaces → CLI.
+ * Order: injected override → OS interfaces. No CLI shell-out (event-loop policy).
  */
 export function resolveTailscaleIPv4(opts?: {
   interfaces?: NodeJS.Dict<os.NetworkInterfaceInfo[]>;
-  /** Test inject / skip CLI */
+  /** Test inject: force a specific IP (empty string → undefined). */
   cliIp?: string | null;
-  skipCli?: boolean;
 }): string | undefined {
   if (opts?.cliIp !== undefined && opts.cliIp !== null) {
     return opts.cliIp || undefined;
   }
-  const fromIf = listTailscaleIPv4Addresses(opts?.interfaces)[0];
-  if (fromIf) return fromIf;
-  if (opts?.skipCli) return undefined;
   if (opts?.cliIp === null) return undefined;
-  return detectTailscaleIPv4FromCli();
+  return listTailscaleIPv4Addresses(opts?.interfaces)[0];
 }
 
 /**
@@ -114,7 +86,6 @@ export function companionPairBaseUrl(
   opts?: {
     interfaces?: NodeJS.Dict<os.NetworkInterfaceInfo[]>;
     cliIp?: string | null;
-    skipCli?: boolean;
   },
 ): string | undefined {
   if (!mobileEnabled) return `http://127.0.0.1:${port}`;
@@ -134,7 +105,6 @@ export function companionPairBaseUrlCandidates(
   opts?: {
     interfaces?: NodeJS.Dict<os.NetworkInterfaceInfo[]>;
     cliIp?: string | null;
-    skipCli?: boolean;
   },
 ): string[] {
   const primary = companionPairBaseUrl(port, mobileEnabled, opts);

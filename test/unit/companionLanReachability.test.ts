@@ -26,7 +26,7 @@ describe("companion Tailscale reachability (SDD 422)", () => {
   });
 
   it("pair baseUrl stays loopback when mobile off", () => {
-    expect(companionPairBaseUrl(41234, false, { skipCli: true })).toBe("http://127.0.0.1:41234");
+    expect(companionPairBaseUrl(41234, false)).toBe("http://127.0.0.1:41234");
   });
 
   it("pair baseUrl uses Tailscale IP when mobile on (not eth0 LAN)", () => {
@@ -63,10 +63,10 @@ describe("companion Tailscale reachability (SDD 422)", () => {
       ],
     };
     expect(listTailscaleIPv4Addresses(ifaces)).toEqual(["100.101.102.103"]);
-    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces, skipCli: true })).toBe(
+    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces })).toBe(
       "http://100.101.102.103:41000",
     );
-    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces, skipCli: true })).toEqual([
+    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces })).toEqual([
       "http://100.101.102.103:41000",
     ]);
   });
@@ -84,9 +84,9 @@ describe("companion Tailscale reachability (SDD 422)", () => {
         },
       ],
     };
-    expect(resolveTailscaleIPv4({ interfaces: ifaces, skipCli: true })).toBeUndefined();
-    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces, skipCli: true })).toBeUndefined();
-    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces, skipCli: true })).toEqual([]);
+    expect(resolveTailscaleIPv4({ interfaces: ifaces })).toBeUndefined();
+    expect(companionPairBaseUrl(41000, true, { interfaces: ifaces })).toBeUndefined();
+    expect(companionPairBaseUrlCandidates(41000, true, { interfaces: ifaces })).toEqual([]);
   });
 
   it("accepts CGNAT IP on any interface name", () => {
