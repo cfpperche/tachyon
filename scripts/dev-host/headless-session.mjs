@@ -48,11 +48,30 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(here, "..", "..");
 const PTR = path.join(REPO, ".tachyon", "dev-host");
 const SESSION_FILE = path.join(PTR, "session.json");
-const META_FILE = path.join(PTR, "meta.json");
 const OUT_DIR = path.join(PTR, "session-out");
+
+/**
+ * Multi-slot (t-efe06d): live F5 pointer is `.tachyon/dev-host/active` → `slots/<id>/`.
+ * Legacy flat layout keeps extension/workspace/meta.json directly under dev-host/.
+ * Headless must resolve the same root launch.json's `active` entry uses.
+ */
+function resolvePointerSlotRoot(repoRoot = REPO) {
+  const root = path.join(repoRoot, ".tachyon", "dev-host");
+  const active = path.join(root, "active");
+  try {
+    if (fs.lstatSync(active).isSymbolicLink() || fs.existsSync(active)) {
+      return fs.realpathSync(active);
+    }
+  } catch {
+    /* no active — fall through */
+  }
+  return root;
+}
 
 /** Built-in frame alias: the Control webview. */
 const CONTROL_PRED = "!!document.querySelector('.ck-tabs') || !!document.querySelector('.ck-root')";
+/** Agent pane webview (layer-2 xterm host). */
+const AGENT_PANE_PRED = "!!document.querySelector('.agent-pane') || !!document.querySelector('.xterm')";
 
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
 const die = (msg) => { out({ ok: false, error: msg }); process.exit(1); };
@@ -63,7 +82,9 @@ function readSession() {
 
 function readPointerGeneration() {
   try {
-    const meta = JSON.parse(fs.readFileSync(META_FILE, "utf8"));
+    const slotRoot = resolvePointerSlotRoot();
+    const metaPath = path.join(slotRoot, "meta.json");
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
     if (typeof meta.generation !== "string" || !meta.generation) {
       die("Dev Host pointer has no generation — re-run point before starting a session");
     }
@@ -116,7 +137,11 @@ async function workbenchPage(browser) {
 
 /** Resolve `<frame>` (alias or predicate) to a puppeteer Frame. */
 async function resolveFrame(browser, frameArg) {
-  const pred = frameArg === "control" ? CONTROL_PRED : frameArg;
+  const pred = frameArg === "control"
+    ? CONTROL_PRED
+    : frameArg === "agent-pane"
+      ? AGENT_PANE_PRED
+      : frameArg;
   for (let attempt = 0; attempt < 20; attempt++) {
     for (const t of browser.targets()) {
       if (!["page", "webview", "other"].includes(t.type())) continue;
@@ -141,11 +166,15 @@ async function up(opts) {
     try { process.kill(existing.edhPid, 0); die(`session already live (edhPid=${existing.edhPid}); use down first, or up --force`); }
     catch { /* stale — fall through */ }
   }
-  const extensionDir = path.join(PTR, "extension");
+  const slotRoot = resolvePointerSlotRoot();
+  const extensionDir = path.join(slotRoot, "extension");
   if (!fs.existsSync(extensionDir)) die(`Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood:dev-host -- point …`);
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) die(`pointed extension has no dist/extension.js — build it (TACHYON_ENGINE_CHANNEL=dev npm run build)`);
-  const workspaceDir = path.join(PTR, "workspace");
+  // Prefer real workspace mirror under the slot (same as F5).
+  const workspaceDir = fs.existsSync(path.join(slotRoot, "workspace"))
+    ? path.join(slotRoot, "workspace")
+    : path.join(PTR, "workspace");
   const pointerGeneration = readPointerGeneration();
 
   try { execFileSync("which", ["Xvfb"]); } catch { die("Xvfb required (apt install xvfb)"); }
@@ -156,7 +185,7 @@ async function up(opts) {
   const extDir = path.join(OUT_DIR, "extensions");
   fs.mkdirSync(path.join(udd, "User"), { recursive: true });
   fs.mkdirSync(extDir, { recursive: true });
-  fs.mkdirSync(path.join(PTR, "profile-home"), { recursive: true, mode: 0o700 });
+  fs.mkdirSync(path.join(slotRoot, "profile-home"), { recursive: true, mode: 0o700 });
   fs.writeFileSync(path.join(udd, "User", "settings.json"), JSON.stringify({
     "workbench.startupEditor": "none",
     "workbench.colorTheme": "Default Dark Modern",
@@ -166,6 +195,13 @@ async function up(opts) {
     "extensions.autoCheckUpdates": false,
     "window.dialogStyle": "custom",
     "window.newWindowDimensions": "maximized",
+    // Prefer a known mono for geometry stability in headless shots
+    "terminal.integrated.fontFamily": "DejaVu Sans Mono, monospace",
+    "terminal.integrated.fontSize": 14,
+    "terminal.integrated.letterSpacing": 0,
+    "terminal.integrated.lineHeight": 1,
+    "editor.fontFamily": "DejaVu Sans Mono, monospace",
+    "editor.fontSize": 14,
   }, null, 2));
 
   const xvfb = spawn("Xvfb", [opts.display, "-screen", "0", "1600x1000x24"], { stdio: "ignore", detached: true });
@@ -179,12 +215,12 @@ async function up(opts) {
     DISPLAY: opts.display,
     DONT_PROMPT_WSL_INSTALL: "1",
     TACHYON_DEV_HOST: "1",
-    TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(PTR, "runtime"),
-    TACHYON_DEV_HOST_PROFILE_HOME: path.join(PTR, "profile-home"),
-    TMUX_TMPDIR: path.join(PTR, "tmux"),
-    XDG_CACHE_HOME: path.join(PTR, "cache"),
-    XDG_STATE_HOME: path.join(PTR, "state"),
-    XDG_DATA_HOME: path.join(PTR, "data"),
+    TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
+    TACHYON_DEV_HOST_PROFILE_HOME: path.join(slotRoot, "profile-home"),
+    TMUX_TMPDIR: path.join(slotRoot, "tmux"),
+    XDG_CACHE_HOME: path.join(slotRoot, "cache"),
+    XDG_STATE_HOME: path.join(slotRoot, "state"),
+    XDG_DATA_HOME: path.join(slotRoot, "data"),
   };
   delete env.VSCODE_IPC_HOOK_CLI;      // would forward to the human's live window
   delete env.ELECTRON_RUN_AS_NODE;     // would turn the binary into plain node

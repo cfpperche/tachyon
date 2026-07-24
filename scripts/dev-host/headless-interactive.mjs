@@ -90,11 +90,28 @@ function httpJson(url) {
   });
 }
 
+/** Multi-slot: active → slots/<id>/; legacy flat keeps paths under dev-host/. */
+function resolvePointerSlotRoot(repoRoot) {
+  const root = path.join(repoRoot, ".tachyon", "dev-host");
+  const active = path.join(root, "active");
+  try {
+    if (fs.lstatSync(active).isSymbolicLink() || fs.existsSync(active)) {
+      return fs.realpathSync(active);
+    }
+  } catch {
+    /* fall through */
+  }
+  return root;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const ptr = path.join(REPO, ".tachyon", "dev-host");
-  const extensionDir = path.join(ptr, "extension");
-  const workspaceDir = path.join(ptr, "workspace");
+  const slotRoot = resolvePointerSlotRoot(REPO);
+  const extensionDir = path.join(slotRoot, "extension");
+  const workspaceDir = fs.existsSync(path.join(slotRoot, "workspace"))
+    ? path.join(slotRoot, "workspace")
+    : path.join(ptr, "workspace");
   if (!fs.existsSync(extensionDir)) {
     throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood:dev-host -- point --worktree … --fixture …`);
   }
@@ -175,11 +192,11 @@ async function main() {
         DISPLAY: args.display,
         DONT_PROMPT_WSL_INSTALL: "1",
         TACHYON_DEV_HOST: "1",
-        TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(ptr, "runtime"),
-        TMUX_TMPDIR: path.join(ptr, "tmux"),
-        XDG_CACHE_HOME: path.join(ptr, "cache"),
-        XDG_STATE_HOME: path.join(ptr, "state"),
-        XDG_DATA_HOME: path.join(ptr, "data"),
+        TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
+        TMUX_TMPDIR: path.join(slotRoot, "tmux"),
+        XDG_CACHE_HOME: path.join(slotRoot, "cache"),
+        XDG_STATE_HOME: path.join(slotRoot, "state"),
+        XDG_DATA_HOME: path.join(slotRoot, "data"),
       };
       // Inherited from an agent terminal these would hijack the launch: the IPC hook makes
       // bin/code forward to the HUMAN's live window's remote CLI instead of spawning our own
