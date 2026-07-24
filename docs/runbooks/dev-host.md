@@ -310,7 +310,7 @@ desktop EDH still interrupts an active session or an F5 dogfood already on scree
 | Mode | Command | When |
 |------|---------|------|
 | **Automated / agent** | `npm run dogfood:dev-host -- headless` | Default for agents — Xvfb, no desktop focus |
-| **Human F5 (preferred GUI)** | `point` … then F5 `Tachyon: Dev Host` | Shared monorepo pointer; one owner at a time |
+| **Human F5 (preferred GUI)** | `point` … then F5 `Tachyon: Dev Host` | Multi-slot (`slots/<owner>/`); default/active for single human; agents use `--owner` |
 | **Secondary desktop GUI** | `launch --gui` or `TACHYON_DEV_HOST_GUI=1 … launch` | Explicit only; prints warnings if F5 is armed or caller is an agent |
 
 Without `--gui` / `TACHYON_DEV_HOST_GUI=1`, `launch` **fails closed** and points at the safe routes above.
@@ -415,6 +415,9 @@ npm run dogfood:dev-host -- fixture-new --slug my-feature --spec 393 --intent fo
 # From monorepo root *or* a linked feature worktree (short form with --fixture).
 # Linked worktrees auto-redirect the pointer to the primary monorepo — F5 always reads
 # monorepo/.tachyon/dev-host, never the feature worktree's own pointer dir.
+#
+# Multi-slot (t-efe06d): each agent arms an isolated slots/<owner>/ — no last-writer-wins clobber.
+# Humans may omit --owner (slot "default"). Agents MUST pass --owner "$TACHYON_AGENT_NAME".
 npm run dogfood:dev-host -- point \
   --worktree /path/to/worktree \
   --fixture my-feature \
@@ -422,18 +425,22 @@ npm run dogfood:dev-host -- point \
   --slug my-feature \
   --owner "$TACHYON_AGENT_NAME"
 
-npm run dogfood:dev-host -- point-status   # doctor: worktree, mirror .tachyon, dist/, drift
-npm run dogfood:dev-host -- point-clear    # when done / after git worktree remove
+npm run dogfood:dev-host -- point-status          # doctor for active (or --owner / --slot)
+npm run dogfood:dev-host -- point-status --all    # list every armed slot
+npm run dogfood:dev-host -- point-clear --owner "$TACHYON_AGENT_NAME"   # free only your slot
+npm run dogfood:dev-host -- point-clear --all     # free the whole environment
 ```
 
 | Piece | Location |
 |-------|----------|
-| Stable F5 config | monorepo `.vscode/launch.json` → **Tachyon: Dev Host** (portable `${workspaceFolder}` paths) |
-| Pointer (local) | **monorepo** `.tachyon/dev-host/` (`extension` symlink → worktree; `workspace` real mirror → fixture; `meta.json`) |
+| Stable F5 config | monorepo `.vscode/launch.json` → **Tachyon: Dev Host** (paths via `.tachyon/dev-host/active/…`) |
+| Per-agent F5 | **Tachyon: Dev Host · &lt;slot&gt;** → `slots/&lt;slot&gt;/` (also sets `TACHYON_DEV_HOST_SLOT`) |
+| Pointer (local) | **monorepo** `.tachyon/dev-host/slots/&lt;id&gt;/` + `active` symlink (legacy flat layout migrates once → `slots/default`) |
 | Extension bits | worktree via `--extensionDevelopmentPath=…/extension` |
-| Opened folder | mirror of isolated **fixture** (never monorepo root) |
+| Opened folder | per-slot mirror of isolated **fixture** (never monorepo root) |
 
 **Human:** Run and Debug → **Tachyon: Dev Host** → **F5**. Drive only the EDH window.
+**Agents:** same, or pick **Tachyon: Dev Host · $owner** so concurrent dogfood does not steal `active`.
 
 ### Fixture intents (do not confuse)
 
@@ -447,11 +454,14 @@ npm run dogfood:dev-host -- point-clear    # when done / after git worktree remo
 1. `--workspace` / resolved fixture must not be the monorepo root (script refuses).
 2. Do not reload / reinstall VSIX in the fleet window for this path.
 3. Specs document steps under `**Human dogfood:**` in `tasks.md` (not a free-floating `DOGFOOD.md`).
-4. After `git worktree remove` of a pointed worktree, run **`point-clear`** (or re-point). `point-status` reports **broken** if the worktree path is gone.
-5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease.
+4. After `git worktree remove` of a pointed worktree, run **`point-clear --owner …`** (or re-point). `point-status` reports **broken** if the worktree path is gone.
+5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease. Map lease owner → slot id when both apply.
 6. F5 host is always the **primary monorepo checkout**. When `point` runs from a linked worktree,
    the CLI redirects the pointer there automatically; a pointer only under the feature worktree's
    `.tachyon/dev-host` is invisible to monorepo F5 (preLaunchTask fails with a guided error).
+7. **No flat global pointer** as the multi-agent model (t-efe06d). Flat layout is migrated once to
+   `slots/default` and then only `slots/*` is first-class. Agents without `--owner` /
+   `$TACHYON_AGENT_NAME` / `$TACHYON_DEV_HOST_SLOT` fail closed when agent-bridge env is present.
 
 Script: `scripts/dev-host/pointer.mjs`.
 

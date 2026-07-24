@@ -30,9 +30,50 @@ import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop
 
 const SELF = "dev-host";
 const DIR_NAME = "dev-host";
+/** Multi-slot v1 (t-efe06d): each owner/agent keeps an isolated pointer under slots/<id>/. */
+export const DEFAULT_SLOT = "default";
+const SLOTS_SUBDIR = "slots";
+const ACTIVE_LINK = "active";
 
 export function defaultRepoRoot(fromFile = fileURLToPath(import.meta.url)) {
   return path.resolve(path.dirname(fromFile), "../..");
+}
+
+/** Sanitize slot id: agents/owners map 1:1; human path uses DEFAULT_SLOT. */
+export function normalizeSlotId(raw) {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  if (!s || s === "." || s === "..") {
+    throw new Error(`${SELF}: invalid slot id '${raw}'`);
+  }
+  return s;
+}
+
+/**
+ * Resolve which slot to use.
+ * Priority: explicit slot → owner → env TACHYON_DEV_HOST_SLOT → env TACHYON_AGENT_NAME → default.
+ * When `requireOwner` and no owner/slot/agent env, throws (agent fail-closed).
+ */
+export function resolveSlotId(opts = {}) {
+  const env = opts.env ?? process.env;
+  if (opts.slot != null && String(opts.slot).trim()) return normalizeSlotId(opts.slot);
+  if (opts.owner != null && String(opts.owner).trim()) return normalizeSlotId(opts.owner);
+  if (env.TACHYON_DEV_HOST_SLOT && String(env.TACHYON_DEV_HOST_SLOT).trim()) {
+    return normalizeSlotId(env.TACHYON_DEV_HOST_SLOT);
+  }
+  if (env.TACHYON_AGENT_NAME && String(env.TACHYON_AGENT_NAME).trim()) {
+    return normalizeSlotId(env.TACHYON_AGENT_NAME);
+  }
+  if (opts.requireOwner) {
+    throw new Error(
+      `${SELF}: agents must pass --owner (or set TACHYON_AGENT_NAME / TACHYON_DEV_HOST_SLOT); refusing unscoped last-writer-wins point`,
+    );
+  }
+  return DEFAULT_SLOT;
 }
 
 /**
@@ -105,9 +146,26 @@ export function devHostDir(repoRoot) {
   return path.join(repoRoot, ".tachyon", DIR_NAME);
 }
 
-export function pathsOf(repoRoot) {
-  const root = devHostDir(repoRoot);
+export function slotsDir(repoRoot) {
+  return path.join(devHostDir(repoRoot), SLOTS_SUBDIR);
+}
+
+export function activeLinkPath(repoRoot) {
+  return path.join(devHostDir(repoRoot), ACTIVE_LINK);
+}
+
+/**
+ * Paths for one Dev Host slot (isolated pointer).
+ * @param {string} repoRoot
+ * @param {string} [slotId]
+ */
+export function pathsOf(repoRoot, slotId = DEFAULT_SLOT) {
+  const slot = normalizeSlotId(slotId);
+  const base = devHostDir(repoRoot);
+  const root = path.join(base, SLOTS_SUBDIR, slot);
   return {
+    base,
+    slotId: slot,
     root,
     extension: path.join(root, "extension"),
     workspace: path.join(root, "workspace"),
@@ -117,7 +175,112 @@ export function pathsOf(repoRoot) {
     extensions: path.join(root, "extensions"),
     tmux: path.join(root, "tmux"),
     cache: path.join(root, "cache"),
+    profileHome: path.join(root, "profile-home"),
   };
+}
+
+/** True if the pre-multi-slot flat layout is present (meta + extension at base root). */
+export function isFlatPointerLayout(repoRoot) {
+  const base = devHostDir(repoRoot);
+  return fs.existsSync(path.join(base, "meta.json")) || fs.existsSync(path.join(base, "extension"));
+}
+
+/**
+ * One-shot migrate flat `.tachyon/dev-host/{extension,workspace,…}` → `slots/default/`.
+ * Returns { migrated, slotId } .
+ */
+export function migrateFlatPointerToSlots(repoRoot) {
+  const base = devHostDir(path.resolve(repoRoot));
+  if (!fs.existsSync(base)) return { migrated: false, slotId: null };
+  if (fs.existsSync(path.join(base, SLOTS_SUBDIR))) {
+    // Already multi-slot; leave any leftover flat files alone until clear.
+    return { migrated: false, slotId: null };
+  }
+  if (!isFlatPointerLayout(repoRoot)) return { migrated: false, slotId: null };
+
+  const dest = path.join(base, SLOTS_SUBDIR, DEFAULT_SLOT);
+  ensureDir(path.join(base, SLOTS_SUBDIR));
+  ensureDir(dest);
+  const moveNames = [
+    "extension",
+    "workspace",
+    "runtime",
+    "meta.json",
+    "user-data",
+    "extensions",
+    "tmux",
+    "cache",
+    "state",
+    "data",
+    "profile-home",
+    "session.json",
+  ];
+  for (const name of moveNames) {
+    const from = path.join(base, name);
+    const to = path.join(dest, name);
+    if (!fs.existsSync(from)) continue;
+    try {
+      fs.renameSync(from, to);
+    } catch {
+      // Cross-device or busy: copy+rm best effort
+      try {
+        fs.cpSync(from, to, { recursive: true });
+        fs.rmSync(from, { recursive: true, force: true });
+      } catch {
+        /* leave in place; slot may be partial */
+      }
+    }
+  }
+  setActiveSlot(repoRoot, DEFAULT_SLOT);
+  console.error(
+    `${SELF}: migrated legacy flat pointer → slots/${DEFAULT_SLOT}/ (t-efe06d multi-slot). Re-point per agent with --owner to avoid clobber.`,
+  );
+  return { migrated: true, slotId: DEFAULT_SLOT };
+}
+
+/** Point `active` symlink at slots/<slotId> for the default F5 launch entry. */
+export function setActiveSlot(repoRoot, slotId) {
+  const slot = normalizeSlotId(slotId);
+  const base = devHostDir(repoRoot);
+  const target = path.join(base, SLOTS_SUBDIR, slot);
+  if (!fs.existsSync(target)) {
+    throw new Error(`${SELF}: cannot activate missing slot '${slot}' (${target})`);
+  }
+  ensureDir(base);
+  const link = activeLinkPath(repoRoot);
+  try {
+    fs.lstatSync(link);
+    fs.rmSync(link, { recursive: true, force: true });
+  } catch {
+    /* missing */
+  }
+  // Relative link so the monorepo tree stays relocatable
+  fs.symlinkSync(path.join(SLOTS_SUBDIR, slot), link);
+  return link;
+}
+
+export function readActiveSlotId(repoRoot) {
+  const link = activeLinkPath(repoRoot);
+  try {
+    if (!fs.lstatSync(link).isSymbolicLink()) return null;
+    const raw = fs.readlinkSync(link);
+    const base = path.basename(raw.replace(/\\/g, "/"));
+    return base && base !== "." && base !== ".." ? normalizeSlotId(base) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** List slot ids that have meta.json. */
+export function listSlotIds(repoRoot) {
+  const dir = slotsDir(repoRoot);
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name)
+    .filter((name) => fs.existsSync(path.join(dir, name, "meta.json")))
+    .sort();
 }
 
 /** Refuse monorepo root as the opened EDH workspace. */
@@ -494,37 +657,48 @@ function readShortSha(worktreeAbs) {
 
 const LAUNCH_CONFIG_NAME = "Tachyon: Dev Host";
 
-/** Portable F5 shape for WSL Remote parent windows (must stay under ${workspaceFolder}). */
-export function portableDevHostLaunchConfig() {
+/**
+ * Portable F5 shape. Default config uses `active` symlink → slots/<id>.
+ * Per-slot configs use slots/<id>/ so concurrent agents can F5 without clobber.
+ * @param {{ slotId?: string, label?: string }} [opts]
+ */
+export function portableDevHostLaunchConfig(opts = {}) {
   // Do NOT set --extensions-dir / --user-data-dir: empty private dirs drop
   // ms-vscode-remote.remote-wsl on the local (Windows) side of the EDH window.
   // Do NOT write absolute machine paths: they force a fresh WSL re-entry
   // ("Disconnected from WSL" / "Extension 'WSL' is required").
-  // Match Run Tachyon (demo/fixture): folder + extensionDevelopmentPath under workspaceFolder.
+  const slotId = opts.slotId ? normalizeSlotId(opts.slotId) : null;
+  const rel = slotId
+    ? `\${workspaceFolder}/.tachyon/dev-host/slots/${slotId}`
+    : "${workspaceFolder}/.tachyon/dev-host/active";
+  const name = slotId
+    ? `${LAUNCH_CONFIG_NAME} · ${slotId}`
+    : LAUNCH_CONFIG_NAME;
   return {
-    name: LAUNCH_CONFIG_NAME,
+    name,
     type: "extensionHost",
     request: "launch",
     args: [
-      "${workspaceFolder}/.tachyon/dev-host/workspace",
-      "--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension",
+      `${rel}/workspace`,
+      `--extensionDevelopmentPath=${rel}/extension`,
       "--disable-workspace-trust",
     ],
     env: {
       TACHYON_DEV_HOST: "1",
-      TACHYON_DEV_HOST_ENGINE_RUNTIME: "${workspaceFolder}/.tachyon/dev-host/runtime",
-      TACHYON_DEV_HOST_PROFILE_HOME: "${workspaceFolder}/.tachyon/dev-host/profile-home",
-      TMUX_TMPDIR: "${workspaceFolder}/.tachyon/dev-host/tmux",
-      XDG_CACHE_HOME: "${workspaceFolder}/.tachyon/dev-host/cache",
-      XDG_STATE_HOME: "${workspaceFolder}/.tachyon/dev-host/state",
-      XDG_DATA_HOME: "${workspaceFolder}/.tachyon/dev-host/data",
+      ...(slotId ? { TACHYON_DEV_HOST_SLOT: slotId } : {}),
+      TACHYON_DEV_HOST_ENGINE_RUNTIME: `${rel}/runtime`,
+      TACHYON_DEV_HOST_PROFILE_HOME: `${rel}/profile-home`,
+      TMUX_TMPDIR: `${rel}/tmux`,
+      XDG_CACHE_HOME: `${rel}/cache`,
+      XDG_STATE_HOME: `${rel}/state`,
+      XDG_DATA_HOME: `${rel}/data`,
     },
-    outFiles: ["${workspaceFolder}/.tachyon/dev-host/extension/dist/**/*.js"],
+    outFiles: [`${rel}/extension/dist/**/*.js`],
     preLaunchTask: "tachyon: build-dev-host",
     presentation: {
       hidden: false,
       group: "dogfood",
-      order: 1,
+      order: slotId ? 2 : 1,
     },
   };
 }
@@ -537,7 +711,7 @@ export function writeAbsoluteLaunchConfig(repoRoot, _worktreeAbs, _workspaceAbs)
   return ensurePortableLaunchConfig(repoRoot);
 }
 
-/** Write / restore portable Dev Host launch entry (safe to leave committed). */
+/** Write / restore portable Dev Host launch entries (default active + per-slot). */
 export function ensurePortableLaunchConfig(repoRoot) {
   const launchPath = path.join(repoRoot, ".vscode", "launch.json");
   if (!fs.existsSync(launchPath)) {
@@ -554,10 +728,31 @@ export function ensurePortableLaunchConfig(repoRoot) {
   if (!Array.isArray(doc.configurations)) {
     throw new Error(`${SELF}: ${launchPath} has no configurations array`);
   }
-  const cfg = portableDevHostLaunchConfig();
-  const idx = doc.configurations.findIndex((c) => c && c.name === LAUNCH_CONFIG_NAME);
-  if (idx >= 0) doc.configurations[idx] = cfg;
-  else doc.configurations.unshift(cfg);
+  const wanted = [portableDevHostLaunchConfig()];
+  for (const slotId of listSlotIds(repoRoot)) {
+    if (slotId === DEFAULT_SLOT) continue; // default covered by active entry + explicit if needed
+    wanted.push(portableDevHostLaunchConfig({ slotId }));
+  }
+  // Always include default slot entry when it exists (named), so agents can F5 without flipping active.
+  if (listSlotIds(repoRoot).includes(DEFAULT_SLOT)) {
+    wanted.push(portableDevHostLaunchConfig({ slotId: DEFAULT_SLOT }));
+  }
+  // Dedupe by name
+  const byName = new Map();
+  for (const c of wanted) byName.set(c.name, c);
+  const keepNames = new Set(byName.keys());
+  // Drop stale "Tachyon: Dev Host · *" configs not in keepNames
+  doc.configurations = doc.configurations.filter((c) => {
+    if (!c || typeof c.name !== "string") return true;
+    if (c.name === LAUNCH_CONFIG_NAME) return false; // replace
+    if (c.name.startsWith(`${LAUNCH_CONFIG_NAME} · `)) return false; // regenerate
+    return true;
+  });
+  // Insert our configs at front in stable order
+  const ordered = [byName.get(LAUNCH_CONFIG_NAME), ...[...byName.values()].filter((c) => c.name !== LAUNCH_CONFIG_NAME)].filter(
+    Boolean,
+  );
+  doc.configurations = [...ordered, ...doc.configurations];
   fs.mkdirSync(path.dirname(launchPath), { recursive: true });
   fs.writeFileSync(launchPath, `${JSON.stringify(doc, null, 2)}\n`, "utf8");
   return launchPath;
@@ -571,7 +766,15 @@ export function restoreTemplateLaunchConfig(repoRoot) {
 }
 
 /**
- * Point the stable Dev Host launcher at a worktree + fixture.
+ * Point one Dev Host slot at a worktree + fixture (t-efe06d multi-slot).
+ * @param {object} opts
+ * @param {string} opts.repoRoot
+ * @param {string} opts.worktree
+ * @param {string} opts.workspace
+ * @param {string} [opts.owner]
+ * @param {string} [opts.slot]
+ * @param {boolean} [opts.activate] — set F5 `active` symlink to this slot (default: true for default slot / no owner)
+ * @param {boolean} [opts.requireOwner]
  * @returns {object} meta written to disk
  */
 export function point(opts) {
@@ -580,24 +783,45 @@ export function point(opts) {
   const workspace = assertWorkspaceDir(opts.workspace);
   assertWorkspaceNotRepoRoot(workspace, repoRoot);
 
-  const p = pathsOf(repoRoot);
+  migrateFlatPointerToSlots(repoRoot);
+
+  const slotId = resolveSlotId({
+    owner: opts.owner,
+    slot: opts.slot,
+    requireOwner: opts.requireOwner === true,
+    env: opts.env,
+  });
+  const p = pathsOf(repoRoot, slotId);
   assertPointerSessionIdle(p.root);
+  ensureDir(p.base);
+  ensureDir(path.join(p.base, SLOTS_SUBDIR));
   ensureDir(p.root);
   ensureDir(p.userData);
   ensureDir(p.extensions);
   ensureDir(p.tmux);
   ensureDir(p.cache);
+  ensureDir(p.profileHome);
 
   const nm = ensureNodeModules(worktree, repoRoot);
   const tools = ensureWorktreeToolBin(worktree, repoRoot);
   // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
   replaceSymlink(p.extension, worktree);
-  // A local Electron test host may need adjacent shared libraries after process.execPath is copied.
   // Point at the Node executable running this CLI; the engine store will copy and hash that instead.
   replaceSymlink(p.runtime, fs.realpathSync(process.execPath));
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
-  // (`.tachyon` is copied — see materializeWorkspaceMirror.)
   materializeWorkspaceMirror(p.workspace, workspace);
+
+  // Activate for F5 default: explicit flag, or human/default path (no owner).
+  // Agent slots with --owner do not steal active unless --activate or first slot ever.
+  const wantActivate =
+    opts.activate === true ||
+    (opts.activate !== false && (!opts.owner || slotId === DEFAULT_SLOT));
+  if (wantActivate) {
+    setActiveSlot(repoRoot, slotId);
+  } else if (!readActiveSlotId(repoRoot)) {
+    // First slot ever → become active so bare F5 still works.
+    setActiveSlot(repoRoot, slotId);
+  }
 
   let packageName = null;
   try {
@@ -606,10 +830,14 @@ export function point(opts) {
     /* ignore */
   }
 
+  const isActive = readActiveSlotId(repoRoot) === slotId;
+  const launchName = isActive ? LAUNCH_CONFIG_NAME : `${LAUNCH_CONFIG_NAME} · ${slotId}`;
+
   const meta = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generation: randomUUID(),
     kind: "dev-host",
+    slotId,
     worktree,
     workspace,
     extensionLink: p.extension,
@@ -617,29 +845,28 @@ export function point(opts) {
     workspaceMirror: true,
     spec: opts.spec ?? null,
     slug: opts.slug ?? null,
-    owner: opts.owner ?? null,
+    owner: opts.owner ?? (slotId !== DEFAULT_SLOT ? slotId : null),
     packageName,
     sha: readShortSha(worktree),
     nodeModulesLinked: nm.linked,
     toolBinLinked: tools.linked,
     toolBinLinkCount: tools.count,
     preparedAt: new Date().toISOString(),
-    launchConfig: "Tachyon: Dev Host",
+    launchConfig: launchName,
     howTo: [
-      'Run and Debug → select "Tachyon: Dev Host"',
-      "Press F5 (builds the pointed worktree, opens Extension Development Host on the fixture)",
+      `Run and Debug → select "${launchName}"${isActive ? " (active F5 slot)" : " (or set active with point --activate)"}`,
+      "Press F5 (builds this slot's worktree, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
-      "When done: npm run dogfood:dev-host -- point-clear",
-      "If you remove the worktree, run point-clear so the pointer is not left stale",
+      `When done: npm run dogfood:dev-host -- point-clear --owner ${opts.owner ?? slotId}`,
+      "Other agents' slots are untouched — use point-status --all to list",
     ],
   };
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
-  // Always portable ${workspaceFolder} paths — never machine-local absolutes (WSL F5).
   const launchPath = ensurePortableLaunchConfig(repoRoot);
   if (launchPath) {
     meta.launchJson = launchPath;
     meta.launchNote =
-      "launch.json Dev Host entry uses portable ${workspaceFolder} paths; workspace is a real mirror dir under .tachyon/dev-host/";
+      "launch.json: default entry uses .tachyon/dev-host/active → slots/<id>; per-slot entries under slots/<id>/";
   }
   fs.writeFileSync(p.meta, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
   return meta;
@@ -647,12 +874,32 @@ export function point(opts) {
 
 export async function status(repoRoot, opts = {}) {
   const probeEngine = opts.probeEngine ?? probeFixtureEngine;
-  const p = pathsOf(path.resolve(repoRoot));
+  const resolved = path.resolve(repoRoot);
+  migrateFlatPointerToSlots(resolved);
+  let slotId;
+  if (opts.slotId != null && String(opts.slotId).trim()) {
+    slotId = normalizeSlotId(opts.slotId);
+  } else if (opts.slot != null && String(opts.slot).trim()) {
+    slotId = normalizeSlotId(opts.slot);
+  } else if (opts.owner != null && String(opts.owner).trim()) {
+    slotId = normalizeSlotId(opts.owner);
+  } else {
+    slotId = readActiveSlotId(resolved) ?? DEFAULT_SLOT;
+  }
+  const activeId = readActiveSlotId(resolved);
+  const p = pathsOf(resolved, slotId);
   if (!fs.existsSync(p.meta)) {
+    const slots = listSlotIds(resolved);
     return {
       armed: false,
       broken: true,
-      reason: "no meta.json — run: npm run dogfood:dev-host -- point …",
+      reason: slots.length
+        ? `no meta for slot '${slotId}' — armed slots: ${slots.join(", ")} (point-status --all)`
+        : "no meta.json — run: npm run dogfood:dev-host -- point …",
+      slotId,
+      active: activeId === slotId,
+      activeSlotId: activeId,
+      slots,
       warnings: [],
     };
   }
@@ -664,6 +911,9 @@ export async function status(repoRoot, opts = {}) {
       armed: false,
       broken: true,
       reason: `meta.json unreadable: ${err instanceof Error ? err.message : String(err)}`,
+      slotId,
+      active: activeId === slotId,
+      activeSlotId: activeId,
       warnings: [],
     };
   }
@@ -773,6 +1023,10 @@ export async function status(repoRoot, opts = {}) {
   return {
     armed: !criticalBroken && extOk && wsOk && worktreeExists,
     broken: criticalBroken,
+    slotId,
+    active: activeId === slotId,
+    activeSlotId: activeId,
+    slots: listSlotIds(resolved),
     meta,
     extensionResolves,
     runtimePath: runtimeOk ? fs.realpathSync(p.runtime) : null,
@@ -790,6 +1044,24 @@ export async function status(repoRoot, opts = {}) {
   };
 }
 
+/** Doctor for every armed slot (point-status --all). */
+export async function statusAll(repoRoot, opts = {}) {
+  const resolved = path.resolve(repoRoot);
+  migrateFlatPointerToSlots(resolved);
+  const ids = listSlotIds(resolved);
+  const activeSlotId = readActiveSlotId(resolved);
+  const items = [];
+  for (const id of ids) {
+    items.push(await status(resolved, { ...opts, slotId: id }));
+  }
+  return {
+    armed: items.some((s) => s.armed),
+    activeSlotId,
+    slots: items,
+    slotIds: ids,
+  };
+}
+
 /** Pretty-print doctor lines for humans/agents (stdout). */
 export function printStatus(st) {
   if (!st.armed && st.reason && !st.meta) {
@@ -797,6 +1069,8 @@ export function printStatus(st) {
     return;
   }
   console.log(`${SELF}: ${st.armed ? "armed" : "BROKEN / not ready"}`);
+  if (st.slotId) console.log(`  slot:           ${st.slotId}${st.active ? "  (active F5)" : ""}`);
+  if (st.meta?.owner) console.log(`  owner:          ${st.meta.owner}`);
   if (st.meta?.spec) console.log(`  spec:           ${st.meta.spec}`);
   if (st.meta?.slug) console.log(`  slug:           ${st.meta.slug}`);
   if (st.worktreePath) console.log(`  worktree:       ${st.worktreePath}${st.worktreeExists ? "" : "  (MISSING)"}`);
@@ -817,37 +1091,152 @@ export function printStatus(st) {
 }
 
 /**
- * Stop any persistent engine/Bridge owned by this Dev Host pointer before its storage is touched.
- * `.tachyon/dev-host/{state,data}` (the engine's storage root / bundle install root, materialized by
- * the engine itself at runtime — see portableDevHostLaunchConfig's XDG_STATE_HOME/XDG_DATA_HOME) live
- * under the same fixed mirror path across every F5 session, so a persistent engine started under an
- * earlier point() outlives point-clear unless it is stopped first. Stopping it here — before its
- * storage is wiped — is what prevents a later session's supervisor from finding that engine still
- * alive with no verified rollback bundle left to fall back to (ROLLBACK_BUNDLE_UNAVAILABLE, t-e357dc).
- * `stopFixtureEngine`/`stopFixtureBridge` key strictly off this pointer's own mirror workspace path,
- * so this can never reach a normal Tachyon window or a different Dev Host pointer's engine.
+ * Stop any persistent engine/Bridge owned by this Dev Host **slot** before its storage is touched.
+ * Per-slot XDG state/data live under `slots/<id>/` (see portableDevHostLaunchConfig). A persistent
+ * engine started under an earlier point() outlives point-clear unless stopped first — that is what
+ * prevents ROLLBACK_BUNDLE_UNAVAILABLE (t-e357dc). stopFixtureEngine/Bridge key off this slot's
+ * mirror workspace path only — never a normal Tachyon window or another slot.
+ *
+ * @param {string} slotRoot absolute path to slots/<id> (or legacy flat root during migration)
  */
-export async function reconcileDevHostOccupant(repoRoot, opts = {}) {
+export async function reconcileDevHostOccupant(slotRoot, opts = {}) {
   const stopEngine = opts.stopEngine ?? stopFixtureEngine;
   const stopBridge = opts.stopBridge ?? stopFixtureBridge;
-  const root = devHostDir(path.resolve(repoRoot));
+  const root = path.resolve(slotRoot);
   const engine = await stopEngine(root);
   const bridge = await stopBridge(root);
   return { engine, bridge };
 }
 
+/**
+ * Clear one slot (default: active, else default). `--all` / opts.all wipes every slot + base.
+ * Never touches worktree or fixture targets.
+ */
 export async function clear(repoRoot, opts = {}) {
-  const p = pathsOf(path.resolve(repoRoot));
-  if (!fs.existsSync(p.root)) {
-    return { cleared: false, reason: "already clear" };
+  const resolved = path.resolve(repoRoot);
+  migrateFlatPointerToSlots(resolved);
+  const base = devHostDir(resolved);
+
+  if (opts.all) {
+    if (!fs.existsSync(base)) {
+      return { cleared: false, reason: "already clear", all: true };
+    }
+    const ids = listSlotIds(resolved);
+    // Also include slot dirs that exist without meta (partial failures)
+    let dirIds = [];
+    try {
+      if (fs.existsSync(slotsDir(resolved))) {
+        dirIds = fs
+          .readdirSync(slotsDir(resolved), { withFileTypes: true })
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name);
+      }
+    } catch {
+      /* ignore */
+    }
+    const unique = [...new Set([...ids, ...dirIds])];
+    const reconciledAll = [];
+    for (const id of unique) {
+      const p = pathsOf(resolved, id);
+      if (!fs.existsSync(p.root)) continue;
+      assertPointerSessionIdle(p.root);
+      reconciledAll.push({ slotId: id, ...(await reconcileDevHostOccupant(p.root, opts)) });
+    }
+    // Flat leftovers (pre-migrate race)
+    if (isFlatPointerLayout(resolved)) {
+      assertPointerSessionIdle(base);
+      reconciledAll.push({ slotId: "(flat)", ...(await reconcileDevHostOccupant(base, opts)) });
+    }
+    fs.rmSync(base, { recursive: true, force: true });
+    const launch = restoreTemplateLaunchConfig(resolved);
+    return {
+      cleared: true,
+      all: true,
+      slots: unique,
+      launch,
+      reconciled: reconciledAll[0] ?? { engine: { state: "absent" }, bridge: { state: "absent" } },
+      reconciledAll,
+    };
   }
+
+  // Explicit owner/slot/env → that slot. Bare human clear → active, else default.
+  // opts.env isolates tests from the real agent process env when set (even to {}).
+  const env = opts.env !== undefined ? opts.env : process.env;
+  let slotId;
+  if (opts.slot != null && String(opts.slot).trim()) {
+    slotId = normalizeSlotId(opts.slot);
+  } else if (opts.owner != null && String(opts.owner).trim()) {
+    slotId = normalizeSlotId(opts.owner);
+  } else if (env.TACHYON_DEV_HOST_SLOT && String(env.TACHYON_DEV_HOST_SLOT).trim()) {
+    slotId = normalizeSlotId(env.TACHYON_DEV_HOST_SLOT);
+  } else if (env.TACHYON_AGENT_NAME && String(env.TACHYON_AGENT_NAME).trim()) {
+    slotId = normalizeSlotId(env.TACHYON_AGENT_NAME);
+  } else {
+    slotId = readActiveSlotId(resolved) ?? DEFAULT_SLOT;
+  }
+
+  if (opts.requireOwner === true) {
+    resolveSlotId({
+      owner: opts.owner,
+      slot: opts.slot,
+      requireOwner: true,
+      env,
+    });
+  }
+
+  const p = pathsOf(resolved, slotId);
+  if (!fs.existsSync(p.root)) {
+    // Nothing for this slot — if base is empty/orphan, treat as already clear
+    if (!fs.existsSync(base) || (listSlotIds(resolved).length === 0 && !isFlatPointerLayout(resolved))) {
+      if (fs.existsSync(base) && listSlotIds(resolved).length === 0) {
+        // empty multi-slot shell
+        try {
+          fs.rmSync(base, { recursive: true, force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+      return { cleared: false, reason: "already clear", slotId };
+    }
+    return { cleared: false, reason: `slot '${slotId}' not armed`, slotId };
+  }
+
   assertPointerSessionIdle(p.root);
   // Reconcile before touching storage: never wipe state/data out from under a live engine.
-  const reconciled = await reconcileDevHostOccupant(repoRoot, opts);
-  // Only remove pointer + isolation dirs under .tachyon/dev-host — never the worktree/fixture targets
+  const reconciled = await reconcileDevHostOccupant(p.root, opts);
   fs.rmSync(p.root, { recursive: true, force: true });
-  const launch = restoreTemplateLaunchConfig(repoRoot);
-  return { cleared: true, launch, reconciled };
+
+  // Retarget or drop active symlink
+  if (readActiveSlotId(resolved) === slotId) {
+    const remaining = listSlotIds(resolved);
+    if (remaining.length > 0) {
+      try {
+        setActiveSlot(resolved, remaining[0]);
+      } catch {
+        try {
+          fs.rmSync(activeLinkPath(resolved), { force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    } else {
+      try {
+        fs.rmSync(activeLinkPath(resolved), { force: true });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  // Last slot gone → wipe base (active, slots/, leftovers) for a clean unarmed tree
+  if (listSlotIds(resolved).length === 0) {
+    if (fs.existsSync(base)) {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }
+
+  const launch = restoreTemplateLaunchConfig(resolved);
+  return { cleared: true, slotId, launch, reconciled };
 }
 
 /** Refuse destructive pointer changes while an interactive headless session owns it. */
@@ -885,12 +1274,21 @@ export function parseArgs(argv) {
       a === "--spec" ||
       a === "--slug" ||
       a === "--owner" ||
+      a === "--slot" ||
       a === "--intent" ||
       a === "--repo"
     ) {
       const v = argv[++i];
       if (v === undefined) throw new Error(`${SELF}: ${a} requires a value`);
       out[a.slice(2)] = v;
+    } else if (a === "--all") {
+      out.all = true;
+    } else if (a === "--activate") {
+      out.activate = true;
+    } else if (a === "--no-activate") {
+      out.activate = false;
+    } else if (a === "--require-owner") {
+      out.requireOwner = true;
     } else if (a.startsWith("--")) {
       throw new Error(`${SELF}: unknown flag ${a}`);
     } else {
@@ -898,6 +1296,16 @@ export function parseArgs(argv) {
     }
   }
   return out;
+}
+
+/** True when the process looks like a fleet agent (not a bare human shell). */
+export function looksLikeAgentProcess(env = process.env) {
+  return Boolean(
+    env.TACHYON_AGENT_BRIDGE_TOKEN ||
+      env.TACHYON_BRIDGE_TOKEN ||
+      env.TACHYON_NODE_ID ||
+      env.TACHYON_RUN_ID,
+  );
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -911,19 +1319,23 @@ export async function main(argv = process.argv.slice(2)) {
       ? { hostRepo: scriptRoot, scriptRepo: scriptRoot, redirected: false }
       : resolveF5HostRepoRoot(scriptRoot);
   const repoRoot = host.hostRepo;
+  const agentish = looksLikeAgentProcess();
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage:
-  npm run dogfood:dev-host -- point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME]
+  npm run dogfood:dev-host -- point --worktree PATH --workspace PATH [--spec NNN] [--slug SLUG] [--owner NAME] [--slot ID] [--activate|--no-activate]
   npm run dogfood:dev-host -- point --worktree PATH --fixture SLUG [--spec NNN] [--slug SLUG] [--owner NAME]
   npm run dogfood:dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics] [--worktree PATH]
-  npm run dogfood:dev-host -- point-status
-  npm run dogfood:dev-host -- point-clear
+  npm run dogfood:dev-host -- point-status [--owner NAME] [--slot ID] [--all]
+  npm run dogfood:dev-host -- point-clear [--owner NAME] [--slot ID] [--all]
 
-Stable F5 config name: "Tachyon: Dev Host"
-Pointer dir: <monorepo>/.tachyon/dev-host/  (F5 host = primary checkout, not a linked worktree)
+Multi-slot (t-efe06d): each owner keeps slots/<id>/ under <monorepo>/.tachyon/dev-host/.
+  active → symlink to the default F5 slot; launch.json also has "Tachyon: Dev Host · <slot>".
+  Agents: pass --owner $TACHYON_AGENT_NAME (or set TACHYON_AGENT_NAME / TACHYON_DEV_HOST_SLOT).
+  Humans: omit --owner → slot "default". point-clear --all frees the whole environment.
+
+Stable F5 config name: "Tachyon: Dev Host" (reads .tachyon/dev-host/active/…)
 Linked worktree: point/status/clear auto-redirect to the primary monorepo so F5 finds the pointer.
-On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon copied) and portable launch.json.
 --fixture resolves test/fixtures/<slug> or <slug>-dogfood under worktree, then monorepo.
 `);
     return 0;
@@ -953,6 +1365,9 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
     if (!workspace) {
       throw new Error(`${SELF}: point requires --workspace PATH or --fixture SLUG`);
     }
+    const requireOwner =
+      args.requireOwner === true ||
+      (agentish && !args.owner && !args.slot && !process.env.TACHYON_AGENT_NAME && !process.env.TACHYON_DEV_HOST_SLOT);
     const slug = args.slug ?? (args.fixture ? String(args.fixture).replace(/-dogfood$/, "") : null);
     const meta = point({
       repoRoot,
@@ -961,17 +1376,22 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
       spec: args.spec,
       slug,
       owner: args.owner,
+      slot: args.slot,
+      activate: args.activate,
+      requireOwner,
     });
     console.log(`${SELF}: armed`);
     console.log(`  f5-host:   ${repoRoot}`);
+    console.log(`  slot:      ${meta.slotId}${meta.launchConfig === LAUNCH_CONFIG_NAME ? " (active F5)" : ""}`);
     console.log(`  worktree:  ${meta.worktree}`);
     console.log(`  workspace: ${meta.workspace}`);
     console.log(`  sha:       ${meta.sha}`);
+    if (meta.owner) console.log(`  owner:     ${meta.owner}`);
     if (meta.spec) console.log(`  spec:      ${meta.spec}`);
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
     console.log("");
-    console.log("  launch.json: portable ${workspaceFolder} Dev Host paths (WSL-safe)");
-    console.log("  workspace:   real mirror dir under monorepo .tachyon/dev-host/workspace");
+    console.log("  launch.json: portable ${workspaceFolder} paths via active/ + per-slot configs");
+    console.log(`  workspace:   real mirror under slots/${meta.slotId}/workspace`);
     console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
     console.log("");
     console.log("Human next step (from monorepo VS Code window):");
@@ -995,7 +1415,21 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
   }
 
   if (sub === "status") {
-    const st = await status(repoRoot);
+    if (args.all) {
+      const all = await statusAll(repoRoot);
+      console.log(`${SELF}: ${all.slotIds.length} slot(s)${all.activeSlotId ? ` · active=${all.activeSlotId}` : ""}`);
+      for (const st of all.slots) {
+        console.log("");
+        printStatus(st);
+      }
+      if (all.slotIds.length === 0) {
+        console.log(`${SELF}: unarmed — no slots (npm run dogfood:dev-host -- point …)`);
+      }
+      console.log("---");
+      console.log(JSON.stringify({ ...all, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
+      return all.armed ? 0 : 1;
+    }
+    const st = await status(repoRoot, { owner: args.owner, slot: args.slot, slotId: args.slot });
     printStatus(st);
     console.log("---");
     console.log(JSON.stringify({ ...st, f5HostRepo: repoRoot, scriptRepo: host.scriptRepo, redirected: host.redirected }, null, 2));
@@ -1003,11 +1437,32 @@ On point: mirrors fixture into .tachyon/dev-host/workspace (real dir; .tachyon c
   }
 
   if (sub === "clear") {
-    const r = await clear(repoRoot);
-    console.log(`${SELF}: ${r.cleared ? "cleared" : r.reason}`);
+    if (
+      agentish &&
+      !args.all &&
+      !args.owner &&
+      !args.slot &&
+      !process.env.TACHYON_AGENT_NAME &&
+      !process.env.TACHYON_DEV_HOST_SLOT
+    ) {
+      throw new Error(
+        `${SELF}: agents must pass --owner (or --slot / TACHYON_AGENT_NAME) for point-clear; use --all only when intentionally freeing every slot`,
+      );
+    }
+    const r = await clear(repoRoot, {
+      owner: args.owner,
+      slot: args.slot,
+      all: args.all === true,
+      requireOwner: args.requireOwner === true,
+    });
+    if (r.all) {
+      console.log(`${SELF}: ${r.cleared ? "cleared all slots" : r.reason}`);
+    } else {
+      console.log(`${SELF}: ${r.cleared ? `cleared slot '${r.slotId}'` : r.reason}`);
+    }
     if (r.reconciled) {
-      console.log(`  engine: ${r.reconciled.engine.state}`);
-      console.log(`  bridge: ${r.reconciled.bridge.state}`);
+      console.log(`  engine: ${r.reconciled.engine?.state ?? r.reconciled.engine}`);
+      console.log(`  bridge: ${r.reconciled.bridge?.state ?? r.reconciled.bridge}`);
     }
     if (host.redirected) console.log(`  (cleared monorepo pointer at ${repoRoot})`);
     return 0;
