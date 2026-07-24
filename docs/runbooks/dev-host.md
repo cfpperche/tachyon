@@ -45,7 +45,7 @@ pins, journals, or commits should map the old vocabulary here:
 
 | Do | Do not |
 |----|--------|
-| Open `${workspaceFolder}/.tachyon/dev-host/workspace` (real dir under the monorepo) | Pass machine-local absolute paths in `launch.json` (forces a fresh WSL re-entry → **Disconnected from WSL** / **Extension 'WSL' is required**) |
+| Open `${workspaceFolder}/.tachyon/dev-host/workspace` (real dir under the current checkout) | Pass machine-local absolute paths in `launch.json` (forces a fresh WSL re-entry → **Disconnected from WSL** / **Extension 'WSL' is required**) |
 | `--extensionDevelopmentPath=${workspaceFolder}/.tachyon/dev-host/extension` | Open a *symlink* as the EDH folder (empty **NO FOLDER OPENED**) |
 | Private `TMUX_TMPDIR` / `XDG_CACHE_HOME` / `XDG_STATE_HOME` / `XDG_DATA_HOME` | Private `--extensions-dir` / `--user-data-dir` (drops `ms-vscode-remote.remote-wsl` on the local side of the EDH window) |
 
@@ -398,13 +398,13 @@ refused. Re-read the pane after each answer and assign work only after the norma
 
 ---
 
-## Preferred human path: stable F5 from the monorepo
+## Preferred human path: stable F5 from the checkout
 
 This is the **default** dogfood path for product UI. CLI `seed` / `launch` remain available as
 secondary (scripted / non-F5); headless remains the automated Xvfb path.
 
-When the human stays on the **monorepo window** and the feature under test lives in a
-**git worktree**, agents arm a pointer instead of editing one-off `launch.json` paths.
+Open VS Code on the **checkout containing the feature under test**. The Dev Host belongs to that
+checkout; there is no shared monorepo pointer to select.
 
 ```bash
 # Optional: scaffold a fixture (intent focus = stopped OK; metrics = autostart loops)
@@ -436,12 +436,10 @@ is unrelated: that is a *lease* owner and still required.)
 | Dev-host | `<checkout>/.tachyon/dev-host/` (gitignored) — one per checkout |
 | Extension bits | this checkout via `--extensionDevelopmentPath=…/extension` |
 | Opened folder | mirror of the isolated **fixture** (never a repo root) |
-| Borrowed from primary | `node_modules` and `.tachyon/bin`, symlinked when this checkout lacks them |
+| Dependencies | Install with `npm ci` in the checkout when `node_modules` is absent; F5 refuses a missing dependency tree |
 
 **To dogfood:** open VS Code **on that checkout** and press **F5** → **Tachyon: Dev Host**. Drive only
-the EDH window. In a multi-root window VS Code disambiguates per folder, so the dropdown reads
-**Tachyon: Dev Host (my-worktree)** and you can reach every worktree's dev-host without switching
-windows — no extra configuration.
+the EDH window. If dependencies are missing, run `npm ci` in that checkout before pressing F5 again.
 
 **Disk:** a worktree now carries its own dev-host (~100s of MB once VS Code writes its data dir).
 That is the trade for lifecycle: removing the worktree reclaims it, instead of leaving an orphaned
@@ -474,14 +472,10 @@ reclaim the bytes either way — but the engine still needs stopping.
 1. `--workspace` / resolved fixture must not be the monorepo root (script refuses).
 2. Do not reload / reinstall VSIX in the fleet window for this path.
 3. Specs document steps under `**Human dogfood:**` in `tasks.md` (not a free-floating `DOGFOOD.md`).
-4. **After land / after dogfood:** `point-clear --owner …` then remove the worktree (see **After land** above). If the worktree is already gone, still run **point-clear** so the slot and engine are not left stale.
+4. **After land / after dogfood:** `point-clear` then remove the worktree (see **After land** above). If the worktree is already gone, clear its Dev Host before removing it when possible.
 5. Lease (`lane.mjs`) is required for **delegated** headless/GUI pilots; plain F5 pointer for a single human/agent does not auto-acquire a lease. Map lease owner → slot id when both apply.
-6. F5 host is always the **primary monorepo checkout**. When `point` runs from a linked worktree,
-   the CLI redirects the pointer there automatically; a pointer only under the feature worktree's
-   `.tachyon/dev-host` is invisible to monorepo F5 (preLaunchTask fails with a guided error).
-7. **No flat global pointer** as the multi-agent model (t-efe06d). Flat layout is migrated once to
-   `slots/default` and then only `slots/*` is first-class. Agents without `--owner` /
-   `$TACHYON_AGENT_NAME` / `$TACHYON_DEV_HOST_SLOT` fail closed when agent-bridge env is present.
+6. F5 resolves only the current checkout's `.tachyon/dev-host`; opening a different checkout requires
+   arming and launching that checkout's Dev Host separately.
 
 Script: `scripts/dev-host/pointer.mjs`.
 

@@ -196,7 +196,6 @@ function CockpitRoot() {
   const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
-  const toastApi = useToast();
   const taskErrorSeqCounter = useRef(0);
   /**
    * Track companion devices so a successful pair dismisses the ephemeral code card.

@@ -84,6 +84,7 @@ describe("preview route table", () => {
       "multi-workspace-scoped",
       "plugins",
       "runtime",
+      "runtime-config",
       "settings",
       "studio-agent",
       "studio-agent-canonical",

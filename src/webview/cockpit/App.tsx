@@ -931,6 +931,10 @@ function WorktreesHygiene({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
 type RuntimeConfigScope = "global" | "workspace";
 function RuntimeConfigInventory({
   s,
