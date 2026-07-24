@@ -9,11 +9,12 @@ export interface AgentPaneAppProps {
   onHostMessage: (handler: (msg: AgentPaneFromHost) => void) => () => void;
 }
 
+/**
+ * Full-bleed xterm viewport — no chrome header (title/status live on the editor tab).
+ * Terminal fills 100% of the webview / editor area.
+ */
 export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
   const termHostRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLSpanElement>(null);
-  const statusRef = useRef<HTMLSpanElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
 
@@ -56,8 +57,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
 
     const unsub = onHostMessage((msg) => {
       if (msg.type === "agent-pane/init") {
-        if (titleRef.current) titleRef.current.textContent = msg.title || msg.agent;
-        if (statusRef.current) statusRef.current.textContent = msg.status;
+        // Title is the editor tab; nothing to paint in-pane.
         return;
       }
       if (msg.type === "agent-pane/data") {
@@ -65,15 +65,9 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         return;
       }
       if (msg.type === "agent-pane/status") {
-        if (statusRef.current) statusRef.current.textContent = msg.status;
         return;
       }
       if (msg.type === "agent-pane/exit") {
-        if (statusRef.current) {
-          statusRef.current.textContent = msg.signal
-            ? `detached (${msg.signal})`
-            : `detached (code ${msg.code ?? "?"})`;
-        }
         term.writeln("\r\n\x1b[33m[Tachyon] attach ended — reopen the pane or use integrated terminal.\x1b[0m");
       }
     });
@@ -91,24 +85,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   }, [postMessage, onHostMessage]);
 
   return (
-    <div class="agent-pane" ref={hostRef}>
-      <header class="agent-pane__chrome">
-        <div class="agent-pane__identity">
-          <span class="codicon codicon-terminal" aria-hidden="true" />
-          <span class="agent-pane__title" ref={titleRef}>Agent</span>
-          <span class="agent-pane__status" ref={statusRef}>connecting…</span>
-        </div>
-        <div class="agent-pane__actions">
-          <button
-            type="button"
-            class="agent-pane__btn"
-            title="Open the same session in VS Code integrated terminal (layer 1)"
-            onClick={() => postMessage({ type: "agent-pane/open-integrated" })}
-          >
-            Integrated terminal
-          </button>
-        </div>
-      </header>
+    <div class="agent-pane">
       <div class="agent-pane__term" ref={termHostRef} />
     </div>
   );

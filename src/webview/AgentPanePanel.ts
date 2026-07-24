@@ -80,7 +80,8 @@ export class AgentPanePanelManager {
         enableFindWidget: true,
       },
     );
-    panel.iconPath = panelIcon(this.extensionUri, "terminal-tmux");
+    // Same glyph as sidebar openPane action (codicon "terminal") — light/dark SVG pair under media/icons/
+    panel.iconPath = panelIcon(this.extensionUri, "terminal");
 
     const live: LivePane = {
       panel,
