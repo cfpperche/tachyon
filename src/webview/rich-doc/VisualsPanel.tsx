@@ -80,7 +80,7 @@ export function VisualsPanel({
   onEditSketch: (att: RichDocAttachmentVM) => void;
 }) {
   return (
-    <aside>
+    <aside class="rd-visuals">
       <button class="drop" type="button" onClick={onImport}>
         <Icon name="cloud-upload" />
         <span>Paste, drop, import, or annotate screenshots</span>
