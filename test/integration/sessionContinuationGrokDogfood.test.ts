@@ -43,7 +43,6 @@ class DogfoodHost {
   notify(): void {}
   focusPrimaryView(): void {}
   openTask(): void {}
-  onViewsChanged(): void {}
   executeCommand(command: string): Promise<unknown> {
     return Promise.reject(new Error(`unexpected host command in dogfood: ${command}`));
   }
