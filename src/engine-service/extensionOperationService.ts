@@ -231,6 +231,11 @@ export async function executeExtensionQuery(
         }));
       return json({ worktrees: [...fromLedger, ...fromRegistry] });
     }
+    case "worktrees.classified": {
+      // spec 444 — the ONE classified read for Control's Worktrees tab. Every row flows through
+      // ManagedWorktreeService (fail-closed loader + reconcile) + classify.ts; no raw JSON parsing.
+      return json({ worktrees: (await workspace.managedWorktrees.listClassified()) as unknown as JsonValue });
+    }
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
@@ -432,6 +437,20 @@ export async function executeExtensionCommand(
       return removeAgentWorktree(workspace, command.agent, true);
     case "worktree.delete-branch":
       return json({ deleted: await workspace.worktrees.deleteBranch(command.branch) });
+    // spec 444 — registry-id-scoped hygiene actions from Control's Worktrees tab. Both are
+    // human-initiated (the tab is a human surface); the service re-validates fail-closed on every
+    // call (occupancy, dirty, ownership), so a stale UI verdict can never force a removal through.
+    case "worktree.forget-record": {
+      const forgotten = workspace.managedWorktrees.unregister(command.id, { kind: "human" });
+      return json({ forgotten });
+    }
+    case "worktree.remove-managed": {
+      const result = await workspace.managedWorktrees.remove(command.id, {
+        actor: { kind: "human" },
+        deleteBranch: command.deleteBranch === true,
+      });
+      return json(result as unknown as JsonValue);
+    }
     case "agent.verify":
       return json(await workspace.runVerify(command.agent));
     case "agent.reanchor":

@@ -29,6 +29,20 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+- **2026-07-24 — process boundary forces an RPC layer the plan missed.** The plan assumed
+  `CockpitDeps.collect()` (extension host) could call `ManagedWorktreeService.listClassified()`
+  in-process. It can't: the service lives in the persistent engine, a separate process (SDD 382).
+  That same boundary is why `disk.ts`'s raw reader existed at all — checked its provenance when the
+  maintainer challenged the "workaround" label: born in POC commit `656f6393`, zero test references
+  anywhere in `test/`, lenient parallel parser bypassing `loadManagedWorktreeStore`'s fail-closed
+  validation, `catch {} → []` (read failure indistinguishable from genuinely empty). Plan revised:
+  new engine RPC query `worktrees.classified` + commands `worktree.forget-record` /
+  `worktree.remove-managed`; `readManagedWorktreesFromDisk` deleted once consumer-free.
+- **2026-07-24 — fallback hardened beyond the original plan (maintainer-ratified).** The plan kept
+  the raw reader as a degraded fallback. Ratified instead: engine unreachable → honest error state
+  in the tab, never unverified rows ("dado não-confiável não é melhor que dado nenhum"). The same
+  debt in `readGitDeliveriesFromDisk` (Deliveries tab) is out of scope and tracked as t-43c6fa.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._

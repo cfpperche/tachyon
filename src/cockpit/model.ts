@@ -67,6 +67,14 @@ export interface CockpitWorktreeRow {
   agent?: string;
   folder?: string;
   wsHash?: string;
+  /**
+   * spec 444 — fail-closed hygiene classification (see `src/worktree/classify.ts`). Computed
+   * host-side in `CockpitDeps.collect()` before this row reaches `buildCockpitModel` (a pure,
+   * synchronous composer — classification itself requires async git probes, so it is never
+   * computed here). Absent only for a row sourced from the fail-closed `disk.ts` fallback path
+   * (the classifier itself threw); the client must never treat "absent" as "safe".
+   */
+  classification?: import("../worktree/classify.js").WorktreeClassification;
 }
 
 export interface CockpitDeliveryRow {

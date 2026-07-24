@@ -13,18 +13,34 @@ ancestry check for containment) into one of five states: `active` (real checkout
 zero unique commits), `needs-review` (real, blocked by a stated reason: dirty / unique-commits /
 unknown-ancestry / non-owned-branch), `occupied` (real, blocked specifically by a live agent).
 
-Wire it into `CockpitDeps.collect()` (`src/extension.ts`, already `async`) in place of the raw
-`readManagedWorktreesFromDisk` pass-through — that reader is demoted to a fallback used only if
-classification throws (fail-closed: an entry that can't be classified renders as `needs-review:
-classification-failed`, never silently as `active`/`ready-to-remove`). Add a `worktree_hygiene`
-read-only Bridge tool (naming precedent: `git_delivery_hygiene`) that exposes the same classifier for
-Bridge-side/CLI consumers, mirroring `list_worktrees`'s existing auth/shape but adding the
-classification fields. Add three new `CockpitAction` webview messages —
-`worktreeRemove`, `worktreeForgetRecord`, `worktreeBatchCleanup` — handled host-side by calling the
-existing `ManagedWorktreeService.remove`/`.unregister` (no new removal machinery; the gap is
-classification + wiring, not new destructive primitives). Batch cleanup re-runs the classifier at
-confirm time per selected id and silently drops (with a stated reason) any entry whose live
-classification no longer matches what the preview showed.
+**REVISED 2026-07-24 mid-implementation (see notes.md § Deviations):** `src/extension.ts` (Extension
+Host shell) and the persistent engine (where `ManagedWorktreeService` lives) are SEPARATE PROCESSES
+(SDD 382 boundary) — `CockpitDeps.collect()` cannot call `listClassified()` in-process, which is
+also exactly why `disk.ts`'s raw reader existed (a POC-era workaround, commit `656f6393`: zero
+tests, lenient parallel parser, `catch {} → []`). The classified read therefore crosses the boundary
+as a new engine RPC query `worktrees.classified` (registered in `extensionOperations.ts`'s
+`EXTENSION_QUERY_ACTIONS` + `extensionQuerySchema`, handled in `extensionOperationService.ts`
+mirroring the existing `worktrees.list`), and the destructive actions cross as two new RPC commands
+`worktree.forget-record` and `worktree.remove-managed` (the existing `worktree.remove` /
+`worktree.delete-branch` commands are AGENT-name-scoped for Fleet's kill flow, not generic
+registry-id operations). This unifies the architecture: after this change every consumer of the
+registry — VS Code reveal (`worktrees.list`), Control's Worktrees tab (`worktrees.classified`),
+Bridge agents (`list_worktrees`/`worktree_hygiene`) — flows through the ONE validated
+`ManagedWorktreeService` path (fail-closed loader + reconcile); no parallel parsers remain.
+
+Fallback hardened (maintainer-ratified 2026-07-24, "dado não-confiável não é melhor que dado
+nenhum"): when the engine RPC is unavailable the Worktrees tab shows an honest error state
+("engine unavailable — registry not shown"), NOT unverified raw rows; `readManagedWorktreesFromDisk`
+loses its last consumer and is DELETED outright (its sibling `readGitDeliveriesFromDisk` carries the
+same debt for the Deliveries tab — out of scope here, tracked as t-43c6fa).
+
+Add a `worktree_hygiene` read-only Bridge tool (naming precedent: `git_delivery_hygiene`) exposing
+the same classifier for Bridge-side/CLI consumers. Add three new `CockpitAction` webview messages —
+`worktreeRemove`, `worktreeForgetRecord`, `worktreeBatchCleanup` — handled host-side by invoking the
+new RPC commands (which call the existing `ManagedWorktreeService.remove`/`.unregister`; no new
+destructive primitives). Batch cleanup needs no atomic server op: each batch item is an individual
+forget/remove whose service call re-validates fail-closed on its own, so "an entry drops out of the
+batch when its state changed" emerges from per-item refusal, not new logic.
 
 Register `PI-002` (maintainer-approved 2026-07-24) with an evidence test asserting the classifier
 never returns `ready-to-remove` for an entry with commits not contained in its base.

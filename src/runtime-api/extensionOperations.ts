@@ -35,7 +35,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
+  "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "agent-profile.migration-preview", "agent-profile.rollbackable", "agent-profile.studio-inspect", "agent-profile.studio-bundle-export",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
@@ -47,7 +47,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
   "config.companion.tabTools",
   "config.companion.allowedHosts",
-  "agent.fork", "worktree.remove", "worktree.delete-branch", "agent.verify", "agent.reanchor",
+  "agent.fork", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "agent.verify", "agent.reanchor",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "config.health",
@@ -92,6 +92,8 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("tmux.capture"), session: tmuxSession }).strict(),
   z.object({ action: z.literal("prompt.catalog") }).strict(),
   z.object({ action: z.literal("worktrees.list") }).strict(),
+  // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
+  z.object({ action: z.literal("worktrees.classified") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
   z.object({ action: z.literal("pipeline.inspect"), name: name.optional(), runId: text(128, 1).optional() }).strict(),
@@ -155,6 +157,14 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("agent.fork"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.remove"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.delete-branch"), branch: text(512, 1) }).strict(),
+  // spec 444 — registry-id-scoped hygiene actions (the two above are AGENT-name-scoped, Fleet's
+  // kill flow). Human-initiated from Control's Worktrees tab; the service re-validates fail-closed.
+  z.object({ action: z.literal("worktree.forget-record"), id: text(256, 1) }).strict(),
+  z.object({
+    action: z.literal("worktree.remove-managed"),
+    id: text(256, 1),
+    deleteBranch: z.boolean().optional(),
+  }).strict(),
   z.object({ action: z.literal("agent.verify"), agent: name }).strict(),
   z.object({ action: z.literal("agent.reanchor"), agent: name }).strict(),
   z.object({ action: z.literal("agent.inject-continuity"), agent: name }).strict(),
