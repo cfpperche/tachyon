@@ -40,7 +40,6 @@ describe("agent-pane protocol", () => {
     expect(isAgentPaneToHost({ type: AGENT_PANE_READY })).toBe(true);
     expect(isAgentPaneToHost({ type: "agent-pane/input", data: "hi" })).toBe(true);
     expect(isAgentPaneToHost({ type: "agent-pane/resize", cols: 80, rows: 24 })).toBe(true);
-    expect(isAgentPaneToHost({ type: "agent-pane/open-integrated" })).toBe(true);
   });
 
   it("rejects malformed messages", () => {

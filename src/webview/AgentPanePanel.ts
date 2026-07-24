@@ -20,8 +20,6 @@ export interface AgentPaneOpenArgs {
   session: string;
   title?: string;
   wsHash?: string;
-  /** Open same session in layer-1 integrated terminal (fallback / dual path). */
-  openIntegrated: (agent: string, session: string, title?: string) => Promise<void>;
   /** Apply window size to the tmux session (cols × rows). */
   resizeSession: (session: string, cols: number, rows: number) => Promise<void>;
 }
@@ -175,14 +173,6 @@ export class AgentPanePanelManager {
       if (raw.type === "agent-pane/resize") {
         void args.resizeSession(args.session, raw.cols, raw.rows).catch(() => {
           /* best-effort */
-        });
-        return;
-      }
-      if (raw.type === "agent-pane/open-integrated") {
-        void args.openIntegrated(args.agent, args.session, args.title).catch((err) => {
-          void vscode.window.showErrorMessage(
-            err instanceof Error ? err.message : String(err),
-          );
         });
       }
     });

@@ -1697,9 +1697,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       session: projected.session,
       title: agent,
       wsHash: ws.wsHash,
-      openIntegrated: async (a, session, title) => {
-        await presentTerminal(ws, a, session, title);
-      },
+      // Layer 1 integrated terminal stays available via sidebar "Open terminal" (inspect).
       resizeSession: async (session, cols, rows) => {
         await terminalTmux.resizeWindow(session, cols, rows);
       },

@@ -221,8 +221,8 @@ Started on branch `tachyon/change/agent-pane-first-party`.
 
 ### Commands
 - `tachyon.openAgentPane` — palette pick agent → layer 2 pane  
-- `tachyon.openAgentPaneItem` — sidebar/item entry  
-- Pane button **Integrated terminal** → existing `terminal.open` path (layer 1)
+- `tachyon.openAgentPaneItem` — sidebar primary action `openPane`  
+- Layer 1 integrated terminal: sidebar **Open terminal** (`inspect`) only — no in-pane button
 
 ## Open questions for implementers
 

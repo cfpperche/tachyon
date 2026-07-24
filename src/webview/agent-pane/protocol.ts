@@ -9,8 +9,7 @@ export const AGENT_PANE_READY = "agent-pane/ready" as const;
 export type AgentPaneToHost =
   | { type: typeof AGENT_PANE_READY }
   | { type: "agent-pane/input"; data: string }
-  | { type: "agent-pane/resize"; cols: number; rows: number }
-  | { type: "agent-pane/open-integrated" };
+  | { type: "agent-pane/resize"; cols: number; rows: number };
 
 export type AgentPaneFromHost =
   | {
@@ -34,7 +33,6 @@ export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
     const rows = (value as { rows?: unknown }).rows;
     return typeof cols === "number" && typeof rows === "number" && cols > 0 && rows > 0;
   }
-  if (t === "agent-pane/open-integrated") return true;
   return false;
 }
 
