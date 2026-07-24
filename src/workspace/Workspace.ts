@@ -247,7 +247,8 @@ import {
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
-import type { GitDelivery } from "../git-delivery/types.js";
+import type { GitDelivery, GitDeliveryListRow } from "../git-delivery/types.js";
+import { listRows } from "../git-delivery/classify.js";
 import { hasDeliveryMarker, isInvalidDeliveryMarker, isValidDeliveryBinding, sameDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
@@ -4490,6 +4491,30 @@ export class Workspace {
     } catch {
       return "unknown";
     }
+  }
+
+  /**
+   * t-43c6fa — the ONE classified GitDelivery read for Control's Deliveries tab, mirroring spec
+   * 444's `managedWorktrees.listClassified()` for Worktrees. Every row flows through the validated
+   * `GitDeliveryStore` plus spec 365's fail-closed `listRows` classifier (live git containment,
+   * missing-ref and agent liveness) — the same path `git_delivery_list` serves over the Bridge.
+   *
+   * It deliberately does NOT swallow failures: a store or git error propagates so the caller can
+   * render an honest "engine unavailable" state instead of an empty list that reads as "no
+   * deliveries" (the exact ambiguity the deleted raw-disk reader produced).
+   */
+  async listClassifiedDeliveries(): Promise<GitDeliveryListRow[]> {
+    const deliveries = await this.gitDeliveries.list();
+    const deliveriesById = new Map((await this.deliveries.list()).map((d) => [d.id, d]));
+    const reloadSnapshot = this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined;
+    return listRows(deliveries, {
+      workspaceRoot: this.workspaceRoot,
+      git: this.gitExec,
+      liveness: (agent) => this.gitDeliveryLiveness(agent),
+      tasks: this.taskStore,
+      deliveriesById,
+      ...(reloadSnapshot ? { reloadSnapshot } : {}),
+    });
   }
 
   /**

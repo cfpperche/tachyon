@@ -236,6 +236,13 @@ export async function executeExtensionQuery(
       // ManagedWorktreeService (fail-closed loader + reconcile) + classify.ts; no raw JSON parsing.
       return json({ worktrees: (await workspace.managedWorktrees.listClassified()) as unknown as JsonValue });
     }
+    case "deliveries.classified": {
+      // t-43c6fa — the ONE classified read for Control's Deliveries tab, mirroring
+      // `worktrees.classified` above. Rows come from the validated GitDeliveryStore + spec 365's
+      // fail-closed classifier; the deleted raw-JSON reader is not a fallback (untrusted data is
+      // not better than no data — maintainer-ratified with spec 444).
+      return json({ deliveries: (await workspace.listClassifiedDeliveries()) as unknown as JsonValue });
+    }
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
