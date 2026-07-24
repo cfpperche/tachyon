@@ -328,6 +328,7 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   runtime: { icon: "graph", navKey: "navRuntime" },
+  "runtime-config": { icon: "settings", navKey: "navRuntimeConfig" },
   tmux: { icon: "terminal-tmux", navKey: "navTmux" },
   plugins: { icon: "extensions", navKey: "navPlugins" },
   settings: { icon: "settings-gear", navKey: "navSettings" },
@@ -926,6 +927,187 @@ function WorktreesHygiene({
           </div>
         </div>
       ) : null}
+type RuntimeCapabilityKind = "Skills" | "MCPs" | "Hooks" | "Extensions";
+
+const RUNTIME_CONFIG_PROTOTYPE = {
+  codex: {
+    label: "OpenAI Codex",
+    source: "~/.codex/config.toml",
+    agents: ["codex", "reviewer", "architect"],
+    settings: [
+      { label: "Approval policy", value: "on-request", options: ["untrusted", "on-request", "never"] },
+      { label: "Sandbox mode", value: "workspace-write", options: ["read-only", "workspace-write", "danger-full-access"] },
+      { label: "Personality", value: "pragmatic", options: ["none", "pragmatic", "friendly"] },
+      { label: "Status line", value: "model · context · git branch", options: ["model · context · git branch", "model · context", "hidden"] },
+    ],
+    capabilities: [
+      { kind: "Skills" as const, count: 8, enabled: true, detail: "review-guidelines, architecture, docs +5" },
+      { kind: "MCPs" as const, count: 3, enabled: true, detail: "tachyon_bridge, github, browser" },
+      { kind: "Hooks" as const, count: 2, enabled: true, detail: "SessionStart, Stop" },
+      { kind: "Extensions" as const, count: 1, enabled: false, detail: "experimental-tools" },
+    ],
+    unknown: ["model_context_window", "model_auto_compact_token_limit", "notice.hide_full_access_warning"],
+  },
+  claude: {
+    label: "Claude Code",
+    source: "~/.claude/settings.json",
+    agents: ["claude", "claude-orca"],
+    settings: [
+      { label: "Permission mode", value: "default", options: ["default", "acceptEdits", "plan"] },
+      { label: "Output style", value: "concise", options: ["concise", "explanatory", "learning"] },
+    ],
+    capabilities: [
+      { kind: "Skills" as const, count: 5, enabled: true, detail: "review, testing, docs +2" },
+      { kind: "MCPs" as const, count: 2, enabled: true, detail: "tachyon_bridge, github" },
+      { kind: "Hooks" as const, count: 4, enabled: true, detail: "SessionStart, PreToolUse, Stop +1" },
+      { kind: "Extensions" as const, count: 0, enabled: false, detail: "None configured" },
+    ],
+    unknown: ["env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "attribution.commit"],
+  },
+  grok: {
+    label: "Grok CLI",
+    source: "~/.grok/config.json",
+    agents: ["grok"],
+    settings: [
+      { label: "Model", value: "grok-4.5", options: ["grok-4.5", "grok-4"] },
+      { label: "Interaction mode", value: "auto", options: ["auto", "confirm"] },
+    ],
+    capabilities: [
+      { kind: "Skills" as const, count: 2, enabled: true, detail: "review, research" },
+      { kind: "MCPs" as const, count: 1, enabled: true, detail: "tachyon_bridge" },
+      { kind: "Hooks" as const, count: 0, enabled: false, detail: "None configured" },
+      { kind: "Extensions" as const, count: 0, enabled: false, detail: "None configured" },
+    ],
+    unknown: ["telemetry.mode"],
+  },
+} satisfies Record<string, {
+  label: string;
+  source: string;
+  agents: string[];
+  settings: Array<{ label: string; value: string; options: string[] }>;
+  capabilities: Array<{ kind: RuntimeCapabilityKind; count: number; enabled: boolean; detail: string }>;
+  unknown: string[];
+}>;
+
+function RuntimeConfigPrototype({ s }: { s: CockpitStrings }) {
+  const [runtime, setRuntime] = useState<keyof typeof RUNTIME_CONFIG_PROTOTYPE>("codex");
+  const [unknownOpen, setUnknownOpen] = useState(false);
+  const [capabilityState, setCapabilityState] = useState<Record<string, boolean>>({});
+  const config = RUNTIME_CONFIG_PROTOTYPE[runtime];
+  return (
+    <div class="rcp-root" data-testid="control-runtime-config-prototype">
+      <PageChrome
+        title={s.runtimeConfigTitle}
+        hint={s.runtimeConfigHint}
+        actions={<Badge tone="warn">{s.runtimeConfigPrototype}</Badge>}
+      />
+
+      <div class="rcp-toolbar">
+        <div class="rcp-runtime-picker">
+          <span class="rcp-eyebrow">{s.runtimeConfigGlobal}</span>
+          <KitSelect
+            aria-label={s.runtimeConfigGlobal}
+            value={runtime}
+            onValueChange={(value) => setRuntime(value as keyof typeof RUNTIME_CONFIG_PROTOTYPE)}
+            options={Object.entries(RUNTIME_CONFIG_PROTOTYPE).map(([value, item]) => ({ value, label: item.label }))}
+          />
+        </div>
+        <div class="rcp-source">
+          <span class="rcp-eyebrow">{s.runtimeConfigSourceFile}</span>
+          <code>{config.source}</code>
+        </div>
+        <div class="rcp-toolbar-actions">
+          <Button variant="default">{s.runtimeConfigReload}</Button>
+          <Button variant="default">{s.runtimeConfigOpenFile}</Button>
+          <Button variant="primary" disabled>{s.runtimeConfigSave}</Button>
+        </div>
+      </div>
+
+      <div class="rcp-impact">
+        <span>{s.runtimeConfigUsedBy}</span>
+        <div class="rcp-agent-list">
+          {config.agents.map((agent) => <Badge key={agent}>{agent}</Badge>)}
+        </div>
+      </div>
+
+      <div class="rcp-grid">
+        <section class="rcp-card rcp-card--settings">
+          <div class="rcp-card-head">
+            <div>
+              <span class="rcp-eyebrow">{s.runtimeConfigKnown}</span>
+              <h2>{config.label}</h2>
+            </div>
+            <Badge tone="ok">{config.settings.length} {s.runtimeConfigConfigured}</Badge>
+          </div>
+          <div class="rcp-setting-list">
+            {config.settings.map((setting) => (
+              <label class="rcp-setting" key={setting.label}>
+                <span>{setting.label}</span>
+                <select value={setting.value} onChange={() => {}}>
+                  {setting.options.map((option) => <option key={option}>{option}</option>)}
+                </select>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        <section class="rcp-card">
+          <div class="rcp-card-head">
+            <div>
+              <span class="rcp-eyebrow">{s.runtimeConfigCapabilities}</span>
+              <h2>Skills, MCPs, hooks & extensions</h2>
+            </div>
+          </div>
+          <div class="rcp-capability-list">
+            {config.capabilities.map((capability) => {
+              const key = `${runtime}:${capability.kind}`;
+              const enabled = capabilityState[key] ?? capability.enabled;
+              return (
+                <div class="rcp-capability" key={capability.kind}>
+                  <div class="rcp-capability-main">
+                    <span class={`codicon codicon-${capability.kind === "MCPs" ? "plug" : capability.kind === "Hooks" ? "zap" : capability.kind === "Extensions" ? "extensions" : "library"}`} />
+                    <div>
+                      <strong>{capability.kind}</strong>
+                      <span>{capability.count} {s.runtimeConfigConfigured} · {capability.detail}</span>
+                    </div>
+                  </div>
+                  <label class="rcp-switch">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(event) => setCapabilityState((current) => ({
+                        ...current,
+                        [key]: (event.target as HTMLInputElement).checked,
+                      }))}
+                    />
+                    <span>{enabled ? s.runtimeConfigEnabled : s.runtimeConfigDisabled}</span>
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        <section class="rcp-card rcp-card--other">
+          <div class="rcp-card-head">
+            <div>
+              <span class="rcp-eyebrow">{s.runtimeConfigOther}</span>
+              <h2>{config.unknown.length} detected</h2>
+              <p>{s.runtimeConfigOtherHint}</p>
+            </div>
+            <Button variant="default" onClick={() => setUnknownOpen((open) => !open)}>
+              {s.runtimeConfigViewRaw}
+            </Button>
+          </div>
+          {unknownOpen ? (
+            <pre>{config.unknown.join("\n")}</pre>
+          ) : (
+            <div class="rcp-other-preview">
+              {config.unknown.map((key) => <code key={key}>{key}</code>)}
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
@@ -1419,6 +1601,8 @@ export function App(p: CockpitAppProps) {
         </Suspense>
       </div>
     );
+  } else if (section === "runtime-config") {
+    body = <RuntimeConfigPrototype s={s} />;
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">

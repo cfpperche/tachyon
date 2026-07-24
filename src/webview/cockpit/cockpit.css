@@ -287,6 +287,240 @@ main.ck-main.ck-main--mission,
   box-sizing: border-box;
 }
 
+/* t-41fb0a — visual-only Runtime Config prototype. */
+.rcp-root {
+  width: 100%;
+  max-width: 1180px;
+}
+
+.rcp-toolbar,
+.rcp-impact,
+.rcp-card {
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-radius: var(--ds-radius);
+}
+
+.rcp-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(250px, 1.2fr) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 12px;
+}
+
+.rcp-runtime-picker,
+.rcp-source {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rcp-runtime-picker .ds-select-trigger {
+  width: 100%;
+}
+
+.rcp-eyebrow {
+  color: var(--ds-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rcp-source code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-textLink-foreground);
+  font-size: 11px;
+}
+
+.rcp-toolbar-actions {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.rcp-impact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
+.rcp-agent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rcp-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rcp-card {
+  min-width: 0;
+  padding: 12px;
+}
+
+.rcp-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.rcp-card-head h2 {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rcp-card-head p {
+  max-width: 620px;
+  margin: 5px 0 0;
+  color: var(--ds-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.rcp-setting-list,
+.rcp-capability-list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-border);
+}
+
+.rcp-setting,
+.rcp-capability {
+  background: var(--vscode-editor-background);
+  min-height: 38px;
+}
+
+.rcp-setting {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+
+.rcp-setting select {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  border: 1px solid var(--vscode-dropdown-border, var(--ds-border));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 7px;
+}
+
+.rcp-capability {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 8px;
+}
+
+.rcp-capability-main {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.rcp-capability-main > .codicon {
+  color: var(--vscode-textLink-foreground);
+}
+
+.rcp-capability-main div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.rcp-capability-main strong {
+  font-size: 10px;
+}
+
+.rcp-capability-main div > span {
+  overflow: hidden;
+  color: var(--ds-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ds-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.rcp-switch input {
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
+.rcp-card--other {
+  grid-column: 1 / -1;
+}
+
+.rcp-other-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.rcp-other-preview code,
+.rcp-card--other pre {
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 3px;
+  color: var(--ds-muted);
+  font-size: 9px;
+  padding: 4px 6px;
+}
+
+.rcp-card--other pre {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 850px) {
+  .rcp-toolbar,
+  .rcp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rcp-toolbar-actions {
+    flex-wrap: wrap;
+  }
+
+  .rcp-card--other {
+    grid-column: auto;
+  }
+}
+
 /* Embed hosts stay pad-free; each product root applies --ds-page-pad-*. */
 .ck-embed-host[data-testid="control-tmux-inspector"] {
   padding: 0;

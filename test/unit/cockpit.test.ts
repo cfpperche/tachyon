@@ -13,6 +13,7 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
     expect(COCKPIT_SECTION_ORDER).toContain("deliveries");
     expect(COCKPIT_SECTION_ORDER).toContain("runtime");
+    expect(COCKPIT_SECTION_ORDER).toContain("runtime-config");
     expect(COCKPIT_SECTION_ORDER).toContain("settings");
   });
 

@@ -28,6 +28,7 @@ export type CockpitSectionId =
   | "worktrees"
   | "deliveries"
   | "runtime"
+  | "runtime-config"
   | "tmux"
   | "plugins"
   | "settings";
@@ -43,6 +44,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "worktrees",
   "deliveries",
   "runtime",
+  "runtime-config",
   "tmux",
   "plugins",
   "settings",
