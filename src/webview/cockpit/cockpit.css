@@ -398,6 +398,15 @@ main.ck-main.ck-main--mission,
   font-size: 10px;
 }
 
+.rcp-global-warning {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--vscode-editorWarning-foreground, #cca700);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 9%, transparent);
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
 .rcp-agent-list {
   display: flex;
   flex-wrap: wrap;
@@ -471,6 +480,43 @@ main.ck-main.ck-main--mission,
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.rcp-setting--editable label {
+  font-weight: 600;
+}
+
+.rcp-setting-editor {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.rcp-setting-editor input:not([type="checkbox"]) {
+  min-width: 0;
+  flex: 1;
+  height: 25px;
+  box-sizing: border-box;
+  border: 1px solid var(--vscode-input-border, var(--ds-border));
+  border-radius: 2px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  padding: 0 7px;
+}
+
+.rcp-setting-editor input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
+.rcp-setting-editor .ds-btn,
+.rcp-capability-item .ds-btn {
+  height: 25px;
+  flex: 0 0 auto;
+  font-size: 9px;
 }
 
 .rcp-setting select {

@@ -6,7 +6,7 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
 
 - [x] Slice A: establish typed runtime-config inventory/read boundary and replace static prototype
       with a live read-only Codex Global/Workspace view. No native writes.
-- [ ] Slice B: extend the canonical SDD 442 adapter with atomic Codex scalar/MCP editing that
+- [x] Slice B: extend the canonical SDD 442 adapter with atomic Codex scalar/MCP editing that
       detects external source changes, preserves unowned data and reports parse/write errors.
 - [ ] Slice C: mark only affected running agents configuration-pending and acknowledge the change
       through successful Start/Restart/Resume materialization.
@@ -18,7 +18,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 - [x] Global/workspace provenance and individual tooling inventory are rendered from real source
       inputs, not fixture data.
-- [ ] Known writes preserve unrelated keys and fail closed for malformed/unsafe sources.
+- [x] Known writes preserve unrelated keys and fail closed for malformed/unsafe sources.
 - [ ] A running affected agent remains live but is visibly pending until its next successful launch.
 - [ ] Existing canonical private-home and auth boundaries remain unchanged.
 

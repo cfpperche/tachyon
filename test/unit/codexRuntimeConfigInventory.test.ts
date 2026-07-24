@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { inspectCodexRuntimeConfig } from "../../src/runtimeConfig/codexInventory.js";
+import { applyCodexNativeConfigChange } from "../../src/config/codexNativeConfigProjection.js";
 import type { AgentDef } from "../../src/config/loadConfig.js";
 
 const roots: string[] = [];
@@ -42,7 +43,8 @@ describe("Codex runtime configuration inventory", () => {
       },
     });
 
-    expect(snapshot.global.knownSettings).toEqual([{ key: "approval_policy", label: "Approval policy", value: "on-request" }]);
+    expect(snapshot.global.knownSettings).toContainEqual({ key: "approval_policy", label: "Approval policy", value: "on-request", editValue: "on-request", editable: true });
+    expect(snapshot.global.knownSettings).toContainEqual({ key: "sandbox_mode", label: "Sandbox mode", editable: true });
     expect(snapshot.global.mcpServers).toEqual(["bridge"]);
     expect(snapshot.global.unknownKeys).toEqual(["hooks.SessionStart.command", "model"]);
     expect(snapshot.global.internalStateCount).toBe(1);
@@ -51,7 +53,7 @@ describe("Codex runtime configuration inventory", () => {
     expect(JSON.stringify(snapshot)).not.toContain("runtime-managed");
     expect(snapshot.potentialAgents).toEqual(["codex"]);
     expect(snapshot.workspace.exists).toBe(false);
-    expect(snapshot.global.revision).toMatch(/^[a-f0-9]{12}$/);
+    expect(snapshot.global.revision).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("reports invalid TOML without exposing its contents", () => {
@@ -65,5 +67,87 @@ describe("Codex runtime configuration inventory", () => {
     expect(snapshot.global.parseError).toBeTruthy();
     expect(snapshot.global.knownSettings).toEqual([]);
     expect(snapshot.global.mcpServers).toEqual([]);
+  });
+
+  it("patches one measured scalar while preserving unrelated TOML and MCP blocks", () => {
+    const root = tempRoot();
+    const home = path.join(root, "home");
+    const file = path.join(home, ".codex", "config.toml");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      "# retain this user setting",
+      'approval_policy = "on-request"',
+      'model = "gpt-5"',
+      "",
+      "[mcp_servers.bridge]",
+      'command = "secret-argument"',
+      "",
+      "[tui]",
+      "status_line_use_colors = true",
+    ].join("\n"));
+    const before = inspectCodexRuntimeConfig({ workspaceRoot: root, homeDir: home, agents: {} });
+
+    applyCodexNativeConfigChange({
+      workspaceRoot: root,
+      homeDir: home,
+      scope: "global",
+      expectedRevision: before.global.revision,
+      change: { kind: "setting", key: "approval_policy", value: "never" },
+    });
+
+    const after = fs.readFileSync(file, "utf8");
+    expect(after).toContain('approval_policy = "never"');
+    expect(after).toContain("# retain this user setting");
+    expect(after).toContain('model = "gpt-5"');
+    expect(after).toContain('[mcp_servers.bridge]\ncommand = "secret-argument"');
+    expect(after).toContain("[tui]\nstatus_line_use_colors = true");
+  });
+
+  it("fails closed when the source changed since its inventory revision", () => {
+    const root = tempRoot();
+    const home = path.join(root, "home");
+    const file = path.join(home, ".codex", "config.toml");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'personality = "pragmatic"\n');
+    const before = inspectCodexRuntimeConfig({ workspaceRoot: root, homeDir: home, agents: {} });
+    fs.writeFileSync(file, 'personality = "changed-elsewhere"\n');
+
+    expect(() => applyCodexNativeConfigChange({
+      workspaceRoot: root,
+      homeDir: home,
+      scope: "global",
+      expectedRevision: before.global.revision,
+      change: { kind: "setting", key: "personality", value: "focused" },
+    })).toThrow(/changed since it was opened/);
+    expect(fs.readFileSync(file, "utf8")).toBe('personality = "changed-elsewhere"\n');
+  });
+
+  it("disables one MCP by removing only that server block", () => {
+    const root = tempRoot();
+    const file = path.join(root, ".codex", "config.toml");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      'model = "gpt-5"',
+      "",
+      "[mcp_servers.keep]",
+      'command = "keep"',
+      "",
+      "[mcp_servers.remove_me]",
+      'command = "remove"',
+    ].join("\n"));
+    const before = inspectCodexRuntimeConfig({ workspaceRoot: root, homeDir: path.join(root, "home"), agents: {} });
+
+    applyCodexNativeConfigChange({
+      workspaceRoot: root,
+      homeDir: path.join(root, "home"),
+      scope: "workspace",
+      expectedRevision: before.workspace.revision,
+      change: { kind: "disable-mcp", name: "remove_me" },
+    });
+
+    const after = fs.readFileSync(file, "utf8");
+    expect(after).toContain('[mcp_servers.keep]\ncommand = "keep"');
+    expect(after).not.toContain("remove_me");
+    expect(after).toContain('model = "gpt-5"');
   });
 });

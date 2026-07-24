@@ -4,13 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { AgentDef } from "../config/loadConfig.js";
+import type { CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
 
 export type RuntimeConfigScope = "global" | "workspace";
 
 export interface RuntimeConfigKnownSetting {
-  key: string;
+  key: CodexEditableSettingKey;
   label: string;
-  value: string;
+  /** Content-free rendering of an editable scalar; omitted means unset in this source. */
+  value?: string;
+  /** The typed, measured value used by the visual editor; never a credential-bearing field. */
+  editValue?: string | boolean | string[];
+  editable: boolean;
 }
 
 export interface RuntimeConfigSourceInventory {
@@ -34,7 +39,7 @@ export interface CodexRuntimeConfigInventory {
   potentialAgents: string[];
 }
 
-const KNOWN_SETTINGS: ReadonlyArray<{ key: string; label: string }> = [
+const KNOWN_SETTINGS: ReadonlyArray<{ key: CodexEditableSettingKey; label: string }> = [
   { key: "approval_policy", label: "Approval policy" },
   { key: "sandbox_mode", label: "Sandbox mode" },
   { key: "personality", label: "Personality" },
@@ -63,6 +68,13 @@ function displayValue(value: unknown): string {
   if (typeof value === "boolean" || typeof value === "number") return String(value);
   if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) return value.join(" · ");
   return "Configured";
+}
+
+function editableValue(key: CodexEditableSettingKey, value: unknown): string | boolean | string[] | undefined {
+  if (value === undefined) return undefined;
+  if (key === "tui.status_line") return Array.isArray(value) && value.every((entry) => typeof entry === "string") ? value : undefined;
+  if (key === "tui.status_line_use_colors" || key === "features.terminal_resize_reflow") return typeof value === "boolean" ? value : undefined;
+  return typeof value === "string" ? value : undefined;
 }
 
 function sourcePath(scope: RuntimeConfigScope, workspaceRoot: string, homeDir: string): string {
@@ -97,15 +109,18 @@ function inspectSource(scope: RuntimeConfigScope, workspaceRoot: string, homeDir
     scope,
     path: file,
     exists: true,
-    revision: createHash("sha256").update(text).digest("hex").slice(0, 12),
+    revision: createHash("sha256").update(text).digest("hex"),
     modifiedAt: stat.mtime.toISOString(),
   } as const;
   try {
     const parsed = parse(text);
     if (!isRecord(parsed)) throw new Error("The TOML root must be a table.");
-    const knownSettings = KNOWN_SETTINGS.flatMap(({ key, label }) => {
+    const knownSettings = KNOWN_SETTINGS.map(({ key, label }) => {
       const value = atPath(parsed, key);
-      return value === undefined ? [] : [{ key, label, value: displayValue(value) }];
+      const typed = editableValue(key, value);
+      return value === undefined
+        ? { key, label, editable: true }
+        : { key, label, value: displayValue(value), ...(typed !== undefined ? { editValue: typed, editable: true } : { editable: false }) };
     });
     const mcp = isRecord(parsed.mcp_servers) ? parsed.mcp_servers : {};
     const allPaths = leafPaths(parsed);

@@ -56,6 +56,7 @@ import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
 import { runtimeOpsFleetView } from "./shell/RuntimeOpsTarget.js";
 import { inspectCodexRuntimeConfig } from "./runtimeConfig/codexInventory.js";
+import { applyCodexNativeConfigChange, type CodexEditableSettingKey } from "./config/codexNativeConfigProjection.js";
 import type {
   AgentItem,
   PinItem,
@@ -1499,6 +1500,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       openSource: async (sourcePath) => {
         await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
+      },
+      saveSetting: async ({ wsHash, scope, expectedRevision, key, value }) => {
+        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
+        applyCodexNativeConfigChange({
+          workspaceRoot: ws.workspaceRoot,
+          scope,
+          expectedRevision,
+          change: { kind: "setting", key: key as CodexEditableSettingKey, value: value as string | boolean | string[] },
+        });
+      },
+      disableMcp: async ({ wsHash, scope, expectedRevision, name }) => {
+        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
+        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
+        applyCodexNativeConfigChange({ workspaceRoot: ws.workspaceRoot, scope, expectedRevision, change: { kind: "disable-mcp", name } });
       },
     },
     inspector: (() => {

@@ -620,6 +620,8 @@ function CockpitRoot() {
       }
       runtimeConfigSnapshot={runtimeConfigSnapshot}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
+      onSaveRuntimeConfigSetting={(scope, expectedRevision, key, value) => post({ type: "saveRuntimeConfigSetting", scope, expectedRevision, key, value })}
+      onDisableRuntimeConfigMcp={(scope, expectedRevision, name) => post({ type: "disableRuntimeConfigMcp", scope, expectedRevision, name })}
       inspector={inspectorProps}
       pluginsVm={pluginsVm}
       pluginsConsent={pluginsConsent}

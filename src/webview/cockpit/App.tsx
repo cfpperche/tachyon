@@ -298,6 +298,8 @@ export interface CockpitAppProps {
   onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
   runtimeConfigSnapshot?: CodexRuntimeConfigInventory;
   onOpenRuntimeConfigSource: (path: string) => void;
+  onSaveRuntimeConfigSetting: (scope: RuntimeConfigScope, expectedRevision: string | undefined, key: string, value: unknown) => void;
+  onDisableRuntimeConfigMcp: (scope: RuntimeConfigScope, expectedRevision: string | undefined, name: string) => void;
   inspector: Pick<
     InspectorAppProps,
     "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
@@ -935,10 +937,14 @@ function RuntimeConfigInventory({
   s,
   snapshot,
   onOpenSource,
+  onSaveSetting,
+  onDisableMcp,
 }: {
   s: CockpitStrings;
   snapshot?: CodexRuntimeConfigInventory;
   onOpenSource: (path: string) => void;
+  onSaveSetting: (scope: RuntimeConfigScope, expectedRevision: string | undefined, key: string, value: unknown) => void;
+  onDisableMcp: (scope: RuntimeConfigScope, expectedRevision: string | undefined, name: string) => void;
 }) {
   const [scope, setScope] = useState<RuntimeConfigScope>("global");
   const [unknownOpen, setUnknownOpen] = useState(false);
@@ -984,18 +990,32 @@ function RuntimeConfigInventory({
           {snapshot.potentialAgents.length === 0 ? <span>{s.none}</span> : snapshot.potentialAgents.map((agent) => <Badge key={agent}>{agent}</Badge>)}
         </div>
       </div>
+      {scope === "global" ? <div class="rcp-global-warning">{s.runtimeConfigGlobalWarning}</div> : null}
 
       <div class="rcp-grid">
         <section class="rcp-card rcp-card--settings">
           <div class="rcp-card-head">
             <div>
-              <span class="rcp-eyebrow">{s.runtimeConfigKnown}</span>
+              <span class="rcp-eyebrow">{s.runtimeConfigEditable}</span>
               <h2>OpenAI Codex · {scope === "global" ? s.runtimeConfigGlobal : s.runtimeConfigWorkspace}</h2>
             </div>
             <Badge tone={config.exists ? "ok" : "default"}>{config.exists ? `${config.knownSettings.length} ${s.runtimeConfigConfigured}` : "Not found"}</Badge>
           </div>
-          {config.parseError ? <div class="rcp-capability-empty">Could not read this TOML file: {config.parseError}</div> : config.knownSettings.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : (
-            <div class="rcp-setting-list">{config.knownSettings.map((setting) => <div class="rcp-setting" key={setting.key}><span>{setting.label}</span><code>{setting.value}</code></div>)}</div>
+          {config.parseError ? <div class="rcp-capability-empty">Could not read this TOML file: {config.parseError}</div> : (
+            <div class="rcp-setting-list">{config.knownSettings.map((setting) => {
+              const boolean = setting.key === "tui.status_line_use_colors" || setting.key === "features.terminal_resize_reflow";
+              const statusLine = setting.key === "tui.status_line";
+              return <RuntimeConfigSettingEditor
+                key={`${scope}:${setting.key}:${config.revision ?? "new"}`}
+                setting={setting}
+                boolean={boolean}
+                statusLine={statusLine}
+                unsetLabel={s.runtimeConfigUnset}
+                saveLabel={s.runtimeConfigSave}
+                editable={setting.editable}
+                onSave={(value) => onSaveSetting(scope, config.revision, setting.key, value)}
+              />;
+            })}</div>
           )}
         </section>
 
@@ -1008,7 +1028,7 @@ function RuntimeConfigInventory({
           </div>
           <div class="rcp-capability-list">
             {config.mcpServers.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : config.mcpServers.map((name) => (
-              <div class="rcp-capability-item" key={name}><div><strong>{name}</strong><span>Configured in this source</span></div><Badge tone="ok">{s.runtimeConfigEnabled}</Badge></div>
+              <div class="rcp-capability-item" key={name}><div><strong>{name}</strong><span>Configured in this source</span></div><Button variant="default" onClick={() => onDisableMcp(scope, config.revision, name)}>{s.runtimeConfigDisableMcp}</Button></div>
             ))}
           </div>
         </section>
@@ -1034,6 +1054,36 @@ function RuntimeConfigInventory({
       </div>
     </div>
   );
+}
+
+function RuntimeConfigSettingEditor({
+  setting,
+  boolean,
+  statusLine,
+  unsetLabel,
+  saveLabel,
+  editable,
+  onSave,
+}: {
+  setting: CodexRuntimeConfigInventory["global"]["knownSettings"][number];
+  boolean: boolean;
+  statusLine: boolean;
+  unsetLabel: string;
+  saveLabel: string;
+  editable: boolean;
+  onSave: (value: string | boolean | string[]) => void;
+}) {
+  const [value, setValue] = useState(() => Array.isArray(setting.editValue) ? setting.editValue.join(", ") : String(setting.editValue ?? ""));
+  const parsed = statusLine ? value.split(",").map((item) => item.trim()).filter(Boolean) : value;
+  return <div class="rcp-setting rcp-setting--editable">
+    <label>{setting.label}</label>
+    <div class="rcp-setting-editor">
+      {boolean ? <input type="checkbox" checked={value === "true"} disabled={!editable} onInput={(event) => setValue((event.currentTarget as HTMLInputElement).checked ? "true" : "false")} /> : (
+        <input value={value} disabled={!editable} placeholder={editable ? unsetLabel : "Unsupported value"} onInput={(event) => setValue((event.currentTarget as HTMLInputElement).value)} />
+      )}
+      <Button variant="default" disabled={!editable} onClick={() => onSave(boolean ? value === "true" : parsed)}>{saveLabel}</Button>
+    </div>
+  </div>;
 }
 
 export function App(p: CockpitAppProps) {
@@ -1526,7 +1576,7 @@ export function App(p: CockpitAppProps) {
       </div>
     );
   } else if (section === "runtime-config") {
-    body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} onOpenSource={p.onOpenRuntimeConfigSource} />;
+    body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} onOpenSource={p.onOpenRuntimeConfigSource} onSaveSetting={p.onSaveRuntimeConfigSetting} onDisableMcp={p.onDisableRuntimeConfigMcp} />;
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">

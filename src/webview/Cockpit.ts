@@ -173,6 +173,8 @@ export interface CockpitRuntimeOps {
 export interface CockpitRuntimeConfig {
   buildSnapshot: (wsHash?: string) => CodexRuntimeConfigInventory | undefined;
   openSource: (sourcePath: string) => Promise<void>;
+  saveSetting: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; key: string; value: unknown }) => Promise<void>;
+  disableMcp: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; name: string }) => Promise<void>;
 }
 
 export interface CockpitInspector {
@@ -303,6 +305,10 @@ function strings(): CockpitStrings {
     runtimeConfigTitle: t("Runtime Config"),
   runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
     runtimeConfigPrototype: t("Read-only inventory"),
+    runtimeConfigEditable: t("Editable measured settings"),
+    runtimeConfigGlobalWarning: t("Global changes also affect Codex outside Tachyon."),
+    runtimeConfigUnset: t("Not set"),
+    runtimeConfigDisableMcp: t("Disable from source"),
     runtimeConfigGlobal: t("Global"),
     runtimeConfigWorkspace: t("Workspace"),
     runtimeConfigRuntime: t("Runtime"),
@@ -2046,6 +2052,39 @@ export async function openCockpit(
           if (typeof c.path === "string" && runtimeConfigKnownPaths.has(c.path) && isSection(currentRoute, "runtime-config")) {
             try {
               await deps.runtimeConfig.openSource(c.path);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "saveRuntimeConfigSetting":
+          if ((c.scope === "global" || c.scope === "workspace") && typeof c.key === "string" && isSection(currentRoute, "runtime-config")) {
+            try {
+              await deps.runtimeConfig.saveSetting({
+                wsHash: controlWsHash,
+                scope: c.scope,
+                expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
+                key: c.key,
+                value: c.value,
+              });
+              await sendRuntimeConfig();
+              live.webview.postMessage(toastMessage("Runtime configuration saved."));
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          return;
+        case "disableRuntimeConfigMcp":
+          if ((c.scope === "global" || c.scope === "workspace") && typeof c.name === "string" && isSection(currentRoute, "runtime-config")) {
+            try {
+              await deps.runtimeConfig.disableMcp({
+                wsHash: controlWsHash,
+                scope: c.scope,
+                expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
+                name: c.name,
+              });
+              await sendRuntimeConfig();
+              live.webview.postMessage(toastMessage("MCP disabled in this source."));
             } catch (err) {
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
             }

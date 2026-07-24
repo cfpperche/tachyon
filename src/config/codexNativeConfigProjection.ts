@@ -1,6 +1,11 @@
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
+import { removeCodexMcpServer } from "../registration/adapters.js";
 
 type ScalarFamily = "permissions" | "interface" | "featureFlags";
 type SourceName = "global" | "workspace";
@@ -20,6 +25,163 @@ const FAMILY_KEYS: Record<ScalarFamily, readonly string[]> = {
   interface: ["personality", "tui.status_line", "tui.status_line_use_colors"],
   featureFlags: ["features.terminal_resize_reflow"],
 };
+
+/** The closed, measured Codex settings that Control may change. */
+export const CODEX_EDITABLE_SETTING_KEYS = [
+  "approval_policy",
+  "sandbox_mode",
+  "personality",
+  "tui.status_line",
+  "tui.status_line_use_colors",
+  "features.terminal_resize_reflow",
+] as const;
+
+export type CodexEditableSettingKey = typeof CODEX_EDITABLE_SETTING_KEYS[number];
+export type CodexEditableSettingValue = string | boolean | string[];
+export type CodexNativeConfigScope = "global" | "workspace";
+
+export type CodexNativeConfigChange =
+  | { kind: "setting"; key: CodexEditableSettingKey; value: CodexEditableSettingValue }
+  | { kind: "disable-mcp"; name: string };
+
+export interface ApplyCodexNativeConfigChangeInput {
+  workspaceRoot: string;
+  scope: CodexNativeConfigScope;
+  expectedRevision?: string;
+  change: CodexNativeConfigChange;
+  homeDir?: string;
+}
+
+export interface ApplyCodexNativeConfigChangeResult {
+  path: string;
+  revision: string;
+}
+
+function digest(text: string): string {
+  return crypto.createHash("sha256").update(text).digest("hex");
+}
+
+function nativeConfigPath(scope: CodexNativeConfigScope, workspaceRoot: string, homeDir: string): string {
+  return scope === "global"
+    ? path.join(homeDir, ".codex", "config.toml")
+    : path.join(workspaceRoot, ".codex", "config.toml");
+}
+
+function isEditableKey(key: string): key is CodexEditableSettingKey {
+  return (CODEX_EDITABLE_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+function validValue(key: CodexEditableSettingKey, value: CodexEditableSettingValue): boolean {
+  if (key === "tui.status_line") return Array.isArray(value) && value.every((item) => typeof item === "string");
+  if (key === "tui.status_line_use_colors" || key === "features.terminal_resize_reflow") return typeof value === "boolean";
+  return typeof value === "string";
+}
+
+function tomlValue(value: CodexEditableSettingValue): string {
+  return JSON.stringify(value);
+}
+
+function patchLine(lines: string[], start: number, end: number, key: string, value: string): boolean {
+  const expression = new RegExp(`^(\\s*${key.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*=).*$`);
+  for (let index = start; index < end; index++) {
+    const match = lines[index]?.match(expression);
+    if (match) {
+      lines[index] = `${match[1]} ${value}`;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Change one owned scalar without parsing/re-stringifying unrelated TOML. The fixed
+ * keys let this remain a deliberately small patcher rather than a generic editor.
+ */
+function patchCodexSetting(text: string, key: CodexEditableSettingKey, value: CodexEditableSettingValue): string {
+  const lines = text.split("\n");
+  const rendered = tomlValue(value);
+  const [table, leaf] = key.includes(".") ? key.split(".") as [string, string] : [undefined, key];
+  if (!table) {
+    const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+    const end = firstTable === -1 ? lines.length : firstTable;
+    if (!patchLine(lines, 0, end, leaf, rendered)) lines.splice(end, 0, `${leaf} = ${rendered}`);
+    return lines.join("\n");
+  }
+
+  // A root dotted assignment is the most specific existing representation; retain it.
+  const firstTable = lines.findIndex((line) => /^\s*\[/.test(line));
+  if (patchLine(lines, 0, firstTable === -1 ? lines.length : firstTable, key, rendered)) return lines.join("\n");
+  const header = new RegExp(`^\\s*\\[${table.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\]\\s*$`);
+  const tableStart = lines.findIndex((line) => header.test(line));
+  if (tableStart !== -1) {
+    let tableEnd = lines.length;
+    for (let index = tableStart + 1; index < lines.length; index++) {
+      if (/^\s*\[/.test(lines[index])) { tableEnd = index; break; }
+    }
+    if (!patchLine(lines, tableStart + 1, tableEnd, leaf, rendered)) lines.splice(tableEnd, 0, `${leaf} = ${rendered}`);
+    return lines.join("\n");
+  }
+  const suffix = text.trim().length === 0 ? "" : text.endsWith("\n") ? "\n" : "\n\n";
+  return `${text}${suffix}[${table}]\n${leaf} = ${rendered}\n`;
+}
+
+function readEditableText(file: string): string | undefined {
+  try {
+    const stat = fs.lstatSync(file);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("source must be a regular file");
+    return fs.readFileSync(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+function atomicWrite(file: string, text: string, expectedRevision: string | undefined, mode?: number): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${crypto.randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temporary, text, { encoding: "utf8", mode: mode ?? 0o600, flush: true });
+    if (mode !== undefined) fs.chmodSync(temporary, mode);
+    const current = readEditableText(file);
+    if ((current === undefined ? undefined : digest(current)) !== expectedRevision) {
+      throw new Error("The source changed before it could be saved. Reload it before trying again.");
+    }
+    fs.renameSync(temporary, file);
+  } finally {
+    try { fs.unlinkSync(temporary); } catch { /* renamed or never created */ }
+  }
+}
+
+/**
+ * Canonical SDD 442 mutation boundary for the small Codex subset Tachyon measures.
+ * It verifies the snapshot revision, validates the full TOML before and after the
+ * targeted patch, then atomically replaces the source file.
+ */
+export function applyCodexNativeConfigChange(input: ApplyCodexNativeConfigChangeInput): ApplyCodexNativeConfigChangeResult {
+  const homeDir = input.homeDir ?? os.homedir();
+  const file = nativeConfigPath(input.scope, input.workspaceRoot, homeDir);
+  const before = readEditableText(file);
+  const actualRevision = before === undefined ? undefined : digest(before);
+  if (actualRevision !== input.expectedRevision) throw new Error("The source changed since it was opened. Reload it before saving.");
+  if (before !== undefined) {
+    try { parse(before); } catch { throw new Error("This source is invalid TOML. Open the file to repair it before using Runtime Config."); }
+  }
+
+  let after: string;
+  if (input.change.kind === "setting") {
+    if (!isEditableKey(input.change.key) || !validValue(input.change.key, input.change.value)) throw new Error("Unsupported Codex setting value.");
+    after = patchCodexSetting(before ?? "", input.change.key, input.change.value);
+  } else {
+    if (!/^[A-Za-z0-9_-]+$/.test(input.change.name)) throw new Error("Invalid MCP server name.");
+    if (before === undefined) throw new Error("This source does not contain that MCP server.");
+    after = removeCodexMcpServer(before, input.change.name);
+    if (after === before) throw new Error("This MCP server is no longer present. Reload the source before saving.");
+  }
+  try { parse(after); } catch { throw new Error("The proposed change would produce invalid TOML."); }
+  const mode = before === undefined ? undefined : fs.statSync(file).mode & 0o777;
+  atomicWrite(file, after, actualRevision, mode);
+  return { path: file, revision: digest(after) };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

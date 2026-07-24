@@ -56,6 +56,10 @@ export interface CockpitStrings {
   runtimeConfigTitle: string;
   runtimeConfigHint: string;
   runtimeConfigPrototype: string;
+  runtimeConfigEditable: string;
+  runtimeConfigGlobalWarning: string;
+  runtimeConfigUnset: string;
+  runtimeConfigDisableMcp: string;
   runtimeConfigGlobal: string;
   runtimeConfigWorkspace: string;
   runtimeConfigRuntime: string;
@@ -237,6 +241,8 @@ export type CockpitAction =
   | { type: "fleetContinueTask"; name: string; toName: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "openRuntimeConfigSource"; path: string }
+  | { type: "saveRuntimeConfigSetting"; scope: "global" | "workspace"; expectedRevision?: string; key: string; value: unknown }
+  | { type: "disableRuntimeConfigMcp"; scope: "global" | "workspace"; expectedRevision?: string; name: string }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
   | { type: "engineLogClear"; wsHash: string }

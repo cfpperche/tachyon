@@ -21,7 +21,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     approvals: { getWorkspaces: () => [], resolve: async () => {} },
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },
     runtimeOps: { buildSnapshot: () => ({ generatedAt: "", providers: [] }) as unknown as RuntimeOpsSnapshot },
-    runtimeConfig: { buildSnapshot: () => undefined, openSource: async () => {} },
+    runtimeConfig: { buildSnapshot: () => undefined, openSource: async () => {}, saveSetting: async () => {}, disableMcp: async () => {} },
     inspector: {
       snapshot: async () => [],
       folderByHash: () => new Map(),
