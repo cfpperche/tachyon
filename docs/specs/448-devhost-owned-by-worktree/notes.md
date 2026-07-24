@@ -86,6 +86,26 @@ worktree keeps the Remote-WSL connection. Headless (Xvfb) cannot show that — i
 attach. The headless run proves path resolution, extension load and EDH boot from a worktree-rooted
 dev-host; the window attach needs a human F5.
 
+### Scenario 3 proved with real bytes, not by construction (2026-07-24)
+
+"Removing a worktree reclaims its dev-host" is structurally obvious, which is exactly why it was worth
+measuring rather than asserting. On the spec's own worktree, in the runbook's order:
+
+- dev-host before: **137M** (worktree total 617M)
+- `pointer.mjs clear` → `cleared dev-host of …`, `engine: stopped`, `bridge: absent` — the 137M went,
+  and the persistent engine was stopped rather than orphaned
+- `remove_worktree` → path gone; nothing left behind in the primary
+
+Total reclaimed this session: 583M of orphan slots from the primary + 137M dev-host + the 617M
+worktree. Under the old layout the 137M would have survived in the monorepo as another orphan slot.
+
+### `--owner` means two different things (2026-07-24)
+
+Nearly a trap. `pointer.mjs --owner` was a dev-host slot id (deleted here); `lane.mjs --owner` is a
+**lease** owner and is load-bearing for delegated headless pilots. A find-and-replace across
+`scripts/dev-host/` would have silently broken the lease system. The structural guard is therefore
+path-shaped (`dev-host/slots`, `dev-host/active`) and never matches the bare word "owner" or "slot".
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
@@ -93,3 +113,11 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Dogfood log
+
+### 2026-07-24T21:58:20Z — fail (0/1) — source: tasks.md — commit: c5de8462a988919a4e65180f581088e0923c672e
+- `npm run dogfood:dev-host -- point-status` — fail
+
+### 2026-07-24T21:58:49Z — pass (1/1) — source: tasks.md — commit: c5de8462a988919a4e65180f581088e0923c672e
+- `npm run dogfood:dev-host -- point --fixture agent-soul-dogfood && npm run dogfood:dev-host -- point-status && npm run dogfood:dev-host -- point-clear` — pass
