@@ -33,6 +33,12 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     expect(harnessAt).toBeGreaterThan(worktreeAt);
   });
 
+  it("does not expose the deprecated transcript-isolation toggle in either Agent Studio mode", () => {
+    const src = readSrc("src/webview/agent-studio-shell/App.tsx");
+    expect(src).not.toContain("Isolate runtime transcript/config home");
+    expect(src).not.toContain('set("isolate"');
+  });
+
   it("terminal-studio-shell places worktree in fields and omits sideActions", () => {
     const src = readSrc("src/webview/terminal-studio-shell/App.tsx");
     expect(src).toContain("Git worktree isolation");

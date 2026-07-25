@@ -1089,8 +1089,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </details>
 
-            {!canonical && <label class="check"><input type="checkbox" checked={fields.isolate} onChange={(e) => set("isolate", (e.currentTarget as HTMLInputElement).checked)} /> Isolate runtime transcript/config home</label>}
-
             {showHarness && !canonical && (
               <details open={fields.harness}>
                 <summary>Isolated harness</summary>
