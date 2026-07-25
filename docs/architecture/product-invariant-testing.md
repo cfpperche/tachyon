@@ -306,6 +306,51 @@ decision changes the promise.
   property that was already an implicit design goal of spec 444's classifier and spec 365's
   `commitsNotInBase`/`forceLoseCommits` precedent.
 
+### PI-003 — gated delegation containment is evaluated against a symbolic base
+
+- **Status / owner:** active / Tachyon maintainers.
+- **Promise:** a delegation's recorded projection base is a symbolic branch name, never a pinned
+  commit, so containment tracks the trunk instead of becoming a ceiling.
+- **Source:** `docs/specs/365-orchestrator-delivery-hygiene/spec.md` — "baseRef (name, not frozen
+  SHA)". The promise was already ratified there; this entry makes it executable.
+- **Executable evidence:** `test/product-invariants/PI-003-symbolic-delegation-base.test.ts` via
+  `npm run test:invariants`; active manifest entry in `test/product-invariants/registry.json`.
+- **Topology:** portable integration topology through a real, disposable git repository driving the
+  actual `WorktreeManager` — not a fake git layer.
+- **Environment / allowed variance:** supported repository Node environments with a real `git` binary
+  on `PATH`, on any OS; temporary directory roots and object SHAs may vary. A detached workspace HEAD
+  records NO base rather than substituting a pin — that fail-closed case is part of the promise, and
+  the canonical gated open refuses downstream with `DELIVERY_BASE_REF_UNRESOLVED`.
+- **Fixed oracle:** git's own, on both halves. A recorded base must satisfy `git check-ref-format
+  --branch` AND resolve via `git show-ref --verify refs/heads/<name>`. The grammar half alone does
+  not discriminate — a 40-hex SHA is a grammatically legal branch name — so resolution is what
+  separates a symbolic base from a pin. Neither half is derived from the value under test.
+- **Gates:** focused Product Invariants command, full verification and the distinct CI Product
+  Invariants step.
+- **Ratification note:** promoted 2026-07-25 (maintainer decision, t-93d073) from the property test
+  landed with t-2dd637, which is removed from `test/unit/worktreeManagerRecoveryBase.test.ts` in the
+  same change — two oracles for one promise drift. That file keeps its mechanism coverage. A second
+  candidate assessed in the same decision ("every non-terminal lease has a governed disposition") was
+  DECLINED for promotion: stating it requires enumerating the lease state machine, which is an
+  internal arrangement rather than an externally observable promise, and it stays ordinary regression
+  coverage.
+- **Independent review — WAIVED, by maintainer decision (2026-07-25):** the implementer's own RED/GREEN
+  is recorded below, and no separate reviewer signed it off. The waiver is deliberate and has a
+  reason worth keeping: satisfying the review clause here would have meant spawning an AI agent, and
+  the maintainer ruled that agent invocations must not become a fixed step of this project's
+  governance. Recorded rather than skipped, so the gap is auditable instead of invisible.
+  RED/GREEN as run by the implementer: reintroducing the t-2dd637 defect in
+  `src/worktree/WorktreeManager.ts` (sourcing `baseBranch` only from `o.prior`) fails PI-003 with
+  "prior-less reuse path must carry a base branch: expected undefined to be defined"; restoring it
+  passes the gate at 3 invariants / 6 tests.
+- **Open question this leaves for the standard itself:** the review clause above now states a
+  requirement with no mechanism behind it in this repository. A requirement nobody can mechanically
+  satisfy is skipped silently — the same failure this whole document exists to prevent, inverted.
+  Either the clause should describe what actually happens (maintainer ratification plus recorded
+  RED/GREEN, with independent review as an option rather than a precondition), or a non-agent
+  reviewer path should be named. Not changed here: amending a ratified standard is a product decision,
+  not an implementer's.
+
 Adding a product-global fallback, silently reading repository guidance, dropping provenance, reordering files,
 rewriting their content, or removing an active manifest/evidence link violates this invariant. A repository
 remains free to choose its own guidance explicitly.
