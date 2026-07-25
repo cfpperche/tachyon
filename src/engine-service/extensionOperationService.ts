@@ -862,20 +862,12 @@ async function deleteConfiguredAgent(
   }
   if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
   if (workspace.isCanonicalProfileAgent(agent)) {
-    if ((await workspace.manager.agentStates()).has(agent)) {
-      throw new Error(`agent '${agent}' must be fully stopped before canonical forget`);
-    }
+    await stopAgentSessionForDelete(workspace.manager, agent);
     await workspace.forgetCanonicalProfileAgent(agent);
     onViewsChanged("agents");
     return json({ changed: true });
   }
-  const states = await workspace.manager.agentStates();
-  if (states.has(agent)) {
-    await workspace.manager.kill(agent).catch(() => undefined);
-    if ((await workspace.manager.agentStates()).has(agent)) {
-      throw new Error(`could not stop '${agent}' — it was not removed`);
-    }
-  }
+  await stopAgentSessionForDelete(workspace.manager, agent);
   if (workspace.config?.agents[agent] === undefined) {
     workspace.manager.dismissAdhoc(agent);
     await workspace.forgetAgent(agent);
@@ -886,6 +878,27 @@ async function deleteConfiguredAgent(
     onViewsChanged("agents");
   }
   return json({ changed: true });
+}
+
+interface AgentDeleteSessionManager {
+  agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>>;
+  kill(agent: string): Promise<void>;
+}
+
+/**
+ * Fleet Remove is one confirmed destructive action: its prompt promises to tear down a live
+ * session before deleting saved state. A stopped remain-on-exit pane is still present in tmux, so
+ * it needs the same teardown as a running pane before canonical forget can prove zero occupancy.
+ */
+export async function stopAgentSessionForDelete(
+  manager: AgentDeleteSessionManager,
+  agent: string,
+): Promise<void> {
+  if (!(await manager.agentStates()).has(agent)) return;
+  await manager.kill(agent).catch(() => undefined);
+  if ((await manager.agentStates()).has(agent)) {
+    throw new Error(`could not stop '${agent}' — it was not removed`);
+  }
 }
 
 async function promoteAgent(
