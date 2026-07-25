@@ -102,8 +102,7 @@ export function upsertAgent(
   const doc = load(text);
   const warnings: string[] = [];
 
-  // An EDIT acts in the entry's CURRENT block (never moves a legacy agents: terminal); a CREATE
-  // uses the kind-implied `section` from the caller (spec 215).
+  // An EDIT acts in the entry's CURRENT block; a CREATE uses the caller-selected section.
   let target: Section = section;
   if (replaceName !== undefined) {
     const cur = sectionOf(doc, replaceName);
@@ -455,15 +454,15 @@ export function agentStanzaSourceSlice(text: string, name: string): AgentStanzaS
   if (!pair) throw new Error(`agent '${name}' does not exist`);
   const value = pair.value;
   if (!(value instanceof YAMLMap)) throw new Error(`agents.${name}: must be a plain mapping`);
-  if (value.anchor) throw new Error(`agents.${name}: anchors are not supported by profile migration`);
+  if (value.anchor) throw new Error(`agents.${name}: anchors are not supported by canonical profile pointers`);
   if (value.items.some((entry) => isScalar(entry.key) && entry.key.value === "<<")) {
-    throw new Error(`agents.${name}: YAML merge keys are not supported by profile migration`);
+    throw new Error(`agents.${name}: YAML merge keys are not supported by canonical profile pointers`);
   }
   let alias = false;
   visit(value, (_key, node) => {
     if (isAlias(node)) alias = true;
   });
-  if (alias) throw new Error(`agents.${name}: aliases are not supported by profile migration`);
+  if (alias) throw new Error(`agents.${name}: aliases are not supported by canonical profile pointers`);
   const range = value.range;
   if (!range || range.length < 3) throw new Error(`agents.${name}: source range is unavailable`);
   const valueStart = range[0];

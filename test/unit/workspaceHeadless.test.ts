@@ -303,88 +303,6 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   }
 });
 
-it("migrates and rolls back a stopped eligible agent through host authority custody", async () => {
-  const root = mkdir();
-  const homeDir = mkdir();
-  const original = "# before\nagents:\n  codex:\n    cmd: codex\n    role: reviewer\n  helper:\n    cmd: claude\nsettings:\n  auth: false\n";
-  fs.writeFileSync(path.join(root, "tachyon.yml"), original);
-  const secrets = new Map<string, string>();
-  const host = new SharedSecretHost(mkdir(), secrets);
-  const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
-    root,
-    { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
-  );
-  try {
-    const preview = await ws.planAgentProfileMigration("codex");
-    expect(preview.ok, preview.ok ? undefined : preview.blockers.join("\n")).toBe(true);
-    const migrated = await ws.migrateAgentProfile("codex");
-    expect(migrated.phase).toBe("committed");
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("profile: .tachyon/agents/codex/agent.yml");
-    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
-    const authorityRaw = secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)));
-    expect(authorityRaw).toContain('"agentName": "codex"');
-
-    await ws.rollbackAgentProfileMigration(migrated.txid);
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(original);
-    expect(secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)))).toContain('"records": []');
-    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
-  } finally {
-    ws.dispose();
-  }
-});
-
-it("migrates Evolution opt-in as a selector bound to the authorized profile identity", async () => {
-  const root = mkdir();
-  const host = new SharedSecretHost(mkdir(), new Map());
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
-  const ws = await Workspace.createForTest(
-    root,
-    { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: mkdir() },
-  );
-  try {
-    const evolution = await ws.evolutionStore.ensureProfile("codex");
-    const preview = await ws.planAgentProfileMigration("codex");
-    expect(preview.ok, preview.ok ? undefined : preview.blockers.join("\n")).toBe(true);
-    const migrated = await ws.migrateAgentProfile("codex");
-    expect(migrated.phase).toBe("committed");
-    expect(ws.config?.agents.codex).toMatchObject({
-      selfEvolution: { enabled: true },
-      profileEvolution: { profileId: evolution.profileId },
-    });
-    expect(JSON.parse(fs.readFileSync(
-      path.join(root, ".tachyon", "agents", "codex", "evolution-selector.json"),
-      "utf8",
-    ))).toEqual({ schemaVersion: 1, profileId: evolution.profileId });
-  } finally {
-    ws.dispose();
-  }
-});
-
-it("refuses Evolution migration when active bytes no longer match the host freshness head", async () => {
-  const { ws } = await makeWorkspace(() => {}, {
-    tachyonYaml: "agents:\n  codex:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
-  });
-  try {
-    await ws.evolutionStore.ensureProfile("codex");
-    await fs.promises.writeFile(ws.evolutionStore.learningsPath("codex"), renderEvolutionLearnings([{
-      id: "forged-migration",
-      sourceTaskId: "t-forged",
-      sourceReviewId: "review-forged",
-      approvedAt: "2026-07-23T18:00:00.000Z",
-      content: "Unapproved migration content.",
-    }]), "utf8");
-
-    const preview = await ws.planAgentProfileMigration("codex");
-    expect(preview.ok).toBe(false);
-    if (!preview.ok) expect(preview.blockers.join("\n")).toContain("does not match its human-approved head");
-  } finally {
-    ws.dispose();
-  }
-});
-
 it("creates, edits and disables a canonical profile through the Workspace lifecycle boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
@@ -483,7 +401,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
 it("runs canonical Agent Studio lifecycle actions with revision checks and explicit forget confirmation", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const ws = await Workspace.createForTest(
     root,
     { host: new SharedSecretHost(mkdir(), new Map()), onViewsChanged: () => {} },
@@ -620,7 +538,7 @@ it("renames a running canonical profile and keeps the same live session through 
 it("forgets a stopped canonical profile while preserving its private runtime home", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const secrets = new Map<string, string>();
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
@@ -662,7 +580,6 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
       "activity.jsonl",
     ), "utf8")).toBe("owned activity\n");
     expect(secrets.get(agentProfileAuthoritiesSecretKey(workspaceHash(root)))).not.toContain('"agentName": "reviewer"');
-    expect(host.notices.some((notice) => notice.message.includes("profile migration recovery found"))).toBe(false);
   } finally {
     ws.dispose();
   }
@@ -671,7 +588,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
 it("refuses canonical forget while any tmux binding still exists", async () => {
   const root = mkdir();
   const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
   const ws = await Workspace.createForTest(
@@ -694,12 +611,11 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
   }
 });
 
-it("returns actionable Agent Studio messages for invalid soul values and unsupported runtimes", async () => {
+it("directs legacy Agent Studio submissions to canonical Agent Studio", async () => {
   const { ws } = await makeWorkspace();
   const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
-  expect(ws.studioSubmit({ state: invalid })).toEqual(["soul: choose enabled or disabled, then try again"]);
-  expect(ws.studioSubmit({ state: { ...blankAgentFields(), name: "wrapped", cmd: "bash -lc codex", soul: true } })).toEqual([
-    "soul: bash cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul",
+  expect(ws.studioSubmit({ state: invalid })).toEqual([
+    "inline agent editing is retired — create or edit the canonical agent in Agent Studio",
   ]);
   ws.dispose();
 });

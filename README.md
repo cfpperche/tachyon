@@ -923,7 +923,7 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 ## Commands (palette)
 
 `Tachyon: Init (generate tachyon.yml)` · `Tachyon: Start` · `Tachyon: Stop All` ·
-`Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` · `Tachyon: New Agent (quick)` ·
+`Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` ·
 `Tachyon: Agent Studio` · `Tachyon: Connect Agent Runtime` · `Tachyon: Copy Bridge URL` ·
 `Tachyon: Copy Bridge Token` · `Tachyon: Refresh Views`
 

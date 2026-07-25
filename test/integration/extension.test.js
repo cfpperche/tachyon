@@ -283,42 +283,13 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
-  it("agent CRUD edits tachyon.yml from the UI commands (spec 193)", async function () {
+  it("does not register the retired quick inline-agent command", async function () {
     this.timeout(20000);
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
-    const original = fs.readFileSync(ymlPath, "utf8");
-    const declared = async () => (await vscode.commands.executeCommand("tachyon._agents")).filter((a) => a.declared).map((a) => a.name);
-    try {
-      // create (args skip the input boxes)
-      await vscode.commands.executeCommand("tachyon.newAgent", "uitest", "sh");
-      assert.ok((await declared()).includes("uitest"), "new agent not declared after newAgent");
-      const agents = await vscode.commands.executeCommand("tachyon._agents");
-      assert.strictEqual(agents.find((a) => a.name === "uitest").kind, "terminal", "sh should infer kind terminal");
-      assert.strictEqual(agents.find((a) => a.name === "claude" || a.name === "prompter")?.kind, "agent");
-      assert.ok(fs.readFileSync(ymlPath, "utf8").includes("uitest"), "yml not updated");
-
-      // clone
-      await vscode.commands.executeCommand("tachyon.cloneAgentItem", { agentName: "uitest" }, "uitest-2");
-      assert.ok((await declared()).includes("uitest-2"), "clone not declared");
-
-      // rename (agent never started — allowed)
-      await vscode.commands.executeCommand("tachyon.renameAgentItem", { agentName: "uitest-2" }, "uitest-renamed");
-      const after = await declared();
-      assert.ok(after.includes("uitest-renamed") && !after.includes("uitest-2"), "rename not applied");
-
-      // delete (force skips the modal)
-      await vscode.commands.executeCommand("tachyon.deleteAgentItem", { agentName: "uitest-renamed" }, true);
-      await vscode.commands.executeCommand("tachyon.deleteAgentItem", { agentName: "uitest" }, true);
-      const final = await declared();
-      assert.ok(!final.includes("uitest") && !final.includes("uitest-renamed"), "delete not applied");
-    } finally {
-      fs.writeFileSync(ymlPath, original, "utf8");
-    }
+    const commands = await vscode.commands.getCommands(true);
+    assert.ok(!commands.includes("tachyon.newAgent"), "retired quick inline-agent command is still registered");
   });
 
-  it("Agent Studio pipeline: full-def upsert, edit-in-place, blocking validation (spec 195)", async function () {
+  it("legacy Agent Studio submissions fail closed and direct users to canonical Agent Studio", async function () {
     this.timeout(20000);
     const fs = require("node:fs");
     const path = require("node:path");
@@ -335,25 +306,9 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       attention: true,
     };
     try {
-      // create through the same pipeline the webview submit uses
       let errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
-      assert.strictEqual(errors, undefined, `unexpected errors: ${JSON.stringify(errors)}`);
-      const yml = fs.readFileSync(ymlPath, "utf8");
-      assert.ok(yml.includes("studio-rev") && yml.includes("you are a code reviewer"), "full def not written");
-      const agents = await vscode.commands.executeCommand("tachyon._agents");
-      assert.strictEqual(agents.find((a) => a.name === "studio-rev").kind, "agent");
-
-      // duplicate name blocks
-      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
-      assert.ok(errors && errors.some((e) => e.includes("already exists")), "duplicate should block");
-
-      // edit-in-place via editingName
-      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", {
-        state: { ...state, cmd: "codex" },
-        editingName: "studio-rev",
-      });
-      assert.strictEqual(errors, undefined);
-      assert.ok(fs.readFileSync(ymlPath, "utf8").includes("codex"), "edit not applied");
+      assert.ok(errors && errors.some((e) => e.includes("inline agent editing is retired")), "legacy submit should fail closed");
+      assert.strictEqual(fs.readFileSync(ymlPath, "utf8"), original, "legacy submit must not write tachyon.yml");
 
       // the studio command opens a webview tab
       await vscode.commands.executeCommand("tachyon.agentStudio");

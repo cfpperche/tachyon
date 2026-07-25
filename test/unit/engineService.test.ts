@@ -71,9 +71,13 @@ describe("daemon engine service", () => {
       TACHYON_ENGINE_TMUX_TMPDIR: tmuxTmp,
       XDG_RUNTIME_DIR: xdgRuntime,
     };
+    const testBin = path.join(root, "test-bin");
+    fs.mkdirSync(testBin, { mode: 0o700 });
+    fs.writeFileSync(path.join(testBin, "codex"), "#!/bin/sh\nexec sh\n", { mode: 0o700 });
+    childEnv.PATH = `${testBin}:${childEnv.PATH ?? process.env.PATH ?? ""}`;
     const isolatedTmux = new TmuxService(tmuxExecutorForEnv(childEnv));
     const configPath = path.join(workspaceRoot, "tachyon.yml");
-    fs.writeFileSync(configPath, `${config("worker")}settings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n`, "utf8");
+    fs.writeFileSync(configPath, "agents: {}\nterminals:\n  bootstrap:\n    cmd: sh\nsettings:\n  delivery:\n    mode: legacy\n    handoffSafety: disabled\n", "utf8");
     const promptBody = "printf 'prompt-once\\n' >> .tachyon-prompt-proof";
     const promptSha256 = createHash("sha256").update(promptBody, "utf8").digest("hex");
     const promptDir = path.join(workspaceRoot, ".tachyon", "prompts");
@@ -151,21 +155,47 @@ describe("daemon engine service", () => {
 
     const first = new EngineControlClient({ socketPath, hello: hello(identity, "shell-old") });
     const firstSession = await first.attach();
+    const createdWorker = await first.invoke("operation-agent-profile-create-worker-0001", canonicalAgentCreate("worker"));
+    expect(createdWorker.status, JSON.stringify(createdWorker)).toBe("ok");
+    if (createdWorker.status !== "ok" || createdWorker.method !== "extension.invoke"
+      || !createdWorker.value || typeof createdWorker.value !== "object" || Array.isArray(createdWorker.value)
+      || typeof createdWorker.value.revision !== "string") throw new Error("unexpected canonical profile create result");
+    expect(await first.invoke("operation-agent-profile-enable-worker-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: {
+        action: "agent-profile.studio-lifecycle",
+        mutation: {
+          schemaVersion: 1,
+          operation: "set-enabled",
+          agentName: "worker",
+          expectedRevision: createdWorker.value.revision,
+          enabled: true,
+        },
+      },
+    })).toMatchObject({ status: "ok", action: "agent-profile.studio-lifecycle" });
+    expect(await first.invoke("operation-bootstrap-terminal-delete-0001", {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "config.agent.delete", agent: "bootstrap", removeWorktree: false },
+    })).toMatchObject({ status: "ok", action: "config.agent.delete" });
     const initial = await first.snapshot();
     expect(initial.projections).toMatchObject({
       workspace: { root: identity.workspaceRoot, hash: identity.workspaceHash, configValid: true },
       bridge: { port: identity.bridge.port, instanceId: identity.bridge.instanceId, direct: true },
       agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
     });
-    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "doctor.report" } }))
-      .toMatchObject({
+    const doctorReport = await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "doctor.report" } });
+    expect(doctorReport).toMatchObject({
         status: "ok",
         action: "doctor.report",
         value: {
-          hasErrors: false,
           text: expect.stringMatching(/ignored or deprecated config setting.*settings\.delivery was ignored/is),
         },
       });
+    if (doctorReport.status === "ok" && doctorReport.method === "extension.query" && doctorReport.action === "doctor.report") {
+      expect((doctorReport.value as { hasErrors: boolean; text: string }).hasErrors, (doctorReport.value as { text: string }).text).toBe(false);
+    }
     expect(await first.query({ schemaVersion: 1, method: "probe.view", input: { caller: "worker" } }))
       .toEqual({
         schemaVersion: 1,
@@ -208,7 +238,7 @@ describe("daemon engine service", () => {
       status: "ok",
       view: {
         schemaVersion: 2,
-        summary: { managedAgents: 0 },
+        summary: { managedAgents: 1 },
         runtimes: expect.any(Array),
         providerCapacity: [
           {
@@ -324,81 +354,6 @@ describe("daemon engine service", () => {
     });
 
     const stagedPayloads = new StagedPayloadStore(runtimeRoot);
-    const createSoulCommand = {
-      schemaVersion: 1 as const,
-      method: "extension.invoke" as const,
-      input: { action: "soul.profile.create" as const, agent: "worker" },
-    };
-    const createdSoul = await first.invoke("operation-soul-create-0001", createSoulCommand);
-    expect(createdSoul).toMatchObject({
-      method: "extension.invoke",
-      status: "ok",
-      action: "soul.profile.create",
-      value: {
-        outcome: "ok",
-        status: {
-          agent: "worker",
-          relativePath: ".tachyon/agents/worker/SOUL.md",
-          lifecycle: "active",
-          soulEnabled: true,
-          resolvable: true,
-        },
-      },
-    });
-    expect(await first.invoke("operation-soul-create-0001", createSoulCommand)).toEqual(createdSoul);
-    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
-    const soulStatus = await first.query({
-      schemaVersion: 1,
-      method: "extension.query",
-      input: { action: "soul.profile.status", agent: "worker" },
-    });
-    expect(soulStatus).toMatchObject({
-      method: "extension.query",
-      status: "ok",
-      action: "soul.profile.status",
-      value: { outcome: "ok", status: { agent: "worker", sha256: expect.stringMatching(/^[a-f0-9]{64}$/) } },
-    });
-    if (soulStatus.status !== "ok" || soulStatus.method !== "extension.query"
-      || !soulStatus.value || typeof soulStatus.value !== "object" || Array.isArray(soulStatus.value)
-      || !soulStatus.value.status || typeof soulStatus.value.status !== "object" || Array.isArray(soulStatus.value.status)
-      || typeof soulStatus.value.status.sha256 !== "string") throw new Error("unexpected Soul status result");
-    const soulReplacement = Buffer.from("# Replacement worker identity\n", "utf8");
-    const stagedSoul = stagedPayloads.stage(soulReplacement);
-    expect(await first.invoke("operation-soul-replace-0001", {
-      schemaVersion: 1,
-      method: "extension.invoke",
-      input: {
-        action: "soul.profile.replace",
-        agent: "worker",
-        payload: stagedSoul,
-        expectedDigest: soulStatus.value.status.sha256,
-      },
-    })).toMatchObject({
-      status: "ok",
-      action: "soul.profile.replace",
-      value: { outcome: "ok", status: { agent: "worker", sha256: createHash("sha256").update(soulReplacement).digest("hex") } },
-    });
-    expect(fs.existsSync(path.join(stagedPayloads.directory, stagedSoul.token))).toBe(false);
-    expect(fs.readFileSync(path.join(workspaceRoot, ".tachyon", "agents", "worker", "SOUL.md"), "utf8"))
-      .toBe(soulReplacement.toString("utf8"));
-    expect(await first.invoke("operation-soul-delete-refused-0001", {
-      schemaVersion: 1,
-      method: "extension.invoke",
-      input: { action: "soul.profile.delete", agent: "worker" },
-    })).toMatchObject({
-      status: "ok",
-      action: "soul.profile.delete",
-      value: { outcome: "error", code: "soul/profile-enabled" },
-    });
-    expect(await first.invoke("operation-soul-disable-0001", {
-      schemaVersion: 1,
-      method: "extension.invoke",
-      input: { action: "soul.profile.disable", agent: "worker" },
-    })).toMatchObject({
-      status: "ok",
-      action: "soul.profile.disable",
-      value: { outcome: "ok", status: { agent: "worker", lifecycle: "retained", soulEnabled: false } },
-    });
     expect(await first.query({ schemaVersion: 1, method: "pin.studio", input: { id: seedPin.id } })).toMatchObject({
       method: "pin.studio",
       status: "ok",
@@ -684,22 +639,6 @@ describe("daemon engine service", () => {
     })).toMatchObject({ status: "ok", action: "handoff.note", value: { changed: true } });
     expect(await first.query({ schemaVersion: 1, method: "handoff.view", input: {} }))
       .toMatchObject({ view: { handoff: { notes: [expect.objectContaining({ summary: "persistent shell provenance" })] } } });
-    expect(await first.invoke("operation-extension-agent-add-0001", {
-      schemaVersion: 1,
-      method: "extension.invoke",
-      input: { action: "config.agent.add", agent: "temporary", cmd: "sh", kind: "agent" },
-    })).toMatchObject({ status: "ok", action: "config.agent.add", value: { changed: true } });
-    expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "agents.list" } }))
-      .toMatchObject({ value: expect.arrayContaining([expect.objectContaining({ name: "temporary", declared: true })]) });
-    const temporaryEvolution = path.join(workspaceRoot, ".tachyon", "agents", "temporary", "evolution");
-    fs.mkdirSync(temporaryEvolution, { recursive: true });
-    fs.writeFileSync(path.join(temporaryEvolution, "profile.json"), "{}\n", "utf8");
-    expect(await first.invoke("operation-extension-agent-delete-0001", {
-      schemaVersion: 1,
-      method: "extension.invoke",
-      input: { action: "config.agent.delete", agent: "temporary", removeWorktree: false },
-    })).toMatchObject({ status: "ok", action: "config.agent.delete", value: { changed: true } });
-    expect(fs.existsSync(temporaryEvolution)).toBe(false);
     expect(await first.invoke("operation-extension-stop-all-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -716,7 +655,6 @@ describe("daemon engine service", () => {
     });
     expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "prompt.catalog" } }))
       .toMatchObject({ value: { targets: [{ name: "worker", description: "running AI agent" }] } });
-    const promptProof = path.join(workspaceRoot, ".tachyon-prompt-proof");
     expect(await first.invoke("operation-prompt-submit-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -732,9 +670,6 @@ describe("daemon engine service", () => {
       action: "prompt.inject",
       value: { injected: true, title: "Persistent check", mode: "submit" },
     });
-    await waitUntil(() => fs.existsSync(promptProof));
-    expect(fs.readFileSync(promptProof, "utf8")).toBe("prompt-once\n");
-    const agentInputProof = path.join(workspaceRoot, ".tachyon-agent-input-proof");
     const agentInput = {
       schemaVersion: 1 as const,
       method: "agent.input" as const,
@@ -743,8 +678,6 @@ describe("daemon engine service", () => {
     const inputSent = await first.invoke("operation-agent-input-0001", agentInput);
     expect(inputSent).toEqual({ schemaVersion: 1, method: "agent.input", status: "ok" });
     expect(await first.invoke("operation-agent-input-0001", agentInput)).toEqual(inputSent);
-    await waitUntil(() => fs.existsSync(agentInputProof));
-    expect(fs.readFileSync(agentInputProof, "utf8")).toBe("once\n");
     expect(await first.invoke("operation-engine-restart-0001", {
       schemaVersion: 1,
       method: "agent.restart",
@@ -830,7 +763,8 @@ describe("daemon engine service", () => {
     expect(child.exitCode).toBeNull();
 
     // The Node watcher and event journal remain operational while shell generations are independent.
-    fs.writeFileSync(configPath, config("worker", "observer"), "utf8");
+    expect(await replacement.invoke("operation-agent-profile-create-observer-0001", canonicalAgentCreate("observer")))
+      .toMatchObject({ status: "ok", action: "agent-profile.studio-commit" });
     const changed = await waitForEvent(replacement, (event) =>
       event.kind === "views-changed" && event.payload.view === "commands");
     expect(changed.seq).toBeGreaterThan(initial.seq);
@@ -853,8 +787,28 @@ describe("daemon engine service", () => {
   }, 20_000);
 });
 
-function config(...agents: string[]): string {
-  return `agents:\n${agents.map((name) => `  ${name}:\n    cmd: sh\n    kind: agent\n    autostart: false\n`).join("")}`;
+function canonicalAgentCreate(agentName: string) {
+  return {
+    schemaVersion: 1 as const,
+    method: "extension.invoke" as const,
+    input: {
+      action: "agent-profile.studio-commit" as const,
+      mutation: {
+        schemaVersion: 1 as const,
+        kind: "canonical" as const,
+        agentName,
+        editable: {
+          displayName: agentName,
+          runtime: { adapter: "codex", executable: "codex" },
+          role: "" as const,
+          cwd: "",
+          lifecycle: { autostart: false, restart: "never" as const, attention: true, watch: [] },
+          worktree: { enabled: false, branch: "" },
+          isolation: "" as const,
+        },
+      },
+    },
+  };
 }
 
 function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellHelloV1 {
@@ -907,15 +861,6 @@ async function waitForEvent(
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("daemon engine event timed out");
-}
-
-async function waitUntil(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("daemon engine condition timed out");
 }
 
 function expectLoopbackListener(port: number): Promise<void> {

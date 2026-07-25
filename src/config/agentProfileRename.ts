@@ -10,8 +10,8 @@ import {
   acquireAgentProfileRecoveryLocks,
   acquireAgentProfileTransactionLocks,
   agentProfileTransactionsRoot,
-  type AgentProfileMigrationAuthorityPort,
-} from "./agentProfileMigration.js";
+  type AgentProfileAuthorityPort,
+} from "./agentProfileTransactions.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 import { agentStanzaSourceSlice, renameAgent as renameAgentInYml } from "./YamlConfigEditor.js";
@@ -70,7 +70,7 @@ export interface CommitAgentProfileRenameInput {
   oldAgentName: string;
   newAgentName: string;
   expectedRevision: string;
-  authority: AgentProfileMigrationAuthorityPort;
+  authority: AgentProfileAuthorityPort;
   config: AgentProfileRenameConfigPort;
   evolution: AgentProfileRenameEvolutionPort;
   live?: {
@@ -321,7 +321,7 @@ function readJournal(txDir: string): AgentProfileRenameJournal {
   return value as AgentProfileRenameJournal;
 }
 
-async function authorityState(authority: AgentProfileMigrationAuthorityPort, journal: AgentProfileRenameJournal): Promise<"source" | "target" | "conflict"> {
+async function authorityState(authority: AgentProfileAuthorityPort, journal: AgentProfileRenameJournal): Promise<"source" | "target" | "conflict"> {
   const source = await authority.read(journal.oldAgentName);
   const target = await authority.read(journal.newAgentName);
   if (isDeepStrictEqual(source, journal.sourceAuthority) && target === undefined) return "source";

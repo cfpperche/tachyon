@@ -9,8 +9,8 @@ import {
   acquireAgentProfileRecoveryLocks,
   acquireAgentProfileTransactionLock,
   agentProfileTransactionsRoot,
-  type AgentProfileMigrationAuthorityPort,
-} from "./agentProfileMigration.js";
+  type AgentProfileAuthorityPort,
+} from "./agentProfileTransactions.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 import { agentStanzaSourceSlice, deleteAgent as deleteAgentInYml } from "./YamlConfigEditor.js";
@@ -75,7 +75,7 @@ export interface CommitAgentProfileForgetInput {
   workspaceRoot: string;
   agentName: string;
   expectedRevision: string;
-  authority: AgentProfileMigrationAuthorityPort;
+  authority: AgentProfileAuthorityPort;
   config: AgentProfileForgetConfigPort;
   evolution: AgentProfileForgetEvolutionPort;
   live: {
@@ -262,7 +262,7 @@ function removeLocator(config: AgentProfileForgetConfigPort, journal: AgentProfi
   if (configState(config, journal) !== "target") throw new Error("canonical profile locator removal did not converge");
 }
 
-async function retireAuthority(authority: AgentProfileMigrationAuthorityPort, journal: AgentProfileForgetJournal): Promise<void> {
+async function retireAuthority(authority: AgentProfileAuthorityPort, journal: AgentProfileForgetJournal): Promise<void> {
   const current = await authority.read(journal.agentName);
   if (current === undefined) return;
   if (!isDeepStrictEqual(current, journal.sourceAuthority)) {

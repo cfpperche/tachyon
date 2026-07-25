@@ -18,8 +18,8 @@ import {
   currentProfileDigest,
   publishCanonicalProfile,
   removeCanonicalProfileIfExact,
-  type AgentProfileMigrationAuthorityPort,
-} from "./agentProfileMigration.js";
+  type AgentProfileAuthorityPort,
+} from "./agentProfileTransactions.js";
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
@@ -100,7 +100,7 @@ export interface CommitAgentProfileLifecycleInput {
   createProfileLocalReferences?: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">>;
   /** V1 bundle import only: bounded profile-local authored files published with create. */
   createArtifacts?: Array<{ path: string; text: string; sha256: string }>;
-  authority: AgentProfileMigrationAuthorityPort;
+  authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
   /** Host activation runs while the journal and lock still make launch fail closed. */
@@ -362,7 +362,7 @@ function replaceCanonicalProfileExact(workspaceRoot: string, agentName: string, 
 export async function inspectAgentProfileLifecycle(input: {
   workspaceRoot: string;
   agentName: string;
-  authority: AgentProfileMigrationAuthorityPort;
+  authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
 }): Promise<AgentProfileLifecycleSnapshot> {
   const canonical = canonicalProfile(input.workspaceRoot, input.agentName);
@@ -566,7 +566,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
 
 export async function reconcileAgentProfileLifecycle(input: {
   workspaceRoot: string;
-  authority: AgentProfileMigrationAuthorityPort;
+  authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   activateState: (agentName: string, state: "target" | "prior" | "blocked") => void;
 }): Promise<{ reconciled: string[]; degraded: string[] }> {

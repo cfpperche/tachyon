@@ -6,7 +6,7 @@ import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type Pane
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "./inspector/model.js";
-import { CONFIG_FILENAMES, inferKind, type ScheduleDef } from "./config/loadConfig.js";
+import { CONFIG_FILENAMES, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
@@ -836,96 +836,6 @@ async function pickAgent(ws: WorkspaceShellHandle, placeholder: string, runningO
     candidates.map((a) => a.name),
     { placeHolder: placeholder },
   );
-}
-
-async function migrateAgentProfileFlow(): Promise<void> {
-  const ws = await pickWorkspace();
-  if (!ws) return;
-  const agents = ws.client.presentation.agents;
-  if (agents.truncated) throw new Error("agent list is truncated");
-  const stopped = agents.items.filter((agent) => agent.kind === "agent" && !agent.running);
-  if (stopped.length === 0) {
-    notify(vscode.l10n.t("No stopped agent is available for profile migration."), "warn");
-    return;
-  }
-  const agent = await vscode.window.showQuickPick(stopped.map((row) => row.name), {
-    placeHolder: vscode.l10n.t("Migrate which stopped agent to agent.yml?"),
-  });
-  if (!agent) return;
-
-  let nonSecretEnv: string[] = [];
-  let preview = jsonObject(await extensionQuery(ws, {
-    action: "agent-profile.migration-preview",
-    agent,
-    nonSecretEnv,
-  }), "agent-profile.migration-preview");
-  const unclassified = Array.isArray(preview.unclassifiedEnv)
-    ? preview.unclassifiedEnv.filter((value): value is string => typeof value === "string")
-    : [];
-  if (unclassified.length > 0) {
-    const confirmValues = vscode.l10n.t("Treat as non-secret values");
-    const answer = await showNotification(
-      vscode.l10n.t("'{0}' has environment value(s): {1}. Confirm they are non-secret before storing them in agent.yml.", agent, unclassified.join(", ")),
-      "warn",
-      [confirmValues],
-      { modal: true },
-    );
-    if (answer !== confirmValues) return;
-    nonSecretEnv = unclassified;
-    preview = jsonObject(await extensionQuery(ws, {
-      action: "agent-profile.migration-preview",
-      agent,
-      nonSecretEnv,
-    }), "agent-profile.migration-preview");
-  }
-  if (preview.ok !== true) {
-    const blockers = Array.isArray(preview.blockers)
-      ? preview.blockers.filter((value): value is string => typeof value === "string")
-      : [];
-    notify(vscode.l10n.t("Profile migration blocked for '{0}': {1}", agent, blockers.join("; ") || vscode.l10n.t("unknown blocker")), "error");
-    return;
-  }
-  const migrate = vscode.l10n.t("Migrate profile");
-  const confirmed = await showNotification(
-    vscode.l10n.t("Migrate stopped agent '{0}' to {1}? A recoverable journal will be kept for rollback.", agent, String(preview.profilePath ?? "agent.yml")),
-    "warn",
-    [migrate],
-    { modal: true },
-  );
-  if (confirmed !== migrate) return;
-  const result = jsonObject(await extensionInvoke(ws, { action: "agent-profile.migrate", agent, nonSecretEnv }), "agent-profile.migrate");
-  await ws.client.sync();
-  notify(vscode.l10n.t("Agent '{0}' migrated to agent.yml (transaction {1}).", agent, String(result.txid ?? "")));
-}
-
-async function rollbackAgentProfileFlow(): Promise<void> {
-  const ws = await pickWorkspace();
-  if (!ws) return;
-  const rows = jsonArray(await extensionQuery(ws, { action: "agent-profile.rollbackable" }), "agent-profile.rollbackable")
-    .map((value) => jsonObject(value, "rollbackable migration"))
-    .filter((row) => typeof row.txid === "string" && typeof row.agentName === "string");
-  if (rows.length === 0) {
-    notify(vscode.l10n.t("No safely rollbackable agent profile migration was found."), "warn");
-    return;
-  }
-  const picked = await vscode.window.showQuickPick(rows.map((row) => ({
-    label: String(row.agentName),
-    description: String(row.createdAt ?? ""),
-    detail: String(row.txid),
-    txid: String(row.txid),
-  })), { placeHolder: vscode.l10n.t("Roll back which agent profile migration?") });
-  if (!picked) return;
-  const rollback = vscode.l10n.t("Roll back profile");
-  const confirmed = await showNotification(
-    vscode.l10n.t("Restore the legacy tachyon.yml stanza for stopped agent '{0}'? Later edits will make rollback refuse safely.", picked.label),
-    "warn",
-    [rollback],
-    { modal: true },
-  );
-  if (confirmed !== rollback) return;
-  await extensionInvoke(ws, { action: "agent-profile.rollback", txid: picked.txid });
-  await ws.client.sync();
-  notify(vscode.l10n.t("Agent '{0}' profile migration rolled back.", picked.label));
 }
 
 async function connectRuntime(ws: WorkspaceShellHandle): Promise<void> {
@@ -2918,41 +2828,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       } satisfies Record<"agent" | "terminal", () => void>;
       dispatch[def.kind === "terminal" ? "terminal" : "agent"]();
     }),
-    vscode.commands.registerCommand("tachyon.newAgent", async (name?: string, cmd?: string, kindArg?: "agent" | "terminal") => {
-      const ws = await pickFolderForCreate();
-      if (!ws) return;
-      const agentName =
-        name ??
-        (await vscode.window.showInputBox({
-          prompt: vscode.l10n.t("Agent name (a free label — e.g. frontend, reviewer, dev)"),
-          validateInput: (v) => (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(v) ? undefined : vscode.l10n.t("letters/digits/_/-, starting with a letter")),
-        }));
-      if (!agentName) return;
-      const agentCmd =
-        cmd ??
-        (await vscode.window.showInputBox({
-          prompt: vscode.l10n.t("Command for '{0}' (what actually runs)", agentName),
-          placeHolder: vscode.l10n.t("e.g. claude · codex · agy · npm run dev"),
-        }));
-      if (!agentCmd) return;
-      let kind = kindArg;
-      if (!kind && name === undefined) {
-        // Interactive flow: confirm the inferred kind (drives grouping + attention defaults).
-        const inferred = inferKind(agentCmd);
-        const picked = await vscode.window.showQuickPick(
-          [
-            { label: vscode.l10n.t("Agent"), description: vscode.l10n.t("AI CLI — attention detection on"), value: "agent" },
-            { label: vscode.l10n.t("Terminal"), description: vscode.l10n.t("server / shell / build — attention off"), value: "terminal" },
-          ].sort((a) => (a.value === inferred ? -1 : 1)),
-          { placeHolder: vscode.l10n.t("Kind of '{0}' (detected: {1})", agentName, inferred) },
-        );
-        if (!picked) return;
-        kind = picked.value as "agent" | "terminal";
-      }
-      const finalKind = kind && kind !== inferKind(agentCmd) ? kind : undefined; // write only when it differs from inference
-      await extensionInvoke(ws, { action: "config.agent.add", agent: agentName, cmd: agentCmd, ...(finalKind ? { kind: finalKind } : {}) });
-      notify(vscode.l10n.t("'{0}' added — ▶ in the sidebar starts it", agentName));
-    }),
     vscode.commands.registerCommand("tachyon.cloneAgentItem", async (item: AgentItem, newNameArg?: string) => {
       const ws = wsOf(item);
       if (!ws) return;
@@ -3200,14 +3075,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         editor.selection = new vscode.Selection(pos, pos);
         editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
       }
-    }),
-    vscode.commands.registerCommand("tachyon.migrateAgentProfile", async () => {
-      try { await migrateAgentProfileFlow(); }
-      catch (error) { notify(error instanceof Error ? error.message : String(error), "error"); }
-    }),
-    vscode.commands.registerCommand("tachyon.rollbackAgentProfile", async () => {
-      try { await rollbackAgentProfileFlow(); }
-      catch (error) { notify(error instanceof Error ? error.message : String(error), "error"); }
     }),
     // ---- lifecycle ----
     vscode.commands.registerCommand("tachyon.start", async () => {

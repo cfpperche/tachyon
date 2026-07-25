@@ -5,7 +5,6 @@ import { agentProfileStudioLifecycleMutationSchemaV1, agentProfileStudioMutation
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
-const envName = z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).max(256);
 const text = (max: number, min = 0) => z.string().min(min).max(max);
 const decision = z.enum(["approved", "denied"]);
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
@@ -36,14 +35,14 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
-  "agent-profile.migration-preview", "agent-profile.rollbackable", "agent-profile.studio-inspect", "agent-profile.studio-bundle-export",
+  "agent-profile.studio-inspect", "agent-profile.studio-bundle-export",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
   "pipeline.seed", "agent.spawn", "pin.create", "command.run", "command.tick", "runbook.run", "proposal.create",
-  "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.add", "config.agent.clone",
+  "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.clone",
   "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
   "config.companion.tabTools",
   "config.companion.allowedHosts",
@@ -59,7 +58,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
   "legacy-delivery.retirement-apply",
-  "agent-profile.migrate", "agent-profile.rollback", "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
+  "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
   "agent-profile.studio-bundle-clone", "agent-profile.studio-bundle-import",
 ] as const;
 
@@ -76,8 +75,6 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("proposals.list") }).strict(),
   z.object({ action: z.literal("doctor.report") }).strict(),
   z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
-  z.object({ action: z.literal("agent-profile.migration-preview"), agent: name, nonSecretEnv: z.array(envName).max(256) }).strict(),
-  z.object({ action: z.literal("agent-profile.rollbackable") }).strict(),
   z.object({ action: z.literal("agent-profile.studio-inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-export"), agent: name, expectedRevision: sha256 }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
@@ -138,13 +135,10 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("companion.unpair"),
     deviceId: text(64, 1).optional(),
   }).strict(),
-  z.object({ action: z.literal("config.agent.add"), agent: name, cmd: text(16_384, 1), kind: z.enum(["agent", "terminal"]).optional() }).strict(),
   z.object({ action: z.literal("config.agent.clone"), agent: name, newName: name }).strict(),
   z.object({ action: z.literal("config.agent.rename"), agent: name, newName: name }).strict(),
   z.object({ action: z.literal("config.agent.delete"), agent: name, removeWorktree: z.boolean() }).strict(),
   z.object({ action: z.literal("config.agent.promote"), agent: name }).strict(),
-  z.object({ action: z.literal("agent-profile.migrate"), agent: name, nonSecretEnv: z.array(envName).max(256) }).strict(),
-  z.object({ action: z.literal("agent-profile.rollback"), txid: z.string().uuid() }).strict(),
   z.object({ action: z.literal("agent-profile.studio-commit"), mutation: agentProfileStudioMutationSchemaV1 }).strict(),
   z.object({ action: z.literal("agent-profile.studio-lifecycle"), mutation: agentProfileStudioLifecycleMutationSchemaV1 }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-clone"), agent: name, expectedRevision: sha256, destinationAgentName: name }).strict(),

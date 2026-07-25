@@ -17,7 +17,7 @@ import {
   type AgentProfileLifecycleConfigPort,
 } from "../../src/config/agentProfileLifecycle.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileMigrationAuthorityPort } from "../../src/config/agentProfileMigration.js";
+import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
 
 const roots: string[] = [];
 
@@ -32,7 +32,7 @@ function temporaryWorkspace(): string {
   return root;
 }
 
-class MemoryAuthority implements AgentProfileMigrationAuthorityPort {
+class MemoryAuthority implements AgentProfileAuthorityPort {
   readonly records = new Map<string, AgentProfileAuthorityRecord>();
   async read(name: string) { return structuredClone(this.records.get(name)); }
   async publish(record: AgentProfileAuthorityRecord) {

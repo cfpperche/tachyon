@@ -9,8 +9,8 @@ import { commitAgentProfileLifecycle, type AgentProfileLifecycleConfigPort } fro
 import {
   acquireAgentProfileTransactionLock,
   acquireAgentProfileTransactionLocks,
-  type AgentProfileMigrationAuthorityPort,
-} from "../../src/config/agentProfileMigration.js";
+  type AgentProfileAuthorityPort,
+} from "../../src/config/agentProfileTransactions.js";
 import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
@@ -27,7 +27,7 @@ function temporaryWorkspace(): string {
   return root;
 }
 
-class MemoryAuthority implements AgentProfileMigrationAuthorityPort {
+class MemoryAuthority implements AgentProfileAuthorityPort {
   readonly records = new Map<string, AgentProfileAuthorityRecord>();
   loseMoveAcknowledgement = false;
   async read(name: string) { const value = this.records.get(name); return value ? structuredClone(value) : undefined; }

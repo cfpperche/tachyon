@@ -408,7 +408,7 @@ describe("loadProfileAwareConfig", () => {
       workspaceRoot: temporaryRoot("tachyon-profile-authored-internal-"),
       authorities: new Map(),
     });
-    expect(authored.errors.join("\n")).toContain("unknown key 'profileCapabilities'");
+    expect(authored.errors.join("\n")).toContain("inline agent definitions are no longer supported");
   });
 
   it("projects an authority-granted local MCP declaration without exposing an authorable harness field", () => {
@@ -503,7 +503,7 @@ describe("loadProfileAwareConfig", () => {
 
     expect(result.errors.some((error) => error.includes("profile/capability-collision") && error.includes("review.md"))).toBe(true);
   });
-  it("loads a profile and retains its trusted source metadata beside legacy agents", () => {
+  it("loads a profile and retains its trusted source metadata beside terminals", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     const bytes = writeProfile(root, {
       prompt: { role: "reviewer" },
@@ -514,6 +514,7 @@ describe("loadProfileAwareConfig", () => {
         "agents:",
         "  codex:",
         "    profile: .tachyon/agents/codex/agent.yml",
+        "terminals:",
         "  helper:",
         "    cmd: claude",
         "",
@@ -539,14 +540,14 @@ describe("loadProfileAwareConfig", () => {
       profileSha256: sha256(bytes),
       authorityRevision: "profile-r1",
     });
-    expect(result.config?.agentSources.helper?.mode).toBe("legacy");
+    expect(result.config?.agentSources.helper?.mode).toBe("terminal");
 
     const authored = loadProfileAwareConfig({
       yamlText: "agents:\n  codex:\n    cmd: codex\n    profileLifecycle:\n      enabled: false\n",
       workspaceRoot: temporaryRoot("tachyon-profile-authored-lifecycle-"),
       authorities: new Map(),
     });
-    expect(authored.errors.join("\n")).toContain("unknown key 'profileLifecycle'");
+    expect(authored.errors.join("\n")).toContain("inline agent definitions are no longer supported");
   });
 
   it("fails closed when authority is absent, stale, or an effective native config is non-empty", () => {
@@ -585,7 +586,7 @@ describe("loadProfileAwareConfig", () => {
     expect(emptyCapabilities.errors).toEqual([]);
   });
 
-  it("rejects simultaneous inline and canonical owners", () => {
+  it("rejects inline agents even when canonical bytes exist", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     writeProfile(root);
     const result = loadProfileAwareConfig({
@@ -594,6 +595,6 @@ describe("loadProfileAwareConfig", () => {
       authorities: new Map(),
       homeDir: temporaryRoot("tachyon-agent-profile-home-"),
     });
-    expect(result.errors.join("\n")).toContain("inline configuration conflicts with canonical profile");
+    expect(result.errors.join("\n")).toContain("inline agent definitions are no longer supported");
   });
 });

@@ -59,7 +59,7 @@ describe("YamlConfigEditor", () => {
     expect(() => replaceAgentStanzaValue(YML, "frontend", "0".repeat(64), "profile: x\n")).toThrow("CAS mismatch");
   });
 
-  it("rejects aliases and merge keys for source-range profile migration", () => {
+  it("rejects aliases and merge keys for canonical profile pointers", () => {
     expect(() => agentStanzaSourceSlice("agents:\n  codex: &shared\n    cmd: codex\n", "codex")).toThrow("anchors");
     expect(() => agentStanzaSourceSlice("base: &base\n  cmd: codex\nagents:\n  codex:\n    <<: *base\n", "codex")).toThrow("merge keys");
   });
@@ -273,7 +273,7 @@ terminals:
     expect(text).not.toMatch(/terminals:[\s\S]*rev:/);
   });
 
-  it("editing a legacy agents: terminal rewrites it IN PLACE (never moves to terminals:)", () => {
+  it("editing a terminal rewrites it in its declared block", () => {
     const { text } = upsertAgent(MIX, "legacy-term", { cmd: "npm run new", kind: "terminal" }, "legacy-term", "terminals");
     const config = expectValid(text);
     expect(config.agents["legacy-term"].cmd).toBe("npm run new");

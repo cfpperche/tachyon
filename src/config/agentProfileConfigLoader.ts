@@ -4,15 +4,10 @@ import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { projectCanonicalAgentProfile } from "./agentProfileProjection.js";
-import {
-  closeCanonicalAgentProfile,
-  readCanonicalAgentProfile,
-  type CanonicalAgentProfileSource,
-} from "./agentProfileReader.js";
 import { isValidAgentName } from "./nameValidation.js";
 
 export type AgentConfigSource =
-  | { mode: "legacy"; source: string }
+  | { mode: "terminal"; source: string }
   | {
       mode: "profile";
       source: string;
@@ -45,8 +40,15 @@ export interface LoadProfileAwareConfigInput {
 export function parseProfileAwareConfigSyntax(yamlText: string): ParseResult {
   const scan = scanAgentProfilePointers(yamlText);
   if (scan.errors.length > 0) return { errors: scan.errors, warnings: [] };
-  if (scan.pointers.size === 0) return parseConfig(yamlText);
   const doc = parseDocument(yamlText, { uniqueKeys: true });
+  const inlineAgents = declaredAgentNames(doc).filter((name) => !scan.pointers.has(name));
+  if (inlineAgents.length > 0) {
+    return {
+      errors: inlineAgents.map((name) =>
+        `agents.${name}: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio`),
+      warnings: [],
+    };
+  }
   for (const agentName of scan.pointers.keys()) {
     doc.setIn(["agents", agentName], { cmd: "codex" });
   }
@@ -67,19 +69,6 @@ function declaredAgentNames(doc: ReturnType<typeof parseDocument>): string[] {
     .filter((name): name is string => name !== undefined);
 }
 
-function inlineCanonicalConflict(workspaceRoot: string, agentName: string): string | undefined {
-  let source: CanonicalAgentProfileSource | undefined;
-  try {
-    source = readCanonicalAgentProfile(workspaceRoot, agentName);
-    if (!source) return undefined;
-    return `agents.${agentName}: inline configuration conflicts with canonical profile ${source.source}; remove one authority source`;
-  } catch (error) {
-    return `agents.${agentName}: cannot prove canonical profile absence while inline configuration is authoritative: ${error instanceof Error ? error.message : String(error)}`;
-  } finally {
-    if (source) closeCanonicalAgentProfile(source);
-  }
-}
-
 /**
  * Trusted second-phase loader. YAML declaration parsing remains pure; profile
  * bytes, host authority and runtime-native inputs are resolved only here.
@@ -97,8 +86,9 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     if (!isValidAgentName(agentName)) continue;
     const pointer = scan.pointers.get(agentName);
     if (!pointer) {
-      const conflict = inlineCanonicalConflict(input.workspaceRoot, agentName);
-      if (conflict) errors.push(conflict);
+      errors.push(
+        `agents.${agentName}: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio`,
+      );
       continue;
     }
     const authority = input.authorities.get(agentName);
@@ -159,8 +149,8 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   const agentSources: Record<string, AgentConfigSource> = {};
   for (const name of Object.keys(parsed.config.agents)) {
     agentSources[name] = profileSources[name] ?? {
-      mode: "legacy",
-      source: `tachyon.yml#agents-or-terminals.${name}`,
+      mode: "terminal",
+      source: `tachyon.yml#terminals.${name}`,
     };
   }
   return { ...parsed, warnings, config: { ...parsed.config, agentSources } };

@@ -12,8 +12,7 @@ Every canonical agent keeps a private operational home, but Tachyon may material
 configuration into that home. “Inheritance” never means sharing the global mutable home. It means
 reading an approved source and producing a controlled, inspectable projection for that agent.
 
-Existing legacy agents are not migrated. This contract applies to agents created canonically and to
-future adapter work.
+This contract applies to canonical agents and future adapter work.
 
 ## Four planes
 

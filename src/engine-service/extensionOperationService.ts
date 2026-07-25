@@ -11,8 +11,6 @@ import { resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
-import { loadConfigFile } from "../config/loadConfig.js";
-import { listRollbackableAgentProfileMigrations } from "../config/agentProfileMigration.js";
 import {
   addAgent,
   cloneAgent,
@@ -94,14 +92,6 @@ export async function executeExtensionQuery(
       return doctorReport(workspace);
     case "legacy-delivery.retirement-preview":
       return json(workspace.legacyDeliveryRetirement.preview());
-    case "agent-profile.migration-preview": {
-      const result = await workspace.planAgentProfileMigration(query.agent, query.nonSecretEnv);
-      return result.ok
-        ? json({ ok: true, agent: result.plan.agentName, profilePath: `.tachyon/agents/${result.plan.agentName}/agent.yml` })
-        : json({ ok: false, blockers: result.blockers, unclassifiedEnv: result.unclassifiedEnv });
-    }
-    case "agent-profile.rollbackable":
-      return json(listRollbackableAgentProfileMigrations(workspace.workspaceRoot));
     case "agent-profile.studio-inspect":
       return json(await workspace.inspectAgentProfileStudio(query.agent));
     case "agent-profile.studio-bundle-export": {
@@ -358,16 +348,14 @@ export async function executeExtensionCommand(
       }
       return json({ ok: true, hadSession: result.hadSession });
     }
-    case "config.agent.add":
-      return configMutation(workspace, () => workspace.mutateConfig(
-        (text) => addAgent(text, command.agent, command.cmd, command.kind),
-        () => onViewsChanged("agents"),
-      ));
     case "config.agent.clone": {
       if (workspace.isCanonicalProfileAgent(command.agent)) {
         await workspace.cloneCanonicalProfileAgent(command.agent, command.newName);
         onViewsChanged("agents");
         return json({ changed: true });
+      }
+      if (workspace.config?.agents[command.agent]?.kind !== "terminal") {
+        throw new Error(`'${command.agent}' is not a canonical agent or declared terminal`);
       }
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => cloneAgent(text ?? "", command.agent, command.newName),
@@ -381,10 +369,6 @@ export async function executeExtensionCommand(
       return deleteConfiguredAgent(workspace, command.agent, command.removeWorktree, onViewsChanged);
     case "config.agent.promote":
       return promoteAgent(workspace, command.agent, onViewsChanged);
-    case "agent-profile.migrate":
-      return json(await workspace.migrateAgentProfile(command.agent, command.nonSecretEnv));
-    case "agent-profile.rollback":
-      return json(await workspace.rollbackAgentProfileMigration(command.txid));
     case "agent-profile.studio-commit":
       return json(await workspace.commitAgentProfileStudio(command.mutation));
     case "agent-profile.studio-lifecycle":
@@ -738,7 +722,7 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
   let configFailure = workspace.configFailure ?? null;
   let configWarnings: string[] = [];
   if (configPath && fileExists) {
-    const { errors, warnings } = loadConfigFile(configPath);
+    const { errors, warnings } = workspace.parseTrustedConfigText(fs.readFileSync(configPath, "utf8"));
     configWarnings = [...warnings];
     if (errors.length > 0) {
       configValid = false;
@@ -872,6 +856,9 @@ async function deleteConfiguredAgent(
     workspace.manager.dismissAdhoc(agent);
     await workspace.forgetAgent(agent);
   } else {
+    if (workspace.config.agents[agent]?.kind !== "terminal") {
+      throw new Error(`'${agent}' is not a canonical agent or declared terminal`);
+    }
     const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
     if (!changed) throw new Error(`could not remove '${agent}' from tachyon.yml`);
     await workspace.forgetAgent(agent);
@@ -909,9 +896,12 @@ async function promoteAgent(
   const record = workspace.ledger.get(agent);
   const definition = record?.def;
   if (!definition) throw new Error(`'${agent}' has no stored definition to save`);
+  if (definition.kind !== "terminal") {
+    throw new Error("ad-hoc agents cannot be promoted; create a canonical agent in Agent Studio");
+  }
   if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
   const changed = workspace.mutateConfig(
-    (text) => addAgent(text ?? "", agent, definition.cmd, definition.kind, definition.instructions),
+    (text) => addAgent(text ?? "", agent, definition.cmd, "terminal"),
     () => onViewsChanged("agents"),
   );
   if (!changed) throw new Error(`could not save '${agent}' to tachyon.yml`);

@@ -316,5 +316,5 @@ describe("ClientWorkspaceStudioTarget", () => {
 });
 
 function config(...commands: string[]): string {
-  return `agents:\n  worker:\n    cmd: sh\ncommands:\n${commands.map((name) => `  ${name}:\n    cmd: npm run ${name}\n`).join("")}runbooks:\n  ship:\n    steps:\n      - lint\n`;
+  return `agents: {}\nterminals:\n  worker:\n    cmd: sh\ncommands:\n${commands.map((name) => `  ${name}:\n    cmd: npm run ${name}\n`).join("")}runbooks:\n  ship:\n    steps:\n      - lint\n`;
 }

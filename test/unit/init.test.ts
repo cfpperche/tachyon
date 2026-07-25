@@ -114,16 +114,16 @@ describe("ensureTachyonGitignore", () => {
     expect(out).toContain(".tachyon/sessions.json");
     expect(out).toContain(".tachyon/harness/"); // spec 226 — harness homes (auth symlink + transcripts) stay local
     expect(out).toContain(".tachyon/bridge-mcp/"); // spec 236 — per-agent Bridge --mcp-config files stay local
-    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
+    expect(out).toBe("node_modules\ndist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
   });
 
   it("handles a file with no trailing newline", () => {
     const out = ensureTachyonGitignore("dist");
-    expect(out).toBe("dist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
+    expect(out).toBe("dist\n\n# Tachyon — machine-local state (pins.json stays shareable)\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n");
   });
 
   it("is idempotent — returns null when all entries are already present", () => {
-    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n")).toBeNull();
+    expect(ensureTachyonGitignore("dist\n.tachyon/sessions.json\n.tachyon/harness/\n.tachyon/bridge-mcp/\n.tachyon/continuity/\n.tachyon/agents/\n.tachyon/agent-profile-transactions/\n.tachyon/canonical-agent-transactions/\n.tachyon/handoff-notes.jsonl\n.tachyon/pins/\n.tachyon/probes/\n")).toBeNull();
   });
 
   it("appends only the missing entry when one is already present", () => {

@@ -153,25 +153,12 @@
         "icon": "$(pencil)"
       },
       {
-        "command": "tachyon.newAgent",
-        "title": "%command.newAgent%",
-        "icon": "$(add)"
-      },
-      {
         "command": "tachyon.cloneAgentItem",
         "title": "%command.cloneAgentItem%"
       },
       {
         "command": "tachyon.editAgentItem",
         "title": "%command.editAgentItem%"
-      },
-      {
-        "command": "tachyon.migrateAgentProfile",
-        "title": "%command.migrateAgentProfile%"
-      },
-      {
-        "command": "tachyon.rollbackAgentProfile",
-        "title": "%command.rollbackAgentProfile%"
       },
       {
         "command": "tachyon.renameAgentItem",

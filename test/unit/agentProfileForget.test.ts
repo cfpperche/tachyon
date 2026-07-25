@@ -14,10 +14,7 @@ import {
   type AgentProfileForgetEvolutionPort,
 } from "../../src/config/agentProfileForget.js";
 import { commitAgentProfileLifecycle, type AgentProfileLifecycleConfigPort } from "../../src/config/agentProfileLifecycle.js";
-import {
-  reconcileAgentProfileMigrations,
-  type AgentProfileMigrationAuthorityPort,
-} from "../../src/config/agentProfileMigration.js";
+import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
 
 const roots: string[] = [];
 
@@ -28,7 +25,7 @@ function temporaryWorkspace(): string {
   return root;
 }
 
-class MemoryAuthority implements AgentProfileMigrationAuthorityPort {
+class MemoryAuthority implements AgentProfileAuthorityPort {
   readonly records = new Map<string, AgentProfileAuthorityRecord>();
   loseRetireAcknowledgement = false;
   async read(name: string) { const value = this.records.get(name); return value ? structuredClone(value) : undefined; }
@@ -131,12 +128,6 @@ describe("canonical agent profile forget", () => {
     expect(input.evolution.retired).toEqual(["reviewer"]);
     expect(input.converged).toHaveLength(1);
     expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(false);
-    await expect(reconcileAgentProfileMigrations({
-      workspaceRoot: input.root,
-      configPath: path.join(input.root, "tachyon.yml"),
-      authority: input.authority,
-    })).resolves.toMatchObject({ degraded: [] });
-
     const replacement = await commitAgentProfileLifecycle({
       workspaceRoot: input.root,
       agentName: "reviewer",

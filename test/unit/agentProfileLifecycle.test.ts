@@ -12,8 +12,8 @@ import {
   type CommitAgentProfileLifecycleInput,
 } from "../../src/config/agentProfileLifecycle.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileMigrationAuthorityPort } from "../../src/config/agentProfileMigration.js";
-import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileMigration.js";
+import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
+import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileTransactions.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
@@ -32,7 +32,7 @@ function sha256(value: string): string {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-class MemoryAuthority implements AgentProfileMigrationAuthorityPort {
+class MemoryAuthority implements AgentProfileAuthorityPort {
   readonly records = new Map<string, AgentProfileAuthorityRecord>();
   async read(name: string) { const value = this.records.get(name); return value ? structuredClone(value) : undefined; }
   async publish(record: AgentProfileAuthorityRecord) {
@@ -139,7 +139,7 @@ describe("agent profile lifecycle kernel", () => {
     expect(config.read()).toContain("profile: .tachyon/agents/codex/agent.yml");
     expect(authority.records.get("codex")?.canonicalSha256).toBe(committed.snapshot.provenance.canonical.sha256);
     expect(await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config })).toEqual(committed.snapshot);
-    expect(fs.readdirSync(path.join(root, ".tachyon", "agent-profile-migrations", "lifecycle"))).toEqual([]);
+    expect(fs.readdirSync(path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle"))).toEqual([]);
   });
 
   it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {
@@ -301,7 +301,7 @@ describe("agent profile lifecycle kernel", () => {
       config,
     });
     const txid = crypto.randomUUID();
-    const txDir = path.join(root, ".tachyon", "agent-profile-migrations", "lifecycle", txid);
+    const txDir = path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle", txid);
     fs.mkdirSync(txDir);
     fs.writeFileSync(path.join(txDir, "journal.json"), `${JSON.stringify({
       schemaVersion: 1,
