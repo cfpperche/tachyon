@@ -207,9 +207,10 @@ in the same change.
 | Resume | `codex resume <id>` | `resumeCommand` afterBinary (capture id) | code |
 | Fork | — | no `forkCommand` | 2026-07-09 code read |
 | Harness | `CODEX_HOME` + `config.toml` | harness home-config | specs 298/357 era |
-| Stop | interrupt + EOF path | `runtimeProfile.codex.gracefulStop` | `source: declared`, **verified: false** → mark `~` |
+| Stop | interrupt + EOF path | `runtimeProfile.codex.gracefulStop` | measured and verified; canonical lifecycle reconstruction keeps the same private policy on fresh/restart/resume (`t-60ff74`, 2026-07-25) |
 | Activity | rollout / session files | `codexNormalizer` | specs 305+ |
-| Permission inject | flags / config | partial vs Claude; not a full profile-driven inject | code |
+| Permission inject | private `config.toml` policy | canonical profiles regenerate selected `approval_policy` and `sandbox_mode` in private `CODEX_HOME`; arbitrary legacy commands remain unchanged | **✓** `t-60ff74`, strict-config parser + lifecycle regression |
+| Native config parity | reviewed selectors, permissions, interface and feature flags | `materializeCanonicalCodexProfileHome` atomically regenerates the allowlisted projection, Bridge, skills/MCP/hooks; ambient config and unsupported extensions are excluded | **✓** `t-60ff74`; fresh/restart/resume exact-projection regression |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.codex` | code |
 
 #### OpenCode
@@ -396,7 +397,7 @@ No Product Invariant change. No new adapter in this task.
 | Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
 | Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
 | OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
-| Claude/Codex stop measurement | promote gracefulStop from declared → measured |
+| Claude active/drafted stop measurement | Claude remains partial until `t-b727bd`; Codex is measured/verified (`t-60ff74`) |
 | Codex fork | only if Codex CLI gains stable native fork |
 | ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
 | ~~Pi opt-in harness resources~~ | **Closed SDD 406** — exact private local extension/skill/prompt/theme/package snapshots with automatic discovery disabled and no install side effects |
