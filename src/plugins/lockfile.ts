@@ -267,7 +267,7 @@ function parseToolLock(raw: unknown, where: string, errors: string[]): ToolLock 
  *  regardless of the logical tool/plugin name. Removal deletes a content-addressed file only when its last
  *  physical referrer is gone. */
 export function physicalToolKey(t: ToolLock): string {
-  return `${t.installPath} ${t.binSha256}`;
+  return `${t.installPath}\u0000${t.binSha256}`;
 }
 
 /** Map each physical tool identity → the set of plugin names that reference it across the whole lockfile. */
@@ -334,7 +334,7 @@ export function physicalDataKey(d: DataLock): string {
 /** spec 285 — parse one consented external-tool requirement. Fail-closed (a malformed value is corruption). */
 function parseExternalToolReqLock(raw: unknown, where: string, errors: string[]): ExternalToolReqLock | null {
   if (!isPlainObject(raw)) { errors.push(`${where}: must be an object`); return null; }
-  const argvOk = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0 && !x.includes(" "));
+  const argvOk = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.every((x) => typeof x === "string" && x.length > 0 && !x.includes("\u0000"));
   const name = typeof raw.name === "string" && raw.name.length > 0 ? raw.name : null;
   if (!name) errors.push(`${where}.name: required`);
   const manual = typeof raw.manual === "string" && raw.manual.length > 0 ? raw.manual : null;
