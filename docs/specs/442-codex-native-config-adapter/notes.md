@@ -26,6 +26,16 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
   is no cross-source fallback.
 - TOML parsing uses `@iarna/toml`; `smol-toml` was rejected because its ESM-only package shape is
   incompatible with Tachyon's current CommonJS extension build.
+- Slice C source matrix is closed to measured paths: global MCP declarations may be inventoried by
+  name from `~/.codex/config.toml`; workspace MCP declarations by name from `.codex/config.toml`;
+  workspace hooks from `.codex/hooks.json`; workspace skills from `.agents/skills/<name>/SKILL.md`.
+  A selected profile item is never re-read from those paths: SDD 428 captures its pinned bytes with
+  no-follow custody and uses that captured projection. Global skills have no measured projection
+  path, so they are unavailable rather than copied. `hooks.state`, credentials, notices and all
+  runtime-maintained data are excluded from inventory and projection.
+- Codex plugins are a universal plugin-directory surface, not a measured per-agent extension loader.
+  They remain workspace-owned and are reported as unavailable for profile composition; a later
+  adapter measurement is required before changing that boundary.
 
 ## Deviations
 
