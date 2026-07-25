@@ -128,6 +128,7 @@ describe("AgentStudioAdapter — load", () => {
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.profileLabels?.provenanceTitle).toBe("localized:Profile sources and authority");
     expect(result.entity.profileLabels?.retryRefresh).toBe("localized:Refresh and retry");
+    expect(result.entity.profileLabels?.newAgentSetupHelp).toBe("localized:Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling.");
   });
 
   it("resolves an existing agent-kind entry via formLogic's fromDef", async () => {

@@ -994,7 +994,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   )}
                 </>
               ) : (
-                <div class="ash-soul-status" role="status">Save this agent before creating or importing its identity profile.</div>
+                <div class="ash-soul-status" role="status">{profileLabels.newAgentSetupHelp}</div>
               )}
             </section>
 

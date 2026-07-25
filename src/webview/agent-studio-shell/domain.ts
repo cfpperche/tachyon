@@ -469,6 +469,7 @@ export interface AgentProfileLabels {
   clone: string;
   import: string;
   saveFirst: string;
+  newAgentSetupHelp: string;
   provenanceTitle: string;
   provenanceHelp: string;
   authoredProfile: string;
@@ -594,6 +595,7 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
     rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
     saveFirst: t("Save or discard form changes before a lifecycle action."),
+    newAgentSetupHelp: t("Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling."),
     provenanceTitle: t("Profile sources and authority"),
     provenanceHelp: t("Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."),
     authoredProfile: t("Authored profile"), hostAuthority: t("Host authority"), learnedState: t("Learned state"), runtimeProjection: t("Runtime projection"),
