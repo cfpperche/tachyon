@@ -46,6 +46,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
 
   it("declares Codex isolation as measured private-home", () => {
     const profile = runtimeProfile("codex");
+    expect(profile?.profileVersion).toBe(2);
     expect(profile?.model).toMatchObject({ defaultModel: "Codex default", source: "declared", verified: false });
     expect(modelLabelForRuntime("codex", "gpt-5.1-codex")).toBe("GPT-5.1 Codex");
     expect(modelLabelForRuntime("codex", "gpt-5.6-sol")).toBe("GPT-5.6 Sol");
@@ -56,6 +57,17 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.composer?.promptLine?.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);
+    expect(profile?.permission).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
+    expect(profile?.permission?.modes).toEqual([
+      "approval_policy:untrusted",
+      "approval_policy:on-failure",
+      "approval_policy:on-request",
+      "approval_policy:never",
+      "sandbox_mode:read-only",
+      "sandbox_mode:workspace-write",
+      "sandbox_mode:danger-full-access",
+    ]);
+    expect(profile?.permission?.notes).toContain("private CODEX_HOME/config.toml");
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 

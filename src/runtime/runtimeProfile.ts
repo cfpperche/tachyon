@@ -183,7 +183,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
   },
   codex: {
     runtime: "codex",
-    profileVersion: 1,
+    profileVersion: 2,
     model: {
       defaultModel: "Codex default",
       aliases: {
@@ -205,6 +205,23 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-05",
       notes: "Spec 357: Tachyon-spawned Codex agents use per-agent private CODEX_HOME directories.",
+    },
+    permission: {
+      modes: [
+        "approval_policy:untrusted",
+        "approval_policy:on-failure",
+        "approval_policy:on-request",
+        "approval_policy:never",
+        "sandbox_mode:read-only",
+        "sandbox_mode:workspace-write",
+        "sandbox_mode:danger-full-access",
+      ],
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-25",
+      notes:
+        "Canonical profiles regenerate the selected approval_policy and sandbox_mode in private CODEX_HOME/config.toml on fresh/restart/resume " +
+        "(t-1a3d50). Codex CLI 0.145.0 accepted every declared key/value under --strict-config. This does not apply a policy to legacy arbitrary commands.",
     },
     composer: {
       tailLines: 8,

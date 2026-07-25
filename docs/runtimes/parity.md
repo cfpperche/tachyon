@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-24 (Outros / unsupported-runtime fallback column — `t-f61ce8`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-25 (Codex canonical permission/config lifecycle — `t-60ff74`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -50,6 +50,10 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 | 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
+
+For the Codex marks in rows 7, 9, and 12, **✓** is scoped to canonical profiles: Tachyon regenerates
+the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
+resume. It does not claim to impose that policy on arbitrary legacy `cmd: codex …` definitions.
 
 Also real, uneven seams (not full matrix rows yet — see open gaps): **session-id strategy** (mint vs capture), **deterministic `transcriptPath`**, **session-ownership hooks** (Claude `--settings`), **model-label normalization** (Claude/Codex), **live/observed model provenance** (spec 378 plus the Hermes SQLite reader — claude/codex/grok/hermes can latch an observed model; opencode/gemini/qwen/etc. stay declared-only), and **cross-runtime task continuation** (SDD 443 / `t-7551f9`: host focused handoff + new session on another agent — **not** native resume; edit-`cmd` while live is fail-closed via `t-6d09e6`).
 
@@ -105,12 +109,12 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
 | 5 Fork | ✓ | ✗ | ✓ | ✓ | ✓ | **✗** |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ | **✗** / **—** |
-| 7 Graceful stop | ~ | ~ | ✓ | ✓ | ✓ | **~**¶ |
+| 7 Graceful stop | ~ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
-| 9 Permission inject | ~ | ~ | ~ | **✗** | ✓ | **✗** |
+| 9 Permission inject | ~ | ✓ | ~ | **✗** | ✓ | **✗** |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ | **✗**¶ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
-| 12 Native config parity | ~ | ✗ | ~ | ✗ | ~ | **✗** |
+| 12 Native config parity | ~ | ✓ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 | 14 Runtime Config (Control) | ✗ | ✓¶ | ✗ | ✗ | ✗ |
 
