@@ -13,9 +13,11 @@ import {
   agentStudioTitleFor,
   blankAgentFields,
   canonicalAgentFields,
+  codexNativeConfigChoice,
   computeAgentDirty,
   createAgentProfileLabels,
   serializeAgentPatch,
+  setCodexNativeConfigChoice,
   isAllowedSoulImportFileName,
   validateAgentStudioHostDomainMessage,
 } from "./domain";
@@ -550,6 +552,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
 
   const flags = entity.flagMap[firstToken(fields.cmd)] ?? [];
   const canonical = fields.canonical !== undefined;
+  const canonicalRuntime = canonical
+    ? (mode === "edit" ? fields.canonical!.runtime.adapter : firstToken(fields.cmd).split(/[\\/]/).pop())
+    : undefined;
   const canonicalSnapshot = entity.profile;
   const profileLabels = entity.profileLabels ?? createAgentProfileLabels();
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
@@ -1026,6 +1031,37 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 ))}
               </div>}
             </div>
+
+            {canonical && canonicalRuntime === "codex" && (
+              <section class="ash-native-config-editor" aria-labelledby="ash-native-config-editor-title">
+                <div>
+                  <div class="ash-label" id="ash-native-config-editor-title">{profileLabels.nativeConfigTitle}</div>
+                  <div class="hint">{profileLabels.nativeConfigHelp}</div>
+                </div>
+                {([
+                  ["permissions", profileLabels.nativeConfigPermissions],
+                  ["interface", profileLabels.nativeConfigInterface],
+                  ["featureFlags", profileLabels.nativeConfigFeatureFlags],
+                ] as const).map(([family, label]) => (
+                  <div class="ash-native-config-editor-row" key={family}>
+                    <label for={`ash-native-config-${family}`}>{label}</label>
+                    <Select
+                      id={`ash-native-config-${family}`}
+                      value={codexNativeConfigChoice(fields, family)}
+                      onChange={(event) => updateFields((current) => setCodexNativeConfigChoice(
+                        current,
+                        family,
+                        (event.currentTarget as HTMLSelectElement).value as "exclude" | "global" | "workspace",
+                      ))}
+                    >
+                      <option value="exclude">{profileLabels.nativeConfigExclude}</option>
+                      <option value="global">{profileLabels.nativeConfigGlobal}</option>
+                      <option value="workspace">{profileLabels.nativeConfigWorkspace}</option>
+                    </Select>
+                  </div>
+                ))}
+              </section>
+            )}
 
             <details open={!!fields.instructions}>
               <summary>Persistent instructions</summary>

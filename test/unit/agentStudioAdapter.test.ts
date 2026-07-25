@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { AgentStudioAdapter } from "../../src/webview/AgentStudioAdapter.js";
-import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, createAgentProfileLabels, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
+import {
+  blankAgentFields,
+  canonicalAgentFields,
+  codexNativeConfigChoice,
+  createAgentEvolutionLabels,
+  createAgentProfileLabels,
+  serializeAgentPatch,
+  setCodexNativeConfigChoice,
+} from "../../src/webview/agent-studio-shell/domain.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
@@ -92,6 +100,26 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.persistentInstructionsHelp).toBe("When supported, delivered at startup through the selected runtime.");
     expect(result.entity.chips.find((c) => c.bin === "claude")?.detected).toBe(true);
     expect(result.entity.evolutionLabels.title).toBe("Agent Evolution");
+    expect(result.entity.fields.canonical?.nativeConfig).toEqual({
+      permissions: {
+        source: "global",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume"],
+      },
+      interface: {
+        source: "global",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume"],
+      },
+      featureFlags: {
+        source: "global",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume"],
+      },
+    });
   });
 
   it("projects host-localized Evolution labels into the browser entity", async () => {
@@ -129,6 +157,7 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.profileLabels?.provenanceTitle).toBe("localized:Profile sources and authority");
     expect(result.entity.profileLabels?.retryRefresh).toBe("localized:Refresh and retry");
     expect(result.entity.profileLabels?.newAgentSetupHelp).toBe("localized:Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling.");
+    expect(result.entity.profileLabels?.nativeConfigGlobal).toBe("localized:Use global defaults");
   });
 
   it("resolves an existing agent-kind entry via formLogic's fromDef", async () => {
@@ -264,8 +293,38 @@ describe("AgentStudioAdapter — save", () => {
     expect(patch).toMatchObject({
       kind: "canonical",
       agentName: `${runtime}-helper`,
-      editable: { runtime: { adapter: runtime, executable: runtime } },
+      editable: { runtime: { adapter: runtime, executable: runtime }, nativeConfig: {} },
     });
+  });
+
+  it("round-trips the fixed Codex scalar source choices without exposing unsupported tuples", () => {
+    const initial = canonicalAgentFields();
+    const workspace = setCodexNativeConfigChoice(initial, "permissions", "workspace");
+    const excluded = setCodexNativeConfigChoice(workspace, "interface", "exclude");
+
+    expect(codexNativeConfigChoice(workspace, "permissions")).toBe("workspace");
+    expect(codexNativeConfigChoice(excluded, "interface")).toBe("exclude");
+    expect(excluded.canonical?.nativeConfig.permissions).toEqual({
+      source: "workspace",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["fresh", "restart", "resume"],
+    });
+    expect(excluded.canonical?.nativeConfig.interface).toBeUndefined();
+
+    excluded.name = "canonical-codex";
+    excluded.cmd = "codex";
+    const patch = serializeAgentPatch(excluded, true);
+    expect(patch).toMatchObject({
+      kind: "canonical",
+      editable: {
+        nativeConfig: {
+          permissions: { source: "workspace" },
+          featureFlags: { source: "global" },
+        },
+      },
+    });
+    expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig?.interface).toBeUndefined();
   });
 
   it("maps a stale canonical save to a redacted Studio conflict", async () => {

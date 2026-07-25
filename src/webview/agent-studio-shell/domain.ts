@@ -10,6 +10,12 @@ import type {
 } from "../../config/agentProfileStudio.js";
 import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
 import { agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
+import {
+  codexScalarNativeConfigPolicy,
+  defaultCodexScalarNativeConfigPolicy,
+  type CodexScalarNativeConfigChoice,
+  type CodexScalarNativeConfigFamily,
+} from "../../config/agentNativeConfigPolicy.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -497,6 +503,12 @@ export interface AgentProfileLabels {
   nativeConfigTitle: string;
   nativeConfigHelp: string;
   nativeConfigEmpty: string;
+  nativeConfigPermissions: string;
+  nativeConfigInterface: string;
+  nativeConfigFeatureFlags: string;
+  nativeConfigExclude: string;
+  nativeConfigGlobal: string;
+  nativeConfigWorkspace: string;
   supported: string;
   unsupported: string;
 }
@@ -606,6 +618,12 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     nativeConfigTitle: t("Native configuration"),
     nativeConfigHelp: t("Supported choices are projected into the agent's private runtime home. Raw runtime files and credentials are never shown here."),
     nativeConfigEmpty: t("No native configuration policy is authored for this agent."),
+    nativeConfigPermissions: t("Permissions"),
+    nativeConfigInterface: t("Interface"),
+    nativeConfigFeatureFlags: t("Feature flags"),
+    nativeConfigExclude: t("Exclude"),
+    nativeConfigGlobal: t("Use global defaults"),
+    nativeConfigWorkspace: t("Use workspace defaults"),
     supported: t("Supported"),
     unsupported: t("Unsupported"),
   };
@@ -685,10 +703,38 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
     ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
     displayName: snapshot?.editable.displayName ?? "",
     runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
-    nativeConfig: structuredClone(snapshot?.editable.nativeConfig ?? {}),
+    nativeConfig: structuredClone(
+      snapshot ? snapshot.editable.nativeConfig ?? {} : defaultCodexScalarNativeConfigPolicy(),
+    ),
     capabilities: structuredClone(snapshot?.editable.capabilities ?? { skills: [], mcp: [], hooks: [] }),
   };
   return fields;
+}
+
+export function codexNativeConfigChoice(
+  fields: AgentStudioFields,
+  family: CodexScalarNativeConfigFamily,
+): CodexScalarNativeConfigChoice {
+  const source = fields.canonical?.nativeConfig[family]?.source;
+  return source === "global" || source === "workspace" ? source : "exclude";
+}
+
+export function setCodexNativeConfigChoice(
+  fields: AgentStudioFields,
+  family: CodexScalarNativeConfigFamily,
+  choice: CodexScalarNativeConfigChoice,
+): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const nativeConfig = structuredClone(fields.canonical.nativeConfig);
+  if (choice === "exclude") delete nativeConfig[family];
+  else nativeConfig[family] = codexScalarNativeConfigPolicy(choice);
+  return {
+    ...fields,
+    canonical: {
+      ...fields.canonical,
+      nativeConfig,
+    },
+  };
 }
 
 export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: AgentStudioFields): boolean {
@@ -731,7 +777,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         branch: fields.branch.trim(),
       },
       isolation: fields.isolate ? "transcript" : "",
-      nativeConfig: structuredClone(fields.canonical.nativeConfig),
+      nativeConfig: adapter === "codex" ? structuredClone(fields.canonical.nativeConfig) : {},
       capabilities: structuredClone(fields.canonical.capabilities),
     },
   };

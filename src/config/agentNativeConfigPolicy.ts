@@ -5,6 +5,36 @@ import {
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 export type AgentNativeConfigFamily = (typeof AGENT_NATIVE_CONFIG_FAMILIES)[number];
+export const CODEX_SCALAR_NATIVE_CONFIG_FAMILIES = [
+  "permissions",
+  "interface",
+  "featureFlags",
+] as const;
+export type CodexScalarNativeConfigFamily = (typeof CODEX_SCALAR_NATIVE_CONFIG_FAMILIES)[number];
+export type CodexScalarNativeConfigSource = "global" | "workspace";
+export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exclude";
+
+const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
+
+export function codexScalarNativeConfigPolicy(
+  source: CodexScalarNativeConfigSource,
+): AgentNativeConfigPolicyV1 {
+  return {
+    source,
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...CODEX_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
+export function defaultCodexScalarNativeConfigPolicy(): NonNullable<AgentProfileV1["nativeConfig"]> {
+  return Object.fromEntries(
+    CODEX_SCALAR_NATIVE_CONFIG_FAMILIES.map((family) => [
+      family,
+      codexScalarNativeConfigPolicy("global"),
+    ]),
+  );
+}
 
 export interface AgentNativeConfigSupportDecision {
   support: "supported" | "unsupported";
@@ -71,7 +101,7 @@ export function projectAgentNativeConfig(
   return projection;
 }
 
-const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(["fresh", "restart", "resume"]);
+const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(CODEX_NATIVE_CONFIG_LIFECYCLE);
 
 function hasExactLifecycle(actual: AgentNativeConfigPolicyV1["lifecycle"], expected: ReadonlySet<string>): boolean {
   return actual.length === expected.size && actual.every((phase) => expected.has(phase));

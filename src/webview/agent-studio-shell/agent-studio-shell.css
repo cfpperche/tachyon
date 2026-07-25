@@ -30,6 +30,12 @@
 .ash-profile-bindings { display: flex; flex-wrap: wrap; gap: var(--ds-2) var(--ds-3); padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: var(--ds-small); }
 .ash-profile-bindings .ash-label { flex-basis: 100%; margin: 0; }
 .ash-native-config { display: grid; gap: var(--ds-2); padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+.ash-native-config-editor { display: grid; gap: var(--ds-3); width: 100%; box-sizing: border-box; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-native-config-editor-row { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(14rem, 1.5fr); align-items: center; gap: var(--ds-3); }
+.ash-native-config-editor-row label { font-weight: 600; }
+@media (max-width: 560px) {
+  .ash-native-config-editor-row { grid-template-columns: 1fr; gap: var(--ds-1); }
+}
 .ash-native-config-empty { color: var(--ds-muted); font-size: var(--ds-small); }
 .ash-native-config-row { display: grid; grid-template-columns: minmax(7rem, .8fr) minmax(12rem, 1.4fr) minmax(9rem, 1fr) auto; align-items: center; gap: var(--ds-2); font-size: var(--ds-small); }
 .ash-native-config-supported { color: var(--vscode-testing-iconPassed, var(--ds-success)); }
