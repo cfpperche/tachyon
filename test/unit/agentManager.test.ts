@@ -4625,6 +4625,56 @@ describe("AgentManager — session resume (spec 209)", () => {
       ]);
     });
 
+    it("canonical Claude regenerates exact folder trust on fresh, restart, and resume", async () => {
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const realClaudeHome = path.join(h.ws, "real-claude");
+      const realClaudeJson = path.join(realClaudeHome, ".claude.json");
+      fs.mkdirSync(realClaudeHome, { recursive: true });
+      fs.writeFileSync(path.join(realClaudeHome, ".credentials.json"), '{"token":"external-only"}\n');
+      fs.writeFileSync(realClaudeJson, JSON.stringify({
+        hasCompletedOnboarding: true,
+        userID: "u123",
+        projects: { "/ambient/sibling": { hasTrustDialogAccepted: true } },
+      }));
+      const harness = new HarnessManager(h.ws, realClaudeHome, {}, realClaudeJson);
+      const materialized: string[] = [];
+      h.manager.defOf("claude")!.profileLifecycle = {
+        enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
+        const result = harness.materializeCanonicalClaudeHome(name, adapterFor("claude")!, cwd);
+        materialized.push(fs.readFileSync(path.join(result.home, ".claude.json"), "utf8"));
+        return result;
+      };
+
+      await h.manager.spawn("claude");
+      const privateHome = harnessHome(h.ws, "claude");
+      fs.writeFileSync(path.join(privateHome, ".claude.json"), JSON.stringify({
+        projects: { "/stale": { hasTrustDialogAccepted: true } },
+      }));
+      await h.manager.restart("claude", { stop: "force", session: "new" });
+      fs.writeFileSync(path.join(privateHome, ".claude.json"), JSON.stringify({ runtimeState: "stale" }));
+      await h.manager.resume("claude", {
+        def: { cmd: "claude", kind: "agent" },
+        resume: { runtime: "claude", sessionId: "captured-id" },
+        cwd: h.ws,
+        declared: true,
+        updatedAt: "now",
+      });
+
+      expect(materialized).toHaveLength(3);
+      expect(new Set(materialized).size).toBe(1);
+      const config = JSON.parse(materialized[0]!);
+      expect(config.projects).toEqual({
+        [path.resolve(h.ws)]: { hasTrustDialogAccepted: true },
+      });
+      expect(config).toMatchObject({ hasCompletedOnboarding: true, userID: "u123" });
+      expect(JSON.stringify(config)).not.toContain("ambient/sibling");
+      expect(JSON.stringify(config)).not.toContain("stale");
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).CLAUDE_CONFIG_DIR))
+        .toEqual([privateHome, privateHome, privateHome]);
+    });
+
     it("t-1a3d50: canonical Codex regenerates one private policy on fresh, restart, and resume", async () => {
       const h = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { fileExists: () => true });
       const realCodexHome = path.join(h.ws, "real-codex");

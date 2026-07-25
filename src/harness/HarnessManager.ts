@@ -1840,6 +1840,7 @@ export class HarnessManager {
   materializeCanonicalClaudeHome(agent: string, adapter: ResumeAdapter, cwd?: string): MaterializedHarness {
     if (adapter.runtime !== "claude") throw new Error(`runtime '${adapter.runtime}' is not Claude`);
     const home = this.materializeHome(agent, adapter, cwd);
+    this.materializeCanonicalClaudeBootstrap(home, cwd);
 
     for (const entry of ["CLAUDE.md", "settings.local.json", "plugins", "agents", "commands", "skills"]) {
       fs.rmSync(path.join(home, entry), { recursive: true, force: true });
@@ -1869,6 +1870,27 @@ export class HarnessManager {
       env: { CLAUDE_CONFIG_DIR: home },
       args: ["--setting-sources", "user", "--settings", settingsPath, ...args],
     };
+  }
+
+  private materializeCanonicalClaudeBootstrap(home: string, cwd?: string): void {
+    const cfg: Record<string, unknown> = {};
+    try {
+      const realCfg = JSON.parse(fs.readFileSync(this.realClaudeJson, "utf8")) as Record<string, unknown>;
+      if (realCfg && typeof realCfg === "object" && !Array.isArray(realCfg)) {
+        for (const key of ONBOARDING_SEED_KEYS) if (key in realCfg) cfg[key] = realCfg[key];
+      }
+    } catch {
+      // Credentials are seeded separately; exact folder trust must not depend on ambient metadata.
+    }
+    cfg.hasCompletedOnboarding = true;
+    const trustedProjects = [...new Set([
+      path.resolve(this.workspaceRoot),
+      path.resolve(cwd ?? this.workspaceRoot),
+    ])].sort();
+    cfg.projects = Object.fromEntries(
+      trustedProjects.map((project) => [project, { hasTrustDialogAccepted: true }]),
+    );
+    fs.writeFileSync(path.join(home, ".claude.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 });
   }
 
   private readCanonicalClaudeSettings(file: string): Record<string, unknown> {

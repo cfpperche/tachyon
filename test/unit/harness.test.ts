@@ -225,6 +225,56 @@ describe("HarnessManager materialize (fs)", () => {
       .toThrow(/canonical Claude settings source is unsafe/);
   });
 
+  it("canonical Claude keeps only bootstrap markers and exact workspace/cwd trust", () => {
+    const realClaudeJson = path.join(realHome, ".claude.json");
+    fs.writeFileSync(realClaudeJson, JSON.stringify({
+      hasCompletedOnboarding: true,
+      lastOnboardingVersion: "2.1.12",
+      userID: "u123",
+      oauthAccount: { id: "acct" },
+      projects: { "/ambient/sibling": { hasTrustDialogAccepted: true } },
+      attackerState: "must-not-copy",
+    }));
+    const mgr = new HarnessManager(ws, realHome, PROC, realClaudeJson);
+    const home = harnessHome(ws, "canonical");
+
+    mgr.materializeCanonicalClaudeHome("canonical", claude);
+    let cfg = JSON.parse(fs.readFileSync(path.join(home, ".claude.json"), "utf8"));
+    expect(cfg).toEqual({
+      hasCompletedOnboarding: true,
+      lastOnboardingVersion: "2.1.12",
+      userID: "u123",
+      oauthAccount: { id: "acct" },
+      projects: {
+        [path.resolve(ws)]: { hasTrustDialogAccepted: true },
+      },
+    });
+
+    const firstCwd = path.join(ws, "worktrees", "first");
+    const secondCwd = path.join(ws, "worktrees", "second");
+    mgr.materializeCanonicalClaudeHome("canonical", claude, firstCwd);
+    cfg = JSON.parse(fs.readFileSync(path.join(home, ".claude.json"), "utf8"));
+    expect(cfg.projects).toEqual({
+      [path.resolve(ws)]: { hasTrustDialogAccepted: true },
+      [path.resolve(firstCwd)]: { hasTrustDialogAccepted: true },
+    });
+
+    cfg.projects["/stale/private-home-write"] = { hasTrustDialogAccepted: true };
+    cfg.runtimeState = "must-be-removed";
+    fs.writeFileSync(path.join(home, ".claude.json"), JSON.stringify(cfg));
+    mgr.materializeCanonicalClaudeHome("canonical", claude, secondCwd);
+    cfg = JSON.parse(fs.readFileSync(path.join(home, ".claude.json"), "utf8"));
+    expect(cfg.projects).toEqual({
+      [path.resolve(ws)]: { hasTrustDialogAccepted: true },
+      [path.resolve(secondCwd)]: { hasTrustDialogAccepted: true },
+    });
+    expect(cfg).not.toHaveProperty("runtimeState");
+    expect(JSON.stringify(cfg)).not.toContain("ambient/sibling");
+    expect(JSON.stringify(cfg)).not.toContain("stale/private-home-write");
+    expect(fs.realpathSync(path.join(home, ".credentials.json")))
+      .toBe(fs.realpathSync(path.join(realHome, ".credentials.json")));
+  });
+
   it("spec 236: folds the Bridge into the materialized --strict mcp file (inherit:none keeps it)", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
