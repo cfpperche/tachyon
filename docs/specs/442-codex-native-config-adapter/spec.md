@@ -3,7 +3,7 @@
 _Created 2026-07-23._
 
 **Status:** shipped
-**Closure:** t-1a3d50 closes lifecycle parity with a fresh/restart/resume private-home regeneration proof and a 2026-07-25 Dev Host smoke; `c879acbd`.
+**Closure:** t-1a3d50 closes lifecycle parity with a fresh/restart/resume private-home regeneration proof and a 2026-07-25 Dev Host smoke; lifecycle evidence `4e3b45bd`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
