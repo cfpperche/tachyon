@@ -915,9 +915,12 @@ export class Workspace {
         // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its
         // dedicated exact-resource materializer rather than pretending Pi has generic MCP wiring.
         if (adapter?.runtime === "pi" && def.isolate === undefined) {
+          const exactTrust = def.profileLifecycle
+            ? { exactTrustCwd: cwd ?? this.workspaceRoot }
+            : undefined;
           return def.harness
-            ? this.harness.materializePiHome(name, def.harness)
-            : this.harness.materializePiHomeOnly(name);
+            ? this.harness.materializePiHome(name, def.harness, exactTrust)
+            : this.harness.materializePiHomeOnly(name, exactTrust);
         }
         if (!harnessable(adapter) || !adapter) return null;
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the

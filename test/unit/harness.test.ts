@@ -313,8 +313,56 @@ describe("HarnessManager materialize (fs)", () => {
 
     // Pi owns later private mutations; rematerialization validates but does not overwrite them.
     fs.writeFileSync(path.join(a.home, "settings.json"), '{"theme":"light"}');
+    fs.writeFileSync(path.join(a.home, "trust.json"), '{"/runtime-owned":false}');
     mgr.materializePiHomeOnly("pi-a");
     expect(JSON.parse(fs.readFileSync(path.join(a.home, "settings.json"), "utf8"))).toEqual({ theme: "light" });
+    expect(JSON.parse(fs.readFileSync(path.join(a.home, "trust.json"), "utf8"))).toEqual({ "/runtime-owned": false });
+  });
+
+  it("canonical Pi replaces ambient and stale trust with the exact workspace and effective cwd", () => {
+    const piHome = path.join(path.dirname(realHome), "realpi-canonical-trust");
+    const cwd = path.join(path.dirname(ws), "pi-worktree");
+    fs.mkdirSync(piHome, { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    fs.writeFileSync(path.join(piHome, "auth.json"), '{"provider":{"type":"oauth"}}');
+    fs.writeFileSync(path.join(piHome, "settings.json"), '{"theme":"dark"}');
+    fs.writeFileSync(path.join(piHome, "trust.json"), '{"/ambient-parent":true,"/ambient-denial":false}');
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      PROC,
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      piHome,
+    );
+
+    const result = mgr.materializePiHomeOnly("pi-canonical", { exactTrustCwd: cwd });
+    const trustPath = path.join(result.home, "trust.json");
+    expect(JSON.parse(fs.readFileSync(trustPath, "utf8"))).toEqual({
+      [fs.realpathSync(ws)]: true,
+      [fs.realpathSync(cwd)]: true,
+    });
+    expect(fs.statSync(trustPath).mode & 0o777).toBe(0o600);
+
+    fs.writeFileSync(trustPath, '{"/stale-parent":true,"/stale-denial":false}');
+    fs.writeFileSync(path.join(result.home, "settings.json"), '{"theme":"runtime-owned"}');
+    mgr.materializePiHomeOnly("pi-canonical", { exactTrustCwd: cwd });
+    expect(JSON.parse(fs.readFileSync(trustPath, "utf8"))).toEqual({
+      [fs.realpathSync(ws)]: true,
+      [fs.realpathSync(cwd)]: true,
+    });
+    expect(JSON.parse(fs.readFileSync(path.join(result.home, "settings.json"), "utf8")))
+      .toEqual({ theme: "runtime-owned" });
+    expect(JSON.parse(fs.readFileSync(path.join(result.home, "auth.json"), "utf8")))
+      .toEqual({ provider: { type: "oauth" } });
+
+    const same = mgr.materializePiHomeOnly("pi-same-cwd", { exactTrustCwd: ws });
+    expect(JSON.parse(fs.readFileSync(path.join(same.home, "trust.json"), "utf8")))
+      .toEqual({ [fs.realpathSync(ws)]: true });
   });
 
   it("SDD 401: Pi environment-only auth works, while unsafe JSON sources and targets fail closed", () => {
@@ -335,6 +383,12 @@ describe("HarnessManager materialize (fs)", () => {
     fs.mkdirSync(unsafe, { recursive: true });
     fs.symlinkSync(path.join(piHome, "settings.json"), path.join(unsafe, "settings.json"));
     expect(() => mgr.materializePiHomeOnly("unsafe-target")).toThrow(/regular no-follow file/);
+
+    const unsafeTrust = harnessHome(ws, "unsafe-exact-trust");
+    fs.mkdirSync(unsafeTrust, { recursive: true });
+    fs.symlinkSync(path.join(piHome, "settings.json"), path.join(unsafeTrust, "trust.json"));
+    expect(() => mgr.materializePiHomeOnly("unsafe-exact-trust", { exactTrustCwd: ws }))
+      .toThrow(/regular no-follow file/);
   });
 
   it("SDD 406: Pi snapshots an exact resource generation and returns only explicit CLI resource paths", () => {

@@ -68,9 +68,9 @@ export function harnessRoot(workspaceRoot: string): string {
  *  reader (e.g. a sibling agent's SessionStart hook running the materialized recorder) sees the old or new
  *  complete file, never a truncated one. Unique temp (pid + monotonic seq) — no Date.now (resume-safe idiom). */
 let __atomicSeq = 0;
-function atomicWrite(file: string, content: string): void {
+function atomicWrite(file: string, content: string, mode?: number): void {
   const tmp = `${file}.tmp-${process.pid}-${__atomicSeq++}`;
-  fs.writeFileSync(tmp, content);
+  fs.writeFileSync(tmp, content, mode === undefined ? undefined : { mode });
   fs.renameSync(tmp, file);
 }
 
@@ -858,7 +858,7 @@ export class HarnessManager {
     if (projection.adapter !== adapter.runtime) {
       throw new HarnessUnavailableError(agent, `capability snapshot targets '${projection.adapter}', not '${adapter.runtime}'`);
     }
-    if (adapter.runtime === "pi") return this.materializePiProfileHome(agent, projection);
+    if (adapter.runtime === "pi") return this.materializePiProfileHome(agent, projection, cwd);
     if (adapter.runtime !== "codex") {
       throw new HarnessUnavailableError(agent, `runtime '${adapter.runtime}' has no measured profile capability projection`);
     }
@@ -966,16 +966,16 @@ export class HarnessManager {
    * global resource trees deliberately do not cross this boundary. Existing private files belong to Pi
    * and are validated/preserved so OAuth refresh and `/settings` writes survive restart/resume.
    */
-  materializePiHomeOnly(agent: string): MaterializedHarness {
+  materializePiHomeOnly(agent: string, options: { exactTrustCwd?: string } = {}): MaterializedHarness {
     // Prior content-addressed harness generations remain inert: without explicit CLI paths Pi cannot
     // discover this hidden subtree. Keeping them avoids mutating a still-live process during fallible
     // restart preparation; canonical forget removes the complete private home.
-    return this.materializePiBaseHome(agent);
+    return this.materializePiBaseHome(agent, options);
   }
 
   /** SDD 406 — materialize an exact, agent-local Pi resource catalog without mutating private settings. */
-  materializePiHome(agent: string, def: HarnessDef): MaterializedHarness {
-    const base = this.materializePiBaseHome(agent);
+  materializePiHome(agent: string, def: HarnessDef, options: { exactTrustCwd?: string } = {}): MaterializedHarness {
+    const base = this.materializePiBaseHome(agent, options);
     const root = path.join(base.home, PI_RESOURCE_ROOT);
     this.ensurePiResourceDir(agent, root);
     this.cleanPiStagingDirs(agent, root);
@@ -1030,8 +1030,12 @@ export class HarnessManager {
     }
   }
 
-  private materializePiProfileHome(agent: string, projection: ResolvedAgentCapabilityProjection): MaterializedHarness {
-    const base = this.materializePiBaseHome(agent);
+  private materializePiProfileHome(
+    agent: string,
+    projection: ResolvedAgentCapabilityProjection,
+    cwd?: string,
+  ): MaterializedHarness {
+    const base = this.materializePiBaseHome(agent, { exactTrustCwd: cwd ?? this.workspaceRoot });
     const root = path.join(base.home, PI_RESOURCE_ROOT);
     this.ensurePiResourceDir(agent, root);
     this.cleanPiStagingDirs(agent, root);
@@ -1081,24 +1085,29 @@ export class HarnessManager {
     }
   }
 
-  private materializePiBaseHome(agent: string): MaterializedHarness {
+  private materializePiBaseHome(agent: string, options: { exactTrustCwd?: string } = {}): MaterializedHarness {
     const home = materializePiAgentHome(this.workspaceRoot, agent);
+    const exactTrust = options.exactTrustCwd === undefined
+      ? undefined
+      : [...new Set([this.workspaceRoot, options.exactTrustCwd].map((folder) => fs.realpathSync(folder)))];
 
     for (const fileName of PI_PRIVATE_JSON_FILES) {
       const source = path.join(this.realPiHome, fileName);
       const target = path.join(home, fileName);
       let sourceExists = false;
-      try {
-        const stat = fs.lstatSync(source);
-        sourceExists = true;
-        if (stat.isSymbolicLink() || !stat.isFile()) {
-          throw new HarnessUnavailableError(agent, `Pi seed source must be a regular no-follow file: ${source}`);
+      if (fileName !== "trust.json" || exactTrust === undefined) {
+        try {
+          const stat = fs.lstatSync(source);
+          sourceExists = true;
+          if (stat.isSymbolicLink() || !stat.isFile()) {
+            throw new HarnessUnavailableError(agent, `Pi seed source must be a regular no-follow file: ${source}`);
+          }
+          if (!isReadableJsonObjectFile(source)) {
+            throw new HarnessUnavailableError(agent, `Pi seed source is not a readable JSON object: ${source}`);
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
         }
-        if (!isReadableJsonObjectFile(source)) {
-          throw new HarnessUnavailableError(agent, `Pi seed source is not a readable JSON object: ${source}`);
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
 
       let targetExists = false;
@@ -1140,6 +1149,17 @@ export class HarnessManager {
         fs.chmodSync(target, 0o600);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+
+    if (exactTrust !== undefined) {
+      const trustPath = path.join(home, "trust.json");
+      const trust = Object.fromEntries(exactTrust.map((folder) => [folder, true]));
+      atomicWrite(trustPath, `${JSON.stringify(trust, null, 2)}\n`, 0o600);
+      fs.chmodSync(trustPath, 0o600);
+      const stat = fs.lstatSync(trustPath);
+      if (stat.isSymbolicLink() || !stat.isFile() || !isReadableJsonObjectFile(trustPath)) {
+        throw new HarnessUnavailableError(agent, `Pi exact trust target failed final validation: ${trustPath}`);
       }
     }
 

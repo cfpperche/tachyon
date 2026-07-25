@@ -4738,6 +4738,73 @@ describe("AgentManager — session resume (spec 209)", () => {
         .toEqual([privateHome, privateHome, privateHome]);
     });
 
+    it("canonical Pi regenerates exact trust without losing private state on fresh, restart, and resume", async () => {
+      const h = resumeHarness("agents:\n  pi:\n    cmd: pi\n", {
+        fileExists: () => true,
+        materializePiSessionDir: (name) => path.join(harnessHome(h.ws, name), "sessions"),
+        resolveCaptureSession: async (_runtime, _cwd, home, id) => ({
+          id: id ?? "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+          path: path.join(home ?? h.ws, `${id ?? "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}.jsonl`),
+        }),
+      });
+      const realPiHome = path.join(h.ws, "real-pi");
+      fs.mkdirSync(realPiHome, { recursive: true });
+      fs.writeFileSync(path.join(realPiHome, "auth.json"), '{"provider":{"type":"oauth"}}\n');
+      fs.writeFileSync(path.join(realPiHome, "settings.json"), '{"theme":"dark"}\n');
+      fs.writeFileSync(path.join(realPiHome, "trust.json"), '{"/ambient-parent":true}\n');
+      const harness = new HarnessManager(
+        h.ws,
+        path.join(h.ws, "real-claude"),
+        {},
+        path.join(h.ws, "real-claude", ".claude.json"),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        realPiHome,
+      );
+      const materialized: string[] = [];
+      h.manager.defOf("pi")!.profileLifecycle = {
+        enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
+        const result = harness.materializePiHomeOnly(name, { exactTrustCwd: cwd ?? h.ws });
+        materialized.push(fs.readFileSync(path.join(result.home, "trust.json"), "utf8"));
+        return result;
+      };
+
+      await h.manager.spawn("pi");
+      const privateHome = harnessHome(h.ws, "pi");
+      fs.writeFileSync(path.join(privateHome, "trust.json"), '{"/stale-restart":true}\n');
+      fs.writeFileSync(path.join(privateHome, "settings.json"), '{"theme":"runtime-owned"}\n');
+      await h.manager.restart("pi", { stop: "force", session: "new" });
+      fs.writeFileSync(path.join(privateHome, "trust.json"), '{"/stale-resume":false}\n');
+      await h.manager.resume("pi", {
+        def: { cmd: "pi", kind: "agent" },
+        resume: { runtime: "pi", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+        cwd: h.ws,
+        declared: true,
+        updatedAt: "now",
+      });
+
+      expect(materialized).toHaveLength(3);
+      expect(new Set(materialized).size).toBe(1);
+      expect(JSON.parse(materialized[0]!)).toEqual({ [fs.realpathSync(h.ws)]: true });
+      expect(JSON.parse(fs.readFileSync(path.join(privateHome, "settings.json"), "utf8")))
+        .toEqual({ theme: "runtime-owned" });
+      expect(JSON.parse(fs.readFileSync(path.join(privateHome, "auth.json"), "utf8")))
+        .toEqual({ provider: { type: "oauth" } });
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).PI_CODING_AGENT_DIR))
+        .toEqual([privateHome, privateHome, privateHome]);
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).PI_CODING_AGENT_SESSION_DIR))
+        .toEqual([
+          path.join(privateHome, "sessions"),
+          path.join(privateHome, "sessions"),
+          path.join(privateHome, "sessions"),
+        ]);
+    });
+
     it("t-1a3d50: canonical Codex regenerates one private policy on fresh, restart, and resume", async () => {
       const h = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { fileExists: () => true });
       const realCodexHome = path.join(h.ws, "real-codex");
