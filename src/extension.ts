@@ -1513,6 +1513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
         applyCodexNativeConfigChange({
           workspaceRoot: ws.workspaceRoot,
+          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
           scope,
           expectedRevision,
           changes: changes.map((change) => change.kind === "setting"

@@ -521,9 +521,29 @@ main.ck-main.ck-main--mission,
 
 .rcp-card-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 10px;
+}
+
+.rcp-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.rcp-actions-state {
+  margin-right: auto;
+  color: var(--ds-muted);
+  font-size: 10px;
 }
 
 .rcp-toggle {

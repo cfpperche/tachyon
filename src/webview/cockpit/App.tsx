@@ -1027,6 +1027,14 @@ function RuntimeConfigInventory({
       </div> : null}
       {scope === "global" ? <div class="rcp-global-warning">{s.runtimeConfigGlobalWarning}</div> : null}
 
+      <div class="rcp-actions-bar" role="region" aria-label="Runtime configuration actions">
+        <span class="rcp-actions-state" aria-live="polite">{dirty ? "Unsaved changes" : "No pending changes"}</span>
+        <div class="rcp-card-actions">
+          <Button variant="default" disabled={!dirty} onClick={cancel}>Cancel</Button>
+          <Button variant="primary" disabled={!dirty} onClick={save}>{s.runtimeConfigSave}</Button>
+        </div>
+      </div>
+
       <div class="rcp-grid">
         <section class="rcp-card rcp-card--settings">
           <div class="rcp-card-head">
@@ -1052,7 +1060,6 @@ function RuntimeConfigInventory({
               </div>;
             })}</div>
           )}
-          <div class="rcp-card-actions"><Button variant="default" disabled={!dirty} onClick={cancel}>Cancel</Button><Button variant="primary" disabled={!dirty} onClick={save}>{s.runtimeConfigSave}</Button></div>
         </section>
 
         <section class="rcp-card">
