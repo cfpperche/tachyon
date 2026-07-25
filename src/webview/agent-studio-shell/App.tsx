@@ -1063,11 +1063,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </section>
             )}
 
-            <details open={!!fields.instructions}>
-              <summary>Persistent instructions</summary>
+            <section class="ash-static-section" aria-labelledby="ash-persistent-instructions-title">
+              <div class="ash-label" id="ash-persistent-instructions-title">Persistent instructions</div>
               <Textarea disabled={canonical} rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
               <div class="hint">{canonical ? "Persistent instructions use their dedicated profile binding and are not editable in this form yet." : entity.persistentInstructionsHelp}</div>
-            </details>
+            </section>
 
             <EvolutionSection
               labels={entity.evolutionLabels}
@@ -1109,8 +1109,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             {/* t-a1ba6c — advanced sections live in the main fields column (natural document flow
              * under Working directory). StudioFrame's sideActions slot sits AFTER flex:1 main and
              * was pinning these as a lonely bottom footer with a huge empty void on short forms. */}
-            <details open={fields.worktree || !!fields.branch || !!fields.worktreeSetup || !!fields.verify}>
-              <summary>Git worktree isolation</summary>
+            <section class="ash-static-section" aria-labelledby="ash-worktree-title">
+              <div class="ash-label" id="ash-worktree-title">Git worktree isolation</div>
+              <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup and verification.</div>
               <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
@@ -1124,11 +1125,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   <Chip key={c} active={c === fields.verify.trim()} onClick={() => set("verify", c)}>{c}</Chip>
                 ))}
               </div>}
-            </details>
+            </section>
 
             {showHarness && !canonical && (
-              <details open={fields.harness}>
-                <summary>Isolated harness</summary>
+              <section class="ash-static-section" aria-labelledby="ash-harness-title">
+                <div class="ash-label" id="ash-harness-title">Isolated harness</div>
+                <div class="hint">Project runtime resources are copied into a private harness for this agent.</div>
                 <label class="check"><input type="checkbox" checked={fields.harness} onChange={(e) => set("harness", (e.currentTarget as HTMLInputElement).checked)} /> {harnessCheckboxLabel}</label>
                 <label class="ash-label" for="ash-inherit">Inherit</label>
                 <Select id="ash-inherit" value={fields.harnessInherit} onChange={(e) => set("harnessInherit", (e.currentTarget as HTMLSelectElement).value)}>
@@ -1153,7 +1155,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <Textarea id="ash-skills" rows={2} value={fields.harnessSkills} onInput={(e) => set("harnessSkills", (e.currentTarget as HTMLTextAreaElement).value)} />
                 <label class="ash-label" for="ash-hooks">Hooks (YAML)</label>
                 <Textarea id="ash-hooks" rows={4} value={fields.harnessHooks} onInput={(e) => set("harnessHooks", (e.currentTarget as HTMLTextAreaElement).value)} />
-              </details>
+              </section>
             )}</>
           </div>
         ),

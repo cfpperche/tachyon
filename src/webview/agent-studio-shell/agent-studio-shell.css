@@ -3,11 +3,9 @@
  * directory, not sideActions). Layout only — .ds-input/.ds-chip/.ds-degrade etc. come from the shared
  * design-system.css every studio surface already loads. */
 .ash-fields { display: grid; gap: var(--ds-3); align-content: start; width: min(100%, 760px); margin: 0 auto; }
-/* `<details>` (instructions/worktree/harness) breaks a nested label+input out of the parent grid's implicit
- * per-child row — they fall back to normal inline flow, where a bare label/input would otherwise collapse
- * onto the same line. Force block/full-width explicitly rather than relying on grid-stretch (which only
- * reaches DIRECT children), the same way pipeline-studio.css's .ps-input does. */
 .ash-group, .ash-field { min-width: 0; }
+.ash-static-section { display: grid; gap: var(--ds-2); min-width: 0; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-static-section > .ash-label { margin: 0; }
 .ash-grid { display: grid; gap: var(--ds-3); }
 .ash-grid-compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ash-label { display: block; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 var(--ds-1); }
@@ -99,15 +97,11 @@
 .ash-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); }
 .checks label, .check { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .hint { color: var(--ds-muted); font-size: var(--ds-small); }
-/* t-ca31c2 follow-up — bare `details` leaked into Runtime Ops (and any other Control surface that
-   uses <details>) after Agent Studio co-load. Scope under the studio fields root. */
-.ash-fields details, .ash-evolution details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
-.ash-fields details > summary, .ash-evolution details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
-.ash-fields details > .ds-input, .ash-fields details > select, .ash-fields details > textarea,
-.ash-fields details > .hint, .ash-fields details > .ash-chips, .ash-fields details > .check { margin-top: var(--ds-2); }
-.ash-fields details > .ash-label { margin-top: var(--ds-3); }
+.ash-evolution details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+.ash-evolution details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
 
 @media (max-width: 720px) {
+  .ash-fields { width: calc(100vw - (2 * var(--ds-page-pad-x))); margin: 0; justify-self: start; }
   .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff, .ash-profile-source-grid { grid-template-columns: 1fr; }
   .ash-row { align-items: stretch; flex-direction: column; }
   .ash-identity-heading, .ash-evolution-heading, .ash-evolution-toolbar { align-items: stretch; flex-direction: column; }

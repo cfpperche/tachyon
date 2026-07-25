@@ -33,6 +33,19 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     expect(harnessAt).toBeGreaterThan(worktreeAt);
   });
 
+  it("renders agent configuration blocks as always-expanded static sections", () => {
+    const src = readSrc("src/webview/agent-studio-shell/App.tsx");
+    const css = readSrc("src/webview/agent-studio-shell/agent-studio-shell.css");
+    expect(src).not.toContain("<details");
+    expect(src).not.toContain("<summary");
+    expect(src).toContain('class="ash-static-section" aria-labelledby="ash-persistent-instructions-title"');
+    expect(src).toContain('class="ash-static-section" aria-labelledby="ash-worktree-title"');
+    expect(src).toContain('class="ash-static-section" aria-labelledby="ash-harness-title"');
+    expect(src).toContain("{showHarness && !canonical && (");
+    expect(css).toContain(".ash-static-section");
+    expect(css).not.toContain(".ash-fields details");
+  });
+
   it("does not expose the deprecated transcript-isolation toggle in either Agent Studio mode", () => {
     const src = readSrc("src/webview/agent-studio-shell/App.tsx");
     expect(src).not.toContain("Isolate runtime transcript/config home");
