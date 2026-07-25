@@ -11,7 +11,7 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
-import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, bridgeGrokHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
@@ -4672,6 +4672,69 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(JSON.stringify(config)).not.toContain("ambient/sibling");
       expect(JSON.stringify(config)).not.toContain("stale");
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).CLAUDE_CONFIG_DIR))
+        .toEqual([privateHome, privateHome, privateHome]);
+    });
+
+    it("canonical Grok regenerates exact trust without losing auth or Bridge MCP on fresh, restart, and resume", async () => {
+      const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
+      const realGrokHome = path.join(h.ws, "real-grok");
+      fs.mkdirSync(realGrokHome, { recursive: true });
+      fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"external-only"}\n');
+      const harness = new HarnessManager(
+        h.ws,
+        path.join(h.ws, "real-claude"),
+        {},
+        path.join(h.ws, "real-claude", ".claude.json"),
+        undefined,
+        undefined,
+        undefined,
+        realGrokHome,
+      );
+      const bridge = {
+        url: "http://127.0.0.1:9/mcp",
+        headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+      };
+      const materialized: Array<{ config: string; trust: string }> = [];
+      h.manager.defOf("grok")!.profileLifecycle = {
+        enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
+        const home = harness.materializeBridgeMcpGrok(name, bridge, cwd ?? h.ws, { exactTrust: true });
+        materialized.push({
+          config: fs.readFileSync(path.join(home, "config.toml"), "utf8"),
+          trust: fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8"),
+        });
+        return { home, env: { GROK_HOME: home }, args: [] };
+      };
+
+      await h.manager.spawn("grok");
+      const privateHome = bridgeGrokHome(h.ws, "grok");
+      fs.writeFileSync(path.join(privateHome, "trusted_folders.toml"), '[folders."/stale-restart"]\ntrusted = true\ndecided_at = 1\n');
+      fs.writeFileSync(path.join(privateHome, "config.toml"), '[mcp_servers.stale]\ncommand = "wrong"\n');
+      await h.manager.restart("grok", { stop: "force", session: "new" });
+      fs.writeFileSync(path.join(privateHome, "trusted_folders.toml"), '[folders."/stale-resume"]\ntrusted = true\ndecided_at = 2\n');
+      fs.rmSync(path.join(privateHome, "config.toml"));
+      await h.manager.resume("grok", {
+        def: { cmd: "grok", kind: "agent" },
+        resume: { runtime: "grok", sessionId: "captured-id" },
+        cwd: h.ws,
+        declared: true,
+        updatedAt: "now",
+      });
+
+      expect(materialized).toHaveLength(3);
+      expect(new Set(materialized.map(({ config }) => config)).size).toBe(1);
+      expect(new Set(materialized.map(({ trust }) => trust)).size).toBe(1);
+      for (const { config, trust } of materialized) {
+        expect(config).toContain("[mcp_servers.tachyon_bridge]");
+        expect(config).not.toContain("mcp_servers.stale");
+        expect(trust).toContain(`[folders."${path.resolve(h.ws)}"]`);
+        expect(trust.match(/trusted\s*=\s*true/g)).toHaveLength(1);
+        expect(trust).not.toContain("stale-");
+      }
+      expect(fs.realpathSync(path.join(privateHome, "auth.json")))
+        .toBe(fs.realpathSync(path.join(realGrokHome, "auth.json")));
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).GROK_HOME))
         .toEqual([privateHome, privateHome, privateHome]);
     });
 
