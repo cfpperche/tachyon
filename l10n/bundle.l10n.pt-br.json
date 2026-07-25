@@ -403,6 +403,7 @@
   "Which agent runtime should connect to the Bridge?": "Qual runtime de agente conectar à Bridge?",
   "Which folder?": "Qual pasta?",
   "Working directory": "Diretório de trabalho",
+  "Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged.": "Habilitar ou iniciar este agente canônico autoriza a confiança nativa de pastas somente para o workspace atual e o diretório de trabalho efetivo. Aprovações gerais, a política de sandbox e a confiança em hooks arbitrários permanecem inalteradas.",
   "Worktree removal failed: {0}": "Falha ao remover o worktree: {0}",
   "Worktree removed. Branch '{0}' has unmerged commits and was kept — force-delete it and LOSE that work?": "Worktree removido. A branch '{0}' tem commits não-mergeados e foi mantida — forçar exclusão e PERDER esse trabalho?",
   "Worktree removed. The pre-existing branch '{0}' was kept — delete it too? This is destructive and cannot be undone.": "Worktree removido. A branch pré-existente '{0}' foi mantida — excluir também? Isso é destrutivo e não pode ser desfeito.",

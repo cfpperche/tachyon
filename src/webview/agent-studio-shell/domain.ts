@@ -509,6 +509,7 @@ export interface AgentProfileLabels {
   nativeConfigExclude: string;
   nativeConfigGlobal: string;
   nativeConfigWorkspace: string;
+  canonicalTrustHelp: string;
   supported: string;
   unsupported: string;
 }
@@ -624,6 +625,7 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     nativeConfigExclude: t("Exclude"),
     nativeConfigGlobal: t("Use global defaults"),
     nativeConfigWorkspace: t("Use workspace defaults"),
+    canonicalTrustHelp: t("Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged."),
     supported: t("Supported"),
     unsupported: t("Unsupported"),
   };

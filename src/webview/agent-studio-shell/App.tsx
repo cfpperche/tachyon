@@ -1103,6 +1103,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
                 <Button onClick={() => post(browseMessage())}>Browse</Button>
               </div>
+              {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
             </div>
 
             {/* t-a1ba6c — advanced sections live in the main fields column (natural document flow

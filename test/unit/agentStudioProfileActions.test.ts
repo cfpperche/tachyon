@@ -245,6 +245,7 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain("forgetValue !== canonicalSnapshot.agentName");
     expect(source).toContain("bundleCancelButtonRef.current?.focus()");
     expect(source).toContain("Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.");
+    expect(source).toContain('{canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}');
     expect(source).toContain('aria-labelledby="ash-profile-sources-title"');
     expect(source).toContain("canonicalSnapshot.provenance.authority.grants");
     expect(source).toContain("profileLabels.retryRefresh");
@@ -257,6 +258,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(pt["Profile sources and authority"]).toBe("Origens e autoridade do perfil");
     expect(pt["Only authored profile values are editable. Authority, learned state, and runtime projection are read-only."]).toContain("somente leitura");
     expect(pt["Refresh and retry"]).toBe("Atualizar e tentar novamente");
+    const trustCopy = "Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged.";
+    expect(en[trustCopy]).toBe(trustCopy);
+    expect(pt[trustCopy]).toContain("workspace atual");
   });
 
   it("keeps the browser import cap aligned with the authoritative soul byte cap", () => {

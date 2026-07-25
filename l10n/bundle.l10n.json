@@ -135,6 +135,7 @@
   "Operational actions use the loaded profile revision and stay separate from form save.": "Operational actions use the loaded profile revision and stay separate from form save.",
   "Closed": "Closed", "Degraded": "Degraded", "Conflict": "Conflict",
   "Enable agent": "Enable agent", "Disable agent": "Disable agent", "Refresh and retry": "Refresh and retry",
+  "Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged.": "Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged.",
   "Rename…": "Rename…", "Forget…": "Forget…", "Export": "Export", "Clone…": "Clone…", "Import…": "Import…",
   "Save or discard form changes before a lifecycle action.": "Save or discard form changes before a lifecycle action.",
   "Profile sources and authority": "Profile sources and authority",

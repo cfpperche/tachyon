@@ -158,6 +158,7 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.profileLabels?.retryRefresh).toBe("localized:Refresh and retry");
     expect(result.entity.profileLabels?.newAgentSetupHelp).toBe("localized:Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling.");
     expect(result.entity.profileLabels?.nativeConfigGlobal).toBe("localized:Use global defaults");
+    expect(result.entity.profileLabels?.canonicalTrustHelp).toContain("localized:Enabling or starting this canonical agent");
   });
 
   it("resolves an existing agent-kind entry via formLogic's fromDef", async () => {
