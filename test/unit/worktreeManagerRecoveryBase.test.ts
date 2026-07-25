@@ -22,25 +22,6 @@ describe("WorktreeManager — prior-less recovery reuse base identity (t-2dd637)
 
   const git = (args: string[], cwd: string) => execFileSync("git", args, { cwd, encoding: "utf8" });
 
-  /**
-   * Oracle fixed by git itself, not by our output: a projection base must both satisfy git's branch
-   * ref grammar AND resolve to a real branch under `refs/heads/`. The grammar half alone is NOT
-   * discriminating — `git check-ref-format --branch <40-hex>` exits 0, since a SHA is a
-   * grammatically legal branch name. Resolution is the half that actually separates a symbolic
-   * base branch from a pinned commit, so both are asserted together.
-   */
-  function isSymbolicBranchRef(value: string, cwd: string): boolean {
-    const run = (args: string[]) => {
-      try {
-        execFileSync("git", args, { cwd, stdio: "ignore" });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    return run(["check-ref-format", "--branch", value]) && run(["show-ref", "--verify", `refs/heads/${value}`]);
-  }
-
   function mkRepo(): string {
     const d = fs.mkdtempSync(path.join(os.tmpdir(), "wt-recovery-base-repo-"));
     dirs.push(d);
@@ -95,23 +76,9 @@ describe("WorktreeManager — prior-less recovery reuse base identity (t-2dd637)
     expect(reused.record.tachyonCreatedBranch).toBe(false);
   });
 
-  it("never records a projection base that is not a symbolic ref", async () => {
-    expect.hasAssertions();
-    const m = mgr();
-
-    // The projection base is `WorktreeRecord.baseBranch` (Workspace.recordCanonicalDelivery).
-    const created = (await m.ensure({ agent: "prop", branch: "tachyon/prop" })).record;
-    const reused = (await m.ensure({ agent: "prop", branch: "tachyon/prop" })).record;
-
-    for (const [label, record] of [["create", created], ["prior-less reuse", reused]] as const) {
-      expect(record.baseBranch, `${label} path must carry a base branch`).toBeDefined();
-      expect(isSymbolicBranchRef(record.baseBranch!, repo), `${label} base must be a symbolic branch ref`).toBe(true);
-    }
-
-    // The oracle has teeth: the fork-point SHA these paths would otherwise fall back to is NOT a
-    // symbolic branch ref, so the assertion above could not pass vacuously.
-    expect(isSymbolicBranchRef(reused.baseRef, repo)).toBe(false);
-  });
+  // The "projection base is always a symbolic branch ref" property moved to
+  // test/product-invariants/PI-003-symbolic-delegation-base.test.ts (ratified 2026-07-25). Two
+  // oracles for one promise drift; this file keeps the mechanism coverage, PI-003 owns the promise.
 
   it("leaves the base branch absent when the workspace root is on a detached HEAD", async () => {
     expect.hasAssertions();
