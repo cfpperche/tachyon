@@ -7,3 +7,23 @@
 !package.nls*.json
 !l10n/**
 !provenance.json
+
+# t-09a462 — node-pty is `external` in esbuild (a native addon cannot be bundled), so the extension
+# host `require()`s it at runtime from node_modules. Nothing re-included it here, so every installed
+# build shipped without it and the agent pane could never attach: "Cannot find module 'node-pty'".
+#
+# Only NEGATIONS below, never a re-exclusion inside a negated tree. `.vscodeignore` does not honour
+# that shape — t-009d2f is the incident: `dist/webview-preview/**` sat here as a documented, dead
+# exclusion after `!dist/**` and shipped ~274KB of dev harness for weeks. So the debug symbols are
+# left out by NOT naming them, not by excluding them: node-pty's Windows .pdb files are 58MB, while
+# every platform's real binary together is 4MB.
+#
+# node-pty resolves its own binary at runtime (lib/utils.js: build/Release, then build/Debug, then
+# prebuilds/<platform>-<arch>), so shipping every platform's payload lets one VSIX serve all of them
+# — no per-platform packaging. The host's own build output covers the platform this was built on
+# (Linux builds from source; there is no linux entry under prebuilds/).
+!node_modules/node-pty/package.json
+!node_modules/node-pty/lib/**
+!node_modules/node-pty/build/Release/*.node
+!node_modules/node-pty/prebuilds/**/*.node
+!node_modules/node-pty/prebuilds/**/conpty/**

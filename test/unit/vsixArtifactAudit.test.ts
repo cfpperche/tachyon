@@ -35,6 +35,8 @@ async function makeVsix(opts: {
   manifestFiles?: Array<{ path: string; sha256?: string }>;
   engineFiles?: Record<string, string>;
   omitManifest?: boolean;
+  /** Extra archive entries, keyed by their full in-archive path (e.g. a shipped node_module). */
+  extraFiles?: Record<string, string>;
 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vsix-audit-test-"));
   dirs.push(root);
@@ -48,6 +50,8 @@ async function makeVsix(opts: {
     const files = opts.manifestFiles ?? Object.entries(engine).map(([p, body]) => ({ path: p, sha256: sha(body) }));
     zip.file("extension/dist/engine/engine-manifest.json", JSON.stringify({ schemaVersion: 1, files }));
   }
+
+  for (const [rel, body] of Object.entries(opts.extraFiles ?? {})) zip.file(rel, body);
 
   const vsix = path.join(root, "fixture.vsix");
   fs.writeFileSync(vsix, await zip.generateAsync({ type: "nodebuffer" }));
@@ -132,6 +136,25 @@ describe.skipIf(!unzipOk())("packaged artifact audit (t-1f425c)", () => {
     const r = checkPackagedArtifact(vsix, {});
     expect(r.ok).toBe(false);
     expect(r.problems.join("\n")).toMatch(/source map inside the engine payload/);
+  });
+
+  // t-09a462 — an `external` require is a promise about runtime. node-pty was declared, marked
+  // external, required and never packaged; the audit above could not see it, because a node_module is
+  // in neither the dist claims nor the engine manifest.
+  it("REFUSES a bundle that requires a package the vsix does not contain", async () => {
+    const { vsix, claims } = await makeVsix({ distFiles: { "dist/extension.js": `require("node-pty");` } });
+    const r = checkPackagedArtifact(vsix, claims);
+    expect(r.ok).toBe(false);
+    expect(r.problems.join("\n")).toMatch(/requires 'node-pty' at runtime but the vsix does not contain it/);
+  });
+
+  it("accepts the same bundle once the package ships with it", async () => {
+    const { vsix, claims } = await makeVsix({
+      distFiles: { "dist/extension.js": `require("node-pty");` },
+      extraFiles: { "extension/node_modules/node-pty/package.json": `{"name":"node-pty"}` },
+    });
+    const r = checkPackagedArtifact(vsix, claims);
+    expect(r.problems).toEqual([]);
   });
 
   it("REFUSES a file that is not a readable archive instead of reporting success", () => {
