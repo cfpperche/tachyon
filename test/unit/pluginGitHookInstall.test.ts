@@ -3,9 +3,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall, applyRemove, repairGitHooks } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyRemove, repairGitHooks, reconcileGitHookHarness } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
-import { GitHookStore } from "../../src/plugins/gitHookRegistry.js";
+import {
+  GitHookStore,
+  dispatcherScript,
+  DISPATCHER_TEMPLATE_VERSION,
+  readDispatcherTemplateVersion,
+} from "../../src/plugins/gitHookRegistry.js";
 import { GitRepo } from "../../src/plugins/gitRepo.js";
 
 function gitOk(): boolean {
@@ -162,5 +167,79 @@ describe.skipIf(!gitOk())("git-hook repair / clone behavior (spec 264 task 9)", 
     expect(await new GitRepo(ws).getHooksPath()).toMatchObject({ raw: ".tachyon/githooks" });
     // a second repair is a no-op (already active)
     expect((await repairGitHooks(ws)).reason).toMatch(/already active/);
+  });
+
+  // ── harness reconciliation (t-c3b0a5) ────────────────────────────────────
+  // The dispatcher is product code Tachyon generates, but it was only written on plugin install/remove. So a
+  // dispatcher fix never reached a workspace that already had the plugin — the harness stayed behind its
+  // engine forever, silently. These lock in that an engine brings its own generated code forward.
+
+  /** Rewrite an event's dispatcher as a PRE-STAMP (v1) harness, as an older engine would have left it. */
+  function degradeToV1(store: GitHookStore, event: string): void {
+    const old = dispatcherScript(event)
+      .split("\n")
+      .filter((l) => !l.startsWith("# tachyon-dispatcher-template "))
+      .join("\n");
+    fs.writeFileSync(store.dispatcherFile(event), old, { mode: 0o755 });
+  }
+
+  it("brings a stale (unstamped) dispatcher forward, leaving the registered leaves untouched", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    const store = new GitHookStore(ws);
+    const manifestBefore = fs.readFileSync(path.join(store.dir(), "pre-commit.run"), "utf8");
+    const snapshotBefore = fs.readFileSync(path.join(store.dir(), "registry.json"), "utf8");
+
+    degradeToV1(store, "pre-commit");
+    expect(readDispatcherTemplateVersion(store.dispatcherFile("pre-commit"))).toBe(1);
+
+    const r = await reconcileGitHookHarness(ws);
+    expect(r.refreshed).toEqual(["pre-commit"]);
+    // byte-identical to what THIS engine generates — not merely "stamped newer".
+    expect(fs.readFileSync(store.dispatcherFile("pre-commit"), "utf8")).toBe(dispatcherScript("pre-commit"));
+    expect(fs.statSync(store.dispatcherFile("pre-commit")).mode & 0o111).not.toBe(0); // still executable
+    // the harness moved; the REGISTRATION did not.
+    expect(fs.readFileSync(path.join(store.dir(), "pre-commit.run"), "utf8")).toBe(manifestBefore);
+    expect(fs.readFileSync(path.join(store.dir(), "registry.json"), "utf8")).toBe(snapshotBefore);
+  });
+
+  it("is a no-op when the harness is already current (idempotent)", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    const r = await reconcileGitHookHarness(ws);
+    expect(r).toMatchObject({ refreshed: [], ahead: [], reason: "harness is current" });
+  });
+
+  it("NEVER rewrites a harness stamped newer than this engine (downgrade), and says so", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    const store = new GitHookStore(ws);
+    const future = dispatcherScript("pre-commit").replace(
+      `# tachyon-dispatcher-template ${DISPATCHER_TEMPLATE_VERSION}`,
+      `# tachyon-dispatcher-template ${DISPATCHER_TEMPLATE_VERSION + 1}\n# FUTURE-ONLY LINE`,
+    );
+    fs.writeFileSync(store.dispatcherFile("pre-commit"), future, { mode: 0o755 });
+
+    const r = await reconcileGitHookHarness(ws);
+    expect(r).toMatchObject({ refreshed: [], ahead: ["pre-commit"] });
+    // rewriting backwards would silently strip whatever the newer harness was fixing.
+    expect(fs.readFileSync(store.dispatcherFile("pre-commit"), "utf8")).toBe(future);
+  });
+
+  it("no managed git-hook state → a quiet no-op, never a throw", async () => {
+    const ws = makeRepo();
+    await expect(reconcileGitHookHarness(ws)).resolves.toMatchObject({ refreshed: [], reason: "no managed git-hook state" });
+  });
+
+  it("a corrupt snapshot is NOT silently regenerated over (that is repair's call, not this)", async () => {
+    const ws = makeRepo();
+    await installGitHook(ws, makeGitHookPlugin("sdd"));
+    const store = new GitHookStore(ws);
+    fs.writeFileSync(path.join(store.dir(), "registry.json"), "{ not json");
+    degradeToV1(store, "pre-commit");
+    const r = await reconcileGitHookHarness(ws);
+    expect(r.refreshed).toEqual([]);
+    expect(r.reason).toMatch(/corrupt/);
+    expect(readDispatcherTemplateVersion(store.dispatcherFile("pre-commit"))).toBe(1); // left as found
   });
 });

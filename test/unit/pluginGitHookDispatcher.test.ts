@@ -8,6 +8,10 @@ import {
   argvWrapperScript,
   GIT_HOOK_STDIN_EVENTS,
   gitHookStdinEventsAreAllowlisted,
+  DISPATCHER_TEMPLATE_VERSION,
+  dispatcherTemplateFingerprint,
+  readDispatcherTemplateVersion,
+  dispatcherScript,
 } from "../../src/plugins/gitHookRegistry.js";
 import { GIT_HOOK_EVENTS } from "../../src/plugins/manifest.js";
 
@@ -180,6 +184,40 @@ describe.skipIf(!shOk())("git-hook dispatcher (spec 264, executed)", () => {
     expect(gitHookStdinEventsAreAllowlisted(GIT_HOOK_EVENTS)).toEqual({ ok: true, unknown: [] });
     expect(GIT_HOOK_STDIN_EVENTS.has("pre-push")).toBe(true);
     expect(gitHookStdinEventsAreAllowlisted(["pre-commit"])).toEqual({ ok: false, unknown: ["pre-push"] });
+  });
+
+  // ── template version stamp (t-c3b0a5) ────────────────────────────────────
+
+  it("stamps the generated dispatcher with the current template version", () => {
+    const root = ws();
+    const store = install(root, [{ name: "A", code: 0 }]);
+    expect(readDispatcherTemplateVersion(store.dispatcherFile("pre-commit"))).toBe(DISPATCHER_TEMPLATE_VERSION);
+    // and it stays where a reader can find it without executing anything.
+    expect(fs.readFileSync(store.dispatcherFile("pre-commit"), "utf8").split("\n")[2])
+      .toBe(`# tachyon-dispatcher-template ${DISPATCHER_TEMPLATE_VERSION}`);
+  });
+
+  it("an UNSTAMPED dispatcher reads as version 1, not as current", () => {
+    const root = ws();
+    const store = install(root, [{ name: "A", code: 0 }]);
+    const stripped = dispatcherScript("pre-commit")
+      .split("\n")
+      .filter((l) => !l.startsWith("# tachyon-dispatcher-template "))
+      .join("\n");
+    fs.writeFileSync(store.dispatcherFile("pre-commit"), stripped);
+    expect(readDispatcherTemplateVersion(store.dispatcherFile("pre-commit"))).toBe(1);
+    // an absent file is unknown — NOT "current", so a caller can never mistake it for up to date.
+    expect(readDispatcherTemplateVersion(path.join(root, "nope"))).toBeNull();
+  });
+
+  // THE forcing function for the whole mechanism: a version nobody increments is decoration, and the
+  // reconciler would then never fire for a real behavior change. If this fails because you edited
+  // `dispatcherScript`, that is the test working: bump DISPATCHER_TEMPLATE_VERSION and update this hash.
+  it("changing the template body without bumping the version fails the suite", () => {
+    expect({ version: DISPATCHER_TEMPLATE_VERSION, fingerprint: dispatcherTemplateFingerprint() }).toEqual({
+      version: 2,
+      fingerprint: "96a2876684c3a0916475bb08cceafe22e44de08f386e7e3dfad0c48267d572cf",
+    });
   });
 
   it("an argv-wrapper leaf execs the declared command", () => {
