@@ -119,4 +119,3 @@ do Tachyon são políticas do próprio projeto, não obrigações impostas aos c
 
 - [System Design](system-design.md)
 - [README](../README.md)
-- [Product Invariant Testing Standard](architecture/product-invariant-testing.md)

@@ -1102,7 +1102,6 @@ English on purpose — their audience is the models reading the MCP schema.
 npm ci
 npm run build          # esbuild bundle -> dist/
 npm test               # aggregate Vitest gate: unit + integration + Product Invariants
-npm run test:invariants   # focused stable promises under test/product-invariants/
 npm run test:integration   # @vscode/test-cli host suites (single-root + multi-root; downloads VSCode once)
 npm run typecheck
 ```
@@ -1111,13 +1110,7 @@ CI runs the portable core (typecheck + build + unit, including a real-tmux subse
 Invariants as a distinct gate. The xvfb editor-host integration suites are a local gate — run them on
 tmux ≥ 3.6.
 
-### Product invariants and explicit verification migration
-
-Tachyon's own stable product promises are registered in
-[`docs/architecture/product-invariant-testing.md`](docs/architecture/product-invariant-testing.md).
-“Product Invariant” is the semantic contract; browser, full-stack, `e2e`, component and installed-system
-are possible execution topologies. The focused command above and the normal full suite execute the same
-files rather than maintaining two sources of truth.
+### Explicit verification migration
 
 Gated delegation verification no longer assumes that a consumer project uses npm, Vitest or `test/unit`.
 Projects that want full, changed-file and named-test verification declare those mechanics explicitly. For

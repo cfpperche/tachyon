@@ -15,7 +15,6 @@ settings:
   projectGuidance:
     files:
       - docs/project-guidance.md
-      - docs/architecture/product-invariant-testing.md
   # Orchestrated waves (impl + reviewers + declared fleet) need headroom above default 8.
   maxAgents: 12
   # Coordinators allowed to record integration or prune linked GitDelivery projections.

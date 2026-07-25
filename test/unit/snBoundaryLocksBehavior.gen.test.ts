@@ -18,10 +18,6 @@ const TACHYON_BUILD_MARKERS = [
   ".tachyon/deploys",
   "npm run build",
   "docs/specs",
-  "test:invariants",
-  "product-invariant-testing",
-  "Product Invariant",
-  "PI-",
 ];
 
 const baseFixture = (over: Partial<DetectedProject> = {}): DetectedProject => ({ files: [], installedClis: ["claude"], ...over });
