@@ -21,8 +21,10 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { runtimeExternals, missingExternals } from "./runtime-externals.mjs";
 
 const ENGINE_REL = "dist/engine";
+const EXTENSION_BUNDLE = "dist/extension.js";
 
 function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -87,6 +89,20 @@ export function checkPackagedArtifact(vsixPath, distClaims = {}) {
     // 3. source maps inside the engine payload are dev weight in a user install.
     for (const rel of walk(path.join(ext, ENGINE_REL))) {
       if (rel.endsWith(".map")) problems.push(`source map inside the engine payload: ${ENGINE_REL}/${rel}`);
+    }
+
+    // 4. t-09a462 — an `external` is a promise that the module is there at RUNTIME. Nothing verified
+    // it, so node-pty was declared, marked external, required, and never packaged: the agent pane
+    // could not attach in any installed build, and the build had no reason to fail. Read what the
+    // BUILT bundle emits rather than the esbuild config — the config is the claim, the bundle is the
+    // result.
+    const bundle = path.join(ext, EXTENSION_BUNDLE);
+    if (fs.existsSync(bundle)) {
+      const externals = runtimeExternals(bundle);
+      checked += externals.length;
+      for (const pkg of missingExternals(externals, ext)) {
+        problems.push(`the bundle requires '${pkg}' at runtime but the vsix does not contain it`);
+      }
     }
 
     return { ok: problems.length === 0, checked, problems };
