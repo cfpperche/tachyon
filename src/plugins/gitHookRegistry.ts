@@ -22,6 +22,23 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 export const GITHOOKS_REL = ".tachyon/githooks";
+
+/**
+ * Git events whose CONTRACT IS STDIN: git feeds the hook data the leaf must read to do its job. `pre-push`
+ * gets one line per ref (`<local ref> <local sha> <remote ref> <remote sha>`), which is the only way a gate
+ * can scope itself to a protected branch instead of taxing every push.
+ *
+ * This is a per-event property, not a preference: for such an event the dispatcher BUFFERS git's stdin once
+ * and replays it to every leaf, so a chain of N leaves does not leave N-1 of them starved by the first
+ * reader. Events absent here get `/dev/null` — explicitly, so a leaf can never observe dispatcher-internal
+ * bytes. Buffering is not unconditional because an event that receives no stdin may be attached to a
+ * terminal, where an unconditional read would hang the hook.
+ *
+ * Kept beside the dispatcher that consumes it rather than beside `GIT_HOOK_EVENTS` (the manifest's input
+ * allowlist); `gitHookStdinEventsAreAllowlisted` is the executable guard against the two drifting apart.
+ */
+export const GIT_HOOK_STDIN_EVENTS: ReadonlySet<string> = new Set(["pre-push"]);
+
 const LEAVES_SUBDIR = "leaves";
 const REGISTRY_FILE = "registry.json";
 const OWNERSHIP_FILE = "ownership.json";
@@ -123,8 +140,24 @@ export function buildExecutionManifest(stepRelPaths: string[]): string {
 /** The Tachyon-authored POSIX `sh` dispatcher for `event`: integrity-self-validate the manifest (fail-closed),
  *  preserve Git's env (+ only `TACHYON_` additions), run each step in order, run-all-aggregate (first non-zero
  *  exit propagates, but every step runs), a missing/non-exec step is fail-closed. NB: no `${...}` sh expansions
- *  here — they would collide with the TS template literal; the only TS interpolation is `${event}`. */
+ *  here — they would collide with the TS template literal; the only TS interpolations are `${event}` and the
+ *  stdin plumbing below.
+ *
+ *  STDIN: every leaf is invoked with an EXPLICIT stdin. The manifest is read on fd 3, never on fd 0, so the
+ *  loop's own input can no longer leak into a leaf — which it did, leaving a `pre-push` gate reading an
+ *  exhausted manifest instead of git's ref lines and passing every push in silence. For a stdin-contract
+ *  event (`GIT_HOOK_STDIN_EVENTS`) git's stdin is buffered once to a temp file and replayed to each leaf, so
+ *  chained leaves all see the same bytes; every other event gets `/dev/null`. */
 export function dispatcherScript(event: string): string {
+  const carriesStdin = GIT_HOOK_STDIN_EVENTS.has(event);
+  // Buffer git's stdin ONCE (a pipe is single-read: without this, leaf 2..N would starve).
+  const bufferStdin = carriesStdin
+    ? `STDIN_BUF=$(mktemp) || { echo "tachyon: ${event} cannot buffer stdin (mktemp failed) — fail-closed" >&2; exit 1; }
+trap 'rm -f "$STDIN_BUF"' EXIT HUP INT TERM
+cat > "$STDIN_BUF"
+`
+    : "";
+  const leafStdin = carriesStdin ? `< "$STDIN_BUF"` : "< /dev/null";
   return `#!/bin/sh
 # Tachyon git-hook dispatcher (generated) — spec 264. Do not edit; managed by Tachyon.
 set -u
@@ -140,20 +173,30 @@ EXPECT=$(head -n 1 "$MANIFEST" | sed 's/^#tachyon-integrity //')
 ACTUAL=$(tail -n +2 "$MANIFEST" | tachyon_sha256) || exit 1
 [ "$EXPECT" = "$ACTUAL" ] || { echo "tachyon: ${event} manifest integrity mismatch — fail-closed" >&2; exit 1; }
 export TACHYON_GITHOOK_EVENT="${event}"
-RC=0
-{
-  read -r _HEADER
-  while IFS= read -r STEP; do
-    [ -n "$STEP" ] || continue
-    S="$DIR/$STEP"
-    if [ ! -x "$S" ]; then echo "tachyon: ${event} step missing/not executable: $STEP — fail-closed" >&2; exit 1; fi
-    "$S" "$@"
-    C=$?
-    if [ "$C" -ne 0 ] && [ "$RC" -eq 0 ]; then RC=$C; fi
-  done
-} < "$MANIFEST"
+${bufferStdin}RC=0
+exec 3< "$MANIFEST"
+read -r _HEADER <&3
+while IFS= read -r STEP <&3; do
+  [ -n "$STEP" ] || continue
+  S="$DIR/$STEP"
+  if [ ! -x "$S" ]; then echo "tachyon: ${event} step missing/not executable: $STEP — fail-closed" >&2; exit 1; fi
+  "$S" "$@" ${leafStdin}
+  C=$?
+  if [ "$C" -ne 0 ] && [ "$RC" -eq 0 ]; then RC=$C; fi
+done
+exec 3<&-
 exit "$RC"
 `;
+}
+
+/** Every stdin-contract event must be an event a manifest can actually declare. A `GIT_HOOK_STDIN_EVENTS`
+ *  entry outside the manifest allowlist is dead plumbing; an allowlisted event silently missing here is the
+ *  worse direction — its leaves would read `/dev/null` and the gate would pass everything. Callers pass the
+ *  allowlist so this module stays free of a manifest import cycle. */
+export function gitHookStdinEventsAreAllowlisted(allowlist: readonly string[]): { ok: boolean; unknown: string[] } {
+  const known = new Set(allowlist);
+  const unknown = [...GIT_HOOK_STDIN_EVENTS].filter((e) => !known.has(e)).sort();
+  return { ok: unknown.length === 0, unknown };
 }
 
 /** Recursively key-sorted JSON for a stable integrity hash. */

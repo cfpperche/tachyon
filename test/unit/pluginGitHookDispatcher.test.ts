@@ -3,7 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { GitHookStore, argvWrapperScript } from "../../src/plugins/gitHookRegistry.js";
+import {
+  GitHookStore,
+  argvWrapperScript,
+  GIT_HOOK_STDIN_EVENTS,
+  gitHookStdinEventsAreAllowlisted,
+} from "../../src/plugins/gitHookRegistry.js";
+import { GIT_HOOK_EVENTS } from "../../src/plugins/manifest.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });
@@ -30,6 +36,33 @@ function runDispatcher(store: GitHookStore, root: string, extraEnv: Record<strin
   }
 }
 const read = (f: string) => fs.readFileSync(f, "utf8").split("\n").filter(Boolean);
+
+/** Run any event's dispatcher with `input` on stdin; return {code, and whatever each leaf wrote to $OUT}. */
+function runWithStdin(
+  store: GitHookStore,
+  root: string,
+  event: string,
+  input: string,
+): { code: number; out: string[] } {
+  const outFile = path.join(root, "out.txt");
+  fs.writeFileSync(outFile, "");
+  try {
+    execFileSync("sh", [store.dispatcherFile(event)], {
+      cwd: root,
+      env: { ...process.env, OUT: outFile },
+      input,
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    return { code: 0, out: read(outFile) };
+  } catch (e) {
+    return { code: (e as { status?: number }).status ?? 1, out: read(outFile) };
+  }
+}
+
+/** A leaf that copies EVERYTHING it reads on stdin into $OUT, tagged with its name. */
+function stdinEchoLeaf(name: string): string {
+  return `#!/bin/sh\nwhile IFS= read -r L; do printf '%s:%s\\n' "${name}" "$L" >> "$OUT"; done\nprintf '%s:EOF\\n' "${name}" >> "$OUT"\n`;
+}
 
 describe.skipIf(!shOk())("git-hook dispatcher (spec 264, executed)", () => {
   function install(root: string, leaves: Array<{ name: string; code: number }>): GitHookStore {
@@ -75,6 +108,78 @@ describe.skipIf(!shOk())("git-hook dispatcher (spec 264, executed)", () => {
     const store = new GitHookStore(root);
     store.installEventArtifacts("pre-commit", ["leaves/deadbeef"]); // referenced leaf never put → not executable
     expect(runDispatcher(store, root).code).toBe(1);
+  });
+
+  // ── stdin contract (t-6a8deb) ────────────────────────────────────────────
+  // `pre-push` IS a stdin contract: git feeds one line per ref and a gate cannot scope itself to a
+  // protected branch without them. The dispatcher used to read its own manifest on fd 0, so every leaf
+  // inherited an exhausted manifest instead — a branch-scoped gate found no refs and passed every push.
+
+  const REFS =
+    "refs/heads/main aaaa1111 refs/heads/main bbbb2222\n" +
+    "refs/heads/topic cccc3333 refs/heads/topic dddd4444\n";
+
+  it("pre-push: git's ref lines reach the leaf intact", () => {
+    const root = ws();
+    const store = new GitHookStore(root);
+    const h = store.putLeaf(stdinEchoLeaf("A"));
+    store.installEventArtifacts("pre-push", [`leaves/${h}`]);
+    expect(runWithStdin(store, root, "pre-push", REFS)).toEqual({
+      code: 0,
+      out: [
+        "A:refs/heads/main aaaa1111 refs/heads/main bbbb2222",
+        "A:refs/heads/topic cccc3333 refs/heads/topic dddd4444",
+        "A:EOF",
+      ],
+    });
+  });
+
+  it("pre-push: EVERY leaf in the chain sees the same stdin (a pipe is single-read)", () => {
+    const root = ws();
+    const store = new GitHookStore(root);
+    const a = store.putLeaf(stdinEchoLeaf("A"));
+    const b = store.putLeaf(stdinEchoLeaf("B"));
+    store.installEventArtifacts("pre-push", [`leaves/${a}`, `leaves/${b}`]);
+    const r = runWithStdin(store, root, "pre-push", REFS);
+    expect(r.code).toBe(0);
+    // Buffering is what makes this pass: forwarding git's pipe directly would starve B.
+    expect(r.out.filter((l) => l.startsWith("B:"))).toEqual([
+      "B:refs/heads/main aaaa1111 refs/heads/main bbbb2222",
+      "B:refs/heads/topic cccc3333 refs/heads/topic dddd4444",
+      "B:EOF",
+    ]);
+    expect(r.out.filter((l) => l.startsWith("A:"))).toHaveLength(3);
+  });
+
+  it("pre-push: a leaf that refuses on what it read propagates its exit code", () => {
+    const root = ws();
+    const store = new GitHookStore(root);
+    // Refuses only when a ref line targets main — the real shape of a branch-scoped gate.
+    const h = store.putLeaf(
+      `#!/bin/sh\nwhile IFS= read -r L; do\n  case "$L" in *"refs/heads/main "*) printf 'refused\\n' >> "$OUT"; exit 7;; esac\ndone\nexit 0\n`,
+    );
+    store.installEventArtifacts("pre-push", [`leaves/${h}`]);
+    expect(runWithStdin(store, root, "pre-push", REFS)).toEqual({ code: 7, out: ["refused"] });
+    // ...and stays out of the way when no protected ref is in the push.
+    expect(runWithStdin(store, root, "pre-push", "refs/heads/topic c3 refs/heads/topic d4\n")).toEqual({
+      code: 0,
+      out: [],
+    });
+  });
+
+  it("pre-commit: a leaf gets /dev/null, never the dispatcher's own manifest", () => {
+    const root = ws();
+    const store = new GitHookStore(root);
+    const h = store.putLeaf(stdinEchoLeaf("A"));
+    store.installEventArtifacts("pre-commit", [`leaves/${h}`]);
+    // Feed bytes git would never send: an event with no stdin contract must not forward them either.
+    expect(runWithStdin(store, root, "pre-commit", "leaves/injected\n")).toEqual({ code: 0, out: ["A:EOF"] });
+  });
+
+  it("the stdin-contract set cannot drift from the manifest allowlist", () => {
+    expect(gitHookStdinEventsAreAllowlisted(GIT_HOOK_EVENTS)).toEqual({ ok: true, unknown: [] });
+    expect(GIT_HOOK_STDIN_EVENTS.has("pre-push")).toBe(true);
+    expect(gitHookStdinEventsAreAllowlisted(["pre-commit"])).toEqual({ ok: false, unknown: ["pre-push"] });
   });
 
   it("an argv-wrapper leaf execs the declared command", () => {
