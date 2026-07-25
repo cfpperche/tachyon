@@ -57,6 +57,7 @@ describe("ClientWorkspaceStudioTarget", () => {
       agentId: "123e4567-e89b-42d3-a456-426614174000",
       revision: "a".repeat(64),
       enabled: false,
+      readiness: { state: "limited", limitations: ["fork-unavailable"] },
       editable: {
         displayName: "Ada", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },

@@ -44,6 +44,10 @@
 .ash-evolution-notice .ds-button { margin-left: var(--ds-2); }
 .ash-identity-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
 .ash-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
+.ash-runtime-readiness { display: grid; gap: var(--ds-2); padding: var(--ds-2); border-left: 3px solid var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-focusBorder) 7%, transparent); font-size: var(--ds-small); }
+.ash-runtime-readiness-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
+.ash-runtime-readiness ul { display: grid; gap: var(--ds-1); margin: 0; padding-left: var(--ds-4); }
+.ash-runtime-readiness-limited { border-color: var(--vscode-editorWarning-foreground, var(--vscode-notificationsWarningIcon-foreground)); }
 .ash-soul-state { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
 .ash-soul-state-active { border-color: var(--vscode-testing-iconPassed); }
 .ash-soul-state-invalid, .ash-soul-state-unowned { border-color: var(--vscode-errorForeground); }
@@ -105,6 +109,7 @@
   .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff, .ash-profile-source-grid { grid-template-columns: 1fr; }
   .ash-row { align-items: stretch; flex-direction: column; }
   .ash-identity-heading, .ash-evolution-heading, .ash-evolution-toolbar { align-items: stretch; flex-direction: column; }
+  .ash-runtime-readiness-heading { align-items: stretch; flex-direction: column; }
   .ash-evolution-candidate { grid-template-columns: 1fr; }
   .ash-soul-state { align-self: flex-start; }
   .ash-evolution-state { align-self: flex-start; }

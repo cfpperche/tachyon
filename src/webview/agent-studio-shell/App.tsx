@@ -557,6 +557,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     : undefined;
   const canonicalSnapshot = entity.profile;
   const profileLabels = entity.profileLabels ?? createAgentProfileLabels();
+  const canonicalReadinessLimitationLabel = (limitation: NonNullable<typeof canonicalSnapshot>["readiness"]["limitations"][number]) => ({
+    "runtime-baseline-unverified": profileLabels.runtimeLimitationBaselineUnverified,
+    "fork-unavailable": profileLabels.runtimeLimitationForkUnavailable,
+    "permission-policy-partial": profileLabels.runtimeLimitationPermissionPolicyPartial,
+    "attention-composer-unverified": profileLabels.runtimeLimitationAttentionComposerUnverified,
+    "stop-active-draft-unverified": profileLabels.runtimeLimitationStopActiveDraftUnverified,
+    "oauth-concurrency-single-live": profileLabels.runtimeLimitationOauthConcurrencySingleLive,
+  })[limitation];
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
   const showHarnessRules = harnessRuntime === "claude";
@@ -708,6 +716,22 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
                 </div>
+                {canonicalSnapshot && (
+                  <div class="ash-runtime-readiness" aria-labelledby="ash-runtime-readiness-title">
+                    <div class="ash-runtime-readiness-heading">
+                      <div>
+                        <div class="ash-label" id="ash-runtime-readiness-title">{profileLabels.runtimeReadinessTitle}</div>
+                        <div class="hint">{profileLabels.runtimeReadinessHelp}</div>
+                      </div>
+                      <span class={`ash-soul-state ${canonicalSnapshot.readiness.state === "ready" ? "ash-soul-state-active" : "ash-runtime-readiness-limited"}`}>
+                        {canonicalSnapshot.readiness.state === "ready" ? profileLabels.runtimeReady : profileLabels.runtimeLimited}
+                      </span>
+                    </div>
+                    {canonicalSnapshot.readiness.limitations.length > 0 && (
+                      <ul>{canonicalSnapshot.readiness.limitations.map((limitation) => <li key={limitation}>{canonicalReadinessLimitationLabel(limitation)}</li>)}</ul>
+                    )}
+                  </div>
+                )}
                 {dirty && <div class="ash-soul-status">{profileLabels.saveFirst}</div>}
                 {renameConfirmOpen && canonicalSnapshot && (
                   <div class="ash-soul-replace-confirm" aria-labelledby="ash-rename-confirm-title">

@@ -84,12 +84,32 @@ describe("canonical Agent Studio projection", () => {
       secretNames: ["TOKEN"],
       prompt: { soul: true, evolution: true },
     });
+    expect(projected.readiness).toEqual({ state: "limited", limitations: ["fork-unavailable"] });
     const serialized = JSON.stringify(projected);
     expect(serialized).not.toContain("private-enough-not-to-project");
     expect(serialized).not.toContain("secret-handle");
     expect(serialized).not.toContain("vault");
     expect(serialized).not.toContain("SOUL.md");
     expect(serialized).not.toContain("capabilityReferenceIds");
+  });
+
+  it("derives canonical readiness from runtime capability evidence instead of form copy", () => {
+    const current = lifecycleSnapshot();
+    current.profile.runtime.adapter = "claude";
+    expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
+      state: "limited",
+      limitations: ["permission-policy-partial", "stop-active-draft-unverified"],
+    });
+    current.profile.runtime.adapter = "pi";
+    expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
+      state: "limited",
+      limitations: ["oauth-concurrency-single-live"],
+    });
+    current.profile.runtime.adapter = "unmeasured-runtime";
+    expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
+      state: "limited",
+      limitations: ["runtime-baseline-unverified"],
+    });
   });
 
   it("rejects unknown response fields and creates fresh profiles disabled", () => {

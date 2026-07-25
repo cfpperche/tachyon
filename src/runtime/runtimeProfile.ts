@@ -66,7 +66,18 @@ export interface RuntimeProfile {
   permission?: RuntimePermissionProfile;
   composer?: ComposerRegionProfile;
   gracefulStop?: GracefulStopProfile;
+  /** Honest canonical-runtime constraints surfaced before lifecycle actions. */
+  canonicalLimitations?: CanonicalRuntimeLimitation[];
 }
+
+export const CANONICAL_RUNTIME_LIMITATIONS = [
+  "permission-policy-partial",
+  "attention-composer-unverified",
+  "stop-active-draft-unverified",
+  "oauth-concurrency-single-live",
+] as const;
+
+export type CanonicalRuntimeLimitation = (typeof CANONICAL_RUNTIME_LIMITATIONS)[number];
 
 export const DEFAULT_GRACEFUL_STOP: GracefulStopProfile = {
   steps: [
@@ -131,6 +142,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verifiedAt: "2026-07-18",
       notes: "SDD 404: Delivery reviewers inject --exclude-tools bash,edit,write. This is shell-level tool safety, not an OS sandbox or universal Bridge read-only guarantee.",
     },
+    canonicalLimitations: ["oauth-concurrency-single-live"],
   },
   claude: {
     runtime: "claude",
@@ -193,6 +205,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "Claude Code 2.1.220 exited an isolated interactive onboarding/session after interrupt plus repeated EOF. " +
         "Keep the existing interrupt, clear-composer, EOF, retry-EOF sequence because a first EOF can be consumed by interactive state; live active-turn and drafted-composer measurement remains required.",
     },
+    canonicalLimitations: ["permission-policy-partial", "stop-active-draft-unverified"],
   },
   codex: {
     runtime: "codex",
@@ -327,6 +340,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       notes: "t-f45313: conservative Claude/Codex-shaped composer guard for Grok dogfood pane-injection safety; exact prompt shape still needs runtime measurement.",
     },
     gracefulStop: GROK_GRACEFUL_STOP,
+    canonicalLimitations: ["permission-policy-partial", "attention-composer-unverified"],
   },
   hermes: {
     runtime: "hermes",

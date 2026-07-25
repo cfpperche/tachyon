@@ -3,6 +3,8 @@ import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
 import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 import { previewAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
+import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
+import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
@@ -12,6 +14,36 @@ const capabilityIdsSchema = z.object({
   mcp: z.array(z.string().regex(ID)).max(128),
   hooks: z.array(z.string().regex(ID)).max(128),
 }).strict();
+
+const canonicalRuntimeLimitationSchema = z.enum([
+  "runtime-baseline-unverified",
+  "fork-unavailable",
+  "permission-policy-partial",
+  "attention-composer-unverified",
+  "stop-active-draft-unverified",
+  "oauth-concurrency-single-live",
+]);
+
+const canonicalRuntimeReadinessSchema = z.object({
+  state: z.enum(["ready", "limited"]),
+  limitations: z.array(canonicalRuntimeLimitationSchema).max(8),
+}).strict();
+
+type CanonicalRuntimeReadinessLimitation = z.infer<typeof canonicalRuntimeLimitationSchema>;
+
+function canonicalRuntimeReadiness(adapter: string) {
+  const runtime = runtimeOf(adapter);
+  const limitations: CanonicalRuntimeReadinessLimitation[] = [];
+  if (!runtime) limitations.push("runtime-baseline-unverified");
+  if (runtime && !forkable(adapterForRuntime(runtime))) limitations.push("fork-unavailable");
+  for (const limitation of runtime ? runtimeProfile(runtime)?.canonicalLimitations ?? [] : []) {
+    limitations.push(limitation satisfies CanonicalRuntimeLimitation);
+  }
+  return {
+    state: limitations.length === 0 ? "ready" as const : "limited" as const,
+    limitations,
+  };
+}
 
 export const agentProfileStudioEditableSchemaV1 = z.object({
   displayName: text(256),
@@ -125,6 +157,7 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
   agentId: z.string().uuid(),
   revision: z.string().regex(REVISION),
   enabled: z.boolean(),
+  readiness: canonicalRuntimeReadinessSchema,
   editable: agentProfileStudioEditableSchemaV1,
   bindings: z.object({
     environmentValueNames: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(128),
@@ -176,6 +209,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
     agentId: snapshot.agentId,
     revision: snapshot.revision,
     enabled: profile.lifecycle?.enabled !== false,
+    readiness: canonicalRuntimeReadiness(profile.runtime.adapter),
     editable: {
       displayName: profile.displayName ?? "",
       runtime: { ...profile.runtime },

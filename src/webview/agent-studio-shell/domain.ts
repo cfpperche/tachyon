@@ -460,6 +460,16 @@ export interface AgentStudioEntity {
 export interface AgentProfileLabels {
   lifecycleTitle: string;
   lifecycleHelp: string;
+  runtimeReadinessTitle: string;
+  runtimeReady: string;
+  runtimeLimited: string;
+  runtimeReadinessHelp: string;
+  runtimeLimitationBaselineUnverified: string;
+  runtimeLimitationForkUnavailable: string;
+  runtimeLimitationPermissionPolicyPartial: string;
+  runtimeLimitationAttentionComposerUnverified: string;
+  runtimeLimitationStopActiveDraftUnverified: string;
+  runtimeLimitationOauthConcurrencySingleLive: string;
   enabled: string;
   disabled: string;
   closed: string;
@@ -604,6 +614,15 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
   return {
     lifecycleTitle: t("Agent lifecycle"),
     lifecycleHelp: t("Operational actions use the loaded profile revision and stay separate from form save."),
+    runtimeReadinessTitle: t("Canonical runtime readiness"),
+    runtimeReady: t("Ready"), runtimeLimited: t("Limited"),
+    runtimeReadinessHelp: t("This is the effective canonical baseline for this runtime. Limitations remain in effect when you enable or start the agent."),
+    runtimeLimitationBaselineUnverified: t("This runtime has no verified canonical baseline yet."),
+    runtimeLimitationForkUnavailable: t("Native session fork is unavailable for this runtime."),
+    runtimeLimitationPermissionPolicyPartial: t("Native permission-policy projection is not fully verified."),
+    runtimeLimitationAttentionComposerUnverified: t("Attention and drafted-composer behavior still need live verification."),
+    runtimeLimitationStopActiveDraftUnverified: t("Stopping an active turn or drafted composer still needs live verification."),
+    runtimeLimitationOauthConcurrencySingleLive: t("OAuth admission permits one live Pi agent at a time."),
     enabled: t("Enabled"), disabled: t("Disabled"), closed: t("Closed"), degraded: t("Degraded"), conflict: t("Conflict"),
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
     rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),

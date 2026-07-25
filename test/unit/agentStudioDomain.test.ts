@@ -48,6 +48,7 @@ function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentPro
     agentId: "123e4567-e89b-42d3-a456-426614174000",
     revision,
     enabled: false,
+    readiness: { state: "limited", limitations: ["fork-unavailable"] },
     editable: {
       displayName: agentName, runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
       cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
