@@ -1779,6 +1779,15 @@ export class HarnessManager {
       lines.push("[features]");
       lines.push(`terminal_resize_reflow = ${tomlValue(nativeConfig.featureFlags.terminalResizeReflow)}`);
     }
+    const trustedProjects = [...new Set([
+      path.resolve(this.workspaceRoot),
+      path.resolve(cwd ?? this.workspaceRoot),
+    ])].sort();
+    for (const project of trustedProjects) {
+      if (lines.length > 0) lines.push("");
+      lines.push(`[projects.${tomlString(project)}]`);
+      lines.push('trust_level = "trusted"');
+    }
     let content = lines.join("\n");
     if (capabilities) {
       const def: HarnessDef = {

@@ -4701,6 +4701,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       const config = materialized[0]!;
       expect(config).toContain('model = "gpt-5.6"');
       expect(config).toContain('approval_policy = "on-request"');
+      expect(config).toContain(`[projects.${JSON.stringify(path.resolve(h.ws))}]\ntrust_level = "trusted"`);
+      expect(config).not.toContain(JSON.stringify(path.join(path.dirname(h.ws), "sibling")));
       expect(config).toContain("[mcp_servers.docs]");
       expect(config).toContain("[mcp_servers.tachyon_bridge]");
       expect(config).toContain("hooks.SessionStart =");

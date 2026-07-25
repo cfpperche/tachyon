@@ -649,6 +649,8 @@ describe("HarnessManager materialize (fs)", () => {
     fs.writeFileSync(path.join(codexHome, "config.toml"), [
       'model = "ambient-model"',
       'approval_policy = "never"',
+      '[projects."/ambient/sibling"]',
+      'trust_level = "trusted"',
       '[mcp_servers.secret]',
       'command = "do-not-copy"',
     ].join("\n"));
@@ -692,6 +694,9 @@ describe("HarnessManager materialize (fs)", () => {
       "[features]",
       "terminal_resize_reflow = true",
       "",
+      `[projects.${JSON.stringify(path.resolve(ws))}]`,
+      'trust_level = "trusted"',
+      "",
     ].join("\n"));
     expect(fs.realpathSync(path.join(first.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
 
@@ -699,6 +704,46 @@ describe("HarnessManager materialize (fs)", () => {
     mgr.materializeCanonicalCodexHome("coder", codex, projection);
     expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).toContain('approval_policy = "on-request"');
     expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("do-not-copy");
+    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("/ambient/sibling");
+  });
+
+  it("canonical Codex trusts only the exact workspace and effective cwd on every materialization", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-trust");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const projection = {
+      adapter: "codex" as const,
+      selectors: { model: "gpt-5.6" },
+      permissions: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+      interface: { personality: "pragmatic" },
+      featureFlags: { terminalResizeReflow: true },
+    };
+    const firstCwd = path.join(ws, "packages", "first");
+    const secondCwd = path.join(ws, "packages", "second");
+    const sibling = path.join(path.dirname(ws), "sibling");
+
+    const first = mgr.materializeCanonicalCodexHome("coder", codex, projection, firstCwd);
+    let toml = fs.readFileSync(path.join(first.home, "config.toml"), "utf8");
+    expect(toml).toContain(`[projects.${JSON.stringify(path.resolve(ws))}]\ntrust_level = "trusted"`);
+    expect(toml).toContain(`[projects.${JSON.stringify(path.resolve(firstCwd))}]\ntrust_level = "trusted"`);
+    expect(toml).not.toContain(JSON.stringify(sibling));
+    expect(toml).toContain('approval_policy = "on-request"');
+    expect(toml).toContain("[features]");
+
+    fs.appendFileSync(path.join(first.home, "config.toml"), [
+      "",
+      `[projects.${JSON.stringify(path.resolve(sibling))}]`,
+      'trust_level = "trusted"',
+      "",
+    ].join("\n"));
+    mgr.materializeCanonicalCodexHome("coder", codex, projection, secondCwd);
+    toml = fs.readFileSync(path.join(first.home, "config.toml"), "utf8");
+    expect(toml).toContain(`[projects.${JSON.stringify(path.resolve(secondCwd))}]\ntrust_level = "trusted"`);
+    expect(toml).not.toContain(JSON.stringify(firstCwd));
+    expect(toml).not.toContain(JSON.stringify(sibling));
+    expect(toml).toContain('model = "gpt-5.6"');
+    expect(toml).toContain('personality = "pragmatic"');
   });
 
   it("t-e2ebe3 review fix: opencode materializeHomeOnly returns all three XDG vars pointing at the config/data/state subdirs (not just XDG_CONFIG_HOME at the home root)", () => {
