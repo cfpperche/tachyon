@@ -435,7 +435,7 @@ export function installData(srcPath: string, opts: InstallDataOpts): InstallData
 export const MAX_ARCHIVE_ENTRIES = 4096;
 export const MAX_DECOMPRESSED_BYTES = 512 * 1024 * 1024;
 
-const CTRL_RE = /[ -]/;
+const CTRL_RE = /[\x00-\x1f\x7f]/;
 
 /** Tar entry types we refuse ANYWHERE in a tool archive (a tool tarball is regular files + dirs only). Includes
  *  the pax/GNU meta types as defense-in-depth: tar-stream consumes them internally, so SURFACING one is a red flag. */

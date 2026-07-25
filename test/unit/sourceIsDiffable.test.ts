@@ -1,0 +1,98 @@
+import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+
+/**
+ * t-0750b6 — TypeScript sources must stay reviewable.
+ *
+ * A single raw control byte makes git classify a whole file as binary: `git show` prints
+ * "Binary files differ" instead of a diff, and grep goes silent on it. Four files under
+ * src/plugins/ had reached that state by writing regex character classes and string separators with
+ * REAL bytes instead of escape sequences — `/[<NUL>-<US><DEL>]/` rather than `/[\x00-\x1f\x7f]/`.
+ * Identical at runtime, opaque in review.
+ *
+ * That mattered more there than anywhere else: those files are the plugin manifest validator, the
+ * lockfile reader and the tool provisioner — the code whose job is to refuse hostile input. The one
+ * place a diff must never be unreadable is the one where it was.
+ *
+ * It is not a mistake anyone makes once, either: writing `dispatcherTemplateFingerprint` earlier the
+ * same day, an agent introduced a fresh instance while the fix for the other four was in flight.
+ * Hence a test rather than a cleanup.
+ *
+ * Tab, LF and CR are the legitimate whitespace controls and are allowed. Everything else in C0, plus
+ * DEL, must be written as an escape.
+ */
+
+const ROOT = path.resolve(__dirname, "../..");
+/**
+ * src/, test/ AND scripts/ — every hand-written source tree, not just product code.
+ *
+ * The narrow version of this guard covered `src/` alone, and this very file slipped past it: the
+ * comment below explaining how to avoid a literal NUL contained one, so the test enforcing
+ * diffability was itself undiffable. A scope that excludes the enforcer is the same shape as a
+ * trigger list that misses the cases that bite.
+ */
+const SCANNED = ["src", "test", "scripts"] as const;
+const ALLOWED = new Set([0x09, 0x0a, 0x0d]); // tab, LF, CR
+/** Generated/vendored trees are not hand-written and are excluded by NAME, never by a broad pattern. */
+const SKIP_DIRS = new Set(["node_modules", "fixtures"]);
+
+function sourceFiles(dir: string): string[] {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return SKIP_DIRS.has(e.name) ? [] : sourceFiles(full);
+    return e.isFile() && (full.endsWith(".ts") || full.endsWith(".mjs")) ? [full] : [];
+  });
+}
+
+/** Offending byte positions, as `line:col` with the byte value — enough to fix without hunting. */
+function controlBytes(file: string): string[] {
+  const data = fs.readFileSync(file);
+  const hits: string[] = [];
+  let line = 1;
+  let col = 1;
+  for (const byte of data) {
+    if (byte === 0x0a) { line += 1; col = 1; continue; }
+    if ((byte < 0x20 && !ALLOWED.has(byte)) || byte === 0x7f) {
+      hits.push(`${line}:${col} (0x${byte.toString(16).padStart(2, "0")})`);
+    }
+    col += 1;
+  }
+  return hits;
+}
+
+describe("TypeScript sources stay diffable (t-0750b6)", () => {
+  it("contains no raw control byte outside tab, LF and CR", () => {
+    const offenders = SCANNED.flatMap((d) => sourceFiles(path.join(ROOT, d)))
+      .map((file) => ({ file: path.relative(ROOT, file), hits: controlBytes(file) }))
+      .filter((r) => r.hits.length > 0)
+      .map((r) => `${r.file} — ${r.hits.slice(0, 5).join(", ")}`);
+
+    // If this fails: you almost certainly meant an ESCAPE. Write /[\x00-\x1f\x7f]/ instead of the
+    // class with real bytes, and the escape text \\u0000 instead of a literal NUL separator. Same value at runtime,
+    // and the file stays something git can diff and grep can search.
+    expect(offenders).toEqual([]);
+  });
+
+  it("detects a control byte when one is present — the guard is not vacuous", () => {
+    // Proves the scanner discriminates, without planting a real one in the tree.
+    const tmp = path.join(process.env.TMPDIR ?? "/tmp", `diffable-probe-${process.pid}.ts`);
+    fs.writeFileSync(tmp, `const CONTROL = /[${String.fromCharCode(0)}]/;\n`);
+    try {
+      expect(controlBytes(tmp)).toEqual(["1:19 (0x00)"]);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+
+  it("allows tab, LF and CR", () => {
+    const tmp = path.join(process.env.TMPDIR ?? "/tmp", `diffable-ok-${process.pid}.ts`);
+    fs.writeFileSync(tmp, "const a = 1;\n\tconst b = 2;\r\n");
+    try {
+      expect(controlBytes(tmp)).toEqual([]);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+});

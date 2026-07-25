@@ -230,7 +230,7 @@ export function dispatcherTemplateFingerprint(): string {
   const strip = (s: string) => s.split("\n").filter((l) => !l.startsWith(TEMPLATE_STAMP_PREFIX)).join("\n");
   return crypto
     .createHash("sha256")
-    .update(`${strip(dispatcherScript("pre-commit"))} ${strip(dispatcherScript("pre-push"))}`)
+    .update(`${strip(dispatcherScript("pre-commit"))}\u0000${strip(dispatcherScript("pre-push"))}`)
     .digest("hex");
 }
 
