@@ -23,6 +23,42 @@ export interface DeliveryContract {
 
 export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "verifying" | "quarantined" | "abandoned";
 
+/**
+ * t-cc6495 — what a caller refused because of this lease state is supposed to DO about it.
+ *
+ * A governed refusal that names no way forward pushes the operator out of the governed flow: the
+ * next move becomes raw git or raw sqlite, which is the failure t-0cbcbd describes. The refusal
+ * already carried `next: { action: "delivery_salvage" }`, but only for `held` and `quarantined`,
+ * while the guard that produces it refuses EVERY state that is not `free`/`held`. So a caller
+ * refused because a lease was `pending` or `draining` got a dead end and no hint.
+ *
+ * The point of this map is not that every state gets an action — some genuinely resolve on their
+ * own — it is that "nothing to do" becomes a DECLARATION rather than an omission. `null` says a
+ * human deliberately concluded the state is transitional; a missing key says nobody thought about
+ * it, and the exhaustive `Record` makes the compiler refuse the second one when a state is added.
+ */
+export type LeaseDisposition =
+  /** An operator-invokable Bridge action that moves this lease forward. */
+  | { kind: "action"; action: "delivery_salvage" | "git_delivery_reconcile" }
+  /** Terminal: the lease holds nothing, so there is nothing to dispose of. */
+  | { kind: "terminal" }
+  /** Transitional: it clears without operator action. `why` is shown, so the caller knows to retry. */
+  | { kind: "transitional"; why: string };
+
+export const LEASE_DISPOSITION: Record<DeliveryLeaseState, LeaseDisposition> = {
+  free: { kind: "terminal" },
+  abandoned: { kind: "terminal" },
+  // A contender is mid-CAS; the winner settles it within one mutation.
+  pending: { kind: "transitional", why: "another contender is mid-transition; retry" },
+  // Releasing its tail. Becomes free or quarantined on its own.
+  draining: { kind: "transitional", why: "the lease is releasing its tail; retry shortly" },
+  held: { kind: "action", action: "delivery_salvage" },
+  quarantined: { kind: "action", action: "delivery_salvage" },
+  // A verification owns it. If its owner died, reconciliation is what frees it — not salvage,
+  // which would discard a run that may still be legitimately in flight.
+  verifying: { kind: "action", action: "git_delivery_reconcile" },
+};
+
 export interface DeliveryProcessIdentity {
   pid: number;
   processStart: string;

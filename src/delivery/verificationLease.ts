@@ -8,6 +8,7 @@ import type { GitDeliveryStore } from "../git-delivery/store.js";
 import type { GitDelivery } from "../git-delivery/types.js";
 import { DeliveryLeaseError } from "./leaseService.js";
 import { DeliveryStore, DeliveryStoreBusyError, DeliveryVersionConflictError } from "./store.js";
+import { LEASE_DISPOSITION } from "./types.js";
 import type { Delivery, DeliveryActor, DeliveryLease, DeliveryLeaseHolder, DeliveryVerificationIntent } from "./types.js";
 import { resolveOperationalSegment } from "./verificationSubject.js";
 
@@ -531,10 +532,23 @@ export class DeliveryVerificationLeaseService {
   private now(): string { return this.deps.now?.() ?? new Date().toISOString(); }
   private eventId(): string { return this.deps.eventId?.() ?? `event-${randomBytes(8).toString("hex")}`; }
   private message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
+  /**
+   * t-cc6495 — every refusal names the way forward, from the declared per-state disposition rather
+   * than a list inlined here. The inlined version covered `held` and `quarantined` only, while the
+   * guard above refuses EVERY state that is not `free`/`held`: a caller blocked by a `pending` or
+   * `draining` lease got a dead end, and the next move out of a dead end is raw git (t-0cbcbd).
+   * A transitional state now says so, which is a different answer from saying nothing.
+   */
   private occupied(delivery: Delivery, message: string, detail: Record<string, unknown> = {}): DeliveryLeaseError {
+    const disposition = LEASE_DISPOSITION[delivery.lease.state];
+    const next = disposition.kind === "action"
+      ? { next: { action: disposition.action, deliveryId: delivery.id } }
+      : disposition.kind === "transitional"
+        ? { next: { retry: true, why: disposition.why } }
+        : {};
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
       deliveryId: delivery.id, version: delivery.version, state: delivery.lease.state,
-      ...(["held", "quarantined"].includes(delivery.lease.state) ? { next: { action: "delivery_salvage", deliveryId: delivery.id } } : {}),
+      ...next,
       ...detail,
     });
   }
