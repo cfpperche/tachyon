@@ -39,6 +39,24 @@ export const GITHOOKS_REL = ".tachyon/githooks";
  */
 export const GIT_HOOK_STDIN_EVENTS: ReadonlySet<string> = new Set(["pre-push"]);
 
+/**
+ * Version of the GENERATED dispatcher template. The dispatcher is product code Tachyon writes into a
+ * workspace, so a fix to it ships in an engine — but the bytes on disk were written by whichever engine
+ * installed the plugin, and nothing used to bring them forward. A harness could therefore stay behind its
+ * engine indefinitely, with no signal, so a dispatcher fix only reached a user who happened to reinstall an
+ * unrelated plugin (t-c3b0a5). Stamping the generated file makes its provenance a fact on disk rather than a
+ * guess, which is what lets `reconcileGitHookHarness` bring a stale harness forward.
+ *
+ * BUMP THIS whenever `dispatcherScript` changes behavior. `dispatcherTemplateFingerprint` +
+ * its pinned-fingerprint test fail the suite if you forget — a version nobody increments is decoration.
+ *
+ *   1 — pre-stamp dispatchers (never written with a stamp; recognized by its ABSENCE).
+ *   2 — every leaf gets an explicit stdin; stdin-contract events buffer and replay git's stdin (t-6a8deb).
+ */
+export const DISPATCHER_TEMPLATE_VERSION = 2;
+
+const TEMPLATE_STAMP_PREFIX = "# tachyon-dispatcher-template ";
+
 const LEAVES_SUBDIR = "leaves";
 const REGISTRY_FILE = "registry.json";
 const OWNERSHIP_FILE = "ownership.json";
@@ -160,6 +178,7 @@ cat > "$STDIN_BUF"
   const leafStdin = carriesStdin ? `< "$STDIN_BUF"` : "< /dev/null";
   return `#!/bin/sh
 # Tachyon git-hook dispatcher (generated) — spec 264. Do not edit; managed by Tachyon.
+${TEMPLATE_STAMP_PREFIX}${DISPATCHER_TEMPLATE_VERSION}
 set -u
 DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 MANIFEST="$DIR/${event}.run"
@@ -187,6 +206,32 @@ done
 exec 3<&-
 exit "$RC"
 `;
+}
+
+/** The template version stamped into a dispatcher ON DISK. An UNSTAMPED file is a pre-versioning dispatcher,
+ *  which is version 1 — read as data, never inferred from the file's age or content. Returns null when the
+ *  file is absent or unreadable (nothing to compare; the caller decides, and must not treat that as current). */
+export function readDispatcherTemplateVersion(file: string): number | null {
+  let text: string;
+  try { text = fs.readFileSync(file, "utf8"); } catch { return null; }
+  for (const line of text.split("\n", 8)) {
+    if (!line.startsWith(TEMPLATE_STAMP_PREFIX)) continue;
+    const n = Number(line.slice(TEMPLATE_STAMP_PREFIX.length).trim());
+    return Number.isInteger(n) && n > 0 ? n : null;
+  }
+  return 1; // present but unstamped → the original template
+}
+
+/** A content fingerprint of the CURRENT template, stamp line excluded, over both an ordinary event and a
+ *  stdin-contract one (they generate different plumbing). Its only job is to make an un-bumped behavior
+ *  change fail the suite: the pinned expectation lives in the test, so editing `dispatcherScript` without
+ *  touching `DISPATCHER_TEMPLATE_VERSION` cannot slip through as "the version is fine, nothing changed". */
+export function dispatcherTemplateFingerprint(): string {
+  const strip = (s: string) => s.split("\n").filter((l) => !l.startsWith(TEMPLATE_STAMP_PREFIX)).join("\n");
+  return crypto
+    .createHash("sha256")
+    .update(`${strip(dispatcherScript("pre-commit"))} ${strip(dispatcherScript("pre-push"))}`)
+    .digest("hex");
 }
 
 /** Every stdin-contract event must be an event a manifest can actually declare. A `GIT_HOOK_STDIN_EVENTS`
