@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { checkPackagedArtifact } from "./vsix-artifact.mjs";
 
 const root = process.cwd();
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -174,6 +175,27 @@ function writeAudit() {
     // rebuilds workspace dist as `dev` and must not rewrite the packaged identity in this record.
     note: "Dogfood build provenance only: detects accidental or lazy out-of-band installs. This is not a security boundary; local agents can forge the record.",
   };
+  // t-1f425c — the audit record must not be able to exist while DESCRIBING an artifact that does not
+  // match it. Until now this comparison was a manual unzip somebody remembered to do; 0.56.102 shipped
+  // and crashed on activation because nobody did it that time. Unpack the vsix and check the claims
+  // BEFORE writing the record, so a mismatch produces no audit trail at all rather than a green one.
+  if (vsixPath) {
+    // Compare dist claims ONLY when they came from the vsix's own embedded record. On the fallback
+    // path (`source === "workspace"`, a vsix with no embedded provenance) `identity.dist` describes
+    // the workspace tree, not this package — comparing them would flag a legitimate difference. The
+    // engine-manifest and source-map checks are properties of the artifact alone, so they always run.
+    const claims = source === "vsix" ? identity.dist ?? {} : {};
+    const artifact = checkPackagedArtifact(vsixPath, claims);
+    if (!artifact.ok) {
+      console.error(`provenance: REFUSED — the packaged artifact does not match what the build claims:`);
+      for (const problem of artifact.problems) console.error(`  ${problem}`);
+      console.error(`No audit record was written for ${identity.version}. Do not install this vsix.`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`artifact audit: OK — ${artifact.checked} packaged files match the build's claims`);
+  }
+
   fs.mkdirSync(AUDIT_DIR, { recursive: true });
   const out = path.join(AUDIT_DIR, `${identity.version}.json`);
   fs.writeFileSync(out, `${JSON.stringify(record, null, 2)}\n`, "utf8");

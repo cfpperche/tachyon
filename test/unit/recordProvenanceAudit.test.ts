@@ -55,10 +55,15 @@ function writeZip(vsixPath: string, entries: Record<string, string | Buffer>): v
   fs.rmSync(stage, { recursive: true, force: true });
 }
 
-function writeFakeVsix(root: string, name: string, provenance: object): string {
+/** t-1f425c — the vsix must actually CONTAIN the files its embedded record claims. `audit` now unpacks
+ *  the artifact and refuses to write a record when the two disagree, so a fixture that claims files it
+ *  does not pack is no longer a valid stand-in for a release candidate — it is the exact shape the
+ *  check exists to reject. `payload` is those claimed files, keyed by their in-archive path. */
+function writeFakeVsix(root: string, name: string, provenance: object, payload: Record<string, string> = {}): string {
   const vsixPath = path.join(root, name);
   writeZip(vsixPath, {
     "extension/provenance.json": `${JSON.stringify(provenance, null, 2)}\n`,
+    ...payload,
   });
   return vsixPath;
 }
@@ -82,11 +87,10 @@ describe("record-provenance audit (t-86b1fa)", () => {
     );
 
     const packagedDistJs = "packaged-stable-build";
+    const packagedManifest = JSON.stringify({ schemaVersion: 1, channel: "stable", engineVersion: version });
     const packagedDist = {
       "dist/extension.js": sha256Bytes(packagedDistJs),
-      "dist/engine/engine-manifest.json": sha256Bytes(
-        JSON.stringify({ schemaVersion: 1, channel: "stable", engineVersion: version }),
-      ),
+      "dist/engine/engine-manifest.json": sha256Bytes(packagedManifest),
     };
     const packaged = {
       version,
@@ -97,7 +101,10 @@ describe("record-provenance audit (t-86b1fa)", () => {
       dist: packagedDist,
     };
     const vsixName = `tachyon-${version}.vsix`;
-    writeFakeVsix(root, vsixName, packaged);
+    writeFakeVsix(root, vsixName, packaged, {
+      "extension/dist/extension.js": packagedDistJs,
+      "extension/dist/engine/engine-manifest.json": packagedManifest,
+    });
 
     execFileSync(process.execPath, [scriptPath, "audit", vsixName], {
       cwd: root,
