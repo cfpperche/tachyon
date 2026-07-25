@@ -58,7 +58,7 @@
   "Native session fork is unavailable for this runtime.": "O fork nativo de sessão não está disponível para este runtime.",
   "Native permission-policy projection is not fully verified.": "A projeção da política nativa de permissões ainda não foi totalmente verificada.",
   "Attention and drafted-composer behavior still need live verification.": "O comportamento de atenção e de compositor com rascunho ainda precisa de verificação ao vivo.",
-  "Stopping an active turn or drafted composer still needs live verification.": "A interrupção de um turno ativo ou compositor com rascunho ainda precisa de verificação ao vivo.",
+  "Stopping an active turn still needs live verification.": "A interrupção de um turno ativo ainda precisa de verificação ao vivo.",
   "OAuth admission permits one live Pi agent at a time.": "A admissão OAuth permite apenas um agente Pi ativo por vez.",
   "Agent name (a free label — e.g. frontend, reviewer, dev)": "Nome do agente (rótulo livre — ex.: frontend, revisor, dev)",
   "Agent profile": "Perfil do agente",

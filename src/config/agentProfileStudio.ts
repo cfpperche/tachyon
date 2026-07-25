@@ -20,7 +20,7 @@ const canonicalRuntimeLimitationSchema = z.enum([
   "fork-unavailable",
   "permission-policy-partial",
   "attention-composer-unverified",
-  "stop-active-draft-unverified",
+  "stop-active-turn-unverified",
   "oauth-concurrency-single-live",
 ]);
 

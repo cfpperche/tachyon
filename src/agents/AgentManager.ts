@@ -2802,7 +2802,10 @@ export class AgentManager {
         } else {
           await sleep(step.delayMs);
           const state = (await this.opts.tmux.sessionStates(session))?.get(session);
-          if (state && !state.dead) await this.opts.tmux.sendKey(session, step.key);
+          if (state && !state.dead) {
+            if (step.type === "sendKeyIfAliveAfterDelay") await this.opts.tmux.sendKey(session, step.key);
+            else await this.opts.tmux.sendKeys(session, step.text, true);
+          }
         }
       }
     } catch (err) {

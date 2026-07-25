@@ -35,6 +35,7 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
 
-- `t-b727bd` owns active-turn/drafted-composer graceful-stop measurement and native permission
-  settings-versus-argv precedence. Until it lands, Claude stop, permission injection, and authored
-  native-config policy remain `~` in the parity matrix.
+- `t-b727bd` measured that Ctrl+C clears a drafted composer and `/exit` closes it without a model
+  prompt; it also measured CLI `--permission-mode` overriding settings defaultMode. Active-turn stop
+  remains unverified without an authorized model interaction, and no typed authored Claude policy
+  exists, so permission injection and native-config policy remain `~` in the parity matrix.

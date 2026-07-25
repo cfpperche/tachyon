@@ -562,7 +562,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     "fork-unavailable": profileLabels.runtimeLimitationForkUnavailable,
     "permission-policy-partial": profileLabels.runtimeLimitationPermissionPolicyPartial,
     "attention-composer-unverified": profileLabels.runtimeLimitationAttentionComposerUnverified,
-    "stop-active-draft-unverified": profileLabels.runtimeLimitationStopActiveDraftUnverified,
+    "stop-active-turn-unverified": profileLabels.runtimeLimitationStopActiveTurnUnverified,
     "oauth-concurrency-single-live": profileLabels.runtimeLimitationOauthConcurrencySingleLive,
   })[limitation];
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);

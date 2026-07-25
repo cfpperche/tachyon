@@ -140,7 +140,7 @@
   "Native session fork is unavailable for this runtime.": "Native session fork is unavailable for this runtime.",
   "Native permission-policy projection is not fully verified.": "Native permission-policy projection is not fully verified.",
   "Attention and drafted-composer behavior still need live verification.": "Attention and drafted-composer behavior still need live verification.",
-  "Stopping an active turn or drafted composer still needs live verification.": "Stopping an active turn or drafted composer still needs live verification.",
+  "Stopping an active turn still needs live verification.": "Stopping an active turn still needs live verification.",
   "OAuth admission permits one live Pi agent at a time.": "OAuth admission permits one live Pi agent at a time.",
   "Operational actions use the loaded profile revision and stay separate from form save.": "Operational actions use the loaded profile revision and stay separate from form save.",
   "Closed": "Closed", "Degraded": "Degraded", "Conflict": "Conflict",

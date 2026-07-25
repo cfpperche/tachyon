@@ -11,7 +11,7 @@ profiles, lifecycle regressions, completed parity slices, and Agent Studio readi
 | Runtime | Fresh / restart / resume | Explicit limitation | Result |
 |---|---|---|---|
 | Codex | `test/unit/agentManager.test.ts` canonical private-policy regression | no native fork | lifecycle test passes; Studio shows fork unavailable |
-| Claude | same test file regenerates private settings, skills, MCP and trust | policy precedence and active/drafted stop remain partial (`t-b727bd`) | limitation is shown; not promoted to full parity |
+| Claude | same test file regenerates private settings, skills, MCP and trust | policy precedence and active-turn stop remain partial (`t-b727bd`) | limitation is shown; not promoted to full parity |
 | Grok | same test file regenerates trust and preserves external auth/Bridge | no authored permission policy; composer/attention unverified | limitation is shown; canonical HOME/GROK_HOME isolation is covered |
 | Pi | same test file regenerates exact trust/private state | OAuth allows one live Pi agent only; headless probe unavailable | limitation is shown; admission remains enforced |
 
@@ -39,7 +39,7 @@ and `t-60ff74` provide measured/verified stop plus lifecycle-bound `approval_pol
 runtime limitations, but the umbrella requires a real dogfood record for every runtime and a visual
 inspection of the Agent Studio readiness surface. The current evidence has two explicit gaps:
 
-1. Claude's active-turn/drafted-composer stop and authored permission-policy precedence are still
+1. Claude's active-turn stop and authored permission-policy precedence are still
    open in `t-b727bd`.
 2. Agent Studio visual QA is `unable_to_judge`: the preview bundle builds, but this worktree lacks
    the provisioned `agent-browser` launcher (`BROWSER_RUNTIME_MISSING`).

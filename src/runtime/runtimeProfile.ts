@@ -51,7 +51,8 @@ export interface RuntimePermissionProfile extends RuntimeProfileSection {
 export type GracefulStopStep =
   | { type: "interruptActiveTurn" }
   | { type: "sendKey"; key: string }
-  | { type: "sendKeyIfAliveAfterDelay"; key: string; delayMs: number };
+  | { type: "sendKeyIfAliveAfterDelay"; key: string; delayMs: number }
+  | { type: "sendTextIfAliveAfterDelay"; text: string; delayMs: number };
 
 export interface GracefulStopProfile extends RuntimeProfileSection {
   steps: GracefulStopStep[];
@@ -73,7 +74,7 @@ export interface RuntimeProfile {
 export const CANONICAL_RUNTIME_LIMITATIONS = [
   "permission-policy-partial",
   "attention-composer-unverified",
-  "stop-active-draft-unverified",
+  "stop-active-turn-unverified",
   "oauth-concurrency-single-live",
 ] as const;
 
@@ -177,7 +178,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       notes:
         "Claude Code 2.1.220 accepted every declared --permission-mode value and rejected an invalid value. " +
         "Canonical profiles regenerate workspace-authored permissions in their private settings.json on fresh/restart/resume; " +
-        "Tachyon does not synthesize an implicit permission mode for a declared canonical profile. Native settings precedence still lacks an authored profile-policy projection.",
+        "A measured settings defaultMode=plan is overridden by explicit --permission-mode auto. Tachyon has no typed authored Claude policy field, so it does not synthesize or inject a permission mode for a canonical profile.",
     },
     composer: {
       tailLines: 8,
@@ -195,17 +196,16 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       steps: [
         { type: "interruptActiveTurn" },
         { type: "sendKey", key: "C-c" },
-        { type: "sendKey", key: "C-d" },
-        { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
+        { type: "sendTextIfAliveAfterDelay", text: "/exit", delayMs: 150 },
       ],
       source: "measured",
       verified: false,
       verifiedAt: "2026-07-25",
       notes:
-        "Claude Code 2.1.220 exited an isolated interactive onboarding/session after interrupt plus repeated EOF. " +
-        "Keep the existing interrupt, clear-composer, EOF, retry-EOF sequence because a first EOF can be consumed by interactive state; live active-turn and drafted-composer measurement remains required.",
+        "Claude Code 2.1.220: Ctrl+C clears an unsubmitted draft but Ctrl+D does not exit it; a local /exit command then cleanly exits. " +
+        "Keep interrupt, clear-composer, then conditional /exit. Active-turn behavior remains unverified because measuring it would require a model turn.",
     },
-    canonicalLimitations: ["permission-policy-partial", "stop-active-draft-unverified"],
+    canonicalLimitations: ["permission-policy-partial", "stop-active-turn-unverified"],
   },
   codex: {
     runtime: "codex",

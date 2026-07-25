@@ -145,6 +145,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
   const panes = new Map<string, string>();
   const sessionEnv = new Map<string, Record<string, string>>(); // launch env from -e / set-environment
   const sentKeys: Array<{ session: string; key: string }> = [];
+  const sentTexts: Array<{ session: string; text: string; submit: boolean }> = [];
   const respawnArgs: string[][] = [];
   const newSessionArgs: string[][] = [];
   const pipedSessions = new Map<string, string>(); // t-6a6a00 — session -> its current pipe-pane shell-command (absent = not piping)
@@ -223,6 +224,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
       }
       case "send-keys":
         sentKeys.push({ session: target(), key: args[args.length - 1] });
+        if (args.includes("-l")) sentTexts.push({ session: target(), text: args[args.length - 1], submit: false });
         return { stdout: "", stderr: "" };
       case "capture-pane":
         if (!sessions.has(target())) throw new Error("can't find session");
@@ -240,7 +242,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, sessionEnv, sentKeys, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, sessionEnv, sentKeys, sentTexts, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -250,7 +252,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
-  const { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
+  const { sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -269,7 +271,7 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
       : null,
     materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
   });
-  return { manager, sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, spawned, killed, restarted };
+  return { manager, sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
 describe("AgentManager", () => {
@@ -707,41 +709,44 @@ describe("AgentManager", () => {
     ]);
   });
 
-  it("stopGracefully sends Claude's second EOF when the pane stays alive", async () => {
-    const { manager, sessions, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+  it("stopGracefully sends Claude's local exit command when the pane stays alive", async () => {
+    const { manager, sessions, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
       { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "/exit" },
+      { session: `tachyon-${HASH}-claude`, key: "C-m" },
     ]);
+    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
   });
 
-  it("stopGracefully interrupts an active claude turn before EOF", async () => {
-    const { manager, panes, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+  it("stopGracefully interrupts an active claude turn before local exit", async () => {
+    const { manager, panes, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
     panes.set(`tachyon-${HASH}-claude`, "esc to interrupt");
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
       { session: `tachyon-${HASH}-claude`, key: "Escape" },
       { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "/exit" },
+      { session: `tachyon-${HASH}-claude`, key: "C-m" },
     ]);
+    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
   });
 
-  it("stopGracefully clears a leftover composer draft on an idle claude agent before EOF", async () => {
-    const { manager, panes, sentKeys } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+  it("stopGracefully clears a leftover composer draft on an idle claude agent before local exit", async () => {
+    const { manager, panes, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
     panes.set(`tachyon-${HASH}-claude`, "› queued draft text that is not yet submitted");
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
       { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
-      { session: `tachyon-${HASH}-claude`, key: "C-d" },
+      { session: `tachyon-${HASH}-claude`, key: "/exit" },
+      { session: `tachyon-${HASH}-claude`, key: "C-m" },
     ]);
+    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
   });
 
   it("cannot restart a re-discovered ad-hoc agent (no stored definition)", async () => {

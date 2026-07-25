@@ -98,7 +98,7 @@ describe("canonical Agent Studio projection", () => {
     current.profile.runtime.adapter = "claude";
     expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
       state: "limited",
-      limitations: ["permission-policy-partial", "stop-active-draft-unverified"],
+      limitations: ["permission-policy-partial", "stop-active-turn-unverified"],
     });
     current.profile.runtime.adapter = "pi";
     expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({

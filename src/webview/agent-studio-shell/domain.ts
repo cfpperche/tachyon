@@ -468,7 +468,7 @@ export interface AgentProfileLabels {
   runtimeLimitationForkUnavailable: string;
   runtimeLimitationPermissionPolicyPartial: string;
   runtimeLimitationAttentionComposerUnverified: string;
-  runtimeLimitationStopActiveDraftUnverified: string;
+  runtimeLimitationStopActiveTurnUnverified: string;
   runtimeLimitationOauthConcurrencySingleLive: string;
   enabled: string;
   disabled: string;
@@ -621,7 +621,7 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     runtimeLimitationForkUnavailable: t("Native session fork is unavailable for this runtime."),
     runtimeLimitationPermissionPolicyPartial: t("Native permission-policy projection is not fully verified."),
     runtimeLimitationAttentionComposerUnverified: t("Attention and drafted-composer behavior still need live verification."),
-    runtimeLimitationStopActiveDraftUnverified: t("Stopping an active turn or drafted composer still needs live verification."),
+    runtimeLimitationStopActiveTurnUnverified: t("Stopping an active turn still needs live verification."),
     runtimeLimitationOauthConcurrencySingleLive: t("OAuth admission permits one live Pi agent at a time."),
     enabled: t("Enabled"), disabled: t("Disabled"), closed: t("Closed"), degraded: t("Degraded"), conflict: t("Conflict"),
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),

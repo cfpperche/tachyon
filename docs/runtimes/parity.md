@@ -192,7 +192,7 @@ in the same change.
 | Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
-| Stop | C-c / C-d sequences | `runtimeProfile.claude.gracefulStop` | Claude Code 2.1.220 isolated interactive/onboarding measurement; active-turn and drafted-composer evidence remains open → mark `~` |
+| Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` | Claude Code 2.1.220 TTY: Ctrl+C clears a draft and `/exit` closes it; active-turn evidence remains open → mark `~` |
 | Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
 | Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates the workspace-authored permission block; ad-hoc ownership injection may use `--permission-mode auto` but never changes a declared canonical profile | Claude Code 2.1.220 accepts all six native modes; canonical lifecycle test `t-2490e0`; an authored native policy projection remains open → mark `~` |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.claude` | code |
