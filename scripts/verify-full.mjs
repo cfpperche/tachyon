@@ -4,6 +4,7 @@ import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { decideHeavyGate } from "./host-resources.mjs";
+import { recordVerification } from "./verify-record.mjs";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
@@ -233,6 +234,19 @@ export async function main() {
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : tests.code || 1;
     }
     process.stdout.write(`${formatSuccess(report)}\n`);
+    // t-47cc91 — file the green under the TREE it covered, so "the tree you land is the tree you
+    // verified" becomes a lookup instead of something the operator has to still remember. Recorded
+    // only on the success path: a red or aborted run must never leave a proof behind.
+    const count = summarizeReport(report);
+    const filed = recordVerification({
+      command: "verify:full",
+      summary: `${count.files} files, ${count.passed} passed`,
+    });
+    process.stdout.write(
+      filed.recorded
+        ? `verified tree ${filed.record.tree.slice(0, 12)} recorded\n`
+        : `no verification record written: ${filed.reason}\n`,
+    );
     rmSync(root, { recursive: true, force: true });
     return 0;
   } finally {
