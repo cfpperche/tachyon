@@ -5,16 +5,22 @@ on:
     branches: [main]
   pull_request:
 
-# Deterministic, portable core: typecheck + build + unit (the unit suite
-# includes a real-tmux subset that runs against whatever tmux the runner ships).
+# t-dcd8eb — this workflow does NOT list verification steps. `npm run verify:full` is the single source
+# of truth (engine/UI boundary → typecheck → build → the whole Vitest suite, which includes the Product
+# Invariants). CI merely provisions a runner and calls it, so "green locally" and "green in CI" cannot
+# drift into meaning different things.
 #
-# The xvfb editor-host integration suite (test/integration*) is a LOCAL gate, not
-# run here: it drives a real VSCode host whose one-shot-command exit-code capture
-# is sensitive to the tmux version (the runner's tmux 3.4 leaves pane_dead_status
-# empty for instantly-exiting panes, which the supported tmux 3.6 populates). Run
-# it locally with `xvfb-run -a npm run test:integration` on tmux >= 3.6.
+# They used to be two hand-maintained lists, and they disagreed: verify:full skipped typecheck AND the
+# engine-boundary guard, so the pre-push gate that resolves that same command skipped them too. With
+# Actions out of credit nothing here ran either, and the boundary sat red on main unnoticed.
+# `test/unit/ciWorkflowSingleSource.test.ts` fails the suite if a verification step reappears here.
+#
+# The xvfb editor-host integration suite is still a LOCAL gate, not run here: it drives a real VSCode
+# host whose one-shot-command exit-code capture is sensitive to the tmux version (the runner's tmux 3.4
+# leaves pane_dead_status empty for instantly-exiting panes, which the supported tmux 3.6 populates).
+# Run it locally with `xvfb-run -a npm run test:integration` on tmux >= 3.6.
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,11 +31,4 @@ jobs:
       - name: Install tmux (real-tmux unit coverage)
         run: sudo apt-get update && sudo apt-get install -y tmux
       - run: npm ci
-      - run: npm run typecheck
-      - name: Engine/UI boundary (spec 233 — engine must not import vscode)
-        run: npm run check:engine-boundary
-      - run: npm run build
-      - name: Core Vitest tests
-        run: npx vitest run test/unit test/integration
-      - name: Product Invariants
-        run: npm run test:invariants
+      - run: npm run verify:full

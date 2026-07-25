@@ -28,9 +28,19 @@ function cleanupCreatedPaths() {
 
 afterEach(cleanupCreatedPaths);
 
-function workspace(buildSource = "", vitestSource?: string) {
+/** t-dcd8eb — the runner now shells the static gates through `npm run <script>`, so a workspace it can
+ *  verify is one that DECLARES them. The fixture models that (trivially passing by default); pass
+ *  `gates` to make one fail. Production stays fail-closed: a missing script is an error, never a skip. */
+function workspace(buildSource = "", vitestSource?: string, gates: Record<string, string> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-full-quiet-test-"));
   createdPaths.add(root);
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
+    name: "verify-full-fixture",
+    scripts: {
+      "check:engine-boundary": gates["check:engine-boundary"] ?? "node -e 0",
+      typecheck: gates.typecheck ?? "node -e 0",
+    },
+  }));
   fs.mkdirSync(path.join(root, "node_modules/vitest"), { recursive: true });
   fs.writeFileSync(path.join(root, "esbuild.mjs"), buildSource || "console.log('PASSED BUILD NOISE')\n");
   fs.writeFileSync(path.join(root, "node_modules/vitest/vitest.mjs"), vitestSource ?? `
@@ -138,6 +148,33 @@ describe("quiet full verification", () => {
     expect(result.stderr).toContain("failed during build");
     expect(result.stderr).toContain("BUILD FAILURE DETAIL");
     expect(result.stderr).toContain("npm run verify:full");
+  });
+
+  // t-dcd8eb — the static gates are part of THIS command, not of the CI workflow. Before, `verify:full`
+  // ran build+tests only, so the pre-push gate resolving it never typechecked and the engine-boundary
+  // guard sat red on main unnoticed once Actions ran out of credit.
+  it("runs a failing static gate BEFORE the build, and stops there", async () => {
+    const root = workspace(
+      "console.error('BUILD SHOULD NOT RUN'); process.exit(4)\n",
+      undefined,
+      { typecheck: "node -e \"console.error('TYPE ERROR DETAIL'); process.exit(2)\"" },
+    );
+    const result = await execute(root);
+    expect(result.code).toBe(2); // the gate's own exit code, not the build's 4
+    expect(result.stderr).toContain("failed during typecheck");
+    expect(result.stderr).toContain("TYPE ERROR DETAIL");
+    expect(result.stderr).not.toContain("BUILD SHOULD NOT RUN"); // never reached the build
+  });
+
+  it("orders the static gates cheapest-first so a 100ms guard never waits on a 19s one", async () => {
+    // Both fail; the FIRST one declared must be the one reported.
+    const result = await execute(workspace("", undefined, {
+      "check:engine-boundary": "node -e \"console.error('BOUNDARY FIRST'); process.exit(3)\"",
+      typecheck: "node -e \"console.error('TYPECHECK SECOND'); process.exit(2)\"",
+    }));
+    expect(result.code).toBe(3);
+    expect(result.stderr).toContain("failed during check:engine-boundary");
+    expect(result.stderr).not.toContain("TYPECHECK SECOND");
   });
 
   it("forwards SIGTERM to the active child and exits with signal status", async () => {

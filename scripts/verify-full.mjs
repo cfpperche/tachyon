@@ -18,6 +18,14 @@ export const VITEST_MAX_WORKERS = resolveVitestMaxWorkers();
 /** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
 export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH || path.join(tmpdir(), "tachyon-verify-full.lock");
 
+/**
+ * t-dcd8eb — the non-test gates this command owns, in cheapest-first order so a 100ms failure never
+ * waits behind a 19s one. Exported because `test/unit/ciWorkflowSingleSource.test.ts` asserts the CI
+ * workflow delegates to this command instead of re-listing these steps: two hand-maintained lists is
+ * how they came to disagree in the first place.
+ */
+export const STATIC_GATES = ["check:engine-boundary", "typecheck"];
+
 export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
   try {
     const fd = openSync(lockPath, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
@@ -181,6 +189,7 @@ export async function main() {
 
   const root = mkdtempSync(path.join(tmpdir(), "tachyon-verify-full-"));
   chmodSync(root, 0o700);
+  const staticLog = path.join(root, "static.log");
   const buildLog = path.join(root, "build.log");
   const testLog = path.join(root, "vitest.log");
   const reportFile = path.join(root, "vitest-report.json");
@@ -190,6 +199,23 @@ export async function main() {
   process.on("SIGINT", forward);
   process.on("SIGTERM", forward);
   try {
+    // t-dcd8eb — STATIC gates first, cheapest-first, before spending the build+suite.
+    //
+    // These used to live only in .github/workflows/ci.yml, so `verify:full` was NOT a superset of CI:
+    // it ran build+tests and skipped both of these. With Actions out of credit (t-815159) nothing ran
+    // them at all, and the engine/UI boundary had been red on main since 3aa19029 with no signal. The
+    // pre-push gate resolves this same command, so a push to the trunk was not typechecked either --
+    // even though the regression that motivated the gate (t-381750) was a TS2345.
+    //
+    // They belong HERE, not in the workflow, so that one command is the single source of truth and CI
+    // merely calls it. `npm run typecheck` stays available on its own as the fast standalone check.
+    for (const gate of STATIC_GATES) {
+      const result = await runChild("npm", ["run", "--silent", gate], staticLog, active);
+      if (result.code !== 0 || result.signal || receivedSignal) {
+        process.stderr.write(`${formatFailure({ phase: gate, fallback: await readTail(staticLog), logDir: root })}\n`);
+        return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : result.code || 1;
+      }
+    }
     const build = await runChild(process.execPath, ["esbuild.mjs"], buildLog, active);
     if (build.code !== 0 || build.signal || receivedSignal) {
       process.stderr.write(`${formatFailure({ phase: "build", fallback: await readTail(buildLog), logDir: root })}\n`);
