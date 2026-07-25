@@ -20,6 +20,12 @@ The common support resolver declares exact tuples. The chosen source owns its wh
 keys use Codex defaults and never fall through to another source. Projection is assembled in memory,
 written atomically into the private home, and regenerated before every supported launch path.
 
+Slice C is split at its trust boundaries: `t-2b258a` composes the already-authoritative captured
+capabilities with the native scalar projection in one private Codex home; `t-c9a086` measures and
+defines safe global/workspace/profile tooling discovery; `t-115742` adds the resulting Studio controls.
+Native extensions remain unavailable until the measurement proves an agent-scoped mechanism that does
+not re-scope Tachyon's workspace-wide plugins.
+
 ## Key decisions
 
 _Each decision + why this option over the alternatives considered. Record rejected alternatives — they explain the design as much as the chosen path does._

@@ -6,9 +6,10 @@ _Generated from `plan.md` on 2026-07-23. Work top-to-bottom. Check boxes as task
 
 - [x] Slice A: typed agent selector projection and exact support declaration.
 - [x] Slice B: reviewed global/workspace scalar-family parser and allowlist.
-- [ ] Slice C: human-configurable global/workspace/agent tooling composition, private-harness
-      materialization, and Agent Studio source/effective inventory for hooks, MCPs, skills and
-      native extensions.
+- [ ] Slice C: tooling composition is split by trust boundary: private composition of existing
+      captured capabilities with native scalar projection (`t-2b258a`), source discovery and
+      capture contract (`t-c9a086`), then Agent Studio source/effective controls (`t-115742`).
+      Native extensions remain unsupported until their agent-scoped mechanism is measured.
 - [ ] Slice D: lifecycle dogfood and per-family parity evidence.
 
 ## Verification

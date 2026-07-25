@@ -862,12 +862,7 @@ export class HarnessManager {
     if (adapter.runtime !== "codex") {
       throw new HarnessUnavailableError(agent, `runtime '${adapter.runtime}' has no measured profile capability projection`);
     }
-    const def: HarnessDef = {
-      inherit: "none",
-      ...(Object.keys(projection.mcp).length > 0 ? { mcp: projection.mcp } : {}),
-      ...(Object.keys(projection.hooks).length > 0 ? { hooks: projection.hooks } : {}),
-    };
-    return this.materialize(agent, def, adapter, cwd, bridgeEntry, undefined, projection);
+    return this.materializeCanonicalCodexProfileHome(agent, adapter, { capabilities: projection }, cwd, bridgeEntry);
   }
 
   private ensureProfileCapabilityRoot(agent: string, home: string): string {
@@ -1418,17 +1413,7 @@ export class HarnessManager {
     // claude expands ${VAR} from the spawned PROCESS env (not the mcp.json file), so the real value must
     // be injected there. spec 227 — source = the ambient process env OR a project `.env` (gitignored),
     // process.env taking precedence (dotenv semantics) so the common case needs no shell export.
-    const envFile = this.readEnvFile();
-    const secretEnv: Record<string, string> = {};
-    const missing: string[] = [];
-    for (const name of collectEnvRefs(def)) {
-      const v = this.procEnv[name] ?? envFile[name];
-      if (v === undefined || v === "") missing.push(name);
-      else secretEnv[name] = v;
-    }
-    if (missing.length > 0) {
-      throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} — in the project .env or your shell (referenced by an MCP server)`);
-    }
+    const secretEnv = this.resolveMcpSecretEnv(agent, def);
 
     // spec t-e2ebe3 — opencode's Bridge entry is opencode-shaped (`type:remote`, `{env:VAR}` token ref). The
     // caller (Workspace) passes the SHARED bridgeEntry (claude-shaped) for all runtimes; normalize here so the
@@ -1735,42 +1720,107 @@ export class HarnessManager {
     projection: ResolvedAgentNativeConfigProjection,
     cwd?: string,
   ): MaterializedHarness {
-    if (adapter.runtime !== "codex" || projection.adapter !== "codex") {
+    return this.materializeCanonicalCodexProfileHome(agent, adapter, { nativeConfig: projection }, cwd);
+  }
+
+  /**
+   * Materialize a canonical Codex profile as one private configuration. Native scalar policy and
+   * capability selections are independent profile planes, but Codex reads both from the same
+   * config home; writing either one separately would silently discard the other.
+   */
+  materializeCanonicalCodexProfileHome(
+    agent: string,
+    adapter: ResumeAdapter,
+    projection: {
+      nativeConfig?: ResolvedAgentNativeConfigProjection;
+      capabilities?: ResolvedAgentCapabilityProjection;
+    },
+    cwd?: string,
+    bridgeEntry?: Record<string, unknown>,
+  ): MaterializedHarness {
+    const nativeConfig = projection.nativeConfig;
+    const capabilities = projection.capabilities;
+    if (
+      adapter.runtime !== "codex"
+      || (nativeConfig && nativeConfig.adapter !== "codex")
+      || (capabilities && capabilities.adapter !== "codex")
+    ) {
       throw new Error(`runtime '${adapter.runtime}' is not compatible with the Codex native configuration projection`);
     }
     const home = this.materializeHome(agent, adapter, cwd);
+    if (capabilities) {
+      fs.rmSync(path.join(this.ensureProfileCapabilityRoot(agent, home), "manifest.json"), { force: true });
+    }
     const configPath = path.join(home, "config.toml");
     const values: Array<[string, string | undefined]> = [
-      ["model", projection.selectors.model],
-      ["model_provider", projection.selectors.provider],
-      ["model_reasoning_effort", projection.selectors.reasoningEffort],
-      ["service_tier", projection.selectors.serviceTier],
-      ["approval_policy", projection.permissions?.approvalPolicy],
-      ["sandbox_mode", projection.permissions?.sandboxMode],
-      ["personality", projection.interface?.personality],
+      ["model", nativeConfig?.selectors.model],
+      ["model_provider", nativeConfig?.selectors.provider],
+      ["model_reasoning_effort", nativeConfig?.selectors.reasoningEffort],
+      ["service_tier", nativeConfig?.selectors.serviceTier],
+      ["approval_policy", nativeConfig?.permissions?.approvalPolicy],
+      ["sandbox_mode", nativeConfig?.permissions?.sandboxMode],
+      ["personality", nativeConfig?.interface?.personality],
     ];
     const lines = values
       .filter((entry): entry is [string, string] => entry[1] !== undefined)
       .map(([key, value]) => `${key} = ${tomlString(value)}`);
-    if (projection.interface?.statusLine !== undefined || projection.interface?.statusLineUseColors !== undefined) {
+    if (nativeConfig?.interface?.statusLine !== undefined || nativeConfig?.interface?.statusLineUseColors !== undefined) {
       if (lines.length > 0) lines.push("");
       lines.push("[tui]");
-      if (projection.interface.statusLine !== undefined) {
-        lines.push(`status_line = ${tomlValue(projection.interface.statusLine)}`);
+      if (nativeConfig.interface.statusLine !== undefined) {
+        lines.push(`status_line = ${tomlValue(nativeConfig.interface.statusLine)}`);
       }
-      if (projection.interface.statusLineUseColors !== undefined) {
-        lines.push(`status_line_use_colors = ${tomlValue(projection.interface.statusLineUseColors)}`);
+      if (nativeConfig.interface.statusLineUseColors !== undefined) {
+        lines.push(`status_line_use_colors = ${tomlValue(nativeConfig.interface.statusLineUseColors)}`);
       }
     }
-    if (projection.featureFlags?.terminalResizeReflow !== undefined) {
+    if (nativeConfig?.featureFlags?.terminalResizeReflow !== undefined) {
       if (lines.length > 0) lines.push("");
       lines.push("[features]");
-      lines.push(`terminal_resize_reflow = ${tomlValue(projection.featureFlags.terminalResizeReflow)}`);
+      lines.push(`terminal_resize_reflow = ${tomlValue(nativeConfig.featureFlags.terminalResizeReflow)}`);
     }
-    const content = lines.join("\n");
+    let content = lines.join("\n");
+    if (capabilities) {
+      const def: HarnessDef = {
+        inherit: "none",
+        ...(Object.keys(capabilities.mcp).length > 0 ? { mcp: capabilities.mcp } : {}),
+        ...(Object.keys(capabilities.hooks).length > 0 ? { hooks: capabilities.hooks } : {}),
+      };
+      const bridge = bridgeEntry && typeof bridgeEntry.url === "string"
+        ? { url: bridgeEntry.url, headers: bridgeEntry.headers }
+        : undefined;
+      for (const [name, server] of Object.entries(def.mcp ?? {})) {
+        content = setCodexMcpServer(content, name, renderCodexMcpBlock({ name, transport: "stdio", command: server.command, args: server.args ?? [], env: server.env ?? {} }));
+      }
+      if (bridge) {
+        const headers = bridge.headers && typeof bridge.headers === "object" && !Array.isArray(bridge.headers) ? bridge.headers as Record<string, string> : {};
+        content = setCodexMcpServer(content, "tachyon_bridge", renderCodexMcpBlock({ name: "tachyon_bridge", transport: "http", url: bridge.url, headers }));
+      }
+      if (def.hooks) content = appendCodexHooksConfig(content, def.hooks);
+    }
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
-    return { home, env: { CODEX_HOME: home }, args: [] };
+    if (capabilities) {
+      this.replaceCapturedSkillTree(agent, home, capabilities);
+      this.writeProfileCapabilityManifest(agent, home, capabilities);
+    }
+    const secretEnv = capabilities ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp }) : {};
+    return { home, env: { CODEX_HOME: home, ...secretEnv }, args: [] };
+  }
+
+  private resolveMcpSecretEnv(agent: string, def: HarnessDef): Record<string, string> {
+    const envFile = this.readEnvFile();
+    const secretEnv: Record<string, string> = {};
+    const missing: string[] = [];
+    for (const name of collectEnvRefs(def)) {
+      const value = this.procEnv[name] ?? envFile[name];
+      if (value === undefined || value === "") missing.push(name);
+      else secretEnv[name] = value;
+    }
+    if (missing.length > 0) {
+      throw new HarnessUnavailableError(agent, `set these env var(s) before starting it: ${missing.join(", ")} — in the project .env or your shell (referenced by an MCP server)`);
+    }
+    return secretEnv;
   }
 
   /**

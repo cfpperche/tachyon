@@ -902,6 +902,12 @@ export class Workspace {
         const adapter = adapterFor(def.cmd);
         if (def.profileCapabilities) {
           if (!adapter) throw new Error(`runtime for '${name}' has no capability projection adapter`);
+          if (adapter.runtime === "codex") {
+            return this.harness.materializeCanonicalCodexProfileHome(name, adapter, {
+              ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),
+              capabilities: def.profileCapabilities,
+            }, cwd, this.bridgeEntry());
+          }
           return this.harness.materializeProfileCapabilities(name, def.profileCapabilities, adapter, cwd, this.bridgeEntry());
         }
         // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its

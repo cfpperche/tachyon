@@ -509,12 +509,26 @@ describe("HarnessManager materialize (fs)", () => {
       pi: { extensions: [], prompts: [], themes: [], packages: [] },
     };
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-    const first = mgr.materializeProfileCapabilities("coder", projection, codex);
+    const nativeConfig = {
+      adapter: "codex" as const,
+      selectors: { model: "gpt-5.6", provider: "openai" },
+      permissions: { approvalPolicy: "on-request" },
+    };
+    const first = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, undefined, {
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" },
+    });
     const skillFile = path.join(first.home, "skills", "research", "SKILL.md");
     const manifestFile = path.join(first.home, ".tachyon-profile-capabilities", "manifest.json");
 
     expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
-    expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).toContain("[mcp_servers.docs]");
+    const config = fs.readFileSync(path.join(first.home, "config.toml"), "utf8");
+    expect(config).toContain('model = "gpt-5.6"');
+    expect(config).toContain('approval_policy = "on-request"');
+    expect(config).toContain("[mcp_servers.docs]");
+    expect(config).toContain("[mcp_servers.tachyon_bridge]");
+    expect(config).toContain("hooks.SessionStart =");
+    expect(first.env.FAL_KEY).toBe("real-key");
     const manifest = JSON.parse(fs.readFileSync(manifestFile, "utf8"));
     expect(manifest).toMatchObject({ effectiveProfileSha256: "b".repeat(64), capabilityProjectionSha256: "a".repeat(64), sources: [{ owner: "workspace" }] });
     expect(JSON.stringify(manifest)).not.toContain("real-key");
@@ -524,7 +538,7 @@ describe("HarnessManager materialize (fs)", () => {
     fs.writeFileSync(skillFile, "tampered");
     fs.writeFileSync(manifestFile, "tampered");
     fs.writeFileSync(path.join(first.home, "config.toml"), "[mcp_servers.attacker]\ncommand = \"evil\"\n");
-    mgr.materializeProfileCapabilities("coder", projection, codex);
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection });
     expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
     expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("attacker");
     expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({ capabilityProjectionSha256: "a".repeat(64) });
@@ -532,7 +546,7 @@ describe("HarnessManager materialize (fs)", () => {
 
     fs.rmSync(path.join(first.home, "skills"), { recursive: true });
     fs.writeFileSync(path.join(first.home, "skills"), "unsafe replacement");
-    expect(() => mgr.materializeProfileCapabilities("coder", projection, codex)).toThrow(/skill projection target must be a real directory/);
+    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection })).toThrow(/skill projection target must be a real directory/);
     expect(fs.existsSync(manifestFile)).toBe(false);
   });
 

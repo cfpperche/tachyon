@@ -31,6 +31,15 @@ _Choices made where the spec/plan was ambiguous. The decision + why this option 
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+- Existing SDD 428 capability references already persist a human-selected, captured composition for
+  Codex skills, MCPs and hooks. Slice C must reuse that authority path instead of adding a second
+  selection format. `t-2b258a` joins it with the native scalar materializer, so a canonical launch
+  cannot discard capabilities when it also has native policy. Discovery by global/workspace/profile
+  source and its Studio editor are separately tracked in `t-c9a086` and `t-115742`.
+- The current Codex product documentation describes plugins as a universal plugin directory. That
+  does not establish a safe per-agent native-extension projection, so extensions/plugins remain
+  outside the generated private home pending the explicit measurement task.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
