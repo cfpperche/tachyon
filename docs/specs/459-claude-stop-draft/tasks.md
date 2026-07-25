@@ -6,7 +6,8 @@ _Generated from `plan.md` on 2026-07-25. Work top-to-bottom. Check boxes as task
 
 - [x] Measure draft clearing and exit in a real no-prompt Claude 2.1.220 TTY.
 - [x] Add conditional local-text graceful-stop support and update Claude's sequence.
-- [x] Cover draft and active-pattern emitted input in unit tests without claiming active live evidence.
+- [x] Cover draft and active-pattern emitted input in unit tests.
+- [x] Measure one authorized active Claude turn using Escape, Ctrl+C, and `/exit`.
 
 ## Verification
 
@@ -27,8 +28,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** The real TTY proof is interactive but did not require a model response; active-turn
-dogfood would require explicit authorization for a billable prompt.
+**Dogfood:** In an authorized Claude Code 2.1.220 session, submit one no-tools prompt, apply Escape,
+Ctrl+C, then `/exit`, and verify the pane exits with status 0.
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
@@ -45,7 +46,9 @@ _Optional for UI/interface/rendered-output work. Keep prose-based: real surface 
 
 - [x] Evidence: Real Claude Code 2.1.220 TTY: Ctrl+C cleared a draft; Ctrl+D retries left the pane
   alive; `/exit` ended it cleanly without a model prompt.
-- [x] Verdict: draft stop fixed; active-turn verdict remains unavailable without authorized billing.
+- [x] Evidence: Authorized Claude Code 2.1.220 active turn stopped by Escape, Ctrl+C, then `/exit`;
+  tmux reported `Pane is dead (status 0)`.
+- [x] Verdict: draft and active-turn graceful stop verified.
 
 ## Cookbook
 

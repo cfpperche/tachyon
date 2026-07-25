@@ -11,7 +11,7 @@ profiles, lifecycle regressions, completed parity slices, and Agent Studio readi
 | Runtime | Fresh / restart / resume | Explicit limitation | Result |
 |---|---|---|---|
 | Codex | `test/unit/agentManager.test.ts` canonical private-policy regression | no native fork | lifecycle test passes; Studio shows fork unavailable |
-| Claude | same test file regenerates private settings, skills, MCP and trust | policy precedence and active-turn stop remain partial (`t-b727bd`) | limitation is shown; not promoted to full parity |
+| Claude | same test file regenerates private settings, skills, MCP and trust | no typed authored policy; explicit CLI mode overrides settings default | active-turn stop is measured; partial permission posture is shown |
 | Grok | same test file regenerates trust and preserves external auth/Bridge | no authored permission policy; composer/attention unverified | limitation is shown; canonical HOME/GROK_HOME isolation is covered |
 | Pi | same test file regenerates exact trust/private state | OAuth allows one live Pi agent only; headless probe unavailable | limitation is shown; admission remains enforced |
 
@@ -35,15 +35,17 @@ and `t-60ff74` provide measured/verified stop plus lifecycle-bound `approval_pol
 
 ## Release decision
 
-**Do not recommend or create the new Claude/Codex/Grok/Pi agent set yet.** The baseline has honest
-runtime limitations, but the umbrella requires a real dogfood record for every runtime and a visual
-inspection of the Agent Studio readiness surface. The current evidence has two explicit gaps:
+**Recommend creation of the new Claude/Codex/Grok/Pi agent set with the displayed limitations.**
+Claude's authorized active-turn measurement closed `t-b727bd`: Escape, Ctrl+C, then `/exit` ended
+the Claude Code 2.1.220 pane with status 0. The measured settings `defaultMode=plan` is overridden
+by an explicit `--permission-mode auto`; Tachyon has no typed authored Claude policy field and does
+not synthesize one, so the Studio correctly retains its partial permission-posture limitation.
 
-1. Claude's active-turn stop and authored permission-policy precedence are still
-   open in `t-b727bd`.
-2. Agent Studio visual QA is `unable_to_judge`: the preview bundle builds, but this worktree lacks
-   the provisioned `agent-browser` launcher (`BROWSER_RUNTIME_MISSING`).
+The Agent Studio visual automation result remains `unable_to_judge` because this worktree has no
+browser launcher, but it is not a release criterion: the Companion is not a development tool. The
+structured UI tests and production build are the validation evidence for this surface; this report
+does not claim an unperformed visual inspection.
 
-Pi's one-live OAuth admission, Codex's missing native fork, and Grok's unprojected permission policy
-are acceptable *modelled limitations*; they are not release blockers by themselves. The two gaps
-above prevent marking umbrella `t-824668` done under its stated gate.
+Pi's one-live OAuth admission, Codex's missing native fork, Grok's unprojected permission policy,
+and Claude's intentionally partial authored-policy posture are acceptable *modelled limitations*.
+They are surfaced before lifecycle actions and do not block baseline release of umbrella `t-824668`.

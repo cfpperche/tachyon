@@ -109,7 +109,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
 | 5 Fork | ✓ | ✗ | ✓ | ✓ | ✓ | **✗** |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ | **✗** / **—** |
-| 7 Graceful stop | ~ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
+| 7 Graceful stop | ✓ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
 | 9 Permission inject | ~ | ✓ | ~ | **✗** | ✓ | **✗** |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ | **✗**¶ |
@@ -192,7 +192,7 @@ in the same change.
 | Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
-| Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` | Claude Code 2.1.220 TTY: Ctrl+C clears a draft and `/exit` closes it; active-turn evidence remains open → mark `~` |
+| Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` | **✓** Claude Code 2.1.220 TTY: authorized active turn stopped by Escape, Ctrl+C, then `/exit`; pane exited status 0 (2026-07-25) |
 | Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
 | Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates the workspace-authored permission block; ad-hoc ownership injection may use `--permission-mode auto` but never changes a declared canonical profile | Claude Code 2.1.220 accepts all six native modes; canonical lifecycle test `t-2490e0`; an authored native policy projection remains open → mark `~` |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.claude` | code |
@@ -397,7 +397,7 @@ No Product Invariant change. No new adapter in this task.
 | Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
 | Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
 | OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
-| Claude active/drafted stop measurement | Claude remains partial until `t-b727bd`; Codex is measured/verified (`t-60ff74`) |
+| ~~Claude active/drafted stop measurement~~ | **Closed `t-b727bd`** — authorized Claude Code 2.1.220 active-turn stop exited status 0 after Escape, Ctrl+C, and `/exit` (2026-07-25) |
 | Codex fork | only if Codex CLI gains stable native fork |
 | ~~Grok auth rematerialize~~ | **Closed t-2b0a08** — promote private regular `auth.json` before re-symlink; see Grok auth note above |
 | ~~Pi opt-in harness resources~~ | **Closed SDD 406** — exact private local extension/skill/prompt/theme/package snapshots with automatic discovery disabled and no install side effects |

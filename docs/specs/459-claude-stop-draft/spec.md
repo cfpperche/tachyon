@@ -2,10 +2,10 @@
 
 _Created 2026-07-25._
 
-**Status:** shipped-partial
-**Closure:** Claude draft stop now uses the measured local `/exit` after Ctrl+C. Active-turn stop
-and a typed authored permission policy remain explicitly deferred because producing a real active
-turn would require an authorized model interaction.
+**Status:** shipped
+**Closure:** Claude draft and authorized active-turn stop use the measured local `/exit` after
+Ctrl+C; the active pane exited with status 0. A typed authored permission policy remains intentionally
+unavailable because Tachyon has no corresponding profile field.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -17,9 +17,8 @@ Claude Code 2.1.220 clears an unsubmitted composer draft with Ctrl+C, but does n
 previous Ctrl+D retry sequence. A real non-billable TTY measurement established that its local
 `/exit` command cleanly ends the session after clearing the draft.
 
-Make the measured draft-safe sequence the runtime behavior while preserving the active-turn limit:
-no model request is sent merely to create an active turn, so that scenario remains explicitly
-unverified until separately authorized.
+Make the measured draft-safe sequence the runtime behavior and verify it against an authorized
+active turn.
 
 ## Acceptance criteria
 
@@ -31,14 +30,13 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **Then** Tachyon submits the local `/exit` command rather than relying on Ctrl+D.
 - [x] The runtime profile and AgentManager model conditional text submission explicitly and cover it
   in unit tests.
-- [x] Active-turn behavior remains labelled unverified rather than inferred from the draft result.
+- [x] An authorized active Claude turn accepts the sequence and exits its pane with status 0.
 
 ## Non-goals
 
-- Send a billable model prompt to produce a live active turn.
 - Synthesize a canonical Claude permission policy from the CLI precedence measurement.
 
 ## Open questions
 
-Whether a real active Claude turn accepts Escape, Ctrl+C, and `/exit` without a provider prompt. It
-requires explicit authorization for a billable model interaction.
+None for graceful stop. The intentionally unavailable typed Claude policy is surfaced as a canonical
+runtime limitation rather than synthesized from CLI flags.

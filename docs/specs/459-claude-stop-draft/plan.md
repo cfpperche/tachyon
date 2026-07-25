@@ -5,8 +5,8 @@ _Drafted from `spec.md` on 2026-07-25. The approach, not the steps (those go in 
 ## Approach
 
 Extend the graceful-stop step model with a conditional literal-text step, use it only for Claude
-after the existing interrupt/clear actions, and exercise the exact emitted tmux input in the
-AgentManager unit fake. Preserve the profile's partial-verification status.
+after the existing interrupt/clear actions, exercise the exact emitted tmux input in the
+AgentManager unit fake, and verify it in an authorized active turn.
 
 ## Key decisions
 
@@ -14,8 +14,8 @@ _Each decision + why this option over the alternatives considered. Record reject
 
 - **Use `/exit` after clear** — measured in a real no-prompt Claude TTY; rejected Ctrl+D retry because
   it left the live pane running.
-- **Keep `verified: false`** — draft behavior is measured, but active-turn behavior has no non-billable
-  evidence.
+- **Verify the full sequence in one authorized turn** — the measurement permits a `verified: true`
+  profile only after the pane exits cleanly.
 
 ## Files touched
 

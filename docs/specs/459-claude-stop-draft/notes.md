@@ -16,6 +16,8 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 - Focused `agentManager` and `runtimeProfile` tests passed before the final full gates.
 - `npm run typecheck` and `npm run verify:full:quiet` passed after the stop-sequence change.
+- With approval `a-eca2e7`, one Claude Code 2.1.220 no-tools prompt was started in an isolated tmux
+  session. Escape, Ctrl+C, then `/exit` produced `Pane is dead (status 0)` on 2026-07-25.
 
 ## Deviations
 

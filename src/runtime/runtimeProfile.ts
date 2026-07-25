@@ -199,13 +199,13 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         { type: "sendTextIfAliveAfterDelay", text: "/exit", delayMs: 150 },
       ],
       source: "measured",
-      verified: false,
+      verified: true,
       verifiedAt: "2026-07-25",
       notes:
         "Claude Code 2.1.220: Ctrl+C clears an unsubmitted draft but Ctrl+D does not exit it; a local /exit command then cleanly exits. " +
-        "Keep interrupt, clear-composer, then conditional /exit. Active-turn behavior remains unverified because measuring it would require a model turn.",
+        "An authorized real model turn was stopped with Escape, Ctrl+C, then conditional /exit; the pane exited with status 0. Keep interrupt, clear-composer, then conditional /exit.",
     },
-    canonicalLimitations: ["permission-policy-partial", "stop-active-turn-unverified"],
+    canonicalLimitations: ["permission-policy-partial"],
   },
   codex: {
     runtime: "codex",
