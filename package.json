@@ -925,6 +925,7 @@
     "preview:webview:catalog": "vite-node --script scripts/webview-preview/generate-routes.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
+    "plugin:validate": "node dist/plugin-validate.cjs",
     "check:runtime-observability-reference": "node scripts/runtime-observability-reference.mjs",
     "activity:preview": "node scripts/activity-preview.mjs",
     "record:provenance": "node scripts/record-provenance.mjs",

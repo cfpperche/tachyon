@@ -134,6 +134,22 @@ const toolLauncher = {
 
 // spec 284 — the standalone DATA RESOLVER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-data.js and
 // exec'd by a plugin skill with no VS Code running, so it must be self-contained. Sibling of the tool launcher.
+// t-d8e772 — the plugin-package validator, standalone so an AUTHOR can run it. The plugins repository
+// has no Node toolchain and Tachyon is not on npm, so the only way to give the author's side the real
+// parser is to bundle it. Reimplementing the schema over there would drift, and a drifting validator
+// reports green while the real loader refuses.
+const pluginValidate = {
+  entryPoints: ["src/pluginValidateEntry.ts"],
+  bundle: true,
+  outfile: "dist/plugin-validate.cjs",
+  platform: "node",
+  format: "cjs",
+  target: "node20",
+  define: nodeDefines,
+  sourcemap: false,
+  logLevel: "info",
+};
+
 const dataResolver = {
   entryPoints: ["src/dataResolverEntry.ts"],
   bundle: true,
@@ -484,7 +500,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
