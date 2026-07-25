@@ -40,6 +40,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { devHostEnv, devHostArgs } from "./launch-spec.mjs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ensureDevHostTmuxLaunchEnv } from "./pointer.mjs";
@@ -206,26 +207,25 @@ async function up(opts) {
     ...process.env,
     DISPLAY: opts.display,
     DONT_PROMPT_WSL_INSTALL: "1",
-    TACHYON_DEV_HOST: "1",
-    TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
-    TACHYON_DEV_HOST_PROFILE_HOME: path.join(slotRoot, "profile-home"),
-    // Short AF_UNIX-safe path (deep worktree …/dev-host/tmux overflows sun_path).
+    // t-6bc30d — shared with what launch.json declares, so F5 and headless cannot drift.
+    ...devHostEnv(slotRoot),
+    // Short AF_UNIX-safe path (deep worktree …/dev-host/tmux overflows sun_path). F5 gets this from
+    // launch.env via `envFile`; headless has no envFile, so it resolves the same value here.
     TMUX_TMPDIR: ensureDevHostTmuxLaunchEnv(path.resolve(slotRoot, "../..")).tmuxTmpDir,
-    XDG_CACHE_HOME: path.join(slotRoot, "cache"),
-    XDG_STATE_HOME: path.join(slotRoot, "state"),
-    XDG_DATA_HOME: path.join(slotRoot, "data"),
   };
   delete env.VSCODE_IPC_HOOK_CLI;      // would forward to the human's live window
   delete env.ELECTRON_RUN_AS_NODE;     // would turn the binary into plain node
 
   const edh = spawn(codeBin, [
-    `--extensionDevelopmentPath=${extensionPath}`,
+    // What is being run — shared with launch.json (t-6bc30d).
+    ...devHostArgs({ workspaceDir, extensionPath }),
+    // Headless-only plumbing: these exist because nobody is watching. launch.json must NOT carry
+    // them; the human path should not be shaped like the robot one.
     `--user-data-dir=${udd}`,
     `--extensions-dir=${extDir}`,
     `--remote-debugging-port=${opts.port}`,
-    "--skip-welcome", "--skip-release-notes", "--disable-workspace-trust",
+    "--skip-welcome", "--skip-release-notes",
     "--use-inmemory-secretstorage", "--disable-gpu", "--disable-updates", "--new-window",
-    workspaceDir,
   ], { env, stdio: ["ignore", hostLog, hostLog], detached: true });
   edh.unref();
 

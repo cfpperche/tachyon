@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+// The dev-host launch spec is plain ESM and has no separate declaration surface.
+// @ts-expect-error -- comparing against the SHARED source is the point of these cases.
+import { devHostEnv, devHostArgs, DEV_HOST_ENV_KEYS } from "../../scripts/dev-host/launch-spec.mjs";
 
 /**
  * spec 448 — `.vscode/launch.json` is a STATIC, COMMITTED file: the dev-host belongs to the checkout,
@@ -105,5 +108,53 @@ describe("dev-host launch config (spec 448)", () => {
     };
     walk(scriptsDir);
     expect(offenders, "no script may write .vscode/launch.json").toEqual([]);
+  });
+
+  // ── t-6bc30d — F5 and headless must describe the same launch ────────────────
+  // The note above says the headless harness "structurally cannot" catch an F5 break, and that was
+  // true while the two assembled their command lines independently. They now share the half that
+  // says WHAT is being run, and these cases keep them from drifting apart again.
+
+  it("declares exactly the environment the shared spec defines", () => {
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
+    const declared = Object.keys((config.env as Record<string, unknown>) ?? {}).sort();
+    // Missing a key means F5 runs with an environment headless never exercises. An EXTRA key is just
+    // as bad in reverse: headless would go green without it and F5 would depend on it.
+    expect(declared).toEqual([...DEV_HOST_ENV_KEYS].sort());
+  });
+
+  it("points every shared env var at the same slot-relative location as the harness", () => {
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
+    const env = config.env as Record<string, string>;
+    // F5's slot is the checkout's own dev-host directory; substitute it and the two must agree.
+    const expected = devHostEnv("${workspaceFolder}/.tachyon/dev-host") as Record<string, string>;
+    expect(env).toEqual(expected);
+  });
+
+  it("passes the same defining arguments the harness passes", () => {
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
+    const expected = devHostArgs({
+      workspaceDir: "${workspaceFolder}/.tachyon/dev-host/workspace",
+      extensionPath: "${workspaceFolder}/.tachyon/dev-host/extension",
+    }) as string[];
+    expect(config.args).toEqual(expected);
+  });
+
+  it("carries none of the headless-only plumbing", () => {
+    // Those flags exist because nobody is watching a headless run. Requiring them here would shape
+    // the human path like the robot one, which is the wrong direction for this whole guard.
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
+    const args = (config.args as string[]).join(" ");
+    for (const flag of ["--user-data-dir", "--remote-debugging-port", "--disable-gpu", "--new-window", "--skip-welcome"]) {
+      expect(args, `${flag} is headless plumbing, not part of the F5 path`).not.toContain(flag);
+    }
+  });
+
+  it("keeps the harness reading the shared spec rather than its own copy", () => {
+    // The drift returns the moment headless-session.mjs re-inlines the list, and that would not fail
+    // any assertion above — the two would simply be equal until someone edits one of them.
+    const harness = fs.readFileSync(path.join(repoRoot, "scripts/dev-host/headless-session.mjs"), "utf8");
+    expect(harness).toContain("devHostEnv(slotRoot)");
+    expect(harness).toContain("devHostArgs({ workspaceDir, extensionPath })");
   });
 });
