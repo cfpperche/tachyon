@@ -4625,16 +4625,28 @@ describe("AgentManager — session resume (spec 209)", () => {
       ]);
     });
 
-    it("canonical Claude regenerates exact folder trust on fresh, restart, and resume", async () => {
+    it("canonical Claude regenerates exact settings, skills, MCP, and folder trust on fresh, restart, and resume", async () => {
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
       const realClaudeHome = path.join(h.ws, "real-claude");
       const realClaudeJson = path.join(realClaudeHome, ".claude.json");
       fs.mkdirSync(realClaudeHome, { recursive: true });
+      fs.mkdirSync(path.join(h.ws, ".claude", "skills", "review"), { recursive: true });
       fs.writeFileSync(path.join(realClaudeHome, ".credentials.json"), '{"token":"external-only"}\n');
       fs.writeFileSync(realClaudeJson, JSON.stringify({
         hasCompletedOnboarding: true,
         userID: "u123",
         projects: { "/ambient/sibling": { hasTrustDialogAccepted: true } },
+      }));
+      fs.writeFileSync(path.join(h.ws, ".claude", "settings.json"), JSON.stringify({
+        permissions: { allow: ["Read"] },
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "guard" }] }] },
+      }));
+      fs.writeFileSync(path.join(h.ws, ".claude", "settings.local.json"), JSON.stringify({
+        permissions: { allow: ["Read", "Bash"] },
+      }));
+      fs.writeFileSync(path.join(h.ws, ".claude", "skills", "review", "SKILL.md"), "# Canonical review\n");
+      fs.writeFileSync(path.join(h.ws, ".mcp.json"), JSON.stringify({
+        mcpServers: { workspace: { command: "workspace-mcp" } },
       }));
       const harness = new HarnessManager(h.ws, realClaudeHome, {}, realClaudeJson);
       const materialized: string[] = [];
@@ -4643,7 +4655,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       };
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
         const result = harness.materializeCanonicalClaudeHome(name, adapterFor("claude")!, cwd);
-        materialized.push(fs.readFileSync(path.join(result.home, ".claude.json"), "utf8"));
+        materialized.push(JSON.stringify({
+          claudeJson: JSON.parse(fs.readFileSync(path.join(result.home, ".claude.json"), "utf8")),
+          settings: JSON.parse(fs.readFileSync(path.join(result.home, "settings.json"), "utf8")),
+          skill: fs.readFileSync(path.join(result.home, "skills", "review", "SKILL.md"), "utf8"),
+          mcp: JSON.parse(fs.readFileSync(path.join(result.home, "mcp.json"), "utf8")),
+        }));
         return result;
       };
 
@@ -4652,8 +4669,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       fs.writeFileSync(path.join(privateHome, ".claude.json"), JSON.stringify({
         projects: { "/stale": { hasTrustDialogAccepted: true } },
       }));
+      fs.writeFileSync(path.join(privateHome, "settings.json"), JSON.stringify({ permissions: { allow: ["Write"] } }));
+      fs.writeFileSync(path.join(privateHome, "skills", "review", "SKILL.md"), "stale skill\n");
+      fs.writeFileSync(path.join(privateHome, "mcp.json"), JSON.stringify({ mcpServers: { stale: { command: "stale" } } }));
       await h.manager.restart("claude", { stop: "force", session: "new" });
       fs.writeFileSync(path.join(privateHome, ".claude.json"), JSON.stringify({ runtimeState: "stale" }));
+      fs.writeFileSync(path.join(privateHome, "settings.json"), JSON.stringify({ runtimeState: "stale" }));
+      fs.writeFileSync(path.join(privateHome, "skills", "review", "SKILL.md"), "stale again\n");
+      fs.writeFileSync(path.join(privateHome, "mcp.json"), JSON.stringify({ runtimeState: "stale" }));
       await h.manager.resume("claude", {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "captured-id" },
@@ -4664,13 +4687,20 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       expect(materialized).toHaveLength(3);
       expect(new Set(materialized).size).toBe(1);
-      const config = JSON.parse(materialized[0]!);
-      expect(config.projects).toEqual({
+      const state = JSON.parse(materialized[0]!);
+      expect(state.claudeJson.projects).toEqual({
         [path.resolve(h.ws)]: { hasTrustDialogAccepted: true },
       });
-      expect(config).toMatchObject({ hasCompletedOnboarding: true, userID: "u123" });
-      expect(JSON.stringify(config)).not.toContain("ambient/sibling");
-      expect(JSON.stringify(config)).not.toContain("stale");
+      expect(state.claudeJson).toMatchObject({ hasCompletedOnboarding: true, userID: "u123" });
+      expect(state.settings).toEqual({
+        permissions: { allow: ["Read", "Bash"] },
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "guard" }] }] },
+        autoMemoryEnabled: false,
+      });
+      expect(state.skill).toBe("# Canonical review\n");
+      expect(state.mcp).toEqual({ mcpServers: { workspace: { command: "workspace-mcp" } } });
+      expect(JSON.stringify(state)).not.toContain("ambient/sibling");
+      expect(JSON.stringify(state)).not.toContain("stale");
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).CLAUDE_CONFIG_DIR))
         .toEqual([privateHome, privateHome, privateHome]);
     });

@@ -134,7 +134,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
   },
   claude: {
     runtime: "claude",
-    profileVersion: 1,
+    profileVersion: 2,
     model: {
       defaultModel: "Claude default",
       aliases: {
@@ -157,6 +157,16 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verifiedAt: "2026-07-05",
       notes: "Spec 220: Tachyon spawns Claude with a per-agent name and captures the resulting uuid/customTitle.",
     },
+    permission: {
+      modes: ["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"],
+      source: "measured",
+      verified: false,
+      verifiedAt: "2026-07-25",
+      notes:
+        "Claude Code 2.1.220 accepted every declared --permission-mode value and rejected an invalid value. " +
+        "Canonical profiles regenerate workspace-authored permissions in their private settings.json on fresh/restart/resume; " +
+        "Tachyon does not synthesize an implicit permission mode for a declared canonical profile. Native settings precedence still lacks an authored profile-policy projection.",
+    },
     composer: {
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
@@ -176,9 +186,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         { type: "sendKey", key: "C-d" },
         { type: "sendKeyIfAliveAfterDelay", key: "C-d", delayMs: 150 },
       ],
-      source: "declared",
+      source: "measured",
       verified: false,
-      notes: "Byte-identical to the pre-t-bae032 Claude path: interrupt active turn, clear composer, EOF, then retry EOF if still alive.",
+      verifiedAt: "2026-07-25",
+      notes:
+        "Claude Code 2.1.220 exited an isolated interactive onboarding/session after interrupt plus repeated EOF. " +
+        "Keep the existing interrupt, clear-composer, EOF, retry-EOF sequence because a first EOF can be consumed by interactive state; live active-turn and drafted-composer measurement remains required.",
     },
   },
   codex: {

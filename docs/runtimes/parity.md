@@ -147,7 +147,7 @@ Current adapter evidence:
 
 | Runtime | Global/account source | Workspace source | Private projection | External authority | Fresh/restart/resume/fork | Mark |
 |---|---|---|---|---|---|:---:|
-| Claude | selected auth/bootstrap only | settings, skills and MCP selectively projected; ambient prompt/plugin roots rejected | generated `settings.json`, skills and strict MCP config | credentials/onboarding markers | regenerated on launch paths; family-level resume evidence incomplete | ~ |
+| Claude | selected auth/bootstrap only | settings (including workspace-authored permissions), skills and MCP selectively projected; ambient prompt/plugin roots rejected | generated `settings.json`, skills and strict MCP config | credentials/onboarding markers | fresh/restart/resume regenerate one identical private projection before launch (`t-2490e0`, 2026-07-25) | ✓ |
 | Codex | canonical policy projects reviewed global scalar families; auth stays external | canonical policy projects reviewed workspace scalar families; unselected keys fail closed | private `CODEX_HOME`; atomically regenerated selectors/scalars plus captured profile skills/MCP/hooks and Bridge | OAuth credentials | fresh/restart/resume regenerate an identical private projection before launch (`t-1a3d50`, 2026-07-25); fork is unavailable; native extensions remain explicitly unsupported | ✓ |
 | OpenCode | ambient global XDG excluded | `inherit: workspace` snapshots `opencode.json`; `none` starts empty | private XDG config/data/state plus MCP overlay | runtime auth state not fully classified here | spawn/restart/resume wiring exists; per-family refresh evidence incomplete | ~ |
 | Grok | ambient config, memory and plugins excluded | harness can snapshot `.grok/config.toml`; canonical non-harness writes Bridge-only config | private `GROK_HOME`, exact workspace/cwd trust store and hooks | auth symlink plus reconciliation | regenerated equivalently on fresh/restart/resume; stale trust removed without losing auth/MCP (`t-15d7e7`) | ✗ |
@@ -192,9 +192,9 @@ in the same change.
 | Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
-| Stop | C-c / C-d sequences | `runtimeProfile.claude.gracefulStop` | `source: declared`, **verified: false** → mark `~` |
+| Stop | C-c / C-d sequences | `runtimeProfile.claude.gracefulStop` | Claude Code 2.1.220 isolated interactive/onboarding measurement; active-turn and drafted-composer evidence remains open → mark `~` |
 | Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
-| Permission inject | `--permission-mode` | **not** from profile; `--permission-mode auto` only on ownership-settings / claude path | code `AgentManager` settings inject |
+| Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates the workspace-authored permission block; ad-hoc ownership injection may use `--permission-mode auto` but never changes a declared canonical profile | Claude Code 2.1.220 accepts all six native modes; canonical lifecycle test `t-2490e0`; an authored native policy projection remains open → mark `~` |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.claude` | code |
 
 #### Codex
