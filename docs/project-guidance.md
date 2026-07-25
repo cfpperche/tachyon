@@ -66,15 +66,6 @@ content, and it is the content that was verified.
 Note the boundary: the pre-push gate cannot cover this. It runs at `git push`, and every step above
 happens before the trunk is pushed anywhere.
 
-## Product invariant testing
-
-- Before implementing a behavior-changing Task or SDD spec, declare
-  `Affected Product Invariants: PI-*` or `Affected Product Invariants: none — <reason>`.
-- Follow `docs/architecture/product-invariant-testing.md`: Product Invariant names the stable promise;
-  `e2e`/full-stack names only an execution topology. Do not derive or relax the registered fixed oracle.
-- When a `PI-*` promise intentionally changes, land the ratified product decision, registry metadata and
-  executable assertions together. Run `npm run test:invariants` for affected entries.
-
 ## Localization ownership
 
 - New or changed strings shown to people through the VS Code UI use `vscode.l10n.t(...)` or the

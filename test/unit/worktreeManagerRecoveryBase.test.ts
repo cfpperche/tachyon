@@ -76,9 +76,9 @@ describe("WorktreeManager — prior-less recovery reuse base identity (t-2dd637)
     expect(reused.record.tachyonCreatedBranch).toBe(false);
   });
 
-  // The "projection base is always a symbolic branch ref" property moved to
-  // test/product-invariants/PI-003-symbolic-delegation-base.test.ts (ratified 2026-07-25). Two
-  // oracles for one promise drift; this file keeps the mechanism coverage, PI-003 owns the promise.
+  // The "projection base is always a symbolic branch ref" property lives in
+  // test/unit/symbolicDelegationBase.test.ts. Two oracles for one promise drift; that file owns the
+  // promise, this one keeps the mechanism coverage.
 
   it("leaves the base branch absent when the workspace root is on a detached HEAD", async () => {
     expect.hasAssertions();

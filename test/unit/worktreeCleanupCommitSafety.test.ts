@@ -19,7 +19,7 @@ import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 const PI_002 = Object.freeze({
-  id: "PI-002",
+  id: "worktree-cleanup-commit-safety",
   promise: "a destructive worktree/branch cleanup action never discards unique, unmerged commits without an explicit, informed override",
 } as const);
 
@@ -54,7 +54,7 @@ describe(`${PI_002.id}: worktree cleanup commit safety`, () => {
 
       const entry = await svc.createChange({ slug: "pi002-unique-work", createdBy: "tester" });
       // A real, committed, UNIQUE change — not merged anywhere else. This is exactly the case
-      // PI-002 exists to protect: losing this commit would be a real, silent loss of work.
+      // this test exists to protect: losing this commit would be a real, silent loss of work.
       fs.writeFileSync(path.join(entry.path, "unique.txt"), "irreplaceable work\n");
       git(["add", "-A"], entry.path);
       git(["commit", "-m", "unique unmerged work"], entry.path);
@@ -72,7 +72,7 @@ describe(`${PI_002.id}: worktree cleanup commit safety`, () => {
       // Remove the checkout FIRST (what ManagedWorktreeService.remove's worktree-removal step would
       // do) so the only remaining reason `branch -d` could refuse is the unmerged-commit protection
       // itself — otherwise "still checked out in a worktree" would refuse for an unrelated reason
-      // and this angle wouldn't actually be testing PI-002's promise.
+      // and this angle wouldn't actually be testing this promise.
       git(["worktree", "remove", "--force", entry.path], repo);
       let branchDeleteRefused = false;
       let branchDeleteError = "";
@@ -92,7 +92,7 @@ describe(`${PI_002.id}: worktree cleanup commit safety`, () => {
     }
   });
 
-  it("PI-002: unknown ancestry (unresolvable baseRef) is never claimed safe — the probe RESOLVES with a failure flag, it does not throw", async () => {
+  it("unknown ancestry (unresolvable baseRef) is never claimed safe — the probe RESOLVES with a failure flag, it does not throw", async () => {
     // Adversarial-review blocker (2026-07-24): WorktreeManager.status() best-effort-coerces a
     // failed `rev-list baseRef..HEAD` to aheadOfBase 0 and RESOLVES — the throwing-mock shape the
     // original evidence pinned never occurs for this failure mode in production. This case pins the

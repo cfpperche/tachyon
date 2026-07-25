@@ -14,15 +14,12 @@ import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic
 import { PRIMER_OPEN } from "../../src/bridge/primer.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 
-const PI_001 = Object.freeze({
-  id: "PI-001",
-  promise: "Project guidance is opt-in, source-labelled, and absent from an unconfigured consumer's Tachyon primer.",
-} as const);
+// Promoted out of the Product Invariant registry on 2026-07-25 (maintainer decision: the ceremony
+// slowed a beta project; the coverage did not). The promise is unchanged and still what this file
+// proves — only the three-way registry/governance/evidence contract around it is gone.
+const PROMISE = "Project guidance is opt-in, source-labelled, and absent from an unconfigured consumer's Tachyon primer.";
 
-const TACHYON_PROJECT_GUIDANCE = [
-  "docs/project-guidance.md",
-  "docs/architecture/product-invariant-testing.md",
-] as const;
+const TACHYON_PROJECT_GUIDANCE = ["docs/project-guidance.md"] as const;
 
 function expectedRenderedGuidance(root: string, files: readonly string[]): string {
   let rendered = `${PROJECT_GUIDANCE_START}\n`;
@@ -80,13 +77,13 @@ const INIT_FIXTURES: DetectedProject[] = [
   { files: ["Cargo.toml"], installedClis: ["codex"] },
 ];
 
-describe(`${PI_001.id}: project-guidance ownership boundary`, () => {
+describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`, () => {
   beforeEach(() => {
     // The Product Invariant runner requires this guard so a conditional early return cannot become a pass.
     expect.hasAssertions();
   });
 
-  it(PI_001.promise, async () => {
+  it(PROMISE, async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pi-001-"));
     try {
       fs.mkdirSync(path.join(root, "docs"), { recursive: true });
@@ -131,11 +128,12 @@ describe(`${PI_001.id}: project-guidance ownership boundary`, () => {
         "SECOND PROJECT RULE",
         "UNLISTED PROJECT RULE",
         "docs/project-guidance.md",
-        "product-invariant-testing",
-        "Product Invariant",
-        "Affected Product Invariants",
-        "PI-",
-        "test:invariants",
+        // Live Tachyon-repo markers. The Product Invariant terms that used to sit here were
+        // removed with the ceremony, and an assertion about a string that no longer exists anywhere
+        // passes vacuously — which is the false green this suite exists to prevent.
+        "Landing order",
+        "the tree you land",
+        "verify:full",
       ]) {
         expect(unconfiguredCommand).not.toContain(forbidden);
         for (const fixture of INIT_FIXTURES) expect(buildStarterYaml(fixture)).not.toContain(forbidden);
@@ -145,7 +143,7 @@ describe(`${PI_001.id}: project-guidance ownership boundary`, () => {
     }
   });
 
-  it("PI-001: Tachyon's tracked shared template opts into both owned documents with exact source provenance", () => {
+  it("Tachyon's tracked shared template opts into its owned document with exact source provenance", () => {
     // Evidence source is tachyon.yml.example (tracked shared template), not tachyon.yml (untracked
     // local dogfood fleet config since 9186c73b). Ratified 2026-07-19 (t-8bb9cd): same promise and
     // oracle strength, same files/order/bytes, evidence source moved to what every clone actually has.

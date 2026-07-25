@@ -7,7 +7,7 @@ import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 /**
- * PI-003 — a delegation's containment is evaluated against a SYMBOLIC base, never a pinned commit.
+ * A delegation's containment is evaluated against a SYMBOLIC base, never a pinned commit.
  *
  * Promise (already ratified, made executable here): spec 365 states the recorded base is
  * "baseRef (name, not frozen SHA)". Containment asks whether a delegation's tip is contained in its
@@ -27,7 +27,7 @@ import type { TachyonConfig } from "../../src/config/loadConfig.js";
  * That is fail-closed and part of the promise — the canonical gated open then refuses with
  * DELIVERY_BASE_REF_UNRESOLVED rather than inventing a pin.
  */
-describe("PI-003 — gated delegation containment is evaluated against a symbolic base", () => {
+describe("gated delegation containment is evaluated against a symbolic base", () => {
   const dirs: string[] = [];
   let repo: string;
   let base: string;

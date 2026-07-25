@@ -930,7 +930,6 @@
     "activity:preview": "node scripts/activity-preview.mjs",
     "record:provenance": "node scripts/record-provenance.mjs",
     "test": "vitest run",
-    "test:invariants": "node scripts/run-product-invariants.mjs",
     "verify:full": "node scripts/verify-full.mjs",
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "verify:prepare": "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build",
