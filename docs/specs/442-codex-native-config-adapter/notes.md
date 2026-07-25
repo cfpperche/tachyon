@@ -81,3 +81,41 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   `headless-interactive.mjs` booted the pointed extension successfully and wrote
   `.tachyon/evidence/t-115742-installed/result.json`. The canonical Agent Studio preview rendered
   the redacted runtime-tooling control at `.tachyon/evidence/t-115742-agent-tooling.png`.
+
+## t-1a3d50 — lifecycle parity evidence (2026-07-25)
+
+- `test/unit/agentManager.test.ts` now exercises the actual `AgentManager` launch boundaries, not
+  only `HarnessManager`: fresh spawn, forced fresh restart and resume each invoke the canonical
+  Codex materializer before launch.
+- The fixture carries every shipped family in one projection: selectors; approval/sandbox;
+  personality/status; terminal reflow; captured skill; MCP with a launch-only environment secret;
+  SessionStart hook; and Bridge. It deliberately corrupts `config.toml` and the captured skill
+  between cycles (content replacement, then file deletion), then proves all three generated TOML
+  byte strings are identical and the captured skill is restored. The launch argv receives that same
+  private `CODEX_HOME` on all three paths.
+- The proof also keeps a real `auth.json` external via a private-home symlink, rejects both an
+  ambient real-home config and workspace source config from generated output, and confirms that
+  Codex fork reports its native unsupported state.
+- Dev Host S1 headless smoke passed against this isolated worktree at `be3dc5d1` on 2026-07-25:
+  `node scripts/dev-host/lane.mjs run --owner codex --target worktree -- npm run dogfood:dev-host -- headless`.
+  Report: `/tmp/tachyon-dev-host/default/headless-out/result.json`; screenshot was copied to
+  `.tachyon/evidence/dev-host/fail-visible.png`. This proves the built extension cold-starts under
+  its private Dev Host namespace; the lifecycle equivalence claim remains grounded in the
+  launch-boundary test above, not in this generic S1 fixture.
+- The first SDD wrapper rerun exposed a Dev Host S1 race: its LKG only repeated names from the
+  valid bootstrap config, so a late reload could choose a still-known live definition and report a
+  permitted spawn. The fixture now carries an explicit `lkg-only` entry, making its refusal probe
+  deterministic without changing product behavior.
+
+## Verification log
+
+### 2026-07-25T14:45:59Z — pass (1/1) — source: tasks.md
+- `npx vitest run test/unit/codexNativeConfigProjection.test.ts test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts` — pass
+
+## Dogfood log
+
+### 2026-07-25T14:46:04Z — fail (0/1) — source: tasks.md — commit: be3dc5d103b457ab13f90009df7a0e74b8f095f2
+- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:dev-host -- headless` — fail
+
+### 2026-07-25T14:47:31Z — pass (1/1) — source: tasks.md — commit: be3dc5d103b457ab13f90009df7a0e74b8f095f2
+- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:dev-host -- headless` — pass

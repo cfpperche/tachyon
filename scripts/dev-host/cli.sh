@@ -136,7 +136,8 @@ write_lkg_and_ledger() {
   "sourceFile": "tachyon.yml",
   "agents": [
     { "name": "pilot", "kind": "agent", "cmd": "echo pilot-agent" },
-    { "name": "reviewer", "kind": "agent", "cmd": "echo reviewer-agent", "declaredOwner": "pilot" }
+    { "name": "reviewer", "kind": "agent", "cmd": "echo reviewer-agent", "declaredOwner": "pilot" },
+    { "name": "lkg-only", "kind": "agent", "cmd": "echo lkg-only-agent" }
   ]
 }
 JSON

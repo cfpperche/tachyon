@@ -2,7 +2,8 @@
 
 _Created 2026-07-23._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** t-1a3d50 closes lifecycle parity with a fresh/restart/resume private-home regeneration proof and a 2026-07-25 Dev Host smoke; `c879acbd`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -25,34 +26,34 @@ Affected Product Invariants: **none** — this is an opt-in adapter projection f
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: typed agent selectors survive private-home isolation**
+- [x] **Scenario: typed agent selectors survive private-home isolation**
   - **Given** a canonical Codex profile whose `selectors` policy chooses `source: agent`
   - **When** Tachyon starts or resumes the agent
   - **Then** the private `CODEX_HOME/config.toml` contains only the profile's model, provider,
     reasoning-effort and service-tier selectors plus Tachyon-owned projection data
-- [ ] **Scenario: selected global or workspace family is filtered**
+- [x] **Scenario: selected global or workspace family is filtered**
   - **Given** a supported family policy choosing a global or workspace source
   - **When** Tachyon reads that source
   - **Then** only the adapter's reviewed keys for that family are projected and missing keys use
     Codex defaults rather than falling through to another source
-- [ ] **Scenario: unsupported or mixed policy fails closed**
+- [x] **Scenario: unsupported or mixed policy fails closed**
   - **Given** one or more authored Codex policy tuples
   - **When** any tuple, source or source key is unsupported
   - **Then** the whole projection is rejected with family/source/key diagnostics and no partial home
-- [ ] **Scenario: projection is lifecycle-consistent**
+- [x] **Scenario: projection is lifecycle-consistent**
   - **Given** an accepted Codex policy
   - **When** the agent starts fresh, restarts or resumes
   - **Then** Tachyon regenerates the same policy projection before launch; fork remains unsupported
-- [ ] Authentication stays externally linked and no credential, token, runtime state, notices,
+- [x] Authentication stays externally linked and no credential, token, runtime state, notices,
   trust cache, hook trust state or memory bytes enter canonical policy or generated config.
-- [ ] Agent Studio exposes policy and content-free provenance, never source TOML bytes.
-- [ ] **Scenario: a human composes runtime tooling by source**
+- [x] Agent Studio exposes policy and content-free provenance, never source TOML bytes.
+- [x] **Scenario: a human composes runtime tooling by source**
   - **Given** hooks, MCPs, skills or native extensions discovered at global, workspace or agent scope
   - **When** the human enables or disables one available item for a canonical agent
   - **Then** the agent profile persists that selection, the private runtime harness receives the
     resulting effective composition, and Agent Studio shows both each contributing source and the
     effective set at any later time
-- [ ] The Codex row in `docs/runtimes/parity.md` names evidence per shipped family.
+- [x] The Codex row in `docs/runtimes/parity.md` names evidence per shipped family.
 
 ## Non-goals
 
@@ -66,7 +67,5 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 
 ## Open questions
 
-- Agent-sourced permissions/interface/feature flags remain unsupported until their authority model is
-  explicitly decided; the typed selector fields are the only safe agent source in the first slice.
-- Slice C still needs to measure the Codex storage and launch mechanics for each tooling kind before
-  declaring an adapter tuple supported.
+None for the shipped scope. Agent-sourced permissions/interface/feature flags and native extensions
+remain explicitly unsupported rather than implied future compatibility.

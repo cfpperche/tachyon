@@ -20,6 +20,8 @@ import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../.
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
 import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
+import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
+import type { ResolvedAgentNativeConfigProjection } from "../../src/config/agentNativeConfigPolicy.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -4621,6 +4623,94 @@ describe("AgentManager — session resume (spec 209)", () => {
         { name: "codex", ownershipOnly: false },
         { name: "codex", ownershipOnly: false },
       ]);
+    });
+
+    it("t-1a3d50: canonical Codex regenerates one private policy on fresh, restart, and resume", async () => {
+      const h = resumeHarness("agents:\n  codex:\n    cmd: codex\n", { fileExists: () => true });
+      const realCodexHome = path.join(h.ws, "real-codex");
+      const workspaceSource = path.join(h.ws, ".codex", "config.toml");
+      fs.mkdirSync(realCodexHome, { recursive: true });
+      fs.mkdirSync(path.dirname(workspaceSource), { recursive: true });
+      fs.writeFileSync(path.join(realCodexHome, "auth.json"), '{"access_token":"external-only"}\n');
+      fs.writeFileSync(path.join(realCodexHome, "config.toml"), 'model = "ambient-secret-model"\n');
+      fs.writeFileSync(workspaceSource, '[mcp_servers.ambient]\ncommand = "must-not-copy"\n');
+
+      const nativeConfig: ResolvedAgentNativeConfigProjection = {
+        adapter: "codex",
+        selectors: { model: "gpt-5.6", provider: "openai", reasoningEffort: "high", serviceTier: "fast" },
+        permissions: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+        interface: { personality: "pragmatic", statusLine: ["model", "git-branch"], statusLineUseColors: true },
+        featureFlags: { terminalResizeReflow: true },
+      };
+      const capabilities: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1,
+        adapter: "codex",
+        sha256: "a".repeat(64),
+        effectiveProfileSha256: "b".repeat(64),
+        sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: "skills/research", sha256: "c".repeat(64) }],
+        skills: [{ name: "research", source: {
+          source: "skills/research", sourcePath: path.join(h.ws, "skills", "research"), type: "tree", sha256: "c".repeat(64),
+          entries: [
+            { path: ".", type: "directory", mode: 0o755 },
+            { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# Captured skill\n") },
+          ],
+        } }],
+        mcp: { docs: { command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } } },
+        hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node guard.js" }] }] },
+        pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const harness = new HarnessManager(
+        h.ws,
+        path.join(h.ws, "real-claude"),
+        { DOCS_TOKEN: "launch-only-secret" },
+        path.join(h.ws, "real-claude", ".claude.json"),
+        realCodexHome,
+      );
+      const materialized: string[] = [];
+      (h.manager.defOf("codex")!).profileLifecycle = {
+        enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      (h.manager.defOf("codex")!).profileNativeConfig = nativeConfig;
+      (h.manager.defOf("codex")!).profileCapabilities = capabilities;
+      // The actual launch boundary is what matters: each lifecycle path invokes the same real private-home writer.
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) => {
+        const result = harness.materializeCanonicalCodexProfileHome(name, adapterFor("codex")!, {
+          nativeConfig: def.profileNativeConfig,
+          capabilities: def.profileCapabilities,
+        }, cwd, { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } });
+        materialized.push(fs.readFileSync(path.join(result.home, "config.toml"), "utf8"));
+        return result;
+      };
+
+      await h.manager.spawn("codex");
+      const privateHome = harnessHome(h.ws, "codex");
+      fs.writeFileSync(path.join(privateHome, "config.toml"), 'model = "tampered"\n');
+      fs.writeFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "tampered\n");
+      await h.manager.restart("codex", { stop: "force", session: "new" });
+      fs.rmSync(path.join(privateHome, "config.toml"));
+      await h.manager.resume("codex", {
+        def: { cmd: "codex", kind: "agent" },
+        resume: { runtime: "codex", sessionId: "captured-id" },
+        cwd: h.ws,
+        declared: true,
+        updatedAt: "now",
+      });
+
+      expect(materialized).toHaveLength(3);
+      expect(new Set(materialized).size).toBe(1);
+      const config = materialized[0]!;
+      expect(config).toContain('model = "gpt-5.6"');
+      expect(config).toContain('approval_policy = "on-request"');
+      expect(config).toContain("[mcp_servers.docs]");
+      expect(config).toContain("[mcp_servers.tachyon_bridge]");
+      expect(config).toContain("hooks.SessionStart =");
+      expect(config).not.toContain("ambient-secret-model");
+      expect(config).not.toContain("launch-only-secret");
+      expect(fs.readFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
+      expect(fs.realpathSync(path.join(privateHome, "auth.json"))).toBe(fs.realpathSync(path.join(realCodexHome, "auth.json")));
+      expect(fs.readFileSync(workspaceSource, "utf8")).toContain("must-not-copy");
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).CODEX_HOME)).toEqual([privateHome, privateHome, privateHome]);
+      await expect(h.manager.planFork("codex")).rejects.toThrow("has no native session fork");
     });
 
     it("t-554634: codex without Tachyon hook materialization does not get bypass", async () => {
