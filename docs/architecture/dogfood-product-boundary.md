@@ -22,8 +22,18 @@ Consequence: the boundary only exists where a test enforces it.
 
 ## The rule
 
-1. When a change touches `dist/`, packaging (`.vscodeignore`, `vsce`), CI/release, or the
-   activation path, ask: **does this surface mix dev infra with the product artifact?**
+1. When a change touches `dist/`, packaging (`.vscodeignore`, `vsce`), CI/release, the
+   activation path, **the publication of a plugin, the template of a generated artifact, or what the
+   verification command runs**, ask: **does this surface mix dev infra with the product artifact?**
+
+   The last three were added on 2026-07-25 (t-1f425c) because the first four did not fire for four
+   real failures in one session. A published plugin manifest was never loaded through Tachyon's own
+   parser, so the release could not install anywhere. The git-hook allowlist was widened without
+   running the dispatcher it feeds, so the gate protected nothing. The generated dispatcher on disk
+   was never reconciled against the engine that generates it, so the fix for that would have died
+   inside its own release. And `verify:full` did not run what CI ran, so the pre-push gate never
+   typechecked. None of them touched `dist/`, packaging, CI or activation — the question simply never
+   got asked. A trigger list that misses the cases that bite is itself an unlocked door.
 2. If yes, the change lands **with** its forcing function — a test that fails when the boundary is
    crossed, in the same PR/landing. Not a follow-up, not a comment.
 3. Register the boundary in the table below, pointing at its lock.
@@ -36,7 +46,11 @@ Consequence: the boundary only exists where a test enforces it.
 | Boundary | State | Lock / evidence |
 |---|---|---|
 | Shipping allowlist/classifier mechanism excludes known dev paths and retains required path classes | 🔒 mechanism locked | `test/unit/cxShipBoundaryBehavior.gen.test.ts` exercises `scripts/ship-boundary.mjs` in both classifier directions; `scripts/prepare-package.mjs` invokes that mechanism (t-009d2f). This is mechanism coverage, not inspection of a packaged artifact. |
-| Packaged VSIX contains only the intended allowlisted product files (no dev harness, fixtures or source maps) | 🟡 artifact proof open | No current forcing function packages and unpacks the release candidate to enumerate its actual contents. The classifier test above cannot close this artifact-level promise; add packaged-artifact evidence before marking it locked. |
+| Packaged VSIX matches what the build claims, and keeps every promise the engine manifest makes | 🔒 locked | `scripts/vsix-artifact.mjs` unpacks the release candidate and compares its real bytes with the embedded provenance record, with every `engine-manifest.json` entry, and with the no-source-map rule for the engine payload. `record-provenance.mjs audit` runs it **before** writing the audit record and refuses to write one on mismatch, so a green audit cannot describe an artifact that does not match it. `test/unit/vsixArtifactAudit.test.ts` pins seven refusal shapes (absent claim, changed bytes, unkept manifest promise, manifest hash mismatch, shipped source map, engine claims with no manifest, unreadable archive) plus the healthy case. Re-run against the real 0.56.102 artifact: it is refused for the exact promised-but-pruned `app.js.map` that crashed activation, while 0.56.103 and 0.56.105 pass (256 and 308 files checked). Replaces the manual unzip that this row previously depended on (t-1f425c). |
+| A git-hook leaf receives the event's real stdin | 🔒 locked | The generated dispatcher reads its own manifest on fd 3 and gives every leaf an explicit stdin; stdin-contract events buffer git's input once and replay it to each leaf. `test/unit/pluginGitHookDispatcher.test.ts` runs the REAL generated dispatcher and asserts ref lines arrive intact, that a SECOND chained leaf sees the same bytes, and that a leaf refusing on what it read propagates its exit code (t-6a8deb). Before this, a `pre-push` gate read an exhausted manifest, found no refs and passed every push in silence. |
+| The generated git-hook harness on disk matches the engine that generated it | 🔒 locked | The dispatcher carries `# tachyon-dispatcher-template <n>`; `reconcileGitHookHarness` brings a stale one forward on workspace attach, refuses to rewrite a NEWER stamp backwards, and never regenerates over corrupt state. `dispatcherTemplateFingerprint` is pinned by test, so editing the template without bumping the version fails the suite — otherwise the version is decoration and the reconciler never fires (t-c3b0a5). Proven in the real workspace: a v1 harness became v2 on Reload with no plugin reinstall. |
+| `verify:full` is the single verification list; CI delegates to it | 🔒 locked | The static gates (`check:engine-boundary`, `typecheck`) run inside `verify:full`, and `.github/workflows/ci.yml` provisions a runner and calls that one command. `test/unit/ciWorkflowSingleSource.test.ts` fails if a verification step reappears in the workflow **or** if a gate is dropped from `STATIC_GATES` — both directions, because both are how the drift returns. Two hand-maintained lists had already disagreed: the pre-push gate never typechecked, and the engine/UI boundary sat red on main unnoticed once Actions ran out of credit (t-dcd8eb). |
+| A published plugin's manifest loads through Tachyon's own parser | 🟡 open | Nothing in the publication path loads `*/tachyon-plugin.json` through `loadManifest()`. `verify-gate` v1.0.0 shipped with the parser's OUTPUT shape (`{kind, path}`) instead of its input contract (`{leaf}`) and could not install in any environment; only a human trying to install it found out (t-d8e772). The plugins repository does not depend on Tachyon today, so locking this needs a design decision — export the validator, host the check here, or ship a `tachyon plugin validate` both sides call. |
 | `PI-001`: project guidance is explicit project input, not Tachyon product policy | 🔒 locked | `test/product-invariants/PI-001-project-guidance-ownership.test.ts` proves absence for an unconfigured consumer, synthetic exact ordered/source-labelled delivery, and that Tachyon's real `tachyon.yml` opts into both owned documents with exact provenance-labelled composition. The active ID/file/source link is machine-readable in `test/product-invariants/registry.json`; full metadata remains in `docs/architecture/product-invariant-testing.md`. |
 | Embedded provenance record matches shipped bits | 🔒 locked | Prune runs **before** `record-provenance.mjs embed`, so the sentinel's record describes the post-prune tree (verified end-to-end: 188 files, 0 mismatch). Behavior test `snProvEmbedBehavior` pins workspace-independence + the `!provenance.json` allowlist line. |
 | Provenance **sentinel** (dogfood) vs governed **release boundary** (product) | 🔒 separated | Split into t-d0fc4f (dogfood: Tachyon hashes its own install; honest "unverified build" wording, never "tamper-proof") and t-a1faec (product: artifact provenance as evidence + brokered outward actions). The asymmetry is documented in both: a user project's root of trust lives off-machine; ours cannot. |
@@ -66,3 +80,15 @@ nobody's head and no table — that is how ~27MB of dev artifacts shipped for we
 - **0.55.88 out-of-band install (2026-07-09):** an agent built from an uncommitted tree, installed
   and reloaded, same version string as the legit deploy. Caught only by hand-hashing 216 files.
   Produced the sentinel + the build stamp (dirty self-report).
+- **0.56.102 activation crash (2026-07-24):** the engine manifest promised
+  `dist/engine/media/companion-mobile/app.js.map`, which the ship boundary pruned. The extension
+  failed to activate on a real install. Every config in the repo said the build was correct; only
+  unpacking the VSIX showed otherwise. The response was a manual unzip on each release — a habit,
+  which is what this rule exists to replace. Now `record-provenance.mjs audit` refuses to write an
+  audit record when the artifact disagrees with it (t-1f425c).
+- **Four couplings shipped open in one session (2026-07-25):** a plugin manifest never loaded by the
+  parser, a git-hook allowlist widened without running its dispatcher, a generated harness never
+  reconciled with its engine, and `verify:full` not running what CI ran. Where a forcing function
+  already existed — the `l10n.t`/bundle guard — the same class of mistake was caught within minutes
+  of being made. Where none existed, the defect lived for weeks. The evidence is that the variable is
+  the mechanism, not the care taken; it produced the trigger-list widening above (t-1f425c).
