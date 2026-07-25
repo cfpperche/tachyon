@@ -619,6 +619,7 @@ export interface AgentStudioCanonicalContext {
   displayName: string;
   runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
   nativeConfig: NonNullable<AgentProfileStudioSnapshotV1["editable"]["nativeConfig"]>;
+  capabilities: NonNullable<AgentProfileStudioSnapshotV1["editable"]["capabilities"]>;
 }
 
 export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalContext };
@@ -683,6 +684,7 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
     displayName: snapshot?.editable.displayName ?? "",
     runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
     nativeConfig: structuredClone(snapshot?.editable.nativeConfig ?? {}),
+    capabilities: structuredClone(snapshot?.editable.capabilities ?? { skills: [], mcp: [], hooks: [] }),
   };
   return fields;
 }
@@ -728,6 +730,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       },
       isolation: fields.isolate ? "transcript" : "",
       nativeConfig: structuredClone(fields.canonical.nativeConfig),
+      capabilities: structuredClone(fields.canonical.capabilities),
     },
   };
 }

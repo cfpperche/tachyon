@@ -77,6 +77,7 @@ describe("canonical Agent Studio projection", () => {
       worktree: { enabled: true, branch: "feature/reviewer" },
       isolation: "transcript",
       nativeConfig: {},
+      capabilities: { skills: [], mcp: [], hooks: [] },
     });
     expect(projected.bindings).toMatchObject({
       environmentValueNames: ["PUBLIC"],
@@ -88,6 +89,7 @@ describe("canonical Agent Studio projection", () => {
     expect(serialized).not.toContain("secret-handle");
     expect(serialized).not.toContain("vault");
     expect(serialized).not.toContain("SOUL.md");
+    expect(serialized).not.toContain("capabilityReferenceIds");
   });
 
   it("rejects unknown response fields and creates fresh profiles disabled", () => {
@@ -100,6 +102,9 @@ describe("canonical Agent Studio projection", () => {
       lifecycle: { enabled: false, watch: ["test/**"] },
       workspace: { cwd: "apps/tester" },
     });
+    const selected = mutation();
+    selected.editable.capabilities = { skills: ["research"], mcp: [], hooks: [] };
+    expect(() => createProfileFromStudioMutation(selected)).toThrow("before host authorization");
   });
 
   it("round-trips authored native policy and exposes only content-free support provenance", () => {
@@ -128,6 +133,47 @@ describe("canonical Agent Studio projection", () => {
     const edited = mutation(current.revision);
     edited.editable.nativeConfig = projected.editable.nativeConfig;
     expect(patchProfileFromStudioMutation(edited, current).nativeConfig).toEqual(current.profile.nativeConfig);
+  });
+
+  it("lists only host-authorized tooling references and permits selection without authoring a reference", () => {
+    const current = lifecycleSnapshot();
+    current.profile.references!.push(
+      { id: "research", kind: "skill", scope: "project", owner: "workspace", path: "hidden/skill", mode: "pinned", sha256: "e".repeat(64) },
+      { id: "ungranted-skill", kind: "skill", scope: "project", owner: "workspace", path: "hidden/skill", mode: "pinned", sha256: "f".repeat(64) },
+    );
+    current.provenance.authority.capabilityReferenceIds = ["research"];
+    const projected = projectAgentProfileStudioSnapshot(current);
+
+    expect(projected.bindings.tooling).toEqual({ skills: [{ id: "research", scope: "project" }], mcp: [], hooks: [] });
+    expect(JSON.stringify(projected)).not.toContain("hidden/");
+    const edited = mutation(current.revision);
+    edited.editable.capabilities = { skills: ["research"], mcp: [], hooks: [] };
+    expect(patchProfileFromStudioMutation(edited, current).capabilities).toEqual({ skills: ["research"], mcp: [], hooks: [] });
+    edited.editable.capabilities = { skills: ["ungranted-skill"], mcp: [], hooks: [] };
+    expect(() => patchProfileFromStudioMutation(edited, current)).toThrow("not a host-authorized skill reference");
+  });
+
+  it("keeps Pi selections and preserves existing capabilities for legacy Studio clients", () => {
+    const current = lifecycleSnapshot();
+    current.profile.capabilities = { skills: ["research"], pi: { extensions: ["pi-extension"] } };
+    current.profile.references!.push(
+      { id: "research", kind: "skill", scope: "project", owner: "workspace", path: "captured/research", mode: "pinned", sha256: "e".repeat(64) },
+      { id: "pi-extension", kind: "pi-extension", scope: "project", owner: "workspace", path: "captured/pi", mode: "pinned", sha256: "f".repeat(64) },
+    );
+    current.provenance.authority.capabilityReferenceIds = ["research", "pi-extension"];
+
+    const edited = mutation(current.revision);
+    edited.editable.capabilities = { skills: [], mcp: [], hooks: [] };
+    expect(patchProfileFromStudioMutation(edited, current).capabilities).toEqual({
+      skills: [], mcp: [], hooks: [], pi: { extensions: ["pi-extension"] },
+    });
+
+    const legacy = mutation(current.revision);
+    expect(patchProfileFromStudioMutation(legacy, current)).not.toHaveProperty("capabilities");
+
+    const forged = mutation(current.revision) as unknown as { editable: { capabilities: unknown } };
+    forged.editable.capabilities = { skills: [], mcp: [], hooks: [], pi: ["research"] };
+    expect(() => patchProfileFromStudioMutation(forged as AgentProfileStudioMutationV1, current)).toThrow();
   });
 
   it("builds a narrow edit while retaining unrelated prompt bindings and rejects stale revisions", () => {

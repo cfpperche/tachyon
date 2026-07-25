@@ -32,6 +32,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
       secretNames: ["API_TOKEN"],
       prompt: { soul: true, instructions: false, evolution: true },
       capabilities: { skills: 1, mcp: 0, hooks: 0, pi: 0 },
+      tooling: { skills: [], mcp: [], hooks: [] },
       externalReferences: 1,
     },
     provenance: {
@@ -166,6 +167,20 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.profile?.bindings.secretNames).toEqual(["API_TOKEN"]);
     expect(JSON.stringify(result.entity)).not.toContain("secret-handle");
     expect(new AgentStudioAdapter(ws).revisionOf(result.entity)).toBe(snapshot.revision);
+  });
+
+  it("carries canonical tooling selections while retaining transcript isolation in the mutation state", () => {
+    const snapshot = profileSnapshot();
+    snapshot.editable.capabilities = { skills: ["research"], mcp: [], hooks: [] };
+    snapshot.bindings.tooling = { skills: [{ id: "research", scope: "project" }], mcp: [], hooks: [] };
+    const fields = canonicalAgentFields(snapshot);
+    const patch = serializeAgentPatch(fields, true);
+
+    expect(fields.isolate).toBe(true);
+    expect(patch).toMatchObject({
+      kind: "canonical",
+      editable: { isolation: "transcript", capabilities: { skills: ["research"], mcp: [], hooks: [] } },
+    });
   });
 
   it("loads a shell-discovered canonical pointer through the engine snapshot", async () => {

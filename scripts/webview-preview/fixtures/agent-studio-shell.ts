@@ -87,11 +87,17 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true, watch: ["src/**"] },
     worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+    capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
     prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
+    tooling: {
+      skills: [{ id: "review-checklist", scope: "profile" }, { id: "repo-search", scope: "project" }],
+      mcp: [{ id: "docs-search", scope: "product" }],
+      hooks: [{ id: "guard-output", scope: "project" }],
+    },
   },
   provenance: {
     canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) },

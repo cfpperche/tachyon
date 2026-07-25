@@ -54,7 +54,7 @@ function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentPro
       worktree: { enabled: false, branch: "" }, isolation: "",
       nativeConfig: {},
     },
-    bindings: { environmentValueNames: [], secretNames: [], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, externalReferences: 0 },
+    bindings: { environmentValueNames: [], secretNames: [], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },
     provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
   };
 }

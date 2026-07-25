@@ -81,7 +81,7 @@ export interface AgentProfileLifecycleSnapshot {
   profile: AgentProfileV1;
   provenance: {
     canonical: { scope: "profile"; writable: true; sha256: string };
-    authority: { scope: "host"; writable: false; revision: string; grants: number };
+    authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
     learned: { scope: "profile"; writable: false; present: boolean };
     projection: { scope: "runtime"; writable: false; active: boolean };
   };
@@ -382,7 +382,13 @@ export async function inspectAgentProfileLifecycle(input: {
     profile: structuredClone(canonical.profile),
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: canonical.sha256 },
-      authority: { scope: "host", writable: false, revision: authority.revision, grants: authority.capabilityGrants?.length ?? 0 },
+      authority: {
+        scope: "host",
+        writable: false,
+        revision: authority.revision,
+        grants: authority.capabilityGrants?.length ?? 0,
+        capabilityReferenceIds: (authority.capabilityGrants ?? []).map((grant) => grant.referenceId).sort(),
+      },
       learned: { scope: "profile", writable: false, present: canonical.profile.prompt?.evolution !== undefined },
       projection: { scope: "runtime", writable: false, active: canonical.profile.lifecycle?.enabled !== false },
     },

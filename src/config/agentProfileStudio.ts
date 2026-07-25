@@ -7,6 +7,11 @@ import { previewAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
 const text = (max: number) => z.string().max(max);
+const capabilityIdsSchema = z.object({
+  skills: z.array(z.string().regex(ID)).max(128),
+  mcp: z.array(z.string().regex(ID)).max(128),
+  hooks: z.array(z.string().regex(ID)).max(128),
+}).strict();
 
 export const agentProfileStudioEditableSchemaV1 = z.object({
   displayName: text(256),
@@ -32,6 +37,8 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
   }).strict(),
   isolation: z.enum(["", "transcript"]),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
+  /** Existing, authority-bound capability references only; Studio cannot author a new reference. */
+  capabilities: capabilityIdsSchema.optional(),
 }).strict();
 
 export const agentProfileStudioMutationSchemaV1 = z.object({
@@ -134,6 +141,11 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
       hooks: z.number().int().nonnegative().max(128),
       pi: z.number().int().nonnegative().max(512),
     }).strict(),
+    tooling: z.object({
+      skills: z.array(z.object({ id: z.string().regex(ID), scope: z.enum(["profile", "project", "product"]) }).strict()).max(128),
+      mcp: z.array(z.object({ id: z.string().regex(ID), scope: z.enum(["profile", "project", "product"]) }).strict()).max(128),
+      hooks: z.array(z.object({ id: z.string().regex(ID), scope: z.enum(["profile", "project", "product"]) }).strict()).max(128),
+    }).strict(),
     externalReferences: z.number().int().nonnegative().max(128),
   }).strict(),
   provenance: z.object({
@@ -181,6 +193,11 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       },
       isolation: profile.isolation ?? "",
       nativeConfig: structuredClone(profile.nativeConfig ?? {}),
+      capabilities: {
+        skills: [...(profile.capabilities?.skills ?? [])],
+        mcp: [...(profile.capabilities?.mcp ?? [])],
+        hooks: [...(profile.capabilities?.hooks ?? [])],
+      },
     },
     bindings: {
       environmentValueNames: Object.keys(profile.environment?.values ?? {}).sort(),
@@ -200,10 +217,26 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
           + (profile.capabilities?.pi?.themes?.length ?? 0)
           + (profile.capabilities?.pi?.packages?.length ?? 0),
       },
+      tooling: Object.fromEntries(["skills", "mcp", "hooks"].map((family) => {
+        const kind = family === "skills" ? "skill" : family === "mcp" ? "mcp" : "hook";
+        const granted = new Set(snapshot.provenance.authority.capabilityReferenceIds ?? []);
+        return [family, (profile.references ?? [])
+          .filter((reference) => reference.kind === kind && granted.has(reference.id))
+          .map((reference) => ({ id: reference.id, scope: reference.scope }))
+          .sort((left, right) => left.id.localeCompare(right.id))];
+      })),
       externalReferences: (profile.references ?? []).filter((reference) => reference.scope !== "profile").length,
     },
     provenance: {
-      ...structuredClone(snapshot.provenance),
+      canonical: { ...snapshot.provenance.canonical },
+      authority: {
+        scope: "host",
+        writable: false,
+        revision: snapshot.provenance.authority.revision,
+        grants: snapshot.provenance.authority.grants,
+      },
+      learned: { ...snapshot.provenance.learned },
+      projection: { ...snapshot.provenance.projection },
       nativeConfig: previewAgentNativeConfigPolicy(profile.runtime.adapter, profile.nativeConfig).map((entry) => ({
         family: entry.family,
         ...entry.policy,
@@ -219,6 +252,9 @@ export function createProfileFromStudioMutation(
 ): Omit<AgentProfileV1, "schemaVersion" | "agentId"> {
   const parsed = agentProfileStudioMutationSchemaV1.parse(mutation);
   if (parsed.expectedRevision !== undefined) throw new Error("new canonical profile must not carry an expected revision");
+  if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
+    throw new Error("new canonical profile cannot select capability references before host authorization");
+  }
   return {
     ...(parsed.editable.displayName ? { displayName: parsed.editable.displayName } : {}),
     runtime: { ...parsed.editable.runtime },
@@ -278,6 +314,31 @@ export function patchProfileFromStudioMutation(
     cwd: parsed.editable.cwd || undefined,
     worktree,
   };
+  const selected = parsed.editable.capabilities;
+  if (selected === undefined) return {
+    displayName: parsed.editable.displayName || undefined,
+    runtime: { ...parsed.editable.runtime },
+    prompt: Object.keys(prompt).length > 0 ? prompt : undefined,
+    lifecycle, workspace, isolation: parsed.editable.isolation || undefined,
+    nativeConfig: Object.keys(parsed.editable.nativeConfig ?? {}).length > 0 ? structuredClone(parsed.editable.nativeConfig) : undefined,
+  };
+  const references = new Map((current.profile.references ?? []).map((reference) => [reference.id, reference]));
+  const granted = new Set(current.provenance.authority.capabilityReferenceIds ?? []);
+  const families = [
+    ["skills", selected.skills, "skill"],
+    ["mcp", selected.mcp, "mcp"],
+    ["hooks", selected.hooks, "hook"],
+  ] as const;
+  for (const [family, ids, expectedKind] of families) {
+    if (new Set(ids).size !== ids.length) {
+      throw new Error(`capability selection for '${family}' contains duplicate references`);
+    }
+    for (const id of ids) {
+      if (references.get(id)?.kind !== expectedKind || !granted.has(id)) {
+        throw new Error(`capability '${id}' is not a host-authorized ${expectedKind} reference for this profile`);
+      }
+    }
+  }
   return {
     displayName: parsed.editable.displayName || undefined,
     runtime: { ...parsed.editable.runtime },
@@ -288,6 +349,12 @@ export function patchProfileFromStudioMutation(
     nativeConfig: Object.keys(parsed.editable.nativeConfig ?? {}).length > 0
       ? structuredClone(parsed.editable.nativeConfig)
       : undefined,
+    capabilities: {
+      skills: [...selected.skills],
+      mcp: [...selected.mcp],
+      hooks: [...selected.hooks],
+      ...(current.profile.capabilities?.pi ? { pi: structuredClone(current.profile.capabilities.pi) } : {}),
+    },
   };
 }
 

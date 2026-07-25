@@ -359,6 +359,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 displayName: patch.editable.displayName,
                 runtime: { ...patch.editable.runtime },
                 nativeConfig: structuredClone(patch.editable.nativeConfig ?? {}),
+                capabilities: structuredClone(patch.editable.capabilities ?? { skills: [], mcp: [], hooks: [] }),
               },
             }
           : patch;
@@ -799,6 +800,27 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       </div>
                     ))}
                 </div>
+                <div class="ash-native-config">
+                  <div class="ash-label">Runtime tooling</div>
+                  <div class="hint">Only pre-authorized profile references can be enabled here. Commands, source files, credentials and runtime trust state are never shown.</div>
+                  {(["skills", "mcp", "hooks"] as const).map((family) => canonicalSnapshot.bindings.tooling[family].map((item) => {
+                    const enabled = fields.canonical?.capabilities[family].includes(item.id) ?? false;
+                    return <label class="check" key={`${family}:${item.id}`}>
+                      <input type="checkbox" checked={enabled} disabled={mutationDisabled} onChange={(event) => updateFields((current) => {
+                        if (!current.canonical) return current;
+                        const selected = new Set(current.canonical.capabilities[family]);
+                        if ((event.currentTarget as HTMLInputElement).checked) selected.add(item.id);
+                        else selected.delete(item.id);
+                        return { ...current, canonical: {
+                          ...current.canonical,
+                          capabilities: { ...current.canonical.capabilities, [family]: [...selected].sort() },
+                        } };
+                      })} />
+                      <code>{item.id}</code> <span class="hint">{family} · {item.scope}</span>
+                    </label>;
+                  }))}
+                  {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
+                </div>
               </section>
             )}
             <div class="ash-group">
@@ -1067,7 +1089,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </details>
 
-            <label class="check"><input type="checkbox" checked={fields.isolate} onChange={(e) => set("isolate", (e.currentTarget as HTMLInputElement).checked)} /> Isolate runtime transcript/config home</label>
+            {!canonical && <label class="check"><input type="checkbox" checked={fields.isolate} onChange={(e) => set("isolate", (e.currentTarget as HTMLInputElement).checked)} /> Isolate runtime transcript/config home</label>}
 
             {showHarness && !canonical && (
               <details open={fields.harness}>
