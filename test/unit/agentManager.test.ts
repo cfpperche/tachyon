@@ -4734,7 +4734,7 @@ describe("AgentManager — session resume (spec 209)", () => {
           config: fs.readFileSync(path.join(home, "config.toml"), "utf8"),
           trust: fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8"),
         });
-        return { home, env: { GROK_HOME: home }, args: [] };
+        return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
       };
 
       await h.manager.spawn("grok");
@@ -4765,6 +4765,8 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(fs.realpathSync(path.join(privateHome, "auth.json")))
         .toBe(fs.realpathSync(path.join(realGrokHome, "auth.json")));
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).GROK_HOME))
+        .toEqual([privateHome, privateHome, privateHome]);
+      expect(h.startArgs.map((args) => envFromTmuxArgs(args).HOME))
         .toEqual([privateHome, privateHome, privateHome]);
     });
 

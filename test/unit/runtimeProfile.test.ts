@@ -114,7 +114,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       modes: ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
       alwaysApproveFlag: "--always-approve",
       source: "measured",
-      verified: true,
+      verified: false,
     });
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "assumed", verified: false });
     expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);

@@ -308,16 +308,15 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-08",
       notes:
-        "t-4891dd/t-7e3cba: grok has native -w/--worktree support. Private config-home wiring is not declared here yet, " +
-        "so transcript isolation is treated as project-scoped until a dedicated harness profile is measured.",
+        "Grok has native -w/--worktree support. Canonical profiles additionally regenerate a private GROK_HOME and HOME, but legacy/ad-hoc Grok commands remain project-scoped, so runtime-wide transcript isolation is not yet declared.",
     },
     permission: {
       modes: ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
       alwaysApproveFlag: "--always-approve",
       source: "measured",
-      verified: true,
-      verifiedAt: "2026-07-08",
-      notes: "grok supports Claude-shaped --permission-mode values plus --always-approve; delegated permission wiring is a follow-up.",
+      verified: false,
+      verifiedAt: "2026-07-25",
+      notes: "Grok 0.2.112 accepts every listed --permission-mode value and rejects invalid input. Canonical HOME isolation excludes ambient Claude settings, but no authored permission-policy projection exists yet; never infer --always-approve or bypassPermissions.",
     },
     composer: {
       tailLines: 8,

@@ -951,7 +951,10 @@ export class Workspace {
             cwd ?? this.workspaceRoot,
             { exactTrust: true },
           );
-          return { home, env: { GROK_HOME: home }, args: [] };
+          // Grok 0.2.112 consults `$HOME/.claude/settings.json` for permission settings even when
+          // GROK_HOME is redirected. A canonical profile owns the complete forming namespace, so bind
+          // HOME to the same private directory; auth continues to come only from GROK_HOME/auth.json.
+          return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
         }
         return null;
       },
