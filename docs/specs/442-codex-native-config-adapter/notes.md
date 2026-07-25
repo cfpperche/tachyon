@@ -63,3 +63,21 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   selections; the private harness receives only the effective composition; Agent Studio always
   shows the available source inventory and effective result. Tachyon does not add a policy engine
   that judges the human's risk choice. Plugins remain outside this slice.
+
+## t-115742 — Studio tooling controls evidence (2026-07-25)
+
+- Agent Studio projects only the IDs and owner scopes of host-authorized captured skills, MCPs and
+  hooks. It never projects reference paths, captured bytes, commands, credentials, grant IDs or
+  runtime trust state.
+- A save is revisioned and the host independently checks the selected ID's reference kind and host
+  grant. The returned profile capability object is explicitly reconstructed for the three Codex
+  tooling families; Pi resources remain unchanged. New profiles cannot select a reference before
+  host authorization exists.
+- Focused proof: `npm run typecheck` and 125 Agent Studio/profile/workspace tests passed. An
+  adversarial Claude probe found the risk in spreading the client capability object; the resulting
+  patch now rejects unknown keys through the strict mutation schema and reconstructs only the three
+  validated families.
+- Installed evidence: the worktree-local Dev Host was armed against the `codex-tooling` fixture;
+  `headless-interactive.mjs` booted the pointed extension successfully and wrote
+  `.tachyon/evidence/t-115742-installed/result.json`. The canonical Agent Studio preview rendered
+  the redacted runtime-tooling control at `.tachyon/evidence/t-115742-agent-tooling.png`.
