@@ -23,3 +23,10 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+## Verification log
+
+### 2026-07-26T15:49:37Z — pass (3/3) — source: tasks.md
+- `npx vitest run test/unit/runtimeConfigDropdown.test.ts` — pass
+- `npm run typecheck` — pass
+- `npm run verify:full:quiet` — pass
