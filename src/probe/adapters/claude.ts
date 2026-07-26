@@ -38,6 +38,19 @@ function reportedModels(result: ClaudeResultJson): string[] | undefined {
   return models.length > 0 ? [...new Set(models)].sort() : undefined;
 }
 
+/**
+ * SDD 473 — the `modelUsage` KEYS are the provider-native identifiers
+ * (`claude-haiku-4-5-20251001`), which are more precise than the `canonicalModel` family
+ * (`claude-haiku-4-5`) captured above. The family alone cannot distinguish releases, so the keys are
+ * preserved as the primary evidence of what actually ran.
+ */
+function reportedNativeModels(result: ClaudeResultJson): string[] | undefined {
+  const usage = result.modelUsage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const models = Object.keys(usage).filter((key) => key.trim().length > 0);
+  return models.length > 0 ? [...new Set(models)].sort() : undefined;
+}
+
 function jsonSchemaForArchetype(archetype: string | undefined): string | undefined {
   if (archetype === "adversarial-review") {
     return JSON.stringify({
@@ -144,6 +157,8 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
   return {
     runtime: "claude",
     adapterVersion: ADAPTER_VERSION,
+    // Claude reports `modelUsage`, so a requested model is provable here (SDD 473).
+    reportsEffectiveModel: true,
 
     buildInvocation(spec: ProbeSpec): Invocation {
       const args = ["-p", spec.prompt, "--output-format", "json", "--safe-mode", "--no-session-persistence", "--tools", "", ...sandboxFlag(spec)];
@@ -156,7 +171,12 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
 
     interpret(raw: RawOutcome): ProbeResult {
       const parsed = extractClaudeResult(raw.stdout);
-      const native = { runtime: "claude", subtype: parsed?.subtype, ...(parsed ? { reportedModels: reportedModels(parsed) } : {}) };
+      const native = {
+        runtime: "claude",
+        subtype: parsed?.subtype,
+        ...(parsed ? { reportedModels: reportedModels(parsed) } : {}),
+        ...(parsed ? { reportedNativeModels: reportedNativeModels(parsed) } : {}),
+      };
       if (!parsed) {
         if (raw.exitCode !== 0) {
           return base("process_error", raw.stderr.trim() || "claude exited non-zero with no result JSON", raw, native);

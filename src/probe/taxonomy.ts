@@ -27,7 +27,11 @@ export type TerminationReason =
   | "killed_signal" // the process died from a signal (cancellation, OOM, external kill)
   | "process_error" // the process exited non-zero without a usable result
   | "parse_error" // the adapter could not parse the output/artifact (incl. schema non-compliance)
-  | "empty_output"; // the process ended cleanly but produced no final message
+  | "empty_output" // the process ended cleanly but produced no final message
+  // SDD 473 — the run produced an answer, but not from the model that was asked for. A probe is
+  // used as evidence, so a wrong-model answer must never surface as a success.
+  | "model_mismatch" // the runtime reported running a model other than the one requested
+  | "model_unproven"; // a model was requested and the runtime that can prove it reported nothing
 
 /** Every reason, in declaration order — the exhaustive set adapters and tests iterate. */
 export const ALL_TERMINATION_REASONS: readonly TerminationReason[] = [
@@ -40,6 +44,8 @@ export const ALL_TERMINATION_REASONS: readonly TerminationReason[] = [
   "process_error",
   "parse_error",
   "empty_output",
+  "model_mismatch",
+  "model_unproven",
 ] as const;
 
 /**
@@ -60,6 +66,29 @@ export interface NativeOutcome {
   [k: string]: unknown;
 }
 
+/**
+ * SDD 473 — whether the model that actually ran can be shown to be the model that was requested.
+ *
+ * `not-requested` no explicit model was asked for, so there is nothing to prove
+ * `proven`        the runtime reported running the requested model
+ * `mismatch`      the runtime reported running a DIFFERENT model
+ * `unproven`      a model was requested and no effective model can be shown
+ *
+ * `unproven` is deliberately distinct from `proven`: absence of evidence is never evidence, and a
+ * result that cannot prove its model must not be readable as one that can.
+ */
+export type ProbeModelProofVerdict = "not-requested" | "proven" | "mismatch" | "unproven";
+
+export interface ProbeModelProof {
+  verdict: ProbeModelProofVerdict;
+  /** the model the caller asked for, when one was requested. */
+  requested?: string;
+  /** provider-native identifiers the runtime reported running (e.g. claude-haiku-4-5-20251001). */
+  effective?: string[];
+  /** canonical model families the runtime reported (e.g. claude-haiku-4-5). */
+  effectiveCanonical?: string[];
+}
+
 /** The captured outcome of a finished probe (D4). Present on `completed` and `failed` envelopes. */
 export interface ProbeResult {
   reason: TerminationReason;
@@ -75,6 +104,8 @@ export interface ProbeResult {
   costUsd?: number;
   /** runtime-specific signalling, opaque (D4). */
   native: NativeOutcome;
+  /** SDD 473 — the model-proof verdict; absent on runs stored before this existed. */
+  modelProof?: ProbeModelProof;
 }
 
 /** The stable envelope returned by EVERY probe_agent / read_probe_result call (D3). */

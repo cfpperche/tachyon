@@ -22,9 +22,11 @@ function resultFor(reason: TerminationReason): ProbeResult {
 }
 
 describe("probe taxonomy — reasons are distinct, none collapse", () => {
-  it("declares exactly the nine reasons, no duplicates", () => {
-    expect(ALL_TERMINATION_REASONS).toHaveLength(9);
-    expect(new Set(ALL_TERMINATION_REASONS).size).toBe(9);
+  it("declares exactly the eleven reasons, no duplicates", () => {
+    // SDD 473 added model_mismatch/model_unproven — a probe used as evidence must be able to fail
+    // for "the wrong model answered" and "no model could be proven".
+    expect(ALL_TERMINATION_REASONS).toHaveLength(11);
+    expect(new Set(ALL_TERMINATION_REASONS).size).toBe(11);
   });
 
   it("maps ONLY a clean answer to completed; every non-ok reason is failed (codex review #23)", () => {
@@ -36,7 +38,10 @@ describe("probe taxonomy — reasons are distinct, none collapse", () => {
   it("does NOT collapse the failure classes onto one another — each non-ok reason stays distinct", () => {
     const seen = ALL_TERMINATION_REASONS.map((r) => ({ reason: r, status: statusForReason(r) }));
     const failures = seen.filter((s) => s.status === "failed").map((s) => s.reason);
-    expect(failures).toEqual(["model_error", "refused", "budget", "timeout", "killed_signal", "process_error", "parse_error", "empty_output"]);
+    expect(failures).toEqual([
+      "model_error", "refused", "budget", "timeout", "killed_signal", "process_error", "parse_error",
+      "empty_output", "model_mismatch", "model_unproven",
+    ]);
   });
 });
 

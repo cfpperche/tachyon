@@ -430,6 +430,10 @@ export interface WorkspaceProbeViewRowV1 {
   reason: string;
   ageLabel: string;
   excerpt: string;
+  /** SDD 473 — the model explicitly requested for this run, or "—" when none was. */
+  requestedModel: string;
+  /** SDD 473 — whether the effective model was shown to be the requested one. */
+  modelProof: string;
 }
 
 export interface WorkspaceProbeViewV1 {
@@ -1092,6 +1096,8 @@ export function workspaceProbeViewSuccessV1(
       reason: queryText(row.reason, 1, 128, "probe reason"),
       ageLabel: queryText(row.ageLabel, 1, 32, "probe ageLabel"),
       excerpt: queryText(row.excerpt, 0, 240, "probe excerpt"),
+      requestedModel: queryText(row.requestedModel, 1, 128, "probe requestedModel"),
+      modelProof: queryText(row.modelProof, 1, 32, "probe modelProof"),
     } satisfies WorkspaceProbeViewRowV1;
   });
   const caller = view.caller === undefined ? undefined : queryAgentName(view.caller, "probe view caller");
@@ -1537,7 +1543,7 @@ function isWorkspaceProbeViewV1(value: unknown): value is WorkspaceProbeViewV1 {
   let failed = 0;
   for (const row of value.rows) {
     if (!isRecord(row)
-      || !hasOnlyKeys(row, ["runId", "shortId", "runtime", "archetype", "caller", "status", "reason", "ageLabel", "excerpt"])
+      || !hasOnlyKeys(row, ["runId", "shortId", "runtime", "archetype", "caller", "status", "reason", "ageLabel", "excerpt", "requestedModel", "modelProof"])
       || !queryTextValid(row.runId, 1, 128)
       || !queryTextValid(row.shortId, 1, 16)
       || !queryTextValid(row.runtime, 1, 64)
@@ -1545,7 +1551,9 @@ function isWorkspaceProbeViewV1(value: unknown): value is WorkspaceProbeViewV1 {
       || !queryTextValid(row.caller, 1, 128)
       || !queryTextValid(row.reason, 1, 128)
       || !queryTextValid(row.ageLabel, 1, 32)
-      || !queryTextValid(row.excerpt, 0, 240)) return false;
+      || !queryTextValid(row.excerpt, 0, 240)
+      || !queryTextValid(row.requestedModel, 1, 128)
+      || !["not-requested", "proven", "mismatch", "unproven"].includes(row.modelProof as string)) return false;
     if (row.status === "running") running++;
     else if (row.status === "completed") completed++;
     else if (row.status === "failed") failed++;

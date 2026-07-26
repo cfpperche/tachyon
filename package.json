@@ -923,6 +923,7 @@
     "dogfood:claude-canonical-create": "vite-node --script scripts/dogfood/claude-canonical-create.ts",
     "dogfood:claude-bypass-optin": "vite-node --script scripts/dogfood/claude-bypass-optin.ts",
     "dogfood:codex-danger-optin": "vite-node --script scripts/dogfood/codex-danger-optin.ts",
+    "dogfood:probe-model-proof": "vite-node --script scripts/dogfood/probe-model-proof.ts",
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",

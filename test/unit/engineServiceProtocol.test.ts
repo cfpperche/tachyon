@@ -689,6 +689,8 @@ describe("persistent engine protocol", () => {
         reason: "ok",
         ageLabel: "2s ago",
         excerpt: "accepted",
+        requestedModel: "—",
+        modelProof: "not-requested",
       }],
       total: 99,
       running: 99,

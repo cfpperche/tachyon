@@ -16,9 +16,9 @@ const view: ProbeView = {
   running: 1,
   empty: false,
   rows: [
-    { runId: "p-9f3a21", shortId: "9f3a21", runtime: "codex", archetype: "adversarial-review", caller: "build", status: "completed", reason: "review the auth refactor", ageLabel: "2m ago", excerpt: "No blocking issues; one nit on error copy." },
-    { runId: "p-7c11de", shortId: "7c11de", runtime: "claude", archetype: "factual-verify", caller: "review", status: "running", reason: "verify the migration claim", ageLabel: "just now", excerpt: "" },
-    { runId: "p-3b88aa", shortId: "3b88aa", runtime: "codex", archetype: "adversarial-review", caller: "build", status: "failed", reason: "review spec 279 plan", ageLabel: "9m ago", excerpt: "Probe exited (1): provider timeout." },
+    { runId: "p-9f3a21", shortId: "9f3a21", runtime: "codex", archetype: "adversarial-review", caller: "build", status: "completed", reason: "review the auth refactor", ageLabel: "2m ago", excerpt: "No blocking issues; one nit on error copy.", requestedModel: "—", modelProof: "not-requested" },
+    { runId: "p-7c11de", shortId: "7c11de", runtime: "claude", archetype: "factual-verify", caller: "review", status: "running", reason: "verify the migration claim", ageLabel: "just now", excerpt: "", requestedModel: "claude-opus-5", modelProof: "unproven" },
+    { runId: "p-3b88aa", shortId: "3b88aa", runtime: "codex", archetype: "adversarial-review", caller: "build", status: "failed", reason: "review spec 279 plan", ageLabel: "9m ago", excerpt: "Probe exited (1): provider timeout.", requestedModel: "claude-opus-5", modelProof: "mismatch" },
   ],
 };
 

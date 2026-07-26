@@ -23,6 +23,22 @@ describe("claude adapter — interpret maps native subtype → taxonomy (D4)", (
     expect(r.native.reportedModels).toEqual(["claude-opus-5"]);
   });
 
+  it("SDD 473: keeps the provider-native modelUsage key, not only the canonical family", () => {
+    // The real payload observed in a stored run: the KEY is the dated identifier, `canonicalModel`
+    // is the family. The family alone cannot distinguish releases, so both are preserved.
+    const dated = JSON.stringify({
+      type: "result", subtype: "success", is_error: false, result: "A", total_cost_usd: 0.01,
+      modelUsage: { "claude-haiku-4-5-20251001": { canonicalModel: "claude-haiku-4-5" } },
+    });
+    const r = adapter.interpret(raw(dated), { runtime: "claude", prompt: "", cwd: "/x", timeoutMs: 1 });
+    expect(r.native.reportedNativeModels).toEqual(["claude-haiku-4-5-20251001"]);
+    expect(r.native.reportedModels).toEqual(["claude-haiku-4-5"]);
+  });
+
+  it("SDD 473: declares that this runtime can prove its effective model", () => {
+    expect(adapter.reportsEffectiveModel).toBe(true);
+  });
+
   it("budget exhaustion → budget (a result, not a crash), error text lifted", () => {
     const r = adapter.interpret(raw(budget, 1), { runtime: "claude", prompt: "", cwd: "/x", timeoutMs: 1 });
     expect(r.reason).toBe("budget");

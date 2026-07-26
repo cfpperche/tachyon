@@ -63,6 +63,12 @@ export interface HeadlessCaptureAdapter {
   readonly runtime: string;
   /** adapter contract version, recorded with each run (D5 versioning surface). */
   readonly adapterVersion: string;
+  /**
+   * SDD 473 — whether this runtime reports which model actually ran. Declared rather than inferred
+   * from the runtime name, so the reason a runtime is exempt from model-proof enforcement is stated
+   * here, and turning enforcement on later is a declaration instead of a change in the service.
+   */
+  readonly reportsEffectiveModel?: boolean;
   /** build the non-interactive invocation; `scratchDir` is where artifact files may be placed. */
   buildInvocation(spec: ProbeSpec, scratchDir: string): Invocation;
   /** interpret a finished process into the neutral result — content classification only; the runner

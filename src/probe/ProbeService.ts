@@ -11,6 +11,7 @@
 
 import { runProbe as defaultRunProbe } from "./ProbeRunner.js";
 import { envelopeFor, runningEnvelope, type ProbeEnvelope, type ProbeResult, type RunId } from "./taxonomy.js";
+import { enforceModelProof, resolveModelProof } from "./modelProof.js";
 import { composeBrief, getArchetype, type ArchetypeBrief, type ArchetypeId } from "./archetypes.js";
 import type { HeadlessCaptureAdapter, ProbeSpec } from "./adapters/types.js";
 import { mintRunId, ProbeStore, type ProbeRunMeta } from "./ProbeStore.js";
@@ -78,6 +79,13 @@ export const DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS = 10 * 60_000;
 interface InFlight {
   controller: AbortController;
   done: Promise<ProbeEnvelope>;
+}
+
+/** Narrow an opaque native field to a string list — anything else is treated as absent evidence. */
+function stringList(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string") && value.length > 0
+    ? value as string[]
+    : undefined;
 }
 
 export class ProbeService {
@@ -175,7 +183,19 @@ export class ProbeService {
   /** Read a finished probe's envelope from the store (the async/poll path). */
   async read(runId: RunId): Promise<ProbeEnvelope | null> {
     const back = await this.store.readResult(runId);
-    return back?.envelope ?? null;
+    if (!back) return null;
+    const { envelope, meta } = back;
+    if (!envelope.result || envelope.result.modelProof) return envelope;
+    // SDD 473 — a run stored before the verdict existed carries no `modelProof`. Derive one from
+    // the evidence that WAS stored, using the same rule as a live run. This never invents proof (a
+    // run with nothing recorded reads as `unproven`); it only stops an old artifact from being
+    // indistinguishable from one that was actually proven.
+    const proof = resolveModelProof({
+      requested: meta.requestedModel,
+      effective: meta.reportedNativeModels,
+      effectiveCanonical: meta.reportedModels,
+    });
+    return { ...envelope, result: { ...envelope.result, modelProof: proof } };
   }
 
   /**
@@ -244,14 +264,22 @@ export class ProbeService {
       };
       let result = await this.runFn(adapter, spec, { scratchDir, signal });
       result = this.validateArchetype(req.archetype, result);
+      const reportedModels = stringList(result.native.reportedModels);
+      const reportedNativeModels = stringList(result.native.reportedNativeModels);
+      // SDD 473 — a probe is read as evidence, so decide here whether the model that ran can be
+      // shown to be the model that was asked for, and refuse the result when it cannot.
+      const proof = resolveModelProof({
+        requested: req.model,
+        effective: reportedNativeModels,
+        effectiveCanonical: reportedModels,
+      });
+      result = enforceModelProof(result, proof, adapter.reportsEffectiveModel === true);
       envelope = envelopeFor(runId, result);
-      const reportedModels = Array.isArray(result.native.reportedModels)
-        && result.native.reportedModels.every((model) => typeof model === "string")
-        ? result.native.reportedModels as string[]
-        : undefined;
       await this.store.writeResult(envelope, {
         ...meta,
         ...(reportedModels ? { reportedModels } : {}),
+        ...(reportedNativeModels ? { reportedNativeModels } : {}),
+        modelProof: proof.verdict,
         finishedAt: new Date(this.now()).toISOString(),
       });
     } catch (err) {

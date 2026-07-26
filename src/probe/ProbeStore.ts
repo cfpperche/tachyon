@@ -25,6 +25,10 @@ export interface ProbeRunMeta {
   requestedModel?: string;
   /** Runtime-reported model identities when the structured result supplies them. */
   reportedModels?: string[];
+  /** SDD 473 — provider-native identifiers the runtime reported (modelUsage keys). */
+  reportedNativeModels?: string[];
+  /** SDD 473 — whether the effective model could be shown to be the requested one. */
+  modelProof?: "not-requested" | "proven" | "mismatch" | "unproven";
   archetype?: string;
   /** the agent that launched this probe — provenance/audit/ownership (codex review #49). */
   caller?: string;
@@ -43,6 +47,10 @@ export interface ProbeRunRecord {
   status: ProbeStatus;
   reason?: TerminationReason;
   excerpt?: string;
+  /** SDD 473 — the model requested for this run, when one was explicitly asked for. */
+  requestedModel?: string;
+  /** SDD 473 — whether the effective model could be shown to be the requested one. */
+  modelProof?: "not-requested" | "proven" | "mismatch" | "unproven";
 }
 
 export interface ProbeStoreOptions {
@@ -142,7 +150,14 @@ export class ProbeStore {
       } catch {
         /* no result yet → still running */
       }
-      records.push({ runId: meta.runId, runtime: meta.runtime, archetype: meta.archetype, caller: meta.caller, createdAt: meta.createdAt, finishedAt: meta.finishedAt, status, reason, excerpt });
+      records.push({
+        runId: meta.runId, runtime: meta.runtime, archetype: meta.archetype, caller: meta.caller,
+        createdAt: meta.createdAt, finishedAt: meta.finishedAt, status, reason, excerpt,
+        ...(meta.requestedModel ? { requestedModel: meta.requestedModel } : {}),
+        // SDD 473 — a run stored before the verdict existed has none; the view reports that as
+        // `unproven` rather than leaving it blank, so an old row never looks proven.
+        modelProof: meta.modelProof ?? (meta.requestedModel ? "unproven" : "not-requested"),
+      });
     }
     records.sort((a, b) => b.createdAt.localeCompare(a.createdAt)); // newest first
     return records.slice(0, limit);

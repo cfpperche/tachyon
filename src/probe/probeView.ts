@@ -17,6 +17,10 @@ export interface ProbeViewRow {
   reason: string;
   ageLabel: string;
   excerpt: string;
+  /** SDD 473 — the model explicitly requested for this run, or "—" when none was. */
+  requestedModel: string;
+  /** SDD 473 — whether the effective model was shown to be the requested one. */
+  modelProof: string;
 }
 
 export interface ProbeView {
@@ -65,6 +69,8 @@ export function buildProbeView(records: ProbeRunRecord[], nowMs: number, caller?
     reason: r.reason ?? "—",
     ageLabel: relativeAge(r.createdAt, nowMs),
     excerpt: (r.excerpt ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT_CAP),
+    requestedModel: r.requestedModel ?? "—",
+    modelProof: r.modelProof ?? "unproven",
   }));
   return {
     rows,
