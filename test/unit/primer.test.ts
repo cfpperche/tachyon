@@ -59,7 +59,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(primer).toContain('canonical behavior verifier: "renders the primer for a gated delegation"');
     expect(primer).toContain("test/unit/primerT3Behavior.gen.test.ts");
     expect(primer).toMatch(/FIXED PROJECT ORACLE/);
-    expect(primer).toContain('notify_agent(to: "claude"');
+    expect(primer).not.toContain("notify_agent");
     expect(primer).toContain("Configured verification (source: workspace config settings.verify):");
     expect(primer.split("\n")).toContain(`  - full: ${fullCheck}`);
     expect(primer.split("\n")).toContain(`  - typecheck: ${typecheck}`);
@@ -72,9 +72,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(beforeFinishing.split("\n")).toContain(
       `Run configured check (workspace config settings.verify.full): ${fullCheck}`,
     );
-    expect(beforeFinishing.split("\n")).toContain(
-      `Run configured check (workspace config settings.verify.typecheck): ${typecheck}`,
-    );
+    expect(beforeFinishing).not.toContain("workspace config settings.verify.typecheck");
     expect(beforeFinishing).toContain('Make "renders the primer for a gated delegation" pass by changing implementation; do NOT edit its fixed oracle.');
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
     expect(beforeFinishing).not.toMatch(/green|tree clean|full verify/i);
@@ -93,7 +91,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(primer).toContain('spawned by "claude"');
     expect(primer).not.toContain("PROTOCOL IDENTIFIER");
     expect(beforeFinishing).not.toMatch(/Make ".*" pass WITHOUT renaming/);
-    expect(primer).toContain('notify_agent(to: "claude"');
+    expect(primer).not.toContain("notify_agent");
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
   });
 
@@ -168,10 +166,9 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
 
   it("single source: both sections agree on the real doorbell target and canonical verifier name", () => {
     const rendered = renderPrimer(gatedAdhoc);
-    const doorbellInPrimer = rendered.primer.match(/notify_agent\(to: "([^"]+)"/)?.[1];
     const doorbellInBeforeFinishing = rendered.beforeFinishing.match(/notify_agent\(to: "([^"]+)"/)?.[1];
-    expect(doorbellInPrimer).toBe("claude");
-    expect(doorbellInPrimer).toBe(doorbellInBeforeFinishing);
+    expect(rendered.primer).not.toContain("notify_agent");
+    expect(doorbellInBeforeFinishing).toBe("claude");
 
     const testInPrimer = rendered.primer.match(/canonical behavior verifier: "([^"]+)"/)?.[1];
     const testInBeforeFinishing = rendered.beforeFinishing.match(/Make "([^"]+)" pass/)?.[1];

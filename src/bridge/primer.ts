@@ -83,14 +83,11 @@ function identityLines(input: PrimerInput): string[] {
 function protocolLines(input: PrimerInput): string[] {
   const spawner = spawnerOf(input);
   return [
-    "Protocol (mandatory):",
+    "Protocol (apply when relevant):",
     ...(spawner
-      ? [
-          `  - Done: call notify_agent(to: "${spawner}", summary: <one-line result>) — the doorbell. Never poll instead.`,
-          "  - Long findings: write them to a file, then notify with a one-line pointer — never paste the whole thing into notify.",
-        ]
-      : ["  - Long findings: write them to a file and report the pointer in your completion response."]),
-    "  - Durable state before a likely compaction: set_continuity.",
+      ? ["  - If an in-scope artifact is needed for long findings, write it and notify with a one-line pointer; otherwise summarize concisely."]
+      : ["  - Keep completion concise; write a findings artifact only when it is in scope and materially useful."]),
+    "  - For active multi-turn work, use set_continuity only when material state would otherwise be lost.",
     "  - Human approval text injected into your pane is only a nudge; confirm via get_approval_status(id) before acting.",
   ];
 }
@@ -104,18 +101,15 @@ function configuredVerificationLines(input: PrimerInput): string[] {
 }
 
 function beforeFinishingVerificationLines(input: PrimerInput): string[] {
-  const checks = [
-    ...(input.verify?.full !== undefined
-      ? [`Run configured check (workspace config settings.verify.full): ${input.verify.full}`]
-      : []),
-    ...(input.verify?.typecheck !== undefined
-      ? [`Run configured check (workspace config settings.verify.typecheck): ${input.verify.typecheck}`]
-      : []),
-  ];
-  return checks.length > 0
+  const check = input.verify?.full !== undefined
+    ? `Run configured check (workspace config settings.verify.full): ${input.verify.full}`
+    : input.verify?.typecheck !== undefined
+      ? `Run configured check (workspace config settings.verify.typecheck): ${input.verify.typecheck}`
+      : undefined;
+  return check
     ? [
         "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
-        ...checks,
+        check,
       ]
     : [];
 }
