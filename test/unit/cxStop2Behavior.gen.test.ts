@@ -4,7 +4,7 @@ import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js"
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 
 describe("container-generated delegation behavior", () => {
-  it("graceful stop uses a per-runtime exit sequence and grok gets a working one", async () => {
+  it("graceful stop uses each runtime's measured exit sequence", async () => {
     async function keysFor(cmd: string): Promise<string[]> {
       const wsHash = workspaceHash("/workspace");
       const session = `tachyon-${wsHash}-agent`;
@@ -47,7 +47,7 @@ describe("container-generated delegation behavior", () => {
       return sentKeys;
     }
 
-    await expect(keysFor("claude")).resolves.toEqual(["Escape", "C-c", "C-d", "C-d"]);
+    await expect(keysFor("claude")).resolves.toEqual(["Escape", "C-c", "/exit", "C-m"]);
     await expect(keysFor("codex")).resolves.toEqual(["Escape", "C-c", "C-d", "C-d"]);
     await expect(keysFor("grok")).resolves.toEqual(["C-c", "C-c"]);
     await expect(keysFor("opencode")).resolves.toEqual(["C-d"]);
