@@ -373,6 +373,95 @@ main.ck-main.ck-main--mission,
   font-size: 10px;
 }
 
+.rcp-runtime-select {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+}
+
+.rcp-runtime-select:hover,
+.rcp-runtime-select[data-state="open"] {
+  border-color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 12%, var(--vscode-editor-background));
+}
+
+.rcp-runtime-select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.rcp-runtime-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcp-runtime-chevron {
+  color: var(--ds-muted);
+  font-size: 12px;
+  justify-self: end;
+}
+
+.rcp-runtime-select[data-state="open"] .rcp-runtime-chevron {
+  transform: rotate(180deg);
+}
+
+.rcp-runtime-logo,
+.rcp-runtime-logo .ash-runtime-logo {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.rcp-runtime-menu[data-slot="dropdown-menu-content"] {
+  z-index: 100;
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 38%, transparent);
+}
+
+.rcp-runtime-option[data-slot="dropdown-menu-item"] {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: calc(var(--ds-radius) - 2px);
+  cursor: pointer;
+  font-size: 10px;
+  outline: none;
+}
+
+.rcp-runtime-option[data-slot="dropdown-menu-item"][data-highlighted] {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.rcp-runtime-check {
+  justify-self: end;
+  font-size: 12px;
+}
+
 .rcp-eyebrow {
   color: var(--ds-muted);
   font-size: 9px;

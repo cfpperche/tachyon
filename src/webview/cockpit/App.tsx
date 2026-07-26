@@ -18,7 +18,14 @@ import {
 } from "./messages";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
-import { KitSelect } from "../shared/ui/kit";
+import {
+  KitDropdown,
+  KitDropdownContent,
+  KitDropdownItem,
+  KitDropdownTrigger,
+  KitSelect,
+} from "../shared/ui/kit";
+import { RuntimeLogo } from "../agent-studio-shell/runtimeLogos";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
@@ -987,6 +994,7 @@ function RuntimeConfigInventory({
     setDraftMcp(Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled])));
   }, [snapshotKey]);
   if (!config) return <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>;
+  const activeRuntime = runtime!;
   const initialSettings: Record<string, string | boolean | string[]> = Object.fromEntries(config.knownSettings.filter((setting) => setting.editValue !== undefined).map((setting) => [setting.key, setting.editValue])) as Record<string, string | boolean | string[]>;
   const initialMcp = Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled]));
   const dirtySettings = Object.keys({ ...initialSettings, ...draftSettings }).some((key) => JSON.stringify(initialSettings[key]) !== JSON.stringify(draftSettings[key]));
@@ -1017,14 +1025,40 @@ function RuntimeConfigInventory({
       <div class="rcp-toolbar">
         <div class="rcp-toolbar-field">
           <span class="rcp-eyebrow">{s.runtimeConfigRuntime}</span>
-          <div class="rcp-segmented" role="group" aria-label={s.runtimeConfigRuntime}>
-            {snapshot?.runtimes.map((candidate) => (
-              <button type="button" class={candidate.runtime === runtime?.runtime ? "active" : ""} onClick={() => {
-                setRuntimeId(candidate.runtime);
-                setDocumentId(candidate.documents[0]?.id ?? "");
-              }}>{runtimeLabel(candidate.runtime)}</button>
-            ))}
-          </div>
+          <KitDropdown>
+            <KitDropdownTrigger asChild>
+              <button
+                type="button"
+                class="rcp-runtime-select"
+                aria-label={s.runtimeConfigRuntime}
+                data-testid="runtime-config-runtime-trigger"
+              >
+                <span class="rcp-runtime-logo"><RuntimeLogo id={activeRuntime.runtime} /></span>
+                <span class="rcp-runtime-label">{runtimeLabel(activeRuntime.runtime)}</span>
+                <span class="codicon codicon-chevron-down rcp-runtime-chevron" aria-hidden="true" />
+              </button>
+            </KitDropdownTrigger>
+            <KitDropdownContent className="rcp-runtime-menu" align="start">
+              {snapshot?.runtimes.map((candidate) => {
+                const selected = candidate.runtime === activeRuntime.runtime;
+                return (
+                  <KitDropdownItem
+                    key={candidate.runtime}
+                    className="rcp-runtime-option"
+                    data-testid={`runtime-config-runtime-${candidate.runtime}`}
+                    onSelect={() => {
+                      setRuntimeId(candidate.runtime);
+                      setDocumentId(candidate.documents[0]?.id ?? "");
+                    }}
+                  >
+                    <span class="rcp-runtime-logo"><RuntimeLogo id={candidate.runtime} /></span>
+                    <span>{runtimeLabel(candidate.runtime)}</span>
+                    {selected ? <span class="codicon codicon-check rcp-runtime-check" aria-label="Selected" /> : null}
+                  </KitDropdownItem>
+                );
+              })}
+            </KitDropdownContent>
+          </KitDropdown>
         </div>
         <div class="rcp-toolbar-field">
           <span class="rcp-eyebrow">{s.runtimeConfigScope}</span>
