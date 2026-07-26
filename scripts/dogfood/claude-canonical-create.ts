@@ -204,7 +204,12 @@ console.log("\n== Scenario 2: selected-family invalid value must still fail clos
   }
   checks.push(report(
     "bypassPermissions in the selected permissions family is refused",
-    refused && message.includes("has an unsupported value"),
+    refused && message.includes("'permissions.defaultMode' value 'bypassPermissions' is not projectable"),
+    message,
+  ));
+  checks.push(report(
+    "the refusal names the way out (t-111190)",
+    refused && message.includes("set the Permissions family to Exclude"),
     message,
   ));
   checks.push(report(

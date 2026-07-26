@@ -459,8 +459,60 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(result.config).toBeUndefined();
-    expect(result.errors.join("\n")).toContain("Claude global key 'permissions' has an unsupported value");
+    // The refusal names the offending subkey, the value, and the way out (t-111190).
+    expect(result.errors.join("\n")).toContain(
+      "Claude global key 'permissions.defaultMode' value 'bypassPermissions' is not projectable"
+      + " (supported: acceptEdits, auto, manual, dontAsk, plan)"
+      + "; set the Permissions family to Exclude or change the global value",
+    );
     expect(result.errors.join("\n")).not.toContain("outside the selected family allowlist");
+  });
+
+  it("names the offending subkey for every Claude settings rejection shape", () => {
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const policy = { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle };
+    const cases: Array<{ settings: Record<string, unknown>; expected: string }> = [
+      {
+        settings: { permissions: { allow: "Read" } },
+        expected: "key 'permissions.allow' must be a list of strings, got 'Read'",
+      },
+      {
+        settings: { permissions: { hooks: ["x"] } },
+        expected: "key 'permissions.hooks' is not a projectable permission field",
+      },
+      {
+        settings: { permissions: ["nope"] },
+        expected: "key 'permissions' must be an object, got a list",
+      },
+      {
+        settings: { theme: 3 },
+        expected: "key 'theme' must be a string, got 3; set the Interface family to Exclude",
+      },
+      {
+        settings: { alwaysThinkingEnabled: "yes" },
+        expected: "key 'alwaysThinkingEnabled' must be a boolean, got 'yes'"
+          + "; set the Feature flags family to Exclude",
+      },
+    ];
+
+    for (const { settings, expected } of cases) {
+      const root = temporaryRoot("tachyon-agent-profile-claude-reject-");
+      const homeDir = temporaryRoot("tachyon-agent-profile-claude-reject-home-");
+      fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+      fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify(settings));
+      const bytes = writeProfile(root, {
+        runtime: { adapter: "claude", executable: "claude" },
+        nativeConfig: { permissions: policy, interface: policy, featureFlags: policy },
+      });
+
+      const result = load(root, authority(bytes, {
+        runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+      }), { homeDir });
+
+      expect(result.config).toBeUndefined();
+      expect(result.errors.join("\n")).toContain(expected);
+      expect(result.errors.join("\n")).not.toContain("has an unsupported value");
+    }
   });
 
   it("rejects unmeasured Claude selectors and bypass permission defaults", () => {
@@ -493,7 +545,9 @@ describe("loadProfileAwareConfig", () => {
     expect(result.errors.join("\n")).toContain("Claude provider has no measured canonical materialization");
     expect(result.errors.join("\n")).toContain("Claude serviceTier has no measured canonical materialization");
     expect(result.errors.join("\n")).toContain("Claude reasoningEffort 'ultra' is unsupported");
-    expect(result.errors.join("\n")).toContain("Claude workspace key 'permissions' has an unsupported value");
+    expect(result.errors.join("\n")).toContain(
+      "Claude workspace key 'permissions.defaultMode' value 'bypassPermissions' is not projectable",
+    );
   });
 
   it("projects only captured, Claude-granted skills, hooks and MCP", () => {

@@ -25,6 +25,20 @@ const FAMILY_KEYS: Record<ClaudeScalarFamily, readonly string[]> = {
   featureFlags: ["alwaysThinkingEnabled"],
 };
 
+/** Agent Studio's own family labels, so a refusal names the control the person has to change. */
+const FAMILY_LABELS: Record<ClaudeScalarFamily, string> = {
+  permissions: "Permissions",
+  interface: "Interface",
+  featureFlags: "Feature flags",
+};
+
+function familyOf(key: string): ClaudeScalarFamily {
+  for (const family of Object.keys(FAMILY_KEYS) as ClaudeScalarFamily[]) {
+    if (FAMILY_KEYS[family].includes(key)) return family;
+  }
+  return "interface";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -33,20 +47,59 @@ function validStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function validatePermissions(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  const allowed = new Set(["allow", "ask", "deny", "defaultMode", "additionalDirectories"]);
-  return Object.entries(value).every(([key, entry]) => {
-    if (!allowed.has(key)) return false;
-    if (key === "defaultMode") return typeof entry === "string" && CLAUDE_PERMISSION_MODES.has(entry);
-    return validStringList(entry);
-  });
+function describe(value: unknown): string {
+  if (typeof value === "string") return `'${value}'`;
+  if (Array.isArray(value)) return "a list";
+  if (value === null) return "null";
+  if (isRecord(value)) return "an object";
+  return String(value);
 }
 
-function validValue(key: string, value: unknown): boolean {
-  if (key === "permissions") return validatePermissions(value);
-  if (key === "theme") return typeof value === "string";
-  return typeof value === "boolean";
+const PERMISSION_FIELDS = ["allow", "ask", "deny", "defaultMode", "additionalDirectories"] as const;
+
+/** The precise setting path that was refused, plus why — never a bare "unsupported value". */
+interface ValueRejection {
+  path: string;
+  reason: string;
+}
+
+/**
+ * Locate the exact offending subkey inside a permissions block. A bare "unsupported value" leaves
+ * the person with no way to tell which of five subkeys is at fault (t-111190).
+ */
+function permissionsRejection(value: unknown): ValueRejection | undefined {
+  if (!isRecord(value)) return { path: "permissions", reason: `must be an object, got ${describe(value)}` };
+  for (const [key, entry] of Object.entries(value)) {
+    if (!(PERMISSION_FIELDS as readonly string[]).includes(key)) {
+      return {
+        path: `permissions.${key}`,
+        reason: `is not a projectable permission field (supported: ${PERMISSION_FIELDS.join(", ")})`,
+      };
+    }
+    if (key === "defaultMode") {
+      if (typeof entry !== "string" || !CLAUDE_PERMISSION_MODES.has(entry)) {
+        return {
+          path: "permissions.defaultMode",
+          reason: `value ${describe(entry)} is not projectable`
+            + ` (supported: ${[...CLAUDE_PERMISSION_MODES].join(", ")})`,
+        };
+      }
+      continue;
+    }
+    if (!validStringList(entry)) {
+      return { path: `permissions.${key}`, reason: `must be a list of strings, got ${describe(entry)}` };
+    }
+  }
+  return undefined;
+}
+
+/** Why `key` cannot be projected, or undefined when it can. */
+function valueRejection(key: string, value: unknown): ValueRejection | undefined {
+  if (key === "permissions") return permissionsRejection(value);
+  if (key === "theme") {
+    return typeof value === "string" ? undefined : { path: key, reason: `must be a string, got ${describe(value)}` };
+  }
+  return typeof value === "boolean" ? undefined : { path: key, reason: `must be a boolean, got ${describe(value)}` };
 }
 
 export interface ClaudeNativeConfigProjectionResult {
@@ -117,8 +170,15 @@ export function projectClaudeNativeConfig(
     for (const key of selectedKeys) {
       const value = parsed[key];
       if (value === undefined) continue;
-      if (!validValue(key, value)) {
-        errors.push(`profile/native-config-value: Claude ${source} key '${key}' has an unsupported value`);
+      const rejection = valueRejection(key, value);
+      if (rejection) {
+        // Name the offending subkey/value and the way out: the refusal is intentional
+        // fail-closed, so the person needs to know which family to exclude (t-111190).
+        errors.push(
+          `profile/native-config-value: Claude ${source} key '${rejection.path}' ${rejection.reason}`
+          + `; set the ${FAMILY_LABELS[familyOf(key)]} family to Exclude`
+          + ` or change the ${source} value`,
+        );
         continue;
       }
       settings[key] = structuredClone(value);
