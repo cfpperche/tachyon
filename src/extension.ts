@@ -58,6 +58,7 @@ import { buildOffers, type RegistrationOffer } from "./registration/adapters.js"
 import { runtimeOpsFleetView } from "./shell/RuntimeOpsTarget.js";
 import { inspectCodexRuntimeConfig } from "./runtimeConfig/codexInventory.js";
 import { applyCodexNativeConfigChange, type CodexEditableSettingKey } from "./config/codexNativeConfigProjection.js";
+import { applyClaudeRuntimeConfigChange, inspectClaudeRuntimeConfig } from "./runtimeConfig/claudeInventory.js";
 import type {
   AgentItem,
   PinItem,
@@ -1408,37 +1409,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
         if (!ws?.config) return undefined;
         const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        return inspectCodexRuntimeConfig({
+        const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
+        const common = {
           workspaceRoot: ws.workspaceRoot,
           agents: ws.config.agents,
-          pendingAgents: ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name),
+          pendingAgents,
           ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
-        });
+        };
+        try {
+          return {
+            runtimes: [
+              inspectCodexRuntimeConfig(common),
+              inspectClaudeRuntimeConfig(common),
+            ],
+          };
+        } catch (error) {
+          console.error("[Tachyon] Runtime Config snapshot failed", error);
+          return undefined;
+        }
       },
       openSource: async (sourcePath) => {
         await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
       },
-      saveChanges: async ({ wsHash, scope, expectedRevision, changes }) => {
+      saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
         if (!ws?.config) throw new Error("The selected workspace is unavailable.");
         const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        applyCodexNativeConfigChange({
-          workspaceRoot: ws.workspaceRoot,
-          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
-          scope,
-          expectedRevision,
-          changes: changes.map((change) => change.kind === "setting"
-            ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
-              : change),
-        });
-        const snapshot = inspectCodexRuntimeConfig({
+        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
+        let scope: "global" | "workspace";
+        let revision: string;
+        if (runtime === "codex") {
+          scope = documentId === "codex-global" ? "global" : documentId === "codex-workspace" ? "workspace" : (() => { throw new Error("Unknown Codex Runtime Config document."); })();
+          const applied = applyCodexNativeConfigChange({
             workspaceRoot: ws.workspaceRoot,
-            agents: ws.config.agents,
-            ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
-        });
-        const revision = snapshot[scope].revision;
+            ...home,
+            scope,
+            expectedRevision,
+            changes: changes.map((change) => change.kind === "setting"
+              ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
+                : change),
+          });
+          revision = applied.revision;
+        } else {
+          scope = documentId === "claude-global-settings" ? "global" : "workspace";
+          const applied = applyClaudeRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            ...home,
+            documentId,
+            expectedRevision,
+            changes,
+          });
+          revision = applied.revision;
+        }
         if (revision) {
-          await ws.extension.invoke({ action: "runtime-config.mark-pending", scope, revision });
+          await ws.extension.invoke({ action: "runtime-config.mark-pending", runtime, scope, revision });
           await ws.client.sync();
         }
       },

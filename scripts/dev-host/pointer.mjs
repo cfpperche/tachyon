@@ -306,7 +306,7 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") continue;
     const src = path.join(fixture, name);
     const dest = path.join(mirrorDir, name);
-    // `.tachyon`, `.codex` and tachyon.yml must be REAL entries under the mirror. The engine deliberately
+    // Runtime-owned configuration and tachyon.yml must be REAL entries under the mirror. The engine deliberately
     // opens authoritative config with a no-follow policy; a tachyon.yml symlink therefore fails
     // closed with ELOOP during real Dev Host Studio saves. Copying the config also keeps destructive
     // dogfood mutations inside the disposable mirror instead of writing back into a tracked fixture.
@@ -314,11 +314,11 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     // (SoulError: Soul launch reservation parent escapes workspace) — common when dogfood
     // fixtures seed tasks/continuity/sessions under fixture/.tachyon and pointer only
     // symlinks them. Other entries stay symlinks so Explorer still shows fixture files.
-    if (name === ".tachyon" || name === ".codex") {
+    if (name === ".tachyon" || name === ".codex" || name === ".claude") {
       fs.cpSync(src, dest, { recursive: true });
       continue;
     }
-    if (name === "tachyon.yml") {
+    if (name === "tachyon.yml" || name === ".mcp.json") {
       fs.copyFileSync(src, dest);
       continue;
     }

@@ -1,0 +1,7 @@
+schemaVersion: 1
+agentId: ef76f1b8-a124-4968-95c4-77285b402ada
+runtime:
+  adapter: claude
+  executable: claude
+lifecycle:
+  enabled: true

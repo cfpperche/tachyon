@@ -1,14 +1,12 @@
-# Dogfood fixture for SDD 446 Slice A. Agents stay stopped: Runtime Config is a
+# Dogfood fixture for SDD 446/464. Agents stay stopped: Runtime Config is a
 # source-inventory surface and must not require a live session.
 settings:
   maxAgents: 8
 
 agents:
   codex:
-    cmd: codex
-    autostart: false
-    attention: false
+    profile: .tachyon/agents/codex/agent.yml
   codex-reviewer:
-    cmd: codex
-    autostart: false
-    attention: false
+    profile: .tachyon/agents/codex-reviewer/agent.yml
+  claude:
+    profile: .tachyon/agents/claude/agent.yml

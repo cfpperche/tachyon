@@ -1,6 +1,6 @@
 # runtime-config-prototype-dogfood
 
-Dogfood fixture for SDD 446/447 — Runtime Config's controlled Codex inventory and editor.
+Dogfood fixture for SDD 446/447/464 — Runtime Config's controlled Codex and Claude inventory/editor.
 
 It contains two stopped Codex agents plus two deliberately different Codex sources. In the
 Dev Host, open **Control → Runtime Config** and inspect both scopes:
@@ -10,6 +10,13 @@ Dev Host, open **Control → Runtime Config** and inspect both scopes:
 - **Global** is a Dev Host-private copy of `.runtime-config-global-home/.codex/config.toml`:
   `never`, `danger-full-access`, focused, false booleans, the same named MCPs and a hidden
   `hooks.state` record. It never reads or writes the machine's real `~/.codex/config.toml`.
+
+Claude adds three independently versioned documents:
+
+- **Global settings** uses the Dev Host-private `.runtime-config-global-home/.claude/settings.json`.
+- **Workspace settings** exposes measured scalars, summarizes hooks opaquely and marks
+  `prefersReducedMotion` shadowed by `settings.local.json`.
+- **Workspace MCP** exposes only the server name from `.mcp.json`; command payloads stay hidden.
 
 ## Slice B walkthrough
 

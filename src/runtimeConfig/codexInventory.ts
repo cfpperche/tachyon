@@ -4,44 +4,21 @@ import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { AgentDef } from "../config/loadConfig.js";
 import { codexNativeConfigRevision, type CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
+import { binaryOf } from "../resume/adapters.js";
+import type {
+  RuntimeConfigDocumentInventory,
+  RuntimeConfigRuntimeInventory,
+  RuntimeConfigScope,
+} from "./types.js";
 
-export type RuntimeConfigScope = "global" | "workspace";
+export type { RuntimeConfigScope } from "./types.js";
+export type RuntimeConfigSourceInventory = Omit<RuntimeConfigDocumentInventory, "id" | "label" | "kind">;
 
-export interface RuntimeConfigKnownSetting {
-  key: CodexEditableSettingKey;
-  label: string;
-  /** Content-free rendering of an editable scalar; omitted means unset in this source. */
-  value?: string;
-  /** The typed, measured value used by the visual editor; never a credential-bearing field. */
-  editValue?: string | boolean | string[];
-  editable: boolean;
-}
-
-export interface RuntimeConfigSourceInventory {
-  scope: RuntimeConfigScope;
-  path: string;
-  exists: boolean;
-  revision?: string;
-  modifiedAt?: string;
-  knownSettings: RuntimeConfigKnownSetting[];
-  mcpServers: RuntimeConfigMcpServer[];
-  unknownKeys: string[];
-  /** Runtime-maintained records, intentionally summarized rather than listed. */
-  internalStateCount: number;
-  parseError?: string;
-}
-
-export interface RuntimeConfigMcpServer {
-  name: string;
-  enabled: boolean;
-}
-
-export interface CodexRuntimeConfigInventory {
+export interface CodexRuntimeConfigInventory extends RuntimeConfigRuntimeInventory {
   runtime: "codex";
+  label: "OpenAI Codex";
   global: RuntimeConfigSourceInventory;
   workspace: RuntimeConfigSourceInventory;
-  potentialAgents: string[];
-  pendingAgents?: string[];
 }
 
 const KNOWN_SETTINGS: ReadonlyArray<{ key: CodexEditableSettingKey; label: string }> = [
@@ -169,14 +146,22 @@ export function inspectCodexRuntimeConfig(input: {
   pendingAgents?: string[];
 }): CodexRuntimeConfigInventory {
   const homeDir = input.homeDir ?? os.homedir();
+  const global = inspectSource("global", input.workspaceRoot, homeDir);
+  const workspace = inspectSource("workspace", input.workspaceRoot, homeDir);
+  const potentialAgents = Object.entries(input.agents)
+    .filter(([, definition]) => definition.profileNativeConfig?.adapter === "codex" || binaryOf(definition.cmd) === "codex")
+    .map(([name]) => name)
+    .sort();
   return {
     runtime: "codex",
-    global: inspectSource("global", input.workspaceRoot, homeDir),
-    workspace: inspectSource("workspace", input.workspaceRoot, homeDir),
-    potentialAgents: Object.entries(input.agents)
-      .filter(([, definition]) => definition.profileNativeConfig?.adapter === "codex" || /^codex(?:\s|$)/.test(definition.cmd.trim()))
-      .map(([name]) => name)
-      .sort(),
-    pendingAgents: [...(input.pendingAgents ?? [])].sort(),
+    label: "OpenAI Codex",
+    global,
+    workspace,
+    documents: [
+      { ...global, id: "codex-global", label: "Global config", kind: "config" },
+      { ...workspace, id: "codex-workspace", label: "Workspace config", kind: "config" },
+    ],
+    potentialAgents,
+    pendingAgents: [...(input.pendingAgents ?? [])].filter((name) => potentialAgents.includes(name)).sort(),
   };
 }

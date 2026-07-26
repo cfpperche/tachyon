@@ -79,8 +79,8 @@ import {
   isRuntimeOpsSetProviderObservationAction,
 } from "./runtime-ops/messages.js";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/types.js";
-import { runtimeConfigSnapshotMessage } from "./runtime-config/messages.js";
-import type { CodexRuntimeConfigInventory } from "../runtimeConfig/codexInventory.js";
+import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
+import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
 import {
   type InspectorStrings,
   type InspectorAction,
@@ -171,9 +171,9 @@ export interface CockpitRuntimeOps {
 
 /** Read-only native runtime-config inventory. Editing is intentionally deferred to SDD 446 B. */
 export interface CockpitRuntimeConfig {
-  buildSnapshot: (wsHash?: string) => CodexRuntimeConfigInventory | undefined;
+  buildSnapshot: (wsHash?: string) => RuntimeConfigControlSnapshot | undefined;
   openSource: (sourcePath: string) => Promise<void>;
-  saveChanges: (input: { wsHash?: string; scope: "global" | "workspace"; expectedRevision?: string; changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> }) => Promise<void>;
+  saveChanges: (input: { wsHash?: string; runtime: RuntimeConfigRuntime; documentId: string; expectedRevision?: string; changes: RuntimeConfigChange[] }) => Promise<void>;
 }
 
 export interface CockpitInspector {
@@ -305,7 +305,7 @@ function strings(): CockpitStrings {
   runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
     runtimeConfigPrototype: t("Read-only inventory"),
     runtimeConfigEditable: t("Editable measured settings"),
-    runtimeConfigGlobalWarning: t("Global changes also affect Codex outside Tachyon."),
+    runtimeConfigGlobalWarning: t("Global changes also affect the selected runtime outside Tachyon."),
     runtimeConfigUnset: t("Not set"),
     runtimeConfigDisableMcp: t("Disable from source"),
     runtimeConfigGlobal: t("Global"),
@@ -327,6 +327,24 @@ function strings(): CockpitStrings {
     runtimeConfigOpenFile: t("Open file"),
     runtimeConfigSave: t("Save changes"),
     runtimeConfigViewRaw: t("View keys"),
+    runtimeConfigCodex: t("OpenAI Codex"),
+    runtimeConfigClaude: t("Anthropic Claude"),
+    runtimeConfigGlobalConfig: t("Global config"),
+    runtimeConfigWorkspaceConfig: t("Workspace config"),
+    runtimeConfigGlobalSettings: t("Global settings"),
+    runtimeConfigWorkspaceSettings: t("Workspace settings"),
+    runtimeConfigWorkspaceMcp: t("Workspace MCP"),
+    runtimeConfigTheme: t("Theme"),
+    runtimeConfigReducedMotion: t("Reduced motion"),
+    runtimeConfigSpinnerTips: t("Spinner tips"),
+    runtimeConfigTurnDuration: t("Turn duration"),
+    runtimeConfigTerminalProgress: t("Terminal progress bar"),
+    runtimeConfigAlwaysThinking: t("Always thinking"),
+    runtimeConfigReadOnly: t("Read only"),
+    runtimeConfigOverriddenBy: t("Overridden by"),
+    runtimeConfigOpaqueSections: t("Opaque sections"),
+    runtimeConfigReadError: t("Could not read this runtime configuration source"),
+    runtimeConfigUnavailable: t("Runtime configuration is unavailable because this workspace configuration did not load."),
     tmuxTitle: t("tmux"),
     tmuxHint: t("Server inspector (embedded)."),
     pluginsTitle: t("Plugins"),
@@ -1214,8 +1232,12 @@ export async function openCockpit(
     if (panel !== live || !isSection(currentRoute, "runtime-config")) return;
     const epoch = navEpoch;
     const snapshot = deps.runtimeConfig.buildSnapshot(controlWsHash);
-    if (panel !== live || navEpoch !== epoch || !snapshot) return;
-    runtimeConfigKnownPaths = new Set([snapshot.global.path, snapshot.workspace.path]);
+    if (panel !== live || navEpoch !== epoch) return;
+    if (!snapshot) {
+      live.webview.postMessage(runtimeConfigSnapshotUnavailableMessage());
+      return;
+    }
+    runtimeConfigKnownPaths = new Set(snapshot.runtimes.flatMap((runtime) => runtime.documents.map((document) => document.path)));
     live.webview.postMessage(runtimeConfigSnapshotMessage(snapshot));
   };
 
@@ -2057,11 +2079,12 @@ export async function openCockpit(
           }
           return;
         case "saveRuntimeConfigChanges":
-          if ((c.scope === "global" || c.scope === "workspace") && Array.isArray(c.changes) && isSection(currentRoute, "runtime-config")) {
+          if ((c.runtime === "codex" || c.runtime === "claude") && typeof c.documentId === "string" && Array.isArray(c.changes) && isSection(currentRoute, "runtime-config")) {
             try {
               await deps.runtimeConfig.saveChanges({
                 wsHash: controlWsHash,
-                scope: c.scope,
+                runtime: c.runtime,
+                documentId: c.documentId,
                 expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
                 changes: c.changes,
               });

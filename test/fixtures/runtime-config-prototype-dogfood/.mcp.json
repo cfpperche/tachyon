@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "workspace_claude_fixture": {
+      "command": "never-render-workspace-mcp-payload"
+    }
+  }
+}

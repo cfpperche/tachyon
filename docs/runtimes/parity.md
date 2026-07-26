@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-25 (Codex canonical permission/config lifecycle — `t-60ff74`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude Runtime Config — `t-e5cb7c`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -116,7 +116,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
 | 12 Native config parity | ~ | ✓ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
-| 14 Runtime Config (Control) | ✗ | ✓¶ | ✗ | ✗ | ✗ |
+| 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -130,7 +130,10 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 
 *Secondary adapters: [§3.3](#33-secondary-runtimes). Unsupported / generic: [§3.5](#35-outros--unsupported--generic-fallback).*
 
-¶ **Codex Runtime Config** provides global/workspace source provenance, six measured scalar values, MCP names and safe unknown-key names; Control edits only the measured subset through the native projection boundary and marks affected running agents pending.
+¶ **Runtime Config** provides per-document provenance and CAS. Codex exposes its measured TOML
+subset; Claude exposes six safe settings scalars, local-shadow detection, MCP names and opaque
+section names without executable payloads. Control writes only the measured subset and marks
+affected running agents pending.
 
 ### 3.1.1 Native configuration inheritance
 
@@ -172,9 +175,10 @@ runtime in the `Other` parity category is not enough.
 
 | Runtime eligible for selector | Global inventory | Workspace inventory | Measured settings | Individual tooling | Native writes | Pending / next launch | Evidence |
 |------------------------------|:----------------:|:-------------------:|:-----------------:|:------------------:|:-------------:|:---------------------:|----------|
-| Codex | ✓ `~/.codex/config.toml` | ✓ `.codex/config.toml` | ✓ six scalar keys | ✓ MCP names only | ✗ | ✗ | `src/runtimeConfig/codexInventory.ts`; `test/unit/codexRuntimeConfigInventory.test.ts`; Dev Host 2026-07-24; SDD 446 Slice A / `t-39cf89` |
+| Codex | ✓ `~/.codex/config.toml` | ✓ `.codex/config.toml` | ✓ six scalar keys | ✓ MCP names; measured enable/disable | ✓ measured scalar/MCP subset, CAS + atomic projection | ✓ runtime-scoped | `src/runtimeConfig/codexInventory.ts`; `test/unit/codexRuntimeConfigInventory.test.ts`; SDD 446 / `t-39cf89` |
+| Claude | ✓ `~/.claude/settings.json` | ✓ `.claude/settings.json`, `.claude/settings.local.json` shadow detection, `.mcp.json` | ✓ six scalar keys | ✓ MCP names read-only; hooks/statusLine/MCP bodies opaque | ✓ settings scalar subset, per-document CAS + atomic JSON replace | ✓ runtime-scoped | `src/runtimeConfig/claudeInventory.ts`; `test/unit/claudeRuntimeConfigInventory.test.ts`; Dev Host scenario `claude-runtime-config.mjs`; SDD 464 / `t-e5cb7c` |
 
-**Not eligible yet:** Claude, Grok, OpenCode, Pi, Hermes and every other detected runtime. Their
+**Not eligible yet:** Grok, OpenCode, Pi, Hermes and every other detected runtime. Their
 native formats and launch effects may exist elsewhere in Tachyon, but Control has no measured
 Runtime Config adapter for them. Do not list them as disabled choices: absence communicates the
 honest contract, and their eventual addition must update this table and the applicable parity row
@@ -438,6 +442,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-26 | **Claude Runtime Config (SDD 464 / `t-e5cb7c`):** independent JSON document CAS for global/workspace settings, local shadow detection, read-only MCP-name inventory, safe scalar writes, runtime-scoped pending and Dev Host functional/visual dogfood. |
 | 2026-07-24 | **Cap 13 Headless probe:** matrix row for SDD 257 `probe_agent` adapters. Claude/Codex ✓ (shipped 0.40.0); Grok ✓ via `t-7426de` (`adapters/grok.ts`); OpenCode/Pi/Hermes ✗ deferred. |
 | 2026-07-18 | **Pi OAuth interim safety (SDD 408):** at most one live Pi process per workspace across Spawn/Resume/Restart/Fork until upstream shared-auth support ships; 394 unit tests + human dogfood `v-591729`. |
 | 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |

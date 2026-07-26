@@ -1,0 +1,14 @@
+{
+  "theme": "dark",
+  "alwaysThinkingEnabled": true,
+  "statusLine": {
+    "type": "command",
+    "command": "never-render-global-status-payload"
+  },
+  "mcpServers": {
+    "global_claude_fixture": {
+      "command": "never-render-global-mcp-payload"
+    }
+  },
+  "fixtureUnknown": "never-render-global-unknown-value"
+}

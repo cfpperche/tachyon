@@ -3199,14 +3199,14 @@ export class Workspace {
     }
   }
 
-  /** Mark only live canonical Codex agents whose profile selects this source. */
-  async markRuntimeConfigPending(scope: "global" | "workspace", revision: string): Promise<string[]> {
+  /** Mark only live canonical agents whose native projection selects this runtime source. */
+  async markRuntimeConfigPending(runtime: "codex" | "claude", scope: "global" | "workspace", revision: string): Promise<string[]> {
     const live = await this.manager.list();
     const affected: string[] = [];
     for (const agent of live) {
       if (!agent.running || agent.kind !== "agent") continue;
       const def = this.config?.agents[agent.name];
-      if (def?.profileNativeConfig?.adapter !== "codex") continue;
+      if (def?.profileNativeConfig?.adapter !== runtime) continue;
       const selected = Object.values(def.profileNativeConfig.sources ?? {}).includes(scope);
       if (!selected) continue;
       this.runtimeConfigPending.set(agent.name, { scope, revision });

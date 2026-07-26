@@ -79,6 +79,24 @@ export interface CockpitStrings {
   runtimeConfigOpenFile: string;
   runtimeConfigSave: string;
   runtimeConfigViewRaw: string;
+  runtimeConfigCodex: string;
+  runtimeConfigClaude: string;
+  runtimeConfigGlobalConfig: string;
+  runtimeConfigWorkspaceConfig: string;
+  runtimeConfigGlobalSettings: string;
+  runtimeConfigWorkspaceSettings: string;
+  runtimeConfigWorkspaceMcp: string;
+  runtimeConfigTheme: string;
+  runtimeConfigReducedMotion: string;
+  runtimeConfigSpinnerTips: string;
+  runtimeConfigTurnDuration: string;
+  runtimeConfigTerminalProgress: string;
+  runtimeConfigAlwaysThinking: string;
+  runtimeConfigReadOnly: string;
+  runtimeConfigOverriddenBy: string;
+  runtimeConfigOpaqueSections: string;
+  runtimeConfigReadError: string;
+  runtimeConfigUnavailable: string;
   tmuxTitle: string;
   tmuxHint: string;
   pluginsTitle: string;
@@ -241,7 +259,7 @@ export type CockpitAction =
   | { type: "fleetContinueTask"; name: string; toName: string; wsHash?: string }
   | { type: "revealPath"; path: string }
   | { type: "openRuntimeConfigSource"; path: string }
-  | { type: "saveRuntimeConfigChanges"; scope: "global" | "workspace"; expectedRevision?: string; changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> }
+  | { type: "saveRuntimeConfigChanges"; runtime: "codex" | "claude"; documentId: string; expectedRevision?: string; changes: Array<{ kind: "setting"; key: string; value: unknown } | { kind: "set-mcp-enabled"; name: string; enabled: boolean }> }
   | { type: "copyText"; text: string }
   | { type: "openConfigFile"; wsHash?: string }
   | { type: "engineLogClear"; wsHash: string }

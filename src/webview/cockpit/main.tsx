@@ -105,8 +105,8 @@ import {
   RUNTIME_OPS_SNAPSHOT,
   runtimeOpsSetProviderObservationAction,
 } from "../runtime-ops/messages";
-import { RUNTIME_CONFIG_SNAPSHOT } from "../runtime-config/messages";
-import type { CodexRuntimeConfigInventory } from "../../runtimeConfig/codexInventory";
+import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "../runtime-config/messages";
+import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
 import type { InspectorAppProps } from "../inspector/App";
 import type { InspectorModel } from "../../inspector/model";
 import type { InspectorStrings } from "../inspector/messages";
@@ -180,7 +180,8 @@ function CockpitRoot() {
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
-  const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<CodexRuntimeConfigInventory | undefined>(undefined);
+  const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
+  const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
   const [inspectorStrings, setInspectorStrings] = useState<InspectorStrings | undefined>(undefined);
   const [inspectorModel, setInspectorModel] = useState<InspectorModel | undefined>(undefined);
   const [inspectorCaptures, setInspectorCaptures] = useState<Record<string, string>>({});
@@ -354,7 +355,11 @@ function CockpitRoot() {
       } else if (type === RUNTIME_OPS_SNAPSHOT && raw.snapshot) {
         setRuntimeSnapshot(raw.snapshot as RuntimeOpsSnapshot);
       } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
-        setRuntimeConfigSnapshot(raw.snapshot as CodexRuntimeConfigInventory);
+        setRuntimeConfigSnapshot(raw.snapshot as RuntimeConfigControlSnapshot);
+        setRuntimeConfigUnavailable(false);
+      } else if (type === RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE) {
+        setRuntimeConfigSnapshot(undefined);
+        setRuntimeConfigUnavailable(true);
       } else if (type === "inspectorInit" && raw.strings) {
         setInspectorStrings(raw.strings as InspectorStrings);
       } else if (type === "inspectorModel" && raw.model) {
@@ -619,8 +624,9 @@ function CockpitRoot() {
         post(runtimeOpsSetProviderObservationAction(provider, enabled))
       }
       runtimeConfigSnapshot={runtimeConfigSnapshot}
+      runtimeConfigUnavailable={runtimeConfigUnavailable}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
-      onSaveRuntimeConfigChanges={(scope, expectedRevision, changes) => post({ type: "saveRuntimeConfigChanges", scope, expectedRevision, changes })}
+      onSaveRuntimeConfigChanges={(runtime, documentId, expectedRevision, changes) => post({ type: "saveRuntimeConfigChanges", runtime, documentId, expectedRevision, changes })}
       inspector={inspectorProps}
       pluginsVm={pluginsVm}
       pluginsConsent={pluginsConsent}

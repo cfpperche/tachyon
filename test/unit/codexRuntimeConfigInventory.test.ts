@@ -39,8 +39,10 @@ describe("Codex runtime configuration inventory", () => {
       homeDir: home,
       agents: {
         codex: { cmd: "codex", autostart: false, watch: [], attention: {}, restart: {}, kind: "agent" } as unknown as AgentDef,
+        claude: { cmd: "claude", autostart: false, watch: [], attention: {}, restart: {}, kind: "agent" } as unknown as AgentDef,
         shell: { cmd: "bash", autostart: false, watch: [], attention: {}, restart: {}, kind: "terminal" } as unknown as AgentDef,
       },
+      pendingAgents: ["codex", "claude"],
     });
 
     expect(snapshot.global.knownSettings).toContainEqual({ key: "approval_policy", label: "Approval policy", value: "on-request", editValue: "on-request", editable: true });
@@ -52,6 +54,7 @@ describe("Codex runtime configuration inventory", () => {
     expect(JSON.stringify(snapshot)).not.toContain("also-hidden");
     expect(JSON.stringify(snapshot)).not.toContain("runtime-managed");
     expect(snapshot.potentialAgents).toEqual(["codex"]);
+    expect(snapshot.pendingAgents).toEqual(["codex"]);
     expect(snapshot.workspace.exists).toBe(false);
     expect(snapshot.global.revision).toMatch(/^[a-f0-9]{64}$/);
   });

@@ -46,6 +46,7 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureDevHostTmuxLaunchEnv } from "./pointer.mjs";
+import { devHostEnv } from "./launch-spec.mjs";
 
 const SELF = "dev-host-interactive";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -185,15 +186,11 @@ async function main() {
     env: (() => {
       const env = {
         ...process.env,
+        ...devHostEnv(slotRoot),
         DISPLAY: args.display,
         DONT_PROMPT_WSL_INSTALL: "1",
-        TACHYON_DEV_HOST: "1",
-        TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
         // Short AF_UNIX-safe path (deep worktree …/dev-host/tmux overflows sun_path).
         TMUX_TMPDIR: ensureDevHostTmuxLaunchEnv(path.resolve(slotRoot, "../..")).tmuxTmpDir,
-        XDG_CACHE_HOME: path.join(slotRoot, "cache"),
-        XDG_STATE_HOME: path.join(slotRoot, "state"),
-        XDG_DATA_HOME: path.join(slotRoot, "data"),
       };
       // Inherited from an agent terminal these would hijack the launch: the IPC hook makes
       // bin/code forward to the HUMAN's live window's remote CLI instead of spawning our own

@@ -1,0 +1,7 @@
+schemaVersion: 1
+agentId: 87a98ab3-7b6f-4b59-bb05-abf81fa37713
+runtime:
+  adapter: codex
+  executable: codex
+lifecycle:
+  enabled: true

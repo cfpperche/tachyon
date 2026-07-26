@@ -156,5 +156,8 @@ describe("dev-host launch config (spec 448)", () => {
     const harness = fs.readFileSync(path.join(repoRoot, "scripts/dev-host/headless-session.mjs"), "utf8");
     expect(harness).toContain("devHostEnv(slotRoot)");
     expect(harness).toContain("devHostArgs({ workspaceDir, extensionPath })");
+    const interactiveHarness = fs.readFileSync(path.join(repoRoot, "scripts/dev-host/headless-interactive.mjs"), "utf8");
+    expect(interactiveHarness).toContain("devHostEnv(slotRoot)");
+    expect(interactiveHarness).not.toContain('TACHYON_DEV_HOST: "1"');
   });
 });

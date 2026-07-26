@@ -160,6 +160,8 @@ describe("persistent engine protocol", () => {
 
   it("validates the runtime-config freshness command", () => {
     expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", scope: "workspace", revision: "a".repeat(64) })).toBe(true);
+    expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", runtime: "claude", scope: "workspace", revision: "a".repeat(64) })).toBe(true);
+    expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", runtime: "unknown", scope: "workspace", revision: "a".repeat(64) })).toBe(false);
     expect(isExtensionCommandV1({ action: "runtime-config.mark-pending", scope: "workspace", revision: "bad" })).toBe(false);
   });
 

@@ -290,6 +290,20 @@ describe("dev-host pointer", () => {
     expect(fs.existsSync(path.join(mirror, "README.md"))).toBe(true);
   });
 
+  it("copies mutable native runtime configuration into the disposable mirror", () => {
+    const mirror = path.join(repo, ".tachyon", "dev-host", "workspace");
+    fs.mkdirSync(path.join(fixture, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(fixture, ".claude", "settings.json"), "{\"theme\":\"dark\"}\n");
+    fs.writeFileSync(path.join(fixture, ".mcp.json"), "{\"mcpServers\":{}}\n");
+
+    materializeWorkspaceMirror(mirror, fixture);
+
+    expect(fs.lstatSync(path.join(mirror, ".claude")).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(path.join(mirror, ".mcp.json")).isSymbolicLink()).toBe(false);
+    fs.writeFileSync(path.join(mirror, ".claude", "settings.json"), "{\"theme\":\"light\"}\n");
+    expect(fs.readFileSync(path.join(fixture, ".claude", "settings.json"), "utf8")).toContain("dark");
+  });
+
 
   describe("t-e357dc: stale persistent-engine reconciliation", () => {
     // Per-slot mirror workspace is fixed across F5 sessions for that slot, so a persistent engine

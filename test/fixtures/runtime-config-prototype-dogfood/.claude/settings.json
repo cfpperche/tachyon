@@ -1,0 +1,17 @@
+{
+  "theme": "light",
+  "prefersReducedMotion": false,
+  "spinnerTipsEnabled": true,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "never-render-workspace-hook-payload"
+          }
+        ]
+      }
+    ]
+  }
+}
