@@ -2,6 +2,16 @@ import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPol
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 type ClaudeScalarFamily = "permissions" | "interface" | "featureFlags";
+type ClaudeScalarSource = "global" | "workspace";
+
+const CLAUDE_REASONING_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+const CLAUDE_PERMISSION_MODES = new Set([
+  "acceptEdits",
+  "auto",
+  "manual",
+  "dontAsk",
+  "plan",
+]);
 
 const FAMILY_KEYS: Record<ClaudeScalarFamily, readonly string[]> = {
   permissions: ["permissions"],
@@ -28,7 +38,7 @@ function validatePermissions(value: unknown): boolean {
   const allowed = new Set(["allow", "ask", "deny", "defaultMode", "additionalDirectories"]);
   return Object.entries(value).every(([key, entry]) => {
     if (!allowed.has(key)) return false;
-    if (key === "defaultMode") return typeof entry === "string";
+    if (key === "defaultMode") return typeof entry === "string" && CLAUDE_PERMISSION_MODES.has(entry);
     return validStringList(entry);
   });
 }
@@ -46,46 +56,69 @@ export interface ClaudeNativeConfigProjectionResult {
 
 /** Project only the small Claude settings subset measured by the canonical adapter. */
 export function projectClaudeNativeConfig(
-  profile: Pick<AgentProfileV1, "nativeConfig">,
-  sourceText: string | undefined,
+  profile: Pick<AgentProfileV1, "runtime" | "nativeConfig">,
+  sourceTexts: Partial<Record<ClaudeScalarSource, string>>,
   base: ResolvedAgentNativeConfigProjection,
 ): ClaudeNativeConfigProjectionResult {
-  const selected = (Object.keys(FAMILY_KEYS) as ClaudeScalarFamily[])
-    .filter((family) => profile.nativeConfig?.[family]?.source === "workspace");
-  if (selected.length === 0) return { projection: base, errors: [] };
-
-  let parsed: unknown = {};
-  try {
-    parsed = sourceText?.trim() ? JSON.parse(sourceText) : {};
-  } catch (error) {
-    return {
-      projection: base,
-      errors: [`profile/native-config-source: Claude workspace settings are invalid JSON: ${error instanceof Error ? error.message : String(error)}`],
-    };
-  }
-  if (!isRecord(parsed)) {
-    return { projection: base, errors: ["profile/native-config-source: Claude workspace settings must be a JSON object"] };
-  }
-
-  const selectedKeys = new Set(selected.flatMap((family) => FAMILY_KEYS[family]));
   const errors: string[] = [];
-  for (const key of Object.keys(parsed)) {
-    if (!selectedKeys.has(key)) {
-      errors.push(`profile/native-config-key: Claude workspace key '${key}' is outside the selected family allowlist`);
+  const selectorsSelected = profile.nativeConfig?.selectors?.source === "agent";
+  if (selectorsSelected) {
+    if (profile.runtime.provider) {
+      errors.push("profile/native-config-selector: Claude provider has no measured canonical materialization");
+    }
+    if (profile.runtime.serviceTier) {
+      errors.push("profile/native-config-selector: Claude serviceTier has no measured canonical materialization");
+    }
+    if (profile.runtime.model !== undefined && profile.runtime.model.trim().length === 0) {
+      errors.push("profile/native-config-selector: Claude model must be non-empty");
+    }
+    if (
+      profile.runtime.reasoningEffort !== undefined
+      && !CLAUDE_REASONING_EFFORTS.has(profile.runtime.reasoningEffort)
+    ) {
+      errors.push(
+        `profile/native-config-selector: Claude reasoningEffort '${profile.runtime.reasoningEffort}' is unsupported; expected low, medium, high, xhigh or max`,
+      );
     }
   }
+
   const settings: Record<string, unknown> = {};
-  for (const key of selectedKeys) {
-    const value = parsed[key];
-    if (value === undefined) continue;
-    if (!validValue(key, value)) {
-      errors.push(`profile/native-config-value: Claude workspace key '${key}' has an unsupported value`);
+  for (const source of ["global", "workspace"] as const) {
+    const selected = (Object.keys(FAMILY_KEYS) as ClaudeScalarFamily[])
+      .filter((family) => profile.nativeConfig?.[family]?.source === source);
+    if (selected.length === 0) continue;
+    let parsed: unknown = {};
+    const sourceText = sourceTexts[source];
+    try {
+      parsed = sourceText?.trim() ? JSON.parse(sourceText) : {};
+    } catch (error) {
+      errors.push(
+        `profile/native-config-source: Claude ${source} settings are invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
       continue;
     }
-    settings[key] = structuredClone(value);
+    if (!isRecord(parsed)) {
+      errors.push(`profile/native-config-source: Claude ${source} settings must be a JSON object`);
+      continue;
+    }
+    const selectedKeys = new Set(selected.flatMap((family) => FAMILY_KEYS[family]));
+    for (const key of Object.keys(parsed)) {
+      if (!selectedKeys.has(key)) {
+        errors.push(`profile/native-config-key: Claude ${source} key '${key}' is outside the selected family allowlist`);
+      }
+    }
+    for (const key of selectedKeys) {
+      const value = parsed[key];
+      if (value === undefined) continue;
+      if (!validValue(key, value)) {
+        errors.push(`profile/native-config-value: Claude ${source} key '${key}' has an unsupported value`);
+        continue;
+      }
+      settings[key] = structuredClone(value);
+    }
   }
   return {
-    projection: { ...base, settings },
+    projection: Object.keys(settings).length > 0 ? { ...base, settings } : base,
     errors,
   };
 }

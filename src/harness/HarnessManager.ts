@@ -1930,10 +1930,20 @@ export class HarnessManager {
     const secretEnv = capabilities
       ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp })
       : {};
+    const selectorArgs: string[] = [];
+    if (nativeConfig?.selectors.model) selectorArgs.push("--model", nativeConfig.selectors.model);
+    if (nativeConfig?.selectors.reasoningEffort) {
+      selectorArgs.push("--effort", nativeConfig.selectors.reasoningEffort);
+    }
     return {
       home,
       env: { CLAUDE_CONFIG_DIR: home, ...secretEnv },
-      args: ["--setting-sources", "user", "--settings", settingsPath, ...harness.mcp.args(mcpPath)],
+      args: [
+        "--setting-sources", "user",
+        "--settings", settingsPath,
+        ...selectorArgs,
+        ...harness.mcp.args(mcpPath),
+      ],
     };
   }
 

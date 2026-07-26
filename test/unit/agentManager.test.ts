@@ -4025,7 +4025,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     };
     sourceDef.profileNativeConfig = {
       adapter: "claude",
-      selectors: {},
+      selectors: { model: "claude-opus-5", reasoningEffort: "high" },
       settings: { includeCoAuthoredBy: false },
     };
     sourceDef.profileCapabilities = {
@@ -4787,7 +4787,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       };
       const nativeConfig: ResolvedAgentNativeConfigProjection = {
         adapter: "claude",
-        selectors: {},
+        selectors: { model: "claude-opus-5", reasoningEffort: "high" },
         settings: { permissions: { allow: ["Read"] } },
       };
       const capabilities: ResolvedAgentCapabilityProjection = {
@@ -4817,6 +4817,7 @@ describe("AgentManager — session resume (spec 209)", () => {
           capabilities,
         }, cwd);
         materialized.push(JSON.stringify({
+          args: result.args,
           claudeJson: JSON.parse(fs.readFileSync(path.join(result.home, ".claude.json"), "utf8")),
           settings: JSON.parse(fs.readFileSync(path.join(result.home, "settings.json"), "utf8")),
           skill: fs.readFileSync(path.join(result.home, "skills", "review", "SKILL.md"), "utf8"),
@@ -4852,6 +4853,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(materialized).toHaveLength(3);
       for (const captured of materialized) {
         const state = JSON.parse(captured);
+        expect(state.args).toEqual([
+          "--setting-sources", "user",
+          "--settings", path.join(privateHome, "settings.json"),
+          "--model", "claude-opus-5",
+          "--effort", "high",
+          "--mcp-config", path.join(privateHome, "mcp.json"),
+          "--strict-mcp-config",
+        ]);
         expect(state.claudeJson.projects).toEqual({
           [path.resolve(h.ws)]: { hasTrustDialogAccepted: true },
         });

@@ -90,7 +90,7 @@ Tachyon never partially materializes the supported subset.
 
 | Runtime | Current native-config behavior | Status |
 |---|---|---|
-| Claude | Private `CLAUDE_CONFIG_DIR`; workspace settings and skills are projected; workspace MCP is regenerated; ambient prompt/plugin roots are rejected; auth/bootstrap remains external; native memory is forced off. | Partial: selective behavior exists but is not an authored per-family policy. |
+| Claude | Private `CLAUDE_CONFIG_DIR`; reviewed global/workspace scalar families and agent-owned model/effort selectors are projected; selected skills/hooks/MCP require exact grants; ambient prompt/plugin/local roots are rejected; auth/bootstrap remains external; native memory is forced off. | Typed per-family policy covers fresh/restart/resume/fork; provider/service tier and unselected keys fail closed (`t-fdd3a0`, SDD 465). |
 | Codex | Private `CODEX_HOME`; legacy home-only mode can copy global `config.toml`, while canonical projection removes it and currently requires workspace native config to be empty; auth remains external. | Gap: canonical agents cannot select which global/workspace behavior to preserve. |
 | OpenCode | Private XDG config/data/state; harness can snapshot workspace `opencode.json` or start empty and overlay MCP. | Partial: coarse workspace/none switch, not capability-scoped policy. |
 | Grok | Private `GROK_HOME`; Bridge config and trust are regenerated; auth is externally linked/reconciled; ambient config, memory and plugins are excluded. | Gap: no authored policy for native config families. |

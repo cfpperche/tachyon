@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude Runtime Config — `t-e5cb7c`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude canonical native policy — `t-fdd3a0`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -111,10 +111,10 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ | **✗** / **—** |
 | 7 Graceful stop | ✓ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
-| 9 Permission inject | ~ | ✓ | ~ | **✗** | ✓ | **✗** |
+| 9 Permission inject | ✓ | ✓ | ~ | **✗** | ✓ | **✗** |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ | **✗**¶ |
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
-| 12 Native config parity | ~ | ✓ | ~ | ✗ | ~ | **✗** |
+| 12 Native config parity | ✓ | ✓ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 | 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
 
@@ -150,7 +150,7 @@ Current adapter evidence:
 
 | Runtime | Global/account source | Workspace source | Private projection | External authority | Fresh/restart/resume/fork | Mark |
 |---|---|---|---|---|---|:---:|
-| Claude | selected auth/bootstrap only | explicit workspace policy projects closed scalar keys; selected owner-captured skills/hooks/MCP require exact Claude grants; ambient `settings.local.json`, plugin roots and unselected workspace tooling remain excluded | private `CLAUDE_CONFIG_DIR`; generated settings+hooks, captured skill tree, strict selected-MCP+Bridge config, and manifest-last provenance | credential symlink plus onboarding markers; auth is not profile-authored | fresh/restart/resume regenerate the same selected generation and remove stale tooling; fork rematerializes a distinct private home from copied projections and seeds the exact transcript across home/cwd namespaces (`t-debbfe`, `t-2f37e7`, `t-088454`, SDD 460/462/463, 2026-07-26) | ~ |
+| Claude | canonical policy projects reviewed global scalar families; selected auth/bootstrap remains external | canonical policy projects reviewed workspace scalar families; selected owner-captured skills/hooks/MCP require exact Claude grants; ambient `settings.local.json`, plugin roots and unselected workspace tooling remain excluded | private `CLAUDE_CONFIG_DIR`; generated closed settings, typed `--model`/`--effort` selectors, captured skill tree, strict selected-MCP+Bridge config, and manifest-last provenance | credential symlink plus onboarding markers; auth is not profile-authored | fresh/restart/resume regenerate the same selected generation and remove stale state; fork copies the typed projection into a distinct private home and seeds the exact transcript across home/cwd namespaces (`t-fdd3a0`, `t-088454`, SDD 465/463, 2026-07-26) | ✓ |
 | Codex | canonical policy projects reviewed global scalar families; auth stays external | canonical policy projects reviewed workspace scalar families; unselected keys fail closed | private `CODEX_HOME`; atomically regenerated selectors/scalars plus captured profile skills/MCP/hooks and Bridge | OAuth credentials | fresh/restart/resume regenerate an identical private projection before launch (`t-1a3d50`, 2026-07-25); fork is unavailable; native extensions remain explicitly unsupported | ✓ |
 | OpenCode | ambient global XDG excluded | `inherit: workspace` snapshots `opencode.json`; `none` starts empty | private XDG config/data/state plus MCP overlay | runtime auth state not fully classified here | spawn/restart/resume wiring exists; per-family refresh evidence incomplete | ~ |
 | Grok | ambient config, memory and plugins excluded | harness can snapshot `.grok/config.toml`; canonical non-harness writes Bridge-only config | private `GROK_HOME`, exact workspace/cwd trust store and hooks | auth symlink plus reconciliation | regenerated equivalently on fresh/restart/resume; stale trust removed without losing auth/MCP (`t-15d7e7`) | ✗ |
@@ -198,7 +198,8 @@ in the same change.
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
 | Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` | **✓** Claude Code 2.1.220 TTY: authorized active turn stopped by Escape, Ctrl+C, then `/exit`; pane exited status 0 (2026-07-25) |
 | Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
-| Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates only an explicitly selected, validated workspace permission block; ad-hoc ownership injection may use `--permission-mode auto` but never changes a declared canonical profile | Claude Code 2.1.220 accepts all six native modes; closed authored projection and lifecycle regression in `t-debbfe` / SDD 460 |
+| Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates only an explicitly selected, validated global/workspace permission block; `bypassPermissions` is rejected by the canonical projector; ad-hoc ownership injection remains separate | Claude Code 2.1.220 measurement plus closed projector/lifecycle regressions in `t-fdd3a0` / SDD 465 |
+| Native config parity | `settings.json`, `--model`, `--effort` | exact per-family global/workspace scalar projection plus agent-owned selector argv; provider/service tier and unselected keys fail closed | **✓** `t-fdd3a0`; profile/harness/fresh-restart-resume/fork regressions, 2026-07-26 |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.claude` | code |
 
 #### Codex
@@ -443,6 +444,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 | Date | Change |
 |------|--------|
 | 2026-07-26 | **Claude Runtime Config (SDD 464 / `t-e5cb7c`):** independent JSON document CAS for global/workspace settings, local shadow detection, read-only MCP-name inventory, safe scalar writes, runtime-scoped pending and Dev Host functional/visual dogfood. |
+| 2026-07-26 | **Claude canonical native policy (SDD 465 / `t-fdd3a0`):** closed global/workspace scalar families, typed agent-owned model/effort argv, safe permission-mode validation, and equivalent fresh/restart/resume/fork projection. |
 | 2026-07-24 | **Cap 13 Headless probe:** matrix row for SDD 257 `probe_agent` adapters. Claude/Codex ✓ (shipped 0.40.0); Grok ✓ via `t-7426de` (`adapters/grok.ts`); OpenCode/Pi/Hermes ✗ deferred. |
 | 2026-07-18 | **Pi OAuth interim safety (SDD 408):** at most one live Pi process per workspace across Spawn/Resume/Restart/Fork until upstream shared-auth support ships; 394 unit tests + human dogfood `v-591729`. |
 | 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |

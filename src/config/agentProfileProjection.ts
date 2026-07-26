@@ -41,10 +41,11 @@ const GROK_INSPECTOR_CONTRACT = [
   "ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
 const CLAUDE_INSPECTOR_CONTRACT = [
-  "tachyon/claude-closed-private-home-input-inspector/v4",
+  "tachyon/claude-closed-private-home-input-inspector/v5",
   "literal executable claude",
   "CLAUDE_CONFIG_DIR is Tachyon-owned harness/<agent> on every canonical launch",
-  "--setting-sources user plus --settings selects only closed profile-projected scalar settings",
+  "--setting-sources user plus --settings selects only closed global/workspace profile-projected scalar settings",
+  "--model and --effort select only typed agent-owned selectors",
   "autoMemoryEnabled is forced false",
   "--strict-mcp-config selects a host-custodied Bridge-only MCP file",
   "workspace settings.local and plugins are not inherited",
@@ -75,7 +76,7 @@ export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "claude",
   id: "tachyon.claude-closed-private-home-inputs",
-  version: "4",
+  version: "5",
   sha256: crypto.createHash("sha256").update(CLAUDE_INSPECTOR_CONTRACT).digest("hex"),
 });
 
@@ -518,16 +519,19 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     }
   }
   if (parsed.profile.runtime.adapter === "claude" && nativeConfigProjection) {
-    const selectedWorkspaceScalar = ["permissions", "interface", "featureFlags"].some(
-      (family) => parsed.profile!.nativeConfig?.[family as "permissions" | "interface" | "featureFlags"]?.source === "workspace",
-    );
-    let workspaceSettings: string | undefined;
-    if (selectedWorkspaceScalar) {
-      const read = readNativeConfigTextAt(input.workspaceRoot, [".claude", "settings.json"]);
+    const sourceTexts: { global?: string; workspace?: string } = {};
+    for (const source of ["global", "workspace"] as const) {
+      const selectedScalar = ["permissions", "interface", "featureFlags"].some(
+        (family) => parsed.profile!.nativeConfig?.[family as "permissions" | "interface" | "featureFlags"]?.source === source,
+      );
+      if (!selectedScalar) continue;
+      const read = source === "global"
+        ? readNativeConfigTextAt(input.homeDir ?? os.homedir(), [".claude", "settings.json"])
+        : readNativeConfigTextAt(input.workspaceRoot, [".claude", "settings.json"]);
       if (read.error) return { ok: false, errors: [read.error] };
-      workspaceSettings = read.text;
+      if (read.text !== undefined) sourceTexts[source] = read.text;
     }
-    const scalar = projectClaudeNativeConfig(parsed.profile, workspaceSettings, nativeConfigProjection);
+    const scalar = projectClaudeNativeConfig(parsed.profile, sourceTexts, nativeConfigProjection);
     if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
     nativeConfigProjection = scalar.projection;
   }

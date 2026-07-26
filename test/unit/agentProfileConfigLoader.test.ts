@@ -317,7 +317,7 @@ describe("loadProfileAwareConfig", () => {
       source: "workspace",
       treatment: "overlay",
       refresh: "every-launch",
-      lifecycle: ["fresh", "restart", "resume"],
+      lifecycle: ["fresh", "restart", "resume", "fork"],
     };
     const bytes = writeProfile(root, {
       runtime: { adapter: "claude", executable: "claude" },
@@ -353,7 +353,7 @@ describe("loadProfileAwareConfig", () => {
           source: "workspace",
           treatment: "overlay",
           refresh: "every-launch",
-          lifecycle: ["fresh", "restart", "resume"],
+          lifecycle: ["fresh", "restart", "resume", "fork"],
         },
       },
     });
@@ -363,6 +363,74 @@ describe("loadProfileAwareConfig", () => {
 
     expect(result.config).toBeUndefined();
     expect(result.errors.join("\n")).toContain("Claude workspace key 'hooks' is outside the selected family allowlist");
+  });
+
+  it("projects measured Claude selectors and global scalars through the private-home contract", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-global-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-claude-home-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      prefersReducedMotion: true,
+      alwaysThinkingEnabled: false,
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: {
+        adapter: "claude",
+        executable: "claude",
+        model: "claude-opus-5",
+        reasoningEffort: "xhigh",
+      },
+      nativeConfig: {
+        selectors: { source: "agent", treatment: "overlay", refresh: "every-launch", lifecycle },
+        interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+        featureFlags: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "claude",
+      selectors: { model: "claude-opus-5", reasoningEffort: "xhigh" },
+      settings: { prefersReducedMotion: true, alwaysThinkingEnabled: false },
+    });
+  });
+
+  it("rejects unmeasured Claude selectors and bypass permission defaults", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-closed-selectors-");
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), JSON.stringify({
+      permissions: { defaultMode: "bypassPermissions" },
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: {
+        adapter: "claude",
+        executable: "claude",
+        model: "claude-opus-5",
+        provider: "anthropic",
+        reasoningEffort: "ultra",
+        serviceTier: "fast",
+      },
+      nativeConfig: {
+        selectors: { source: "agent", treatment: "overlay", refresh: "every-launch", lifecycle },
+        permissions: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("Claude provider has no measured canonical materialization");
+    expect(result.errors.join("\n")).toContain("Claude serviceTier has no measured canonical materialization");
+    expect(result.errors.join("\n")).toContain("Claude reasoningEffort 'ultra' is unsupported");
+    expect(result.errors.join("\n")).toContain("Claude workspace key 'permissions' has an unsupported value");
   });
 
   it("projects only captured, Claude-granted skills, hooks and MCP", () => {

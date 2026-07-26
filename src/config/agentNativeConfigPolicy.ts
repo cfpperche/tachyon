@@ -15,7 +15,7 @@ export type CodexScalarNativeConfigSource = "global" | "workspace";
 export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exclude";
 
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
-const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
+const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
 export const CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES = [
   "permissions",
   "interface",
@@ -137,15 +137,28 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
   }
   if (
     adapter === "claude"
-    && (family === "permissions" || family === "interface" || family === "featureFlags")
-    && policy.source === "workspace"
+    && family === "selectors"
+    && policy.source === "agent"
     && policy.treatment === "overlay"
     && policy.refresh === "every-launch"
     && hasExactLifecycle(policy.lifecycle, CLAUDE_ALL_LIFECYCLE)
   ) {
     return {
       support: "supported",
-      reason: `Claude declares filtered workspace ${family} projection for fresh, restart and resume`,
+      reason: "Claude declares typed agent selectors for fresh, restart, resume and fork",
+    };
+  }
+  if (
+    adapter === "claude"
+    && (family === "permissions" || family === "interface" || family === "featureFlags")
+    && (policy.source === "global" || policy.source === "workspace")
+    && policy.treatment === "overlay"
+    && policy.refresh === "every-launch"
+    && hasExactLifecycle(policy.lifecycle, CLAUDE_ALL_LIFECYCLE)
+  ) {
+    return {
+      support: "supported",
+      reason: `Claude declares filtered ${policy.source} ${family} projection for fresh, restart, resume and fork`,
     };
   }
   if (
@@ -159,7 +172,7 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
   ) {
     return {
       support: "supported",
-      reason: `Claude explicitly keeps ${family} outside authored native configuration for fresh, restart and resume`,
+      reason: `Claude explicitly keeps ${family} outside authored native configuration for fresh, restart, resume and fork`,
     };
   }
   if (

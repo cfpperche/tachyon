@@ -196,7 +196,7 @@ describe("HarnessManager materialize (fs)", () => {
 
     const res = mgr.materializeCanonicalClaudeHome("canonical", claude, undefined, {
       adapter: "claude",
-      selectors: {},
+      selectors: { model: "claude-opus-5", reasoningEffort: "high" },
       settings: {
         permissions: { allow: ["Read"] },
         prefersReducedMotion: false,
@@ -206,6 +206,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(res.env).toEqual({ CLAUDE_CONFIG_DIR: res.home });
     expect(res.args).toEqual([
       "--setting-sources", "user", "--settings", path.join(res.home, "settings.json"),
+      "--model", "claude-opus-5", "--effort", "high",
       "--mcp-config", path.join(res.home, "mcp.json"), "--strict-mcp-config",
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(res.home, "settings.json"), "utf8"))).toEqual({
@@ -218,6 +219,14 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(path.join(res.home, "CLAUDE.md"))).toBe(false);
     expect(fs.existsSync(path.join(res.home, "plugins"))).toBe(false);
     expect(fs.lstatSync(path.join(res.home, ".credentials.json")).isSymbolicLink()).toBe(true);
+
+    const withoutSelectors = mgr.materializeCanonicalClaudeHome("canonical", claude, undefined, {
+      adapter: "claude",
+      selectors: {},
+      settings: { prefersReducedMotion: true },
+    });
+    expect(withoutSelectors.args).not.toContain("--model");
+    expect(withoutSelectors.args).not.toContain("--effort");
   });
 
   it("canonical Claude consumes captured capabilities, reserves Bridge, and repairs stale projection state", () => {

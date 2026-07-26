@@ -93,11 +93,12 @@ describe("agent native configuration support admission", () => {
     ]);
   });
 
-  it("declares Claude workspace scalars and explicit external/excluded planes across supported lifecycle paths", () => {
-    const lifecycle: AgentNativeConfigPolicyV1["lifecycle"] = ["resume", "fresh", "restart"];
+  it("declares Claude selectors, global/workspace scalars and external/excluded planes across all lifecycle paths", () => {
+    const lifecycle: AgentNativeConfigPolicyV1["lifecycle"] = ["fork", "resume", "fresh", "restart"];
     expect(validateAgentNativeConfigPolicy("claude", {
+      selectors: { source: "agent", treatment: "overlay", refresh: "every-launch", lifecycle },
       permissions: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
-      interface: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
       featureFlags: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
       tooling: { source: "workspace", treatment: "exclude", refresh: "every-launch", lifecycle },
       authentication: { source: "global", treatment: "external", refresh: "runtime-owned", lifecycle },
@@ -105,9 +106,10 @@ describe("agent native configuration support admission", () => {
     })).toEqual([]);
 
     expect(validateAgentNativeConfigPolicy("claude", {
-      permissions: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      selectors: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      permissions: { source: "agent", treatment: "overlay", refresh: "every-launch", lifecycle },
       tooling: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
-      interface: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle: [...lifecycle, "fork"] },
-    })).toHaveLength(3);
+      interface: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle: ["fresh", "restart", "resume"] },
+    })).toHaveLength(4);
   });
 });
