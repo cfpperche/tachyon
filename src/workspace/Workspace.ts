@@ -932,7 +932,7 @@ export class Workspace {
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
         if (def.harness) return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
-        if (adapter.runtime === "claude" && def.profileLifecycle) {
+        if (adapter.runtime === "claude" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
           return this.harness.materializeCanonicalClaudeHome(name, adapter, cwd, def.profileNativeConfig, this.bridgeEntry());
         }
         // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,

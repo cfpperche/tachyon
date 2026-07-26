@@ -1292,7 +1292,8 @@ export class AgentManager {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
     // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
     const needsPrivateHome = !!def?.harness || def?.isolate === "transcript"
-      || isolation?.mechanism === "private-home" || !!def?.profileLifecycle;
+      || isolation?.mechanism === "private-home" || !!def?.profileLifecycle
+      || !!def?.profileFork || !!def?.profileCapabilities || !!def?.profileNativeConfig;
     if (!def || !needsPrivateHome || !this.opts.materializeHarness) return null;
     return this.opts.materializeHarness({ name, def, cwd });
   }
@@ -1324,6 +1325,9 @@ export class AgentManager {
       return path.join(harnessHome(this.opts.workspaceRoot, name), ".grok");
     }
     if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
+    if (runtime === "claude" && (def?.profileLifecycle || def?.profileFork || def?.profileCapabilities || def?.profileNativeConfig)) {
+      return harnessHome(this.opts.workspaceRoot, name);
+    }
     if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
     // t-843576 — non-harness grok with Bridge wiring uses the private bridge GROK_HOME (sessions live there too).
     if (runtime === "grok" && this.opts.materializeBridgeMcpGrok) {
@@ -4008,6 +4012,8 @@ export class AgentManager {
     sourceCwd: string;
     sourceId: string;
     sourceWorktree?: WorktreeRecord;
+    /** Exact config namespace used to resolve and validate the source transcript. */
+    sourceConfigHome: string;
     /** Exact validated source JSONL for runtimes whose fork namespace differs from the destination (Pi). */
     sourceTranscriptPath?: string;
     instructions?: string;
@@ -4074,6 +4080,7 @@ export class AgentManager {
       baseCmd,
       sourceCwd: cwd,
       sourceId: id,
+      sourceConfigHome: configHome,
       ...(sourceTranscriptPath ? { sourceTranscriptPath } : {}),
       ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
       ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
@@ -4174,6 +4181,16 @@ export class AgentManager {
       ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
       ...(src.env ? { env: src.env } : {}),
+      // A canonical fork is still an ad-hoc sibling, so it must not inherit profileLifecycle
+      // authority. This internal marker retains canonical private-home materialization even when
+      // the source selected no optional native/capability families.
+      ...(sourceDefinition?.profileLifecycle ? { profileFork: true as const } : {}),
+      ...(sourceDefinition?.profileNativeConfig
+        ? { profileNativeConfig: structuredClone(sourceDefinition.profileNativeConfig) }
+        : {}),
+      ...(sourceDefinition?.profileCapabilities
+        ? { profileCapabilities: structuredClone(sourceDefinition.profileCapabilities) }
+        : {}),
     };
     const forkRecord = () => ({
       def: {
@@ -4196,7 +4213,7 @@ export class AgentManager {
     let spawnedSession: string | undefined;
     let sessionAttempted = false;
     let tokenMinted = false;
-    let piHomeCreated = false;
+    let privateHomeCreated = false;
     try {
       // A worktree fork can load project-scoped runtime configuration. Probe only after resolving
       // that exact cwd, but before transcript seeding, token minting, tmux, or durable identity.
@@ -4204,42 +4221,54 @@ export class AgentManager {
       if (path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
         await this.assertLaunchPreflight(forkName, src.baseCmd, src.env, true, cwd);
       }
-      // Worktree fork → seed the source transcript into the new cwd's project dir (claude --resume is
-      // cwd-scoped). FAIL CLOSED: if the seed can't land, abort rather than spawn a context-less fork.
-      if (worktree && adapter.transcriptPath && path.resolve(cwd) !== path.resolve(src.sourceCwd)) {
-        // spec 226 / SDD 369 — a harness source is blocked from fork; use the explicit inherited home when
-        // present, otherwise the same effective host-default home used to resolve the source transcript.
-        const configHome = src.env?.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome();
-        const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
-          adapter.transcriptPath(configHome, src.sourceCwd, src.sourceId),
-          adapter.transcriptPath(configHome, cwd, src.sourceId),
-        );
-        if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's worktree (claude --resume would find nothing)");
-      }
-
       // Claude/Grok/OpenCode fork by exact source id. Pi sources and destinations use distinct private
       // homes, so its native --fork receives the exact validated source JSONL path instead.
       const sourceRef = src.runtime === "pi" ? src.sourceTranscriptPath : src.sourceId;
       if (!sourceRef) throw new ForkUnavailableError(source, "its exact Pi source transcript is unavailable");
       const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkSessionId), sourceRef);
       const session = this.session(forkName);
-      const piHome = src.runtime === "pi" ? harnessHome(this.opts.workspaceRoot, forkName) : undefined;
-      const piHomeExisted = piHome ? fs.existsSync(piHome) : true;
+      const managedPrivateFork = src.runtime === "pi"
+        || (src.runtime === "claude"
+          && (!!sourceDefinition?.profileLifecycle
+            || !!forkDefinition.profileCapabilities
+            || !!forkDefinition.profileNativeConfig));
+      const privateHome = managedPrivateFork ? harnessHome(this.opts.workspaceRoot, forkName) : undefined;
+      const privateHomeExisted = privateHome ? fs.existsSync(privateHome) : true;
       let preparedHarness: MaterializedHarness | null = null;
       try {
-        preparedHarness = src.runtime === "pi"
+        preparedHarness = managedPrivateFork
           ? this.materializeRuntimeHarness(forkName, forkDefinition, cwd)
           : null;
       } finally {
         // Materializers may fail after creating part of the home; retain cleanup authority in that case.
-        piHomeCreated = !!piHome && !piHomeExisted && fs.existsSync(piHome);
+        privateHomeCreated = !!privateHome && !privateHomeExisted && fs.existsSync(privateHome);
+      }
+      if (managedPrivateFork && !preparedHarness) {
+        throw new ForkUnavailableError(source, `couldn't materialize the ${src.runtime} fork private home`);
+      }
+
+      // A private-home fork always crosses transcript namespaces, even when it shares the source cwd.
+      // Worktree forks additionally cross project directories. Seed from the exact source namespace
+      // validated by resolveForkSource into the destination namespace returned by materialization.
+      const destinationConfigHome = preparedHarness?.env.CLAUDE_CONFIG_DIR
+        ?? preparedHarness?.home
+        ?? src.sourceConfigHome;
+      if (adapter.transcriptPath && (
+        path.resolve(destinationConfigHome) !== path.resolve(src.sourceConfigHome)
+        || path.resolve(cwd) !== path.resolve(src.sourceCwd)
+      )) {
+        const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
+          adapter.transcriptPath(src.sourceConfigHome, src.sourceCwd, src.sourceId),
+          adapter.transcriptPath(destinationConfigHome, cwd, src.sourceId),
+        );
+        if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's private namespace (claude --resume would find nothing)");
       }
       const tokenEnv = this.opts.mintAgentToken?.(forkName);
       tokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
       const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
-      // Preserve every existing non-Pi Fork byte/env path. Pi alone needs the newly added mandatory
-      // private-home materialization before its cross-home native --fork launch.
-      const forkBuild: { cmd: string; env: Record<string, string> } = src.runtime === "pi"
+      // Apply the already-prepared private home for Pi and canonical Claude; ordinary forks retain
+      // their existing byte/env path.
+      const forkBuild: { cmd: string; env: Record<string, string> } = preparedHarness
         ? this.applyHarness(forkName, forkDefinition, cwd, forkCmd, baseForkEnv, preparedHarness)
         : { cmd: forkCmd, env: baseForkEnv };
       // spec 236 / SDD 405 — a fork is a normal Tachyon-spawned process: private home first, then
@@ -4321,17 +4350,7 @@ export class AgentManager {
       if (runtimeMayBeLive) {
         try { this.opts.ledger?.record(forkName, forkRecord()); }
         catch (error) { failures.push(new Error(`failed to persist fork recovery handle for '${forkName}'`, { cause: error })); }
-        this.adhoc.set(forkName, {
-          cmd: src.baseCmd,
-          instructions: src.instructions,
-          ...(src.env ? { env: src.env } : {}),
-          autostart: false,
-          watch: [],
-          attention: { enabled: true, silenceSec: 8, patterns: [] },
-          restart: "never",
-          kind: "agent",
-          worktree: !!worktree,
-        });
+        this.adhoc.set(forkName, { ...forkDefinition, worktree: !!worktree });
         failures.push(new Error(`fork recovery session may still be live and remains recorded as '${forkName}'`));
       } else {
         try { this.opts.ledger?.remove(forkName); }
@@ -4342,9 +4361,9 @@ export class AgentManager {
         try { this.opts.revokeAgentToken?.(forkName); }
         catch (error) { failures.push(new Error(`failed to revoke fork token for '${forkName}'`, { cause: error })); }
       }
-      if (piHomeCreated && !runtimeMayBeLive && !worktree) {
+      if (privateHomeCreated && !runtimeMayBeLive && !worktree) {
         try { this.opts.removeHarnessHome?.(forkName); }
-        catch (error) { failures.push(new Error(`failed to remove Pi fork private home for '${forkName}'`, { cause: error })); }
+        catch (error) { failures.push(new Error(`failed to remove ${src.runtime} fork private home for '${forkName}'`, { cause: error })); }
       }
       // The checkout may contain transcript/setup/runtime writes, including ignored files, so its
       // Git quarantine lock is the recovery receipt; never delete it automatically.
@@ -4361,19 +4380,7 @@ export class AgentManager {
         { cause: primary },
       );
     }
-    this.adhoc.set(forkName, {
-      cmd: src.baseCmd,
-      instructions: src.instructions,
-      ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
-      ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
-      ...(src.env ? { env: src.env } : {}),
-      autostart: false,
-      watch: [],
-      attention: { enabled: true, silenceSec: 8, patterns: [] },
-      restart: "never",
-      kind: "agent",
-      worktree: !!worktree,
-    });
+    this.adhoc.set(forkName, { ...forkDefinition, worktree: !!worktree });
     this.opts.onSpawned?.(forkName, true);
     await this.attachPaneTranscript(this.session(forkName));
     return forkName;

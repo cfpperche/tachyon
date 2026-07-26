@@ -148,6 +148,8 @@ export interface ManagedEntryDef {
     canonicalSha256: string;
     authorityRevision: string;
   };
+  /** Internal marker for an ad-hoc fork rematerialized from a canonical profile snapshot. */
+  profileFork?: true;
   /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
   profilePointer?: true;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT

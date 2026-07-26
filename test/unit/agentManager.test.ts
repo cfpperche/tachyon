@@ -3997,6 +3997,133 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.planFork("researcher")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 
+  it("t-088454: canonical Claude fork rematerializes projections and seeds between private homes in the same cwd", async () => {
+    const materialized: Array<{ name: string; def: Record<string, unknown> }> = [];
+    const seeds: Array<[string, string]> = [];
+    const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async (_runtime, _cwd, _title, configHome) => {
+        expect(configHome).toBe(path.join(h.ws, ".tachyon", "harness", "claude"));
+        return UUID;
+      },
+      materializeHarness: ({ name, def }) => {
+        materialized.push({ name, def });
+        const home = path.join(h.ws, ".tachyon", "harness", name);
+        fs.mkdirSync(home, { recursive: true });
+        return { home, env: { CLAUDE_CONFIG_DIR: home }, args: ["--strict-mcp-config"] };
+      },
+      seedTranscript: (from, to) => {
+        seeds.push([from, to]);
+        return true;
+      },
+    });
+    const sourceDef = h.manager.defOf("claude")!;
+    sourceDef.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    sourceDef.profileNativeConfig = {
+      adapter: "claude",
+      selectors: {},
+      settings: { includeCoAuthoredBy: false },
+    };
+    sourceDef.profileCapabilities = {
+      schemaVersion: 1,
+      adapter: "claude",
+      sha256: "b".repeat(64),
+      sources: [],
+      skills: [],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+
+    await h.manager.spawn("claude");
+    materialized.length = 0;
+    const forkName = await h.manager.commitFork(await h.manager.planFork("claude"));
+
+    const sourceHome = path.join(h.ws, ".tachyon", "harness", "claude");
+    const forkHome = path.join(h.ws, ".tachyon", "harness", forkName);
+    expect(materialized).toHaveLength(1);
+    expect(materialized[0]?.name).toBe(forkName);
+    expect(materialized[0]?.def.profileLifecycle).toBeUndefined();
+    expect(materialized[0]?.def.profileNativeConfig).toEqual(sourceDef.profileNativeConfig);
+    expect(materialized[0]?.def.profileCapabilities).toEqual(sourceDef.profileCapabilities);
+    expect(materialized[0]?.def.profileNativeConfig).not.toBe(sourceDef.profileNativeConfig);
+    expect(materialized[0]?.def.profileCapabilities).not.toBe(sourceDef.profileCapabilities);
+    expect(seeds).toEqual([[
+      path.join(sourceHome, "projects", `-${h.ws.slice(1).replaceAll("/", "-")}`, `${UUID}.jsonl`),
+      path.join(forkHome, "projects", `-${h.ws.slice(1).replaceAll("/", "-")}`, `${UUID}.jsonl`),
+    ]]);
+    expect(envFromTmuxArgs(h.startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBe(forkHome);
+    expect(h.ledger.get(forkName)?.resume?.configHome).toBe(forkHome);
+  });
+
+  it("t-088454: canonical Claude worktree fork seeds from source home/cwd to destination home/cwd", async () => {
+    const sourceWorktree = { path: "/wt/source", branch: "tachyon/source", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
+    const seeds: Array<[string, string]> = [];
+    const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      worktreeDirty: async () => false,
+      createForkWorktree: async () => ({
+        cwd: "/wt/destination",
+        worktree: { ...sourceWorktree, path: "/wt/destination", branch: "tachyon/destination" },
+      }),
+      materializeHarness: ({ name }) => {
+        const home = path.join(h.ws, ".tachyon", "harness", name);
+        return { home, env: { CLAUDE_CONFIG_DIR: home }, args: [] };
+      },
+      seedTranscript: (from, to) => {
+        seeds.push([from, to]);
+        return true;
+      },
+    });
+    h.manager.defOf("claude")!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await h.manager.spawn("claude");
+    h.ledger.record("claude", { ...h.ledger.get("claude")!, worktree: sourceWorktree, cwd: "/wt/source" });
+
+    await h.manager.commitFork(await h.manager.planFork("claude"));
+
+    expect(seeds).toHaveLength(1);
+    expect(seeds[0]?.[0]).toContain(`${path.join(h.ws, ".tachyon", "harness", "claude")}/projects/-wt-source/`);
+    expect(seeds[0]?.[1]).toContain(`${path.join(h.ws, ".tachyon", "harness", "claude-fork-1")}/projects/-wt-destination/`);
+  });
+
+  it("t-088454: failed canonical seed removes a newly created private home before any session exists", async () => {
+    const removed: string[] = [];
+    const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      materializeHarness: ({ name }) => {
+        const home = path.join(h.ws, ".tachyon", "harness", name);
+        fs.mkdirSync(home, { recursive: true });
+        return { home, env: { CLAUDE_CONFIG_DIR: home }, args: [] };
+      },
+      seedTranscript: () => false,
+      removeHarnessHome: (name) => {
+        removed.push(name);
+      },
+    });
+    h.manager.defOf("claude")!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await h.manager.spawn("claude");
+    removed.length = 0;
+
+    await expect(h.manager.commitFork(await h.manager.planFork("claude"))).rejects.toThrow("couldn't seed");
+    expect(removed).toEqual(["claude-fork-1"]);
+    expect(h.sessions.has(h.manager.session("claude-fork-1"))).toBe(false);
+    expect(h.ledger.get("claude-fork-1")).toBeUndefined();
+  });
+
   it("v1: renaming an isolated-harness agent is refused (fail-closed — home is name-keyed)", async () => {
     const { manager } = resumeHarness(HARNESS_YML, stubHarness());
     await manager.spawn("researcher");
