@@ -8,7 +8,7 @@ function raw(stdout: string, exitCode = 0, stderr = ""): RawOutcome {
   return { stdout, stderr, exitCode, signal: null, timedOut: false };
 }
 
-const success = JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "THE ANSWER", total_cost_usd: 0.012 });
+const success = JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "THE ANSWER", total_cost_usd: 0.012, modelUsage: { "claude-opus-5": { canonicalModel: "claude-opus-5" } } });
 const budget = JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true, result: "", errors: ["Reached maximum budget ($0.50)"], total_cost_usd: 0.52 });
 const refusal = JSON.stringify({ type: "result", subtype: "error_refusal", is_error: true, result: "I can't help with that." });
 const empty = JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "  ", total_cost_usd: 0.001 });
@@ -20,6 +20,7 @@ describe("claude adapter — interpret maps native subtype → taxonomy (D4)", (
     expect(r.lastMessage).toBe("THE ANSWER");
     expect(r.costUsd).toBe(0.012);
     expect(r.native.subtype).toBe("success"); // claude-shaped field quarantined under native
+    expect(r.native.reportedModels).toEqual(["claude-opus-5"]);
   });
 
   it("budget exhaustion → budget (a result, not a crash), error text lifted", () => {
@@ -38,6 +39,11 @@ describe("claude adapter — interpret maps native subtype → taxonomy (D4)", (
   it("blank result → empty_output", () => {
     const r = adapter.interpret(raw(empty), { runtime: "claude", prompt: "", cwd: "/x", timeoutMs: 1 });
     expect(r.reason).toBe("empty_output");
+  });
+
+  it("does not invent reported model provenance when Claude omits modelUsage", () => {
+    const r = adapter.interpret(raw(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "ok" })), { runtime: "claude", prompt: "", model: "claude-opus-5", cwd: "/x", timeoutMs: 1 });
+    expect(r.native.reportedModels).toBeUndefined();
   });
 });
 

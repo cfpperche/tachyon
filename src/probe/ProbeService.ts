@@ -214,6 +214,7 @@ export class ProbeService {
       runtime: req.runtime,
       adapterVersion: adapter.adapterVersion,
       binaryVersion,
+      ...(req.model ? { requestedModel: req.model } : {}),
       archetype: req.archetype,
       caller: req.caller, // provenance/ownership (codex review #49)
       createdAt,
@@ -244,7 +245,15 @@ export class ProbeService {
       let result = await this.runFn(adapter, spec, { scratchDir, signal });
       result = this.validateArchetype(req.archetype, result);
       envelope = envelopeFor(runId, result);
-      await this.store.writeResult(envelope, { ...meta, finishedAt: new Date(this.now()).toISOString() });
+      const reportedModels = Array.isArray(result.native.reportedModels)
+        && result.native.reportedModels.every((model) => typeof model === "string")
+        ? result.native.reportedModels as string[]
+        : undefined;
+      await this.store.writeResult(envelope, {
+        ...meta,
+        ...(reportedModels ? { reportedModels } : {}),
+        finishedAt: new Date(this.now()).toISOString(),
+      });
     } catch (err) {
       // An orchestration error becomes a `failed` envelope — a probe must never crash the Bridge,
       // and an async caller polling read_probe_result must always get a terminal answer.

@@ -25,6 +25,17 @@ interface ClaudeResultJson {
   result?: string;
   errors?: string[];
   total_cost_usd?: number;
+  /** Provider-reported usage keyed by actual model identity. Retained only as opaque evidence. */
+  modelUsage?: Record<string, { canonicalModel?: unknown }>;
+}
+
+function reportedModels(result: ClaudeResultJson): string[] | undefined {
+  const usage = result.modelUsage;
+  if (!usage || typeof usage !== "object") return undefined;
+  const models = Object.values(usage)
+    .map((entry) => typeof entry?.canonicalModel === "string" ? entry.canonicalModel : undefined)
+    .filter((model): model is string => Boolean(model));
+  return models.length > 0 ? [...new Set(models)].sort() : undefined;
 }
 
 function jsonSchemaForArchetype(archetype: string | undefined): string | undefined {
@@ -145,7 +156,7 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
 
     interpret(raw: RawOutcome): ProbeResult {
       const parsed = extractClaudeResult(raw.stdout);
-      const native = { runtime: "claude", subtype: parsed?.subtype };
+      const native = { runtime: "claude", subtype: parsed?.subtype, ...(parsed ? { reportedModels: reportedModels(parsed) } : {}) };
       if (!parsed) {
         if (raw.exitCode !== 0) {
           return base("process_error", raw.stderr.trim() || "claude exited non-zero with no result JSON", raw, native);

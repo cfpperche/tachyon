@@ -21,6 +21,10 @@ export interface ProbeRunMeta {
   runtime: string;
   adapterVersion: string;
   binaryVersion?: string;
+  /** Model passed to the runtime by the caller; intent, not a claim of provider selection. */
+  requestedModel?: string;
+  /** Runtime-reported model identities when the structured result supplies them. */
+  reportedModels?: string[];
   archetype?: string;
   /** the agent that launched this probe — provenance/audit/ownership (codex review #49). */
   caller?: string;

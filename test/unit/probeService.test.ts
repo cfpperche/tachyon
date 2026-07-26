@@ -48,6 +48,14 @@ describe("ProbeService — happy path + storage", () => {
     expect(stored?.status).toBe("completed");
   });
 
+  it("persists requested and runtime-reported model provenance without conflating them", async () => {
+    const service = svc({ runFn: async () => ({ ...okResult(VALID_REVIEW), native: { runtime: "claude", reportedModels: ["claude-opus-5"] } }) });
+    const { runId, done } = await service.launch({ ...req, model: "claude-opus-5" });
+    await done;
+    const stored = await store.readResult(runId);
+    expect(stored?.meta).toMatchObject({ requestedModel: "claude-opus-5", reportedModels: ["claude-opus-5"] });
+  });
+
   it("non-compliant archetype output downgrades ok → parse_error (OQ5)", async () => {
     const service = svc({ runFn: async () => okResult("this looks great, ship it") });
     const { done } = await service.launch(req);

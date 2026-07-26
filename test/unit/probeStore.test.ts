@@ -31,6 +31,17 @@ describe("ProbeStore — publish + read back", () => {
     expect(back?.meta.binaryVersion).toBe("1.2.3");
   });
 
+  it("round-trips requested and reported model provenance distinctly", async () => {
+    const store = new ProbeStore(root);
+    const runId = mintRunId();
+    await store.writeResult(envelopeFor(runId, result()), {
+      ...meta(runId), requestedModel: "claude-opus-5", reportedModels: ["claude-opus-5"],
+    });
+    expect((await store.readResult(runId))?.meta).toMatchObject({
+      requestedModel: "claude-opus-5", reportedModels: ["claude-opus-5"],
+    });
+  });
+
   it("readResult returns null for an unknown run", async () => {
     expect(await new ProbeStore(root).readResult(mintRunId())).toBeNull();
   });
