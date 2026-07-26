@@ -52,6 +52,12 @@ export function createCodexAdapter(deps: CodexAdapterDeps = {}): HeadlessCapture
     },
 
     interpret(raw: RawOutcome): ProbeResult {
+      // SDD 474 — no effective-model evidence is reported, so `reportsEffectiveModel` stays
+      // undeclared and SDD 473 records these runs `unproven` rather than inventing one. Measured on
+      // codex-cli 0.145.0: `exec --json` stdout carries only thread.started / turn.started /
+      // item.completed / turn.completed (token usage), with no model identity anywhere. The
+      // `turn_context.payload.model` that src/activity/codexNormalizer.ts reads lives in the session
+      // rollout, which the probe's `--ephemeral` deliberately prevents. Tracked in t-a10d31.
       const native = { runtime: "codex" };
       const answer = (raw.resultArtifactText ?? "").trim();
       if (raw.exitCode === 0) {

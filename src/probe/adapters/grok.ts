@@ -32,6 +32,24 @@ interface GrokHeadlessJson {
   total_cost_usd?: number;
   thought?: string;
   num_turns?: number;
+  /**
+   * SDD 474 — provider-reported usage keyed by the model identity that actually ran. Measured on
+   * `grok 0.2.112`: `{"modelUsage":{"grok-4.5-build":{"inputTokens":2240,"outputTokens":31,…}}}`.
+   * Unlike Claude there is no `canonicalModel` sub-field, so the KEY is the only identity available.
+   * Retained only as opaque evidence — never parsed into a family by trimming the string.
+   */
+  modelUsage?: Record<string, unknown>;
+}
+
+/**
+ * SDD 474 — the model identifiers Grok reported running. Absence returns undefined so the probe
+ * service records `unproven`; nothing here infers identity from cost, tokens or the requested model.
+ */
+function reportedNativeModels(result: GrokHeadlessJson): string[] | undefined {
+  const usage = result.modelUsage;
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
+  const models = Object.keys(usage).filter((key) => key.trim().length > 0);
+  return models.length > 0 ? [...new Set(models)].sort() : undefined;
 }
 
 function jsonSchemaForArchetype(archetype: string | undefined): string | undefined {
@@ -159,6 +177,8 @@ export function createGrokAdapter(deps: GrokAdapterDeps = {}): HeadlessCaptureAd
   return {
     runtime: "grok",
     adapterVersion: ADAPTER_VERSION,
+    // Grok reports `modelUsage` in its result JSON, so a requested model is provable (SDD 474).
+    reportsEffectiveModel: true,
 
     buildInvocation(spec: ProbeSpec): Invocation {
       // Headless single-turn: no tools, no memory, no subagents (bounded probe surface).
@@ -185,6 +205,7 @@ export function createGrokAdapter(deps: GrokAdapterDeps = {}): HeadlessCaptureAd
         runtime: "grok",
         stopReason: parsed?.stopReason,
         sessionId: parsed?.sessionId,
+        ...(parsed ? { reportedNativeModels: reportedNativeModels(parsed) } : {}),
       };
       if (!parsed) {
         if (raw.exitCode !== 0) {

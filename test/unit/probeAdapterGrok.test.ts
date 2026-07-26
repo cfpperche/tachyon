@@ -158,3 +158,56 @@ describe("grok adapter — invocation + capability (D5)", () => {
     expect((await missing.detectCapability()).available).toBe(false);
   });
 });
+
+describe("SDD 474 — grok effective-model provenance", () => {
+  /** The payload measured from `grok 0.2.112 -p … --output-format json`. */
+  const measured = JSON.stringify({
+    text: "ok",
+    stopReason: "EndTurn",
+    sessionId: "019fa002-72d6-7d80-b656-455df3429ac3",
+    total_cost_usd: 0.0080068,
+    modelUsage: {
+      "grok-4.5-build": { inputTokens: 2240, outputTokens: 31, modelCalls: 1, costUSD: 0.0080068 },
+    },
+  });
+
+  it("declares that this runtime can prove its effective model", () => {
+    expect(adapter.reportsEffectiveModel).toBe(true);
+  });
+
+  it("reports the modelUsage key as the effective identifier", () => {
+    const r = adapter.interpret(raw(measured), { runtime: "grok", prompt: "", cwd: "/x", timeoutMs: 1 });
+    expect(r.reason).toBe("ok");
+    expect(r.native.reportedNativeModels).toEqual(["grok-4.5-build"]);
+  });
+
+  it("reports every distinct identifier when more than one model ran", () => {
+    const twoModels = JSON.stringify({
+      text: "ok", stopReason: "EndTurn", sessionId: "s",
+      modelUsage: { "grok-4.5-build": { modelCalls: 1 }, "grok-4-fast": { modelCalls: 2 } },
+    });
+    const r = adapter.interpret(raw(twoModels), { runtime: "grok", prompt: "", cwd: "/x", timeoutMs: 1 });
+    // Sorted + de-duplicated; the service treats a mixed run as a mismatch, not a pass.
+    expect(r.native.reportedNativeModels).toEqual(["grok-4-fast", "grok-4.5-build"]);
+  });
+
+  it("reports nothing rather than inferring when modelUsage is absent or unusable", () => {
+    // absent → the probe service records `unproven`; it must never fall back to the requested model.
+    const none = adapter.interpret(raw(success), { runtime: "grok", prompt: "", cwd: "/x", timeoutMs: 1 });
+    expect(none.native.reportedNativeModels).toBeUndefined();
+
+    for (const bad of [{ modelUsage: {} }, { modelUsage: [] }, { modelUsage: "grok-4.5" }, { modelUsage: null }]) {
+      const payload = JSON.stringify({ text: "ok", stopReason: "EndTurn", sessionId: "s", ...bad });
+      const r = adapter.interpret(raw(payload), { runtime: "grok", prompt: "", cwd: "/x", timeoutMs: 1 });
+      expect(r.reason).toBe("ok");
+      expect(r.native.reportedNativeModels).toBeUndefined();
+    }
+  });
+
+  it("does not derive a canonical family by trimming the identifier", () => {
+    const r = adapter.interpret(raw(measured), { runtime: "grok", prompt: "", cwd: "/x", timeoutMs: 1 });
+    // Grok has no canonicalModel field; synthesising `grok-4.5` from `grok-4.5-build` would be
+    // inference, which SDD 473 forbids.
+    expect(r.native.reportedModels).toBeUndefined();
+  });
+});
