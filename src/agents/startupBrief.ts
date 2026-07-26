@@ -38,7 +38,7 @@ function summaryTask(task: PromptTaskLayer): string {
 
 function inventoryTask(task: PromptTaskLayer): string {
   switch (task.kind) {
-    case "absent": return "absent";
+    case "absent": return "absent — awaiting assignment";
     case "brief": return "unstructured brief";
     case "contract": return `contract (${completionDisplay(task.completion)})`;
   }
@@ -64,7 +64,7 @@ export function renderStartupBriefSummary(manifest: StartupBriefManifest): strin
     summaryTask(prompt.task),
   ].join("; ");
   const objective = prompt.task.kind === "absent"
-    ? "\nTask objective: absent — this launch supplied no task brief."
+    ? "\nTask objective: absent — awaiting assignment."
     : "";
   return assertBounded(`Contains: ${contents}.${objective}`, MAX_STARTUP_BRIEF_SUMMARY_BYTES, "startup brief summary");
 }

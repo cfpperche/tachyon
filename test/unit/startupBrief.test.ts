@@ -26,7 +26,7 @@ describe("startup brief manifest rendering", () => {
 
     expect(renderStartupBriefSummary(value)).toBe(
       "Contains: project guidance (2 sources); soul (absent); role (absent); persistent instructions (absent); Bridge guidance (absent); task contract (absent).\n" +
-      "Task objective: absent — this launch supplied no task brief.",
+      "Task objective: absent — awaiting assignment.",
     );
     expect(renderStartupBriefInventory(value)).toBe(
       "── STARTUP BRIEF CONTENTS ──\n" +
@@ -35,7 +35,7 @@ describe("startup brief manifest rendering", () => {
       "Role: absent\n" +
       "Persistent instructions: absent\n" +
       "Bridge guidance: absent\n" +
-      "Task: absent\n" +
+      "Task: absent — awaiting assignment\n" +
       "── END STARTUP BRIEF CONTENTS ──",
     );
   });

@@ -975,11 +975,11 @@ describe("AgentManager", () => {
       expect(cmd).toContain("Your full startup brief is long");
       expect(cmd).toContain("project guidance (1 source)");
       expect(cmd).toContain("task contract (absent)");
-      expect(cmd).toContain("Task objective: absent");
+      expect(cmd).toContain("Task objective: absent — awaiting assignment");
       expect(cmd).not.toContain("LONG_GUIDANCE_");
       const onDisk = fs.readFileSync(file, "utf8");
       expect(onDisk).toContain("── STARTUP BRIEF CONTENTS ──");
-      expect(onDisk).toContain("Task: absent");
+      expect(onDisk).toContain("Task: absent — awaiting assignment");
       expect(onDisk).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
       expect(onDisk).toContain("LONG_GUIDANCE_");
     } finally {

@@ -33,12 +33,15 @@ const HASH = workspaceHash(WS);
 
 function fakeTmuxExec() {
   const sessions = new Map<string, string>(); // name -> last input
+  const launches = new Map<string, string[]>(); // name -> new-session argv
   const dead = new Map<string, number>(); // name -> exit code
   const panes = new Map<string, string>(); // name -> visible/captured pane text
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
     if (args.includes("new-session")) {
-      sessions.set(args[args.indexOf("-s") + 1], "");
+      const name = args[args.indexOf("-s") + 1];
+      sessions.set(name, "");
+      launches.set(name, [...args]);
       return { stdout: "", stderr: "" };
     }
     switch (args[2]) {
@@ -79,12 +82,12 @@ function fakeTmuxExec() {
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, exec };
+  return { sessions, launches, dead, panes, exec };
 }
 
 describe("Bridge end-to-end over streamable HTTP", () => {
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
-  const { sessions, dead, panes, exec } = fakeTmuxExec();
+  const { sessions, launches, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
   const config = parseConfig("agents:\n  claude:\n    cmd: claude\nsettings:\n  maxAgents: 2\n").config;
   const tmux = new TmuxService(exec);
@@ -1000,6 +1003,20 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(badSkip.content)).toContain("skip_contract_reason");
   });
 
+  it("spawn_agent: a contract-skipped spawn without a task receives waiting guidance, not a task brief", async () => {
+    const reason = "waiting for a human-authored task";
+    const spawned = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "waiting-child", cmd: "claude", parent: "claude", skip_contract_reason: reason },
+    });
+    expect(spawned.isError).toBeFalsy();
+    const launch = launches.get(`tachyon-${HASH}-waiting-child`)?.join(" ");
+    expect(launch).toContain("Task: absent — awaiting assignment.");
+    expect(launch).toContain(`Recorded skip reason: ${reason}`);
+    expect(launch).toContain("Do not scan unrelated tasks, pins, or continuity");
+    await client.callTool({ name: "kill_agent", arguments: { name: "waiting-child" } });
+  });
+
   it("SDD 368 T6 delivery_join is no-fallback, mutually exclusive, and still contract-gated", async () => {
     const join = {
       delivery_id: "d-one", role: "fixer", owns_subset: ["src"], expected_head: "abc", operation_id: "join-1",
@@ -1353,7 +1370,24 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const assigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude" } });
     expect(assigned.isError).toBeFalsy();
-    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(`[tachyon] task ${task.id} assigned to you: Ship the thing`);
+    expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(
+      `[tachyon] task ${task.id} assigned to you: Ship the thing. Open it with get_task("${task.id}") and begin it.`,
+    );
+  });
+
+  it("update_task: queues a post-start assignment until the live assignee is idle", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Start after idle", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    const before = sessions.get(`tachyon-${HASH}-claude`);
+    noticeMode = "queued";
+    try {
+      const assigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude" } });
+      expect(assigned.isError).toBeFalsy();
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+    } finally {
+      noticeMode = "immediate";
+    }
   });
 
   it("update_task: assigning to a non-agent/unknown/not-running name updates the task with no notice and no error (case 2/4)", async () => {
