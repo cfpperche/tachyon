@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude↔Codex canonical audit — `t-53455d`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (runtime-native memory inventory — `t-d4c42e`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -50,6 +50,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 12 | **Native configuration parity** | Private-home isolation preserves or intentionally excludes each measured native behavior family through an explicit source/treatment/refresh policy. A private home alone does not count. |
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 | 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
+| 15 | **Runtime-managed native memory** | Adapter inventories the exact runtime/version's persistent learned-context mechanism and behaviorally verifies disable/enable, injection, mutation, isolation and lifecycle semantics. A written setting without behavioral proof is at most `~`; plugin memory is separate from the built-in runtime mark. |
 
 For the Codex marks in rows 7, 9, and 12, **✓** is scoped to canonical profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
@@ -117,6 +118,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 12 Native config parity | ✓ | ✓ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 | 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
+| 15 Runtime-managed native memory | ~ | ~ | ✗ | ~ | ✗ | **✗** |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -134,6 +136,17 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 subset; Claude exposes six safe settings scalars, local-shadow detection, MCP names and opaque
 section names without executable payloads. Control writes only the measured subset and marks
 affected running agents pending.
+
+**Runtime-managed memory:** the 2026-07-26 inventory
+[`runtime-native-memory-parity-t-d4c42e.md`](../research/runtime-native-memory-parity-t-d4c42e.md)
+finds native mechanisms in Claude, Codex, Grok and Hermes. Claude and Codex are
+`~` because private-home/default-disable projections exist but no behavioral
+disable/enable verifier exists. Grok is `~` because `--no-memory` is measured
+and used by probes but not canonical launches. OpenCode and Pi have no built-in
+mechanism (`✗`); plugins/extensions can still introduce uncontrolled memory.
+Hermes belongs under **Outros** until it has a canonical profile adapter and
+remains `✗` because copied config can reconnect native or external-provider
+memory. Human-approved selected memory is a separate Tachyon lane.
 
 The comparative audit in
 [`claude-codex-canonical-parity-audit-2026-07-26.md`](../reports/claude-codex-canonical-parity-audit-2026-07-26.md)
