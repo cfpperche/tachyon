@@ -400,6 +400,69 @@ describe("loadProfileAwareConfig", () => {
     });
   });
 
+  it("ignores unselected Claude global settings keys instead of blocking activation", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-global-extra-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-claude-home-extra-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    // A real ~/.claude/settings.json carries personal keys the canonical profile never authors.
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      $schema: "https://json.schemastore.org/claude-code-settings.json",
+      _comment: "personal",
+      mcpServers: { local: { command: "x" } },
+      statusLine: { type: "command", command: "personal-status" },
+      tui: { theme: "dark" },
+      skipDangerousModePermissionPrompt: true,
+      switchModelsOnFlag: true,
+      skipAutoPermissionPrompt: true,
+      theme: "dark",
+      alwaysThinkingEnabled: true,
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: {
+        interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+        featureFlags: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "claude",
+      selectors: {},
+      settings: { theme: "dark", alwaysThinkingEnabled: true },
+    });
+  });
+
+  it("still rejects an invalid value on a selected Claude global family", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-global-invalid-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-claude-home-invalid-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      $schema: "https://json.schemastore.org/claude-code-settings.json",
+      permissions: { defaultMode: "bypassPermissions" },
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: {
+        permissions: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("Claude global key 'permissions' has an unsupported value");
+    expect(result.errors.join("\n")).not.toContain("outside the selected family allowlist");
+  });
+
   it("rejects unmeasured Claude selectors and bypass permission defaults", () => {
     const root = temporaryRoot("tachyon-agent-profile-claude-closed-selectors-");
     fs.mkdirSync(path.join(root, ".claude"), { recursive: true });

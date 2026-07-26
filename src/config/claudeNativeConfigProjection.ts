@@ -102,9 +102,16 @@ export function projectClaudeNativeConfig(
       continue;
     }
     const selectedKeys = new Set(selected.flatMap((family) => FAMILY_KEYS[family]));
-    for (const key of Object.keys(parsed)) {
-      if (!selectedKeys.has(key)) {
-        errors.push(`profile/native-config-key: Claude ${source} key '${key}' is outside the selected family allowlist`);
+    // Workspace settings are project-owned, so an unselected key there is ambient tooling the
+    // profile must refuse rather than silently drop. The global file is the person's own Claude
+    // config and legitimately carries unrelated keys ($schema, statusLine, tui, ...); those stay
+    // opaque and unauthored instead of blocking activation. Mirrors the Codex projector, which
+    // enforces this allowlist for 'workspace' only.
+    if (source === "workspace") {
+      for (const key of Object.keys(parsed)) {
+        if (!selectedKeys.has(key)) {
+          errors.push(`profile/native-config-key: Claude ${source} key '${key}' is outside the selected family allowlist`);
+        }
       }
     }
     for (const key of selectedKeys) {
