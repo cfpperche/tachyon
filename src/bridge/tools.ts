@@ -848,7 +848,7 @@ async function notifyTaskAssignee(deps: BridgeDeps, assignee: string, task: { id
     if (deps.manager.kindOf(assignee) !== "agent") return;
     const session = deps.manager.session(assignee);
     if (!(await deps.tmux.hasSession(session))) return;
-    const line = `[tachyon] task ${task.id} assigned to you: ${task.title}`;
+    const line = `[tachyon] task ${task.id} assigned to you: ${task.title}. Open it with get_task("${task.id}") and begin it.`;
     if (deps.deliverNotice) {
       await deps.deliverNotice(assignee, line);
     } else {
@@ -1523,6 +1523,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             "spawn_agent worktree:true is not a tracked-change lifecycle for an ad-hoc AI agent; use gate with a behavior_test and owned paths",
           ));
         }
+        const suppliedTaskBrief = !!normalizeField(instructions);
         let brief = instructions;
         let contract: SpawnContract | undefined;
         let delegationGate: DelegationGate | undefined;
@@ -1535,6 +1536,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
             }
             deps.notify(`agent '${parent ?? "?"}' spawned '${name}' WITHOUT a delegation contract — reason: ${normalizeField(skip_contract_reason)}`, "warn");
+            if (!suppliedTaskBrief) {
+              brief = [
+                "Task: absent — awaiting assignment.",
+                `Recorded skip reason: ${normalizeField(skip_contract_reason)}`,
+                "Wait for a direct task assignment. Do not scan unrelated tasks, pins, or continuity and do not invent work.",
+              ].join("\n");
+            }
             // spec 332 — the skip-reason path bypasses the full contract, but a delegated child with a
             // parent still gets taught to notify_agent(<parent>) on completion (dueto: the guidance is
             // orthogonal to whether the FULL contract was given).
@@ -1599,8 +1607,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const receipt = await deps.manager.spawn(name, {
           cmd,
           cwd,
-          instructions: isAdhocAiAgent ? undefined : brief,
-          taskBrief: isAdhocAiAgent ? brief : undefined,
+          // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
+          // Keep it in the instructions layer so the startup manifest truthfully reports no task.
+          instructions: isAdhocAiAgent
+            ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? brief : undefined)
+            : brief,
+          taskBrief: isAdhocAiAgent
+            ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? undefined : brief)
+            : undefined,
           parent,
           delegator: delegationGate ? parent : undefined,
           worktree: delegationGate ? true : worktree,
