@@ -8,7 +8,7 @@
  * login/update/MCP-startup noise (D5).
  */
 
-import type { ProbeResult } from "../taxonomy.js";
+import type { ProbeModelEvidence, ProbeResult } from "../taxonomy.js";
 
 /** A runtime-neutral probe request — what to ask, where, under what bounds. */
 export interface ProbeSpec {
@@ -69,11 +69,43 @@ export interface HeadlessCaptureAdapter {
    * here, and turning enforcement on later is a declaration instead of a change in the service.
    */
   readonly reportsEffectiveModel?: boolean;
-  /** build the non-interactive invocation; `scratchDir` is where artifact files may be placed. */
-  buildInvocation(spec: ProbeSpec, scratchDir: string): Invocation;
+  /**
+   * SDD 476 — WHAT KIND of evidence this adapter's model reporting is, declared next to the claim
+   * that it reports at all. Provider usage accounting and a runtime's own session record are both
+   * reported (never inferred) and are not equally strong, and the difference belongs in the record
+   * rather than in a reader's assumption.
+   */
+  readonly modelEvidence?: ProbeModelEvidence;
+  /** build the non-interactive invocation; `scratchDir` is where artifact files may be placed.
+   *  May be async — an adapter that needs private state on disk (SDD 476) prepares it here. */
+  buildInvocation(spec: ProbeSpec, scratchDir: string): Invocation | Promise<Invocation>;
   /** interpret a finished process into the neutral result — content classification only; the runner
-   *  has already handled timeout/signal run-level failures before delegating here. */
-  interpret(raw: RawOutcome, spec: ProbeSpec): ProbeResult;
+   *  has already handled timeout/signal run-level failures before delegating here. `inv` is the
+   *  invocation that actually ran, so an adapter can find the private state it asked for; the runner
+   *  always supplies it, and an adapter that needs it must FAIL CLOSED when it is absent rather than
+   *  substitute a weaker answer (SDD 476). */
+  interpret(raw: RawOutcome, spec: ProbeSpec, inv?: Invocation): ProbeResult | Promise<ProbeResult>;
+  /**
+   * SDD 476 — deterministic teardown of whatever {@link buildInvocation} put on disk. The runner
+   * awaits this once the process is gone, on EVERY path: clean exit, timeout, cancellation, spawn
+   * failure, and a throwing `interpret`. Best-effort by contract — a failure here never changes the
+   * probe's outcome.
+   */
+  cleanup?(inv: Invocation): Promise<void>;
   /** capability + compatibility probe (D5). */
   detectCapability(): Promise<CapabilityReport>;
+}
+
+/**
+ * SDD 476 — an adapter whose invocation and interpretation are pure computation: nothing to prepare
+ * on disk before the spawn, nothing to tear down after it. Claude and Grok are these; Codex is not,
+ * because proving its effective model requires a private `CODEX_HOME` with a real lifecycle.
+ *
+ * Declaring it in the type rather than in a comment means "does this adapter touch disk?" stays a
+ * checked fact: a stateless adapter cannot quietly grow a `cleanup` that nothing awaits.
+ */
+export interface StatelessCaptureAdapter extends HeadlessCaptureAdapter {
+  buildInvocation(spec: ProbeSpec, scratchDir: string): Invocation;
+  interpret(raw: RawOutcome, spec: ProbeSpec, inv?: Invocation): ProbeResult;
+  cleanup?: undefined;
 }

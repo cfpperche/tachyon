@@ -925,6 +925,7 @@
     "dogfood:codex-danger-optin": "vite-node --script scripts/dogfood/codex-danger-optin.ts",
     "dogfood:probe-model-proof": "vite-node --script scripts/dogfood/probe-model-proof.ts",
     "dogfood:probe-provenance-parity": "vite-node --script scripts/dogfood/probe-provenance-parity.ts",
+    "dogfood:probe-codex-model-proof": "vite-node --script scripts/dogfood/probe-codex-model-proof.ts",
     "dogfood:probes-model-column": "vite-node --script scripts/dogfood/probes-model-column.ts",
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",

@@ -194,6 +194,9 @@ export class ProbeService {
       requested: meta.requestedModel,
       effective: meta.reportedNativeModels,
       effectiveCanonical: meta.reportedModels,
+      // Only what the run itself recorded — an old run that predates SDD 476 has no evidence kind,
+      // and the current adapter's capability says nothing about the run that was actually stored.
+      evidence: meta.modelEvidence,
     });
     return { ...envelope, result: { ...envelope.result, modelProof: proof } };
   }
@@ -272,6 +275,9 @@ export class ProbeService {
         requested: req.model,
         effective: reportedNativeModels,
         effectiveCanonical: reportedModels,
+        // SDD 476 — the adapter declares what KIND of evidence it produces; the service only carries
+        // it, so no runtime can be characterised as stronger than the adapter itself claims.
+        evidence: adapter.modelEvidence,
       });
       result = enforceModelProof(result, proof, adapter.reportsEffectiveModel === true);
       envelope = envelopeFor(runId, result);
@@ -280,6 +286,7 @@ export class ProbeService {
         ...(reportedModels ? { reportedModels } : {}),
         ...(reportedNativeModels ? { reportedNativeModels } : {}),
         modelProof: proof.verdict,
+        ...(proof.evidence ? { modelEvidence: proof.evidence } : {}),
         finishedAt: new Date(this.now()).toISOString(),
       });
     } catch (err) {

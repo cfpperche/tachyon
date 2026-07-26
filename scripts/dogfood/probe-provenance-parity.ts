@@ -6,9 +6,12 @@
  * persisted metadata → read surface.
  *
  * Payloads are the ones measured on this machine:
- *   grok 0.2.112     `{"modelUsage":{"grok-4.5-build":{…}}}`
+ *   grok 0.2.112      `{"modelUsage":{"grok-4.5-build":{…}}}`
  *   codex-cli 0.145.0 `exec --json` → thread.started / turn.started / item.completed /
- *                     turn.completed, with NO model identity anywhere
+ *                     turn.completed, with NO model identity anywhere — so SDD 476 correlates the
+ *                     `thread_id` to the session rollout Codex writes in the probe's PRIVATE home,
+ *                     whose `turn_context.payload.model` is the identity. The rollout below is the
+ *                     measured shape, written to a real private home the real adapter then reads.
  *
  * Run: npm run dogfood:probe-provenance-parity
  */
@@ -18,8 +21,9 @@ import path from "node:path";
 import { ProbeService } from "../../src/probe/ProbeService.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
 import { codexAdapter } from "../../src/probe/adapters/codex.js";
+import { PRIVATE_HOME_DIRNAME } from "../../src/probe/adapters/codexSessionEvidence.js";
 import { grokAdapter } from "../../src/probe/adapters/grok.js";
-import type { HeadlessCaptureAdapter, RawOutcome } from "../../src/probe/adapters/types.js";
+import type { HeadlessCaptureAdapter, Invocation, RawOutcome } from "../../src/probe/adapters/types.js";
 
 const cleanup: string[] = [];
 function temporaryDir(label: string): string {
@@ -33,14 +37,23 @@ function raw(stdout: string, resultArtifactText?: string): RawOutcome {
 }
 
 /** Run a probe whose runtime output is the measured payload, through the real adapter. */
-async function runProbe(adapter: HeadlessCaptureAdapter, outcome: RawOutcome, model?: string) {
+async function runProbe(adapter: HeadlessCaptureAdapter, outcome: RawOutcome, model?: string, onInvocation?: (inv: Invocation) => void) {
   const root = temporaryDir("tachyon-prov-");
   const store = new ProbeStore(root);
   const service = new ProbeService({
     adapters: new Map([[adapter.runtime, adapter]]),
     store,
-    // the adapter's OWN interpret runs here — only the process is stubbed out
-    runFn: async (a, spec) => a.interpret(outcome, spec),
+    // the adapter's OWN buildInvocation + interpret run here — only the process is stubbed out, so
+    // Codex still prepares its private home and still reads the rollout out of it (SDD 476).
+    runFn: async (a, spec, opts) => {
+      const inv = await a.buildInvocation(spec, opts.scratchDir);
+      onInvocation?.(inv);
+      try {
+        return await a.interpret(outcome, spec, inv);
+      } finally {
+        if (a.cleanup) await a.cleanup(inv).catch(() => undefined);
+      }
+    },
   });
   const { runId, done } = await service.launch({
     runtime: adapter.runtime,
@@ -63,13 +76,33 @@ function grokPayload(modelUsage?: Record<string, unknown>): string {
   });
 }
 
+const CODEX_THREAD = "019fa001-c77c-7593-ac93-1931cc036f26";
+
 /** Exactly what `codex exec --json` produced, plus the artifact the adapter actually reads. */
 const CODEX_STDOUT = [
-  '{"type":"thread.started","thread_id":"019fa001-c77c-7593-ac93-1931cc036f26"}',
+  `{"type":"thread.started","thread_id":"${CODEX_THREAD}"}`,
   '{"type":"turn.started"}',
   '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}',
   '{"type":"turn.completed","usage":{"input_tokens":14727,"output_tokens":5}}',
 ].join("\n");
+
+/**
+ * The measured rollout shape, written where codex writes it inside the probe's own private home:
+ * `sessions/<y>/<m>/<d>/rollout-<ts>-<session_id>.jsonl`. The model lives in `turn_context`, and
+ * `session_meta` repeats the session id so the file has to identify itself as this run.
+ */
+function writeCodexRollout(inv: Invocation, sessionId: string, model?: string): void {
+  const home = inv.env?.CODEX_HOME;
+  if (!home || path.basename(home) !== PRIVATE_HOME_DIRNAME) throw new Error("codex probe did not prepare a private home");
+  const dir = path.join(home, "sessions", "2026", "07", "26");
+  fs.mkdirSync(dir, { recursive: true });
+  const records = [
+    JSON.stringify({ type: "session_meta", payload: { session_id: sessionId, id: sessionId, cli_version: "0.145.0", originator: "codex_exec" } }),
+    ...(model ? [JSON.stringify({ type: "turn_context", payload: { turn_id: "t0", model, effort: "medium" } })] : []),
+    JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { model_context_window: 258400 } } }),
+  ];
+  fs.writeFileSync(path.join(dir, `rollout-2026-07-26T19-15-02-${sessionId}.jsonl`), records.join("\n"));
+}
 
 function report(label: string, ok: boolean, detail: unknown): boolean {
   console.log(`${ok ? "PASS" : "FAIL"} — ${label}`);
@@ -142,29 +175,82 @@ console.log("\n== 4: grok with no explicit model ==");
   ));
 }
 
-// ── 5: Codex stays honestly exempt on its MEASURED output.
-console.log("\n== 5: codex exec --json output carries no model identity ==");
+// ── 5: Codex proves its model from its own session record — the exemption SDD 474 recorded, closed.
+console.log("\n== 5: codex correlates its rollout by thread_id and proves the requested model ==");
 {
-  const { envelope, meta, row } = await runProbe(codexAdapter, raw(CODEX_STDOUT, "ok"), "gpt-5.6");
+  const { envelope, meta, row } = await runProbe(
+    codexAdapter, raw(CODEX_STDOUT, "ok"), "gpt-5.6-luna",
+    (inv) => writeCodexRollout(inv, CODEX_THREAD, "gpt-5.6-luna"),
+  );
   checks.push(report(
-    "result preserved, recorded unproven, and no effective model invented",
+    "completed, verdict proven, identifier persisted, evidence named as the session record",
     envelope.status === "completed"
-    && envelope.result?.modelProof?.verdict === "unproven"
-    && meta.modelProof === "unproven"
-    && meta.reportedNativeModels === undefined
-    && envelope.result.modelProof?.effective === undefined
-    && row?.modelProof === "unproven",
-    { status: envelope.status, proof: envelope.result?.modelProof, metaNative: meta.reportedNativeModels },
+    && envelope.result?.modelProof?.verdict === "proven"
+    && JSON.stringify(meta.reportedNativeModels) === JSON.stringify(["gpt-5.6-luna"])
+    && envelope.result.modelProof.evidence === "session-record"
+    && meta.modelEvidence === "session-record"
+    && row?.modelProof === "proven" && row?.effectiveModel === "gpt-5.6-luna",
+    { status: envelope.status, proof: envelope.result?.modelProof, row: { proof: row?.modelProof, effective: row?.effectiveModel } },
   ));
 }
 
-// ── 6: the fleet declaration matches reality.
-console.log("\n== 6: capability declarations ==");
+// ── 6: a codex fallback is caught, exactly like Claude's and Grok's.
+console.log("\n== 6: codex requested gpt-5.6-luna, the rollout records gpt-5.6-sol ==");
+{
+  const { envelope, meta } = await runProbe(
+    codexAdapter, raw(CODEX_STDOUT, "ok"), "gpt-5.6-luna",
+    (inv) => writeCodexRollout(inv, CODEX_THREAD, "gpt-5.6-sol"),
+  );
+  checks.push(report(
+    "failed as model_mismatch naming both models",
+    envelope.status === "failed"
+    && envelope.result?.reason === "model_mismatch"
+    && envelope.result.lastMessage.includes("gpt-5.6-luna")
+    && envelope.result.lastMessage.includes("gpt-5.6-sol")
+    && meta.modelProof === "mismatch",
+    { reason: envelope.result?.reason, message: envelope.result?.lastMessage },
+  ));
+}
+
+// ── 7: no rollout to correlate → unproven, and nothing is borrowed from a neighbour.
+console.log("\n== 7: codex wrote no rollout for this run's thread id ==");
+{
+  const { envelope, meta } = await runProbe(codexAdapter, raw(CODEX_STDOUT, "ok"), "gpt-5.6-luna");
+  checks.push(report(
+    "failed as model_unproven; the answer survives but proves nothing",
+    envelope.status === "failed"
+    && envelope.result?.reason === "model_unproven"
+    && meta.modelProof === "unproven"
+    && meta.reportedNativeModels === undefined
+    && envelope.result.modelProof?.effective === undefined
+    && String(envelope.result.native.modelEvidenceUnavailable).includes("no session rollout"),
+    { reason: envelope.result?.reason, unavailable: envelope.result?.native.modelEvidenceUnavailable },
+  ));
+}
+
+// ── 8: a rollout that belongs to a DIFFERENT session is refused, however convenient it is.
+console.log("\n== 8: the only rollout present names another session ==");
+{
+  const { envelope, meta } = await runProbe(
+    codexAdapter, raw(CODEX_STDOUT, "ok"), "gpt-5.6-luna",
+    (inv) => writeCodexRollout(inv, "019fa080-84b3-75d0-ae7c-cb911d01f83d", "gpt-5.6-luna"),
+  );
+  checks.push(report(
+    "unproven — correlation is by thread id, never 'the rollout that happens to be there'",
+    envelope.result?.modelProof?.verdict === "unproven" && meta.reportedNativeModels === undefined,
+    { verdict: envelope.result?.modelProof?.verdict, unavailable: envelope.result?.native.modelEvidenceUnavailable },
+  ));
+}
+
+// ── 9: the fleet declaration matches reality.
+console.log("\n== 9: capability declarations ==");
 {
   checks.push(report(
-    "grok declares it can prove; codex does not",
-    grokAdapter.reportsEffectiveModel === true && codexAdapter.reportsEffectiveModel !== true,
-    { grok: grokAdapter.reportsEffectiveModel, codex: codexAdapter.reportsEffectiveModel ?? false },
+    "every adapter proves its model, and each names the KIND of evidence it can support",
+    grokAdapter.reportsEffectiveModel === true && codexAdapter.reportsEffectiveModel === true
+    && grokAdapter.modelEvidence === "provider-usage" && codexAdapter.modelEvidence === "session-record",
+    { grok: { proves: grokAdapter.reportsEffectiveModel, evidence: grokAdapter.modelEvidence },
+      codex: { proves: codexAdapter.reportsEffectiveModel, evidence: codexAdapter.modelEvidence } },
   ));
 }
 

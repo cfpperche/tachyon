@@ -61,6 +61,35 @@ describe("probe model cell", () => {
     expect(cell.modelTitle).toContain("still running");
   });
 
+  it("names the kind of evidence behind a verdict, so 'confirmed' is not over-read (SDD 476)", () => {
+    const provider = modelCell({
+      status: "completed", requestedModel: "claude-opus-5",
+      effectiveModel: "claude-opus-5-20260101", modelProof: "proven", modelEvidence: "provider-usage",
+    });
+    expect(provider.modelTitle).toBe("requested and confirmed claude-opus-5-20260101 (provider usage)");
+
+    const session = modelCell({
+      status: "completed", requestedModel: "gpt-5.6-luna",
+      effectiveModel: "gpt-5.6-luna", modelProof: "proven", modelEvidence: "session-record",
+    });
+    // A Codex verdict must not read as provider attestation — it is the runtime's own record.
+    expect(session.modelTitle).toBe("requested and confirmed gpt-5.6-luna (runtime session record)");
+
+    const mismatch = modelCell({
+      status: "failed", requestedModel: "gpt-5.6-luna",
+      effectiveModel: "gpt-5.6-sol", modelProof: "mismatch", modelEvidence: "session-record",
+    });
+    expect(mismatch.modelTitle).toContain("(runtime session record)");
+  });
+
+  it("says nothing about evidence when the run recorded none", () => {
+    const cell = modelCell({
+      status: "completed", requestedModel: "claude-opus-5",
+      effectiveModel: "claude-opus-5-20260101", modelProof: "proven",
+    });
+    expect(cell.modelTitle).toBe("requested and confirmed claude-opus-5-20260101");
+  });
+
   it("does not claim proven when the verdict says so but no identifier was stored", () => {
     // defensive: a proven verdict with no effective value cannot show one.
     const cell = modelCell({ status: "completed", requestedModel: "x", modelProof: "proven" });

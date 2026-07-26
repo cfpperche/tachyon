@@ -138,3 +138,68 @@ describe("runProbe — run-level failures owned by the runner (not the adapter)"
     expect(r.exitCode).toBeNull();
   });
 });
+
+/**
+ * SDD 476 — an adapter may put private state on disk for the run (Codex's own CODEX_HOME). The
+ * runner owns tearing it down, and "owns" has to mean every exit path: a probe that leaks a private
+ * home whenever it times out is a probe that accumulates the state it was built to isolate.
+ */
+describe("runProbe — adapter teardown runs on every exit path", () => {
+  function trackingAdapter(over: Partial<HeadlessCaptureAdapter> = {}): { adapter: HeadlessCaptureAdapter; torn: string[] } {
+    const torn: string[] = [];
+    return {
+      torn,
+      adapter: {
+        ...adapter,
+        buildInvocation: async (s, dir) => ({ cmd: "fake", args: [], cwd: s.cwd, env: { CODEX_HOME: `${dir}/codex-home` }, resultArtifact: `${dir}/result.txt` }),
+        cleanup: async (i) => void torn.push(i.env!.CODEX_HOME!),
+        ...over,
+      },
+    };
+  }
+
+  it("after a clean run", async () => {
+    const { adapter: a, torn } = trackingAdapter();
+    await runProbe(a, spec, { scratchDir: "/scratch", spawn: fakeSpawn({ code: 0, signal: null, stdout: "", stderr: "" }), readFile: readReturning("answer") });
+    expect(torn).toEqual(["/scratch/codex-home"]);
+  });
+
+  it("after a timeout", async () => {
+    const { adapter: a, torn } = trackingAdapter();
+    const r = await runProbe(a, { ...spec, timeoutMs: 5 }, { scratchDir: "/scratch", spawn: fakeSpawn(), readFile: readReturning(undefined), killGraceMs: 5 });
+    expect(r.reason).toBe("timeout"); // the reason is still the timeout, not a model failure
+    expect(torn).toEqual(["/scratch/codex-home"]);
+  });
+
+  it("after a cancellation", async () => {
+    const { adapter: a, torn } = trackingAdapter();
+    const controller = new AbortController();
+    const p = runProbe(a, { ...spec, timeoutMs: 5000 }, { scratchDir: "/scratch", spawn: fakeSpawn(), readFile: readReturning(undefined), killGraceMs: 5, signal: controller.signal });
+    controller.abort();
+    expect((await p).reason).toBe("killed_signal");
+    expect(torn).toEqual(["/scratch/codex-home"]);
+  });
+
+  it("after interpret itself throws — and the throw still surfaces", async () => {
+    const { adapter: a, torn } = trackingAdapter({ interpret: () => { throw new Error("interpretation blew up"); } });
+    await expect(runProbe(a, spec, { scratchDir: "/scratch", spawn: fakeSpawn({ code: 0, signal: null, stdout: "", stderr: "" }), readFile: readReturning("answer") }))
+      .rejects.toThrow("interpretation blew up");
+    expect(torn).toEqual(["/scratch/codex-home"]);
+  });
+
+  it("a failing teardown never changes the probe's outcome", async () => {
+    const { adapter: a } = trackingAdapter({ cleanup: async () => { throw new Error("rm failed"); } });
+    const r = await runProbe(a, spec, { scratchDir: "/scratch", spawn: fakeSpawn({ code: 0, signal: null, stdout: "", stderr: "" }), readFile: readReturning("answer") });
+    expect(r.reason).toBe("ok");
+    expect(r.lastMessage).toBe("answer");
+  });
+
+  it("a cancel before launch spawns nothing, so there is nothing to tear down", async () => {
+    const { adapter: a, torn } = trackingAdapter();
+    const controller = new AbortController();
+    controller.abort();
+    const r = await runProbe(a, spec, { scratchDir: "/scratch", spawn: () => { throw new Error("must not spawn"); }, signal: controller.signal });
+    expect(r.reason).toBe("killed_signal");
+    expect(torn).toEqual([]);
+  });
+});

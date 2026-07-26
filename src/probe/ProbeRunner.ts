@@ -141,61 +141,100 @@ export async function runProbe(
   const readFile = opts.readFile ?? boundedReadFile;
   const killGraceMs = opts.killGraceMs ?? 2000;
 
-  // Cancelled before we launch — never spawn the CLI at all (codex review #4).
-  if (opts.signal?.aborted) {
-    return { reason: "killed_signal", lastMessage: "cancelled before launch", exitCode: null, signal: "SIGTERM", timedOut: false, native: { runtime: spec.runtime } };
-  }
+  const cancelledResult = (message: string): ProbeResult => ({
+    reason: "killed_signal", lastMessage: message, exitCode: null, signal: "SIGTERM", timedOut: false, native: { runtime: spec.runtime },
+  });
 
-  const inv = adapter.buildInvocation(spec, opts.scratchDir);
-  const child = spawn(inv);
+  // Cancelled before we launch — never spawn the CLI at all (codex review #4).
+  if (opts.signal?.aborted) return cancelledResult("cancelled before launch");
 
   let timedOut = false;
   let cancelled = false;
   let terminating = false;
   let escalation: NodeJS.Timeout | undefined;
+  let child: ProbeChild | undefined;
 
   // Idempotent termination — a timeout+abort race must not double-signal or leak a second escalation
-  // timer (codex review #5/#6).
+  // timer (codex review #5/#6). Before the spawn there is nothing to signal; `cancelled` is what the
+  // launch path below reads instead.
   const terminate = () => {
-    if (terminating) return;
+    if (terminating || !child) return;
     terminating = true;
     child.kill("SIGTERM");
-    escalation = setTimeout(() => child.kill("SIGKILL"), killGraceMs);
+    escalation = setTimeout(() => child!.kill("SIGKILL"), killGraceMs);
   };
+
+  const onAbort = () => {
+    cancelled = true;
+    terminate();
+  };
+  // SDD 476 — registered BEFORE the (possibly async) buildInvocation. Preparing an adapter's private
+  // state is an await, and an abort landing inside that window used to be dropped: the listener did
+  // not exist yet, so the probe ran to completion or to its timeout as if nobody had cancelled it.
+  opts.signal?.addEventListener("abort", onAbort, { once: true });
+
+  // SDD 476 — may be async: an adapter that isolates runtime state (Codex's private CODEX_HOME)
+  // creates it here. A throw propagates before anything spawned, so there is nothing to tear down —
+  // but a SUCCESSFUL preparation followed by a cancellation must still be torn down, hence the
+  // `cleanup` below rather than a bare return.
+  let inv: Invocation;
+  try {
+    inv = await adapter.buildInvocation(spec, opts.scratchDir);
+  } catch (err) {
+    opts.signal?.removeEventListener("abort", onAbort);
+    throw err;
+  }
+  if (cancelled) {
+    opts.signal?.removeEventListener("abort", onAbort);
+    if (adapter.cleanup) await adapter.cleanup(inv).catch(() => undefined);
+    return cancelledResult("cancelled before launch");
+  }
+  let started: ProbeChild;
+  try {
+    started = spawn(inv);
+    child = started;
+  } catch (err) {
+    // A spawn that throws outright still leaves the adapter's prepared state behind, so tear it down
+    // here too — the `finally` below is only reached once there is a child to wait on.
+    opts.signal?.removeEventListener("abort", onAbort);
+    if (adapter.cleanup) await adapter.cleanup(inv).catch(() => undefined);
+    throw err;
+  }
 
   const timer = setTimeout(() => {
     timedOut = true;
     terminate();
   }, spec.timeoutMs);
 
-  const onAbort = () => {
-    cancelled = true;
-    terminate();
-  };
-  opts.signal?.addEventListener("abort", onAbort, { once: true });
-
   let exit: ProbeExit;
   try {
-    exit = await child.exit;
+    exit = await started.exit;
   } finally {
     clearTimeout(timer);
     if (escalation) clearTimeout(escalation);
     opts.signal?.removeEventListener("abort", onAbort);
   }
 
-  const raw: RawOutcome = {
-    stdout: exit.stdout,
-    stderr: exit.stderr,
-    exitCode: exit.code,
-    signal: exit.signal,
-    timedOut,
-    resultArtifactText: await readArtifact(inv.resultArtifact, readFile),
-    eventArtifactText: await readArtifact(inv.eventArtifact, readFile),
-  };
+  // SDD 476 — from here on the process is gone and the adapter may have private state on disk, so
+  // every exit path runs through one `finally`: timeout, cancel, clean exit, or a throwing
+  // `interpret`. Teardown is best-effort and never rewrites the outcome.
+  try {
+    const raw: RawOutcome = {
+      stdout: exit.stdout,
+      stderr: exit.stderr,
+      exitCode: exit.code,
+      signal: exit.signal,
+      timedOut,
+      resultArtifactText: await readArtifact(inv.resultArtifact, readFile),
+      eventArtifactText: await readArtifact(inv.eventArtifact, readFile),
+    };
 
-  if (timedOut) return runLevelResult("timeout", raw, spec, {});
-  if (cancelled || (raw.exitCode === null && raw.signal)) {
-    return runLevelResult("killed_signal", raw, spec, { signal: raw.signal ?? "SIGTERM" });
+    if (timedOut) return runLevelResult("timeout", raw, spec, {});
+    if (cancelled || (raw.exitCode === null && raw.signal)) {
+      return runLevelResult("killed_signal", raw, spec, { signal: raw.signal ?? "SIGTERM" });
+    }
+    return await adapter.interpret(raw, spec, inv);
+  } finally {
+    if (adapter.cleanup) await adapter.cleanup(inv).catch(() => undefined);
   }
-  return adapter.interpret(raw, spec);
 }

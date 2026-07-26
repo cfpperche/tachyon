@@ -13,7 +13,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { ProbeEnvelope, ProbeStatus, TerminationReason } from "./taxonomy.js";
+import type { ProbeEnvelope, ProbeModelEvidence, ProbeStatus, TerminationReason } from "./taxonomy.js";
 
 /** Recorded with every run (D5 versioning surface) so a CLI/adapter upgrade is visible after the fact. */
 export interface ProbeRunMeta {
@@ -29,6 +29,8 @@ export interface ProbeRunMeta {
   reportedNativeModels?: string[];
   /** SDD 473 — whether the effective model could be shown to be the requested one. */
   modelProof?: "not-requested" | "proven" | "mismatch" | "unproven";
+  /** SDD 476 — what kind of evidence backed that verdict, recorded per RUN (not per adapter today). */
+  modelEvidence?: ProbeModelEvidence;
   archetype?: string;
   /** the agent that launched this probe — provenance/audit/ownership (codex review #49). */
   caller?: string;
@@ -57,6 +59,11 @@ export interface ProbeRunRecord {
    * run could not prove what it ran on.
    */
   effectiveModel?: string;
+  /**
+   * SDD 476 — where that identifier came from: the provider's usage accounting, or the runtime's own
+   * session record. Absent when the run reported nothing, so there is no source to name.
+   */
+  modelEvidence?: ProbeModelEvidence;
 }
 
 /** The effective identifier a stored run can support, or undefined when it can support none. */
@@ -170,6 +177,8 @@ export class ProbeStore {
         // Provider-native identifiers first (SDD 474: claude-haiku-4-5-20251001, grok-4.5-build);
         // the canonical family is the fallback for Claude runs stored before native keys were kept.
         ...(effectiveModelOf(meta) ? { effectiveModel: effectiveModelOf(meta) } : {}),
+        // SDD 476 — only meaningful next to an identifier; never asserted for a run that reported none.
+        ...(effectiveModelOf(meta) && meta.modelEvidence ? { modelEvidence: meta.modelEvidence } : {}),
         // SDD 473 — a run stored before the verdict existed has none; the view reports that as
         // `unproven` rather than leaving it blank, so an old row never looks proven.
         modelProof: meta.modelProof ?? (meta.requestedModel ? "unproven" : "not-requested"),

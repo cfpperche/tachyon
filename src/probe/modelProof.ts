@@ -1,4 +1,4 @@
-import type { ProbeModelProof, ProbeResult } from "./taxonomy.js";
+import type { ProbeModelEvidence, ProbeModelProof, ProbeResult } from "./taxonomy.js";
 
 /**
  * SDD 473 — decide whether the model that ran can be shown to be the model that was asked for.
@@ -37,6 +37,8 @@ export interface ModelProofInput {
   effective?: readonly string[];
   /** canonical families the runtime reported (modelUsage[].canonicalModel). */
   effectiveCanonical?: readonly string[];
+  /** SDD 476 — the kind of evidence the reporting adapter declares it produces. */
+  evidence?: ProbeModelEvidence;
 }
 
 /** Build the verdict. Never throws — an unusable input is `unproven`, never silently `proven`. */
@@ -46,10 +48,17 @@ export function resolveModelProof(input: ModelProofInput): ProbeModelProof {
   const effectiveCanonical = [
     ...new Set((input.effectiveCanonical ?? []).filter((entry) => entry.trim().length > 0)),
   ];
-  const reported = { ...(effective.length > 0 ? { effective } : {}), ...(effectiveCanonical.length > 0 ? { effectiveCanonical } : {}) };
+  const anyReported = effective.length > 0 || effectiveCanonical.length > 0;
+  const reported = {
+    ...(effective.length > 0 ? { effective } : {}),
+    ...(effectiveCanonical.length > 0 ? { effectiveCanonical } : {}),
+    // SDD 476 — the evidence kind describes reported identifiers; with none reported there is
+    // nothing to characterise, and stamping a source on an empty set would dress up an absence.
+    ...(anyReported && input.evidence ? { evidence: input.evidence } : {}),
+  };
 
   if (!requested) return { verdict: "not-requested", ...reported };
-  if (effective.length === 0 && effectiveCanonical.length === 0) {
+  if (!anyReported) {
     return { verdict: "unproven", requested };
   }
   // Every reported model must satisfy the request. A run that used the requested model AND another

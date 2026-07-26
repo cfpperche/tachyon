@@ -13,7 +13,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProbeResult, TerminationReason } from "../taxonomy.js";
-import type { CapabilityReport, HeadlessCaptureAdapter, Invocation, ProbeSpec, RawOutcome } from "./types.js";
+import type { CapabilityReport, Invocation, ProbeSpec, RawOutcome, StatelessCaptureAdapter } from "./types.js";
 
 const execFileP = promisify(execFile);
 const ADAPTER_VERSION = "1";
@@ -142,7 +142,7 @@ export interface ClaudeAdapterDeps {
   versionProbe?: () => Promise<string | null>;
 }
 
-export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptureAdapter {
+export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): StatelessCaptureAdapter {
   const versionProbe =
     deps.versionProbe ??
     (async () => {
@@ -159,6 +159,8 @@ export function createClaudeAdapter(deps: ClaudeAdapterDeps = {}): HeadlessCaptu
     adapterVersion: ADAPTER_VERSION,
     // Claude reports `modelUsage`, so a requested model is provable here (SDD 473).
     reportsEffectiveModel: true,
+    // SDD 476 — that reporting is the provider's own usage accounting, the strongest kind available.
+    modelEvidence: "provider-usage",
 
     buildInvocation(spec: ProbeSpec): Invocation {
       const args = ["-p", spec.prompt, "--output-format", "json", "--safe-mode", "--no-session-persistence", "--tools", "", ...sandboxFlag(spec)];

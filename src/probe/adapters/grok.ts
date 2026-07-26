@@ -17,7 +17,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProbeResult, TerminationReason } from "../taxonomy.js";
-import type { CapabilityReport, HeadlessCaptureAdapter, Invocation, ProbeSpec, RawOutcome } from "./types.js";
+import type { CapabilityReport, Invocation, ProbeSpec, RawOutcome, StatelessCaptureAdapter } from "./types.js";
 
 const execFileP = promisify(execFile);
 const ADAPTER_VERSION = "1";
@@ -162,7 +162,7 @@ export interface GrokAdapterDeps {
   versionProbe?: () => Promise<string | null>;
 }
 
-export function createGrokAdapter(deps: GrokAdapterDeps = {}): HeadlessCaptureAdapter {
+export function createGrokAdapter(deps: GrokAdapterDeps = {}): StatelessCaptureAdapter {
   const versionProbe =
     deps.versionProbe ??
     (async () => {
@@ -179,6 +179,8 @@ export function createGrokAdapter(deps: GrokAdapterDeps = {}): HeadlessCaptureAd
     adapterVersion: ADAPTER_VERSION,
     // Grok reports `modelUsage` in its result JSON, so a requested model is provable (SDD 474).
     reportsEffectiveModel: true,
+    // SDD 476 — provider usage accounting, same class of evidence as Claude's.
+    modelEvidence: "provider-usage",
 
     buildInvocation(spec: ProbeSpec): Invocation {
       // Headless single-turn: no tools, no memory, no subagents (bounded probe surface).

@@ -167,7 +167,9 @@ console.log("\n== 4: no explicit model requested ==");
 }
 
 // ── 5: the documented temporary exemption — a runtime that cannot report.
-console.log("\n== 5: explicit model on a runtime that cannot report (Codex/Grok today) ==");
+// The whole fleet can prove its model since SDD 476, so this scenario now guards the CONTRACT rather
+// than a named runtime: whatever the next adapter is, an honest "cannot report" must stay readable.
+console.log("\n== 5: explicit model on a runtime that cannot report ==");
 {
   const { envelope, meta } = await runProbe({
     runtime: "codex",

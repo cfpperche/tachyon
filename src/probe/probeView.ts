@@ -46,9 +46,17 @@ export function modelCell(row: {
   requestedModel?: string;
   effectiveModel?: string;
   modelProof?: string;
+  modelEvidence?: string;
 }): { model: string; modelState: ProbeViewRow["modelState"]; modelTitle: string } {
   const effective = row.effectiveModel?.trim();
   const requested = row.requestedModel?.trim();
+  // SDD 476 — name the evidence in the tooltip. Provider usage accounting and a runtime's own session
+  // record are both reported rather than inferred, and are not equally strong; a reader who is told
+  // only "confirmed" will assume the stronger one.
+  const source =
+    row.modelEvidence === "provider-usage" ? " (provider usage)"
+    : row.modelEvidence === "session-record" ? " (runtime session record)"
+    : "";
   // A run still in flight has no verdict yet; asserting one would read as a finished judgement.
   if (row.status === "running") {
     return { model: "—", modelState: "none", modelTitle: requested ? `requested ${requested}; still running` : "still running" };
@@ -57,11 +65,13 @@ export function modelCell(row: {
     return {
       model: effective,
       modelState: "mismatch",
-      modelTitle: requested ? `requested ${requested} — the runtime reported ${effective}` : `unexpected model ${effective}`,
+      modelTitle: requested
+        ? `requested ${requested} — the runtime reported ${effective}${source}`
+        : `unexpected model ${effective}${source}`,
     };
   }
   if (row.modelProof === "proven" && effective) {
-    return { model: effective, modelState: "proven", modelTitle: `requested and confirmed ${effective}` };
+    return { model: effective, modelState: "proven", modelTitle: `requested and confirmed ${effective}${source}` };
   }
   if (row.modelProof === "unproven") {
     return {
@@ -75,7 +85,7 @@ export function modelCell(row: {
   }
   // not-requested (or an older row with no verdict): still show what the runtime reported, if any —
   // nobody asked for a model, but the runtime told us what it used and that is a real fact.
-  if (effective) return { model: effective, modelState: "reported", modelTitle: `reported ${effective}; no model was requested` };
+  if (effective) return { model: effective, modelState: "reported", modelTitle: `reported ${effective}${source}; no model was requested` };
   return { model: "—", modelState: "none", modelTitle: "no model requested and none reported" };
 }
 

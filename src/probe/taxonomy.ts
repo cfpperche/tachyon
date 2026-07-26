@@ -79,6 +79,18 @@ export interface NativeOutcome {
  */
 export type ProbeModelProofVerdict = "not-requested" | "proven" | "mismatch" | "unproven";
 
+/**
+ * SDD 476 — WHERE the evidence behind a verdict came from. Not all proof is equally strong, and a
+ * reader who cannot tell the difference will over-read the weaker kind.
+ *
+ * `provider-usage`  the provider's own usage accounting, echoed back by the runtime (Claude/Grok
+ *                   `modelUsage`) — the model the provider says it billed.
+ * `session-record`  the runtime's own session record of what it resolved and sent (Codex
+ *                   `turn_context.payload.model`) — proves the runtime did not substitute a model
+ *                   between the request and the wire; does NOT attest what the provider served.
+ */
+export type ProbeModelEvidence = "provider-usage" | "session-record";
+
 export interface ProbeModelProof {
   verdict: ProbeModelProofVerdict;
   /** the model the caller asked for, when one was requested. */
@@ -87,6 +99,8 @@ export interface ProbeModelProof {
   effective?: string[];
   /** canonical model families the runtime reported (e.g. claude-haiku-4-5). */
   effectiveCanonical?: string[];
+  /** SDD 476 — the kind of evidence above; absent when the runtime reported nothing to weigh. */
+  evidence?: ProbeModelEvidence;
 }
 
 /** The captured outcome of a finished probe (D4). Present on `completed` and `failed` envelopes. */
