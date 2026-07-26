@@ -102,6 +102,67 @@ describe("agent profile lifecycle kernel", () => {
     expect(authority.records.get("claude")?.runtimeInspector).toEqual(CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR);
   });
 
+  it("transactionally replaces authority-only orphan state during create", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const orphan: AgentProfileAuthorityRecord = {
+      schemaVersion: 1,
+      agentName: "claude",
+      agentId: crypto.randomUUID(),
+      revision: "orphan-authority",
+      canonicalSha256: "a".repeat(64),
+      runtimeInspector: GROK_PRIVATE_HOME_INPUT_INSPECTOR,
+      capabilityGrants: [{
+        referenceId: "stale-grant",
+        sourceSha256: "b".repeat(64),
+        adapter: "claude",
+        kind: "mcp",
+      }],
+    };
+    authority.records.set("claude", orphan);
+
+    const created = await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "claude",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority,
+      config: configPort(root),
+    });
+
+    expect(created.snapshot.profile.agentId).not.toBe(orphan.agentId);
+    expect(authority.records.get("claude")?.runtimeInspector).toEqual(CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR);
+    expect(authority.records.get("claude")?.capabilityGrants).toBeUndefined();
+  });
+
+  it("restores authority-only orphan state when create compensation runs", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const orphan: AgentProfileAuthorityRecord = {
+      schemaVersion: 1,
+      agentName: "claude",
+      agentId: crypto.randomUUID(),
+      revision: "orphan-authority",
+      canonicalSha256: "a".repeat(64),
+      runtimeInspector: CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
+    };
+    authority.records.set("claude", orphan);
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "claude",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority,
+      config: configPort(root),
+      onPhase: (phase) => { if (phase === "authority-published") throw new Error("interrupt-orphan-recovery"); },
+    })).rejects.toThrow("interrupt-orphan-recovery");
+
+    expect(authority.records.get("claude")).toEqual(orphan);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude", "agent.yml"))).toBe(false);
+    expect(configPort(root).read()).toBe("agents: {}\n");
+  });
+
   it("creates Grok authority with the measured private-home inspector", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

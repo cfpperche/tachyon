@@ -493,7 +493,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     const canonical = canonicalProfile(input.workspaceRoot, input.agentName);
     const priorAuthority = await input.authority.read(input.agentName);
     if (input.operation === "create") {
-      if (canonical || priorAuthority) throw new Error(`agent '${input.agentName}' already has canonical state`);
+      if (canonical) throw new Error(`agent '${input.agentName}' already has canonical state`);
       const scan = scanAgentProfilePointers(configBefore);
       if (scan.pointers.has(input.agentName)) throw new Error(`agent '${input.agentName}' already has a profile pointer`);
     } else {
@@ -505,7 +505,13 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     const profile = targetProfile(input, canonical?.profile);
     const profileText = stringify(profile);
     const targetSha = digest(profileText);
-    const targetAuthority = authorityFor(input.agentName, profile, targetSha, priorAuthority, txid);
+    const targetAuthority = authorityFor(
+      input.agentName,
+      profile,
+      targetSha,
+      input.operation === "create" ? undefined : priorAuthority,
+      txid,
+    );
     const configTarget = input.operation === "create" ? addPointer(configBefore, input.agentName) : configBefore;
     const root = ensureLifecycleRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
