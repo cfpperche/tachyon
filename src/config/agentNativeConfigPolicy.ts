@@ -15,6 +15,12 @@ export type CodexScalarNativeConfigSource = "global" | "workspace";
 export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exclude";
 
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
+const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
+export const CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES = [
+  "permissions",
+  "interface",
+  "featureFlags",
+] as const;
 
 export function codexScalarNativeConfigPolicy(
   source: CodexScalarNativeConfigSource,
@@ -55,7 +61,7 @@ export interface AgentNativeConfigPolicyPreview {
 }
 
 export interface ResolvedAgentNativeConfigProjection {
-  adapter: "codex";
+  adapter: "codex" | "claude";
   /** Source ownership is retained so lifecycle freshness can identify affected agents. */
   sources?: Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
   selectors: {
@@ -76,19 +82,22 @@ export interface ResolvedAgentNativeConfigProjection {
   featureFlags?: {
     terminalResizeReflow?: boolean;
   };
+  /** Closed Claude settings selected by family; never a raw settings file. */
+  settings?: Record<string, unknown>;
 }
 
 export function projectAgentNativeConfig(
   profile: Pick<AgentProfileV1, "runtime" | "nativeConfig">,
 ): ResolvedAgentNativeConfigProjection | undefined {
-  if (!profile.nativeConfig?.selectors || profile.runtime.adapter !== "codex") return undefined;
+  if (!profile.nativeConfig || !["codex", "claude"].includes(profile.runtime.adapter)) return undefined;
+  if (profile.runtime.adapter === "codex" && !profile.nativeConfig.selectors) return undefined;
   const sources = Object.fromEntries(
       Object.entries(profile.nativeConfig ?? {})
         .filter((entry): entry is [AgentNativeConfigFamily, AgentNativeConfigPolicyV1] => Boolean(entry[1]))
         .map(([family, policy]) => [family, policy.source]),
     ) as Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
   const projection: ResolvedAgentNativeConfigProjection = {
-    adapter: "codex",
+    adapter: profile.runtime.adapter as "codex" | "claude",
     selectors: {
       ...(profile.runtime.model ? { model: profile.runtime.model } : {}),
       ...(profile.runtime.provider ? { provider: profile.runtime.provider } : {}),
@@ -102,6 +111,7 @@ export function projectAgentNativeConfig(
 }
 
 const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(CODEX_NATIVE_CONFIG_LIFECYCLE);
+const CLAUDE_ALL_LIFECYCLE = new Set(CLAUDE_NATIVE_CONFIG_LIFECYCLE);
 
 function hasExactLifecycle(actual: AgentNativeConfigPolicyV1["lifecycle"], expected: ReadonlySet<string>): boolean {
   return actual.length === expected.size && actual.every((phase) => expected.has(phase));
@@ -123,6 +133,33 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
     return {
       support: "supported",
       reason: "Codex declares typed agent selectors for fresh, restart and resume",
+    };
+  }
+  if (
+    adapter === "claude"
+    && (family === "permissions" || family === "interface" || family === "featureFlags")
+    && policy.source === "workspace"
+    && policy.treatment === "overlay"
+    && policy.refresh === "every-launch"
+    && hasExactLifecycle(policy.lifecycle, CLAUDE_ALL_LIFECYCLE)
+  ) {
+    return {
+      support: "supported",
+      reason: `Claude declares filtered workspace ${family} projection for fresh, restart and resume`,
+    };
+  }
+  if (
+    adapter === "claude"
+    && (
+      (family === "tooling" && policy.source === "workspace" && policy.treatment === "exclude" && policy.refresh === "every-launch")
+      || (family === "authentication" && policy.source === "global" && policy.treatment === "external" && policy.refresh === "runtime-owned")
+      || (family === "memory" && policy.source === "agent" && policy.treatment === "exclude" && policy.refresh === "every-launch")
+    )
+    && hasExactLifecycle(policy.lifecycle, CLAUDE_ALL_LIFECYCLE)
+  ) {
+    return {
+      support: "supported",
+      reason: `Claude explicitly keeps ${family} outside authored native configuration for fresh, restart and resume`,
     };
   }
   if (

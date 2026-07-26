@@ -2,7 +2,9 @@
 
 _Created 2026-07-25._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Shipped under `t-debbfe`: closed Claude scalar projection, external auth/trust,
+Bridge-only strict MCP, ambient tooling exclusion, lifecycle tests and parity evidence.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -26,19 +28,19 @@ executable surfaces remain outside profile authoring.
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: declared Claude setting projection**
+- [x] **Scenario: declared Claude setting projection**
   - **Given** a canonical Claude profile selecting a supported workspace setting family
-  - **When** it is started, restarted, resumed or forked
+  - **When** it is started, restarted or resumed
   - **Then** only the measured, allowlisted non-executable settings are regenerated identically in
     its private projection, with unsupported keys excluded and diagnosed.
-- [ ] **Scenario: capability projection remains explicit**
-  - **Given** a canonical Claude profile with approved MCP or skill capabilities
+- [x] **Scenario: unsupported tooling remains excluded**
+  - **Given** a canonical Claude profile and ambient workspace skills, hooks or MCP
   - **When** its private home is materialized
-  - **Then** the capability projection is validated, refreshed atomically with its generation, and
-    cannot acquire ambient commands, agents, plugins or credentials.
-- [ ] Workspace `settings.local.json`, global settings, auth/bootstrap, exact trust, auto-memory and
+  - **Then** none are inherited; strict MCP contains only the host-custodied Bridge until a Claude
+    capability projector is separately admitted.
+- [x] Workspace `settings.local.json`, global settings, auth/bootstrap, exact trust, auto-memory and
   runtime-owned state have explicit non-authoring dispositions.
-- [ ] Fresh/restart/resume/fork evidence and `docs/runtimes/parity.md` name the actual supported
+- [x] Fresh/restart/resume evidence plus the measured fork refusal and `docs/runtimes/parity.md` name the actual supported
   family/source/treatment/refresh/lifecycle tuples.
 
 ## Non-goals
@@ -49,5 +51,5 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 
 ## Open questions
 
-The exact allowlist and valid Claude `modelUsage`/setting schema must be measured against the pinned
-Claude CLI before implementation; unknown keys remain excluded rather than accepted by default.
+Claude capability projection and private destination-home fork support remain later parity slices;
+unknown settings stay excluded rather than accepted by default.

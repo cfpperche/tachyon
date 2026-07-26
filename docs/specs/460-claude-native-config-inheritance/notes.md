@@ -11,11 +11,20 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   is a closed key allowlist.
 - `settings.local.json` is treated as local runtime state, not reviewed workspace policy; its handling
   must be explicit rather than merged into the canonical projection.
+- The measured scalar allowlist is `permissions` (`allow`, `ask`, `deny`, `defaultMode`,
+  `additionalDirectories`), interface (`theme`, `prefersReducedMotion`, `spinnerTipsEnabled`,
+  `showTurnDuration`, `terminalProgressBarEnabled`) and `alwaysThinkingEnabled`. `statusLine`, hooks,
+  environment and plugin keys are deliberately excluded because they execute or expand authority.
+- Tooling is not silently grandfathered. Claude has no admitted profile-capability projector, so
+  workspace skills/hooks/MCP remain excluded; strict MCP contains only the host-custodied Bridge.
 
 ## Deviations
 
 - Planning paused after the adversarial review exposed a broader boundary issue. `t-b516f4` first
   added auditable requested-versus-reported Probe model provenance (`930c2f51`).
+- A final probe requested as `claude-opus-5` was discarded: run
+  `probe-9477100b-4696-4f85-b5fb-d40e2256cd7d` timed out and reported
+  `claude-haiku-4-5` in `modelUsage`, so it is not an Opus 5 verdict.
 
 ## Tradeoffs
 
@@ -24,5 +33,11 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Open questions
 
-- Which Claude setting keys are both non-executable and stable enough to support requires local CLI
-  measurement before implementation.
+- Explicit Claude skill/hook/MCP capability projection remains future parity work; this slice removes
+  implicit inheritance instead of widening authority without a grant model.
+
+## Sources
+
+- Claude Code settings scopes and precedence: https://code.claude.com/docs/en/settings
+- Claude Code permission settings: https://code.claude.com/docs/en/permissions
+- `statusLine` executable-command semantics: https://code.claude.com/docs/en/statusline

@@ -175,7 +175,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(res.env.FAL_KEY).toBe("real-key");
   });
 
-  it("canonical Claude closes ambient discovery and reprojects workspace settings, skills and MCP", () => {
+  it("canonical Claude materializes only selected settings and excludes ambient local settings, skills and MCP", () => {
     fs.mkdirSync(path.join(ws, ".claude", "skills", "review"), { recursive: true });
     fs.writeFileSync(path.join(ws, ".claude", "settings.json"), JSON.stringify({
       hooks: { Stop: [{ hooks: [{ type: "command", command: "guard" }] }] },
@@ -194,7 +194,14 @@ describe("HarnessManager materialize (fs)", () => {
     fs.mkdirSync(path.join(staleHome, "plugins"), { recursive: true });
     fs.writeFileSync(path.join(staleHome, "CLAUDE.md"), "stale");
 
-    const res = mgr.materializeCanonicalClaudeHome("canonical", claude);
+    const res = mgr.materializeCanonicalClaudeHome("canonical", claude, undefined, {
+      adapter: "claude",
+      selectors: {},
+      settings: {
+        permissions: { allow: ["Read"] },
+        prefersReducedMotion: false,
+      },
+    });
 
     expect(res.env).toEqual({ CLAUDE_CONFIG_DIR: res.home });
     expect(res.args).toEqual([
@@ -202,27 +209,27 @@ describe("HarnessManager materialize (fs)", () => {
       "--mcp-config", path.join(res.home, "mcp.json"), "--strict-mcp-config",
     ]);
     expect(JSON.parse(fs.readFileSync(path.join(res.home, "settings.json"), "utf8"))).toEqual({
-      hooks: { Stop: [{ hooks: [{ type: "command", command: "guard" }] }] },
-      permissions: { allow: ["Read", "Bash"] },
-      prefersReducedMotion: true,
+      permissions: { allow: ["Read"] },
+      prefersReducedMotion: false,
       autoMemoryEnabled: false,
     });
-    expect(fs.readFileSync(path.join(res.home, "skills", "review", "SKILL.md"), "utf8")).toBe("# review\n");
-    expect(JSON.parse(fs.readFileSync(path.join(res.home, "mcp.json"), "utf8")).mcpServers.workspace.command).toBe("workspace-mcp");
+    expect(fs.existsSync(path.join(res.home, "skills"))).toBe(false);
+    expect(JSON.parse(fs.readFileSync(path.join(res.home, "mcp.json"), "utf8"))).toEqual({ mcpServers: {} });
     expect(fs.existsSync(path.join(res.home, "CLAUDE.md"))).toBe(false);
     expect(fs.existsSync(path.join(res.home, "plugins"))).toBe(false);
     expect(fs.lstatSync(path.join(res.home, ".credentials.json")).isSymbolicLink()).toBe(true);
   });
 
-  it("canonical Claude rejects symlinked workspace settings", () => {
+  it("canonical Claude does not inspect ambient workspace settings without a selected policy", () => {
     fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
     const outside = path.join(path.dirname(ws), "outside-settings.json");
     fs.writeFileSync(outside, "{}");
     fs.symlinkSync(outside, path.join(ws, ".claude", "settings.json"));
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
 
-    expect(() => mgr.materializeCanonicalClaudeHome("canonical", claude))
-      .toThrow(/canonical Claude settings source is unsafe/);
+    expect(() => mgr.materializeCanonicalClaudeHome("canonical", claude)).not.toThrow();
+    expect(JSON.parse(fs.readFileSync(path.join(harnessHome(ws, "canonical"), "settings.json"), "utf8")))
+      .toEqual({ autoMemoryEnabled: false });
   });
 
   it("canonical Claude keeps only bootstrap markers and exact workspace/cwd trust", () => {

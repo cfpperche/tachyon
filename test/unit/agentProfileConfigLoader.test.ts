@@ -302,6 +302,69 @@ describe("loadProfileAwareConfig", () => {
     });
   });
 
+  it("projects only selected allowlisted Claude workspace settings", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-settings-");
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), JSON.stringify({
+      permissions: { allow: ["Read"], deny: ["Bash(rm:*)"] },
+      prefersReducedMotion: true,
+      alwaysThinkingEnabled: false,
+    }));
+    fs.writeFileSync(path.join(root, ".claude", "settings.local.json"), JSON.stringify({
+      permissions: { allow: ["Bash"] },
+    }));
+    const policy = {
+      source: "workspace",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["fresh", "restart", "resume"],
+    };
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: { permissions: policy, interface: policy, featureFlags: policy },
+    });
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }));
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "claude",
+      selectors: {},
+      settings: {
+        permissions: { allow: ["Read"], deny: ["Bash(rm:*)"] },
+        prefersReducedMotion: true,
+        alwaysThinkingEnabled: false,
+      },
+    });
+  });
+
+  it("rejects unselected executable Claude settings instead of relocating them into the private home", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-settings-closed-");
+    fs.mkdirSync(path.join(root, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".claude", "settings.json"), JSON.stringify({
+      permissions: { allow: ["Read"] },
+      hooks: { Stop: [{ hooks: [{ type: "command", command: "ambient" }] }] },
+    }));
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: {
+        permissions: {
+          source: "workspace",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
+    });
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }));
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("Claude workspace key 'hooks' is outside the selected family allowlist");
+  });
+
   it("rejects a Claude profile when authority selects another runtime inspector", () => {
     const root = temporaryRoot("tachyon-agent-profile-claude-wrong-inspector-");
     const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });

@@ -927,7 +927,7 @@ export class Workspace {
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
         if (def.harness) return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
         if (adapter.runtime === "claude" && def.profileLifecycle) {
-          return this.harness.materializeCanonicalClaudeHome(name, adapter, cwd);
+          return this.harness.materializeCanonicalClaudeHome(name, adapter, cwd, def.profileNativeConfig, this.bridgeEntry());
         }
         // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,
         // so the agent still loads the workspace project config (incl. the project .mcp.json).

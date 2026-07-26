@@ -6,17 +6,20 @@ _Generated from `plan.md` on 2026-07-25. Work top-to-bottom. Check boxes as task
 
 - [x] Inventory current Claude materialization and record the profile-policy boundary.
 - [x] Obtain adversarial review before selecting an authored settings boundary.
-- [ ] Measure and define the closed Claude setting-key allowlist and rejection diagnostics.
-- [ ] Declare exact supported native-policy tuples and implement the projected generation.
-- [ ] Prove fresh/restart/resume/fork consistency plus absence of ambient/executable inheritance.
-- [ ] Update parity evidence and, if applicable, Agent Studio authoring/visual proof.
+- [x] Measure and define the closed Claude setting-key allowlist and rejection diagnostics.
+- [x] Declare exact supported native-policy tuples and implement the projected generation.
+- [x] Prove fresh/restart/resume consistency, measured fork refusal, and absence of ambient/executable inheritance.
+- [x] Update parity evidence; Agent Studio authoring remains outside this non-UI slice.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Run focused policy, harness and lifecycle tests.
-- [ ] Run configured typecheck and full verification.
+- [x] Run focused policy, harness and lifecycle tests.
+- [x] Run configured typecheck and full verification.
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 
 **Headless check:** `npx vitest run test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/agentNativeConfigPolicy.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation

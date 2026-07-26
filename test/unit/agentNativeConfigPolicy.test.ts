@@ -92,4 +92,22 @@ describe("agent native configuration support admission", () => {
       "profile/native-config-unsupported: runtime adapter 'codex' has not declared native configuration support for 'interface'",
     ]);
   });
+
+  it("declares Claude workspace scalars and explicit external/excluded planes across supported lifecycle paths", () => {
+    const lifecycle: AgentNativeConfigPolicyV1["lifecycle"] = ["resume", "fresh", "restart"];
+    expect(validateAgentNativeConfigPolicy("claude", {
+      permissions: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      interface: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      featureFlags: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      tooling: { source: "workspace", treatment: "exclude", refresh: "every-launch", lifecycle },
+      authentication: { source: "global", treatment: "external", refresh: "runtime-owned", lifecycle },
+      memory: { source: "agent", treatment: "exclude", refresh: "every-launch", lifecycle },
+    })).toEqual([]);
+
+    expect(validateAgentNativeConfigPolicy("claude", {
+      permissions: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      tooling: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle },
+      interface: { source: "workspace", treatment: "overlay", refresh: "every-launch", lifecycle: [...lifecycle, "fork"] },
+    })).toHaveLength(3);
+  });
 });

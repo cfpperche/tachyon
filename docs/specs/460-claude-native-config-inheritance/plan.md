@@ -6,9 +6,10 @@ _Drafted from `spec.md` on 2026-07-25. The approach, not the steps (those go in 
 
 First inventory the current private-home materializer by family, then add Claude-specific support
 decisions to the shared native-policy resolver. Replace whole-file merge behavior with a closed
-allowlist parser and a forced final `autoMemoryEnabled: false` override. Treat settings, skills and
-MCP as a single atomically refreshed generation where their references are coupled. Keep trust and
-authentication external to authored policy; lifecycle tests prove the same generation on every path.
+allowlist parser and a forced final `autoMemoryEnabled: false` override. Exclude workspace skills,
+hooks and MCP until Claude has a host-authorized capability projector; retain only the host-custodied
+Bridge in strict MCP. Keep trust and authentication external to authored policy; lifecycle tests prove
+the same generation on every path.
 
 ## Key decisions
 
@@ -19,8 +20,9 @@ _Each decision + why this option over the alternatives considered. Record reject
   runtime semantics and authority boundary drift with upstream.
 - **Separate requested and runtime-owned planes** — trust, bootstrap, credentials and memory retain
   their existing governed paths; rejected treating private-home state as canonical profile input.
-- **Atomic coupled generation** — settings, skills and strict MCP must refresh together; rejected
-  independent refresh because references could point to stale or absent capability content.
+- **Tooling fails closed** — no ambient skills/hooks/workspace MCP are copied; rejected preserving the
+  old implicit projection because Claude is not admitted by the capability resolver. Strict MCP still
+  contains the host-custodied Bridge.
 
 ## Files touched
 
