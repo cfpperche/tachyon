@@ -9,9 +9,9 @@ import {
   serializeAgentPatch,
   setCodexNativeConfigChoice,
   setNativeConfigChoice,
-  nativeConfigBypassAuthorized,
-  canAuthorizeBypassPermissions,
-  setNativeConfigBypassAuthorized,
+  nativeConfigAuthorized,
+  permissionAuthorizationChoices,
+  setNativeConfigAuthorized,
 } from "../../src/webview/agent-studio-shell/domain.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
@@ -407,7 +407,7 @@ describe("AgentStudioAdapter — save", () => {
     expect(submits[0]?.editingName).toBe("frontend");
   });
 
-  describe("SDD 471 — bypassPermissions authorization", () => {
+  describe("SDD 471/472 — permission authorizations", () => {
     function claudeFields() {
       const snapshot = profileSnapshot();
       snapshot.editable.runtime = { adapter: "claude", executable: "claude" };
@@ -420,22 +420,55 @@ describe("AgentStudioAdapter — save", () => {
       return canonicalAgentFields(snapshot);
     }
 
-    it("is off by default and offered only for Claude with permissions projected", () => {
+    function codexFields() {
+      const snapshot = profileSnapshot();
+      snapshot.editable.nativeConfig = {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      };
+      return canonicalAgentFields(snapshot);
+    }
+
+    it("is off by default and each runtime is offered only its own authorizations", () => {
       const claude = claudeFields();
-      expect(nativeConfigBypassAuthorized(claude)).toBe(false);
-      expect(canAuthorizeBypassPermissions(claude)).toBe(true);
+      expect(nativeConfigAuthorized(claude, "bypassPermissions")).toBe(false);
+      expect(permissionAuthorizationChoices(claude)).toEqual(["bypassPermissions"]);
 
       // Excluding the family removes the control — there is nothing left to authorize.
-      expect(canAuthorizeBypassPermissions(setNativeConfigChoice(claude, "permissions", "exclude"))).toBe(false);
+      expect(permissionAuthorizationChoices(setNativeConfigChoice(claude, "permissions", "exclude"))).toEqual([]);
 
-      // A Codex agent never sees it.
-      const codex = canonicalAgentFields(profileSnapshot());
-      expect(canAuthorizeBypassPermissions(codex)).toBe(false);
+      // A Codex agent is offered its OWN authorizations, never Claude's (SDD 472).
+      const codex = codexFields();
+      expect(permissionAuthorizationChoices(codex)).toEqual(["neverAskForApproval", "dangerFullAccess"]);
+      expect(permissionAuthorizationChoices(codex)).not.toContain("bypassPermissions");
+      expect(nativeConfigAuthorized(codex, "neverAskForApproval")).toBe(false);
+      expect(nativeConfigAuthorized(codex, "dangerFullAccess")).toBe(false);
+
+      // And with no permissions family projected there is nothing to authorize on either runtime.
+      expect(permissionAuthorizationChoices(canonicalAgentFields(profileSnapshot()))).toEqual([]);
+      expect(permissionAuthorizationChoices(setNativeConfigChoice(codex, "permissions", "exclude"))).toEqual([]);
+    });
+
+    it("SDD 472: round-trips each Codex authorization independently", () => {
+      const codex = setNativeConfigAuthorized(codexFields(), "dangerFullAccess", true);
+      expect(nativeConfigAuthorized(codex, "dangerFullAccess")).toBe(true);
+      expect(nativeConfigAuthorized(codex, "neverAskForApproval")).toBe(false);
+
+      const patch = serializeAgentPatch(codex, true) as AgentProfileStudioMutationV1;
+      expect(patch.editable.nativeConfig?.permissions?.authorize).toEqual(["dangerFullAccess"]);
+
+      // Both together, and preserved through the per-adapter policy rebuild on save.
+      const both = setNativeConfigAuthorized(codex, "neverAskForApproval", true);
+      const bothPatch = serializeAgentPatch(setNativeConfigChoice(both, "interface", "workspace"), true) as AgentProfileStudioMutationV1;
+      expect(bothPatch.editable.nativeConfig?.permissions?.authorize)
+        .toEqual(["neverAskForApproval", "dangerFullAccess"]);
     });
 
     it("round-trips the authorization through a save", () => {
-      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
-      expect(nativeConfigBypassAuthorized(authorized)).toBe(true);
+      const authorized = setNativeConfigAuthorized(claudeFields(), "bypassPermissions", true);
+      expect(nativeConfigAuthorized(authorized, "bypassPermissions")).toBe(true);
 
       const patch = serializeAgentPatch(authorized, true) as AgentProfileStudioMutationV1;
       expect(patch.editable.nativeConfig?.permissions?.authorize).toEqual(["bypassPermissions"]);
@@ -444,23 +477,23 @@ describe("AgentStudioAdapter — save", () => {
       const reloaded = profileSnapshot();
       reloaded.editable.runtime = { adapter: "claude", executable: "claude" };
       reloaded.editable.nativeConfig = patch.editable.nativeConfig;
-      expect(nativeConfigBypassAuthorized(canonicalAgentFields(reloaded))).toBe(true);
+      expect(nativeConfigAuthorized(canonicalAgentFields(reloaded), "bypassPermissions")).toBe(true);
     });
 
     it("survives an unrelated edit that rebuilds the policy on save", () => {
       // normalizedNativeConfig rebuilds every family policy from the dropdown at serialize time,
       // so an authorization would silently reset unless it is carried through.
-      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
+      const authorized = setNativeConfigAuthorized(claudeFields(), "bypassPermissions", true);
       const switched = setNativeConfigChoice(authorized, "interface", "workspace");
       const patch = serializeAgentPatch(switched, true) as AgentProfileStudioMutationV1;
       expect(patch.editable.nativeConfig?.permissions?.authorize).toEqual(["bypassPermissions"]);
     });
 
     it("drops the authorization when it is turned off or its family is excluded", () => {
-      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
+      const authorized = setNativeConfigAuthorized(claudeFields(), "bypassPermissions", true);
 
-      const off = setNativeConfigBypassAuthorized(authorized, false);
-      expect(nativeConfigBypassAuthorized(off)).toBe(false);
+      const off = setNativeConfigAuthorized(authorized, "bypassPermissions", false);
+      expect(nativeConfigAuthorized(off, "bypassPermissions")).toBe(false);
       expect((serializeAgentPatch(off, true) as AgentProfileStudioMutationV1)
         .editable.nativeConfig?.permissions?.authorize).toBeUndefined();
 

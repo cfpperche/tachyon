@@ -929,6 +929,36 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("/ambient/sibling");
   });
 
+  it("SDD 472: an authorized dangerous Codex value reaches the private home on fresh, restart and resume", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-authorized");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    // What an AUTHORIZED profile projects; the projector is what decides it may be here at all.
+    const projection = {
+      adapter: "codex" as const,
+      selectors: {},
+      permissions: { approvalPolicy: "never", sandboxMode: "danger-full-access" },
+    };
+    const configOf = (home: string) => fs.readFileSync(path.join(home, "config.toml"), "utf8");
+
+    const fresh = mgr.materializeCanonicalCodexHome("authorized", codex, projection);
+    const restart = mgr.materializeCanonicalCodexHome("authorized", codex, projection);
+    const resume = mgr.materializeCanonicalCodexHome("authorized", codex, projection);
+    for (const phase of [fresh, restart, resume]) {
+      expect(phase.home).toBe(fresh.home);
+      expect(configOf(phase.home)).toContain('approval_policy = "never"');
+      expect(configOf(phase.home)).toContain('sandbox_mode = "danger-full-access"');
+    }
+
+    // An agent that authorized nothing gets no permission keys at all.
+    const unauthorized = mgr.materializeCanonicalCodexHome("unauthorized", codex, {
+      adapter: "codex" as const, selectors: {}, permissions: {},
+    });
+    expect(configOf(unauthorized.home)).not.toContain("approval_policy");
+    expect(configOf(unauthorized.home)).not.toContain("sandbox_mode");
+  });
+
   it("canonical Codex trusts only the exact workspace and effective cwd on every materialization", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex-trust");
     fs.mkdirSync(codexHome, { recursive: true });

@@ -14,9 +14,10 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   nativeConfigChoice,
-  nativeConfigBypassAuthorized,
-  canAuthorizeBypassPermissions,
-  setNativeConfigBypassAuthorized,
+  nativeConfigAuthorized,
+  permissionAuthorizationChoices,
+  permissionAuthorizationCopy,
+  setNativeConfigAuthorized,
   computeAgentDirty,
   createAgentProfileLabels,
   serializeAgentPatch,
@@ -1194,23 +1195,27 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     </Select>
                   </div>
                 ))}
-                {canAuthorizeBypassPermissions(fields) && (
-                  <div class="ash-native-config-authorization">
-                    <label class="check">
-                      <input
-                        type="checkbox"
-                        id="ash-native-config-bypass"
-                        checked={nativeConfigBypassAuthorized(fields)}
-                        onChange={(event) => updateFields((current) => setNativeConfigBypassAuthorized(
-                          current,
-                          (event.currentTarget as HTMLInputElement).checked,
-                        ))}
-                      />
-                      {" "}{profileLabels.nativeConfigBypassLabel}
-                    </label>
-                    <div class="hint ash-native-config-risk">{profileLabels.nativeConfigBypassRisk}</div>
-                  </div>
-                )}
+                {permissionAuthorizationChoices(fields).map((member) => {
+                  const copy = permissionAuthorizationCopy(profileLabels, member);
+                  return (
+                    <div class="ash-native-config-authorization" key={member}>
+                      <label class="check">
+                        <input
+                          type="checkbox"
+                          id={`ash-native-config-authorize-${member}`}
+                          checked={nativeConfigAuthorized(fields, member)}
+                          onChange={(event) => updateFields((current) => setNativeConfigAuthorized(
+                            current,
+                            member,
+                            (event.currentTarget as HTMLInputElement).checked,
+                          ))}
+                        />
+                        {" "}{copy.label}
+                      </label>
+                      <div class="hint ash-native-config-risk">{copy.risk}</div>
+                    </div>
+                  );
+                })}
               </section>
             )}
 

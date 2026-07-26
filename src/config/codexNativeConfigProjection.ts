@@ -3,7 +3,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
-import { carryNativeConfigSources, type ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import {
+  carryNativeConfigSources,
+  nativeConfigAuthorizations,
+  CODEX_FULL_ACCESS_AUTHORIZATION,
+  CODEX_NEVER_APPROVAL_AUTHORIZATION,
+  type ResolvedAgentNativeConfigProjection,
+} from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 import { getCodexMcpServerBlock, removeCodexMcpServer } from "../registration/adapters.js";
 
@@ -269,6 +275,75 @@ function parseSource(family: ScalarFamily, source: SourceName, text: string | un
   }
 }
 
+/**
+ * SDD 472 — measured against `codex-cli 0.145.0` by feeding an invalid value and reading the config
+ * parser's own "expected one of" list, then loading every candidate under an isolated CODEX_HOME.
+ *
+ * These are the CONFIG enums, which are wider than the CLI flag enums: `--ask-for-approval` offers
+ * only untrusted/on-request/never, while `config.toml` also accepts `on-failure`. Copying the flag
+ * list would have refused a value real users already have.
+ *
+ * `granular` appears in the parser's list but is a newtype variant (a TOML table, not a scalar), so
+ * it can never arrive here as a string — `typedValue` already rejects a table as "must be string".
+ */
+const CODEX_MEASURED_CLI_VERSION = "codex-cli 0.145.0";
+const CODEX_APPROVAL_POLICIES = ["untrusted", "on-failure", "on-request", "never"] as const;
+const CODEX_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
+
+/**
+ * Values that hand a canonical agent real authority, each gated behind the profile authorization
+ * that names that capability. Everything else in the measured enums is bounded by either an
+ * approval prompt or the sandbox, and stays freely projectable.
+ */
+const CODEX_DANGEROUS_VALUES: Record<string, { value: string; authorization: string; consequence: string }> = {
+  approval_policy: {
+    value: "never",
+    authorization: CODEX_NEVER_APPROVAL_AUTHORIZATION,
+    consequence: "the agent never asks before running a command",
+  },
+  sandbox_mode: {
+    value: "danger-full-access",
+    authorization: CODEX_FULL_ACCESS_AUTHORIZATION,
+    consequence: "the agent runs without a sandbox",
+  },
+};
+
+/**
+ * Read one permission scalar: type-check it, hold it to the measured enum, and require an explicit
+ * per-agent authorization before a dangerous value may be projected. Inheriting the value from the
+ * person's global config is never sufficient on its own.
+ */
+function permissionValue(
+  source: SourceName,
+  parsed: Record<string, unknown>,
+  field: string,
+  measured: readonly string[],
+  authorized: ReadonlySet<string>,
+  errors: string[],
+): string | undefined {
+  const value = typedValue("permissions", source, parsed, field, "string", errors);
+  if (value === undefined) return undefined;
+  const text = value as string;
+  if (!measured.includes(text)) {
+    errors.push(
+      `profile/native-config-value: Codex ${source} key '${field}' value '${text}' is not projectable`
+      + ` (supported: ${measured.join(", ")}; measured against ${CODEX_MEASURED_CLI_VERSION})`,
+    );
+    return undefined;
+  }
+  const dangerous = CODEX_DANGEROUS_VALUES[field];
+  if (dangerous && dangerous.value === text && !authorized.has(dangerous.authorization)) {
+    errors.push(
+      `profile/native-config-value: Codex ${source} key '${field}' value '${text}' means`
+      + ` ${dangerous.consequence}, so it is refused unless this agent explicitly authorizes it`
+      + `; authorize it for this agent, set the Permissions family to Exclude,`
+      + ` or change the ${source} value`,
+    );
+    return undefined;
+  }
+  return text;
+}
+
 function typedValue<T extends "string" | "boolean" | "string[]">(
   family: ScalarFamily,
   source: SourceName,
@@ -299,6 +374,9 @@ export function projectCodexScalarNativeConfig(
   // structuredClone drops the non-enumerable ownership metadata, so carry it across (t-59a11b).
   const projection = carryNativeConfigSources(structuredClone(base), base);
   const errors: string[] = [];
+  // Read from the PROFILE, never from the config file: the global file supplies a value, only this
+  // agent's own authorization makes a dangerous one projectable (SDD 472).
+  const authorized = nativeConfigAuthorizations(profile.nativeConfig, "permissions");
   const parsedBySource = new Map<SourceName, Record<string, unknown> | string>();
   const selectedWorkspaceKeys = new Set<string>();
 
@@ -316,11 +394,15 @@ export function projectCodexScalarNativeConfig(
       continue;
     }
     if (family === "permissions") {
-      const approvalPolicy = typedValue(family, policy.source, parsed, "approval_policy", "string", errors);
-      const sandboxMode = typedValue(family, policy.source, parsed, "sandbox_mode", "string", errors);
+      const approvalPolicy = permissionValue(
+        policy.source, parsed, "approval_policy", CODEX_APPROVAL_POLICIES, authorized, errors,
+      );
+      const sandboxMode = permissionValue(
+        policy.source, parsed, "sandbox_mode", CODEX_SANDBOX_MODES, authorized, errors,
+      );
       projection.permissions = {
-        ...(approvalPolicy !== undefined ? { approvalPolicy: approvalPolicy as string } : {}),
-        ...(sandboxMode !== undefined ? { sandboxMode: sandboxMode as string } : {}),
+        ...(approvalPolicy !== undefined ? { approvalPolicy } : {}),
+        ...(sandboxMode !== undefined ? { sandboxMode } : {}),
       };
     } else if (family === "interface") {
       const personality = typedValue(family, policy.source, parsed, "personality", "string", errors);

@@ -16,6 +16,8 @@ import {
   codexScalarNativeConfigPolicy,
   defaultCodexScalarNativeConfigPolicy,
   CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION,
+  CODEX_NEVER_APPROVAL_AUTHORIZATION,
+  CODEX_FULL_ACCESS_AUTHORIZATION,
   type CodexScalarNativeConfigChoice,
   type CodexScalarNativeConfigFamily,
 } from "../../config/agentNativeConfigPolicy.js";
@@ -524,6 +526,10 @@ export interface AgentProfileLabels {
   nativeConfigWorkspace: string;
   nativeConfigBypassLabel: string;
   nativeConfigBypassRisk: string;
+  nativeConfigNeverApprovalLabel: string;
+  nativeConfigNeverApprovalRisk: string;
+  nativeConfigFullAccessLabel: string;
+  nativeConfigFullAccessRisk: string;
   runtimeSelectorsTitle: string;
   runtimeSelectorsHelp: string;
   runtimeModel: string;
@@ -661,6 +667,16 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
       "This agent will run tools without asking for permission, including file writes and shell commands."
       + " Only the agents you authorize here are affected — the setting is never inherited on its own.",
     ),
+    nativeConfigNeverApprovalLabel: t("Authorize never asking for approval"),
+    nativeConfigNeverApprovalRisk: t(
+      "This agent will run commands without asking for approval. Only the agents you authorize here are"
+      + " affected — the setting is never inherited on its own.",
+    ),
+    nativeConfigFullAccessLabel: t("Authorize running without a sandbox"),
+    nativeConfigFullAccessRisk: t(
+      "This agent will run commands with full disk and network access instead of inside the sandbox."
+      + " Only the agents you authorize here are affected — the setting is never inherited on its own.",
+    ),
     runtimeSelectorsTitle: t("Runtime selectors"),
     runtimeSelectorsHelp: t("Selectors are projected through measured native runtime arguments. Unsupported fields are not authored."),
     runtimeModel: t("Model"),
@@ -795,30 +811,51 @@ export const codexNativeConfigChoice = nativeConfigChoice;
 export const setCodexNativeConfigChoice = setNativeConfigChoice;
 
 /**
- * SDD 471 — whether this agent explicitly authorized Claude's `bypassPermissions`. Off unless the
- * profile names it, for both new and existing agents.
+ * SDD 471/472 — the dangerous authorizations each runtime offers, in render order. Empty for a
+ * runtime with none, which is what hides the control.
  */
-export function nativeConfigBypassAuthorized(fields: AgentStudioFields): boolean {
-  return (fields.canonical?.nativeConfig.permissions?.authorize ?? [])
-    .includes(CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
+export const PERMISSION_AUTHORIZATION_CHOICES: Record<string, readonly string[]> = {
+  claude: [CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION],
+  codex: [CODEX_NEVER_APPROVAL_AUTHORIZATION, CODEX_FULL_ACCESS_AUTHORIZATION],
+};
+
+/** The authorizations offered for this agent — none unless its runtime declares some and the
+ *  permissions family is actually being projected. */
+export function permissionAuthorizationChoices(fields: AgentStudioFields): readonly string[] {
+  if (nativeConfigChoice(fields, "permissions") === "exclude") return [];
+  return PERMISSION_AUTHORIZATION_CHOICES[canonicalAdapter(fields)] ?? [];
 }
 
-/** Only offered for Claude, and only while the permissions family is actually being projected. */
-export function canAuthorizeBypassPermissions(fields: AgentStudioFields): boolean {
-  return canonicalAdapter(fields) === "claude" && nativeConfigChoice(fields, "permissions") !== "exclude";
+/** Label + consequence copy for one authorization member, from the translated label set. */
+export function permissionAuthorizationCopy(
+  labels: AgentProfileLabels,
+  member: string,
+): { label: string; risk: string } {
+  if (member === CODEX_NEVER_APPROVAL_AUTHORIZATION) {
+    return { label: labels.nativeConfigNeverApprovalLabel, risk: labels.nativeConfigNeverApprovalRisk };
+  }
+  if (member === CODEX_FULL_ACCESS_AUTHORIZATION) {
+    return { label: labels.nativeConfigFullAccessLabel, risk: labels.nativeConfigFullAccessRisk };
+  }
+  return { label: labels.nativeConfigBypassLabel, risk: labels.nativeConfigBypassRisk };
 }
 
-export function setNativeConfigBypassAuthorized(
+/** Whether this agent explicitly authorized `member`. Off unless the profile names it. */
+export function nativeConfigAuthorized(fields: AgentStudioFields, member: string): boolean {
+  return (fields.canonical?.nativeConfig.permissions?.authorize ?? []).includes(member);
+}
+
+export function setNativeConfigAuthorized(
   fields: AgentStudioFields,
+  member: string,
   authorized: boolean,
 ): AgentStudioFields {
   if (!fields.canonical) return fields;
   const nativeConfig = structuredClone(fields.canonical.nativeConfig);
   const permissions = nativeConfig.permissions;
   if (!permissions) return fields;
-  const authorize = (permissions.authorize ?? [])
-    .filter((entry) => entry !== CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
-  if (authorized) authorize.push(CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
+  const authorize = (permissions.authorize ?? []).filter((entry) => entry !== member);
+  if (authorized) authorize.push(member);
   nativeConfig.permissions = { ...permissions };
   if (authorize.length > 0) nativeConfig.permissions.authorize = authorize;
   else delete nativeConfig.permissions.authorize;
@@ -857,14 +894,14 @@ function normalizedNativeConfig(
     const choice = nativeConfigChoice(fields, family);
     if (choice === "exclude") continue;
     // This rebuilds the policy from the dropdown on every save, so an authored authorization has
-    // to be read back out of the current fields or it would silently reset (SDD 471). Excluding
+    // to be read back out of the current fields or it would silently reset (SDD 471/472). Excluding
     // the family drops it too, which is the correct reading of "stop projecting permissions".
-    const authorize = adapter === "claude" && family === "permissions" && nativeConfigBypassAuthorized(fields)
-      ? [CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION]
+    const authorize = family === "permissions"
+      ? (PERMISSION_AUTHORIZATION_CHOICES[adapter] ?? []).filter((member) => nativeConfigAuthorized(fields, member))
       : [];
     result[family] = adapter === "claude"
       ? claudeScalarNativeConfigPolicy(choice, authorize)
-      : codexScalarNativeConfigPolicy(choice);
+      : codexScalarNativeConfigPolicy(choice, authorize);
   }
   if (runtime.model || runtime.provider || runtime.reasoningEffort || runtime.serviceTier) {
     result.selectors = adapter === "claude"

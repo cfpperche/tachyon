@@ -125,8 +125,8 @@ describe("agent native configuration support admission", () => {
     expect(validateAgentNativeConfigPolicy("claude", {
       interface: { ...permissions, authorize: ["bypassPermissions"] },
     })).toEqual([
-      "profile/native-config-unsupported: 'authorize' is only supported on the Claude permissions family,"
-      + " not 'claude' family 'interface'",
+      "profile/native-config-unsupported: 'authorize' is only supported on the permissions family of a"
+      + " runtime that declares authorizations, not 'claude' family 'interface'",
     ]);
 
     // Not on another runtime — a Codex profile must not carry a Claude authorization.
@@ -136,16 +136,47 @@ describe("agent native configuration support admission", () => {
         lifecycle: ["fresh", "restart", "resume"], authorize: ["bypassPermissions"],
       },
     })).toEqual([
-      "profile/native-config-unsupported: 'authorize' is only supported on the Claude permissions family,"
-      + " not 'codex' family 'permissions'",
+      "profile/native-config-unsupported: codex permissions authorization 'bypassPermissions' is not a"
+      + " recognized authorization (supported: neverAskForApproval, dangerFullAccess)",
     ]);
 
     // Unknown members fail closed rather than being ignored.
     expect(validateAgentNativeConfigPolicy("claude", {
       permissions: { ...permissions, authorize: ["disableSandbox"] },
     })).toEqual([
-      "profile/native-config-unsupported: Claude permissions authorization 'disableSandbox' is not a"
+      "profile/native-config-unsupported: claude permissions authorization 'disableSandbox' is not a"
       + " recognized authorization (supported: bypassPermissions)",
+    ]);
+  });
+
+  it("SDD 472: accepts the Codex permissions authorizations and refuses them elsewhere", () => {
+    const codexLifecycle: AgentNativeConfigPolicyV1["lifecycle"] = ["fresh", "restart", "resume"];
+    const codexPermissions = {
+      source: "global" as const, treatment: "overlay" as const, refresh: "every-launch" as const,
+      lifecycle: codexLifecycle,
+    };
+
+    expect(validateAgentNativeConfigPolicy("codex", {
+      permissions: { ...codexPermissions, authorize: ["neverAskForApproval", "dangerFullAccess"] },
+    })).toEqual([]);
+
+    // The refusal runs both ways — a Claude profile must not carry a Codex authorization either.
+    expect(validateAgentNativeConfigPolicy("claude", {
+      permissions: {
+        source: "global", treatment: "overlay", refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume", "fork"], authorize: ["dangerFullAccess"],
+      },
+    })).toEqual([
+      "profile/native-config-unsupported: claude permissions authorization 'dangerFullAccess' is not a"
+      + " recognized authorization (supported: bypassPermissions)",
+    ]);
+
+    // A runtime that declares no authorizations at all cannot carry one.
+    expect(validateAgentNativeConfigPolicy("grok", {
+      permissions: { ...codexPermissions, authorize: ["neverAskForApproval"] },
+    })).toEqual([
+      "profile/native-config-unsupported: 'authorize' is only supported on the permissions family of a"
+      + " runtime that declares authorizations, not 'grok' family 'permissions'",
     ]);
   });
 });

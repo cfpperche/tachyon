@@ -90,6 +90,8 @@ describe("preview route table", () => {
       "studio-agent-canonical",
       "studio-agent-claude-bypass-off",
       "studio-agent-claude-bypass-on",
+      "studio-agent-codex-danger-off",
+      "studio-agent-codex-danger-on",
       "studio-agent-edit",
       "studio-command",
       "studio-command-edit",

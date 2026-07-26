@@ -192,6 +192,8 @@ export const ROUTES: Record<string, Route> = {
           "canonical-reviewer": "canonical-disabled",
           "canonical-claude-bypass-off": "canonical-claude-bypass-off",
           "canonical-claude-bypass-on": "canonical-claude-bypass-on",
+          "canonical-codex-danger-off": "canonical-codex-danger-off",
+          "canonical-codex-danger-on": "canonical-codex-danger-on",
         };
         const entityId = (activeRoute as { entityId?: string }).entityId ?? "";
         const key = (activeRoute as { studio?: string }).studio === "agent" && agentFixtureByEntity[entityId]

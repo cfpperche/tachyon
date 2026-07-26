@@ -162,12 +162,53 @@ function claudeCanonicalEntity(authorize?: string[]): AgentStudioEntity {
   return { ...denseEntity, storage: "canonical", profile, fields: canonicalAgentFields(profile) };
 }
 
+/**
+ * SDD 472 — the Codex counterpart. The base canonical fixture is Codex but authors no native
+ * config, so it cannot show the two danger authorizations; this one projects the permissions family.
+ */
+function codexCanonicalEntity(authorize?: string[]): AgentStudioEntity {
+  const lifecycle = ["fresh", "restart", "resume"] as ("fresh" | "restart" | "resume" | "fork")[];
+  const profile: AgentProfileStudioSnapshotV1 = {
+    ...canonicalSnapshot,
+    agentName: "codex-reviewer",
+    editable: {
+      ...canonicalSnapshot.editable,
+      displayName: "Codex reviewer",
+      nativeConfig: {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: [...lifecycle], ...(authorize ? { authorize } : {}),
+        },
+        interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle: [...lifecycle] },
+      },
+    },
+    provenance: {
+      ...canonicalSnapshot.provenance,
+      nativeConfig: (["permissions", "interface"] as const).map((family) => ({
+        family,
+        source: "global" as const,
+        treatment: "overlay" as const,
+        refresh: "every-launch" as const,
+        lifecycle: [...lifecycle],
+        support: "supported" as const,
+        reason: `Codex declares filtered global ${family} projection for fresh, restart and resume`,
+      })),
+    },
+  };
+  return { ...denseEntity, storage: "canonical", profile, fields: canonicalAgentFields(profile) };
+}
+
 export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFixtureVM>> = {
   new: { provenance: "synthetic-edge", vm: { entity: newEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
   "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
   "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) } },
+  "canonical-codex-danger-off": { provenance: "synthetic-edge", vm: { entity: codexCanonicalEntity() } },
+  "canonical-codex-danger-on": {
+    provenance: "synthetic-edge",
+    vm: { entity: codexCanonicalEntity(["neverAskForApproval", "dangerFullAccess"]) },
+  },
   "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
 };
 

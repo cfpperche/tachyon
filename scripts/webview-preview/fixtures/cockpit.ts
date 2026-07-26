@@ -585,6 +585,14 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-claude-bypass-on"), studioMountNonce: "fixture-mount-nonce" },
   },
+  "studio-agent-codex-danger-off": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-off"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-agent-codex-danger-on": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-on"), studioMountNonce: "fixture-mount-nonce" },
+  },
   // t-610705 (Phase D, D2) — task is edit-only in practice (route.ts's decodeRoute rejects
   // studio-new + "task" outright — every real caller pre-mints an id), so there is no "studio-task"
   // new-session fixture to match command/terminal/runbook/schedule/agent above. Nav section is

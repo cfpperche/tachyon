@@ -22,8 +22,10 @@ describe("Codex scalar native configuration projection", () => {
   it("projects only the ratified global keys and ignores unrelated global state", () => {
     const result = projectCodexScalarNativeConfig(profile("global"), {
       global: [
-        'approval_policy = "never"',
-        'sandbox_mode = "danger-full-access"',
+        // Safe measured values: this test is about which KEYS are ratified, not about the
+        // dangerous-value gate, which has its own coverage below (SDD 472).
+        'approval_policy = "on-request"',
+        'sandbox_mode = "workspace-write"',
         'personality = "pragmatic"',
         'model_provider = "secret-redirect"',
         '[tui]',
@@ -41,7 +43,7 @@ describe("Codex scalar native configuration projection", () => {
     expect(result.projection).toEqual({
       adapter: "codex",
       selectors: {},
-      permissions: { approvalPolicy: "never", sandboxMode: "danger-full-access" },
+      permissions: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
       interface: {
         personality: "pragmatic",
         statusLine: ["model", "git-branch"],
@@ -76,5 +78,85 @@ describe("Codex scalar native configuration projection", () => {
     expect(result.errors).toContain(
       "profile/native-config-key: family 'permissions' source 'global' key 'approval_policy' must be string",
     );
+  });
+
+  describe("SDD 472 — dangerous values need an explicit per-agent authorization", () => {
+    function authorizedProfile(...authorize: string[]): Pick<AgentProfileV1, "nativeConfig"> {
+      const base = profile("global");
+      base.nativeConfig!.permissions = { ...base.nativeConfig!.permissions!, authorize };
+      return base;
+    }
+
+    it.each([
+      ["approval_policy", "never", "the agent never asks before running a command"],
+      ["sandbox_mode", "danger-full-access", "the agent runs without a sandbox"],
+    ])("refuses an unauthorized %s = %s", (key, value, consequence) => {
+      const result = projectCodexScalarNativeConfig(profile("global"), {
+        global: `${key} = "${value}"\n`,
+      }, { adapter: "codex", selectors: {} });
+
+      expect(result.errors.join("\n")).toContain(
+        `Codex global key '${key}' value '${value}' means ${consequence}`,
+      );
+      expect(result.errors.join("\n")).toContain("authorize it for this agent");
+      expect(result.projection.permissions).toEqual({});
+    });
+
+    it("projects each dangerous value once this agent authorizes it", () => {
+      const result = projectCodexScalarNativeConfig(
+        authorizedProfile("neverAskForApproval", "dangerFullAccess"),
+        { global: 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n' },
+        { adapter: "codex", selectors: {} },
+      );
+
+      expect(result.errors).toEqual([]);
+      expect(result.projection.permissions).toEqual({
+        approvalPolicy: "never",
+        sandboxMode: "danger-full-access",
+      });
+    });
+
+    it("authorizes only the capability it names", () => {
+      // Authorizing the sandbox must not also authorize skipping approvals.
+      const result = projectCodexScalarNativeConfig(
+        authorizedProfile("dangerFullAccess"),
+        { global: 'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n' },
+        { adapter: "codex", selectors: {} },
+      );
+
+      expect(result.errors.join("\n")).toContain("key 'approval_policy' value 'never'");
+      expect(result.projection.permissions).toEqual({ sandboxMode: "danger-full-access" });
+    });
+
+    it.each([
+      ["approval_policy", "untrusted"],
+      ["approval_policy", "on-failure"],
+      ["approval_policy", "on-request"],
+      ["sandbox_mode", "read-only"],
+      ["sandbox_mode", "workspace-write"],
+    ])("still projects the measured safe value %s = %s with no authorization", (key, value) => {
+      const result = projectCodexScalarNativeConfig(profile("global"), {
+        global: `${key} = "${value}"\n`,
+      }, { adapter: "codex", selectors: {} });
+
+      expect(result.errors).toEqual([]);
+      expect(result.projection.permissions).toEqual({
+        [key === "approval_policy" ? "approvalPolicy" : "sandboxMode"]: value,
+      });
+    });
+
+    it("refuses a value outside the measured enum instead of projecting it blindly", () => {
+      const result = projectCodexScalarNativeConfig(profile("global"), {
+        // `granular` is a real parser variant but a TOML table, never a scalar — as a string it is
+        // simply unmeasured, and an unmeasured value must not reach the private home.
+        global: 'approval_policy = "granular"\n',
+      }, { adapter: "codex", selectors: {} });
+
+      expect(result.errors.join("\n")).toContain(
+        "key 'approval_policy' value 'granular' is not projectable",
+      );
+      expect(result.errors.join("\n")).toContain("measured against codex-cli 0.145.0");
+      expect(result.projection.permissions).toEqual({});
+    });
   });
 });
