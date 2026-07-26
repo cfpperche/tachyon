@@ -88,6 +88,8 @@ describe("preview route table", () => {
       "settings",
       "studio-agent",
       "studio-agent-canonical",
+      "studio-agent-claude-bypass-off",
+      "studio-agent-claude-bypass-on",
       "studio-agent-edit",
       "studio-command",
       "studio-command-edit",

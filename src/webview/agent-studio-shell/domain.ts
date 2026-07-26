@@ -15,6 +15,7 @@ import {
   claudeSelectorNativeConfigPolicy,
   codexScalarNativeConfigPolicy,
   defaultCodexScalarNativeConfigPolicy,
+  CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION,
   type CodexScalarNativeConfigChoice,
   type CodexScalarNativeConfigFamily,
 } from "../../config/agentNativeConfigPolicy.js";
@@ -521,6 +522,8 @@ export interface AgentProfileLabels {
   nativeConfigExclude: string;
   nativeConfigGlobal: string;
   nativeConfigWorkspace: string;
+  nativeConfigBypassLabel: string;
+  nativeConfigBypassRisk: string;
   runtimeSelectorsTitle: string;
   runtimeSelectorsHelp: string;
   runtimeModel: string;
@@ -653,6 +656,11 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     nativeConfigExclude: t("Exclude"),
     nativeConfigGlobal: t("Use global defaults"),
     nativeConfigWorkspace: t("Use workspace defaults"),
+    nativeConfigBypassLabel: t("Authorize bypassing permission prompts"),
+    nativeConfigBypassRisk: t(
+      "This agent will run tools without asking for permission, including file writes and shell commands."
+      + " Only the agents you authorize here are affected — the setting is never inherited on its own.",
+    ),
     runtimeSelectorsTitle: t("Runtime selectors"),
     runtimeSelectorsHelp: t("Selectors are projected through measured native runtime arguments. Unsupported fields are not authored."),
     runtimeModel: t("Model"),
@@ -786,6 +794,37 @@ export function setNativeConfigChoice(
 export const codexNativeConfigChoice = nativeConfigChoice;
 export const setCodexNativeConfigChoice = setNativeConfigChoice;
 
+/**
+ * SDD 471 — whether this agent explicitly authorized Claude's `bypassPermissions`. Off unless the
+ * profile names it, for both new and existing agents.
+ */
+export function nativeConfigBypassAuthorized(fields: AgentStudioFields): boolean {
+  return (fields.canonical?.nativeConfig.permissions?.authorize ?? [])
+    .includes(CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
+}
+
+/** Only offered for Claude, and only while the permissions family is actually being projected. */
+export function canAuthorizeBypassPermissions(fields: AgentStudioFields): boolean {
+  return canonicalAdapter(fields) === "claude" && nativeConfigChoice(fields, "permissions") !== "exclude";
+}
+
+export function setNativeConfigBypassAuthorized(
+  fields: AgentStudioFields,
+  authorized: boolean,
+): AgentStudioFields {
+  if (!fields.canonical) return fields;
+  const nativeConfig = structuredClone(fields.canonical.nativeConfig);
+  const permissions = nativeConfig.permissions;
+  if (!permissions) return fields;
+  const authorize = (permissions.authorize ?? [])
+    .filter((entry) => entry !== CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
+  if (authorized) authorize.push(CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION);
+  nativeConfig.permissions = { ...permissions };
+  if (authorize.length > 0) nativeConfig.permissions.authorize = authorize;
+  else delete nativeConfig.permissions.authorize;
+  return { ...fields, canonical: { ...fields.canonical, nativeConfig } };
+}
+
 function normalizedRuntime(
   fields: AgentStudioFields,
   adapter: string,
@@ -817,8 +856,14 @@ function normalizedNativeConfig(
   for (const family of ["permissions", "interface", "featureFlags"] as const) {
     const choice = nativeConfigChoice(fields, family);
     if (choice === "exclude") continue;
+    // This rebuilds the policy from the dropdown on every save, so an authored authorization has
+    // to be read back out of the current fields or it would silently reset (SDD 471). Excluding
+    // the family drops it too, which is the correct reading of "stop projecting permissions".
+    const authorize = adapter === "claude" && family === "permissions" && nativeConfigBypassAuthorized(fields)
+      ? [CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION]
+      : [];
     result[family] = adapter === "claude"
-      ? claudeScalarNativeConfigPolicy(choice)
+      ? claudeScalarNativeConfigPolicy(choice, authorize)
       : codexScalarNativeConfigPolicy(choice);
   }
   if (runtime.model || runtime.provider || runtime.reasoningEffort || runtime.serviceTier) {

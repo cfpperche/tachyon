@@ -229,6 +229,37 @@ describe("HarnessManager materialize (fs)", () => {
     expect(withoutSelectors.args).not.toContain("--effort");
   });
 
+  it("SDD 471: an authorized bypassPermissions reaches the private home on fresh, restart, resume and fork", () => {
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const projection = {
+      adapter: "claude" as const,
+      selectors: {},
+      settings: { permissions: { defaultMode: "bypassPermissions", allow: ["Read"] } },
+    };
+    const settingsOf = (home: string) =>
+      JSON.parse(fs.readFileSync(path.join(home, "settings.json"), "utf8"));
+
+    // fresh, then restart and resume regenerate the same private generation.
+    const fresh = mgr.materializeCanonicalClaudeHome("authorized", claude, undefined, projection);
+    const restart = mgr.materializeCanonicalClaudeHome("authorized", claude, undefined, projection);
+    const resume = mgr.materializeCanonicalClaudeHome("authorized", claude, undefined, projection);
+    for (const phase of [fresh, restart, resume]) {
+      expect(phase.home).toBe(fresh.home);
+      expect(settingsOf(phase.home).permissions).toEqual({ defaultMode: "bypassPermissions", allow: ["Read"] });
+    }
+
+    // a fork is a distinct private home that carries the same authorized projection.
+    const fork = mgr.materializeCanonicalClaudeHome("authorized-fork", claude, undefined, projection);
+    expect(fork.home).not.toBe(fresh.home);
+    expect(settingsOf(fork.home).permissions).toEqual({ defaultMode: "bypassPermissions", allow: ["Read"] });
+
+    // an agent that authorized nothing gets no permissions block at all.
+    const unauthorized = mgr.materializeCanonicalClaudeHome("unauthorized", claude, undefined, {
+      adapter: "claude", selectors: {}, settings: {},
+    });
+    expect(settingsOf(unauthorized.home).permissions).toBeUndefined();
+  });
+
   it("canonical Claude consumes captured capabilities, reserves Bridge, and repairs stale projection state", () => {
     const skillBytes = Buffer.from("# Canonical review\n");
     const capabilities: ResolvedAgentCapabilityProjection = {

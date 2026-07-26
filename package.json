@@ -921,6 +921,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "verify:prepare": "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build",
     "dogfood:claude-canonical-create": "vite-node --script scripts/dogfood/claude-canonical-create.ts",
+    "dogfood:claude-bypass-optin": "vite-node --script scripts/dogfood/claude-bypass-optin.ts",
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",

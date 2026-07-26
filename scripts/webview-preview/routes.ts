@@ -186,9 +186,16 @@ export const ROUTES: Record<string, Route> = {
         // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
         // rather than gated on a real "ready" mount handshake (this static harness has no live host
         // to answer one — the client processes whatever arrives regardless of handshake state).
-        const key = (activeRoute as { studio?: string; entityId?: string }).studio === "agent"
-          && (activeRoute as { entityId?: string }).entityId === "canonical-reviewer"
-          ? "canonical-disabled"
+        // SDD 471 — entityId selects which agent-shell fixture the studio route renders, so the
+        // Claude bypass-authorization states are reachable the same way canonical-reviewer is.
+        const agentFixtureByEntity: Record<string, string> = {
+          "canonical-reviewer": "canonical-disabled",
+          "canonical-claude-bypass-off": "canonical-claude-bypass-off",
+          "canonical-claude-bypass-on": "canonical-claude-bypass-on",
+        };
+        const entityId = (activeRoute as { entityId?: string }).entityId ?? "";
+        const key = (activeRoute as { studio?: string }).studio === "agent" && agentFixtureByEntity[entityId]
+          ? agentFixtureByEntity[entityId]
           : activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
         const byStudio: Record<string, { fixtures: Record<string, Fixture>; makeMessage: (vm: unknown) => unknown }> = {
           command: { fixtures: commandStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => commandStudioShellMakeMessage(vm as never) },

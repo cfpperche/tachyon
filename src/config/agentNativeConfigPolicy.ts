@@ -16,6 +16,21 @@ export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exc
 export type ClaudeScalarNativeConfigSource = "global" | "workspace";
 export type ClaudeScalarNativeConfigChoice = ClaudeScalarNativeConfigSource | "exclude";
 
+/**
+ * SDD 471 — the only dangerous Claude value a profile may authorize today. `bypassPermissions`
+ * disables Claude's permission prompts, so it stays refused unless THIS agent's profile names it.
+ */
+export const CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION = "bypassPermissions";
+const CLAUDE_PERMISSION_AUTHORIZATIONS = new Set<string>([CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION]);
+
+/** Authorizations a profile declared for one family — empty unless deliberately authored. */
+export function nativeConfigAuthorizations(
+  nativeConfig: AgentProfileV1["nativeConfig"],
+  family: AgentNativeConfigFamily,
+): ReadonlySet<string> {
+  return new Set(nativeConfig?.[family]?.authorize ?? []);
+}
+
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
 export const CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES = [
@@ -46,12 +61,16 @@ export function defaultCodexScalarNativeConfigPolicy(): NonNullable<AgentProfile
 
 export function claudeScalarNativeConfigPolicy(
   source: ClaudeScalarNativeConfigSource,
+  authorize: readonly string[] = [],
 ): AgentNativeConfigPolicyV1 {
   return {
     source,
     treatment: "overlay",
     refresh: "every-launch",
     lifecycle: [...CLAUDE_NATIVE_CONFIG_LIFECYCLE],
+    // Agent Studio rebuilds this policy on every save, so an authored authorization has to be
+    // carried through explicitly or it would silently reset (SDD 471).
+    ...(authorize.length > 0 ? { authorize: [...authorize] } : {}),
   };
 }
 
@@ -171,6 +190,24 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
   family,
   policy,
 ) => {
+  // SDD 471 — an authorization is a Claude permissions concept. Refusing it anywhere else keeps a
+  // Codex (or any future runtime's) profile from quietly carrying one that nothing would enforce.
+  if (policy.authorize) {
+    if (adapter !== "claude" || family !== "permissions") {
+      return {
+        support: "unsupported",
+        reason: `'authorize' is only supported on the Claude permissions family, not '${adapter}' family '${family}'`,
+      };
+    }
+    const unknown = policy.authorize.filter((entry) => !CLAUDE_PERMISSION_AUTHORIZATIONS.has(entry));
+    if (unknown.length > 0) {
+      return {
+        support: "unsupported",
+        reason: `Claude permissions authorization ${unknown.map((entry) => `'${entry}'`).join(", ")}`
+          + ` is not a recognized authorization (supported: ${[...CLAUDE_PERMISSION_AUTHORIZATIONS].join(", ")})`,
+      };
+    }
+  }
   if (
     adapter === "codex"
     && family === "selectors"

@@ -14,6 +14,9 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   nativeConfigChoice,
+  nativeConfigBypassAuthorized,
+  canAuthorizeBypassPermissions,
+  setNativeConfigBypassAuthorized,
   computeAgentDirty,
   createAgentProfileLabels,
   serializeAgentPatch,
@@ -1191,6 +1194,23 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     </Select>
                   </div>
                 ))}
+                {canAuthorizeBypassPermissions(fields) && (
+                  <div class="ash-native-config-authorization">
+                    <label class="check">
+                      <input
+                        type="checkbox"
+                        id="ash-native-config-bypass"
+                        checked={nativeConfigBypassAuthorized(fields)}
+                        onChange={(event) => updateFields((current) => setNativeConfigBypassAuthorized(
+                          current,
+                          (event.currentTarget as HTMLInputElement).checked,
+                        ))}
+                      />
+                      {" "}{profileLabels.nativeConfigBypassLabel}
+                    </label>
+                    <div class="hint ash-native-config-risk">{profileLabels.nativeConfigBypassRisk}</div>
+                  </div>
+                )}
               </section>
             )}
 

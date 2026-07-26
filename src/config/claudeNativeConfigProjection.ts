@@ -1,4 +1,9 @@
-import { carryNativeConfigSources, type ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import {
+  carryNativeConfigSources,
+  nativeConfigAuthorizations,
+  CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION,
+  type ResolvedAgentNativeConfigProjection,
+} from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 type ClaudeScalarFamily = "permissions" | "interface" | "featureFlags";
@@ -57,6 +62,9 @@ function describe(value: unknown): string {
 
 const PERMISSION_FIELDS = ["allow", "ask", "deny", "defaultMode", "additionalDirectories"] as const;
 
+/** Modes a profile is allowed to lift by authorizing them — everything else stays refused. */
+const CLAUDE_AUTHORIZABLE_MODES = new Set<string>([CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION]);
+
 /** The precise setting path that was refused, plus why — never a bare "unsupported value". */
 interface ValueRejection {
   path: string;
@@ -67,7 +75,7 @@ interface ValueRejection {
  * Locate the exact offending subkey inside a permissions block. A bare "unsupported value" leaves
  * the person with no way to tell which of five subkeys is at fault (t-111190).
  */
-function permissionsRejection(value: unknown): ValueRejection | undefined {
+function permissionsRejection(value: unknown, authorized: ReadonlySet<string>): ValueRejection | undefined {
   if (!isRecord(value)) return { path: "permissions", reason: `must be an object, got ${describe(value)}` };
   for (const [key, entry] of Object.entries(value)) {
     if (!(PERMISSION_FIELDS as readonly string[]).includes(key)) {
@@ -77,6 +85,10 @@ function permissionsRejection(value: unknown): ValueRejection | undefined {
       };
     }
     if (key === "defaultMode") {
+      // SDD 471 — a mode the profile explicitly authorized for THIS agent is projectable even
+      // though it is refused by default. Reading the authorization (never the source file) is what
+      // keeps a global value from being inherited by an agent that never consented to it.
+      if (typeof entry === "string" && authorized.has(entry)) continue;
       if (typeof entry !== "string" || !CLAUDE_PERMISSION_MODES.has(entry)) {
         return {
           path: "permissions.defaultMode",
@@ -94,8 +106,8 @@ function permissionsRejection(value: unknown): ValueRejection | undefined {
 }
 
 /** Why `key` cannot be projected, or undefined when it can. */
-function valueRejection(key: string, value: unknown): ValueRejection | undefined {
-  if (key === "permissions") return permissionsRejection(value);
+function valueRejection(key: string, value: unknown, authorized: ReadonlySet<string>): ValueRejection | undefined {
+  if (key === "permissions") return permissionsRejection(value, authorized);
   if (key === "theme") {
     return typeof value === "string" ? undefined : { path: key, reason: `must be a string, got ${describe(value)}` };
   }
@@ -114,6 +126,9 @@ export function projectClaudeNativeConfig(
   base: ResolvedAgentNativeConfigProjection,
 ): ClaudeNativeConfigProjectionResult {
   const errors: string[] = [];
+  // Read from the PROFILE, never from the source file: the global config supplies a value, only
+  // this agent's own authorization makes it projectable (SDD 471).
+  const authorizedPermissions = nativeConfigAuthorizations(profile.nativeConfig, "permissions");
   const selectorsSelected = profile.nativeConfig?.selectors?.source === "agent";
   if (selectorsSelected) {
     if (profile.runtime.provider) {
@@ -170,14 +185,19 @@ export function projectClaudeNativeConfig(
     for (const key of selectedKeys) {
       const value = parsed[key];
       if (value === undefined) continue;
-      const rejection = valueRejection(key, value);
+      const rejection = valueRejection(key, value, authorizedPermissions);
       if (rejection) {
         // Name the offending subkey/value and the way out: the refusal is intentional
-        // fail-closed, so the person needs to know which family to exclude (t-111190).
+        // fail-closed, so the person needs to know which family to exclude (t-111190). For a
+        // refusal an explicit authorization could lift, name that route too (SDD 471).
+        const remedy = rejection.path === "permissions.defaultMode"
+          && typeof (value as Record<string, unknown>).defaultMode === "string"
+          && CLAUDE_AUTHORIZABLE_MODES.has((value as Record<string, unknown>).defaultMode as string)
+          ? `; authorize it explicitly for this agent, set the ${FAMILY_LABELS[familyOf(key)]} family`
+            + ` to Exclude, or change the ${source} value`
+          : `; set the ${FAMILY_LABELS[familyOf(key)]} family to Exclude or change the ${source} value`;
         errors.push(
-          `profile/native-config-value: Claude ${source} key '${rejection.path}' ${rejection.reason}`
-          + `; set the ${FAMILY_LABELS[familyOf(key)]} family to Exclude`
-          + ` or change the ${source} value`,
+          `profile/native-config-value: Claude ${source} key '${rejection.path}' ${rejection.reason}${remedy}`,
         );
         continue;
       }

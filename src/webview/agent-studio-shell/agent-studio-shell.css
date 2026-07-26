@@ -34,6 +34,15 @@
 @media (max-width: 560px) {
   .ash-native-config-editor-row { grid-template-columns: 1fr; gap: var(--ds-1); }
 }
+/* SDD 471 — a dangerous authorization must not read as neutral hint text: separate it from the
+   family rows and give the consequence copy the warning colour. */
+.ash-native-config-authorization { display: grid; gap: var(--ds-1); padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
+.ash-native-config-authorization .check { font-weight: 600; }
+/* `--ds-danger` is not a defined token (the design system's error token is `--ds-err`), so the
+   neighbouring `--vscode-testing-iconFailed, var(--ds-danger)` pair has a dead fallback and renders
+   as inherited body text wherever the VS Code token is absent. Risk copy must never degrade to
+   looking like a neutral hint, so fall back to the token that actually exists. */
+.ash-native-config-risk { color: var(--vscode-testing-iconFailed, var(--ds-err)); font-size: var(--ds-small); }
 .ash-native-config-empty { color: var(--ds-muted); font-size: var(--ds-small); }
 .ash-native-config-row { display: grid; grid-template-columns: minmax(7rem, .8fr) minmax(12rem, 1.4fr) minmax(9rem, 1fr) auto; align-items: center; gap: var(--ds-2); font-size: var(--ds-small); }
 .ash-native-config-supported { color: var(--vscode-testing-iconPassed, var(--ds-success)); }

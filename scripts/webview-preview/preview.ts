@@ -55,10 +55,14 @@ function run(): void {
 
   // link the real panel's stylesheet set, in order, then frame the surface.
   for (const href of route.cssLinks) addStylesheet(href);
-  // optional width override for responsive visual QA (?width=360).
+  // optional width override for responsive visual QA (?width=360). The height override (?height=…)
+  // exists because #frame is overflow:hidden with no scrollbar, so a surface taller than the route
+  // frame is simply clipped and unreachable — visual QA of a long form needs a taller frame.
   const widthParam = params.get("width");
+  const heightParam = params.get("height");
   const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
-  frameTo({ w: frameW, h: route.frame.h });
+  const frameH = heightParam && Number(heightParam) > 0 ? Number(heightParam) : route.frame.h;
+  frameTo({ w: frameW, h: frameH });
   // Optional theme stand-ins; default remains Dark+ harness tokens.
   const requestedTheme = params.get("theme");
   const theme = requestedTheme === "light" || requestedTheme === "high-contrast" ? requestedTheme : "dark";

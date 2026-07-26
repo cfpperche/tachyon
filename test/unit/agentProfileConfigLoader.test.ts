@@ -459,13 +459,80 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(result.config).toBeUndefined();
-    // The refusal names the offending subkey, the value, and the way out (t-111190).
+    // The refusal names the offending subkey, the value, and the ways out (t-111190, SDD 471).
     expect(result.errors.join("\n")).toContain(
       "Claude global key 'permissions.defaultMode' value 'bypassPermissions' is not projectable"
       + " (supported: acceptEdits, auto, manual, dontAsk, plan)"
-      + "; set the Permissions family to Exclude or change the global value",
+      + "; authorize it explicitly for this agent, set the Permissions family to Exclude,"
+      + " or change the global value",
     );
     expect(result.errors.join("\n")).not.toContain("outside the selected family allowlist");
+  });
+
+  it("SDD 471: projects bypassPermissions only when the profile explicitly authorizes it", () => {
+    const homeDir = temporaryRoot("tachyon-bypass-optin-home-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      $schema: "https://json.schemastore.org/claude-code-settings.json",
+      permissions: { defaultMode: "bypassPermissions", allow: ["Read"] },
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const policy = { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle };
+
+    // Same global file, two agents: only the one that authorized it projects the value.
+    const authorizedRoot = temporaryRoot("tachyon-bypass-optin-yes-");
+    const authorizedBytes = writeProfile(authorizedRoot, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: { permissions: { ...policy, authorize: ["bypassPermissions"] } },
+    });
+    const authorized = load(authorizedRoot, authority(authorizedBytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(authorized.errors).toEqual([]);
+    expect(authorized.config?.agents.codex.profileNativeConfig).toEqual({
+      adapter: "claude",
+      selectors: {},
+      settings: { permissions: { defaultMode: "bypassPermissions", allow: ["Read"] } },
+    });
+
+    const unauthorizedRoot = temporaryRoot("tachyon-bypass-optin-no-");
+    const unauthorizedBytes = writeProfile(unauthorizedRoot, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: { permissions: policy },
+    });
+    const unauthorized = load(unauthorizedRoot, authority(unauthorizedBytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(unauthorized.config).toBeUndefined();
+    expect(unauthorized.errors.join("\n")).toContain("'bypassPermissions' is not projectable");
+  });
+
+  it("SDD 471: an authorization never widens anything beyond the mode it names", () => {
+    const root = temporaryRoot("tachyon-bypass-optin-scope-");
+    const homeDir = temporaryRoot("tachyon-bypass-optin-scope-home-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      permissions: { defaultMode: "somethingElse" },
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch", lifecycle,
+          authorize: ["bypassPermissions"],
+        },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(result.config).toBeUndefined();
+    expect(result.errors.join("\n")).toContain("value 'somethingElse' is not projectable");
   });
 
   it("names the offending subkey for every Claude settings rejection shape", () => {

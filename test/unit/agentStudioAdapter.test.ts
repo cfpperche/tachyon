@@ -8,6 +8,10 @@ import {
   createAgentProfileLabels,
   serializeAgentPatch,
   setCodexNativeConfigChoice,
+  setNativeConfigChoice,
+  nativeConfigBypassAuthorized,
+  canAuthorizeBypassPermissions,
+  setNativeConfigBypassAuthorized,
 } from "../../src/webview/agent-studio-shell/domain.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
@@ -401,6 +405,69 @@ describe("AgentStudioAdapter — save", () => {
     const patch = { ...blankAgentFields(), name: "frontend", cmd: "claude --model opus" };
     adapter.save("frontend", patch);
     expect(submits[0]?.editingName).toBe("frontend");
+  });
+
+  describe("SDD 471 — bypassPermissions authorization", () => {
+    function claudeFields() {
+      const snapshot = profileSnapshot();
+      snapshot.editable.runtime = { adapter: "claude", executable: "claude" };
+      snapshot.editable.nativeConfig = {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume", "fork"],
+        },
+      };
+      return canonicalAgentFields(snapshot);
+    }
+
+    it("is off by default and offered only for Claude with permissions projected", () => {
+      const claude = claudeFields();
+      expect(nativeConfigBypassAuthorized(claude)).toBe(false);
+      expect(canAuthorizeBypassPermissions(claude)).toBe(true);
+
+      // Excluding the family removes the control — there is nothing left to authorize.
+      expect(canAuthorizeBypassPermissions(setNativeConfigChoice(claude, "permissions", "exclude"))).toBe(false);
+
+      // A Codex agent never sees it.
+      const codex = canonicalAgentFields(profileSnapshot());
+      expect(canAuthorizeBypassPermissions(codex)).toBe(false);
+    });
+
+    it("round-trips the authorization through a save", () => {
+      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
+      expect(nativeConfigBypassAuthorized(authorized)).toBe(true);
+
+      const patch = serializeAgentPatch(authorized, true) as AgentProfileStudioMutationV1;
+      expect(patch.editable.nativeConfig?.permissions?.authorize).toEqual(["bypassPermissions"]);
+
+      // Reloading the saved profile shows the control still enabled.
+      const reloaded = profileSnapshot();
+      reloaded.editable.runtime = { adapter: "claude", executable: "claude" };
+      reloaded.editable.nativeConfig = patch.editable.nativeConfig;
+      expect(nativeConfigBypassAuthorized(canonicalAgentFields(reloaded))).toBe(true);
+    });
+
+    it("survives an unrelated edit that rebuilds the policy on save", () => {
+      // normalizedNativeConfig rebuilds every family policy from the dropdown at serialize time,
+      // so an authorization would silently reset unless it is carried through.
+      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
+      const switched = setNativeConfigChoice(authorized, "interface", "workspace");
+      const patch = serializeAgentPatch(switched, true) as AgentProfileStudioMutationV1;
+      expect(patch.editable.nativeConfig?.permissions?.authorize).toEqual(["bypassPermissions"]);
+    });
+
+    it("drops the authorization when it is turned off or its family is excluded", () => {
+      const authorized = setNativeConfigBypassAuthorized(claudeFields(), true);
+
+      const off = setNativeConfigBypassAuthorized(authorized, false);
+      expect(nativeConfigBypassAuthorized(off)).toBe(false);
+      expect((serializeAgentPatch(off, true) as AgentProfileStudioMutationV1)
+        .editable.nativeConfig?.permissions?.authorize).toBeUndefined();
+
+      const excluded = setNativeConfigChoice(authorized, "permissions", "exclude");
+      expect((serializeAgentPatch(excluded, true) as AgentProfileStudioMutationV1)
+        .editable.nativeConfig?.permissions).toBeUndefined();
+    });
   });
 
   it("surfaces a studioSubmit failure as a blocking validation-source error, not a silent no-op", async () => {

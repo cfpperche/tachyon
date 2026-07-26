@@ -115,10 +115,59 @@ const canonicalEntity: AgentStudioEntity = {
   fields: canonicalAgentFields(canonicalSnapshot),
 };
 
+/**
+ * SDD 471 — the bypassPermissions authorization only renders for Claude with the permissions
+ * family projected, so the Codex fixture above cannot show it. These two make the control (and its
+ * risk copy) inspectable in both states.
+ */
+function claudeCanonicalSnapshot(authorize?: string[]): AgentProfileStudioSnapshotV1 {
+  return {
+    ...canonicalSnapshot,
+    agentName: "claude-reviewer",
+    editable: {
+      ...canonicalSnapshot.editable,
+      displayName: "Claude reviewer",
+      runtime: { adapter: "claude", executable: "claude", model: "claude-opus-5", reasoningEffort: "high" },
+      nativeConfig: {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume", "fork"],
+          ...(authorize ? { authorize } : {}),
+        },
+        interface: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume", "fork"],
+        },
+      },
+    },
+  };
+}
+
+function claudeCanonicalEntity(authorize?: string[]): AgentStudioEntity {
+  const profile = claudeCanonicalSnapshot(authorize);
+  // Populate the read-only policy preview too, so the section above the editor does not claim
+  // "no native configuration policy is authored" while the editor shows one.
+  profile.provenance = {
+    ...profile.provenance,
+    nativeConfig: (["permissions", "interface"] as const).map((family) => ({
+      family,
+      source: "global" as const,
+      treatment: "overlay" as const,
+      refresh: "every-launch" as const,
+      lifecycle: ["fresh", "restart", "resume", "fork"] as ("fresh" | "restart" | "resume" | "fork")[],
+      support: "supported" as const,
+      reason: `Claude declares filtered global ${family} projection for fresh, restart, resume and fork`,
+    })),
+  };
+  return { ...denseEntity, storage: "canonical", profile, fields: canonicalAgentFields(profile) };
+}
+
 export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFixtureVM>> = {
   new: { provenance: "synthetic-edge", vm: { entity: newEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
+  "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
+  "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) } },
   "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
 };
 
