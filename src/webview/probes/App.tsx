@@ -5,6 +5,15 @@ import type { ProbesVM } from "./messages";
 // spec 279 — the Probes view (converted from ProbeResultPanel's inline HTML). Read-only: renders the engine's
 // ProbeView. preact escapes all text by default — no manual esc() needed (the old inline path hand-escaped).
 
+/**
+ * SDD 475 — the model that ACTUALLY ran, per the run's own provenance. The cell only ever prints an
+ * effective identifier, the literal `unproven`, or `—`; the requested model lives in the tooltip so
+ * it can never be misread as the model that answered.
+ */
+function Model({ row }: { row: ProbeViewRow }) {
+  return <span class={`model model-${row.modelState}`} title={row.modelTitle}>{row.model}</span>;
+}
+
 function Status({ status }: { status: ProbeViewRow["status"] }) {
   if (status === "running") return <span class="st run">● running</span>;
   if (status === "completed") return <span class="st ok">✓ completed</span>;
@@ -46,7 +55,7 @@ export function App({ vm, backLink }: { vm: ProbesVM | undefined; /** t-bf3498 �
           </div>
           <table>
             <thead>
-              <tr><th>id</th><th>status</th><th>reason</th><th>runtime</th><th>archetype</th><th>caller</th><th>age</th><th>excerpt</th></tr>
+              <tr><th>id</th><th>status</th><th>reason</th><th>runtime</th><th>model</th><th>archetype</th><th>caller</th><th>age</th><th>excerpt</th></tr>
             </thead>
             <tbody>
               {view.rows.map((r) => (
@@ -55,7 +64,8 @@ export function App({ vm, backLink }: { vm: ProbesVM | undefined; /** t-bf3498 �
                   <td><Status status={r.status} /></td>
                   <td>{r.reason}</td>
                   <td>{r.runtime}</td>
-                  <td>{r.archetype}</td>
+                  <td class="model-cell"><Model row={r} /></td>
+                  <td class="arch">{r.archetype}</td>
                   <td>{r.caller}</td>
                   <td class="age">{r.ageLabel}</td>
                   <td class="exc">{r.excerpt}</td>

@@ -21,6 +21,62 @@ export interface ProbeViewRow {
   requestedModel: string;
   /** SDD 473 — whether the effective model was shown to be the requested one. */
   modelProof: string;
+  /**
+   * SDD 475 — what the model cell SAYS. Only ever an effective identifier, the literal `unproven`,
+   * or `—`. A requested identifier is never rendered here; that is the invariant this column exists
+   * to make visible.
+   */
+  model: string;
+  /** Closed set driving the cell's styling, so copy changes never silently change colour. */
+  modelState: "proven" | "mismatch" | "unproven" | "reported" | "none";
+  /** Hover context — names the requested model where it matters, without printing it in the cell. */
+  modelTitle: string;
+}
+
+/**
+ * SDD 475 — turn a stored run's provenance into one unambiguous cell.
+ *
+ * The four shapes come straight from SDD 473's verdict. The rule that matters: when nothing can be
+ * proven, the cell says so rather than borrowing the requested identifier, because a table that
+ * shows the requested model in the effective position re-creates exactly the silent-fallback
+ * confusion those specs exist to remove.
+ */
+export function modelCell(row: {
+  status: ProbeStatus;
+  requestedModel?: string;
+  effectiveModel?: string;
+  modelProof?: string;
+}): { model: string; modelState: ProbeViewRow["modelState"]; modelTitle: string } {
+  const effective = row.effectiveModel?.trim();
+  const requested = row.requestedModel?.trim();
+  // A run still in flight has no verdict yet; asserting one would read as a finished judgement.
+  if (row.status === "running") {
+    return { model: "—", modelState: "none", modelTitle: requested ? `requested ${requested}; still running` : "still running" };
+  }
+  if (row.modelProof === "mismatch" && effective) {
+    return {
+      model: effective,
+      modelState: "mismatch",
+      modelTitle: requested ? `requested ${requested} — the runtime reported ${effective}` : `unexpected model ${effective}`,
+    };
+  }
+  if (row.modelProof === "proven" && effective) {
+    return { model: effective, modelState: "proven", modelTitle: `requested and confirmed ${effective}` };
+  }
+  if (row.modelProof === "unproven") {
+    return {
+      model: "unproven",
+      modelState: "unproven",
+      // The requested model belongs in the tooltip, never in the cell.
+      modelTitle: requested
+        ? `requested ${requested}; the runtime reported no effective model`
+        : "the runtime reported no effective model",
+    };
+  }
+  // not-requested (or an older row with no verdict): still show what the runtime reported, if any —
+  // nobody asked for a model, but the runtime told us what it used and that is a real fact.
+  if (effective) return { model: effective, modelState: "reported", modelTitle: `reported ${effective}; no model was requested` };
+  return { model: "—", modelState: "none", modelTitle: "no model requested and none reported" };
 }
 
 export interface ProbeView {
@@ -71,6 +127,7 @@ export function buildProbeView(records: ProbeRunRecord[], nowMs: number, caller?
     excerpt: (r.excerpt ?? "").replace(/\s+/g, " ").trim().slice(0, EXCERPT_CAP),
     requestedModel: r.requestedModel ?? "—",
     modelProof: r.modelProof ?? "unproven",
+    ...modelCell(r),
   }));
   return {
     rows,

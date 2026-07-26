@@ -25,3 +25,29 @@
 .probes-root .error { color: var(--vscode-testing-iconFailed, #f85149); }
 .probes-root .empty .hint { font-size: var(--ds-small); }
 .probes-root code { font-family: var(--ds-mono); background: var(--vscode-textCodeBlock-background, rgba(128,128,128,.18)); padding: 0 4px; border-radius: 3px; }
+
+/* SDD 475 — the effective-model column. Provider-native identifiers are long
+   (claude-haiku-4-5-20251001), so the cell WRAPS inside a bounded width instead of using nowrap,
+   which would push the nine-column table into horizontal overflow in a narrow Control panel. */
+/* 24ch fits a dated provider-native identifier (claude-haiku-4-5-20251001) on one line at normal
+   widths; narrower caps forced every row to 2-3 lines and destroyed the table's scannability. */
+.probes-root .model-cell { max-width: 24ch; }
+/* `break-word` (not `anywhere`) so the browser prefers the identifier's own hyphens as break points
+   — `anywhere` split mid-token into "…2026010 / 1", which reads as corruption rather than a wrap. */
+.probes-root .model { font-family: var(--ds-mono); overflow-wrap: break-word; }
+/* The two non-identifier states are short fixed labels; wrapping them broke "unproven" into
+   "unprove / n", which looks like a typo rather than a value. */
+.probes-root .model-unproven, .probes-root .model-none { white-space: nowrap; }
+/* State drives colour, never the copy: `unproven` is an ABSENCE of evidence, so it reads muted
+   rather than as an error, while a mismatch — the runtime ran something else — is a real warning. */
+.probes-root .model-proven { color: var(--vscode-testing-iconPassed, #3fb950); }
+.probes-root .model-mismatch { color: var(--vscode-testing-iconFailed, #f85149); font-weight: 600; }
+.probes-root .model-unproven { color: var(--ds-muted); font-style: italic; }
+.probes-root .model-reported { color: var(--ds-fg, inherit); }
+.probes-root .model-none { color: var(--ds-muted); }
+
+/* Adding a ninth column squeezed two short, closed-vocabulary columns into wrapping ("completed"
+   under its tick, "adversarial-review" over two lines). Both are fixed labels, so keeping them on
+   one line costs nothing and restores the row rhythm; the excerpt stays the flexible column. */
+.probes-root .st { white-space: nowrap; }
+.probes-root .arch { white-space: nowrap; }

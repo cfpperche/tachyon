@@ -51,6 +51,19 @@ export interface ProbeRunRecord {
   requestedModel?: string;
   /** SDD 473 — whether the effective model could be shown to be the requested one. */
   modelProof?: "not-requested" | "proven" | "mismatch" | "unproven";
+  /**
+   * SDD 475 — the model the RUNTIME reported actually running, taken from this run's own stored
+   * provenance. Never an agent-declared model, and never the requested one: absent here means the
+   * run could not prove what it ran on.
+   */
+  effectiveModel?: string;
+}
+
+/** The effective identifier a stored run can support, or undefined when it can support none. */
+function effectiveModelOf(meta: ProbeRunMeta): string | undefined {
+  const shown = meta.reportedNativeModels ?? meta.reportedModels ?? [];
+  const usable = shown.filter((entry) => typeof entry === "string" && entry.trim().length > 0);
+  return usable.length > 0 ? usable.join(", ") : undefined;
 }
 
 export interface ProbeStoreOptions {
@@ -154,6 +167,9 @@ export class ProbeStore {
         runId: meta.runId, runtime: meta.runtime, archetype: meta.archetype, caller: meta.caller,
         createdAt: meta.createdAt, finishedAt: meta.finishedAt, status, reason, excerpt,
         ...(meta.requestedModel ? { requestedModel: meta.requestedModel } : {}),
+        // Provider-native identifiers first (SDD 474: claude-haiku-4-5-20251001, grok-4.5-build);
+        // the canonical family is the fallback for Claude runs stored before native keys were kept.
+        ...(effectiveModelOf(meta) ? { effectiveModel: effectiveModelOf(meta) } : {}),
         // SDD 473 — a run stored before the verdict existed has none; the view reports that as
         // `unproven` rather than leaving it blank, so an old row never looks proven.
         modelProof: meta.modelProof ?? (meta.requestedModel ? "unproven" : "not-requested"),
