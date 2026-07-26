@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (runtime-native memory inventory — `t-d4c42e`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (ad-hoc Grok isolation — `t-1d49df`; runtime-native memory inventory — `t-d4c42e`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -273,7 +273,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Headless probe | `grok -p --output-format json` (+ `--json-schema` for archetypes) | `src/probe/adapters/grok.ts` + `ProbeService` + `probe_agent` enum | **✓** t-7426de unit + binary-gated `--version` smoke |
 
 **Grok Bridge note:** private `GROK_HOME` (e.g. `.tachyon/bridge-mcp/<agent>.grok`) is the runtime’s native config surface with a redirected home — not a bypass.  
-**Grok isolation note:** Grok 0.2.112 also discovers `$HOME/.claude/settings.json`; canonical launches therefore bind `HOME` to the same private `GROK_HOME`, preventing ambient permission discovery while retaining external `auth.json` by symlink. This makes the canonical transcript/config namespace private-home; legacy/ad-hoc commands retain their declared isolation posture.
+**Grok isolation note:** Grok 0.2.112 also discovers `$HOME/.claude/settings.json`; canonical launches therefore bind `HOME` to the same private `GROK_HOME`, preventing ambient permission discovery while retaining external `auth.json` by symlink. This makes the canonical transcript/config namespace private-home; legacy/ad-hoc commands retain their declared isolation posture. **Ad-hoc / non-harness Bridge** injects only `GROK_HOME` (not `HOME`) and still hits the parented **project-scoped** worktree gate — measured and kept intentional in [`adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md) (`t-1d49df`).
 **Grok auth / rematerialize (t-2b0a08, 2026-07-09):** private home must keep `auth.json` as a **symlink** to the real `~/.grok/auth.json`. Interactive login under redirected `GROK_HOME` can replace that symlink with a **regular file** (fresh tokens only in the private home). On every reload/rebind, `materializeBridgeMcpGrok` used to `unlink` then re-symlink to the **stale** real auth → re-login wall. Fix: **`promoteNewerPrivateAuth`** — if private `auth.json` is a regular file newer than the real target, copy it to real (mode 600) **before** unlink/relink. Canonical truth remains `~/.grok/auth.json`. **✓** unit `test/unit/harness.test.ts` (t-2b0a08).  
 **Grok auth / in-session harvest (t-6c8437, 2026-07-24):** OIDC refresh mid-session leaves a **regular** private `auth.json` while the agent is still running. Harvest used to run only on **stop/kill/materialize**, so a long-lived Grok pane could keep `~/.grok/auth.json` expired (and revoke the host refresh) while the private file held the only live key → sibling agents and Dev Host dogfood hit the browser login wall. Fix: rank credentials by **non-expired `expires_at` first**, then `create_time`, then mtime; **`maybeHarvestGrokAuthFromWorkspace`** (throttled) on agent-list refresh when any private home has a regular `auth.json`. **✓** unit `test/unit/harness.test.ts` (t-6c8437).  
 **Parity lesson:** measuring only “symlink exists on first materialize” / “Bridge MCP tools list” is **not** enough for harness auth. A first-class private home also requires **auth survives rematerialize after in-home login** (or an explicit `~` with a task) **and** **in-session refresh is harvested without waiting for stop**.
@@ -404,6 +404,32 @@ Documentation task **does not** open adapters. Concrete gaps (open a normal task
 
 No Product Invariant change. No new adapter in this task.
 
+### 3.6 Ad-hoc spawn parity
+
+**Purpose:** parented **Ad-hoc** AI children (`spawn_agent` with `cmd`, not declared in `tachyon.yml`) share the same runtime profile isolation key as declared agents, but their **auto-isolation and Bridge home wiring differ**. The summary table (§3.1) and harness axis (§3.4) alone hide that.
+
+**Seams:** `AgentManager` spawn (auto `isolate: "transcript"`, `assertVerifiedTranscriptIsolation` when `parent && kind === "agent" && !harness`), `withRuntimeBridge`, `runtimeProfile.*.isolation`.
+
+**Verified:** 2026-07-26 · Grok CLI **0.2.112** · research [`adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md) · task `t-1d49df`.
+
+| Runtime | Profile isolation | Ad-hoc auto `isolate:transcript` | Bridge private surface | Parented ad-hoc **without** worktree |
+|---------|-------------------|----------------------------------|------------------------|--------------------------------------|
+| Claude | mint ✓ | yes | `--mcp-config` file | **allow** |
+| Codex | private-home ✓ | yes | private `CODEX_HOME` family | **allow** |
+| OpenCode | private-home ✓ | yes | `OPENCODE_CONFIG` | **allow** (t-e2ebe3) |
+| Grok | **project-scoped** ✓ | **no** (t-303f2b — reuse Bridge `GROK_HOME`, avoid dual-home auth race) | `GROK_HOME` only (**not** `HOME`) | **refuse** — worktree / harness / registered worktree cwd |
+| Pi | private-home ✓ | private dirs via adapter/harness path | Pi Bridge extension + private dirs | **allow** |
+| Hermes | private-home ✓ | no (Bridge `HERMES_HOME`) | `HERMES_HOME` | **allow** |
+
+**Grok ad-hoc ruling (do not weaken without new measurement):**
+
+1. `GROK_HOME` **does** isolate sessions/config from ambient `~/.grok` (dual-home live `-p` proof, 2026-07-26).
+2. Without co-binding `HOME`, Grok **still loads** `$HOME/.claude/settings.json` (`grok inspect --json` permissions.sources).
+3. Canonical-only `HOME`+`GROK_HOME` co-bind (SDD 456) is **not** the ad-hoc path; runtime-wide profile therefore stays **project-scoped**, and parented non-harness ad-hoc correctly requires an isolated worktree.
+4. Explicit `--model …` refusals on Grok are a **separate** gap: no authoritative model-catalog launch-preflight adapter (not isolation).
+
+Remedies for parented Grok ad-hoc today: `worktree: true`, gated delegation into a registered Tachyon worktree, or harness / non-parented top-level spawn. Code changes that reclassify isolation or bind `HOME` for ad-hoc belong in follow-up tasks — not silent gate weakening.
+
 ---
 
 ## 4. How to update this document
@@ -421,7 +447,9 @@ No Product Invariant change. No new adapter in this task.
 |-----|--------|
 | ~~Grok Activity~~ | **Closed t-9874be** — `grokNormalizer` + `GROK_HOME/sessions/.../chat_history.jsonl` file-tail |
 | Grok permission inject | consumers for measured profile / `--permission-mode` at spawn |
-| Grok isolation profile | align `runtimeProfile.grok.isolation` with private-home materialization **or** document the worktree gate forever |
+| ~~Grok isolation / ad-hoc worktree gate~~ | **Documented `t-1d49df`** — keep runtime-wide **project-scoped**; parented ad-hoc refuse without worktree is correct while ad-hoc binds only `GROK_HOME` (ambient `$HOME/.claude/settings.json` still loads). Reclassification requires ad-hoc `HOME` co-bind (or narrower context) as a **code** follow-up — see §3.6 + research note |
+| Grok ad-hoc `HOME` co-bind (optional product) | If parented ad-hoc Grok should run without worktrees: bind `HOME` to Bridge private home on non-canonical path, re-measure, then consider profile `private-home` without lying about bare `cmd: grok` |
+| Grok model-catalog launch preflight | No adapter under `src/runtime/adapters/` → explicit `--model` is `runtime_preflight_unverifiable` (separate from isolation) |
 | OpenCode profile completeness | `label` / model aliases if UI needs them; permission inject on harness path |
 | ~~Claude active/drafted stop measurement~~ | **Closed `t-b727bd`** — authorized Claude Code 2.1.220 active-turn stop exited status 0 after Escape, Ctrl+C, and `/exit` (2026-07-25) |
 | Codex fork | only if Codex CLI gains stable native fork |
@@ -453,6 +481,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 | [`docs/system-design.md`](../system-design.md) | Engine vs shell; Bridge as control surface |
 | [`docs/runtimes/opencode.md`](./opencode.md) | Deep OpenCode measurement report |
 | [`docs/runtimes/hermes.md`](./hermes.md) | Hermes gap inventory (native CLI vs Tachyon seams; promotion path) |
+| [`docs/research/adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md) | Ad-hoc spawn isolation parity; Grok 0.2.112 measurements (`t-1d49df`) |
 | `src/runtime/runtimeProfile.ts` | Machine-readable profile fragments |
 | `src/resume/adapters.ts` | Resume/fork/harness descriptors |
 | `.tachyon/reviews/parity-doc-claude.md` | 2026-07-09 adversarial review |
@@ -464,6 +493,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-26 | **Ad-hoc spawn parity (§3.6 / `t-1d49df`):** measured Grok 0.2.112 — `GROK_HOME` isolates sessions; ad-hoc still omits `HOME` so ambient Claude settings load; runtime-wide **project-scoped** + parented worktree gate **kept**. Research: [`adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md). |
 | 2026-07-26 | **Codex probe effective-model proof (SDD 476 / `t-a10d31`):** closes the last provenance exemption. `codex exec --json` still emits no model identity, so the probe stopped passing `--ephemeral` and instead correlates the `thread_id` the stream already prints to the session rollout Codex writes — `sessions/**/rollout-<ts>-<thread_id>.jsonl`, whose `turn_context.payload.model` is the identity (the same field spec 378 latches). Correlation is exact or absent: one `thread.started`, one matching rollout, and the file's own `session_meta` must repeat the id; anything else records `unproven` rather than borrowing a neighbouring rollout. The isolation `--ephemeral` provided is replaced by a stronger one — a PRIVATE per-run `CODEX_HOME` under the run's scratch dir (auth reaching it by symlink, plugins/remote-plugins/apps/skill-search disabled: 1.2 MB versus 38 MB), torn down by a new adapter `cleanup` hook the runner awaits on every exit path including timeout and cancel. Measured: the human's `~/.codex/sessions` is untouched and even codex's arg0 helper binaries follow `CODEX_HOME`. Codex's verdict carries `evidence: "session-record"` to distinguish it from Claude/Grok's `provider-usage`: it proves Codex did not substitute a model between the flag and the wire, not what the provider served. Evidence: `npm run dogfood:probe-codex-model-proof` (real CLI) and `npm run dogfood:probe-provenance-parity`. |
 | 2026-07-26 | **Probe model provenance parity (SDD 474 / `t-be9405`):** audited every probe adapter against the four provenance obligations. All three already pass `--model` to the native invocation and persist `requestedModel` centrally. **Grok can prove its effective model** — `grok 0.2.112 -p --output-format json` reports `modelUsage` keyed by the identifier (`grok-4.5-build`, no `canonicalModel` sub-field), now extracted, so Grok probes leave SDD 473's `unproven` exemption. **Codex cannot**, measured on codex-cli 0.145.0: `exec --json` emits only thread/turn/usage records with no model identity, and the rollout carrying `turn_context.payload.model` is suppressed by the probe's `--ephemeral` (`t-a10d31`). A fleet guard now fails any adapter that neither declares `reportsEffectiveModel` nor carries a reasoned exemption. Evidence: `npm run dogfood:probe-provenance-parity`. |
 | 2026-07-26 | **Per-agent Codex danger authorization (SDD 472 / `t-b0440a`):** `approval_policy` and `sandbox_mode` are now held to enums **measured against `codex-cli 0.145.0`** (the config enums, which are wider than the CLI flag enums — `on-failure` exists only in config), and the two dangerous values (`never`, `danger-full-access`) are refused unless the agent's own profile authorizes them. This closes the asymmetry where Claude refused a dangerous value by default while Codex validated nothing and inherited any string from the person's global config. Same `authorize` mechanism as SDD 471, now per-runtime; neither runtime can claim the other's members. Evidence: `npm run dogfood:codex-danger-optin`. |
