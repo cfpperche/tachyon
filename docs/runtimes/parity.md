@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude canonical native policy — `t-fdd3a0`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-26 (Claude↔Codex canonical audit — `t-53455d`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`
 
@@ -135,6 +135,14 @@ subset; Claude exposes six safe settings scalars, local-shadow detection, MCP na
 section names without executable payloads. Control writes only the measured subset and marks
 affected running agents pending.
 
+The comparative audit in
+[`claude-codex-canonical-parity-audit-2026-07-26.md`](../reports/claude-codex-canonical-parity-audit-2026-07-26.md)
+created and reopened both canonical profiles in one Dev Host run and mapped
+Runtime Config, lifecycle, isolation, external auth, Bridge/capabilities and
+fail-closed claims to named regressions. Codex remains honestly `Limited`
+because native fork is unavailable; that is a native difference, not a missing
+Tachyon projection.
+
 ### 3.1.1 Native configuration inheritance
 
 Private-home isolation and behavior parity are independent. The installed Codex rollout proved this:
@@ -175,8 +183,8 @@ runtime in the `Other` parity category is not enough.
 
 | Runtime eligible for selector | Global inventory | Workspace inventory | Measured settings | Individual tooling | Native writes | Pending / next launch | Evidence |
 |------------------------------|:----------------:|:-------------------:|:-----------------:|:------------------:|:-------------:|:---------------------:|----------|
-| Codex | ✓ `~/.codex/config.toml` | ✓ `.codex/config.toml` | ✓ six scalar keys | ✓ MCP names; measured enable/disable | ✓ measured scalar/MCP subset, CAS + atomic projection | ✓ runtime-scoped | `src/runtimeConfig/codexInventory.ts`; `test/unit/codexRuntimeConfigInventory.test.ts`; SDD 446 / `t-39cf89` |
-| Claude | ✓ `~/.claude/settings.json` | ✓ `.claude/settings.json`, `.claude/settings.local.json` shadow detection, `.mcp.json` | ✓ six scalar keys | ✓ MCP names read-only; hooks/statusLine/MCP bodies opaque | ✓ settings scalar subset, per-document CAS + atomic JSON replace | ✓ runtime-scoped | `src/runtimeConfig/claudeInventory.ts`; `test/unit/claudeRuntimeConfigInventory.test.ts`; Dev Host scenario `claude-runtime-config.mjs`; SDD 464 / `t-e5cb7c` |
+| Codex | ✓ `~/.codex/config.toml` | ✓ `.codex/config.toml` | ✓ six scalar keys | ✓ MCP names; measured enable/disable | ✓ measured scalar/MCP subset, CAS + atomic projection | ✓ runtime-scoped | `src/runtimeConfig/codexInventory.ts`; `test/unit/codexRuntimeConfigInventory.test.ts`; comparative audit `t-53455d`; SDD 446 / `t-39cf89` |
+| Claude | ✓ `~/.claude/settings.json` | ✓ `.claude/settings.json`, `.claude/settings.local.json` shadow detection, `.mcp.json` | ✓ six scalar keys | ✓ MCP names read-only; hooks/statusLine/MCP bodies opaque | ✓ settings scalar subset, per-document CAS + atomic JSON replace | ✓ runtime-scoped | `src/runtimeConfig/claudeInventory.ts`; `test/unit/claudeRuntimeConfigInventory.test.ts`; Dev Host scenarios `claude-runtime-config.mjs` and `claude-codex-parity-audit.mjs`; SDD 464 / `t-e5cb7c`; audit `t-53455d` |
 
 **Not eligible yet:** Grok, OpenCode, Pi, Hermes and every other detected runtime. Their
 native formats and launch effects may exist elsewhere in Tachyon, but Control has no measured
