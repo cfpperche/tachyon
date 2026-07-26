@@ -12,7 +12,9 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
-_Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
+- Visual QA could not render the inventory because the pre-existing preview fixture never injects
+  `runtimeConfigSnapshot`. The defect is tracked as `t-80d367`; validation `v-45d903` carries the
+  equivalent installed-VSIX check instead of claiming an unobserved visual pass.
 
 ## Tradeoffs
 

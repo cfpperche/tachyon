@@ -4,18 +4,18 @@ _Generated from `plan.md` on 2026-07-26. Work top-to-bottom. Check boxes as task
 
 ## Implementation
 
-- [ ] Replace only the runtime segmented control with `KitDropdown`.
-- [ ] Render canonical runtime icons in the trigger and every item.
-- [ ] Add scoped trigger/menu/item/focus/selected styles.
-- [ ] Add focused regression coverage.
+- [x] Replace only the runtime segmented control with `KitDropdown`.
+- [x] Render canonical runtime icons in the trigger and every item.
+- [x] Add scoped trigger/menu/item/focus/selected styles.
+- [x] Add focused regression coverage.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Runtime selection still resets to the chosen runtime's first document.
-- [ ] Dropdown and icons are pinned by the focused test.
-- [ ] Typecheck and full repository verification pass.
+- [x] Runtime selection still resets to the chosen runtime's first document.
+- [x] Dropdown and icons are pinned by the focused test.
+- [x] Typecheck and full repository verification pass.
 
 **Headless check:** `npx vitest run test/unit/runtimeConfigDropdown.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
@@ -42,8 +42,10 @@ switch Claude/Codex with mouse and keyboard, and confirm the document/editor fol
 
 _Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
 
-- [ ] Evidence:
-- [ ] Verdict:
+- [x] Evidence: The official `cockpit:runtime-config` preview route was captured but remains on
+  `Loading runtime configuration…`; bug `t-80d367` records the missing snapshot injection.
+- [x] Verdict: `unable_to_judge` in headless preview, not a visual failure. Human validation
+  `v-45d903` is queued against the installed VSIX.
 
 ## Cookbook
 
