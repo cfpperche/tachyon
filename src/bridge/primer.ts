@@ -104,7 +104,7 @@ function configuredVerificationLines(input: PrimerInput): string[] {
 }
 
 function beforeFinishingVerificationLines(input: PrimerInput): string[] {
-  return [
+  const checks = [
     ...(input.verify?.full !== undefined
       ? [`Run configured check (workspace config settings.verify.full): ${input.verify.full}`]
       : []),
@@ -112,6 +112,12 @@ function beforeFinishingVerificationLines(input: PrimerInput): string[] {
       ? [`Run configured check (workspace config settings.verify.typecheck): ${input.verify.typecheck}`]
       : []),
   ];
+  return checks.length > 0
+    ? [
+        "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
+        ...checks,
+      ]
+    : [];
 }
 
 /** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7):

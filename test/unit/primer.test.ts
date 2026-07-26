@@ -66,6 +66,9 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
 
     expect(beforeFinishing.startsWith(BEFORE_FINISHING_OPEN)).toBe(true);
     expect(beforeFinishing.endsWith(BEFORE_FINISHING_CLOSE)).toBe(true);
+    expect(beforeFinishing).toContain(
+      "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
+    );
     expect(beforeFinishing.split("\n")).toContain(
       `Run configured check (workspace config settings.verify.full): ${fullCheck}`,
     );
@@ -129,6 +132,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     const fullOnly = renderPrimer({ agentName: "full", verify: { full: fullCheck } });
     expect(fullOnly.primer.split("\n")).toContain(`  - full: ${fullCheck}`);
     expect(fullOnly.primer).not.toContain("typecheck:");
+    expect(fullOnly.beforeFinishing).toContain("skip it for read-only investigation, reporting, and task authoring");
     expect(fullOnly.beforeFinishing).toContain(`workspace config settings.verify.full): ${fullCheck}`);
     expect(fullOnly.beforeFinishing).not.toContain("settings.verify.typecheck");
 
