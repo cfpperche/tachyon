@@ -21,6 +21,17 @@ policy and must not be imposed on projects that consume Tachyon.
   feature worktree. Do not leave a pointed worktree after merge; do not `point-clear --all` unless
   intentionally resetting every slot. See `docs/runbooks/dev-host.md` § After land.
 
+## Release boundary
+
+- **VS Code Marketplace publication is temporarily disabled.** In this repository, “generate a
+  release”, “release”, or equivalent wording means: bump the version when requested, build the
+  stable candidate, generate the local `.vsix`, run the packaged-artifact/provenance audit, and
+  report its path and SHA-256. It does **not** authorize uploading or changing Marketplace state.
+- Do not run `vsce publish`, `vsce unpublish`, Marketplace publishing/removal APIs, or equivalent
+  Marketplace UI actions. Keep the audited `.vsix` local.
+- Marketplace publication remains disabled until the human explicitly updates or revokes this
+  project policy. A request to generate another release is not such a revocation.
+
 ## Git scope
 
 - Preserve unrelated and pre-existing worktree changes. Inspect `git status` before staging.
