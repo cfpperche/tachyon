@@ -4663,14 +4663,38 @@ describe("AgentManager — session resume (spec 209)", () => {
         selectors: {},
         settings: { permissions: { allow: ["Read"] } },
       };
+      const capabilities: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1,
+        adapter: "claude",
+        sha256: "a".repeat(64),
+        sources: [{ referenceId: "review", kind: "skill", scope: "profile", owner: "agent", path: "capabilities/review", sha256: "b".repeat(64) }],
+        skills: [{ name: "review", source: {
+          source: "capabilities/review",
+          sourcePath: path.join(h.ws, "capabilities/review"),
+          type: "tree",
+          sha256: "b".repeat(64),
+          entries: [
+            { path: ".", type: "directory", mode: 0o755 },
+            { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# Captured review\n") },
+          ],
+        } }],
+        mcp: { selected: { command: "selected-mcp" } },
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "selected-hook" }] }] },
+        pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
       h.manager.defOf("claude")!.profileNativeConfig = nativeConfig;
+      h.manager.defOf("claude")!.profileCapabilities = capabilities;
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
-        const result = harness.materializeCanonicalClaudeHome(name, adapterFor("claude")!, cwd, nativeConfig);
+        const result = harness.materializeCanonicalClaudeProfileHome(name, adapterFor("claude")!, {
+          nativeConfig,
+          capabilities,
+        }, cwd);
         materialized.push(JSON.stringify({
           claudeJson: JSON.parse(fs.readFileSync(path.join(result.home, ".claude.json"), "utf8")),
           settings: JSON.parse(fs.readFileSync(path.join(result.home, "settings.json"), "utf8")),
-          hasSkills: fs.existsSync(path.join(result.home, "skills")),
+          skill: fs.readFileSync(path.join(result.home, "skills", "review", "SKILL.md"), "utf8"),
           mcp: JSON.parse(fs.readFileSync(path.join(result.home, "mcp.json"), "utf8")),
+          manifest: JSON.parse(fs.readFileSync(path.join(result.home, ".tachyon-profile-capabilities", "manifest.json"), "utf8")),
         }));
         return result;
       };
@@ -4707,10 +4731,12 @@ describe("AgentManager — session resume (spec 209)", () => {
         expect(state.claudeJson).toMatchObject({ hasCompletedOnboarding: true, userID: "u123" });
         expect(state.settings).toEqual({
           permissions: { allow: ["Read"] },
+          hooks: capabilities.hooks,
           autoMemoryEnabled: false,
         });
-        expect(state.hasSkills).toBe(false);
-        expect(state.mcp).toEqual({ mcpServers: {} });
+        expect(state.skill).toBe("# Captured review\n");
+        expect(state.mcp).toEqual({ mcpServers: { selected: { command: "selected-mcp" } } });
+        expect(state.manifest).toMatchObject({ adapter: "claude", capabilityProjectionSha256: "a".repeat(64) });
         expect(JSON.stringify(state)).not.toContain("ambient/sibling");
         expect(JSON.stringify(state)).not.toContain("stale");
       }

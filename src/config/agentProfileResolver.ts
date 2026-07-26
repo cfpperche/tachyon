@@ -23,6 +23,7 @@ import {
   type CapturedCapabilitySource,
 } from "./agentCapabilitySource.js";
 import { parseCodexHooksBlock } from "../plugins/adapters/codex.js";
+import { parseClaudeHooksBlock } from "../plugins/adapters/claude.js";
 
 export type AgentProfileDiagnosticCode =
   | "profile/missing"
@@ -79,8 +80,8 @@ export type AgentCapabilityHookClass = "capability" | "prompt-transform" | "obse
 export interface AgentCapabilityGrant {
   referenceId: string;
   sourceSha256: string;
-  adapter: "codex" | "pi";
-  kind: "mcp" | "hook" | "pi-extension" | "pi-package";
+  adapter: "claude" | "codex" | "pi";
+  kind: "skill" | "mcp" | "hook" | "pi-extension" | "pi-package";
   hookClass?: AgentCapabilityHookClass;
 }
 
@@ -95,7 +96,7 @@ export interface ResolvedAgentCapabilitySource {
 
 export interface ResolvedAgentCapabilityProjection {
   schemaVersion: 1;
-  adapter: "codex" | "pi";
+  adapter: "claude" | "codex" | "pi";
   sha256: string;
   /** Added only to the launch copy after the complete profile digest is known. */
   effectiveProfileSha256?: string;
@@ -259,8 +260,8 @@ const authoritySnapshotSchema = z.object({
   capabilityGrants: z.array(z.object({
     referenceId: publicIdSchema,
     sourceSha256: digestSchema,
-    adapter: z.enum(["codex", "pi"]),
-    kind: z.enum(["mcp", "hook", "pi-extension", "pi-package"]),
+    adapter: z.enum(["claude", "codex", "pi"]),
+    kind: z.enum(["skill", "mcp", "hook", "pi-extension", "pi-package"]),
     hookClass: z.enum(["capability", "prompt-transform", "observability", "enforcement"]).optional(),
   }).strict()).max(256).optional(),
 }).strict().superRefine((authority, ctx) => {
@@ -520,7 +521,7 @@ const capabilityMcpSchema = z.object({
 }).strict().superRefine((server, ctx) => {
   for (const [name, reference] of Object.entries(server.env ?? {})) {
     if (reference !== `\${${name}}`) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["env", name], message: `Codex requires the env key to match its reference ('\${${name}}')` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["env", name], message: `the env key must match its reference ('\${${name}}')` });
     }
   }
 });
@@ -611,13 +612,13 @@ function resolveCapabilities(
     errors.push(diagnostic("profile/capability-collision", "agent.yml", `capability reference ${JSON.stringify(id)} is selected more than once`, "capabilities"));
   }
   const adapter = profile.runtime.adapter;
-  if (adapter !== "codex" && adapter !== "pi") {
+  if (adapter !== "claude" && adapter !== "codex" && adapter !== "pi") {
     errors.push(diagnostic("profile/capability", "runtime adapter", `adapter ${JSON.stringify(adapter)} has no measured profile capability projection`, "runtime.adapter"));
     return { errors };
   }
   const hasPi = Object.values(selected?.pi ?? {}).some((value) => (value?.length ?? 0) > 0);
-  if (adapter === "codex" && hasPi) {
-    errors.push(diagnostic("profile/capability", "runtime adapter", "Pi resources are not supported by the Codex projection", "capabilities.pi"));
+  if ((adapter === "claude" || adapter === "codex") && hasPi) {
+    errors.push(diagnostic("profile/capability", "runtime adapter", `Pi resources are not supported by the ${adapter} projection`, "capabilities.pi"));
   }
   if (adapter === "pi" && ((selected?.mcp?.length ?? 0) > 0 || (selected?.hooks?.length ?? 0) > 0)) {
     errors.push(diagnostic("profile/capability", "runtime adapter", "Pi profile projections support skills and explicit Pi resources, not MCP or hooks", "capabilities"));
@@ -674,12 +675,13 @@ function resolveCapabilities(
       continue;
     }
     const name = path.posix.basename(reference.path);
+    if (adapter === "claude" && !requireGrant(reference, "skill")) continue;
     if (claim("skills", name, id)) skills.push({ name, source: captured });
   }
 
   for (const id of selected?.mcp ?? []) {
     const reference = get(id);
-    if (!reference || adapter !== "codex") continue;
+    if (!reference || (adapter !== "claude" && adapter !== "codex")) continue;
     const parsed = parseCapabilityYaml(reference, capabilityMcpSchema);
     if (typeof parsed === "string") {
       errors.push(diagnostic("profile/capability", reference.path, `MCP declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.mcp`));
@@ -695,15 +697,17 @@ function resolveCapabilities(
 
   for (const id of selected?.hooks ?? []) {
     const reference = get(id);
-    if (!reference || adapter !== "codex") continue;
+    if (!reference || (adapter !== "claude" && adapter !== "codex")) continue;
     const parsed = parseCapabilityYaml(reference, capabilityHookSchema);
     if (typeof parsed === "string") {
       errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.hooks`));
       continue;
     }
-    const normalized = parseCodexHooksBlock(JSON.stringify(parsed.hooks));
+    const normalized = adapter === "claude"
+      ? parseClaudeHooksBlock(JSON.stringify(parsed.hooks))
+      : parseCodexHooksBlock(JSON.stringify(parsed.hooks));
     if (!normalized.hooks) {
-      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} is not a valid Codex hook block: ${normalized.errors.join("; ")}`, `capabilities.hooks`));
+      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} is not a valid ${adapter} hook block: ${normalized.errors.join("; ")}`, `capabilities.hooks`));
       continue;
     }
     if (!requireGrant(reference, "hook", parsed.class)) continue;

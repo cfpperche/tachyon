@@ -220,6 +220,77 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.lstatSync(path.join(res.home, ".credentials.json")).isSymbolicLink()).toBe(true);
   });
 
+  it("canonical Claude consumes captured capabilities, reserves Bridge, and repairs stale projection state", () => {
+    const skillBytes = Buffer.from("# Canonical review\n");
+    const capabilities: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "claude",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [
+        { referenceId: "review", kind: "skill", scope: "project", owner: "workspace", path: "shared/review", sha256: "c".repeat(64) },
+        { referenceId: "docs", kind: "mcp", scope: "profile", owner: "agent", path: "capabilities/docs.yml", sha256: "d".repeat(64) },
+      ],
+      skills: [{ name: "review", source: {
+        source: "shared/review",
+        sourcePath: path.join(ws, "shared/review"),
+        type: "tree",
+        sha256: "c".repeat(64),
+        entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: skillBytes },
+        ],
+      } }],
+      mcp: { docs: { command: "node", args: ["docs.js"], env: { FAL_KEY: "${FAL_KEY}" } } },
+      hooks: { PostToolUseFailure: [{ hooks: [{ type: "command", command: "node observe.js" }] }] },
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+    const first = mgr.materializeCanonicalClaudeProfileHome("canonical", claude, {
+      nativeConfig: { adapter: "claude", selectors: {}, settings: { prefersReducedMotion: true } },
+      capabilities,
+    }, undefined, bridge);
+    const skillFile = path.join(first.home, "skills", "review", "SKILL.md");
+    const manifestFile = path.join(first.home, ".tachyon-profile-capabilities", "manifest.json");
+
+    expect(first.env).toMatchObject({ CLAUDE_CONFIG_DIR: first.home, FAL_KEY: "real-key" });
+    expect(fs.readFileSync(skillFile, "utf8")).toBe("# Canonical review\n");
+    expect(JSON.parse(fs.readFileSync(path.join(first.home, "settings.json"), "utf8"))).toEqual({
+      prefersReducedMotion: true,
+      hooks: capabilities.hooks,
+      autoMemoryEnabled: false,
+    });
+    expect(JSON.parse(fs.readFileSync(path.join(first.home, "mcp.json"), "utf8"))).toEqual({
+      mcpServers: { docs: capabilities.mcp.docs, tachyon_bridge: bridge },
+    });
+    expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({
+      adapter: "claude",
+      effectiveProfileSha256: "b".repeat(64),
+      capabilityProjectionSha256: "a".repeat(64),
+    });
+
+    fs.writeFileSync(skillFile, "stale");
+    fs.writeFileSync(path.join(first.home, "settings.json"), JSON.stringify({ hooks: { Stop: [] } }));
+    fs.writeFileSync(path.join(first.home, "mcp.json"), JSON.stringify({ mcpServers: { attacker: { command: "evil" } } }));
+    fs.writeFileSync(manifestFile, "stale");
+    mgr.materializeCanonicalClaudeProfileHome("canonical", claude, { capabilities }, undefined, bridge);
+    expect(fs.readFileSync(skillFile, "utf8")).toBe("# Canonical review\n");
+    expect(JSON.stringify(JSON.parse(fs.readFileSync(path.join(first.home, "settings.json"), "utf8")))).not.toContain("Stop");
+    expect(JSON.stringify(JSON.parse(fs.readFileSync(path.join(first.home, "mcp.json"), "utf8")))).not.toContain("attacker");
+    expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({ capabilityProjectionSha256: "a".repeat(64) });
+
+    const invalid = structuredClone(capabilities);
+    delete invalid.skills[0]!.source.entries.find((entry) => entry.path === "SKILL.md")!.bytes;
+    expect(() => mgr.materializeCanonicalClaudeProfileHome("canonical", claude, { capabilities: invalid }))
+      .toThrow(/has no bytes/);
+    expect(fs.existsSync(manifestFile)).toBe(false);
+
+    mgr.materializeCanonicalClaudeHome("canonical", claude);
+    expect(fs.existsSync(path.join(first.home, "skills"))).toBe(false);
+    expect(fs.existsSync(manifestFile)).toBe(false);
+  });
+
   it("canonical Claude does not inspect ambient workspace settings without a selected policy", () => {
     fs.mkdirSync(path.join(ws, ".claude"), { recursive: true });
     const outside = path.join(path.dirname(ws), "outside-settings.json");

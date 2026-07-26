@@ -17,8 +17,8 @@ const inspector = z.object({
 const capabilityGrant = z.object({
   referenceId: publicId,
   sourceSha256: digest,
-  adapter: z.enum(["codex", "pi"]),
-  kind: z.enum(["mcp", "hook", "pi-extension", "pi-package"]),
+  adapter: z.enum(["claude", "codex", "pi"]),
+  kind: z.enum(["skill", "mcp", "hook", "pi-extension", "pi-package"]),
   hookClass: z.enum(["capability", "prompt-transform", "observability", "enforcement"]).optional(),
 }).strict().superRefine((grant, ctx) => {
   if (grant.kind === "hook" && !grant.hookClass) {

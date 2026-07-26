@@ -904,6 +904,12 @@ export class Workspace {
         const adapter = adapterFor(def.cmd);
         if (def.profileCapabilities) {
           if (!adapter) throw new Error(`runtime for '${name}' has no capability projection adapter`);
+          if (adapter.runtime === "claude") {
+            return this.harness.materializeCanonicalClaudeProfileHome(name, adapter, {
+              ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),
+              capabilities: def.profileCapabilities,
+            }, cwd, this.bridgeEntry());
+          }
           if (adapter.runtime === "codex") {
             return this.harness.materializeCanonicalCodexProfileHome(name, adapter, {
               ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),

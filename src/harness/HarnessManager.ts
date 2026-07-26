@@ -857,6 +857,9 @@ export class HarnessManager {
       throw new HarnessUnavailableError(agent, `capability snapshot targets '${projection.adapter}', not '${adapter.runtime}'`);
     }
     if (adapter.runtime === "pi") return this.materializePiProfileHome(agent, projection, cwd);
+    if (adapter.runtime === "claude") {
+      return this.materializeCanonicalClaudeProfileHome(agent, adapter, { capabilities: projection }, cwd, bridgeEntry);
+    }
     if (adapter.runtime !== "codex") {
       throw new HarnessUnavailableError(agent, `runtime '${adapter.runtime}' has no measured profile capability projection`);
     }
@@ -1862,27 +1865,75 @@ export class HarnessManager {
     projection?: ResolvedAgentNativeConfigProjection,
     bridgeEntry?: Record<string, unknown>,
   ): MaterializedHarness {
+    return this.materializeCanonicalClaudeProfileHome(
+      agent,
+      adapter,
+      { ...(projection ? { nativeConfig: projection } : {}) },
+      cwd,
+      bridgeEntry,
+    );
+  }
+
+  /**
+   * Materialize Claude native settings and captured capabilities as one manifest-committed private
+   * generation. The manifest is removed first and published last, so partial writes are never
+   * attestable as a complete capability projection.
+   */
+  materializeCanonicalClaudeProfileHome(
+    agent: string,
+    adapter: ResumeAdapter,
+    projection: {
+      nativeConfig?: ResolvedAgentNativeConfigProjection;
+      capabilities?: ResolvedAgentCapabilityProjection;
+    },
+    cwd?: string,
+    bridgeEntry?: Record<string, unknown>,
+  ): MaterializedHarness {
+    const nativeConfig = projection.nativeConfig;
+    const capabilities = projection.capabilities;
     if (adapter.runtime !== "claude") throw new Error(`runtime '${adapter.runtime}' is not Claude`);
-    if (projection && projection.adapter !== "claude") {
-      throw new HarnessUnavailableError(agent, `native configuration targets '${projection.adapter}', not 'claude'`);
+    if (nativeConfig && nativeConfig.adapter !== "claude") {
+      throw new HarnessUnavailableError(agent, `native configuration targets '${nativeConfig.adapter}', not 'claude'`);
+    }
+    if (capabilities && capabilities.adapter !== "claude") {
+      throw new HarnessUnavailableError(agent, `capability snapshot targets '${capabilities.adapter}', not 'claude'`);
+    }
+    const harness = adapter.harness;
+    if (!harness || harness.mcp.mode !== "flag") {
+      throw new HarnessUnavailableError(agent, "Claude capability projection requires flag-scoped MCP support");
     }
     const home = this.materializeHome(agent, adapter, cwd);
     this.materializeCanonicalClaudeBootstrap(home, cwd);
 
-    for (const entry of ["CLAUDE.md", "settings.local.json", "mcp.json", "plugins", "agents", "commands", "skills"]) {
+    for (const entry of ["CLAUDE.md", "settings.local.json", "mcp.json", "plugins", "agents", "commands", "skills", PROFILE_CAPABILITY_ROOT]) {
       fs.rmSync(path.join(home, entry), { recursive: true, force: true });
     }
 
-    const settings = { ...(projection?.settings ?? {}), autoMemoryEnabled: false };
+    const settings = {
+      ...(nativeConfig?.settings ?? {}),
+      ...(capabilities && Object.keys(capabilities.hooks).length > 0 ? { hooks: capabilities.hooks } : {}),
+      autoMemoryEnabled: false,
+    };
     const settingsPath = path.join(home, "settings.json");
-    fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+    atomicWrite(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, 0o600);
 
-    const servers = bridgeEntry ? { tachyon_bridge: bridgeEntry } : {};
-    const args = this.materializeMcpConfig(agent, { inherit: "none" }, adapter, home, servers);
+    const servers: Record<string, unknown> = {
+      ...(capabilities?.mcp ?? {}),
+      ...(bridgeEntry ? { tachyon_bridge: bridgeEntry } : {}),
+    };
+    const mcpPath = path.join(home, harness.mcp.fileName);
+    atomicWrite(mcpPath, `${JSON.stringify(buildMcpConfig(servers), null, 2)}\n`, 0o600);
+    if (capabilities) {
+      this.replaceCapturedSkillTree(agent, home, capabilities);
+      this.writeProfileCapabilityManifest(agent, home, capabilities);
+    }
+    const secretEnv = capabilities
+      ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp })
+      : {};
     return {
       home,
-      env: { CLAUDE_CONFIG_DIR: home },
-      args: ["--setting-sources", "user", "--settings", settingsPath, ...args],
+      env: { CLAUDE_CONFIG_DIR: home, ...secretEnv },
+      args: ["--setting-sources", "user", "--settings", settingsPath, ...harness.mcp.args(mcpPath)],
     };
   }
 

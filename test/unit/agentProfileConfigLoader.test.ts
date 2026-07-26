@@ -365,6 +365,52 @@ describe("loadProfileAwareConfig", () => {
     expect(result.errors.join("\n")).toContain("Claude workspace key 'hooks' is outside the selected family allowlist");
   });
 
+  it("projects only captured, Claude-granted skills, hooks and MCP", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-capabilities-");
+    const capabilityRoot = path.join(root, ".tachyon", "agents", "codex", "capabilities");
+    const skill = path.join(capabilityRoot, "review");
+    fs.mkdirSync(skill, { recursive: true });
+    fs.writeFileSync(path.join(skill, "SKILL.md"), "# Review\n");
+    const skillDigest = treeSha256(skill);
+    const mcp = "schemaVersion: 1\nname: docs\ncommand: node\nargs: [docs.js]\nenv:\n  DOCS_TOKEN: ${DOCS_TOKEN}\n";
+    const hook = "schemaVersion: 1\nclass: observability\nhooks:\n  PostToolUseFailure:\n    - hooks:\n        - type: command\n          command: node observe.js\n";
+    fs.writeFileSync(path.join(capabilityRoot, "docs.yml"), mcp);
+    fs.writeFileSync(path.join(capabilityRoot, "observe.yml"), hook);
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      capabilities: { skills: ["review"], mcp: ["docs"], hooks: ["observe"] },
+      references: [
+        { id: "review", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/review", mode: "pinned", sha256: skillDigest },
+        { id: "docs", kind: "mcp", scope: "profile", owner: AGENT_ID, path: "capabilities/docs.yml", mode: "pinned", sha256: sha256(mcp) },
+        { id: "observe", kind: "hook", scope: "profile", owner: AGENT_ID, path: "capabilities/observe.yml", mode: "pinned", sha256: sha256(hook) },
+      ],
+    });
+    const claudeAuthority = authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+      capabilityGrants: [
+        { referenceId: "review", sourceSha256: skillDigest, adapter: "claude", kind: "skill" },
+        { referenceId: "docs", sourceSha256: sha256(mcp), adapter: "claude", kind: "mcp" },
+        { referenceId: "observe", sourceSha256: sha256(hook), adapter: "claude", kind: "hook", hookClass: "observability" },
+      ],
+    });
+    const result = load(root, claudeAuthority);
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents.codex.profileCapabilities).toMatchObject({
+      adapter: "claude",
+      skills: [{ name: "review", source: { sha256: skillDigest } }],
+      mcp: { docs: { command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } } },
+      hooks: { PostToolUseFailure: expect.any(Array) },
+    });
+
+    const denied = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+      capabilityGrants: claudeAuthority.capabilityGrants?.filter((grant) => grant.kind !== "skill"),
+    }));
+    expect(denied.config).toBeUndefined();
+    expect(denied.errors.join("\n")).toContain("lacks an exact host-custodied skill grant");
+  });
+
   it("rejects a Claude profile when authority selects another runtime inspector", () => {
     const root = temporaryRoot("tachyon-agent-profile-claude-wrong-inspector-");
     const bytes = writeProfile(root, { runtime: { adapter: "claude", executable: "claude" } });

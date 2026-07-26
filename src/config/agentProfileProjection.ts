@@ -41,13 +41,14 @@ const GROK_INSPECTOR_CONTRACT = [
   "ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
 const CLAUDE_INSPECTOR_CONTRACT = [
-  "tachyon/claude-closed-private-home-input-inspector/v3",
+  "tachyon/claude-closed-private-home-input-inspector/v4",
   "literal executable claude",
   "CLAUDE_CONFIG_DIR is Tachyon-owned harness/<agent> on every canonical launch",
   "--setting-sources user plus --settings selects only closed profile-projected scalar settings",
   "autoMemoryEnabled is forced false",
   "--strict-mcp-config selects a host-custodied Bridge-only MCP file",
-  "workspace settings.local, skills, hooks, MCP and plugins are not inherited",
+  "workspace settings.local and plugins are not inherited",
+  "selected owner-captured skills, hooks and MCP require exact host grants and are reprojected",
   "ambient CLAUDE.md, agents, commands and plugin roots must be absent",
   "credentials and allowlisted onboarding markers remain external auth/bootstrap",
 ].join("\n");
@@ -74,7 +75,7 @@ export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "claude",
   id: "tachyon.claude-closed-private-home-inputs",
-  version: "3",
+  version: "4",
   sha256: crypto.createHash("sha256").update(CLAUDE_INSPECTOR_CONTRACT).digest("hex"),
 });
 
