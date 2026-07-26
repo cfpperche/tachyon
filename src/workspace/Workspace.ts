@@ -84,6 +84,7 @@ import {
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
+import { SurfacePreservation } from "./surfacePreservation.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -555,6 +556,8 @@ export class Workspace {
   private readonly completionHints = new CompletionHintStore();
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
+  /** t-b88106 — a relaunch never changes whether an agent is visible; this owns that rule. */
+  private readonly surfaces = new SurfacePreservation();
   /** t-71ec3b — per-agent delayed retry for real runtime rate-limit reset screens. */
   private readonly rateLimitRetries = new Map<string, { timer: NodeJS.Timeout; episodeKey: string; attempt: number }>();
   /** spec 332 (dueto F3) — agents whose death was JUST caused by a deliberate kill/dismiss (onKilled);
@@ -1080,10 +1083,13 @@ export class Workspace {
         this.persistCallerRegistry();
       },
       onSpawned: (name, reveal) => {
-        // F3: a Bridge-spawned child passes reveal=false so it doesn't yank the human's
-        // editor focus off the parent. It still appears in the tree (nested) — the human
-        // opens it on demand. Human ▶ / autostart / resume / restart reveal as before.
-        if (reveal) this.terminals.open(name, this.manager.session(name));
+        // F3: a Bridge-spawned child passes "silent" so it doesn't yank the human's editor focus off
+        // the parent. It still appears in the tree (nested) — the human opens it on demand.
+        // t-b88106: "preserve" (restart / resume / crash- and watch-restart) is resolved against the
+        // surface the agent ACTUALLY had, so a headless agent stays headless.
+        if (this.surfaces.shouldOpen(name, reveal, () => this.terminals.has(name))) {
+          this.terminals.open(name, this.manager.session(name));
+        }
         // spec 216 (codex r1 M2): a fresh session (spawn/restart/resume) clears any stale
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
@@ -1109,6 +1115,7 @@ export class Workspace {
         await this.deliveryLease.quarantineKilledExecution(name);
         this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
+        this.surfaces.forget(name); // t-b88106 — a kill ends the agent; nothing to restore
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
@@ -1126,8 +1133,12 @@ export class Workspace {
       },
       // Restart kill+new fallback only (t-4d2630): close the old terminal now (sync) so
       // post-spawn onSpawned re-opens a fresh attach. Happy-path respawn-pane keeps clients
-      // attached — AgentManager skips onRestart then; onSpawned still reveals the live tab.
+      // attached — AgentManager skips onRestart then; onSpawned still restores the live tab.
       onRestart: (name) => {
+        // t-b88106 — this close is the ONE place a restart destroys the evidence of what the agent
+        // looked like, so record it before closing. Without this, the kill+new fallback would make
+        // every restarted agent look headless and a visible pane would never come back.
+        this.surfaces.noteBeforeRelaunchClose(name, this.terminals.has(name));
         this.terminals.close(name);
         this.adhocBackstop.reset(name);
         this.completionHints.clear(name);

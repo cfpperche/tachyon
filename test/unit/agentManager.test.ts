@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions } from "../../src/agents/AgentManager.js";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
@@ -1354,7 +1354,7 @@ describe("AgentManager", () => {
 
   it("spawn passes reveal to onSpawned — Bridge child (reveal:false) doesn't open a tab (F3)", async () => {
     const { tmux } = fakeTmux();
-    const reveals: Array<[string, boolean]> = [];
+    const reveals: Array<[string, SpawnReveal]> = [];
     const manager = new AgentManager({
       tmux,
       wsHash: HASH,
@@ -1363,11 +1363,36 @@ describe("AgentManager", () => {
       getMaxAgents: () => 8,
       onSpawned: (n, r) => reveals.push([n, r]),
     });
-    await manager.spawn("a"); // human/declared → reveal default true
+    await manager.spawn("a"); // human/declared → a start is the reason a surface should exist
     await manager.spawn("child", { cmd: "sh", parent: "a", reveal: false }); // Bridge child
     expect(reveals).toEqual([
-      ["a", true],
-      ["child", false],
+      ["a", "reveal"],
+      ["child", "silent"],
+    ]);
+  });
+
+  /**
+   * t-b88106 — the reported defect. A relaunch used to assert `true`, so restarting an agent that was
+   * working headless materialized an editor terminal nobody asked for. A relaunch CONTINUES an agent;
+   * it does not decide whether the agent should be visible. That is now stated as `preserve`, and the
+   * presentation layer resolves it against the surface the agent actually had.
+   */
+  it("restart asks the presentation to PRESERVE the surface rather than reveal one", async () => {
+    const { tmux } = fakeTmux();
+    const reveals: Array<[string, SpawnReveal]> = [];
+    const manager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
+      getMaxAgents: () => 8,
+      onSpawned: (n, r) => reveals.push([n, r]),
+    });
+    await manager.spawn("a");
+    await manager.restart("a", { stop: "force", session: "new" });
+    expect(reveals).toEqual([
+      ["a", "reveal"],
+      ["a", "preserve"], // crash recovery and watch-restart take this exact path
     ]);
   });
 

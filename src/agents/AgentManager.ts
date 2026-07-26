@@ -391,6 +391,23 @@ function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
   return { cmd, advisory: `reviewer runtime '${path.basename(parsed.binary) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
 }
 
+/**
+ * t-b88106 — what a launch asks the PRESENTATION layer to do about this agent's surface.
+ *
+ * `reveal`   this launch is the reason a surface should exist: a human ▶, an explicit start, a fork.
+ * `silent`   never open anything (a Bridge-spawned child must not yank the human's focus, F3).
+ * `preserve` keep whatever the agent already was. A restart/resume/crash-recovery relaunch is a
+ *            continuation of an agent that was ALREADY headless or already open — it is not a
+ *            request to change that. Deciding it here, in the manager, is impossible: only the
+ *            presentation layer knows whether a surface is open, and a persistent engine can be
+ *            serving several windows that disagree. So the manager states the intent and the
+ *            presentation resolves it.
+ *
+ * The old signature was a boolean, and restart/resume/crash-restart all passed `true` — which is
+ * why relaunching a headless agent materialized an editor terminal nobody asked for.
+ */
+export type SpawnReveal = "reveal" | "preserve" | "silent";
+
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
@@ -487,7 +504,7 @@ export interface AgentManagerOptions {
   notify?: (message: string, level: "warn") => void;
   /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
-  onSpawned?: (name: string, reveal: boolean, context?: { worktree?: WorktreeRecord; adhoc: boolean }) => void;
+  onSpawned?: (name: string, reveal: SpawnReveal, context?: { worktree?: WorktreeRecord; adhoc: boolean }) => void;
   onStopping?: (name: string) => void;
   onKilled?: (name: string) => unknown;
   /**
@@ -2378,7 +2395,7 @@ export class AgentManager {
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
-    this.opts.onSpawned?.(name, opts?.reveal ?? true, { worktree, adhoc });
+    this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, adhoc });
     await this.attachPaneTranscript(session);
     return canonicalReceipt;
   }
@@ -3594,7 +3611,10 @@ export class AgentManager {
     }
     // spec 364 — restart is a fresh process with Bridge re-injection; stamp generation.
     this.stampBridgeClientBinding(name, restartBridge.wired);
-    this.opts.onSpawned?.(name, true); // restart is a human action — reveal (existing attach or fresh open)
+    // t-b88106 — a restart CONTINUES an agent; it does not decide whether it should be visible. A pane
+    // that was open is restored in place; one that was headless (including crash auto-restart and
+    // watch-restart, which no human asked for) stays headless.
+    this.opts.onSpawned?.(name, "preserve");
     } catch (error) {
       const primary = error instanceof Error ? error : new Error(String(error));
       const failures: Error[] = [primary];
@@ -3964,7 +3984,10 @@ export class AgentManager {
     this.opts.ledger?.record(name, { ...activeRecord, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).
     if (!opts?.deferBridgeStamp) this.stampBridgeClientBinding(name, resumeBridge.wired);
-    this.opts.onSpawned?.(name, true); // resume is activation/human-driven — reveal
+    // t-b88106 — resume re-attaches an existing agent, and most resumes are activation/rebind rather
+    // than a human asking to look at it. Preserve: `restoreOpenTerminals()` is what reopens the tabs
+    // that were genuinely open, from the manifest.
+    this.opts.onSpawned?.(name, "preserve");
 
     // Resume does not recompose def.instructions (transcript carries the original brief) and does
     // NOT paste the 363 primer by default — all runtimes, all callers (sidebar / autostart / rebind).
@@ -4389,7 +4412,7 @@ export class AgentManager {
       );
     }
     this.adhoc.set(forkName, { ...forkDefinition, worktree: !!worktree });
-    this.opts.onSpawned?.(forkName, true);
+    this.opts.onSpawned?.(forkName, "reveal"); // a fork is a new agent someone asked for — nothing to preserve
     await this.attachPaneTranscript(this.session(forkName));
     return forkName;
   }
