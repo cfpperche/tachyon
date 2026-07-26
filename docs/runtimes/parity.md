@@ -414,17 +414,27 @@ No Product Invariant change. No new adapter in this task.
 
 | Runtime | Profile isolation | Ad-hoc auto `isolate:transcript` | Bridge private surface | Parented ad-hoc **without** worktree |
 |---------|-------------------|----------------------------------|------------------------|--------------------------------------|
-| Claude | mint ✓ | yes | `--mcp-config` file | **allow** |
-| Codex | private-home ✓ | yes | private `CODEX_HOME` family | **allow** |
-| OpenCode | private-home ✓ | yes | `OPENCODE_CONFIG` | **allow** (t-e2ebe3) |
+| Claude | mint ✓ | yes (`ResumeAdapter.harness`) | `--mcp-config` file | **allow** |
+| Codex | private-home ✓ | yes (`ResumeAdapter.harness`) | private `CODEX_HOME` family | **allow** |
+| OpenCode | private-home ✓ | yes (`ResumeAdapter.harness`) | `OPENCODE_CONFIG` | **allow** (t-e2ebe3) |
 | Grok | **project-scoped** ✓ | **no** (t-303f2b — reuse Bridge `GROK_HOME`, avoid dual-home auth race) | `GROK_HOME` only (**not** `HOME`) | **refuse** — worktree / harness / registered worktree cwd |
-| Pi | private-home ✓ | private dirs via adapter/harness path | Pi Bridge extension + private dirs | **allow** |
+| Pi | private-home ✓ | **no** (`ResumeAdapter.pi` has **no** `harness` — auto-isolate never fires) | profile `private-home` → `materializeRuntimeHarness` / `materializePiHomeOnly` (`PI_CODING_AGENT_*`) + Bridge extension | **allow** |
 | Hermes | private-home ✓ | no (Bridge `HERMES_HOME`) | `HERMES_HOME` | **allow** |
+
+**Pi ad-hoc note (code of record):** do not describe Pi auto-isolation as “adapter
+harness.” Private agent/session dirs come from verified profile
+`isolation.mechanism === "private-home"` driving `AgentManager.materializeRuntimeHarness`
+and `Workspace` → `HarnessManager.materializePiHomeOnly` / `materializePiHome`
+(SDD 401/406). Opt-in `def.harness` only layers exact resource snapshots; it is
+not `ResumeAdapter.harness`.
 
 **Grok ad-hoc ruling (do not weaken without new measurement):**
 
-1. `GROK_HOME` **does** isolate sessions/config from ambient `~/.grok` (dual-home live `-p` proof, 2026-07-26).
-2. Without co-binding `HOME`, Grok **still loads** `$HOME/.claude/settings.json` (`grok inspect --json` permissions.sources).
+1. `GROK_HOME` **does** isolate sessions/config from ambient `~/.grok` (dual-home
+   live `-p` proof; sanitized layout + protocol in research appendix, 2026-07-26).
+2. Without co-binding `HOME`, Grok **still loads** `$HOME/.claude/settings.json`
+   (`grok inspect --json` → `permissions.sources` / `loaded: 1`; cleared when
+   `HOME=GROK_HOME` co-bound — research M1).
 3. Canonical-only `HOME`+`GROK_HOME` co-bind (SDD 456) is **not** the ad-hoc path; runtime-wide profile therefore stays **project-scoped**, and parented non-harness ad-hoc correctly requires an isolated worktree.
 4. Explicit `--model …` refusals on Grok are a **separate** gap: no authoritative model-catalog launch-preflight adapter (not isolation).
 
@@ -493,6 +503,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-26 | **Ad-hoc spawn parity review fix (`t-1d49df` / `grok-adhoc-fixer`):** (1) Pi §3.6 row no longer mislabels private home as adapter-harness auto-isolate — `ResumeAdapter.pi` has no `harness`; home comes from profile `private-home` → `materializeRuntimeHarness` / `materializePiHomeOnly`. (2) Research appendix commits sanitized M1–M3 protocol + redacted outputs so HOME ambient / dual-home claims are independently re-runnable. Grok fail-closed worktree gate **unchanged**. |
 | 2026-07-26 | **Ad-hoc spawn parity (§3.6 / `t-1d49df`):** measured Grok 0.2.112 — `GROK_HOME` isolates sessions; ad-hoc still omits `HOME` so ambient Claude settings load; runtime-wide **project-scoped** + parented worktree gate **kept**. Research: [`adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md). |
 | 2026-07-26 | **Codex probe effective-model proof (SDD 476 / `t-a10d31`):** closes the last provenance exemption. `codex exec --json` still emits no model identity, so the probe stopped passing `--ephemeral` and instead correlates the `thread_id` the stream already prints to the session rollout Codex writes — `sessions/**/rollout-<ts>-<thread_id>.jsonl`, whose `turn_context.payload.model` is the identity (the same field spec 378 latches). Correlation is exact or absent: one `thread.started`, one matching rollout, and the file's own `session_meta` must repeat the id; anything else records `unproven` rather than borrowing a neighbouring rollout. The isolation `--ephemeral` provided is replaced by a stronger one — a PRIVATE per-run `CODEX_HOME` under the run's scratch dir (auth reaching it by symlink, plugins/remote-plugins/apps/skill-search disabled: 1.2 MB versus 38 MB), torn down by a new adapter `cleanup` hook the runner awaits on every exit path including timeout and cancel. Measured: the human's `~/.codex/sessions` is untouched and even codex's arg0 helper binaries follow `CODEX_HOME`. Codex's verdict carries `evidence: "session-record"` to distinguish it from Claude/Grok's `provider-usage`: it proves Codex did not substitute a model between the flag and the wire, not what the provider served. Evidence: `npm run dogfood:probe-codex-model-proof` (real CLI) and `npm run dogfood:probe-provenance-parity`. |
 | 2026-07-26 | **Probe model provenance parity (SDD 474 / `t-be9405`):** audited every probe adapter against the four provenance obligations. All three already pass `--model` to the native invocation and persist `requestedModel` centrally. **Grok can prove its effective model** — `grok 0.2.112 -p --output-format json` reports `modelUsage` keyed by the identifier (`grok-4.5-build`, no `canonicalModel` sub-field), now extracted, so Grok probes leave SDD 473's `unproven` exemption. **Codex cannot**, measured on codex-cli 0.145.0: `exec --json` emits only thread/turn/usage records with no model identity, and the rollout carrying `turn_context.payload.model` is suppressed by the probe's `--ephemeral` (`t-a10d31`). A fleet guard now fails any adapter that neither declares `reportsEffectiveModel` nor carries a reasoned exemption. Evidence: `npm run dogfood:probe-provenance-parity`. |
