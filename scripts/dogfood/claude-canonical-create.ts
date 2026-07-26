@@ -287,11 +287,10 @@ console.log("\n== Scenario 5: bypassPermissions HOME converges with permissions 
   }
 }
 
-// ── Scenario 4: pre-existing defect, tracked separately — rollback into an EMPTY roster degrades.
-// `agents: {}` is invalid config, so compensating the first-ever agent cannot reload a valid
-// roster and the transaction is marked degraded/blocked instead of rolled back. Not Claude-specific,
-// so it is reported here as evidence rather than gating this dogfood.
-console.log("\n== Scenario 4: empty-roster rollback (known separate defect) ==");
+// ── Scenario 4: rolling the FIRST agent back restores an empty roster, which loadConfig refuses.
+// The durable restore is complete by then, so the person must get the real refusal and a clean
+// rollback — not a degraded transaction blocking an agent that no longer exists (t-07d05c).
+console.log("\n== Scenario 4: empty-roster rollback stays clean (t-07d05c) ==");
 {
   const home = makeHome({ ...AMBIENT_GLOBAL_SETTINGS, permissions: { defaultMode: "bypassPermissions" } });
   let message = "";
@@ -300,7 +299,12 @@ console.log("\n== Scenario 4: empty-roster rollback (known separate defect) ==")
   } catch (error) {
     message = error instanceof Error ? error.message : String(error);
   }
-  console.log(`NOTE — empty-roster rollback outcome: ${message || "(no error)"}`);
+  checks.push(report(
+    "first-agent rollback reports the real refusal, not a degraded transaction",
+    message.includes("'permissions.defaultMode' value 'bypassPermissions' is not projectable")
+    && !message.includes("degraded"),
+    message,
+  ));
 }
 
 for (const dir of cleanup) fs.rmSync(dir, { recursive: true, force: true });

@@ -307,6 +307,107 @@ describe("agent profile lifecycle kernel", () => {
     expect(activations).toEqual(["target", "prior"]);
   });
 
+  it("t-07d05c: rolls back the first agent cleanly when the restored roster is empty", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    const original = config.read();
+    const activations: string[] = [];
+    // The real host reloads config on activation, and loadConfig refuses a roster with neither
+    // agents nor terminals — so restoring the prior state of a first-ever create throws.
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: initialProfile,
+      authority,
+      config,
+      activateState: (state) => {
+        activations.push(state);
+        if (state === "target") throw new Error("activation rejected");
+        if (state === "prior") throw new Error("'agents' must be a non-empty mapping of agent name -> definition");
+      },
+    })).rejects.toThrow("activation rejected");
+
+    expect(activations).toEqual(["target", "prior"]);
+    // The original activation failure surfaces — not a degraded-transaction error.
+    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
+    expect(config.read()).toBe(original);
+    expect(authority.records.has("codex")).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config)))
+      .toEqual({ reconciled: [], degraded: [] });
+  });
+
+  it.each([
+    ["a scalar", "agents: {}\nterminals: oops\n"],
+    ["a list", "agents: {}\nterminals:\n  - one\n"],
+    ["null", "agents: {}\nterminals:\n"],
+  ])("t-07d05c: still degrades when the restored roster has %s instead of a mapping", async (_label, priorConfig) => {
+    const root = temporaryWorkspace();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), priorConfig);
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    // A present-but-malformed block is a real config error, not an untouched workspace, so the
+    // reload failure it causes must not be mistaken for the empty-roster case.
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: initialProfile,
+      authority,
+      config,
+      activateState: (state) => {
+        if (state === "target") throw new Error("activation rejected");
+        if (state === "prior") throw new Error("'terminals' must be a mapping of terminal name -> definition");
+      },
+    })).rejects.toThrow("transaction degraded");
+    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
+  });
+
+  it.each([
+    ["a scalar", "agents: oops\n"],
+    ["a list", "agents:\n  - one\n"],
+  ])("t-07d05c: refuses to stage a create when the agents block is %s", async (_label, priorConfig) => {
+    const root = temporaryWorkspace();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), priorConfig);
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    // A malformed agents block cannot even take the pointer, so the create fails before staging
+    // and never reaches compensation — nothing is published and nothing is blocked.
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: initialProfile,
+      authority,
+      config,
+    })).rejects.toThrow();
+    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
+    expect(authority.records.has("codex")).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+  });
+
+  it("t-07d05c: still degrades when prior activation fails on a populated roster", async () => {
+    const root = temporaryWorkspace();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  shell:\n    cmd: bash\n");
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: initialProfile,
+      authority,
+      config,
+      activateState: (state) => {
+        if (state === "target") throw new Error("activation rejected");
+        if (state === "prior") throw new Error("host reload failed for an unrelated reason");
+      },
+    })).rejects.toThrow("transaction degraded");
+    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
+  });
+
   it.each(["staged", "profile-published", "authority-published", "locator-written", "activated"] as const)(
     "compensates a create failure after %s without leaving partial identity state",
     async (phase) => {

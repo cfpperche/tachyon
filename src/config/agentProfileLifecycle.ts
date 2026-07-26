@@ -444,6 +444,36 @@ function authorityFor(agentName: string, profile: AgentProfileV1, sha256: string
   };
 }
 
+/**
+ * t-07d05c — a roster with neither agents nor terminals is what an untouched workspace looks like,
+ * and `loadConfig` deliberately refuses it. Rolling back the FIRST canonical agent therefore
+ * restores a config the host cannot reactivate, even though the restore itself was perfect.
+ * Recognising that exact shape keeps the refusal in `loadConfig` intact while letting the
+ * compensation report a clean rollback instead of a degraded transaction.
+ */
+function isEmptyRoster(configText: string): boolean {
+  let raw: unknown;
+  try {
+    raw = parseDocument(configText).toJS();
+  } catch {
+    return false;
+  }
+  // An empty document is the untouched workspace: both blocks are simply absent.
+  if (raw === null || raw === undefined) return true;
+  if (typeof raw !== "object" || Array.isArray(raw)) return false;
+  // Exactly two shapes count: the block is absent, or it is a real mapping with no entries. A
+  // present-but-malformed block (scalar, list, null) is a config error in its own right, so the
+  // reload failure it causes must keep degrading the transaction rather than being swallowed here.
+  const emptyBlock = (block: unknown): boolean => block === undefined || (
+    typeof block === "object"
+    && block !== null
+    && !Array.isArray(block)
+    && Object.keys(block as Record<string, unknown>).length === 0
+  );
+  const record = raw as Record<string, unknown>;
+  return emptyBlock(record.agents) && emptyBlock(record.terminals);
+}
+
 async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string, journal: AgentProfileLifecycleJournal): Promise<void> {
   journal = transition(txDir, journal, "compensating", input.onPhase);
   try {
@@ -473,7 +503,15 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
       if (digest(prior) !== journal.priorConfigSha256) throw new Error("config backup digest mismatch");
       input.config.replace(journal.targetConfigSha256, prior);
     } else if (configSha !== journal.priorConfigSha256) throw new Error("config changed outside lifecycle transaction");
-    input.activateState("prior");
+    // Every durable artifact is restored by this point, so the rollback has already succeeded.
+    // Reactivating the restored state is the host's concern, and it legitimately fails when that
+    // state is an empty roster — the workspace simply has no agents again. Degrading there would
+    // block an agent that no longer exists and demand manual recovery (t-07d05c).
+    try {
+      input.activateState("prior");
+    } catch (error) {
+      if (!isEmptyRoster(input.config.read())) throw error;
+    }
     fs.rmSync(txDir, { recursive: true, force: true });
   } catch (error) {
     const degraded = { ...journal, phase: "degraded" as const, degradedReason: error instanceof Error ? error.message : String(error) };
