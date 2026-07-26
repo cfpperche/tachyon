@@ -1,4 +1,4 @@
-import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import { carryNativeConfigSources, type ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 type ClaudeScalarFamily = "permissions" | "interface" | "featureFlags";
@@ -185,7 +185,10 @@ export function projectClaudeNativeConfig(
     }
   }
   return {
-    projection: Object.keys(settings).length > 0 ? { ...base, settings } : base,
+    // The spread drops the non-enumerable ownership metadata, so carry it across (t-59a11b).
+    projection: Object.keys(settings).length > 0
+      ? carryNativeConfigSources({ ...base, settings }, base)
+      : base,
     errors,
   };
 }

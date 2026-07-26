@@ -117,6 +117,24 @@ export interface ResolvedAgentNativeConfigProjection {
   settings?: Record<string, unknown>;
 }
 
+/**
+ * Re-attach the non-enumerable ownership metadata onto a copy of a projection.
+ *
+ * `sources` is deliberately non-enumerable so it never widens the serialized projection contract,
+ * but that also means a spread or a `structuredClone` silently drops it — and it was being dropped
+ * exactly when a family IS selected, i.e. whenever it actually matters (t-59a11b). Every site that
+ * copies a projection must carry it across with this helper.
+ */
+export function carryNativeConfigSources<T extends object>(
+  target: T,
+  source: Pick<ResolvedAgentNativeConfigProjection, "sources">,
+): T {
+  const sources = source.sources;
+  if (!sources || Object.prototype.hasOwnProperty.call(target, "sources")) return target;
+  Object.defineProperty(target, "sources", { value: sources, enumerable: false, configurable: false });
+  return target;
+}
+
 export function projectAgentNativeConfig(
   profile: Pick<AgentProfileV1, "runtime" | "nativeConfig">,
 ): ResolvedAgentNativeConfigProjection | undefined {

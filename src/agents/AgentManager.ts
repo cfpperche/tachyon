@@ -59,6 +59,7 @@ import {
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
+import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
@@ -4186,7 +4187,14 @@ export class AgentManager {
       // the source selected no optional native/capability families.
       ...(sourceDefinition?.profileLifecycle ? { profileFork: true as const } : {}),
       ...(sourceDefinition?.profileNativeConfig
-        ? { profileNativeConfig: structuredClone(sourceDefinition.profileNativeConfig) }
+        ? {
+            // structuredClone drops the non-enumerable ownership metadata, so a forked agent would
+            // stop being marked pending when its runtime config changes (t-59a11b).
+            profileNativeConfig: carryNativeConfigSources(
+              structuredClone(sourceDefinition.profileNativeConfig),
+              sourceDefinition.profileNativeConfig,
+            ),
+          }
         : {}),
       ...(sourceDefinition?.profileCapabilities
         ? { profileCapabilities: structuredClone(sourceDefinition.profileCapabilities) }

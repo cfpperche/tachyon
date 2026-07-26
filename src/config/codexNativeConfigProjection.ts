@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
-import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import { carryNativeConfigSources, type ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 import { getCodexMcpServerBlock, removeCodexMcpServer } from "../registration/adapters.js";
 
@@ -296,7 +296,8 @@ export function projectCodexScalarNativeConfig(
   texts: CodexNativeConfigSourceTexts,
   base: ResolvedAgentNativeConfigProjection,
 ): CodexNativeConfigProjectionResult {
-  const projection = structuredClone(base);
+  // structuredClone drops the non-enumerable ownership metadata, so carry it across (t-59a11b).
+  const projection = carryNativeConfigSources(structuredClone(base), base);
   const errors: string[] = [];
   const parsedBySource = new Map<SourceName, Record<string, unknown> | string>();
   const selectedWorkspaceKeys = new Set<string>();

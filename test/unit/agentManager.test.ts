@@ -4028,6 +4028,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       selectors: { model: "claude-opus-5", reasoningEffort: "high" },
       settings: { includeCoAuthoredBy: false },
     };
+    // t-59a11b — ownership metadata is non-enumerable, so the fork's structuredClone dropped it and
+    // the forked agent stopped being marked pending on a runtime-config change.
+    Object.defineProperty(sourceDef.profileNativeConfig, "sources", {
+      value: { interface: "global" },
+      enumerable: false,
+      configurable: false,
+    });
     sourceDef.profileCapabilities = {
       schemaVersion: 1,
       adapter: "claude",
@@ -4052,6 +4059,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(materialized[0]?.def.profileCapabilities).toEqual(sourceDef.profileCapabilities);
     expect(materialized[0]?.def.profileNativeConfig).not.toBe(sourceDef.profileNativeConfig);
     expect(materialized[0]?.def.profileCapabilities).not.toBe(sourceDef.profileCapabilities);
+    // The clone carries the ownership metadata across, still non-enumerable (t-59a11b).
+    const forkedNative = materialized[0]!.def.profileNativeConfig as { sources?: Record<string, string> };
+    expect(forkedNative.sources).toEqual({ interface: "global" });
+    expect(Object.keys(forkedNative)).not.toContain("sources");
     expect(seeds).toEqual([[
       path.join(sourceHome, "projects", `-${h.ws.slice(1).replaceAll("/", "-")}`, `${UUID}.jsonl`),
       path.join(forkHome, "projects", `-${h.ws.slice(1).replaceAll("/", "-")}`, `${UUID}.jsonl`),
