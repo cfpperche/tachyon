@@ -11,9 +11,10 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.permission).toMatchObject({
       modes: ["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"],
       source: "measured",
-      verified: false,
-      verifiedAt: "2026-07-25",
+      verified: true,
+      verifiedAt: "2026-07-26",
     });
+    expect(profile?.canonicalLimitations).toEqual([]);
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true, verifiedAt: "2026-07-19" });
     expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
     expect(profile?.gracefulStop?.steps).toEqual([

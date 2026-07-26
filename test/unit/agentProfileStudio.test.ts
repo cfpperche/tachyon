@@ -61,6 +61,14 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       lifecycle: { autostart: false, restart: "never", attention: true, watch: ["test/**"] },
       worktree: { enabled: false, branch: "" },
       isolation: "",
+      nativeConfig: {
+        selectors: {
+          source: "agent",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
     },
   };
 }
@@ -97,8 +105,8 @@ describe("canonical Agent Studio projection", () => {
     const current = lifecycleSnapshot();
     current.profile.runtime.adapter = "claude";
     expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
-      state: "limited",
-      limitations: ["permission-policy-partial"],
+      state: "ready",
+      limitations: [],
     });
     current.profile.runtime.adapter = "pi";
     expect(projectAgentProfileStudioSnapshot(current).readiness).toEqual({
@@ -121,10 +129,58 @@ describe("canonical Agent Studio projection", () => {
       prompt: { role: "tester" },
       lifecycle: { enabled: false, watch: ["test/**"] },
       workspace: { cwd: "apps/tester" },
+      nativeConfig: {
+        selectors: {
+          source: "agent",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
     });
     const selected = mutation();
     selected.editable.capabilities = { skills: ["research"], mcp: [], hooks: [] };
     expect(() => createProfileFromStudioMutation(selected)).toThrow("before host authorization");
+  });
+
+  it("accepts exact Claude authoring and rejects hidden or malformed selector fields before write", () => {
+    const edited = mutation();
+    edited.editable.runtime = {
+      adapter: "claude",
+      executable: "claude",
+      model: "claude-opus-5",
+      reasoningEffort: "xhigh",
+    };
+    edited.editable.nativeConfig = {
+      selectors: {
+        source: "agent",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume", "fork"],
+      },
+      permissions: {
+        source: "global",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume", "fork"],
+      },
+    };
+    expect(createProfileFromStudioMutation(edited)).toMatchObject({
+      runtime: { adapter: "claude", model: "claude-opus-5", reasoningEffort: "xhigh" },
+      nativeConfig: {
+        selectors: { source: "agent", lifecycle: ["fresh", "restart", "resume", "fork"] },
+        permissions: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+      },
+    });
+
+    edited.editable.runtime.provider = "hidden-provider";
+    expect(() => createProfileFromStudioMutation(edited)).toThrow("Claude provider is not authorable");
+    delete edited.editable.runtime.provider;
+    edited.editable.runtime.reasoningEffort = "ultra";
+    expect(() => createProfileFromStudioMutation(edited)).toThrow("Claude effort must be");
+    edited.editable.runtime.reasoningEffort = "high";
+    edited.editable.nativeConfig!.selectors!.lifecycle = ["fresh", "restart", "resume"];
+    expect(() => createProfileFromStudioMutation(edited)).toThrow("has not declared native configuration support");
   });
 
   it("round-trips authored native policy and exposes only content-free support provenance", () => {
@@ -208,6 +264,14 @@ describe("canonical Agent Studio projection", () => {
       },
       workspace: { cwd: "apps/tester", worktree: { enabled: false, branch: undefined } },
       isolation: undefined,
+      nativeConfig: {
+        selectors: {
+          source: "agent",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
     });
     expect(() => patchProfileFromStudioMutation(mutation("e".repeat(64)), current)).toThrow("revision conflict");
   });

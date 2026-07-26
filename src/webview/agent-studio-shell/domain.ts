@@ -11,6 +11,8 @@ import type {
 import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
 import { agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
 import {
+  claudeScalarNativeConfigPolicy,
+  claudeSelectorNativeConfigPolicy,
   codexScalarNativeConfigPolicy,
   defaultCodexScalarNativeConfigPolicy,
   type CodexScalarNativeConfigChoice,
@@ -519,6 +521,13 @@ export interface AgentProfileLabels {
   nativeConfigExclude: string;
   nativeConfigGlobal: string;
   nativeConfigWorkspace: string;
+  runtimeSelectorsTitle: string;
+  runtimeSelectorsHelp: string;
+  runtimeModel: string;
+  runtimeProvider: string;
+  runtimeReasoningEffort: string;
+  runtimeServiceTier: string;
+  runtimeDefault: string;
   canonicalTrustHelp: string;
   supported: string;
   unsupported: string;
@@ -644,6 +653,13 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     nativeConfigExclude: t("Exclude"),
     nativeConfigGlobal: t("Use global defaults"),
     nativeConfigWorkspace: t("Use workspace defaults"),
+    runtimeSelectorsTitle: t("Runtime selectors"),
+    runtimeSelectorsHelp: t("Selectors are projected through measured native runtime arguments. Unsupported fields are not authored."),
+    runtimeModel: t("Model"),
+    runtimeProvider: t("Provider"),
+    runtimeReasoningEffort: t("Reasoning effort"),
+    runtimeServiceTier: t("Service tier"),
+    runtimeDefault: t("Runtime default"),
     canonicalTrustHelp: t("Enabling or starting this canonical agent authorizes native folder trust only for the current workspace and effective working directory. General approvals, sandbox policy, and arbitrary hook trust stay unchanged."),
     supported: t("Supported"),
     unsupported: t("Unsupported"),
@@ -732,7 +748,13 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   return fields;
 }
 
-export function codexNativeConfigChoice(
+function canonicalAdapter(fields: AgentStudioFields): string {
+  if (fields.canonical?.expectedRevision) return fields.canonical.runtime.adapter;
+  const executable = fields.cmd.trim().split(/[\\/]/).pop() ?? fields.cmd.trim();
+  return executable;
+}
+
+export function nativeConfigChoice(
   fields: AgentStudioFields,
   family: CodexScalarNativeConfigFamily,
 ): CodexScalarNativeConfigChoice {
@@ -740,7 +762,7 @@ export function codexNativeConfigChoice(
   return source === "global" || source === "workspace" ? source : "exclude";
 }
 
-export function setCodexNativeConfigChoice(
+export function setNativeConfigChoice(
   fields: AgentStudioFields,
   family: CodexScalarNativeConfigFamily,
   choice: CodexScalarNativeConfigChoice,
@@ -748,7 +770,9 @@ export function setCodexNativeConfigChoice(
   if (!fields.canonical) return fields;
   const nativeConfig = structuredClone(fields.canonical.nativeConfig);
   if (choice === "exclude") delete nativeConfig[family];
-  else nativeConfig[family] = codexScalarNativeConfigPolicy(choice);
+  else nativeConfig[family] = canonicalAdapter(fields) === "claude"
+    ? claudeScalarNativeConfigPolicy(choice)
+    : codexScalarNativeConfigPolicy(choice);
   return {
     ...fields,
     canonical: {
@@ -756,6 +780,58 @@ export function setCodexNativeConfigChoice(
       nativeConfig,
     },
   };
+}
+
+/** Compatibility names for host/tests while the UI uses the runtime-neutral helpers. */
+export const codexNativeConfigChoice = nativeConfigChoice;
+export const setCodexNativeConfigChoice = setNativeConfigChoice;
+
+function normalizedRuntime(
+  fields: AgentStudioFields,
+  adapter: string,
+  executable: string,
+): AgentProfileStudioMutationV1["editable"]["runtime"] {
+  const authored = fields.canonical!.runtime;
+  return {
+    adapter,
+    executable,
+    ...(authored.model?.trim() ? { model: authored.model.trim() } : {}),
+    ...(adapter === "codex" && authored.provider?.trim() ? { provider: authored.provider.trim() } : {}),
+    ...(authored.reasoningEffort?.trim() ? { reasoningEffort: authored.reasoningEffort.trim() } : {}),
+    ...(adapter === "codex" && authored.serviceTier?.trim() ? { serviceTier: authored.serviceTier.trim() } : {}),
+  };
+}
+
+function normalizedNativeConfig(
+  fields: AgentStudioFields,
+  adapter: string,
+  runtime: AgentProfileStudioMutationV1["editable"]["runtime"],
+): NonNullable<AgentProfileStudioMutationV1["editable"]["nativeConfig"]> {
+  if (adapter !== "codex" && adapter !== "claude") return {};
+  const current = fields.canonical!.nativeConfig;
+  const result = Object.fromEntries(
+    Object.entries(current)
+      .filter(([family]) => !["selectors", "permissions", "interface", "featureFlags"].includes(family))
+      .map(([family, policy]) => [family, structuredClone(policy)]),
+  ) as NonNullable<AgentProfileStudioMutationV1["editable"]["nativeConfig"]>;
+  for (const family of ["permissions", "interface", "featureFlags"] as const) {
+    const choice = nativeConfigChoice(fields, family);
+    if (choice === "exclude") continue;
+    result[family] = adapter === "claude"
+      ? claudeScalarNativeConfigPolicy(choice)
+      : codexScalarNativeConfigPolicy(choice);
+  }
+  if (runtime.model || runtime.provider || runtime.reasoningEffort || runtime.serviceTier) {
+    result.selectors = adapter === "claude"
+      ? claudeSelectorNativeConfigPolicy()
+      : {
+          source: "agent",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        };
+  }
+  return result;
 }
 
 export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields: AgentStudioFields): boolean {
@@ -777,6 +853,8 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
     const { canonical: _canonical, ...legacy } = fields;
     return legacy;
   }
+  const runtime = normalizedRuntime(fields, adapter, executable);
+  const nativeConfig = normalizedNativeConfig(fields, adapter, runtime);
   return {
     schemaVersion: 1,
     kind: "canonical",
@@ -784,7 +862,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
     ...(fields.canonical.expectedRevision ? { expectedRevision: fields.canonical.expectedRevision } : {}),
     editable: {
       displayName: fields.canonical.displayName,
-      runtime: { ...fields.canonical.runtime, adapter, executable },
+      runtime,
       role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
       cwd: fields.cwd.trim(),
       lifecycle: {
@@ -798,7 +876,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         branch: fields.branch.trim(),
       },
       isolation: fields.isolate ? "transcript" : "",
-      nativeConfig: adapter === "codex" ? structuredClone(fields.canonical.nativeConfig) : {},
+      nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),
     },
   };

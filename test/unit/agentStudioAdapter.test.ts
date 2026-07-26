@@ -295,8 +295,55 @@ describe("AgentStudioAdapter — save", () => {
     expect(patch).toMatchObject({
       kind: "canonical",
       agentName: `${runtime}-helper`,
-      editable: { runtime: { adapter: runtime, executable: runtime }, nativeConfig: {} },
+      editable: { runtime: { adapter: runtime, executable: runtime } },
     });
+    if (runtime === "claude") {
+      expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig).toMatchObject({
+        permissions: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+        interface: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+        featureFlags: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+      });
+    } else {
+      expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig).toEqual({});
+    }
+  });
+
+  it("authors Claude model/effort and exact policies while dropping unsupported hidden selectors", () => {
+    const fields = canonicalAgentFields();
+    fields.name = "canonical-claude";
+    fields.cmd = "claude";
+    fields.canonical!.runtime = {
+      adapter: "codex",
+      executable: "",
+      model: "claude-opus-5",
+      provider: "must-drop",
+      reasoningEffort: "xhigh",
+      serviceTier: "must-drop",
+    };
+    const workspace = setCodexNativeConfigChoice(fields, "permissions", "workspace");
+    const patch = serializeAgentPatch(workspace, true) as AgentProfileStudioMutationV1;
+
+    expect(patch.editable.runtime).toEqual({
+      adapter: "claude",
+      executable: "claude",
+      model: "claude-opus-5",
+      reasoningEffort: "xhigh",
+    });
+    expect(patch.editable.nativeConfig).toMatchObject({
+      selectors: {
+        source: "agent",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume", "fork"],
+      },
+      permissions: {
+        source: "workspace",
+        treatment: "overlay",
+        refresh: "every-launch",
+        lifecycle: ["fresh", "restart", "resume", "fork"],
+      },
+    });
+    expect(JSON.stringify(patch)).not.toContain("must-drop");
   });
 
   it("round-trips the fixed Codex scalar source choices without exposing unsupported tuples", () => {

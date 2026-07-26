@@ -445,6 +445,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 |------|--------|
 | 2026-07-26 | **Claude Runtime Config (SDD 464 / `t-e5cb7c`):** independent JSON document CAS for global/workspace settings, local shadow detection, read-only MCP-name inventory, safe scalar writes, runtime-scoped pending and Dev Host functional/visual dogfood. |
 | 2026-07-26 | **Claude canonical native policy (SDD 465 / `t-fdd3a0`):** closed global/workspace scalar families, typed agent-owned model/effort argv, safe permission-mode validation, and equivalent fresh/restart/resume/fork projection. |
+| 2026-07-26 | **Claude Agent Form parity (SDD 466 / `t-36b7f0`):** New/Edit authors measured model/effort and per-family sources, hides provider/service tier, preserves round-trip, and reports the verified canonical baseline as Ready. |
 | 2026-07-24 | **Cap 13 Headless probe:** matrix row for SDD 257 `probe_agent` adapters. Claude/Codex ✓ (shipped 0.40.0); Grok ✓ via `t-7426de` (`adapters/grok.ts`); OpenCode/Pi/Hermes ✗ deferred. |
 | 2026-07-18 | **Pi OAuth interim safety (SDD 408):** at most one live Pi process per workspace across Spawn/Resume/Restart/Fork until upstream shared-auth support ships; 394 unit tests + human dogfood `v-591729`. |
 | 2026-07-18 | **Pi exact harness resources (SDD 406):** workspace-local extensions/skills/prompts/themes/package directories are no-follow snapshotted per agent and loaded through Pi's `--no-*` + explicit CLI paths; remote installs and automatic ambient/project resource discovery are excluded in harness mode. |

@@ -13,6 +13,8 @@ export const CODEX_SCALAR_NATIVE_CONFIG_FAMILIES = [
 export type CodexScalarNativeConfigFamily = (typeof CODEX_SCALAR_NATIVE_CONFIG_FAMILIES)[number];
 export type CodexScalarNativeConfigSource = "global" | "workspace";
 export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exclude";
+export type ClaudeScalarNativeConfigSource = "global" | "workspace";
+export type ClaudeScalarNativeConfigChoice = ClaudeScalarNativeConfigSource | "exclude";
 
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
@@ -38,6 +40,35 @@ export function defaultCodexScalarNativeConfigPolicy(): NonNullable<AgentProfile
     CODEX_SCALAR_NATIVE_CONFIG_FAMILIES.map((family) => [
       family,
       codexScalarNativeConfigPolicy("global"),
+    ]),
+  );
+}
+
+export function claudeScalarNativeConfigPolicy(
+  source: ClaudeScalarNativeConfigSource,
+): AgentNativeConfigPolicyV1 {
+  return {
+    source,
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...CLAUDE_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
+export function claudeSelectorNativeConfigPolicy(): AgentNativeConfigPolicyV1 {
+  return {
+    source: "agent",
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...CLAUDE_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
+export function defaultClaudeScalarNativeConfigPolicy(): NonNullable<AgentProfileV1["nativeConfig"]> {
+  return Object.fromEntries(
+    CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES.map((family) => [
+      family,
+      claudeScalarNativeConfigPolicy("global"),
     ]),
   );
 }

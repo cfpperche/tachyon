@@ -13,11 +13,11 @@ import {
   agentStudioTitleFor,
   blankAgentFields,
   canonicalAgentFields,
-  codexNativeConfigChoice,
+  nativeConfigChoice,
   computeAgentDirty,
   createAgentProfileLabels,
   serializeAgentPatch,
-  setCodexNativeConfigChoice,
+  setNativeConfigChoice,
   isAllowedSoulImportFileName,
   validateAgentStudioHostDomainMessage,
 } from "./domain";
@@ -1056,7 +1056,114 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </div>
 
-            {canonical && canonicalRuntime === "codex" && (
+            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude") && (
+              <section class="ash-native-config-editor" aria-labelledby="ash-runtime-selectors-title">
+                <div>
+                  <div class="ash-label" id="ash-runtime-selectors-title">{profileLabels.runtimeSelectorsTitle}</div>
+                  <div class="hint">{profileLabels.runtimeSelectorsHelp}</div>
+                </div>
+                <div class="ash-grid ash-grid-compact">
+                  <div class="ash-field">
+                    <label class="ash-label" for="ash-runtime-model">{profileLabels.runtimeModel}</label>
+                    <Input
+                      id="ash-runtime-model"
+                      value={fields.canonical!.runtime.model ?? ""}
+                      placeholder={profileLabels.runtimeDefault}
+                      onInput={(event) => updateFields((current) => current.canonical ? ({
+                        ...current,
+                        canonical: {
+                          ...current.canonical,
+                          runtime: {
+                            ...current.canonical.runtime,
+                            model: (event.currentTarget as HTMLInputElement).value || undefined,
+                          },
+                        },
+                      }) : current)}
+                    />
+                  </div>
+                  <div class="ash-field">
+                    <label class="ash-label" for="ash-runtime-effort">{profileLabels.runtimeReasoningEffort}</label>
+                    {canonicalRuntime === "claude" ? (
+                      <Select
+                        id="ash-runtime-effort"
+                        value={fields.canonical!.runtime.reasoningEffort ?? ""}
+                        onChange={(event) => updateFields((current) => current.canonical ? ({
+                          ...current,
+                          canonical: {
+                            ...current.canonical,
+                            runtime: {
+                              ...current.canonical.runtime,
+                              reasoningEffort: (event.currentTarget as HTMLSelectElement).value || undefined,
+                            },
+                          },
+                        }) : current)}
+                      >
+                        <option value="">{profileLabels.runtimeDefault}</option>
+                        {["low", "medium", "high", "xhigh", "max"].map((effort) => <option value={effort}>{effort}</option>)}
+                      </Select>
+                    ) : (
+                      <Input
+                        id="ash-runtime-effort"
+                        value={fields.canonical!.runtime.reasoningEffort ?? ""}
+                        placeholder={profileLabels.runtimeDefault}
+                        onInput={(event) => updateFields((current) => current.canonical ? ({
+                          ...current,
+                          canonical: {
+                            ...current.canonical,
+                            runtime: {
+                              ...current.canonical.runtime,
+                              reasoningEffort: (event.currentTarget as HTMLInputElement).value || undefined,
+                            },
+                          },
+                        }) : current)}
+                      />
+                    )}
+                  </div>
+                  {canonicalRuntime === "codex" && (
+                    <>
+                      <div class="ash-field">
+                        <label class="ash-label" for="ash-runtime-provider">{profileLabels.runtimeProvider}</label>
+                        <Input
+                          id="ash-runtime-provider"
+                          value={fields.canonical!.runtime.provider ?? ""}
+                          placeholder={profileLabels.runtimeDefault}
+                          onInput={(event) => updateFields((current) => current.canonical ? ({
+                            ...current,
+                            canonical: {
+                              ...current.canonical,
+                              runtime: {
+                                ...current.canonical.runtime,
+                                provider: (event.currentTarget as HTMLInputElement).value || undefined,
+                              },
+                            },
+                          }) : current)}
+                        />
+                      </div>
+                      <div class="ash-field">
+                        <label class="ash-label" for="ash-runtime-service-tier">{profileLabels.runtimeServiceTier}</label>
+                        <Input
+                          id="ash-runtime-service-tier"
+                          value={fields.canonical!.runtime.serviceTier ?? ""}
+                          placeholder={profileLabels.runtimeDefault}
+                          onInput={(event) => updateFields((current) => current.canonical ? ({
+                            ...current,
+                            canonical: {
+                              ...current.canonical,
+                              runtime: {
+                                ...current.canonical.runtime,
+                                serviceTier: (event.currentTarget as HTMLInputElement).value || undefined,
+                              },
+                            },
+                          }) : current)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude") && (
               <section class="ash-native-config-editor" aria-labelledby="ash-native-config-editor-title">
                 <div>
                   <div class="ash-label" id="ash-native-config-editor-title">{profileLabels.nativeConfigTitle}</div>
@@ -1071,8 +1178,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     <label for={`ash-native-config-${family}`}>{label}</label>
                     <Select
                       id={`ash-native-config-${family}`}
-                      value={codexNativeConfigChoice(fields, family)}
-                      onChange={(event) => updateFields((current) => setCodexNativeConfigChoice(
+                      value={nativeConfigChoice(fields, family)}
+                      onChange={(event) => updateFields((current) => setNativeConfigChoice(
                         current,
                         family,
                         (event.currentTarget as HTMLSelectElement).value as "exclude" | "global" | "workspace",

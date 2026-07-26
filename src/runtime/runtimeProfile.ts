@@ -173,12 +173,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
     permission: {
       modes: ["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"],
       source: "measured",
-      verified: false,
-      verifiedAt: "2026-07-25",
+      verified: true,
+      verifiedAt: "2026-07-26",
       notes:
         "Claude Code 2.1.220 accepted every declared --permission-mode value and rejected an invalid value. " +
-        "Canonical profiles regenerate workspace-authored permissions in their private settings.json on fresh/restart/resume; " +
-        "A measured settings defaultMode=plan is overridden by explicit --permission-mode auto. Tachyon has no typed authored Claude policy field, so it does not synthesize or inject a permission mode for a canonical profile.",
+        "Canonical profiles regenerate validated global/workspace permissions in their private settings.json on fresh/restart/resume/fork; " +
+        "the typed policy rejects bypassPermissions and invalid values instead of synthesizing a fallback (t-fdd3a0 / SDD 465).",
     },
     composer: {
       tailLines: 8,
@@ -205,7 +205,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "Claude Code 2.1.220: Ctrl+C clears an unsubmitted draft but Ctrl+D does not exit it; a local /exit command then cleanly exits. " +
         "An authorized real model turn was stopped with Escape, Ctrl+C, then conditional /exit; the pane exited with status 0. Keep interrupt, clear-composer, then conditional /exit.",
     },
-    canonicalLimitations: ["permission-policy-partial"],
+    canonicalLimitations: [],
   },
   codex: {
     runtime: "codex",

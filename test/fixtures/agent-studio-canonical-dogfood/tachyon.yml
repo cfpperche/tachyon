@@ -1,0 +1,5 @@
+# Disposable Dev Host fixture for canonical Agent Studio create/edit dogfood.
+settings:
+  maxAgents: 8
+
+agents: {}

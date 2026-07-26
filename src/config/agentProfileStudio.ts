@@ -2,7 +2,11 @@ import { z } from "zod";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
 import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
-import { previewAgentNativeConfigPolicy } from "./agentNativeConfigPolicy.js";
+import {
+  previewAgentNativeConfigPolicy,
+  resolveAgentNativeConfigSupport,
+  validateAgentNativeConfigPolicy,
+} from "./agentNativeConfigPolicy.js";
 import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
 
@@ -83,6 +87,41 @@ export const agentProfileStudioMutationSchemaV1 = z.object({
 
 export type AgentProfileStudioEditableV1 = z.infer<typeof agentProfileStudioEditableSchemaV1>;
 export type AgentProfileStudioMutationV1 = z.infer<typeof agentProfileStudioMutationSchemaV1>;
+
+const CLAUDE_STUDIO_EFFORTS = new Set(["low", "medium", "high", "xhigh", "max"]);
+
+function assertStudioNativeConfig(editable: AgentProfileStudioEditableV1): void {
+  const adapter = editable.runtime.adapter;
+  if (adapter !== "claude") return;
+  const errors = validateAgentNativeConfigPolicy(adapter, editable.nativeConfig);
+  const hasSelectors = Boolean(
+    editable.runtime.model
+    || editable.runtime.provider
+    || editable.runtime.reasoningEffort
+    || editable.runtime.serviceTier,
+  );
+  const selectorPolicy = editable.nativeConfig?.selectors;
+  if (
+    hasSelectors
+    && (!selectorPolicy
+      || resolveAgentNativeConfigSupport(adapter, "selectors", selectorPolicy).support !== "supported")
+  ) {
+    errors.push(`profile/native-config-selector: runtime '${adapter}' requires its exact selector policy`);
+  }
+  if (editable.runtime.provider) {
+    errors.push("profile/native-config-selector: Claude provider is not authorable");
+  }
+  if (editable.runtime.serviceTier) {
+    errors.push("profile/native-config-selector: Claude service tier is not authorable");
+  }
+  if (
+    editable.runtime.reasoningEffort
+    && !CLAUDE_STUDIO_EFFORTS.has(editable.runtime.reasoningEffort)
+  ) {
+    errors.push("profile/native-config-selector: Claude effort must be low, medium, high, xhigh or max");
+  }
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+}
 
 const studioAgentName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 
@@ -285,6 +324,7 @@ export function createProfileFromStudioMutation(
   mutation: AgentProfileStudioMutationV1,
 ): Omit<AgentProfileV1, "schemaVersion" | "agentId"> {
   const parsed = agentProfileStudioMutationSchemaV1.parse(mutation);
+  assertStudioNativeConfig(parsed.editable);
   if (parsed.expectedRevision !== undefined) throw new Error("new canonical profile must not carry an expected revision");
   if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
     throw new Error("new canonical profile cannot select capability references before host authorization");
@@ -321,6 +361,7 @@ export function patchProfileFromStudioMutation(
   current: AgentProfileLifecycleSnapshot,
 ): Partial<Omit<AgentProfileV1, "schemaVersion" | "agentId">> {
   const parsed = agentProfileStudioMutationSchemaV1.parse(mutation);
+  assertStudioNativeConfig(parsed.editable);
   if (!parsed.expectedRevision) throw new Error("canonical profile edit requires expectedRevision");
   if (parsed.agentName !== current.agentName || parsed.expectedRevision !== current.revision) {
     throw new Error(`agent '${parsed.agentName}' profile revision conflict`);
