@@ -491,6 +491,11 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("isolated harness: MCP servers must be a valid YAML mapping");
     case "harness-hooks-invalid":
       return t("isolated harness: hooks must be a valid YAML mapping");
+    case "terminal-cmd-is-attested-runtime":
+      return t(
+        "command: '{0}' is an LLM runtime Tachyon attests — create it as an agent in Agent Studio; terminals are for generic processes",
+        issue.param ?? "this command",
+      );
     default:
       return issue.code;
   }
