@@ -194,8 +194,11 @@ export class FakeWorkspaceClient implements WorkspaceClient {
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
     try { this.requireOpen(); }
     catch (error) { return Promise.reject(error); }
-    if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
-      return Promise.reject(new FakeWorkspaceClientError("INVALID_COMMAND", "workspace command or operation id is invalid"));
+    if (!isEngineOperationId(operationId)) {
+      return Promise.reject(new FakeWorkspaceClientError("INVALID_COMMAND", `workspace operation id is invalid: ${operationId}`));
+    }
+    if (!isWorkspaceCommandV1(command)) {
+      return Promise.reject(new FakeWorkspaceClientError("INVALID_COMMAND", "workspace command is invalid"));
     }
     const fingerprint = workspaceCommandFingerprint(command);
     const existing = this.operations.get(operationId);

@@ -1282,6 +1282,32 @@ const STUDIO_FORM_KEYS = [
   "kind", "schedTiming", "schedAction",
 ];
 
+/**
+ * t-8247ec — the Studio submit seam takes a form object from an untyped caller (the webview bundle's
+ * message payload, the `tachyon._upsertAgent` command). Before the shell moved onto the persistent
+ * engine, an absent field simply read as blank in `Workspace.studioSubmit`; the wire shape is exact,
+ * so the same partial object now dies in transport as INVALID_COMMAND and never reaches the domain.
+ *
+ * Canonicalizing here restores that: absent fields take a neutral default and unknown keys are
+ * dropped, so the caller's object becomes a complete `WorkspaceStudioFormV1` and `validateForm`
+ * stays the only thing that decides whether a submit is acceptable. A field that IS present crosses
+ * verbatim — a wrong-typed value is protocol drift, not an omission, and must still be rejected.
+ *
+ * The defaults are deliberately NOT the Studio's UI prefills (which pick `1h` / `09:00`): a submit
+ * that omits its schedule must fail domain validation, never save a schedule nobody asked for. For
+ * the same reason an omitted `kind` reads as `agent`, whose submit path is retired and fails closed.
+ */
+export function canonicalWorkspaceStudioFormV1(state: unknown): WorkspaceStudioFormV1 {
+  const source: Record<string, unknown> = isRecord(state) ? state : {};
+  const canonical: Record<string, unknown> = {};
+  for (const key of STUDIO_FORM_STRING_KEYS) canonical[key] = source[key] ?? "";
+  for (const key of STUDIO_FORM_BOOLEAN_KEYS) canonical[key] = source[key] ?? false;
+  canonical.kind = source.kind ?? "agent";
+  canonical.schedTiming = source.schedTiming ?? "every";
+  canonical.schedAction = source.schedAction ?? "run";
+  return canonical as unknown as WorkspaceStudioFormV1;
+}
+
 function isWorkspaceStudioSubmitInputV1(value: Record<string, unknown>): boolean {
   const inputKeys = Object.keys(value);
   if (!("state" in value)

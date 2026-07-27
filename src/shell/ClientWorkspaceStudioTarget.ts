@@ -23,6 +23,7 @@ import type {
   EvolutionStudioCandidateDetail,
   EvolutionStudioOverview,
 } from "../evolution/studioProjection.js";
+import { canonicalWorkspaceStudioFormV1 } from "../engine-service/protocol.js";
 import type { ExtensionCommandV1, JsonValue } from "../runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import type {
@@ -112,7 +113,9 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       schemaVersion: 1,
       method: "studio.submit",
       input: {
-        state: submit.state,
+        // t-8247ec — an untyped caller may hand this seam a partial form; canonicalize so an
+        // omission reaches the domain as a validation error instead of failing in transport.
+        state: canonicalWorkspaceStudioFormV1(submit.state),
         ...(submit.editingName !== undefined ? { editingName: submit.editingName } : {}),
       },
     });

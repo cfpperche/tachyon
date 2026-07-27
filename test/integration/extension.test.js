@@ -326,11 +326,19 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       assert.ok(errors && errors.some((e) => e.includes("inline agent editing is retired")), "legacy submit should fail closed");
       assert.strictEqual(fs.readFileSync(ymlPath, "utf8"), original, "legacy submit must not write tachyon.yml");
 
-      // the studio command opens a webview tab
+      // t-8247ec — where the refusal points. Canonical Agent Studio is a Control route since
+      // t-610705 Phase D, not a tab of its own, so the command opens the Control panel; this half
+      // of the scenario was unreachable while the submit above died in transport. Close Control
+      // first so what follows proves THIS command opened it rather than reading a panel an earlier
+      // scenario left behind. Being open is the observable, not being focused: another editor tab
+      // can win focus back in the headless host.
+      const open = vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter((t) => t.label.includes("Control"));
+      if (open.length > 0) await vscode.window.tabGroups.close(open, false);
+      await sleep(300);
       await vscode.commands.executeCommand("tachyon.agentStudio");
-      await sleep(500);
+      await sleep(1000);
       const tabs = vscode.window.tabGroups.all.flatMap((g) => g.tabs.map((t) => t.label));
-      assert.ok(tabs.some((l) => l.includes("Agent Studio")), `studio tab not found in: ${tabs.join(", ")}`);
+      assert.ok(tabs.some((l) => l.includes("Control")), `Control panel not opened by the studio command; tabs: ${tabs.join(", ")}`);
     } finally {
       fs.writeFileSync(ymlPath, original, "utf8");
     }

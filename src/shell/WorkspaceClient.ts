@@ -308,8 +308,12 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   }
 
   invoke(operationId: string, command: WorkspaceCommandV1): Promise<WorkspaceCommandResultV1> {
-    if (!isEngineOperationId(operationId) || !isWorkspaceCommandV1(command)) {
-      return Promise.reject(new RemoteWorkspaceClientError("INVALID_COMMAND", "workspace command or operation id is invalid"));
+    // Two distinct rejections: one message for both of them cost t-8247ec its first diagnosis.
+    if (!isEngineOperationId(operationId)) {
+      return Promise.reject(new RemoteWorkspaceClientError("INVALID_COMMAND", `workspace operation id is invalid: ${operationId}`));
+    }
+    if (!isWorkspaceCommandV1(command)) {
+      return Promise.reject(new RemoteWorkspaceClientError("INVALID_COMMAND", "workspace command is invalid"));
     }
     if (this.closeRequested) return Promise.reject(new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed"));
     const result = this.tail.then(() => this.invokeOnce(operationId, command));
