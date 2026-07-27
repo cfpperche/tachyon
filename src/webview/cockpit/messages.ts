@@ -172,6 +172,8 @@ export interface CockpitStrings {
   companionAllowedHostsSave: string;
   companionPaired: string;
   companionNotPaired: string;
+  /** t-46eb4f — label of the ONE global scope option that means 'every attached root'. */
+  allWorkspaces: string;
   companionPickWorkspace: string;
   companionBaseUrl: string;
   /** SDD 414 — Control pair-code affordance (command palette still works). */

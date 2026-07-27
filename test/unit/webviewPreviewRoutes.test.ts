@@ -81,6 +81,9 @@ describe("preview route table", () => {
       "handoff",
       "mission",
       "multi-workspace",
+      // t-46eb4f — Overview with two roots attached: the one global scope selector, with its
+      // "All workspaces" option (the single-root case is `default`, where it still renders).
+      "multi-workspace-overview",
       "multi-workspace-scoped",
       "plugins",
       "runtime",

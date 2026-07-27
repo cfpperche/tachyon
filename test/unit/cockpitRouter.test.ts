@@ -112,6 +112,42 @@ describe("navigation epoch — discards stale responses from a superseded route"
     expect(messageTypes()).not.toContain("snapshot");
   });
 
+  it("the global scope survives navigation between screens (t-46eb4f)", async () => {
+    // One selector, in Overview; every screen after it reads the same scope.
+    const wsA = fakeWorkspace(mkroot(), { hash: "ws-a" });
+    const wsB = fakeWorkspace(mkroot(), { hash: "ws-b" });
+    await wsB.validationStore.create({ title: "beta check", author: "human" });
+    const deps = depsFor([target(wsA), target(wsB)]);
+
+    await openCockpit(deps, { section: "overview", wsHash: "ws-a" });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    __createdPanels[0].webview.__receive({ type: "switchControlWorkspace", wsHash: "ws-b" });
+    await flush();
+    __createdPanels[0].webview.__receive({ type: "setSection", section: "validations" });
+    await flush();
+
+    const validations = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "validations");
+    expect(validations.at(-1)).toMatchObject({ vm: { wsHash: "ws-b" } });
+    expect((validations.at(-1) as { vm: { validations: unknown[] } }).vm.validations).toHaveLength(1);
+  });
+
+  it("a reload restores the global root from the persisted panel state (t-46eb4f)", async () => {
+    const wsA = fakeWorkspace(mkroot(), { hash: "ws-a" });
+    const wsB = fakeWorkspace(mkroot(), { hash: "ws-b" });
+    await wsB.validationStore.create({ title: "beta check", author: "human" });
+    const deps = depsFor([target(wsA), target(wsB)]);
+
+    // What decodePanelState hands back on revive: the route plus the scope that was open.
+    await openCockpit(deps, { section: "validations", wsHash: "ws-b" });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    const validations = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "validations");
+    expect(validations.at(-1)).toMatchObject({ vm: { wsHash: "ws-b" } });
+  });
+
   it("a fresh navigate to the SAME section invalidates an in-flight response from the prior visit", async () => {
     // Same wsHash for both visits: MissionAgentLists coalesces them onto the SAME underlying
     // list() call (by design — see missionVm.test.ts), so both sendMission() calls resolve

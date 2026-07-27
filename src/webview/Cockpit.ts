@@ -425,7 +425,8 @@ function strings(): CockpitStrings {
     companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
-    companionPickWorkspace: t("Select a single workspace in the header to manage Companion settings."),
+    allWorkspaces: t("All workspaces"),
+    companionPickWorkspace: t("Select a single workspace in Overview to manage Companion settings."),
     companionBaseUrl: t("Engine Base URL"),
     companionShowPairCode: t("Show pair code"),
     companionCopyBaseUrl: t("Copy URL"),
@@ -1020,7 +1021,6 @@ export async function openCockpit(
   const sendMission = async () => {
     if (panel !== live || !isSection(currentRoute, "mission")) return;
     const epoch = navEpoch;
-    const all = deps.missionBoard.getWorkspaces();
     const ws = resolveMissionWs(deps.missionBoard);
     if (!ws) {
       live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
@@ -1029,7 +1029,7 @@ export async function openCockpit(
     try {
       // Trailing retry: a list that settles late (after its 250ms fallback already rendered, with
       // further refreshes coalesced behind it) re-posts once so real liveness replaces "unavailable".
-      const vm = await buildMissionVm(ws, all, missionAgentLists, () => void sendMission());
+      const vm = await buildMissionVm(ws, missionAgentLists, () => void sendMission());
       if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(snapshotMessage(vm));
     } catch (err) {
@@ -1689,11 +1689,6 @@ export async function openCockpit(
     }
     if (m.type === "copyTaskId" && typeof m.id === "string") {
       await vscode.env.clipboard.writeText(m.id);
-      return true;
-    }
-    if (m.type === "switchWorkspace" && typeof m.wsHash === "string") {
-      controlWsHash = m.wsHash;
-      await sendMission();
       return true;
     }
     if (m.type === "openTaskStudio") {
