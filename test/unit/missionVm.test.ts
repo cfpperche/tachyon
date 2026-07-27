@@ -66,11 +66,10 @@ describe("buildMissionVm (bounded agent liveness)", () => {
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
 
-    const vm = await buildMissionVm(target(ws), [target(ws)], new MissionAgentLists(), () => {});
+    const vm = await buildMissionVm(target(ws), new MissionAgentLists(), () => {});
 
     expect(vm.agentLiveness).toEqual({ status: "available" });
     expect(vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
-    expect(vm.workspaces).toEqual([{ hash: "ws-1", folder: "Project" }]);
   });
 
   it("renders the task snapshot with liveness unavailable when the list never resolves — and a late rejection stays observed", async () => {
@@ -79,7 +78,7 @@ describe("buildMissionVm (bounded agent liveness)", () => {
     ws.manager.list = () => pending.promise;
     await ws.taskStore.create({ title: "task store survives", author: "human" });
 
-    const vmPromise = buildMissionVm(target(ws), [target(ws)], new MissionAgentLists(), () => {});
+    const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});
     await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
     const vm = await vmPromise;
 
@@ -96,7 +95,7 @@ describe("buildMissionVm (bounded agent liveness)", () => {
     ws.manager.list = async () => { throw new Error("tmux down"); };
     await ws.taskStore.create({ title: "still renders", author: "human" });
 
-    const vmPromise = buildMissionVm(target(ws), [target(ws)], new MissionAgentLists(), () => {});
+    const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});
     await vi.advanceTimersByTimeAsync(0);
     const vm = await vmPromise;
 

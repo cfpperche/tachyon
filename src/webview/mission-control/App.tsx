@@ -24,7 +24,6 @@ export interface MissionControlDispatch {
   openTaskStudio(id?: string): void;
   openTask(id: string): void;
   copyTaskId(id: string): void;
-  switchWorkspace(wsHash: string): void;
 }
 
 export interface TaskErrorEvent {
@@ -314,14 +313,11 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
           title="Board"
           actions={
             <div class="mc-head-tools">
-              <KitSelect
-                aria-label="Board workspace"
-                data-testid="board-workspace-select"
-                class="workspace-select"
-                value={vm.wsHash}
-                onValueChange={(value) => dispatch.switchWorkspace(value)}
-                options={vm.workspaces.map((w) => ({ value: w.hash, label: w.folder }))}
-              />
+              {/* t-46eb4f — the Board's own workspace dropdown was a MIRROR: picking from it wrote
+                  the same global `controlWsHash` the shell owns, so Control had two global scope
+                  controls that could disagree on screen. The root is chosen once, in Overview; the
+                  Board renders the scope it is handed. The filters beside it (search, agent, dropped)
+                  stay — those filter this screen's own collection and touch no global state. */}
               {/* t-5ea4c7 — toolbar search: HIDES non-matching cards (title/id/kind/assignee/body), unlike Ctrl+F
                   find (t-b5e6e5), which never hides anything — the two gestures stay distinct on purpose. */}
               <div class="board-search">

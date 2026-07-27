@@ -78,7 +78,6 @@ import {
   openTaskAction,
   copyTaskIdAction,
   openTaskStudioAction,
-  switchWorkspaceAction,
 } from "../mission-control/messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
@@ -443,7 +442,6 @@ function CockpitRoot() {
       openTaskStudio: (id?: string) => post(openTaskStudioAction(id)),
       openTask: (id: string) => post(openTaskAction(id)),
       copyTaskId: (id: string) => post(copyTaskIdAction(id)),
-      switchWorkspace: (wsHash: string) => post(switchWorkspaceAction(wsHash)),
     }),
     [],
   );
