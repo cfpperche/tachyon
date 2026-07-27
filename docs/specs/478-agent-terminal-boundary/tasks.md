@@ -68,9 +68,18 @@ compatibility shim.
       kind that contradicts what the command would suggest.
 - [ ] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
       `isAgentKind = !isScheduleOrCommandOrRunbook` in favour of the union. Carries visual proof.
-- [ ] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
+- [x] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
       `terminals:` parser refuses all 16 agent-only keys, not 4; every refusal names the block to move
       to.
+      All eleven authorable agent-only keys are refused for a terminal (the other five are internal
+      `profile*` projections, never accepted from YAML), through one `agentOnlyKeyRefusal()` so the
+      ending cannot drift. That ending had to CHANGE, not just spread: it used to read "declare it
+      under agents: with kind: agent", which points at a shape the product refuses — advice that would
+      have reproduced the `t-9418ac` incident rather than prevented it. **The `tachyon.init` door was
+      broken outright**: it emitted an inline `agents:` entry, so the first config Tachyon ever wrote
+      could not be loaded by the canonical loader. It now emits `terminals:` plus a pointer to Agent
+      Studio. `kind:` under `agents:` is deliberately NOT removed — the open question stays open, since
+      nothing measured here requires the config-surface break.
 - [ ] `t-ddf054` · **M7 — remove the shim and its fixtures together.** Absorbs `t-315ce9`. Delete `allowLegacyAgentFixtures` and
       migrate the 15 inline-`agents:` fixtures in the same change. One task, so the suite is never red
       for an unbounded window.

@@ -6218,7 +6218,10 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const REC = { path: "/wt/h/dev", branch: "tachyon/dev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     let durableLedger: SessionLedger | undefined;
     const completed: string[] = [];
-    const h = harness("agents:\n  dev:\n    cmd: sh\n    kind: terminal\n    worktree: true\n", {
+    // SDD 478 M6 — a worktree is an Agent capability, so `kind: terminal` + `worktree: true` is now
+    // refused. This case is about restart quarantine and the durable worktree ledger, which is agent
+    // lifecycle; declaring the runtime name is the ratified headless double (tmux is faked here).
+    const h = harness("agents:\n  dev:\n    cmd: claude\n    worktree: true\n", {
       resolveSpawnCwd: async (ctx) => ({
         cwd: REC.path,
         worktree: REC,

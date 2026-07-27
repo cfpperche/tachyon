@@ -149,15 +149,17 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("# Each agent/terminal becomes a tmux session shown as a native editor terminal.");
   L.push("# Docs & format reference: https://github.com/cfpperche/tachyon");
   L.push("");
-  L.push("agents:");
-  L.push(`  # Your AI coding agent (kind: agent is inferred from the command).`);
+  // SDD 478 M6 — Init used to write an inline `agents:` entry here, which the canonical loader
+  // REFUSES ("inline agent definitions are no longer supported"). So the very first config Tachyon
+  // generated could not be loaded, and the door that is supposed to fail closed was instead handing
+  // a new workspace an invalid file. Agents are created through Agent Studio, which mints the
+  // profile and the host authority behind it; the starter now says so instead of guessing a shape.
+  L.push("# Agents are NOT written here by hand: each agents: entry is a pointer to a canonical");
+  L.push("# profile under .tachyon/agents/<name>/agent.yml, created for you by Agent Studio.");
+  L.push(`# Run "Tachyon: Agent Studio" to create your first agent${agent.detected ? ` (${agent.bin} was detected on this machine)` : ""}.`);
   if (!agent.detected) {
-    L.push(`  # NOTE: '${agent.bin}' was not detected on this machine — install it or change cmd.`);
+    L.push(`# NOTE: no supported AI CLI was detected on this machine — install one (e.g. '${agent.bin}') first.`);
   }
-  L.push(`  ${agent.bin}:`);
-  L.push(`    cmd: ${agent.bin}`);
-  L.push("    autostart: true   # starts when the workspace opens");
-  L.push("    # worktree: true  # run in its own git worktree+branch so parallel agents don't clobber files");
   L.push("");
 
   // terminals: — servers, shells, builds. Same lifecycle as agents (session/tab/restart/watch/

@@ -564,9 +564,10 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skill
  * Codex already has a private home by default, so its harness still needs at least one capability.
  * Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's, for the H4 ownership checks.
  */
-function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
+function parseHarness(section: "agents" | "terminals", name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
   if (isTerminal) {
-    errors.push(`agents.${name}: 'harness' applies only to agents (this entry is a terminal — it has no runtime harness)`);
+    // Prefixed with the REAL section — this used to say `agents.<name>` even for a terminals: entry.
+    errors.push(agentOnlyKeyRefusal(section, name, "harness", "this entry is a terminal — it has no runtime harness"));
     return undefined;
   }
   const binary = binaryOf(cmd);
@@ -824,6 +825,21 @@ function parseHarness(name: string, raw: unknown, cmd: string, env: Record<strin
  */
 const ISOLATE_TRANSCRIPT_DEPRECATION = "isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home";
 
+/**
+ * SDD 478 M6 — the refusal text is part of the contract. Every agent-only key declared on a terminal
+ * is refused with the SAME ending, and that ending names where the entry belongs: the entire cost of
+ * the `t-9418ac` incident was three increments spent discovering WHICH block an entry belonged in.
+ *
+ * The old ending — "declare it under agents: with kind: agent" — was worse than silence, because it
+ * pointed at a shape the product refuses: an `agents:` entry is a canonical profile pointer, and an
+ * inline definition there is rejected outright.
+ */
+const MOVE_TO_AN_AGENT = "create it as an agent in Agent Studio (an agents: entry is a canonical profile pointer), or drop the key to keep this a terminal";
+
+function agentOnlyKeyRefusal(section: "agents" | "terminals", name: string, key: string, why: string): string {
+  return `${section}.${name}: '${key}' applies only to agents (${why}) — ${MOVE_TO_AN_AGENT}`;
+}
+
 function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, errors: string[], warnings: string[]): AgentDef | null {
   const forceTerminal = section === "terminals";
   if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
@@ -840,9 +856,9 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   };
   if (forceTerminal) {
     if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
-    if (def.instructions !== undefined) errors.push(`terminals.${name}: 'instructions' applies only to agents (declare it under agents: with kind: agent)`);
-    if (def.soul !== undefined) errors.push(`terminals.${name}: 'soul' applies only to agents (declare it under agents: with kind: agent)`);
-    if (def.selfEvolution !== undefined) errors.push(`terminals.${name}: 'selfEvolution' applies only to agents (declare it under agents: with kind: agent)`);
+    if (def.instructions !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
+    if (def.soul !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "soul", "a terminal has no AI identity"));
+    if (def.selfEvolution !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "a terminal has no AI to evolve"));
   } else if (def.kind !== undefined) {
     if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
@@ -930,7 +946,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     // role is agents-only — reject under terminals: AND under agents: with kind: terminal
     // (codex r1 m5: the old terminal-declaration style must honor the same contract).
     if (forceTerminal || agent.kind === "terminal") {
-      errors.push(`${section}.${name}: 'role' applies only to agents (this entry is a terminal — it has no AI to take a role)`);
+      errors.push(agentOnlyKeyRefusal(section, name, "role", "this entry is a terminal — it has no AI to take a role"));
     } else if (typeof def.role !== "string" || !isRole(def.role)) {
       errors.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
     } else {
@@ -939,7 +955,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.soul !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) errors.push(`${section}.${name}: 'soul' applies only to agents (this entry is a terminal — it has no AI identity)`);
+      if (!forceTerminal) errors.push(agentOnlyKeyRefusal(section, name, "soul", "this entry is a terminal — it has no AI identity"));
     } else if (typeof def.soul !== "boolean") {
       errors.push(`agents.${name}.soul: must be a boolean`);
     } else {
@@ -948,7 +964,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.selfEvolution !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) errors.push(`${section}.${name}: 'selfEvolution' applies only to agents (this entry is a terminal — it has no AI to evolve)`);
+      if (!forceTerminal) errors.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "this entry is a terminal — it has no AI to evolve"));
     } else if (!isPlainObject(def.selfEvolution)) {
       errors.push(`agents.${name}.selfEvolution: must be a mapping with enabled: boolean`);
     } else {
@@ -973,6 +989,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (def.worktree !== undefined) {
     if (typeof def.worktree !== "boolean") errors.push(`${section}.${name}.worktree: must be a boolean`);
     else if (agentEntry) agentEntry.worktree = def.worktree;
+    else errors.push(agentOnlyKeyRefusal(section, name, "worktree", "this entry is a terminal — it gets no git worktree"));
   }
   if (def.branch !== undefined) {
     if (typeof def.branch !== "string") {
@@ -981,6 +998,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       const bad = validateBranchLiteral(def.branch);
       if (bad) errors.push(`${section}.${name}.branch: ${bad}`);
       else if (agentEntry) agentEntry.branch = def.branch;
+      else errors.push(agentOnlyKeyRefusal(section, name, "branch", "this entry is a terminal — it gets no worktree branch"));
     }
   }
   if (def.worktreeSetup !== undefined) {
@@ -989,6 +1007,8 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
     } else if (agentEntry) {
       agentEntry.worktreeSetup = list as string[];
+    } else {
+      errors.push(agentOnlyKeyRefusal(section, name, "worktreeSetup", "this entry is a terminal — it gets no worktree to set up"));
     }
   }
   if (def.verify !== undefined) {
@@ -996,10 +1016,12 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       errors.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
     } else if (agentEntry) {
       agentEntry.verify = def.verify.trim();
+    } else {
+      errors.push(agentOnlyKeyRefusal(section, name, "verify", "this entry is a terminal — a verify gate proves an agent's work shippable"));
     }
   }
   if (def.harness !== undefined) {
-    const harness = parseHarness(name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
+    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
     if (harness && agentEntry) agentEntry.harness = harness;
   }
   if (def.isolate !== undefined) {
@@ -1010,7 +1032,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (def.isolate !== "transcript") {
       errors.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
     } else if (forceTerminal || agent.kind === "terminal") {
-      errors.push(`${section}.${name}: 'isolate' applies only to agents (this entry is a terminal — it has no transcript)`);
+      errors.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
     } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
       errors.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
     } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
@@ -1023,7 +1045,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.subagents !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      errors.push(`${section}.${name}: 'subagents' applies only to agents (this entry is a terminal — ownership can only target agents)`);
+      errors.push(agentOnlyKeyRefusal(section, name, "subagents", "this entry is a terminal — ownership can only target agents"));
     } else if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
       errors.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
     } else {

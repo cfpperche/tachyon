@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectStack, buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "../../src/init/initLogic.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
 
 const base = (over: Partial<DetectedProject> = {}): DetectedProject => ({
   files: [],
@@ -8,15 +9,21 @@ const base = (over: Partial<DetectedProject> = {}): DetectedProject => ({
   ...over,
 });
 
-/** Every generated starter must parse clean and carry an agent + a shell. */
+/**
+ * Every generated starter must parse clean and carry a shell.
+ *
+ * SDD 478 M6 — it must also pass the CANONICAL door, which is what the old starter failed: it wrote
+ * an inline `agents:` entry that `parseProfileAwareConfigSyntax` refuses, so Init handed a new
+ * workspace a config the product would not load. Agents now come from Agent Studio.
+ */
 function expectValidStarter(yaml: string) {
   const { config, errors } = parseConfig(yaml);
   expect(errors).toEqual([]);
   expect(config).toBeDefined();
+  expect(parseProfileAwareConfigSyntax(yaml).errors, yaml).toEqual([]);
   expect(config!.agents.shell?.kind).toBe("terminal");
-  // exactly one AI agent (kind agent) — the rest are terminals
-  const aiAgents = Object.values(config!.agents).filter((a) => a.kind === "agent");
-  expect(aiAgents.length).toBe(1);
+  // Everything the starter declares is a terminal; agents are created in Agent Studio.
+  expect(Object.values(config!.agents).filter((a) => a.kind === "agent")).toEqual([]);
   return config!;
 }
 
@@ -58,29 +65,29 @@ describe("detectStack", () => {
 });
 
 describe("buildStarterYaml", () => {
-  it("Node starter parses clean: agent + dev/test terminals + shell", () => {
+  it("Node starter parses clean: dev/test terminals + shell, agents via Agent Studio", () => {
     const yaml = buildStarterYaml(base({
       files: ["package.json"],
       packageJson: { scripts: { dev: "next dev", test: "jest" }, dependencies: { next: "^14" } },
     }));
     const config = expectValidStarter(yaml);
-    expect(config.agents.claude.autostart).toBe(true);
     expect(config.agents.dev.cmd).toBe("npm run dev");
     expect(config.agents.dev.kind).toBe("terminal");
     expect(config.agents.test.cmd).toBe("npm test");
     expect(yaml).toContain("Detected stack: Node.js (Next.js)");
+    expect(yaml).toContain("Agent Studio");
   });
 
-  it("no-manifest starter is minimal but valid (agent + shell only)", () => {
+  it("no-manifest starter is minimal but valid (shell only)", () => {
     const config = expectValidStarter(buildStarterYaml(base({ files: [] })));
-    expect(Object.keys(config.agents).sort()).toEqual(["claude", "shell"]);
+    expect(Object.keys(config.agents).sort()).toEqual(["shell"]);
   });
 
-  it("uses the first detected CLI; warns in a comment when none detected", () => {
-    expect(buildStarterYaml(base({ files: [], installedClis: ["codex"] }))).toContain("codex:");
+  it("names the detected CLI in the Agent Studio pointer; says so honestly when none is detected", () => {
+    expect(buildStarterYaml(base({ files: [], installedClis: ["codex"] }))).toContain("codex was detected");
     const none = buildStarterYaml(base({ files: [], installedClis: [] }));
-    expect(none).toContain("claude:"); // default
-    expect(none).toContain("not detected"); // honest comment
+    expect(none).toContain("no supported AI CLI was detected"); // honest comment
+    expect(none).not.toContain("was detected on this machine)"); // and no false claim of detection
   });
 
   it("every stack produces a config that round-trips through parseConfig", () => {

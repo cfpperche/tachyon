@@ -1738,7 +1738,10 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  attached:\n    cmd: sh\n    branch: human/attached\n`,
+      // SDD 478 M6 — `branch:` is an Agent capability, and `cmd: sh` declares a terminal, so this stanza
+      // is now refused outright. Declaring the attested runtime NAME is the ratified way to drive agent
+      // semantics headlessly (no process is spawned here — tmux is a double).
+      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  attached:\n    cmd: codex\n    branch: human/attached\n`,
       "utf8",
     );
     git(root, ["init"]);

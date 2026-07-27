@@ -156,6 +156,40 @@ describe("ClientWorkspaceStudioTarget", () => {
     expect(target.config).toBeUndefined();
   });
 
+  it("carries a partial Studio submit to the domain instead of failing it in transport (t-8247ec)", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-partial-"));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, "tachyon.yml"), config("lint"), "utf8");
+    const identity = projectionIdentity(root);
+    let submits = 0;
+    const fake = new FakeWorkspaceClient({
+      identity,
+      snapshot: projectionSnapshot(identity),
+      // Stands in for the engine's Workspace.studioSubmit: the retired inline-agent path.
+      invoke: async (_operationId, command) => {
+        if (command.method !== "studio.submit") throw new Error("unexpected command");
+        return workspaceCommandSuccessV1(
+          command,
+          command.input.state.kind === "agent" ? ["inline agent editing is retired"] : [],
+        );
+      },
+    });
+    const target = new ClientWorkspaceStudioTarget(fake, {
+      extensionUri: {} as StudioDeps["extensionUri"],
+      operationId: () => `studio-operation-partial-${++submits}`,
+    });
+
+    // Exactly what `tachyon._upsertAgent` is handed by the editor-host suite: a form carrying only
+    // the fields the scenario sets. Before t-8247ec this never left the shell.
+    const partial = { name: "studio-rev", cmd: "claude --permission-mode plan", kind: "agent", instructions: "review" };
+    await expect(target.studioSubmit({ state: partial as never })).resolves.toEqual(["inline agent editing is retired"]);
+    await expect(target.studioSubmit({ state: { name: "release", kind: "runbook", steps: "hello" } as never })).resolves.toBeUndefined();
+    expect(fake.invocations[0]?.command).toMatchObject({
+      method: "studio.submit",
+      input: { state: { name: "studio-rev", kind: "agent", role: "", schedTiming: "every", schedAction: "run", catchUp: false } },
+    });
+  });
+
   it("surfaces an engine command failure as transport failure instead of a validation error", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-error-"));
     roots.push(root);
