@@ -207,6 +207,13 @@
     row-gap: 5px;
   }
   .row-meta:empty { display: none; }
+
+  /* t-b164b2 — a badge may never be wider than the card. A branch like
+     `tachyon/change/<a-very-long-slug>` used to push its chip past the row and out of the sidebar
+     (measured at 320px: 116px of overflow, test/browser/cardPreviewShadow.test.ts). Truncation is the
+     COMPONENT's job, not the template's — SDD 479 spec.md § narrow sidebar — and the full value is
+     already in the badge's tooltip, so nothing is lost by clipping the text. */
+  .row-meta > .ds-badge { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Nested rows skip the disclosure gutter (App.tsx `!nested`); name starts after sdot+gap only.
      Use a matching pad so badges/focus align under the child name the same way parents do. */
   .row.child .row-meta {
