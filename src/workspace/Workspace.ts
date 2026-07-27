@@ -5930,8 +5930,12 @@ export class Workspace {
     // F2 (dogfood): a freshly-CREATED agent declared autostart:true should start now —
     // not only on the next workspace open. Targeted to the create path (editingName
     // undefined) so editing the yml never auto-(re)starts an intentionally-stopped agent.
-    const isAgentKind = !isScheduleOrCommandOrRunbook;
-    const autostarted = isAgentKind && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
+    // SDD 478 M5 — say which arm this is. `kind === "agent"` returned above (inline agent editing
+    // is retired), so the terminal arm is the only managed entry that reaches here. The old
+    // `!isScheduleOrCommandOrRunbook` said this by negating three unrelated studio kinds, and would
+    // have silently swept in a sixth studio kind the day one was added.
+    const isManagedEntry = kind === "terminal";
+    const autostarted = isManagedEntry && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
     if (autostarted) {
       void this.manager.spawn(submit.state.name).then(() => this.refreshAgentsViews()).catch((err) => {
         this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");

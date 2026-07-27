@@ -85,6 +85,7 @@ function sampleFleet(overrides: Partial<FleetVM["agents"][number]> = {}): FleetV
     bridge: { port: "42551", connected: true },
     agents: [
       {
+        kind: "agent",
         name: "raw-secret-agent",
         status: "running",
         attention: "working",
@@ -95,6 +96,7 @@ function sampleFleet(overrides: Partial<FleetVM["agents"][number]> = {}): FleetV
         ...overrides,
       },
       {
+        kind: "agent",
         name: "needs-help",
         status: "needs",
         attention: "needs input",
@@ -121,6 +123,7 @@ function poisonedFleet(sentinel: string): FleetVM {
     bridge: { port: `${sentinel}:bridge.port`, connected: true },
     agents: [
       {
+        kind: "agent",
         name: `${sentinel}:name`,
         status: "stopping",
         attention: `${sentinel}:attention`,
@@ -131,7 +134,7 @@ function poisonedFleet(sentinel: string): FleetVM {
       },
     ],
     proposals: [{ id: `${sentinel}:proposal.id`, name: `${sentinel}:proposal.name`, by: `${sentinel}:proposal.by`, reason: `${sentinel}:proposal.reason`, when: `${sentinel}:proposal.when` }],
-    terminals: [{ name: `${sentinel}:terminal.name`, status: "running", sub: `${sentinel}:terminal.sub` }],
+    terminals: [{ kind: "terminal", name: `${sentinel}:terminal.name`, status: "running", sub: `${sentinel}:terminal.sub` }],
     pipelines: [],
     schedules: [],
     commands: [{ name: `${sentinel}:command.name`, cmd: `${sentinel}:command.cmd`, state: "running", detail: `${sentinel}:command.detail` }],

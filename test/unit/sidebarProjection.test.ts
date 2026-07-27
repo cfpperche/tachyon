@@ -14,6 +14,7 @@ function minimalFleet(agentStatus: string) {
       agents: [
         {
           name: "hermes",
+          kind: "agent" as const,
           status: agentStatus,
         },
       ],

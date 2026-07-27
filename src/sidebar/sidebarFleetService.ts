@@ -175,7 +175,7 @@ export async function buildSidebarFleet(
       }
       const focus = resolveAgentFocus({
         agent: agent.name,
-        ai: true,
+        kind: "agent",
         tasks: focusTasks,
         ledger: {
           contractTask: typeof ledgerDef?.contract?.task === "string" ? ledgerDef.contract.task : undefined,
@@ -204,7 +204,7 @@ export async function buildSidebarFleet(
         forked: source.ledger.get(agent.name)?.def?.fork === true,
         resumable: !agent.running && resumable.has(agent.name),
         freshStart: !agent.running && resumable.has(agent.name) && resumeReadyOf.get(agent.name) === false,
-        ai: true,
+        kind: "agent",
         adhoc: !agent.declared,
         continuity: agent.running && agent.declared ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
@@ -224,7 +224,7 @@ export async function buildSidebarFleet(
     .filter((agent) => agent.kind === "terminal")
     .map((agent) => {
       const view = toAgentVM(agent, {
-        ai: false,
+        kind: "terminal",
         adhoc: !agent.declared,
         resumable: !agent.running && resumable.has(agent.name),
         ...(configFailure ? { configInvalid: true } : {}),
@@ -250,7 +250,7 @@ export async function buildSidebarFleet(
       };
       if (extra.kind === "terminal") {
         const view = toAgentVM(raw, {
-          ai: false,
+          kind: "terminal",
           adhoc: !extra.declared,
           resumable: extra.resumable,
           configInvalid: true,
@@ -259,7 +259,7 @@ export async function buildSidebarFleet(
         terminals.push(view);
       } else {
         agents.push(toAgentVM(raw, {
-          ai: true,
+          kind: "agent",
           adhoc: !extra.declared,
           resumable: extra.resumable,
           worktree: extra.worktreeBranch,

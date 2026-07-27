@@ -135,16 +135,16 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(vm.persistenceHooks).toMatchObject({ state: "failed", reason: "syntax-error" });
   });
   it("t-140242: exposes the active model parsed from --model", () => {
-    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude --model opus-4.8" }), { ai: true })).toMatchObject({ model: "Opus 4.8" });
-    expect(toAgentVM(raw({ name: "claude-2", running: true, cmd: "claude --model='sonnet-5'" }), { ai: true })).toMatchObject({ model: "Sonnet 5" });
+    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude --model opus-4.8" }), { kind: "agent" })).toMatchObject({ model: "Opus 4.8" });
+    expect(toAgentVM(raw({ name: "claude-2", running: true, cmd: "claude --model='sonnet-5'" }), { kind: "agent" })).toMatchObject({ model: "Sonnet 5" });
   });
   it("t-140242: falls back to the runtime default model when no --model flag is present", () => {
-    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude" }), { ai: true })).toMatchObject({ model: "Claude default" });
-    expect(toAgentVM(raw({ name: "codex", running: true, cmd: "codex --yolo" }), { ai: true })).toMatchObject({ model: "Codex default" });
-    expect(toAgentVM(raw({ name: "grok", running: true, cmd: "grok" }), { ai: true })).toMatchObject({ model: "Grok default" });
+    expect(toAgentVM(raw({ name: "claude", running: true, cmd: "claude" }), { kind: "agent" })).toMatchObject({ model: "Claude default" });
+    expect(toAgentVM(raw({ name: "codex", running: true, cmd: "codex --yolo" }), { kind: "agent" })).toMatchObject({ model: "Codex default" });
+    expect(toAgentVM(raw({ name: "grok", running: true, cmd: "grok" }), { kind: "agent" })).toMatchObject({ model: "Grok default" });
   });
   it("t-140242: suppresses model labels for terminal rows", () => {
-    expect(toAgentVM(raw({ name: "probe", running: true, cmd: "claude --model opus-4.8" }), { ai: false }).model).toBeUndefined();
+    expect(toAgentVM(raw({ name: "probe", running: true, cmd: "claude --model opus-4.8" }), { kind: "terminal" }).model).toBeUndefined();
   });
 });
 
@@ -182,10 +182,10 @@ describe("agentModel.modelFromCommand (t-140242)", () => {
   });
   it("t-140a24: toAgentVM surfaces Terra/Luna for declared fleet cmds", () => {
     expect(
-      toAgentVM(raw({ name: "codex-executor", running: true, cmd: "codex -c model=gpt-5.6-terra -c model_reasoning_effort=medium" }), { ai: true }),
+      toAgentVM(raw({ name: "codex-executor", running: true, cmd: "codex -c model=gpt-5.6-terra -c model_reasoning_effort=medium" }), { kind: "agent" }),
     ).toMatchObject({ model: "GPT-5.6 Terra" });
     expect(
-      toAgentVM(raw({ name: "codex-mechanical", running: true, cmd: "codex -c model=gpt-5.6-luna -c model_reasoning_effort=low" }), { ai: true }),
+      toAgentVM(raw({ name: "codex-mechanical", running: true, cmd: "codex -c model=gpt-5.6-luna -c model_reasoning_effort=low" }), { kind: "agent" }),
     ).toMatchObject({ model: "GPT-5.6 Luna" });
   });
 });
@@ -269,7 +269,7 @@ describe("agentModel.resolveModelFact (spec 378 — precedence/divergence/label 
 describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => {
   it("surfaces modelSource/modelObservedAt on an observed row, and omits modelStale/modelDivergence when false", () => {
     const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex" }), {
-      ai: true,
+      kind: "agent",
       model: { id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false },
     });
     expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelObservedAt: "2026-07-13T00:00:00Z", modelDivergence: true });
@@ -278,7 +278,7 @@ describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => 
 
   it("surfaces modelStale:true only when the observation is stale", () => {
     const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex -c model=gpt-5.6-sol" }), {
-      ai: true,
+      kind: "agent",
       model: { id: "gpt-5.6-sol", stale: true },
     });
     expect(vm).toMatchObject({ modelSource: "observed", modelStale: true });
@@ -286,7 +286,7 @@ describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => 
   });
 
   it("no observation yet → modelSource is declared/profile, no modelObservedAt/modelStale/modelDivergence", () => {
-    const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex" }), { ai: true });
+    const vm = toAgentVM(raw({ name: "codex", running: true, cmd: "codex" }), { kind: "agent" });
     expect(vm).toMatchObject({ model: "Codex default", modelSource: "profile" });
     expect(vm.modelObservedAt).toBeUndefined();
     expect(vm.modelStale).toBeUndefined();
@@ -294,7 +294,7 @@ describe("agentModel.toAgentVM — model provenance siblings (spec 378)", () => 
   });
 
   it("terminal rows (ai:false) suppress the observed model input entirely", () => {
-    const vm = toAgentVM(raw({ name: "probe", running: true, cmd: "codex" }), { ai: false, model: { id: "gpt-5.6-sol", stale: false } });
+    const vm = toAgentVM(raw({ name: "probe", running: true, cmd: "codex" }), { kind: "terminal", model: { id: "gpt-5.6-sol", stale: false } });
     expect(vm.model).toBeUndefined();
     expect(vm.modelSource).toBeUndefined();
   });

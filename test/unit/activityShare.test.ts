@@ -97,13 +97,13 @@ describe("activity share helpers", () => {
 
   it("lists only other live AI agents as internal share targets", () => {
     const agents: AgentVM[] = [
-      { name: "codex", status: "running", ai: true },
-      { name: "claude", status: "running", ai: true },
-      { name: "review", status: "throttled", ai: true },
-      { name: "shell", status: "running", ai: false },
-      { name: "stopped", status: "stopped", ai: true },
-      { name: "crashed", status: "crashed", ai: true },
-      { name: "stopping", status: "stopping", ai: true },
+      { name: "codex", status: "running", kind: "agent" },
+      { name: "claude", status: "running", kind: "agent" },
+      { name: "review", status: "throttled", kind: "agent" },
+      { name: "shell", status: "running", kind: "terminal" },
+      { name: "stopped", status: "stopped", kind: "agent" },
+      { name: "crashed", status: "crashed", kind: "agent" },
+      { name: "stopping", status: "stopping", kind: "agent" },
     ];
 
     expect(internalShareTargets(agents, "codex")).toEqual([

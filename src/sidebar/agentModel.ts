@@ -8,6 +8,7 @@ import type {
   PersistenceHookBadge,
   ModelSource,
 } from "./types";
+import type { EntryKind } from "../config/loadConfig.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
@@ -216,7 +217,8 @@ export interface AgentExtras {
   freshStart?: boolean;
   verify?: Verify;
   verifiable?: boolean;
-  ai?: boolean;
+  /** SDD 478 M5 — the managed-entry arm; absent means the caller had no entry to read. */
+  kind?: EntryKind;
   adhoc?: boolean;
   continuity?: ContinuityBadge;
   /** spec 390 — glance focus line (task / brief / continuity). */
@@ -272,7 +274,8 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
-  const modelFact = x.ai === false ? undefined : resolveModelFact(a.cmd, x.model);
+  // A terminal runs a process, not a model. Any other arm (or an unknown one) still resolves.
+  const modelFact = x.kind === "terminal" ? undefined : resolveModelFact(a.cmd, x.model);
   return {
     name: a.name,
     ...(modelFact
@@ -303,7 +306,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.freshStart ? { freshStart: true } : {}),
     ...(x.forked ? { forked: true } : {}),
     ...(x.forkable ? { forkable: true } : {}),
-    ...(x.ai ? { ai: true } : {}),
+    kind: x.kind ?? "agent",
     ...(x.adhoc ? { adhoc: true } : {}),
     ...(x.verifiable ? { verifiable: true } : {}),
     ...(x.canDismiss ? { canDismiss: true } : {}),

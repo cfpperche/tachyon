@@ -39,6 +39,7 @@ import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityP
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
+import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
@@ -1316,7 +1317,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           ...(worktreesUnavailable ? { worktreesUnavailable } : {}),
           deliveries: deliveryRows,
           ...(deliveriesUnavailable ? { deliveriesUnavailable } : {}),
-          approvals: [], // pending list is owned by Approvals panel; deep-link for resolve
+          // t-d85857 — Overview counts these, and it must count what the Approvals section shows:
+          // same read, one function. The list used to be hardcoded empty here, so the counter said
+          // "0 pending" with requests waiting on disk. A read failure is deliberately NOT swallowed
+          // into an empty list — Control's own error card is honest, a silent zero is not.
+          approvals: pendingApprovalRows(ws.workspaceRoot),
           tmux,
           ...(companion ? { companion } : {}),
         });
