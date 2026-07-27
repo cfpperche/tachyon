@@ -7,6 +7,9 @@ export interface OpencodeMessageRecord {
   time?: { created?: number };
   agent?: string;
   model?: { providerID?: string; modelID?: string };
+  /** t-4a4d30 — SQLite-era assistant rows carry the model FLAT instead of nested. Same two values. */
+  providerID?: string;
+  modelID?: string;
   summary?: { title?: string };
 }
 
@@ -109,8 +112,10 @@ function timestamp(rec: OpencodeTurnRecord): string | undefined {
 }
 
 function modelLabel(message: OpencodeMessageRecord): string | undefined {
-  const provider = message.model?.providerID;
-  const model = message.model?.modelID;
+  // Nested on user rows, flat on assistant rows (measured on opencode 1.18.5) — the assistant's is
+  // the one that answers "which model actually replied", so both shapes have to be read.
+  const provider = message.model?.providerID ?? message.providerID;
+  const model = message.model?.modelID ?? message.modelID;
   return [provider, model].filter((s): s is string => typeof s === "string" && s.length > 0).join("/") || undefined;
 }
 

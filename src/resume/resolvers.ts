@@ -26,6 +26,9 @@ export interface ResolverEnv {
   antigravityHome?: string;
   /** Hermes private/real home (dir that contains `state.db`). Defaults to `<home>/.hermes`. */
   hermesHome?: string;
+  /** OpenCode data home (dir that contains `opencode.db`). Defaults to `<home>/.local/share/opencode`;
+   *  a harnessed agent's redirected XDG_DATA_HOME lands here (t-4a4d30). */
+  opencodeHome?: string;
   /** Pi session directory. Managed Pi agents pass their private `.tachyon/pi-sessions/<agent>` path. */
   piSessionDir?: string;
 }
@@ -247,9 +250,51 @@ export function resolveCodexId(cwd: string, env = defaultEnv()): string | null {
   return resolveCodexSession(cwd, env)?.id ?? null;
 }
 
-/** OpenCode: project store maps worktree→hash; session ids are `ses_*` under that hash. */
-export function resolveOpencodeId(cwd: string, env = defaultEnv()): string | null {
-  const base = path.join(env.home, ".local", "share", "opencode", "storage");
+/** The opencode data home — the dir holding `opencode.db` and (on pre-migration homes) `storage/`. */
+function opencodeDataHome(env: ResolverEnv): string {
+  return env.opencodeHome ?? path.join(env.home, ".local", "share", "opencode");
+}
+
+/**
+ * OpenCode: the live store is `opencode.db` (SQLite) since the migration measured on 1.18.5 — one
+ * `session` row per session, carrying the cwd in `directory` and its project in `project_id`. The
+ * legacy JSON tree is read only when there is no database: a home that predates the migration keeps
+ * a FROZEN `storage/` beside the live one, and resolving from it would resume a dead session
+ * (t-4a4d30).
+ */
+export function resolveOpencodeId(cwd: string, env: ResolverEnv = defaultEnv()): string | null {
+  const dbPath = path.join(opencodeDataHome(env), "opencode.db");
+  if (fs.existsSync(dbPath)) return resolveOpencodeIdFromDb(dbPath, cwd);
+  return resolveOpencodeIdFromJson(cwd, env);
+}
+
+function resolveOpencodeIdFromDb(dbPath: string, cwd: string): string | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    const db = new DatabaseSync(dbPath, { readOnly: true });
+    try {
+      // Most-recently-touched first: the legacy resolver picked the newest file by mtime, and a
+      // resumed older session is the active one even though it was created long ago.
+      const order = "ORDER BY s.time_updated DESC, s.time_created DESC LIMIT 1";
+      const direct = db.prepare(`SELECT s.id FROM session s WHERE s.directory = ? ${order}`).get(cwd) as { id?: string } | undefined;
+      if (typeof direct?.id === "string" && direct.id) return direct.id;
+      // Same worktree, session opened from a subdirectory — the project row is the mapping the JSON
+      // tree used to express as `project/<hash>.json`.
+      const viaProject = db.prepare(
+        `SELECT s.id FROM session s JOIN project p ON p.id = s.project_id WHERE p.worktree = ? ${order}`,
+      ).get(cwd) as { id?: string } | undefined;
+      return typeof viaProject?.id === "string" && viaProject.id ? viaProject.id : null;
+    } finally {
+      db.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+function resolveOpencodeIdFromJson(cwd: string, env: ResolverEnv): string | null {
+  const base = path.join(opencodeDataHome(env), "storage");
   const projectDir = path.join(base, "project");
   let hash: string | null = null;
   try {

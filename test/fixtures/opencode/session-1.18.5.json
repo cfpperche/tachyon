@@ -1,0 +1,106 @@
+{
+  "capturedAt": "2026-07-27",
+  "opencodeVersion": "1.18.5",
+  "note": "Rows captured verbatim from a real ~/.local/share/opencode/opencode.db (the t-0338fc \"say ok\" session). DDL is the live schema.",
+  "ddl": {
+    "project": "CREATE TABLE `project` (\n          `id` text PRIMARY KEY,\n          `worktree` text NOT NULL,\n          `vcs` text,\n          `name` text,\n          `icon_url` text,\n          `icon_color` text,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `time_initialized` integer,\n          `sandboxes` text NOT NULL\n        , `commands` text, `icon_url_override` text)",
+    "message": "CREATE TABLE `message` (\n          `id` text PRIMARY KEY,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE\n        )",
+    "part": "CREATE TABLE `part` (\n          `id` text PRIMARY KEY,\n          `message_id` text NOT NULL,\n          `session_id` text NOT NULL,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `data` text NOT NULL,\n          CONSTRAINT `fk_part_message_id_message_id_fk` FOREIGN KEY (`message_id`) REFERENCES `message`(`id`) ON DELETE CASCADE\n        )",
+    "session": "CREATE TABLE `session` (\n          `id` text PRIMARY KEY,\n          `project_id` text NOT NULL,\n          `parent_id` text,\n          `slug` text NOT NULL,\n          `directory` text NOT NULL,\n          `title` text NOT NULL,\n          `version` text NOT NULL,\n          `share_url` text,\n          `summary_additions` integer,\n          `summary_deletions` integer,\n          `summary_files` integer,\n          `summary_diffs` text,\n          `revert` text,\n          `permission` text,\n          `time_created` integer NOT NULL,\n          `time_updated` integer NOT NULL,\n          `time_compacting` integer,\n          `time_archived` integer, `workspace_id` text, `path` text, `agent` text, `model` text, `cost` real DEFAULT 0 NOT NULL, `tokens_input` integer DEFAULT 0 NOT NULL, `tokens_output` integer DEFAULT 0 NOT NULL, `tokens_reasoning` integer DEFAULT 0 NOT NULL, `tokens_cache_read` integer DEFAULT 0 NOT NULL, `tokens_cache_write` integer DEFAULT 0 NOT NULL, `metadata` text,\n          CONSTRAINT `fk_session_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE\n        )"
+  },
+  "session": {
+    "id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+    "project_id": "global",
+    "parent_id": null,
+    "slug": "shiny-island",
+    "directory": "/tmp/pcm-oc-EG0Hg9",
+    "title": "Simple ok reply request",
+    "version": "1.18.5",
+    "share_url": null,
+    "summary_additions": 0,
+    "summary_deletions": 0,
+    "summary_files": 0,
+    "summary_diffs": null,
+    "revert": null,
+    "permission": null,
+    "time_created": 1785120302184,
+    "time_updated": 1785120304947,
+    "time_compacting": null,
+    "time_archived": null,
+    "workspace_id": null,
+    "path": "",
+    "agent": "build",
+    "model": "{\"id\":\"glm-5.2\",\"providerID\":\"opencode-go\",\"variant\":\"high\"}",
+    "cost": 0.00226328,
+    "tokens_input": 276,
+    "tokens_output": 3,
+    "tokens_reasoning": 0,
+    "tokens_cache_read": 7168,
+    "tokens_cache_write": 0,
+    "metadata": null
+  },
+  "project": {
+    "id": "global",
+    "worktree": "/tmp/pcm-oc-EG0Hg9",
+    "vcs": "git",
+    "name": null,
+    "icon_url": null,
+    "icon_color": null,
+    "time_created": 1781216815706,
+    "time_updated": 1785120269339,
+    "time_initialized": null,
+    "sandboxes": "[]",
+    "commands": null,
+    "icon_url_override": null
+  },
+  "messages": [
+    {
+      "id": "msg_fa176247b00125HE3QG1zLn9Bg",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120302203,
+      "time_updated": 1785120304969,
+      "data": "{\"role\":\"user\",\"time\":{\"created\":1785120302203},\"agent\":\"build\",\"model\":{\"providerID\":\"opencode-go\",\"modelID\":\"glm-5.2\",\"variant\":\"high\"},\"summary\":{\"diffs\":[]}}"
+    },
+    {
+      "id": "msg_fa17624950010pZ4OLku6ZS1fL",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120302229,
+      "time_updated": 1785120304940,
+      "data": "{\"parentID\":\"msg_fa176247b00125HE3QG1zLn9Bg\",\"role\":\"assistant\",\"mode\":\"build\",\"agent\":\"build\",\"variant\":\"high\",\"path\":{\"cwd\":\"/tmp/pcm-oc-EG0Hg9\",\"root\":\"/tmp/pcm-oc-EG0Hg9\"},\"cost\":0.00226328,\"tokens\":{\"total\":7447,\"input\":276,\"output\":3,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":7168}},\"modelID\":\"glm-5.2\",\"providerID\":\"opencode-go\",\"time\":{\"created\":1785120302229,\"completed\":1785120304939},\"finish\":\"stop\"}"
+    }
+  ],
+  "parts": [
+    {
+      "id": "prt_fa176247d001ghAH3JxlwHXIPR",
+      "message_id": "msg_fa176247b00125HE3QG1zLn9Bg",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120302213,
+      "time_updated": 1785120302215,
+      "data": "{\"type\":\"text\",\"text\":\"Reply with exactly: ok\"}"
+    },
+    {
+      "id": "prt_fa1762d7a0016lvQqxT0NbqnCQ",
+      "message_id": "msg_fa17624950010pZ4OLku6ZS1fL",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120304506,
+      "time_updated": 1785120304507,
+      "data": "{\"snapshot\":\"444a8fa98e219b9ee8585973bba9425676aba452\",\"type\":\"step-start\"}"
+    },
+    {
+      "id": "prt_fa1762eae001v8LkG2MrZj7NJS",
+      "message_id": "msg_fa17624950010pZ4OLku6ZS1fL",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120304814,
+      "time_updated": 1785120304859,
+      "data": "{\"type\":\"text\",\"text\":\"ok\",\"time\":{\"start\":1785120304814,\"end\":1785120304858}}"
+    },
+    {
+      "id": "prt_fa1762efd001txAzxu9ap02yHw",
+      "message_id": "msg_fa17624950010pZ4OLku6ZS1fL",
+      "session_id": "ses_05e89db97ffewf5YfHvTP5Ur8J",
+      "time_created": 1785120304893,
+      "time_updated": 1785120304894,
+      "data": "{\"reason\":\"stop\",\"snapshot\":\"444a8fa98e219b9ee8585973bba9425676aba452\",\"type\":\"step-finish\",\"tokens\":{\"total\":7447,\"input\":276,\"output\":3,\"reasoning\":0,\"cache\":{\"write\":0,\"read\":7168}},\"cost\":0.00226328}"
+    }
+  ]
+}

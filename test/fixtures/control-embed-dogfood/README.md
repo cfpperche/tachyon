@@ -1,5 +1,10 @@
 # control-embed-dogfood
 
+> **Create the agents first (SDD 478).** This fixture declares no agents. An `agents:` entry is a
+> pointer to a canonical profile, and the authority that attests it is custodied by the host (VS Code
+> secret storage), so no checked-in fixture can ship one. After arming the Dev Host, create the rows
+> below with **Tachyon: Agent Studio**, then continue.
+
 Dogfood fixture for spec control-monolith-embed — **intent: focus**.
 
 ## Intent presets
