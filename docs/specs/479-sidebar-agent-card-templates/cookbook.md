@@ -129,6 +129,22 @@ Keys must name a runtime Tachyon runs agents on — `claude`, `codex`, `grok`, `
 A row whose runtime has no override uses the project template. That fallback is a plain lookup miss:
 overrides are resolved into complete cards when the file loads, so nothing is merged while you scroll.
 
+## Composing one without writing YAML by hand
+
+**Control → Settings → "Agent card layout"** shows every catalog component, per region, with a
+checkbox and up/down arrows. As you change it:
+
+- the preview below renders **real** agent cards — the sidebar's own component and stylesheet — at the
+  sidebar's width and at its narrowest, across five rows (healthy, wants-a-human, cannot-recover, no
+  model yet, and one with a very long name and branch);
+- anything invalid is reported inline, in the same words `tachyon.yml` would use, before you save
+  anything;
+- the YAML box shows exactly what to paste, with the regions you did not change left out so they keep
+  following the default.
+
+The block does not write your config: copy the YAML into `tachyon.yml` yourself, so the file stays
+something you review and commit. Per-runtime overrides are still written by hand.
+
 ## Not available yet
 
 `options:` (e.g. `model: { maxChars: 24 }`) is named in the design but no component honors one, so the

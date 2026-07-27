@@ -186,7 +186,11 @@ as a readable text diff.
    time), `CardTemplateConfig` = `{ base, runtimes }` on the wire, `AgentVM.runtime` projected by the
    same `runtimeOf` the model label already uses, and a lookup in `resolveCardTemplate`. See § What
    phase 3 changed in this design.
-4. Settings block with the live preview.
+4. **[done]** Settings block with the live preview. Landed as `src/cockpit/cardTemplateEditor.ts` (the
+   pure composer: state, toggle with inline-host rules, reorder, validation through the SHARED
+   `parseCardTemplate`, YAML emitter), `src/sidebar/cardPreviewRows.ts` (the five states the spec
+   names), and `src/webview/cockpit/CardTemplateBlock.tsx` (the block, previewing the real `AgentRow`
+   in a shadow root at 320px and 220px). See § What phase 4 changed in this design.
 5. Optional personal override in VS Code settings, with precedence stated in the UI.
 
 Phase 1 was where the design was proven or disproven, and it changed nothing a person can see — a good
@@ -255,6 +259,31 @@ meta content was evidence.
 The override keys validate against `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES` rather than the attested four
 named in the task: a declared agent is attested, but an ad-hoc one may be OpenCode/Gemini/Qwen/Hermes,
 and refusing those keys would refuse an override for rows this product creates.
+
+## What phase 4 changed in this design
+
+1. **The preview needed isolation the plan never mentioned.** "Reuse the real component" is only half
+   the problem: the real card is also the real *stylesheet*, and `sidebar.css` styles `body`, `#root`,
+   `.row`, `.name`, `.actions`. Loading it in Control would restyle Control. The preview therefore
+   renders into a SHADOW ROOT with its own `<link>` — the sheet ships on the same bootstrap-global map
+   the lazy sections use, but nothing injects it into `<head>`, and a test fails if anything starts to.
+
+2. **A composer, not a text box.** The plan rejected a drag-and-drop editor *as the first deliverable*
+   because it would presume the schema was right. By phase 4 the YAML form has shipped and held, so the
+   block is the "thin producer of the same data" that rejection anticipated. It also means no YAML
+   parser in the webview, and validation through `parseCardTemplate` itself — the block and the loader
+   cannot disagree about what is valid, because they are the same function.
+
+3. **It composes; it does not save.** The block emits YAML to paste and offers "Open tachyon.yml".
+   Writing the file from a webview means merging into a document that carries comments, ordering and a
+   person's other settings — a different risk surface from previewing, and one the spec never asked
+   this block to take. `test/unit/cardTemplateEditor.test.ts` closes the loop that matters instead:
+   what the block shows you to paste loads back as the template it was previewing.
+
+4. **Preview fixtures live in `src/`.** The plan said the preview would reuse the dev harness's
+   fixtures, but those are in `scripts/` and the shipped block cannot import them (nor the equality
+   matrix in `test/`). `cardPreviewRows.ts` holds the five states the spec names, in `src/`, where the
+   harness can later import them too — the direction that keeps one set rather than three.
 
 ## Rejected alternatives
 

@@ -161,6 +161,15 @@ export interface CockpitStrings {
   settingsOpenTachyon: string;
   settingsOpenConfig: string;
   settingsDoctor: string;
+  /** SDD 479 phase 4 — the Control → Settings card-template block. */
+  cardTemplateTitle: string;
+  cardTemplateHint: string;
+  cardTemplateBody: string;
+  cardTemplateYamlHint: string;
+  cardTemplateCopy: string;
+  cardTemplateReset: string;
+  cardTemplateCriticalNote: string;
+  cardTemplateInlineNote: string;
   companionTitle: string;
   companionHint: string;
   companionBody: string;

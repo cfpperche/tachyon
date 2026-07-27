@@ -102,11 +102,21 @@ names that test; the rest belong to phases 2–5 and stay open until then._
   - *Bounded on purpose:* re-admission is per row AND per state. A passing or stale verify gate is
     information, not an emergency, and is not re-admitted — otherwise "critical" would quietly come to
     mean "always shown".
-- [ ] **Scenario: live preview while editing**
+- [x] **Scenario: live preview while editing** — phase 4, `test/unit/cardTemplateBlock.test.ts` +
+      `test/unit/cardTemplateEditor.test.ts`
   - **Given** the human is editing the template in Tachyon's settings surface
   - **When** the template text changes
   - **Then** a preview renders the real card component against fixture rows (healthy, attention,
     error, long names, no model, narrow width) and shows validation errors inline, before saving.
+  - *How it stays the real card:* the block imports the sidebar's own `AgentRow` and links the
+    sidebar's own stylesheet — inside a SHADOW ROOT, because `sidebar.css` is a global sheet (it styles
+    `body`, `#root`, `.row`) that would restyle Control if it reached this page. Real component, real
+    CSS, no bleed, and no second renderer that could drift.
+  - *What "editing" means here:* a composer (show/hide + reorder per region), not a YAML text box. The
+    plan rejected an editor only *as the first deliverable* — "if the YAML form proves itself, an
+    editor becomes a thin producer of the same data"; phases 2–3 shipped that form. The block emits the
+    YAML to paste and does not write the file: `tachyon.yml` stays the thing a person reviews and
+    commits. A test proves the emitted YAML loads back as the template the block previewed.
 - [ ] **Scenario: the narrow sidebar still works**
   - **Given** any valid template at the sidebar's minimum practical width
   - **When** rows render

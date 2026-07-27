@@ -410,6 +410,14 @@ function strings(): CockpitStrings {
     settingsOpenTachyon: t("Open Tachyon settings"),
     settingsOpenConfig: t("Open tachyon.yml"),
     settingsDoctor: t("Run Doctor"),
+    cardTemplateTitle: t("Agent card layout"),
+    cardTemplateHint: t("Choose which elements an agent card shows, and in what order."),
+    cardTemplateBody: t("Compose a layout here, watch the real card update, then paste the YAML into tachyon.yml. Nothing is saved from this block."),
+    cardTemplateYamlHint: t("Paste this under your workspace's tachyon.yml. Regions you did not change are left out, so they follow the default."),
+    cardTemplateCopy: t("Copy YAML"),
+    cardTemplateReset: t("Reset to default"),
+    cardTemplateCriticalNote: t("shown anyway when a row is in this state"),
+    cardTemplateInlineNote: t("renders inside another element"),
     companionTitle: t("Companion"),
     companionHint: t("Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*)."),
     companionBody: t(
@@ -2358,6 +2366,15 @@ export async function openCockpit(
         ...(controlWsHash ? { wsHash: controlWsHash } : {}),
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
+        /**
+         * SDD 479 phase 4 — the sidebar stylesheet, for the card preview's SHADOW ROOT only.
+         *
+         * Deliberately NOT a `__tachyonSectionStyles` entry: every key in that map is co-loaded into
+         * `<head>` by `loadSectionStylesheet` (and `cockpitCssParity.test.ts` enforces that pairing).
+         * `sidebar.css` is a global sheet — it styles `body`, `#root`, `.row` — so reaching this page's
+         * head would restyle Control. It travels alone, and only the shadow root links it.
+         */
+        __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
           approvals: uri("approval.css"),
           runtime: uri("runtime-ops.css"),

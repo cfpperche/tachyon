@@ -62,9 +62,12 @@ Ordered; each must leave the tree green on `npm run verify:full:quiet`.
       runtime at all: `AgentVM.runtime`, derived by the same `runtimeOf` the model label uses. Overrides
       resolve to COMPLETE templates at parse time, so the renderer looks up instead of merging; a
       partial `extends: replace` is refused by name rather than silently blanking regions.
-- [ ] `t-e494e1` · **Phase 4 — the live preview** as a Control → Settings block rendering the REAL
-      `AgentRow` against the harness fixtures, at sidebar width plus a narrow pane, errors inline before
-      saving. Depends on phase 2.
+- [x] `t-e494e1` · **Phase 4 — the live preview** as a Control → Settings block rendering the REAL
+      `AgentRow` at 320px and 220px, with validation errors inline before anything is saved. The card
+      renders in a SHADOW ROOT with the sidebar's own stylesheet, because that sheet is global and would
+      restyle Control (`plan.md` § What phase 4 changed). It composes and emits YAML rather than writing
+      `tachyon.yml`; the round trip — composer → YAML → the real loader → the same template — is the
+      test that keeps the preview honest.
 - [ ] `t-601051` · **Phase 5 — optional personal override** in VS Code settings, personal wins, and the
       UI says which template is in effect. Depends on phase 2.
 
@@ -100,8 +103,13 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
       `replace` and an unknown runtime are both refused by name.
 - [x] The row carries the runtime the override keys on, derived by the same function as the model
       label — one derivation, so the card and the model can never disagree about what a row is running.
-- [ ] Live preview, narrow-sidebar behavior at a configured template, accessibility of a reordered
-      reading order, per-component options — phases 4–5 and `t-045d44`.
+- [x] **A live preview before saving**: the real component, the real stylesheet, fixture rows in the
+      five states the spec names, at the sidebar's width and its narrowest, with the loader's own
+      refusals shown inline.
+- [x] The YAML the block emits loads back as the template the block previewed — the one property a
+      screenshot could never check.
+- [ ] Personal override with precedence stated in the UI, accessibility of a reordered reading order,
+      per-component options — phase 5, `t-045d44`, and the human dogfood below.
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -139,7 +147,12 @@ sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fix
    omits it.
 4. **The empty row really is gone.** With `meta: []`, confirm rows with no badges have no leftover gap
    where the badge row used to be.
-5. **Phase 3 — a runtime override.** Add `runtimes: { claude: { extends: default, meta: [harness] } }`.
+5. **Phase 4 — the preview.** Open Control → Settings → "Agent card layout". Toggle a badge off and
+   watch the preview's cards change at both widths; confirm the `error` row keeps `auth required`
+   (re-admission) and that the YAML box updates. Paste it into `tachyon.yml` and confirm the sidebar
+   matches what the preview showed. **Look for style bleed in both directions**: Control must not
+   suddenly look like the sidebar, and the preview cards must look like real cards.
+6. **Phase 3 — a runtime override.** Add `runtimes: { claude: { extends: default, meta: [harness] } }`.
    Expect: Claude rows show only the harness badge; rows on every other runtime keep the project's
    badges. Then change `extends` to `replace` without listing all three regions and expect a refusal
    naming the missing ones — not a card that lost its name.
