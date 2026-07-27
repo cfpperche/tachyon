@@ -277,7 +277,7 @@ export async function importPortableAgentProfileBundle(input: BundleLifecycleDep
       lifecycle: { enabled: false },
     },
     ...(references.length > 0 ? { createProfileLocalReferences: references } : {}),
-    ...(artifacts.length > 0 ? { createArtifacts: artifacts } : {}),
+    ...(artifacts.length > 0 ? { artifacts } : {}),
     authority: input.authority,
     config: input.config,
     activateState: input.activateState,

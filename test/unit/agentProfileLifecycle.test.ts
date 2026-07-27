@@ -216,7 +216,7 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: { ...initialProfile, prompt: { soul: "portable-soul" } },
       createProfileLocalReferences: [{ id: "portable-soul", kind: "soul", path: artifact.path, mode: "pinned", sha256: artifact.sha256 }],
-      createArtifacts: [artifact],
+      artifacts: [artifact],
       authority,
       config,
       onPhase: (phase) => { if (phase === "profile-published") throw new Error("interrupt-artifact-create"); },
