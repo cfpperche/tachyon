@@ -1324,7 +1324,16 @@ export async function openCockpit(
   const handleTaskDetailAction = async (m: Partial<TaskDetailAction>): Promise<boolean> => {
     if (!m?.type || currentRoute.kind !== "task-detail") return false;
     const route = currentRoute;
-    if (m.type === READY || m.type === "requestSnapshot") {
+    // t-2f6cdd — `requestSnapshot` is THIS route's action and is answered here. READY is NOT: it is
+    // the Control SHELL's one-and-only handshake, and this handler runs first in the dispatch chain,
+    // so consuming it here meant a panel whose FIRST route is task-detail — precisely what the
+    // Attention card's "Open" creates — never reached `case READY:`, the only place that posts
+    // `initMessage(s)`. The client's `strings` stayed undefined, and cockpit/App.tsx's `if (!s)`
+    // rendered `<div class="ds-empty" />`: an entirely blank Control, with the detail's own render
+    // states (loading / never-found / tombstone) all unreachable because the shell never mounted the
+    // route at all. Falling through costs nothing — `case READY:` runs sendSectionModule(), which
+    // already dispatches a task-detail route to sendTaskDetail().
+    if (m.type === "requestSnapshot") {
       await sendTaskDetail();
       return true;
     }
