@@ -15,7 +15,15 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       verifiedAt: "2026-07-26",
     });
     expect(profile?.canonicalLimitations).toEqual([]);
-    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true, verifiedAt: "2026-07-19" });
+    // t-c5f29b re-measured this composer on Claude Code 2.1.220 and added the all-dim suggestion
+    // rule, so the verification date moves with the measurement instead of staying at 2026-07-19.
+    expect(profile?.composer).toMatchObject({
+      tailLines: 8,
+      ansiEmptyContentStyle: "all-dim",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-26",
+    });
     expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
     expect(profile?.gracefulStop?.steps).toEqual([
       { type: "interruptActiveTurn" },

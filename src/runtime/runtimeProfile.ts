@@ -184,13 +184,20 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      ansiEmptyContentStyle: "all-dim",
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-19",
+      verifiedAt: "2026-07-26",
       notes:
         "t-3fe20f: live Claude Code CLI renders its composer prompt as U+276F '❯' (measured on tachyon-b349073a-claude, " +
         "raw bytes e2 9d af), not ASCII '>'; the unmeasured t-f30324 regex never matched, permanently wedging isReady() " +
-        "for every claude-runtime agent once LAUNCH_READINESS_RUNTIMES started gating claude (t-9d2299).",
+        "for every claude-runtime agent once LAUNCH_READINESS_RUNTIMES started gating claude (t-9d2299). " +
+        "t-c5f29b: Claude Code 2.1.220 renders a SUGGESTION inside an otherwise empty composer, and Tachyon read it as a " +
+        "human draft and refused continuity. Measured on a live pane: the suggestion is entirely SGR-dim " +
+        "(\\x1b[39m❯\\u00a0\\x1b[2mTry \"fix typecheck errors\"\\x1b[0m) while a typed draft carries no dim at all " +
+        "(\\x1b[39m❯\\u00a0integre em main e verifique o tree — the incident's own text, typed). Same rule Codex already " +
+        "uses. The separator after '❯' is U+00A0 in BOTH cases, so it discriminates nothing; the dim styling is the only " +
+        "signal, and without an escaped capture the detector stays conservative and still refuses.",
     },
     gracefulStop: {
       steps: [
