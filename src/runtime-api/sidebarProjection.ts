@@ -26,6 +26,13 @@ export interface SidebarViewV1 {
 const text = (max: number, min = 0) => z.string().min(min).max(max);
 /** SDD 479 — the wire may only carry ids the catalog actually implements. */
 const cardComponentId = z.enum(CARD_COMPONENT_IDS as unknown as [CardComponentId, ...CardComponentId[]]);
+/** One complete card template. Shared by the project's base and by every resolved runtime override. */
+const cardTemplate = z.object({
+  version: z.literal(CARD_TEMPLATE_VERSION),
+  header: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+  meta: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+  footer: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+}).strict();
 const name = text(128, 1).regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const count = z.number().int().nonnegative().max(1_000_000);
 const agentStatus = z.enum(["running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
@@ -77,6 +84,8 @@ const agent = z.object({
   modelObservedAt: text(64, 1).optional(),
   modelStale: z.boolean().optional(),
   modelDivergence: z.boolean().optional(),
+  /** SDD 479 phase 3 — the runtime this row runs on; selects a per-runtime card template. */
+  runtime: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/).optional(),
   status: agentStatus,
   attention: text(256, 1).optional(),
   parent: name.optional(),
@@ -215,10 +224,11 @@ const fleet = z.object({
   // re-checked against the live catalog, so a wire value the product cannot render never reaches the
   // renderer even if something upstream stopped validating.
   cardTemplate: z.object({
-    version: z.literal(CARD_TEMPLATE_VERSION),
-    header: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
-    meta: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
-    footer: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+    base: cardTemplate,
+    // SDD 479 phase 3 — overrides arrive already RESOLVED to complete templates, so the wire carries
+    // no inheritance for the renderer to re-interpret. Keys are runtime names, bounded like any other
+    // wire string; one the product does not run simply never matches a row.
+    runtimes: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/), cardTemplate).optional(),
   }).strict().optional(),
   cardTemplateRefusal: z.object({
     file: text(256, 1),

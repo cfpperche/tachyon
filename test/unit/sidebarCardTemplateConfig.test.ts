@@ -28,11 +28,11 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
       meta: [branch, verify, harness]
 `);
     expect(result.errors).toEqual([]);
-    expect(result.config?.settings.sidebar?.cardTemplate?.meta).toEqual(["branch", "verify", "harness"]);
+    expect(result.config?.settings.sidebar?.cardTemplate?.base.meta).toEqual(["branch", "verify", "harness"]);
     // A region the template does not mention keeps the default, so a person reordering badges does not
     // silently lose their actions row.
-    expect(result.config?.settings.sidebar?.cardTemplate?.footer).toEqual(DEFAULT_CARD_TEMPLATE.footer);
-    expect(result.config?.settings.sidebar?.cardTemplate?.header).toEqual(DEFAULT_CARD_TEMPLATE.header);
+    expect(result.config?.settings.sidebar?.cardTemplate?.base.footer).toEqual(DEFAULT_CARD_TEMPLATE.footer);
+    expect(result.config?.settings.sidebar?.cardTemplate?.base.header).toEqual(DEFAULT_CARD_TEMPLATE.header);
   });
 
   it("honors an explicitly empty region — `[]` is a sentence, silence is not", () => {
@@ -43,7 +43,7 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
       meta: []
 `);
     expect(result.errors).toEqual([]);
-    expect(result.config?.settings.sidebar?.cardTemplate?.meta).toEqual([]);
+    expect(result.config?.settings.sidebar?.cardTemplate?.base.meta).toEqual([]);
   });
 
   it("refuses an unknown component BY NAME, lists the catalog, and keeps the rest of the file working", () => {
@@ -142,7 +142,7 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
 
   it("reports every problem at once, so one save shows the whole list", () => {
     const parsed = parseCardTemplate({ version: 9, meta: ["nope", "branch", "branch"], footer: 12 });
-    expect(parsed.template).toBeUndefined();
+    expect(parsed.config).toBeUndefined();
     expect(parsed.errors.length).toBeGreaterThanOrEqual(4);
     expect(parsed.errors.join("\n")).toContain("unknown template version");
     expect(parsed.errors.join("\n")).toContain("unknown component 'nope'");

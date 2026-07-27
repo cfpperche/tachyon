@@ -4,8 +4,9 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
-import type { CardTemplate } from "./cardTemplate.js";
+import type { CardTemplateConfig } from "./cardTemplate.js";
 import type { EntryKind } from "../config/loadConfig.js";
+import type { ResumeRuntime } from "../resume/adapters.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
@@ -48,6 +49,13 @@ export interface AgentVM {
   modelStale?: boolean;
   /** spec 378 — the observed model differs from the declared/profile model (same alias table both sides). */
   modelDivergence?: boolean;
+  /**
+   * SDD 479 phase 3 — the runtime this row runs on (`claude`, `codex`, …), derived from its command by
+   * the same `runtimeOf` the model label uses, so a row cannot report one runtime to the card and
+   * another to the model. Absent for terminals and for a command whose binary Tachyon does not
+   * recognize. It selects a per-runtime card template; it is a runtime NAME, not a capability claim.
+   */
+  runtime?: ResumeRuntime;
   status: AgentStatus;
   attention?: string;
   parent?: string;
@@ -209,12 +217,13 @@ export interface FleetVM {
    */
   configError?: ConfigErrorVM;
   /**
-   * SDD 479 — the project's agent-card layout, per FOLDER (it comes from that folder's tachyon.yml).
-   * Absent means the default card. It rides INSIDE the fleet rather than beside it like `sortPrefs`:
-   * those are one person's preferences across every root, this is one project's, and multi-root means
-   * two folders can legitimately disagree.
+   * SDD 479 — the project's agent-card layout, per FOLDER (it comes from that folder's tachyon.yml):
+   * the template every agent row uses, plus any per-runtime override, each already resolved to a
+   * COMPLETE template. Absent means the default card. It rides INSIDE the fleet rather than beside it
+   * like `sortPrefs`: those are one person's preferences across every root, this is one project's, and
+   * multi-root means two folders can legitimately disagree.
    */
-  cardTemplate?: CardTemplate;
+  cardTemplate?: CardTemplateConfig;
   /**
    * SDD 479 — a written template that was refused, and why. The card falls back to the default; this
    * is what lets the fallback explain itself instead of reading as the feature not working.

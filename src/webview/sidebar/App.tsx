@@ -7,7 +7,7 @@ import {
 } from "../../sidebar/types";
 import {
   inlineMembers, readmittedCriticalComponents, resolveCardTemplate, topLevelComponents,
-  type CardComponentId, type CardRegion, type CardTemplate,
+  type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
 } from "../../sidebar/cardTemplate";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
@@ -476,14 +476,17 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
   /** spec 386 — metrics detail lanes open for this agent (independent of hierarchy collapse). */
   metricsOpen?: boolean;
   onToggleMetrics?: () => void;
-  /** SDD 479 — the folder's project template; omitted (or a terminal row) renders the default card. */
-  cardTemplate?: CardTemplate;
+  /**
+   * SDD 479 — the folder's card configuration: the project template plus any resolved per-runtime
+   * override. Omitted — or a terminal row, or a runtime with no override — renders the default card.
+   */
+  cardTemplate?: CardTemplateConfig;
 }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
   const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
-  // SDD 479 — the resolver, not the caller, enforces the ratified V1 boundary: a terminal row takes
-  // the default template whatever this folder configured.
+  // SDD 479 — the resolver, not the caller, enforces both rules: the ratified V1 boundary (a terminal
+  // row takes the default whatever this folder configured) and the per-runtime override lookup.
   const template = resolveCardTemplate(a, cardTemplate);
   // Ratified fork 3 — the one place the product overrides the person: a failure state the template
   // omits is re-admitted for THIS row, and says so in its tooltip.

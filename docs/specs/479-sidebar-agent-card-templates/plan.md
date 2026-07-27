@@ -181,7 +181,11 @@ as a readable text diff.
    rather than reimplements), the `settings.sidebar.cardTemplate` block in `loadConfig.ts`,
    `FleetVM.cardTemplate` + `cardTemplateRefusal` carried through the strict wire schema,
    `readmittedCriticalComponents`, and `CardMetaRegion`. See § What phase 2 changed in this design.
-3. Per-runtime overrides with the explicit `extends`/`replace` switch.
+3. **[done]** Per-runtime overrides with the explicit `extends`/`replace` switch. Landed as the
+   `runtimes:` arm in `parseCardTemplate` (each override resolved to a COMPLETE template at parse
+   time), `CardTemplateConfig` = `{ base, runtimes }` on the wire, `AgentVM.runtime` projected by the
+   same `runtimeOf` the model label already uses, and a lookup in `resolveCardTemplate`. See § What
+   phase 3 changed in this design.
 4. Settings block with the live preview.
 5. Optional personal override in VS Code settings, with precedence stated in the UI.
 
@@ -220,6 +224,37 @@ The wrapper question phase 1 left open is answered in `spec.md` § Open question
 what its components render. That change also fixed a **shipped bug** the equality matrix caught — the
 old `hasMeta` predicate omitted `evidence`, so spec 273's badge was invisible on any row whose only
 meta content was evidence.
+
+## What phase 3 changed in this design
+
+1. **A row had no runtime to key on.** The whole feature is "per-runtime", and `AgentVM` — the ~50-field
+   view-model this design was derived from — did not carry the runtime. It carries `model` and
+   `modelSource`, which are *derived* from the runtime, so the information existed but only inside
+   `agentModel`'s model resolution. `AgentVM.runtime` is now projected there, from the same command by
+   the same `runtimeOf` the model label uses: a row cannot report one runtime to the card and another
+   to the model, because there is one derivation.
+
+2. **`extends: default` layers onto the PROJECT's template, not the bare product default.** The
+   ratified text said "`extends: default` or `replace`" without saying what `default` names. Choosing
+   the project's template makes the three layers compose (product → project → runtime) and keeps fork
+   2's stated trade-off intact — a new product element still reaches an override, through the project
+   template's own unmentioned regions. The alternative reading would let one runtime's override
+   silently discard every decision the project made for all its other rows.
+
+3. **A partial `replace` is refused, not completed.** "Exactly as written" is only safe when what is
+   written is a whole card; a `replace` listing just `meta:` would leave rows with no name and no
+   actions. The refusal names the missing regions and points at `extends: default`. This is the same
+   principle as phase 2's "silence inherits, `[]` obeys" — the difference is that `replace` declared
+   that it inherits nothing, so silence there cannot mean inheritance and must mean a mistake.
+
+4. **Overrides resolve at parse time, not at render time.** The wire carries complete templates per
+   runtime, so the strict schema validates concrete data, the renderer does a lookup rather than a
+   merge, and "which template is this row using" has one answer computed in one place — which is also
+   what phase 4's preview will need to display.
+
+The override keys validate against `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES` rather than the attested four
+named in the task: a declared agent is attested, but an ad-hoc one may be OpenCode/Gemini/Qwen/Hermes,
+and refusing those keys would refuse an override for rows this product creates.
 
 ## Rejected alternatives
 

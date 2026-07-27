@@ -20,7 +20,7 @@ import {
   behaviorStubPathTemplateError,
   type BehaviorVerificationSettings,
 } from "./behaviorVerification.js";
-import { parseCardTemplate, type CardTemplate } from "../sidebar/cardTemplate.js";
+import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
@@ -525,7 +525,7 @@ export interface TachyonConfig {
      * says the SIDEBAR renders the default template, which presumes a config that still loads. The
      * refusal travels to the sidebar so the fallback can explain itself.
      */
-    sidebar?: { cardTemplate?: CardTemplate; cardTemplateRefusal?: string[] };
+    sidebar?: { cardTemplate?: CardTemplateConfig; cardTemplateRefusal?: string[] };
   };
 }
 
@@ -1682,8 +1682,8 @@ export function parseConfig(yamlText: string): ParseResult {
           }
           if (sb.cardTemplate !== undefined) {
             const parsed = parseCardTemplate(sb.cardTemplate);
-            if (parsed.template) {
-              settings.sidebar = { cardTemplate: parsed.template };
+            if (parsed.config) {
+              settings.sidebar = { cardTemplate: parsed.config };
             } else {
               // Refused whole: the sidebar renders the DEFAULT card and says why, rather than showing
               // a layout half-built from the lines that happened to parse.

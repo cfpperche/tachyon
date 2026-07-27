@@ -19,7 +19,14 @@
  * Framework-agnostic on purpose (same contract as `types.ts`): no preact, no vscode. The webview owns
  * the fragments; this module owns which fragments exist, where they may sit, and in what order.
  */
+import { SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
 import { isAgentRow, type AgentVM } from "./types.js";
+
+/**
+ * SDD 479 phase 3 — the runtime names a per-runtime override may key on: every runtime Tachyon can run
+ * an Agent on. Borrowed, not redeclared, so a runtime added to the product is overridable the same day.
+ */
+const AGENT_RUNTIME_NAMES: readonly string[] = SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES;
 
 /** Bumped when the template SHAPE changes. An unknown version is refused, never guessed (phase 2). */
 export const CARD_TEMPLATE_VERSION = 1;
@@ -189,9 +196,17 @@ export function inlineMembers(template: CardTemplate, host: CardComponentId): Ca
  * not a habit of its callers. A terminal row takes the default whatever anyone configures, and
  * `test/unit/sidebarCardCatalog.test.ts` proves it before a configuration surface exists to violate it.
  */
-export function resolveCardTemplate(row: Pick<AgentVM, "kind">, configured?: CardTemplate): CardTemplate {
+export function resolveCardTemplate(
+  row: Pick<AgentVM, "kind" | "runtime">,
+  configured?: CardTemplateConfig,
+): CardTemplate {
   if (!configured) return DEFAULT_CARD_TEMPLATE;
-  return isAgentRow(row) ? configured : DEFAULT_CARD_TEMPLATE;
+  if (!isAgentRow(row)) return DEFAULT_CARD_TEMPLATE;
+  // SDD 479 phase 3 — a runtime override wins for the rows that report that runtime; every other row
+  // takes the project's template. The fallback is explicit BECAUSE it is a lookup miss and nothing
+  // else: there is no partial merge here, since overrides were resolved whole at parse time.
+  const override = row.runtime ? configured.runtimes?.[row.runtime] : undefined;
+  return override ?? configured.base;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -199,12 +214,46 @@ export function resolveCardTemplate(row: Pick<AgentVM, "kind">, configured?: Car
  * ──────────────────────────────────────────────────────────────────────────────────────────────*/
 
 /** Top-level keys a written template may carry. Anything else is refused BY NAME. */
-const TEMPLATE_KEYS = ["version", ...CARD_REGIONS] as const;
+const TEMPLATE_KEYS = ["version", ...CARD_REGIONS, "runtimes"] as const;
+
+/** Keys a per-runtime override may carry. `extends` is REQUIRED — see `CardTemplateInheritance`. */
+const OVERRIDE_KEYS = ["extends", ...CARD_REGIONS] as const;
+
+/**
+ * SDD 479 phase 3, ratified fork 2 — an override states its own inheritance; the product never guesses.
+ *
+ * - `default` — layer this override's regions onto the template the row would otherwise use (the
+ *   project's, which is itself the product default plus the project's changes). Regions the override
+ *   does not mention keep what that base says, so a new element the product adds later still appears.
+ * - `replace` — no inheritance: the override IS the template. Because "exactly as written" would
+ *   otherwise mean "a card with no name and no actions" for anyone who wrote only `meta:`, a `replace`
+ *   override must list ALL THREE regions; a partial one is refused by name.
+ *
+ * The ratified text ("`extends: default` or `replace`") did not say what the base of `default` is.
+ * It is the PROJECT template rather than the bare product default, so the three layers compose —
+ * product → project → runtime — and one runtime's override never silently discards what the project
+ * decided for every other row. Recorded as a phase-3 refinement in `spec.md`.
+ */
+export type CardTemplateInheritance = "default" | "replace";
+const INHERITANCE_VALUES: readonly CardTemplateInheritance[] = ["default", "replace"];
+
+/**
+ * A project's full card configuration: the template every agent row uses, plus any per-runtime
+ * override. Overrides are resolved to COMPLETE templates at parse time, so the renderer does a lookup
+ * and never a merge — the wire carries no inheritance to re-interpret, and the strict schema validates
+ * concrete templates.
+ */
+export interface CardTemplateConfig {
+  /** the project's template — the product default when nothing was written */
+  readonly base: CardTemplate;
+  /** resolved per-runtime templates, keyed by the runtime name a row reports */
+  readonly runtimes?: Readonly<Record<string, CardTemplate>>;
+}
 
 export interface CardTemplateParseResult {
-  /** present only when the template is valid IN FULL — there is no partially applied template */
-  template?: CardTemplate;
-  /** every problem found, each naming the offending key; empty iff `template` is present */
+  /** present only when the document is valid IN FULL — there is no partially applied template */
+  config?: CardTemplateConfig;
+  /** every problem found, each naming the offending key; empty iff `config` is present */
   errors: string[];
 }
 
@@ -213,41 +262,14 @@ function isMapping(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Validate a written card template. Pure and framework-agnostic so that **one** validator serves every
- * home the template can have — `tachyon.yml` today, VS Code settings in phase 5. Two validators that
- * can disagree about the same document is the failure this avoids.
- *
- * Fail-closed, and whole: on any error the caller gets `errors` and NO template, because a
- * partially-applied layout is the one outcome the spec forbids outright. Errors accumulate rather than
- * throw, so a person fixing their file sees every problem at once instead of one per save.
- *
- * A region a template does not mention takes the DEFAULT for that region. An explicitly empty list
- * (`meta: []`) means "hide them all" and is honored — critical re-admission still applies. The
- * asymmetry is deliberate: silence should not delete the actions row from someone who only wanted to
- * reorder badges, but a person who writes `[]` has said what they mean.
+ * Validate the region lists of one template document (the project's, or one override's). Returns only
+ * the regions that were MENTIONED, so each caller can apply its own inheritance rule to the rest.
  */
-export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.cardTemplate"): CardTemplateParseResult {
-  const errors: string[] = [];
-  if (!isMapping(raw)) {
-    return { errors: [`${keyPath}: must be a mapping with 'version' and any of ${CARD_REGIONS.join(", ")}`] };
-  }
-
-  for (const key of Object.keys(raw)) {
-    if (!(TEMPLATE_KEYS as readonly string[]).includes(key)) {
-      errors.push(`${keyPath}: unknown key '${key}' (allowed: ${TEMPLATE_KEYS.join(", ")})`);
-    }
-  }
-
-  if (raw.version === undefined) {
-    errors.push(`${keyPath}.version: required (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`);
-  } else if (raw.version !== CARD_TEMPLATE_VERSION) {
-    // Refused, never guessed: a template written for a schema this build does not implement can only
-    // be honored by inventing what its author meant.
-    errors.push(
-      `${keyPath}.version: unknown template version ${JSON.stringify(raw.version)} (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`,
-    );
-  }
-
+function parseRegions(
+  raw: Record<string, unknown>,
+  keyPath: string,
+  errors: string[],
+): Partial<Record<CardRegion, CardComponentId[]>> {
   const regions: Partial<Record<CardRegion, CardComponentId[]>> = {};
   for (const region of CARD_REGIONS) {
     const value = raw[region];
@@ -293,17 +315,131 @@ export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.card
       }
     }
   }
+  return regions;
+}
+
+/**
+ * Validate a written card template. Pure and framework-agnostic so that **one** validator serves every
+ * home the template can have — `tachyon.yml` today, VS Code settings in phase 5. Two validators that
+ * can disagree about the same document is the failure this avoids.
+ *
+ * Fail-closed, and whole: on any error the caller gets `errors` and NO template, because a
+ * partially-applied layout is the one outcome the spec forbids outright. Errors accumulate rather than
+ * throw, so a person fixing their file sees every problem at once instead of one per save.
+ *
+ * A region a template does not mention takes the DEFAULT for that region. An explicitly empty list
+ * (`meta: []`) means "hide them all" and is honored — critical re-admission still applies. The
+ * asymmetry is deliberate: silence should not delete the actions row from someone who only wanted to
+ * reorder badges, but a person who writes `[]` has said what they mean.
+ */
+export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.cardTemplate"): CardTemplateParseResult {
+  const errors: string[] = [];
+  if (!isMapping(raw)) {
+    return { errors: [`${keyPath}: must be a mapping with 'version' and any of ${CARD_REGIONS.join(", ")}`] };
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!(TEMPLATE_KEYS as readonly string[]).includes(key)) {
+      errors.push(`${keyPath}: unknown key '${key}' (allowed: ${TEMPLATE_KEYS.join(", ")})`);
+    }
+  }
+
+  if (raw.version === undefined) {
+    errors.push(`${keyPath}.version: required (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`);
+  } else if (raw.version !== CARD_TEMPLATE_VERSION) {
+    // Refused, never guessed: a template written for a schema this build does not implement can only
+    // be honored by inventing what its author meant.
+    errors.push(
+      `${keyPath}.version: unknown template version ${JSON.stringify(raw.version)} (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`,
+    );
+  }
+
+  const regions = parseRegions(raw, keyPath, errors);
+  const base: CardTemplate = {
+    version: CARD_TEMPLATE_VERSION,
+    header: regions.header ?? DEFAULT_CARD_TEMPLATE.header,
+    meta: regions.meta ?? DEFAULT_CARD_TEMPLATE.meta,
+    footer: regions.footer ?? DEFAULT_CARD_TEMPLATE.footer,
+  };
+
+  const runtimes = parseRuntimeOverrides(raw.runtimes, `${keyPath}.runtimes`, base, errors);
 
   if (errors.length > 0) return { errors };
   return {
-    template: {
-      version: CARD_TEMPLATE_VERSION,
-      header: regions.header ?? DEFAULT_CARD_TEMPLATE.header,
-      meta: regions.meta ?? DEFAULT_CARD_TEMPLATE.meta,
-      footer: regions.footer ?? DEFAULT_CARD_TEMPLATE.footer,
-    },
+    config: { base, ...(runtimes && Object.keys(runtimes).length > 0 ? { runtimes } : {}) },
     errors: [],
   };
+}
+
+/**
+ * SDD 479 phase 3 — per-runtime overrides, each resolved to a COMPLETE template.
+ *
+ * A key must name a runtime that can actually operate an Agent. That list is
+ * `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`, not the narrower attested four: a declared agent is attested,
+ * but an ad-hoc one may be OpenCode/Gemini/Qwen/Hermes, and refusing `opencode:` would refuse an
+ * override for rows this product creates. It is still the product's own list, not one invented here.
+ */
+function parseRuntimeOverrides(
+  raw: unknown,
+  keyPath: string,
+  base: CardTemplate,
+  errors: string[],
+): Record<string, CardTemplate> | undefined {
+  if (raw === undefined) return undefined;
+  if (!isMapping(raw)) {
+    errors.push(`${keyPath}: must be a mapping of runtime name to override`);
+    return undefined;
+  }
+  const out: Record<string, CardTemplate> = {};
+  for (const [runtime, value] of Object.entries(raw)) {
+    const at = `${keyPath}.${runtime}`;
+    if (!AGENT_RUNTIME_NAMES.includes(runtime)) {
+      errors.push(`${at}: unknown runtime '${runtime}' — Tachyon runs agents on ${AGENT_RUNTIME_NAMES.join(", ")}`);
+      continue;
+    }
+    if (!isMapping(value)) {
+      errors.push(`${at}: must be a mapping with 'extends' and any of ${CARD_REGIONS.join(", ")}`);
+      continue;
+    }
+    for (const key of Object.keys(value)) {
+      if (!(OVERRIDE_KEYS as readonly string[]).includes(key)) {
+        errors.push(`${at}: unknown key '${key}' (allowed: ${OVERRIDE_KEYS.join(", ")})`);
+      }
+    }
+
+    const inheritance = value.extends;
+    if (inheritance === undefined) {
+      errors.push(
+        `${at}.extends: required — say 'default' to layer onto the project's card, or 'replace' to write this runtime's card in full`,
+      );
+    } else if (typeof inheritance !== "string" || !INHERITANCE_VALUES.includes(inheritance as CardTemplateInheritance)) {
+      errors.push(`${at}.extends: must be 'default' or 'replace', not ${JSON.stringify(inheritance)}`);
+    }
+
+    const regions = parseRegions(value, at, errors);
+
+    if (inheritance === "replace") {
+      // "Exactly as written" has to be written in full, or it silently means "a card with no name and
+      // no actions" for anyone who only wanted to change the badges.
+      const missing = CARD_REGIONS.filter((region) => regions[region] === undefined);
+      if (missing.length > 0) {
+        errors.push(
+          `${at}: 'extends: replace' inherits nothing, so it must list every region — missing ${missing.join(", ")}. Use 'extends: default' to change only some.`,
+        );
+      }
+    }
+    if (inheritance !== "default" && inheritance !== "replace") continue;
+
+    // `default` layers onto the project's template; `replace` stands alone (and is complete by now).
+    const from = inheritance === "default" ? base : undefined;
+    out[runtime] = {
+      version: CARD_TEMPLATE_VERSION,
+      header: regions.header ?? from?.header ?? [],
+      meta: regions.meta ?? from?.meta ?? [],
+      footer: regions.footer ?? from?.footer ?? [],
+    };
+  }
+  return out;
 }
 
 /** Is this critical component's state ACTIVE on this row? Re-admission is per row and per state. */

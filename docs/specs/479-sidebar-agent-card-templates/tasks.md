@@ -55,9 +55,13 @@ Ordered; each must leave the tree green on `npm run verify:full:quiet`.
       against the already-declared `CRITICAL_CARD_COMPONENTS`, per row AND per state. The `.row-meta`
       question is answered (the wrapper follows the rendered content), which also fixed a shipped
       evidence-badge bug the equality matrix caught. `options:` is refused by name and filed as `t-045d44`.
-- [ ] `t-6a251c` · **Phase 3 — per-runtime overrides** with the explicit `extends: default | replace`
-      switch, no default guess, unknown runtime refused against the product's own runtime list. Depends
-      on phase 2.
+- [x] `t-6a251c` · **Phase 3 — per-runtime overrides** with the explicit `extends: default | replace`
+      switch and no default guess. An unknown runtime is refused against the product's own list —
+      `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`, not the narrower attested four, because an ad-hoc agent may
+      be OpenCode/Gemini/Qwen/Hermes (`plan.md` § What phase 3 changed). It required giving the row a
+      runtime at all: `AgentVM.runtime`, derived by the same `runtimeOf` the model label uses. Overrides
+      resolve to COMPLETE templates at parse time, so the renderer looks up instead of merging; a
+      partial `extends: replace` is refused by name rather than silently blanking regions.
 - [ ] `t-e494e1` · **Phase 4 — the live preview** as a Control → Settings block rendering the REAL
       `AgentRow` against the harness fixtures, at sidebar width plus a narrow pane, errors inline before
       saving. Depends on phase 2.
@@ -91,8 +95,13 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
 - [x] The schema is versioned; an unknown version and a missing version are both refused.
 - [x] `.row-meta` exists only when something in it rendered — pinned per component, since the first
       implementation put an empty wrapper on every row.
-- [ ] Explicit runtime fallback, live preview, narrow-sidebar behavior at a configured template,
-      accessibility of a reordered reading order, per-component options — phases 3–5 and `t-045d44`.
+- [x] **A runtime override falls back explicitly**: the overridden runtime's rows use it, every other
+      row uses the project template, and the override says which inheritance it wants. A partial
+      `replace` and an unknown runtime are both refused by name.
+- [x] The row carries the runtime the override keys on, derived by the same function as the model
+      label — one derivation, so the card and the model can never disagree about what a row is running.
+- [ ] Live preview, narrow-sidebar behavior at a configured template, accessibility of a reordered
+      reading order, per-component options — phases 4–5 and `t-045d44`.
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -130,6 +139,10 @@ sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fix
    omits it.
 4. **The empty row really is gone.** With `meta: []`, confirm rows with no badges have no leftover gap
    where the badge row used to be.
+5. **Phase 3 — a runtime override.** Add `runtimes: { claude: { extends: default, meta: [harness] } }`.
+   Expect: Claude rows show only the harness badge; rows on every other runtime keep the project's
+   badges. Then change `extends` to `replace` without listing all three regions and expect a refusal
+   naming the missing ones — not a card that lost its name.
 
 ## Visual QA
 

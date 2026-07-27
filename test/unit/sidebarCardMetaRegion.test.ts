@@ -68,7 +68,7 @@ describe("SDD 479 phase 2 — the meta region and its wrapper", () => {
 
   it("renders only the components the template lists, in the order it lists them", () => {
     const a = agent({ name: "curated", liveBranch: "main", harness: true, verify: "pass", continuity: "missing" });
-    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: templateOf(["harness", "branch"]) }));
+    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: templateOf(["harness", "branch"]) } }));
     expect(html).toContain("⚙ harness");
     expect(html).toContain("⎇ main");
     // listed order wins over the default's (branch-first) order
@@ -80,7 +80,7 @@ describe("SDD 479 phase 2 — the meta region and its wrapper", () => {
 
   it("hides every meta badge when the template says `meta: []`", () => {
     const a = agent({ name: "spartan", liveBranch: "main", harness: true, verify: "pass" });
-    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: templateOf([]) }));
+    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: templateOf([]) } }));
     expect(html).not.toContain("row-meta");
     expect(html).toContain('class="name"'); // the rest of the card is untouched
     expect(html).toContain("actions");
@@ -97,7 +97,7 @@ describe("SDD 479 phase 2 — critical states are re-admitted, not overridable (
 
   it("puts an omitted auth-required badge back, and says why", () => {
     const a = agent({ name: "locked", status: "idle", authRequired: { runtime: "claude", action: "run `claude login`" } });
-    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: HIDE_EVERYTHING }));
+    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
     expect(html).toContain("◆ auth required");
     expect(html).toContain("Your card template omits this badge");
   });
@@ -108,7 +108,7 @@ describe("SDD 479 phase 2 — critical states are re-admitted, not overridable (
       [agent({ name: "c", configInvalid: true }), "config invalid"],
       [agent({ name: "v", verify: "fail" }), "✗ verify"],
     ] as const) {
-      const html = renderStatic(AgentRow({ a: row, flash: false, cardTemplate: HIDE_EVERYTHING }));
+      const html = renderStatic(AgentRow({ a: row, flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
       expect(html, `${needle} must survive a template that omits it`).toContain(needle);
       expect(html).toContain("Your card template omits this badge");
     }
@@ -116,14 +116,14 @@ describe("SDD 479 phase 2 — critical states are re-admitted, not overridable (
 
   it("does NOT re-admit a passing or stale gate — critical means the row cannot recover, not 'important'", () => {
     for (const verify of ["pass", "stale"] as const) {
-      const html = renderStatic(AgentRow({ a: agent({ name: verify, verify }), flash: false, cardTemplate: HIDE_EVERYTHING }));
+      const html = renderStatic(AgentRow({ a: agent({ name: verify, verify }), flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
       expect(html).not.toContain("row-meta");
     }
   });
 
   it("adds nothing when the template already lists the critical component", () => {
     const a = agent({ name: "listed", authRequired: { runtime: "codex", action: "run `codex login`" } });
-    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: templateOf(["auth-required"]) }));
+    const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: templateOf(["auth-required"]) } }));
     expect(html).toContain("◆ auth required");
     // no re-admission note: the person asked for this badge, so nothing was overridden
     expect(html).not.toContain("Your card template omits this badge");
@@ -133,7 +133,7 @@ describe("SDD 479 phase 2 — critical states are re-admitted, not overridable (
   it("leaves terminal rows on the default card whatever the folder configured", () => {
     // The ratified V1 boundary, proven through the RENDERER and not only the resolver.
     const terminal: AgentVM = { name: "dev", kind: "terminal", status: "running", sub: "npm run dev", harness: true };
-    const configured = renderStatic(AgentRow({ a: terminal, flash: false, cardTemplate: HIDE_EVERYTHING }));
+    const configured = renderStatic(AgentRow({ a: terminal, flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
     const untouched = renderStatic(AgentRow({ a: terminal, flash: false }));
     expect(configured).toBe(untouched);
     expect(configured).toContain("npm run dev");

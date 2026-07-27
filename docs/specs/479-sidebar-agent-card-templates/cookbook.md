@@ -95,11 +95,45 @@ settings.sidebar.cardTemplate: unknown key 'sidebarWidth' (allowed: version, hea
 
 Every problem is reported at once, so one save shows you the whole list.
 
+## A different card per runtime
+
+Rows read differently depending on what they run. An override keys on the runtime and **must say what
+it inherits** — Tachyon never guesses:
+
+```yaml
+settings:
+  sidebar:
+    cardTemplate:
+      version: 1
+      meta: [branch, verify]
+      runtimes:
+        claude:
+          extends: default          # start from the card above; change only what I list
+          meta: [branch, continuity]
+        codex:
+          extends: replace          # inherit nothing — I am writing the whole card
+          header: [status-dot, name, model]
+          meta: []
+          footer: [actions]
+```
+
+- **`extends: default`** layers your lines onto the template the row would otherwise use — the project
+  template above it, which is itself the product default plus your changes. Regions you leave out keep
+  what that says, so an element the product adds later still reaches your override.
+- **`extends: replace`** inherits nothing, so it must list **all three** regions. A partial `replace` is
+  refused by name: written in half, it would mean a card with no name and no actions.
+
+Keys must name a runtime Tachyon runs agents on — `claude`, `codex`, `grok`, `pi`, `opencode`,
+`hermes`, `gemini`, `qwen`. Anything else is refused, and the message lists the accepted names.
+
+A row whose runtime has no override uses the project template. That fallback is a plain lookup miss:
+overrides are resolved into complete cards when the file loads, so nothing is merged while you scroll.
+
 ## Not available yet
 
 `options:` (e.g. `model: { maxChars: 24 }`) is named in the design but no component honors one, so the
-key is **refused by name** rather than accepted and ignored — tracked as `t-045d44`. Per-runtime
-overrides (`runtimes: { claude: … }`) arrive in phase 3, and the live preview in phase 4.
+key is **refused by name** rather than accepted and ignored — tracked as `t-045d44`. The live preview
+arrives in phase 4, and a personal (per-machine) override in phase 5.
 
 ## Recipes
 

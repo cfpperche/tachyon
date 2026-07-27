@@ -53,11 +53,23 @@ names that test; the rest belong to phases 2–5 and stay open until then._
   - *Also decided here:* a region the template does not MENTION keeps the default; an explicitly empty
     list (`meta: []`) hides everything in it. Silence should not delete the actions row from someone
     who only wanted to reorder badges, but `[]` is a sentence and is honored as one.
-- [ ] **Scenario: a runtime override falls back explicitly**
+- [x] **Scenario: a runtime override falls back explicitly** — phase 3,
+      `test/unit/sidebarCardRuntimeOverrides.test.ts`
   - **Given** a per-runtime template for `claude` and no template for `codex`
   - **When** rows of both runtimes render
   - **Then** the Claude rows use the override and the Codex rows use the default, and the override
     declares whether it extends the default or replaces it — the answer is never implicit.
+  - *Two things the ratified wording left unsaid, decided in phase 3 rather than by whoever reads the
+    code next:* (a) `extends: default` layers onto the **project's** template, so product → project →
+    runtime compose and one runtime's override never discards what the project chose for every other
+    row; (b) a **partial** `replace` is refused by name — "exactly as written", written in half, would
+    mean a card with no name and no actions for someone who only wanted different badges.
+  - *The fallback is a lookup miss and nothing else:* overrides resolve to complete templates when the
+    config is parsed, so the renderer never merges and the wire carries no inheritance to re-interpret.
+  - *Which runtimes may be keys:* every runtime Tachyon can run an agent on
+    (`SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`), not the narrower attested four — an ad-hoc agent may be
+    OpenCode/Gemini/Qwen/Hermes, and refusing those keys would refuse an override for rows the product
+    itself creates. Still the product's own list, borrowed rather than redeclared.
 - [x] **Scenario: an invalid template is refused, not partially applied** — phase 2,
       `test/unit/sidebarCardTemplateConfig.test.ts`
   - **Given** a template naming an unknown component, an unknown option, or a duplicate component
