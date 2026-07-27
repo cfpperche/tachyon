@@ -3,7 +3,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
-import { inferKind, type EntryKind } from "../config/loadConfig.js";
+import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
@@ -440,8 +440,8 @@ export class SessionLedger {
 }
 
 /**
- * Accept the 211 shape, OR migrate a pre-211 flat record
- * (`{runtime, sessionId, cwd, cmd, declared}`) into it. Returns null on garbage.
+ * Accept the 211 shape. Returns null on garbage — and, since SDD 478 M4, on a record whose kind was
+ * never written: a persisted entry's kind is read back, never re-derived from its command string.
  */
 function normalize(r: unknown): SessionRecord | null {
   if (typeof r !== "object" || r === null) return null;
@@ -465,16 +465,11 @@ function normalize(r: unknown): SessionRecord | null {
     return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, cwd: o.cwd, declared, updatedAt });
   }
 
-  // Pre-211 flat record → migrate.
-  if (typeof o.cmd === "string" && typeof o.runtime === "string") {
-    return stripDeclaredParent({
-      def: { cmd: o.cmd, kind: inferKind(o.cmd) },
-      resume: { runtime: o.runtime as ResumeRuntime, sessionId: typeof o.sessionId === "string" ? o.sessionId : "" },
-      cwd: o.cwd,
-      declared,
-      updatedAt,
-    });
-  }
+  // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
+  // stored `kind` entirely, so migrating it required SYNTHESIZING one from the command string. That
+  // is the inference this step removes, and there is no honest substitute: the fact was never
+  // written. Such a record is refused rather than guessed, which drops a shape that has not been
+  // written since spec 211.
   return null;
 }
 
@@ -496,7 +491,12 @@ function parseDef(d: unknown): SessionDef | undefined {
   if (typeof d !== "object" || d === null) return undefined;
   const o = d as Record<string, unknown>;
   if (typeof o.cmd !== "string") return undefined;
-  const kind: EntryKind = o.kind === "agent" || o.kind === "terminal" ? o.kind : inferKind(o.cmd);
+  // SDD 478 M4 — the kind is a STORED fact, read back as written. It used to fall back to the
+  // command-string kind suggestion, which made a change to a 15-element array silently reclassify
+  // data already on disk, retroactively and with no human in the loop. A record that does not carry
+  // a kind is refused: the def is dropped, and a row that held nothing else is dropped with it.
+  if (o.kind !== "agent" && o.kind !== "terminal") return undefined;
+  const kind: EntryKind = o.kind;
   const contract = parseSpawnContract(o.contract);
   return {
     cmd: o.cmd,

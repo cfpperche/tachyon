@@ -33,7 +33,7 @@ import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
-import { asAgent, parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, parseEvery, parseAt, suggestKindForCommand, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
 import {
   validateSpawnContract,
@@ -1518,7 +1518,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
         if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
         if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        const isAdhocAiAgent = (!!cmd && inferKind(cmd) === "agent") || isBoundDeliveryExecution;
+        const isAdhocAiAgent = (!!cmd && suggestKindForCommand(cmd) === "agent") || isBoundDeliveryExecution;
         if (isAdhocAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
             "spawn_agent worktree:true is not a tracked-change lifecycle for an ad-hoc AI agent; use gate with a behavior_test and owned paths",

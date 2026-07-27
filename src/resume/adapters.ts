@@ -139,7 +139,7 @@ export function binaryIndex(tokens: string[]): number {
   return 0;
 }
 
-/** Base name of the runtime binary in a command, or "" — mirrors inferKind's parsing. */
+/** Base name of the runtime binary in a command, or "" — mirrors the config parser's parsing. */
 export function binaryOf(cmd: string): string {
   const tokens = cmd.trim().split(/\s+/);
   return (tokens[binaryIndex(tokens)] ?? "").split("/").pop() ?? "";

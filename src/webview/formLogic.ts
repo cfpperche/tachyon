@@ -1,5 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { asAgent, inferKind, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, suggestKindForCommand, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { binaryOf } from "../resume/adapters.js";
 
 /**
@@ -321,7 +321,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
     return entry;
   }
-  const inferred = inferKind(state.cmd);
+  const inferred = suggestKindForCommand(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
   if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();

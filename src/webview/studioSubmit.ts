@@ -17,7 +17,7 @@ export interface StudioDeps {
   /** Stack-derived verify candidates plus declared command/runbook names. */
   verifyCandidates: () => string[];
   defaultCwd: string;
-  inferKind: (cmd: string) => EntryKind;
+  suggestKindForCommand: (cmd: string) => EntryKind;
   onSubmit: (submit: StudioSubmit) => string[] | undefined | Promise<string[] | undefined>;
 }
 

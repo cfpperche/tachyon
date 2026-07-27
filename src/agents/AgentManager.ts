@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, suggestKindForCommand, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -1919,7 +1919,7 @@ export class AgentManager {
       // `instructions` or a worktree request: both are Agent capabilities, and until now this door
       // handed them to whatever it spawned. Which entity an ad-hoc spawn may produce at all is M9;
       // this only stops the Terminal arm from being handed capabilities it has no field for.
-      def = inferKind(opts.cmd) === "agent"
+      def = suggestKindForCommand(opts.cmd) === "agent"
         ? {
           ...base,
           kind: "agent",
