@@ -32,8 +32,12 @@ The migration steps below are deliberately NOT executed here — each is filed a
 Ordered. Each step must leave the tree green on `npm run verify:full:quiet`; none requires a
 compatibility shim.
 
-- [ ] `t-939a18` · **M1 — one runtime list.** Collapse `KNOWN_AI_CLIS` / `ResumeRuntime` / the attested literal set
+- [x] `t-939a18` · **M1 — one runtime list.** Collapse `KNOWN_AI_CLIS` / `ResumeRuntime` / the attested literal set
       into `AttestedRuntime` plus explicit subset assertions. Blocks M2 (the Agent arm needs the type).
+      Landed as `src/runtime/attestedRuntimes.ts`: `ResumeRuntime` splices the attested list in (subset
+      by construction), the private-home inspector registry is exhaustive over it, `KNOWN_AI_CLIS` is
+      composed from it, and `test/unit/attestedRuntime.test.ts` fails if one list moves without the
+      others. `inferKind` still runs at the persistence and ad-hoc doors — that is M4/M9, not M1.
 - [ ] `t-914f4e` · **M2 — the discriminated union.** Split `ManagedEntryDef` into `AgentEntry | TerminalEntry`;
       the twelve currently-unguarded agent-only fields leave the Terminal arm. Compiler output from
       this step is the true work list for M3.

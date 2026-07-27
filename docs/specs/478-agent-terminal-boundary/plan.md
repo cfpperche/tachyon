@@ -11,15 +11,23 @@ All line numbers and counts below were read at **`2320c2be`**, the base of this 
 | # | Encoding | Where | What it answers |
 |---|---|---|---|
 | 1 | `EntryKind = "agent" \| "terminal"` on `ManagedEntryDef.kind` | `src/config/loadConfig.ts:37,118` | the nominal answer |
-| 2 | `inferKind(cmd)` over `KNOWN_AI_CLIS` (16 binaries) | `src/config/loadConfig.ts:40-62` | "does the command look like an AI CLI" |
+| 2 | `inferKind(cmd)` over `KNOWN_AI_CLIS` (15 binaries) | `src/config/loadConfig.ts:40-62` | "does the command look like an AI CLI" |
 | 3 | Canonical attestation: `adapter ∈ {codex,pi,grok,claude}` **and** `executable === adapter` | `src/config/agentProfileProjection.ts:258` | "may this be a canonical agent" |
 | 4 | `ResumeRuntime` (10 runtimes) | `src/resume/adapters.ts:17` | "can this be resumed" |
 | 5 | `AgentVM.ai?: boolean`, plus `isAgentKind = !isScheduleOrCommandOrRunbook` | `src/sidebar/types.ts:100`, `src/workspace/Workspace.ts:5891` | "does the UI treat this as an agent" |
 
-The three runtime lists **disagree by construction**: `KNOWN_AI_CLIS` has 16 entries, `ResumeRuntime`
+The three runtime lists **disagree by construction**: `KNOWN_AI_CLIS` has 15 entries, `ResumeRuntime`
 has 10, the attested set has 4. `opencode`, `gemini` and `qwen` are agents to (2), resumable to (4),
 and cannot be canonical agents to (3). So an entry can simultaneously be "an agent" and "not
 attestable as an agent", which is exactly the state `t-9418ac` hit when it tried to create one.
+
+<!-- Corrected while executing M1 (t-939a18): the count was published as 16; `KNOWN_AI_CLIS` held 15
+     binaries at 2320c2be, and still does. The disagreement the row describes is unaffected. -->
+
+**Closed by M1 (`t-939a18`).** `src/runtime/attestedRuntimes.ts` now holds the one list; `ResumeRuntime`
+is defined as `AttestedRuntime | <non-attested resumable>` so (4) cannot contradict (3); `KNOWN_AI_CLIS`
+is composed from it, so (2) can no longer omit or contradict an attested runtime — it remains an
+authoring *suggestion*, and removing it from the persistence and ad-hoc doors is M4/M9, not M1.
 
 Encoding (5) is a second, independent copy of the same fact living in the view model, and its
 `isAgentKind` form derives agent-ness by *negation of unrelated studio kinds* — a shape that silently

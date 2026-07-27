@@ -21,6 +21,8 @@ import {
   type CodexScalarNativeConfigChoice,
   type CodexScalarNativeConfigFamily,
 } from "../../config/agentNativeConfigPolicy.js";
+// Node-free by construction (a frozen list + a predicate) — safe for this browser bundle.
+import { isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -931,7 +933,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
   // Keep unmeasured Quick Add runtimes on the legacy writer instead of minting partial authority.
   // usable through Agent Studio's existing legacy writer instead of minting an authority the resolver
   // cannot attest.
-  if (!fields.canonical.expectedRevision && !["codex", "pi", "claude", "grok"].includes(adapter)) {
+  if (!fields.canonical.expectedRevision && !isAttestedRuntime(adapter)) {
     const { canonical: _canonical, ...legacy } = fields;
     return legacy;
   }
