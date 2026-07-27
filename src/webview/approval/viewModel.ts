@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { APPROVALS_REL_DIR, APPROVAL_ID_PREFIX, readApprovalRequest, type ApprovalPayload } from "../../bridge/approvalRequest.js";
+import type { CockpitApprovalRow } from "../../cockpit/model.js";
 
 export interface ApprovalViewItem {
   id: string;
@@ -21,14 +22,29 @@ export interface ApprovalViewModel {
 const emptyPayload = (): ApprovalPayload => ({ reason: "", proposedAction: "", risk: "", exactPrompt: "" });
 
 export function buildApprovalViewModel(input: { workspaceRoot: string; folder: string; wsHash: string }): ApprovalViewModel {
+  return { folder: input.folder, wsHash: input.wsHash, approvals: listPendingApprovalViewItems(input.workspaceRoot) };
+}
+
+/**
+ * t-d85857 — the ONE pending-approval read behind both Control surfaces: the Approvals section
+ * (which renders these items) and Overview's counter (which only counts them). They used to have
+ * different sources — the section read this, while the shell bundled a hardcoded empty list — so
+ * Overview reported `approvals pending: 0` with requests sitting on disk. A security counter that
+ * reads zero is worse than no counter, so the two now cannot disagree by construction.
+ *
+ * Pending is what a human still owes an answer to: resolved and cancelled records are skipped, and
+ * a record whose payloadHash no longer matches (or that will not parse at all) is still listed —
+ * tampering is a reason to look at it, never a reason to drop it from the count.
+ */
+export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalViewItem[] {
   const approvals: ApprovalViewItem[] = [];
-  const dir = path.join(input.workspaceRoot, APPROVALS_REL_DIR);
-  if (!fs.existsSync(dir)) return { folder: input.folder, wsHash: input.wsHash, approvals };
+  const dir = path.join(workspaceRoot, APPROVALS_REL_DIR);
+  if (!fs.existsSync(dir)) return approvals;
   const files = fs.readdirSync(dir).filter((f) => f.startsWith(APPROVAL_ID_PREFIX) && f.endsWith(".json")).sort();
   for (const file of files) {
     const id = file.slice(0, -".json".length);
     try {
-      const request = readApprovalRequest(input.workspaceRoot, id);
+      const request = readApprovalRequest(workspaceRoot, id);
       if (request.status !== "pending") continue;
       approvals.push({
         id: request.id,
@@ -64,5 +80,10 @@ export function buildApprovalViewModel(input: { workspaceRoot: string; folder: s
       }
     }
   }
-  return { folder: input.folder, wsHash: input.wsHash, approvals };
+  return approvals;
+}
+
+/** Overview's row shape for the same pending set — id + status only; the counter renders no payload. */
+export function pendingApprovalRows(workspaceRoot: string): CockpitApprovalRow[] {
+  return listPendingApprovalViewItems(workspaceRoot).map((item) => ({ id: item.id, status: "pending" }));
 }
