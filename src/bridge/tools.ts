@@ -683,6 +683,9 @@ function fail(err: unknown): ToolResult {
               message,
               ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.model ? { model: launchFailure.model } : {}),
               ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.suggestions.length ? { suggestions: launchFailure.suggestions } : {}),
+              // SDD 477 / t-0338fc — an auth refusal is only useful if the caller learns what a HUMAN
+              // must do; a coordinator that reads a bare code will just retry into the same wall.
+              ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.humanAction ? { humanAction: launchFailure.humanAction } : {}),
             },
           },
         }

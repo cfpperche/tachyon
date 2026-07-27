@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { AgentManager } from "../../src/agents/AgentManager.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
@@ -86,6 +87,7 @@ describe("container-generated delegation behavior", () => {
       workspaceRoot: ws,
       getConfig: () => config,
       getMaxAgents: () => 8,
+      launchPreflight: hermeticLaunchPreflight(),
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: BRIDGE_URL, TACHYON_BRIDGE_TOKEN: "tok" }),
       mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
       // Real materializeHarness wiring (matches Workspace's path): HarnessManager.materialize with the
