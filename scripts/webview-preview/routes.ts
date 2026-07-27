@@ -24,6 +24,7 @@ import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
+import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -32,7 +33,12 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
-import { cockpitFixtures, strings as cockpitStrings, validationsFixtureVm } from "./fixtures/cockpit";
+import {
+  cockpitFixtures,
+  runtimeConfigFixtureSnapshot,
+  strings as cockpitStrings,
+  validationsFixtureVm,
+} from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -155,6 +161,8 @@ export const ROUTES: Record<string, Route> = {
               : runtimeOpsSnapshotMessage(runtime.snapshot),
           );
         }
+      } else if (model.section === "runtime-config") {
+        msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
       } else if (model.section === "tmux") {
         const insp = inspectorFixtures.default?.vm;
         if (insp) {

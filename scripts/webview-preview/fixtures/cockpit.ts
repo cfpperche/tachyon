@@ -5,6 +5,7 @@
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import { routes as cockpitRoutes } from "../../../src/cockpit/route";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { Validation } from "../../../src/validations/types";
 import type { Fixture } from "../routes";
@@ -503,6 +504,99 @@ export const validationsFixtureVm: ValidationsViewModel = buildValidationsViewMo
   wsHash: "b349073a",
   validations: validationsSample,
 });
+
+export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
+  runtimes: [
+    {
+      runtime: "codex",
+      label: "OpenAI Codex",
+      potentialAgents: ["codex-canonico"],
+      documents: [
+        {
+          id: "codex-global",
+          label: "Global config",
+          scope: "global",
+          kind: "config",
+          path: "/home/goat/.codex/config.toml",
+          exists: true,
+          revision: "preview-codex-global",
+          knownSettings: [
+            { key: "approval_policy", label: "Approval policy", value: "never", editValue: "never", editable: true, inputKind: "text" },
+            { key: "sandbox_mode", label: "Sandbox mode", value: "danger-full-access", editValue: "danger-full-access", editable: true, inputKind: "text" },
+            { key: "tui.status_line_use_colors", label: "Status line colors", value: "true", editValue: true, editable: true, inputKind: "boolean" },
+          ],
+          mcpServers: [{ name: "tachyon_bridge", enabled: true, editable: true }],
+          unknownKeys: ["model_provider"],
+          internalStateCount: 2,
+        },
+        {
+          id: "codex-workspace",
+          label: "Workspace config",
+          scope: "workspace",
+          kind: "config",
+          path: "/home/goat/tachyon/.codex/config.toml",
+          exists: true,
+          revision: "preview-codex-workspace",
+          knownSettings: [],
+          mcpServers: [],
+          unknownKeys: [],
+          internalStateCount: 0,
+        },
+      ],
+    },
+    {
+      runtime: "claude",
+      label: "Anthropic Claude",
+      potentialAgents: ["claude-opus5"],
+      pendingAgents: ["claude-opus5"],
+      documents: [
+        {
+          id: "claude-global-settings",
+          label: "Global settings",
+          scope: "global",
+          kind: "settings",
+          path: "/home/goat/.claude/settings.json",
+          exists: true,
+          revision: "preview-claude-global",
+          knownSettings: [
+            { key: "theme", label: "Theme", value: "dark", editValue: "dark", editable: true, inputKind: "text" },
+            { key: "spinnerTipsEnabled", label: "Spinner tips", value: "false", editValue: false, editable: true, inputKind: "boolean" },
+          ],
+          mcpServers: [],
+          unknownKeys: ["statusLine"],
+          internalStateCount: 1,
+          opaqueKeys: ["permissions"],
+        },
+        {
+          id: "claude-workspace-settings",
+          label: "Workspace settings",
+          scope: "workspace",
+          kind: "settings",
+          path: "/home/goat/tachyon/.claude/settings.json",
+          exists: true,
+          revision: "preview-claude-workspace",
+          knownSettings: [],
+          mcpServers: [],
+          unknownKeys: [],
+          internalStateCount: 0,
+        },
+        {
+          id: "claude-workspace-mcp",
+          label: "Workspace MCP",
+          scope: "workspace",
+          kind: "mcp",
+          path: "/home/goat/tachyon/.mcp.json",
+          exists: true,
+          revision: "preview-claude-mcp",
+          knownSettings: [],
+          mcpServers: [{ name: "tachyon_bridge", enabled: true, editable: true }],
+          unknownKeys: [],
+          internalStateCount: 0,
+        },
+      ],
+    },
+  ],
+};
 
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
