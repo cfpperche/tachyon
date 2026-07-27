@@ -872,14 +872,19 @@ it("rolls back a declared agent rename when the Evolution destination already ex
   await ws.dispose();
 });
 
-it("leaves no live journal behind when the real config writer refuses a profile mutation", async () => {
+it("refuses a soul mutation a canonical pointer cannot accept, structurally and by name", async () => {
   // SDD 478 M7 — `createSoulProfile` mutates a declared agent by adding an inline `soul:` key, and
   // every declared agent is now a canonical profile pointer, which cannot coexist with an inline
-  // field. So the mutation is refused by the real writer rather than applied. What this case has
-  // always been about survives that change: the transaction must unwind, leaving no live journal.
+  // field. t-e81ec5: the refusal used to happen deep in the config writer as `soul/io-error`, a code
+  // that blames the disk for something no retry can fix, while Agent Studio still offered the button.
+  // It is now refused up front, with a code and a message that name the reason and where soul lives.
+  // What this case has always been about survives both changes: nothing is half-applied.
   const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "Ada", spec: { runtime: "codex" } }] });
   try {
-    await expect(ws.createSoulProfile("Ada")).rejects.toMatchObject({ code: "soul/io-error" });
+    await expect(ws.createSoulProfile("Ada")).rejects.toMatchObject({ code: "soul/canonical-profile-unsupported" });
+    await expect(ws.createSoulProfile("Ada")).rejects.toThrow(/canonical profile pointer/);
+    // The refusal names where the capability actually lives, so the operator is not left guessing.
+    await expect(ws.createSoulProfile("Ada")).rejects.toThrow(/t-e50d4f/);
     await flushMicrotasks();
     const transactions = path.join(ws.workspaceRoot, ".tachyon", "agent-profile-transactions");
     const entries = fs.existsSync(transactions) ? fs.readdirSync(transactions) : [];
