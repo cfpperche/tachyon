@@ -38,9 +38,12 @@ export const FOCUS_TEXT_MAX = 60;
 
 export function truncateFocusText(text: string, max = FOCUS_TEXT_MAX): string {
   const t = text.replace(/\s+/g, " ").trim();
-  if (t.length <= max) return t;
+  const points = Array.from(t);
+  if (points.length <= max) return t;
   if (max <= 1) return "…";
-  return `${t.slice(0, max - 1)}…`;
+  // t-b15872 — by CODE POINT. This one is a genuinely tiny label (60 chars) where a count marker
+  // would cost more than it explains, so it keeps the bare ellipsis and only stops splitting pairs.
+  return `${points.slice(0, max - 1).join("")}…`;
 }
 
 /**
