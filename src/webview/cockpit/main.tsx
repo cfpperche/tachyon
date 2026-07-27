@@ -279,10 +279,28 @@ function CockpitRoot() {
         // order alone (a fast double-click between two Board cards could otherwise interleave).
         const prevTask = activeRouteRef.current?.kind === "task-detail" ? activeRouteRef.current : undefined;
         const nextTask = next.activeRoute?.kind === "task-detail" ? next.activeRoute : undefined;
-        if (!nextTask || !prevTask || prevTask.wsHash !== nextTask.wsHash || prevTask.taskId !== nextTask.taskId) {
+        const taskIdentityChanged = !nextTask || !prevTask
+          || prevTask.wsHash !== nextTask.wsHash || prevTask.taskId !== nextTask.taskId;
+        if (taskIdentityChanged) {
           setTaskVm(undefined);
         }
         activeRouteRef.current = next.activeRoute;
+        // t-2f6cdd — ASK for the detail once this route is active, instead of depending on the host
+        // having pushed it first.
+        //
+        // t-9993cc made accepting a TASK push conditional on the identity above, which correctly
+        // stopped task A's data rendering under task B — but it turned "wrong data" into "no data":
+        // a push that arrives before this branch commits the route is now DROPPED, and nothing ever
+        // asked again. The host's own model post is itself dropped whenever `navEpoch` moved while
+        // it was being built (Cockpit.ts's `panel === live && navEpoch === epoch` guard), so losing
+        // that race left Control with no model, no vm, and no request in flight — the entirely blank
+        // surface reported here, and the same shape as t-9993cc's original sighting.
+        //
+        // The recovery already exists in the contract and was wired only to the manual Refresh
+        // button: `requestSnapshot` makes the host re-run sendTaskDetail(). Sending it exactly once
+        // per identity change makes arrival ORDER stop deciding the outcome — whichever side is
+        // late, the client asks. Bounded by construction: one request per identity, not per message.
+        if (taskIdentityChanged && nextTask) post(requestTaskSnapshotAction());
         if (next.studioMountNonce !== studioMountNonceRef.current) {
           studioMountNonceRef.current = next.studioMountNonce;
           setStudioIncoming(undefined);
