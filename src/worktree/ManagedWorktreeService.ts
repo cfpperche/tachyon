@@ -17,6 +17,12 @@ import {
 } from "./WorktreeManager.js";
 import { classifyManagedWorktree, type WorktreeClassification } from "./classify.js";
 import {
+  describeToolingProjection,
+  projectPluginTooling,
+  resolveAuthorityRoot,
+  type ProjectionResult,
+} from "../plugins/worktreeProjection.js";
+import {
   abandonMissingEntries,
   assertManagedSlug,
   canAdminManagedWorktree,
@@ -44,6 +50,8 @@ export interface ManagedWorktreeServiceOpts {
   occupancy?: WorktreeOccupancyProbe;
   now?: () => string;
   onRegistryChanged?: () => void;
+  /** t-36182f — surface the plugin-tooling projection outcome for a linked worktree (best-effort). */
+  notify?: (message: string) => void;
 }
 
 export class ManagedWorktreeService {
@@ -238,7 +246,37 @@ export class ManagedWorktreeService {
       status: "active",
     };
     this.save(upsertManagedEntry(this.load(), entry));
+    await this.projectPluginTooling(abs);
     return entry;
+  }
+
+  /**
+   * t-36182f — reach the workspace's plugin tooling from a linked worktree.
+   *
+   * Best-effort BY DESIGN: a worktree whose tooling could not be projected is still a valid worktree,
+   * and failing creation over a symlink would trade a Visual QA gap for a lost checkout. It is never
+   * silent though — the outcome is reported, because the whole defect this fixes was a missing tool
+   * that looked like an uninstalled one.
+   *
+   * Idempotent, so it runs on every register and every agent ensure: that is what covers restart, and
+   * what repairs a link a human deleted.
+   */
+  private async projectPluginTooling(worktreePath: string): Promise<ProjectionResult | undefined> {
+    try {
+      const probe = await this.git(["rev-parse", "--git-common-dir"], worktreePath);
+      if (probe.code !== 0) return undefined;
+      const commonAbs = path.resolve(worktreePath, probe.stdout.trim());
+      const authorityRoot = resolveAuthorityRoot(worktreePath, commonAbs);
+      if (!authorityRoot) return undefined; // this IS the authority — nothing to project
+      const result = projectPluginTooling({ worktreeRoot: worktreePath, authorityRoot });
+      this.opts.notify?.(`worktree tooling — ${describeToolingProjection(result)}`);
+      return result;
+    } catch (err) {
+      this.opts.notify?.(
+        `worktree tooling projection skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return undefined;
+    }
   }
 
   /** Upsert from WorktreeManager agent ensure/fork/remove (path already validated by manager). */
@@ -249,6 +287,9 @@ export class ManagedWorktreeService {
       return;
     }
     const abs = path.resolve(rec.path);
+    // t-36182f — an agent worktree needs the same tooling reach a change worktree does. This is a
+    // sync API, so fire and report; a projection failure must never break the record upsert.
+    void this.projectPluginTooling(abs).catch(() => undefined);
     const prior = findManagedEntry(this.load(), abs);
     const entry: ManagedWorktreeEntry = {
       id: newManagedId("agent", agent),

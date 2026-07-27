@@ -196,6 +196,34 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(svc.get(entry.id)?.path).toBe(entry.path);
   });
 
+  /**
+   * t-36182f — the wiring, not the module. A change worktree created through the service must come out
+   * able to REACH the workspace's plugin tooling; before this, it came out with no `.tachyon/bin` at
+   * all and a plugin doctor run inside it reported the tool as missing while it was installed and
+   * healthy one directory over.
+   */
+  it("createChange projects the authority's plugin tooling by link, without copying it", async () => {
+    // The authority is the repo the service manages; give it tooling to project.
+    fs.mkdirSync(path.join(repo, ".tachyon", "bin"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".tachyon", "bin", "_tachyon-tool"), "#!/bin/sh\n", { mode: 0o700 });
+    fs.mkdirSync(path.join(repo, ".claude", "skills", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".claude", "skills", "demo", "SKILL.md"), "# demo\n");
+    // Authority-only state that must NEVER be projected.
+    fs.writeFileSync(path.join(repo, ".tachyon", "plugins.lock.json"), "{}\n");
+
+    const svc = service();
+    const entry = await svc.createChange({ slug: "tooling", createdBy: "alice" });
+
+    const bin = path.join(entry.path, ".tachyon", "bin");
+    expect(fs.lstatSync(bin).isSymbolicLink()).toBe(true);
+    expect(fs.existsSync(path.join(bin, "_tachyon-tool"))).toBe(true);
+    expect(fs.readFileSync(path.join(entry.path, ".claude", "skills", "demo", "SKILL.md"), "utf8")).toContain("# demo");
+    // one binary on disk, not two
+    expect(fs.realpathSync(bin)).toBe(fs.realpathSync(path.join(repo, ".tachyon", "bin")));
+    // the pins stay in the authority alone
+    expect(fs.existsSync(path.join(entry.path, ".tachyon", "plugins.lock.json"))).toBe(false);
+  });
+
   it("remove refuses peer; human owner soft-removes clean tree and drops registry", async () => {
     const svc = service();
     const entry = await svc.createChange({ slug: "own", createdBy: "alice" });
