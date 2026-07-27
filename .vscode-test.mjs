@@ -132,6 +132,65 @@ function retirePreIsolationResidue() {
   }
 }
 
+/**
+ * t-41f496 — refuse the run early when the host cannot give it a working file watcher.
+ *
+ * Measured on this machine: `fs.inotify.max_user_instances` is 128 and 120 were already in use at
+ * rest, so VS Code logged `inotify_init() failed: Too many open files (24)` and its watcher degraded
+ * to nothing. The scenarios that depend on watching then alternate between runs — the same commit
+ * produced 13/8, 14/7, 15/6, 20/7 and 21/6 — and every one of those totals invites blaming the code
+ * for a resource ceiling.
+ *
+ * Failing here, with the number, is worth more than a red suite that looks like a regression. This
+ * only READS /proc and throws; it never kills a process and never touches sysctl, because deciding
+ * what may die on a shared host is not a test runner's call.
+ */
+const INOTIFY_HEADROOM_REQUIRED = 16;
+
+function assertInotifyHeadroom() {
+  let limit;
+  try {
+    limit = Number.parseInt(fs.readFileSync("/proc/sys/fs/inotify/max_user_instances", "utf8").trim(), 10);
+  } catch {
+    return; // not Linux, or /proc unavailable — nothing to assert
+  }
+  if (!Number.isFinite(limit)) return;
+
+  let used = 0;
+  const holders = new Map();
+  for (const entry of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    let count = 0;
+    try {
+      for (const fd of fs.readdirSync(`/proc/${entry}/fd`)) {
+        try {
+          if (fs.readlinkSync(`/proc/${entry}/fd/${fd}`).includes("inotify")) count += 1;
+        } catch { /* fd vanished mid-scan */ }
+      }
+    } catch { continue; } // process gone, or not ours
+    if (count === 0) continue;
+    used += count;
+    let cmd = "unknown";
+    try { cmd = fs.readFileSync(`/proc/${entry}/cmdline`, "utf8").split("\0").filter(Boolean)[0] ?? "unknown"; } catch { /* gone */ }
+    const key = cmd.split("/").pop();
+    holders.set(key, (holders.get(key) ?? 0) + count);
+  }
+
+  const free = limit - used;
+  if (free >= INOTIFY_HEADROOM_REQUIRED) return;
+  const top = [...holders.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([cmd, n]) => `${cmd}=${n}`).join(", ");
+  throw new Error(
+    `Tachyon editor gate refused to start: only ${free} of ${limit} inotify instances are free ` +
+    `(needs ${INOTIFY_HEADROOM_REQUIRED}). VS Code's file watcher would degrade and the ` +
+    `watch-dependent scenarios would fail for a reason that has nothing to do with the code. ` +
+    `Biggest holders: ${top}. See t-41f496 — raising fs.inotify.max_user_instances, or retiring ` +
+    `orphaned holders, is a human decision on a shared host.`,
+  );
+}
+
+assertInotifyHeadroom();
+
 retirePreIsolationResidue();
 
 /**
