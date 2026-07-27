@@ -927,6 +927,7 @@
     "dogfood:claude-composer-suggestion": "vite-node --script scripts/dogfood/claude-composer-suggestion.ts",
     "dogfood:grok-model-preflight": "vite-node --script scripts/dogfood/grok-model-preflight.ts",
     "dogfood:auth-required-parity": "vite-node --script scripts/dogfood/auth-required-parity.ts",
+    "dogfood:adhoc-agent-boundary": "vite-node --script scripts/dogfood/adhoc-agent-boundary.ts",
     "dogfood:worktree-plugin-projection": "vite-node --script scripts/dogfood/worktree-plugin-projection.ts",
     "dogfood:probe-provenance-parity": "vite-node --script scripts/dogfood/probe-provenance-parity.ts",
     "dogfood:probe-codex-model-proof": "vite-node --script scripts/dogfood/probe-codex-model-proof.ts",

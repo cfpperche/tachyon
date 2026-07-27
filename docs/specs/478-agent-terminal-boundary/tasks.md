@@ -85,8 +85,12 @@ compatibility shim.
       for an unbounded window.
 - [ ] `t-a31844` · **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
       non-attested command under `agents:`.
-- [ ] `t-8f3f7d` · **M9 — enforce ad-hoc `spawn_agent`.** Accept only supported, attested LLM runtimes
-      through the lighter Agent path; route generic commands to an explicit Terminal operation.
+- [x] `t-8f3f7d` · **M9 — enforce ad-hoc `spawn_agent`.** Accept only supported LLM runtimes through the
+      lighter Agent path; route generic commands to `spawn_terminal`. The admitted set is its own
+      declared capability (`SUPPORTED_ADHOC_AGENT_RUNTIMES`), separate from canonical attestation in
+      both directions, because the canonical bar would have deleted OpenCode/Hermes/Gemini/Qwen as
+      agents as a side effect. `SpawnOptions.kind` is now declared by the door, not inferred by the
+      manager; an omitted kind takes the strict arm.
 
 ## Verification
 
@@ -129,6 +133,14 @@ grep -rl allowLegacyAgentFixtures test/ | wc -l # 0
 **Dogfood-Opt-Out:** this increment ships an architectural contract and a backlog — documents only.
 There is no runnable behavior to exercise end-to-end; the behavior appears in M1–M9, each of which
 carries its own dogfood. Fabricating a command here would prove nothing about what shipped.
+
+**M9 dogfood:** `npm run dogfood:adhoc-agent-boundary` — drives the installed CLIs to check that the
+declaration has not rotted: every declared runtime present on the machine answers `--version` and is
+admitted, every declared argv brief channel still appears in that CLI's own help, real generic commands
+are refused naming `spawn_terminal`, and a runtime reached through an `env`/`npx` launcher still
+resolves. Absent runtimes are reported, never passed — a machine without `gemini` is not evidence about
+`gemini`. It found one real defect on its first run: `opencode --help` writes its usage to **stderr**
+and exits 0, so a stdout-only probe would have reported a flag missing that is still there.
 
 **Human dogfood:** completed 2026-07-27 — the human confirmed the boundary and ratified the lighter
 attested Agent path for ad-hoc `spawn_agent`; generic commands use an explicit Terminal operation.

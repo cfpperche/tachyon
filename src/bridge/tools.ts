@@ -34,7 +34,7 @@ import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
-import { asAgent, parseEvery, parseAt, suggestKindForCommand, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, parseEvery, parseAt, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
 import {
   validateSpawnContract,
@@ -83,6 +83,7 @@ import type { DeliveryStore } from "../delivery/store.js";
 import type { Delivery } from "../delivery/types.js";
 import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
+import { admitAdhocAgentCommand, SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
@@ -1459,6 +1460,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
+        `cmd MUST name a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
+        "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
         "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
         "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
@@ -1470,7 +1473,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
-        cmd: z.string().min(1).optional().describe("shell command for an ad-hoc managed entry; omit to use tachyon.yml"),
+        cmd: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(`command for an ad-hoc agent — must name a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
         cwd: z.string().optional().describe("working directory for an ad-hoc agent"),
         instructions: z
           .string()
@@ -1533,14 +1540,30 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (delivery_join && (gate || worktree)) {
           return fail(new Error("spawn_agent cannot combine delivery_join with gate or worktree:true — a Delivery already owns its worktree"));
         }
+        // SDD 478 M9 — attestation runs BEFORE every other ad-hoc check, including the delegation
+        // contract. A command that may not be an agent at all must hear WHY and which operation to use;
+        // being told first that its delegation contract is incomplete would send the caller to fill in
+        // a brief for an entity this door is never going to create.
+        //
+        // Scoped to the genuine ad-hoc door: a `delivery_join` execution is a DIFFERENT door with its
+        // own contract (an immutable Delivery, an owned subset, an expected HEAD) and its own measured
+        // policy for an unrecognized reviewer runtime — SDD 368 T10 deliberately runs one and advises
+        // rather than refusing. M9 was told to enforce a boundary, not to withdraw that.
+        if (cmd && !delivery_join) {
+          const admission = admitAdhocAgentCommand(cmd);
+          if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
+        }
         // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
-        // task to a new CLI" case). A declared agent (no cmd, carries config intent) and a terminal child
-        // (can't act on a handoff — D7) are not gated. Enforced HERE at the agent-facing Bridge surface so it
-        // is runtime-neutral (claude/codex/gemini/opencode alike) and never re-fires on restart/resume/fork.
+        // task to a new CLI" case). A declared agent (no cmd, carries config intent) is not gated.
+        // Enforced HERE at the agent-facing Bridge surface so it is runtime-neutral across the attested
+        // runtimes and never re-fires on restart/resume/fork.
+        //
+        // M9 collapsed what this used to compute: an accepted `cmd` is an attested runtime by
+        // construction now, so there is no longer a terminal child to exempt — the kind is not inferred.
         const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
         if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
         if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        const isAdhocAiAgent = (!!cmd && suggestKindForCommand(cmd) === "agent") || isBoundDeliveryExecution;
+        const isAdhocAiAgent = !!cmd || isBoundDeliveryExecution;
         if (isAdhocAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
             "spawn_agent worktree:true is not a tracked-change lifecycle for an ad-hoc AI agent; use gate with a behavior_test and owned paths",
@@ -1625,6 +1648,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // the child shows in the tree (nested under parent), opened on demand.
         const receipt = await deps.manager.spawn(name, {
           cmd,
+          // M9 — this door only ever asks for an Agent, and says so instead of letting the manager
+          // work it out from the command string.
+          kind: "agent",
           cwd,
           // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
           // Keep it in the instructions layer so the startup manifest truthfully reports no task.
@@ -1657,6 +1683,33 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const session = deps.manager.session(name);
         const state = deps.manager.kindOf(name) !== "agent" || await deps.manager.isReady(name) ? "ready" : "starting";
         return ok(JSON.stringify({ agent: name, session, state }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "spawn_terminal",
+    {
+      description:
+        "Start a generic process in this workspace — a shell, a server, a build, a watcher. This is the other half of " +
+        "the Agent/Terminal boundary (SDD 478): a terminal is a process, not an entity. It has no task, no lineage, no " +
+        "brief, no delegation contract, no worktree, no soul, no memory and no model — those are agent capabilities, and " +
+        `there are no parameters here to carry them. Use spawn_agent for a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}). ` +
+        "Stop it with kill_agent and remove the stopped row with dismiss_agent, exactly like any other ad-hoc entry.",
+      inputSchema: {
+        name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
+        cmd: z.string().min(1).describe("the command to run, verbatim — Tachyon does not interpret it"),
+        cwd: z.string().optional().describe("working directory for the process"),
+      },
+    },
+    async ({ name, cmd, cwd }) => {
+      try {
+        // No parent: lineage is an Agent semantic. A terminal that showed up nested under a spawner
+        // would read as a delegation, which is the exact confusion this operation exists to end.
+        await deps.manager.spawn(name, { cmd, kind: "terminal", cwd, reveal: false });
+        return ok(JSON.stringify({ terminal: name, session: deps.manager.session(name), state: "ready" }, null, 2));
       } catch (err) {
         return fail(err);
       }
