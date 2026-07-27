@@ -41,6 +41,13 @@ function agentIdFor(name: string): string {
 export interface CanonicalAgentSpec {
   /** attested runtime; the executable always equals the adapter (the projection requires it). */
   runtime?: AttestedRuntime;
+  /**
+   * Typed runtime selectors. This is how a canonical agent expresses "run this model at this
+   * reasoning effort": NOT as argv. The profile carries the values, the launcher composes the
+   * runtime's own flags (`--model`/`--effort` for claude, `-c model=…` for codex), and declaring
+   * them requires the matching `nativeConfig.selectors` policy — which this helper writes.
+   */
+  selectors?: { model?: string; provider?: string; reasoningEffort?: string; serviceTier?: string };
   role?: "coder" | "reviewer" | "tester" | "orchestrator" | "custom";
   soul?: boolean;
   cwd?: string;
@@ -69,7 +76,19 @@ export function writeCanonicalAgent(root: string, name: string, spec: CanonicalA
   const profile = stringify({
     schemaVersion: 1,
     agentId,
-    runtime: { adapter: runtime, executable: runtime },
+    runtime: { adapter: runtime, executable: runtime, ...(spec.selectors ?? {}) },
+    ...(spec.selectors
+      ? {
+        nativeConfig: {
+          selectors: {
+            source: "agent",
+            treatment: "overlay",
+            refresh: "every-launch",
+            lifecycle: runtime === "claude" ? ["fresh", "restart", "resume", "fork"] : ["fresh", "restart", "resume"],
+          },
+        },
+      }
+      : {}),
     ...(spec.role || spec.soul ? { prompt: { ...(spec.role ? { role: spec.role } : {}), ...(spec.soul ? { soul: true } : {}) } } : {}),
     ...(spec.cwd || spec.autostart !== undefined || spec.attention
       ? {

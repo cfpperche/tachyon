@@ -226,7 +226,10 @@ afterEach(() => {
 async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}, opts: { bCmd?: string; tachyonYaml?: string } = {}) {
   const root = mkdir();
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
-  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? `agents:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
+  // SDD 478 M7 — `a` and `b` are supervised SHELLS, so they are terminals. They were only agents
+  // because `allowLegacyAgentFixtures` accepted an inline shape the product refuses; nothing here
+  // exercises an agent capability, so declaring them honestly costs the cases nothing.
+  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? `agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: true\n  b:\n    cmd: ${opts.bCmd ?? "sh"}\n`, "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need

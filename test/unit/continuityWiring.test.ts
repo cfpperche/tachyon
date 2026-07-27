@@ -120,9 +120,9 @@ class SecretHost extends FakeHost {
  * profile plus the authority that attests it. They used to declare `agents: <name>: cmd: <runtime>`
  * inline, a shape the product refuses and only `allowLegacyAgentFixtures` kept alive.
  */
-async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude") {
+async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude", selectors?: { model?: string; reasoningEffort?: string }) {
   const root = mkdir();
-  const fixture = writeCanonicalAgent(root, agent, { runtime });
+  const fixture = writeCanonicalAgent(root, agent, { runtime, ...(selectors ? { selectors } : {}) });
   const secrets = canonicalAgentSecrets(root, [fixture]);
   fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml([fixture]), "utf8");
   const { tmux, sessions, sent } = capturingTmux();
@@ -231,16 +231,24 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("t-1a808e: declared Codex model overrides still receive silent persistence hooks", async () => {
-    const { ws } = await makeWs(
-      "agents:\n  codex:\n    cmd: codex -c model=gpt-5.6-sol -c model_reasoning_effort=xhigh\n",
-      "codex",
-    );
+    // SDD 478 M7 — a canonical agent expresses a model override as TYPED SELECTORS, not argv: the
+    // profile carries model/reasoningEffort and the launcher composes `-c model=…` itself. The
+    // assertion is unchanged, because what is being tested is that selectors do not suppress hooks.
+    const { ws } = await makeWs("codex", "codex", { model: "gpt-5.6-sol", reasoningEffort: "xhigh" });
 
     expect(ws.persistenceHookHealth("codex")).toMatchObject({ state: "active" });
   });
 
-  it("spec 312: no visible fallback remains when Claude --settings prevents hook injection", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude --settings custom.json\n");
+  it("spec 312: no visible fallback remains when hook injection did not happen for this spawn", async () => {
+    // SDD 478 M7 — this used to declare `cmd: claude --settings custom.json`, i.e. a USER-owned
+    // settings layer that displaced Tachyon's. A canonical agent cannot express that: Tachyon owns
+    // `--settings` on every canonical Claude launch (the closed private-home contract), so the
+    // trigger is unreachable by design rather than merely unconfigured. What the case is really
+    // guarding — that an inactive hook state produces NO visible pane fallback — is asserted
+    // directly against that state instead of through a command shape the product refuses.
+    const { ws, root, sent } = await makeWs();
+    (ws as unknown as { writeSilentPersistenceHookState(agent: string, active: boolean): void })
+      .writeSilentPersistenceHookState("claude", false);
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
