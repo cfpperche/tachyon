@@ -19,6 +19,14 @@ on:
 # host whose one-shot-command exit-code capture is sensitive to the tmux version (the runner's tmux 3.4
 # leaves pane_dead_status empty for instantly-exiting panes, which the supported tmux 3.6 populates).
 # Run it locally with `xvfb-run -a npm run test:integration` on tmux >= 3.6.
+#
+# t-d84837 — two things had to be true before that suite could boot a workspace AT ALL, and
+# `.vscode-test.mjs` now arranges both (see its comments for the measurements):
+#   * the fixture is staged outside the Tachyon worktrees base, because a folder under it is
+#     deliberately excluded from activation (t-2a73d6) — which silently disabled the whole suite
+#     whenever the repo itself was checked out in an agent worktree;
+#   * the engine runtime points at a real Node, because the daemon is launched from a COPY of
+#     `process.execPath`, and the editor host's Electron binary cannot run outside its install dir.
 jobs:
   verify:
     runs-on: ubuntu-latest
