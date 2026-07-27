@@ -421,9 +421,9 @@ function mundinhoFleet(): FleetVM {
     folder: { hash: "mundinho-ws", name: "workspace" },
     bridge: { port: "-", connected: true },
     agents: [
-      { name: "runner", status: "running", ai: true },
-      { name: "needs-human", status: "needs", attention: "needs-input", ai: true },
-      { name: "parked", status: "stopped", ai: true },
+      { name: "runner", status: "running", kind: "agent" },
+      { name: "needs-human", status: "needs", attention: "needs-input", kind: "agent" },
+      { name: "parked", status: "stopped", kind: "agent" },
     ],
     terminals: [],
     commands: [],
@@ -443,7 +443,7 @@ function poisonedAgent(name: string, status: "running" | "needs"): FleetVM["agen
     parent: "SENTINEL_PARENT",
     sub: "SENTINEL_COMMAND",
     persistenceHooks: { state: "active", path: "SENTINEL_HOOK_PATH" },
-    ai: true,
+    kind: "agent",
   } as FleetVM["agents"][number];
 }
 

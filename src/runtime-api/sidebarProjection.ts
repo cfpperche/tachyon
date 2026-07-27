@@ -107,7 +107,10 @@ const agent = z.object({
   externalTools: externalTools.optional(),
   awaitingHuman: z.object({ reason: text(2_000) }).strict().optional(),
   configInvalid: z.boolean().optional(),
-  ai: z.boolean().optional(),
+  // SDD 478 M5 — the managed-entry arm, required because every row has one. This schema is
+  // `.strict()`, so it is the wire contract: a row carrying an arm it does not declare is REJECTED,
+  // not silently trimmed. That is why removing `ai` had to land here in the same change.
+  kind: z.enum(["agent", "terminal"]),
   adhoc: z.boolean().optional(),
   verifiable: z.boolean().optional(),
   forkable: z.boolean().optional(),

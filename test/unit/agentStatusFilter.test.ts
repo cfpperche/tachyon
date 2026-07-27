@@ -13,6 +13,7 @@ import {
 import type { AgentVM } from "../../src/sidebar/types";
 
 const a = (partial: Partial<AgentVM> & Pick<AgentVM, "name" | "status">): AgentVM => ({
+  kind: "agent",
   ...partial,
   name: partial.name,
   status: partial.status,
