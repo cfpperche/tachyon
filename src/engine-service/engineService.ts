@@ -9,6 +9,7 @@ import {
   startAgentWithActivity,
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
+import { EDITOR_HUMAN_ACTOR } from "../validations/types.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
@@ -418,6 +419,9 @@ async function executeWorkspaceCommand(
   }
   if (command.method === "validation.close") {
     await workspace.validationStore.closeRound(command.input.id, {
+      // t-98256c — this command only ever arrives from an attached editor shell, so the actor is the
+      // human at the keyboard. Stamped here, never carried on the wire.
+      actor: EDITOR_HUMAN_ACTOR,
       outcome: command.input.outcome,
       result_note: command.input.result_note,
     });
@@ -425,6 +429,7 @@ async function executeWorkspaceCommand(
   }
   if (command.method === "validation.assign") {
     await workspace.validationStore.update(command.input.id, {
+      actor: EDITOR_HUMAN_ACTOR,
       assignee: command.input.assignee,
       ...(command.input.expect ? { expect: command.input.expect } : {}),
     });

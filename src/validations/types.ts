@@ -9,6 +9,28 @@ export type ValidationExecutor = (typeof VALIDATION_EXECUTORS)[number];
 export const VALIDATION_OUTCOMES = ["passed", "failed", "skipped"] as const;
 export type ValidationOutcome = (typeof VALIDATION_OUTCOMES)[number];
 
+/** The Bridge's own caller kinds — a validation actor is never self-declared, so this mirrors them. */
+export const VALIDATION_ACTOR_KINDS = ["agent", "human", "master", "legacy", "external"] as const;
+export type ValidationActorKind = (typeof VALIDATION_ACTOR_KINDS)[number];
+
+/**
+ * t-98256c — who acted on a validation. For a Bridge call this is the resolved caller (the same
+ * identity `request_human_approval` refuses to take as a parameter); for a close from the editor the
+ * host stamps its own surface, exactly as an approval records `resolvedBy`. It is an argument rather
+ * than a tool field precisely so a caller cannot claim to be someone else.
+ */
+export interface ValidationActor {
+  kind: ValidationActorKind;
+  /** the resolved agent name for kind "agent"; the host surface (e.g. "vscode") for a human close. */
+  name?: string;
+}
+
+/**
+ * The stamp the HOST applies when the human closes or reassigns from the editor. It is a constant on
+ * this side of the wire on purpose: a webview cannot send an actor, so it cannot claim to be a human.
+ */
+export const EDITOR_HUMAN_ACTOR: ValidationActor = { kind: "human", name: "vscode" };
+
 export interface ValidationRound {
   n: number;
   startedAt?: string;
@@ -17,6 +39,8 @@ export interface ValidationRound {
   outcome?: ValidationOutcome;
   evidence_refs?: ArtifactRef[];
   result_note?: string;
+  /** Provenance of the closure — absent on rounds recorded before t-98256c. */
+  closedBy?: ValidationActor;
 }
 
 export interface Validation {
@@ -64,9 +88,13 @@ export interface ValidationUpdateInput {
   source_refs?: ArtifactRef[] | null;
   expect?: ValidationUpdateExpect;
   now?: string;
+  /** Who is patching. Required for the same reason as on close (t-98256c). */
+  actor: ValidationActor;
 }
 
 export interface ValidationCloseInput {
+  /** Who is closing. Required so no path can close without saying who acted (t-98256c). */
+  actor: ValidationActor;
   outcome: ValidationOutcome;
   result_note?: string;
   evidence_refs?: ArtifactRef[];
@@ -99,4 +127,8 @@ export function isValidationExecutor(value: unknown): value is ValidationExecuto
 
 export function isValidationOutcome(value: unknown): value is ValidationOutcome {
   return typeof value === "string" && (VALIDATION_OUTCOMES as readonly string[]).includes(value);
+}
+
+export function isValidationActorKind(value: unknown): value is ValidationActorKind {
+  return typeof value === "string" && (VALIDATION_ACTOR_KINDS as readonly string[]).includes(value);
 }
