@@ -1,5 +1,17 @@
 import { describe, it, expect } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { loadPipeline, parseDuration, nodeSpawnName } from "../../src/pipeline/loadPipeline.js";
+
+const SRC = path.resolve(__dirname, "..", "..", "src");
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(full);
+    return entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) ? [full] : [];
+  });
+}
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
 
@@ -225,5 +237,81 @@ describe("loadPipeline — input mode + work-source rule (spec 231)", () => {
     );
     expect(pipeline).toBeUndefined();
     expect(errors.some((e) => e.includes(".task:"))).toBe(true);
+  });
+});
+
+describe("an inline node declares its kind through `done` (t-c003e1)", () => {
+  it("a signal-based node on an operable runtime is an agent", () => {
+    const { pipeline, errors } = loadPipeline(
+      `name: p\nnodes:\n  ask: {cmd: codex, task: "review this", done: signal_then_verify, timeout: 20m}\n`,
+      AGENTS,
+    );
+    expect(errors).toEqual([]);
+    // The kind is materialized, not left for the spawn door to guess from the command text.
+    expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal_then_verify", kind: "agent" });
+  });
+
+  it("an exit-based node is a terminal, whatever the command is", () => {
+    const { pipeline, errors } = loadPipeline(
+      `name: p\nnodes:\n  build: {cmd: "sh -c 'npm run build'", task: "build it", done: exit, timeout: 5m}\n`
+      + `  once: {cmd: "codex exec 'summarize'", task: "summarize", needs: [build], done: exit_then_verify, timeout: 5m}\n`,
+      AGENTS,
+    );
+    expect(errors).toEqual([]);
+    expect(pipeline?.nodes.build).toMatchObject({ kind: "terminal" });
+    // Even a runtime binary is a Terminal here: an exit-based node is judged by its exit code, and
+    // never receives a brief or the complete_node protocol.
+    expect(pipeline?.nodes.once).toMatchObject({ kind: "terminal" });
+  });
+
+  it("refuses a signal-based node whose command Tachyon cannot operate, naming the other form", () => {
+    // `aider` is in the authoring suggestion catalog but has no resume/brief/Bridge machinery, so it
+    // can be a Terminal and never an Agent — the same rule the ad-hoc door applies.
+    const { pipeline, errors } = loadPipeline(
+      `name: p\nnodes:\n  ask: {cmd: aider, task: "review this", done: signal, timeout: 20m}\n`,
+      AGENTS,
+    );
+    expect(pipeline).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("nodes.ask.cmd");
+    expect(errors[0]).toContain("cannot run as an agent node");
+    expect(errors[0]).toContain("done: exit");
+    expect(errors[0]).toContain("agent: <name>");
+  });
+
+  it("refuses a shell asked to signal — it has no way to report and never did", () => {
+    const { errors } = loadPipeline(
+      `name: p\nnodes:\n  wat: {cmd: "sh -c 'sleep 1'", task: "wait", done: signal, timeout: 1m}\n`,
+      AGENTS,
+    );
+    expect(errors.join("\n")).toContain("cannot run as an agent node");
+  });
+
+  it("leaves an agent: node's kind to the declared agent it names", () => {
+    const { pipeline, errors } = loadPipeline(
+      `name: p\nnodes:\n  step: {agent: coder, task: "do it", done: signal, timeout: 5m}\n`,
+      AGENTS,
+    );
+    expect(errors).toEqual([]);
+    expect(pipeline?.nodes.step.kind).toBeUndefined();
+  });
+});
+
+describe("suggestKindForCommand stays an authoring suggestion (t-c003e1)", () => {
+  it("no entity-creating path calls it — only the authoring surfaces and M6's declared default", () => {
+    // Guarded over source because the property is "who may call this", which no runtime assertion can
+    // see: a call added back inside a spawn door would look perfectly correct locally.
+    const callers = sourceFiles(path.join(SRC)).filter((file) => {
+      const src = readFileSync(file, "utf8");
+      // A call, not a mention: doc comments cite the name on purpose.
+      return /suggestKindForCommand\s*\(/.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""));
+    }).map((file) => path.relative(SRC, file)).sort();
+
+    expect(callers).toEqual([
+      // M6 — the declared `agents:` default a human sees in their own tachyon.yml, deliberately visible.
+      "config/loadConfig.ts",
+      // Authoring: the Studio form's pre-selection, which the human then confirms or overrides.
+      "webview/formLogic.ts",
+    ]);
   });
 });
