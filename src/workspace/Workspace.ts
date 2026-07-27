@@ -85,6 +85,10 @@ import {
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
+import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
+
+/** t-d185e1 — the reference id the selector is pinned under; local to this writer. */
+const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -5054,6 +5058,64 @@ export class Workspace {
     this.rebuildWatches();
     this.refreshAgentsViews();
     return result;
+  }
+
+  /**
+   * `t-d185e1` — turn on Agent Evolution for a DECLARED canonical agent.
+   *
+   * The projection grants `selfEvolution` only when the profile pins an `evolution-selector.json`
+   * whose bytes name a `profileId`, and `AgentManager.evolutionForFreshSession` refuses the spawn
+   * when that id disagrees with the Evolution store's active profile. Nothing wrote that selector, so
+   * once `agents:` narrowed to canonical pointers there was no product path to Evolution at all — the
+   * capability was projectable and unreachable.
+   *
+   * Order is forced by who mints the id: the store does, never the author. So the store's profile is
+   * ensured FIRST and its id is what gets pinned; an agent cannot mint its own Evolution profile on a
+   * first session that the selector must already describe.
+   *
+   * Everything lands in ONE lifecycle transaction — the selector bytes as an artifact, the pin and
+   * `prompt.evolution` as the patch — because the pin carries the artifact's sha256 and the authority
+   * is re-signed over the profile alone. Publishing them separately would leave a window where the
+   * profile pins a digest nothing on disk satisfies, which is precisely the fail-closed state the
+   * projection is built to refuse.
+   */
+  async enableAgentSelfEvolution(agentName: string): Promise<AgentProfileLifecycleCommitResult> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    const existing = snapshot.profile.references ?? [];
+    if (snapshot.profile.prompt?.evolution) {
+      throw new Error(`agent '${agentName}' already selects an Evolution profile`);
+    }
+    if (existing.some((reference) => reference.path === EVOLUTION_SELECTOR_PATH)) {
+      throw new Error(`agent '${agentName}' already carries an Evolution selector reference`);
+    }
+    // The store mints the id; this is the only source of truth for what the selector may name.
+    const profile = await this.evolutionStore.ensureProfile(agentName);
+    const selector = `${JSON.stringify({ profileId: profile.profileId, schemaVersion: 1 })}\n`;
+    return this.commitAgentProfileLifecycle({
+      agentName,
+      operation: "edit",
+      expectedRevision: snapshot.revision,
+      patch: {
+        prompt: { ...(snapshot.profile.prompt ?? {}), evolution: EVOLUTION_SELECTOR_REFERENCE_ID },
+        references: [
+          ...existing,
+          {
+            id: EVOLUTION_SELECTOR_REFERENCE_ID,
+            kind: "evolution",
+            scope: "profile",
+            owner: snapshot.agentId,
+            path: EVOLUTION_SELECTOR_PATH,
+            mode: "pinned",
+            sha256: createHash("sha256").update(selector).digest("hex"),
+          },
+        ],
+      },
+      artifacts: [{
+        path: EVOLUTION_SELECTOR_PATH,
+        text: selector,
+        sha256: createHash("sha256").update(selector).digest("hex"),
+      }],
+    });
   }
 
   private async assertAgentStoppedForProfileMutation(agentName: string): Promise<void> {

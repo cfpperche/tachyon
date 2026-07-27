@@ -24,7 +24,7 @@ import type { FormState } from "../../src/webview/formLogic.js";
 import { loadOrCreateHmacKey } from "../../src/bridge/callerIdentity.js";
 import { deterministicGitDeliveryId } from "../../src/git-delivery/store.js";
 import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
-import { stringify } from "yaml";
+import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
@@ -249,6 +249,88 @@ function canonicalHost(
  * cannot create its Evolution profile on first session — the profile is what the declaration points
  * at, so it precedes the declaration.
  */
+/**
+ * `t-d185e1` — Evolution has a product writer, so the capability is reachable and not merely
+ * projectable.
+ *
+ * `projectDefinition` grants `selfEvolution` only when the profile pins an `evolution-selector.json`
+ * naming a `profileId`. Nothing in `src/` ever wrote that file or that reference, so once `agents:`
+ * narrowed to canonical pointers, no declared agent could enable Evolution by any product path —
+ * only `enableCanonicalSelfEvolution` above, a TEST helper, could reach the enabled projection. A
+ * capability that exists in the projection and nowhere a human can get to is not a capability.
+ *
+ * The ordering is forced, not stylistic: the Evolution store mints the `profileId`, never the author,
+ * and `AgentManager.evolutionForFreshSession` refuses a spawn whose snapshot id disagrees with the
+ * pinned one. So the store's profile must exist before the selector that names it.
+ */
+describe("t-d185e1 — enabling Evolution on a declared canonical agent", () => {
+  async function canonicalWorkspace(name: string) {
+    const root = mkdir();
+    const { host, secrets } = canonicalHost(root, [{ name, spec: { runtime: "claude" } }]);
+    const deps = { host, onViewsChanged: () => {} };
+    const ws = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
+    return { root, ws, deps, secrets, name };
+  }
+
+  const profileOf = (root: string, name: string) =>
+    parseYaml(fs.readFileSync(path.join(root, ".tachyon", "agents", name, "agent.yml"), "utf8")) as Record<string, unknown>;
+
+  it("starts unreachable: a fresh canonical agent has no selector and no selfEvolution", async () => {
+    const { root, ws, name } = await canonicalWorkspace("reviewer");
+    try {
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", name, "evolution-selector.json"))).toBe(false);
+      expect(asAgent(ws.config?.agents[name])?.selfEvolution).toBeUndefined();
+    } finally { ws.dispose(); }
+  });
+
+  it("pins the selector the projection reads, naming the id the STORE minted", async () => {
+    const { root, ws, name } = await canonicalWorkspace("reviewer");
+    try {
+      await ws.enableAgentSelfEvolution(name);
+
+      const bytes = fs.readFileSync(path.join(root, ".tachyon", "agents", name, "evolution-selector.json"), "utf8");
+      const stored = (await ws.evolutionStore.readProfile(name))?.profileId;
+      expect(stored).toBeTruthy();
+      // Exactly these two keys: the reader refuses any extra one outright.
+      expect(JSON.parse(bytes)).toEqual({ profileId: stored, schemaVersion: 1 });
+
+      const profile = profileOf(root, name);
+      const pinned = (profile.references as Array<Record<string, unknown>>)
+        .find((reference) => reference.path === "evolution-selector.json")!;
+      expect(pinned).toMatchObject({ kind: "evolution", scope: "profile", owner: profile.agentId, mode: "pinned" });
+      // The pin is what makes the bytes trustworthy — a mismatched digest fails the whole projection
+      // closed, so the digest is the property worth asserting rather than mere presence.
+      expect(pinned.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
+      expect((profile.prompt as Record<string, unknown>).evolution).toBe(pinned.id);
+    } finally { ws.dispose(); }
+  });
+
+  it("makes the capability REACHABLE: a reloaded workspace projects selfEvolution enabled", async () => {
+    // The point of the task. Everything above could hold while the projection still refused.
+    const { root, ws, deps, name } = await canonicalWorkspace("reviewer");
+    let stored: string | undefined;
+    try {
+      await ws.enableAgentSelfEvolution(name);
+      stored = (await ws.evolutionStore.readProfile(name))?.profileId;
+    } finally { ws.dispose(); }
+
+    const reloaded = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
+    try {
+      const projected = asAgent(reloaded.config?.agents[name]);
+      expect(projected?.selfEvolution).toEqual({ enabled: true });
+      expect(projected?.profileEvolution?.profileId).toBe(stored);
+    } finally { reloaded.dispose(); }
+  });
+
+  it("refuses a second enable rather than pinning a second selector", async () => {
+    const { ws, name } = await canonicalWorkspace("reviewer");
+    try {
+      await ws.enableAgentSelfEvolution(name);
+      await expect(ws.enableAgentSelfEvolution(name)).rejects.toThrow(/already selects an Evolution profile/);
+    } finally { ws.dispose(); }
+  });
+});
+
 async function createEvolvingWorkspace(
   names: readonly string[],
   runtime: CanonicalAgentSpec["runtime"],

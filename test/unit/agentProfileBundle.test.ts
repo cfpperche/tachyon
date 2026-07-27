@@ -90,7 +90,7 @@ async function sourceFixture() {
     createProfileLocalReferences: [
       { id: "local-soul", kind: "soul", path: "SOUL.md", mode: "pinned", sha256: sha256(soul) },
     ],
-    createArtifacts: [{ path: "SOUL.md", text: soul, sha256: sha256(soul) }],
+    artifacts: [{ path: "SOUL.md", text: soul, sha256: sha256(soul) }],
     authority,
     config,
     activateState: () => undefined,
