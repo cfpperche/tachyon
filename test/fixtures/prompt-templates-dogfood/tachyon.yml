@@ -1,26 +1,20 @@
 # Spec 381 dogfood fixture — temporary project for F5 / Extension Development Host.
 # Do NOT open the monorepo root for this scenario.
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create `claude` and `codex` in Agent Studio: Inject Prompt Template offers AGENTS only, so the
+# destination picker needs at least one. The `shell` terminal below is the negative case — it must
+# NOT appear in that picker.
 #
-# dogfood: forced kind=agent so Inject Prompt Template accepts it (bash would
-# otherwise infer terminal). Autostart so the pane is live after F5.
-agents:
-  dogfood:
-    cmd: bash
-    kind: agent
-    autostart: true
-  # Optional real CLI (start from sidebar if installed). Not required for inject smoke.
-  claude:
-    cmd: claude
-    kind: agent
-    autostart: false
-  codex:
-    cmd: codex
-    kind: agent
-    autostart: false
-  # Terminal — must NOT appear in the inject destination picker.
+# SDD 478 M7 — the old `dogfood` row was `cmd: bash` with `kind: agent` forced on precisely so the
+# picker would accept it. That shape is gone: a process cannot be an agent, so proving the picker
+# now requires a real agent, created here.
+terminals:
+  # Must NOT appear in the inject destination picker.
   shell:
     cmd: bash
-    kind: terminal
     autostart: false
 
 commands:

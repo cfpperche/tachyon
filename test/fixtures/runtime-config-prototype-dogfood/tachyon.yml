@@ -1,5 +1,10 @@
 # Dogfood fixture for SDD 446/464. Agents stay stopped: Runtime Config is a
 # source-inventory surface and must not require a live session.
+#
+# SDD 478 M7 — these are already canonical pointers, which is the only shape `agents:` accepts.
+# They will report "host profile authority is missing" until the profiles are (re)created through
+# Agent Studio in the Dev Host: the authority that attests a profile is custodied by the host, so
+# no checked-in fixture can carry it.
 settings:
   maxAgents: 8
 

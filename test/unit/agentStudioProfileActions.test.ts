@@ -272,7 +272,12 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(isAllowedSoulImportFileName("../identity.md")).toBe(false);
   });
 
-  it("prepares one enabled direct agent and identity marker per dogfood runtime", () => {
+  it("prepares one identity marker per dogfood runtime, and declares no agent inline", () => {
+    // SDD 478 M7 — the fixture used to declare the four soul agents inline, which no workspace
+    // loads any more; they are created in Agent Studio at dogfood time (opencode is not even an
+    // attested runtime, so it cannot be declared at all). What the fixture still owns is the
+    // per-runtime material the scenario needs: one identity marker each, and a roster that starts
+    // no agent by itself.
     const fixture = path.resolve("test/fixtures/agent-soul-dogfood");
     const parsed = parseConfig(fs.readFileSync(path.join(fixture, "tachyon.yml"), "utf8"));
     expect(parsed.errors).toEqual([]);
@@ -282,11 +287,9 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "soul-grok": { runtime: "grok", channel: "startup-argument", marker: "SOUL-GROK-OK" },
       "soul-opencode": { runtime: "opencode", channel: "tui-prefill", marker: "SOUL-OPENCODE-OK" },
     } as const;
-    expect(Object.keys(parsed.config!.agents)).toEqual(Object.keys(expected));
-    for (const [name, target] of Object.entries(expected)) {
-      const def = parsed.config!.agents[name]!;
-      expect(def).toMatchObject({ cmd: target.runtime, kind: "agent", soul: true, autostart: false });
-      expect(openingPromptCapability(def.cmd)).toEqual({ status: "prompt", runtime: target.runtime, channel: target.channel });
+    expect(Object.values(parsed.config!.agents).some((entry) => entry.kind === "agent")).toBe(false);
+    for (const target of Object.values(expected)) {
+      expect(openingPromptCapability(target.runtime)).toEqual({ status: "prompt", runtime: target.runtime, channel: target.channel });
       expect(fs.readFileSync(path.join(fixture, `identity-${target.runtime}.md`), "utf8")).toContain(target.marker);
     }
   });

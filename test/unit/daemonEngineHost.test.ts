@@ -270,7 +270,7 @@ describe("DaemonEngineHost", () => {
 
   it("constructs the real Workspace composition without ExtensionContext or vscode", async () => {
     const f = fixture();
-    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "agents:\n  test:\n    cmd: sh\n", "utf8");
+    fs.writeFileSync(path.join(f.root, "tachyon.yml"), "agents: {}\nterminals:\n  test:\n    cmd: sh\n", "utf8");
     const tmux = new TmuxService(async () => ({ stdout: "", stderr: "" }));
     const ws = await Workspace.createForTest(
       f.root,

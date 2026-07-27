@@ -1,18 +1,15 @@
 # Dogfood fixture (release-0-56-91-dogfood) — intent: focus (stopped OK; project task/brief/goal)
 # Spec: 410. Agents start STOPPED; focus still projects without a live process.
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create three grok agents (grok / solo / idle), autostart off.
 settings:
   maxAgents: 8
 
-agents:
-  grok:
-    cmd: grok
+terminals:
+  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
+  shell:
+    cmd: sh
     autostart: false
-    attention: true
-  solo:
-    cmd: grok
-    autostart: false
-    attention: true
-  idle:
-    cmd: grok
-    autostart: false
-    attention: false
