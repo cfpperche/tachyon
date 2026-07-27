@@ -5821,7 +5821,7 @@ export class Workspace {
     return readEvolutionStudioOverview(
       this.evolutionStore,
       agentName,
-      def?.kind === "agent" && def.selfEvolution?.enabled === true,
+      asAgent(def)?.selfEvolution?.enabled === true,
     );
   }
 

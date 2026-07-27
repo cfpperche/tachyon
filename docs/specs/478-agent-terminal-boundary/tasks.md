@@ -46,8 +46,16 @@ compatibility shim.
       across 30 files** — the risk in § Risks & unknowns was real: the true M3 surface is ~2.8× the
       115-conditional grep. `runtime`/`profile` are NOT yet required on the Agent arm: every ad-hoc
       spawn and legacy fixture would need a shim, so they land with M6/M7/M9.
-- [ ] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
+- [x] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
       narrowing. Mechanical once M2 lands.
+      The 115 turned out to be **three different questions sharing a word** (§ Inventory E). Of the 118
+      matches at `834732dc`, only 15 were an entry's kind gating an Agent capability; those are now
+      `asAgent()` and `AgentManager` has **zero** entity-kind conditionals left. The other 103 are the
+      principal axis (`caller.kind`, 38), the worktree axis (`kind ∈ agent|change`, 5), Studio
+      `FormState.kind` (9), the parallel UI/ledger/projection encoding M5 owns (~30), terminal-side and
+      parser refusals M6 owns (~17), and the ledger rehydrate M4 owns (1). The grep count is therefore
+      the wrong meter: after M2 the compiler already forbids a conditional from being what grants a
+      capability, because the field lives on the arm.
 - [ ] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
       (`:471`, `:499`); a kindless record is refused, not guessed. Rename the surviving authoring-time
       helper to say it is a suggestion.

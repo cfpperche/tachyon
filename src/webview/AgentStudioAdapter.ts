@@ -1,6 +1,7 @@
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
 import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromDef, quickAddChips } from "./formLogic.js";
+import { asAgent } from "../config/loadConfig.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import {
   AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
@@ -64,8 +65,8 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     if (entityId === undefined) {
       return { status: "ok", entity: { storage: "canonical", fields: canonicalAgentFields(), ...reference } };
     }
-    const def = this.ws.config?.agents[entityId];
-    if (!def || def.kind !== "agent") return { status: "not-found" };
+    const def = asAgent(this.ws.config?.agents[entityId]);
+    if (!def) return { status: "not-found" };
     if (def.profileLifecycle || def.profilePointer) {
       try {
         const profile = await this.ws.inspectAgentProfileStudio(entityId);
