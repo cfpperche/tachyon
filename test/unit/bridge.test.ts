@@ -247,7 +247,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 73 canonical tools, including managed worktree registry tools", async () => {
+  it("exposes exactly the 74 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -310,6 +310,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "set_continuity",
       "set_project_handoff",
       "spawn_agent",
+      "spawn_terminal",
       "submit_evolution_review",
       "unregister_worktree",
       "update_pin",
@@ -983,7 +984,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(gatedSkip.isError).toBe(true);
     expect(JSON.stringify(gatedSkip.content)).toContain("cannot combine gate with skip_contract_reason");
 
-    // gate is only valid for ad-hoc AI-agent delegations; terminal/non-AI commands reject it instead of ignoring it.
+    // SDD 478 M9 — this case used to read "a terminal command may not take a gate". A generic command
+    // can no longer reach the gate check at all: it is refused as an AGENT first, which is the more
+    // useful answer because it names the operation that WILL run it.
     const terminalGate = await client.callTool({
       name: "spawn_agent",
       arguments: {
@@ -994,8 +997,18 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       },
     });
     expect(terminalGate.isError).toBe(true);
-    expect(JSON.stringify(terminalGate.content)).toContain("gate is only supported for an ad-hoc AI sub-agent");
+    expect(JSON.stringify(terminalGate.content)).toContain("is not a supported LLM runtime");
+    expect(JSON.stringify(terminalGate.content)).toContain("spawn_terminal");
     expect(sessions.has(`tachyon-${HASH}-child-terminal`)).toBe(false);
+
+    // The gate-needs-a-contract refusal still has a live path: a DECLARED agent carries config intent
+    // rather than a delegation, so it is not gated and may not ask to be.
+    const declaredGate = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "claude", gate: { behavior_test: "declared behavior" } },
+    });
+    expect(declaredGate.isError).toBe(true);
+    expect(JSON.stringify(declaredGate.content)).toContain("gate is only supported for an ad-hoc AI sub-agent");
 
     // a too-short skip reason is rejected (D6)
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });
@@ -1093,21 +1106,50 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     }
   });
 
+  it("SDD 478 M9: spawn_agent refuses a generic command and names spawn_terminal, before the contract gate", async () => {
+    // Order is the point. A generic command used to become a Terminal here; now it is refused, and the
+    // refusal must be about the ENTITY, not about a missing delegation contract — otherwise the caller
+    // is sent to write a brief for something this door was never going to create.
+    const refused = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "shelly", cmd: "sh -c 'echo hi'", parent: "claude" },
+    });
+    expect(refused.isError).toBe(true);
+    const text = JSON.stringify(refused.content);
+    expect(text).toContain("spawn_terminal");
+    expect(text).not.toContain("delegation contract");
+    expect(sessions.has(`tachyon-${HASH}-shelly`)).toBe(false);
+  });
+
+  it("SDD 478 M9: spawn_terminal starts a terminal-kind row and carries no agent parameters", async () => {
+    const tools = (await client.listTools()).tools;
+    const schema = tools.find((t) => t.name === "spawn_terminal")?.inputSchema as { properties?: Record<string, unknown> };
+    // Agent-only capabilities are unrepresentable here, not merely rejected: there is no parameter to
+    // put a task, a lineage, a brief, a worktree or a delegation gate into.
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["cmd", "cwd", "name"]);
+
+    const started = await client.callTool({ name: "spawn_terminal", arguments: { name: "devserver", cmd: "npm run dev" } });
+    expect(started.isError).toBeFalsy();
+    expect(sessions.has(`tachyon-${HASH}-devserver`)).toBe(true);
+    expect(manager.kindOf("devserver")).toBe("terminal");
+    await client.callTool({ name: "kill_agent", arguments: { name: "devserver" } });
+  });
+
   it("spawn_agent (ad-hoc) + maxAgents guardrail + lineage", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "helper", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     expect(sessions.has(`tachyon-${HASH}-helper`)).toBe(true);
     const listed = await client.callTool({ name: "list_agents", arguments: {} });
     const parsed = JSON.parse((listed.content as Array<{ text: string }>)[0].text) as Array<{ name: string; parent?: string }>;
     expect(parsed.find((a) => a.name === "helper")?.parent).toBe("claude");
 
-    const blocked = await client.callTool({ name: "spawn_agent", arguments: { name: "third", cmd: "echo no" } });
+    const blocked = await client.callTool({ name: "spawn_agent", arguments: { name: "third", cmd: "opencode", skip_contract_reason: "guardrail fixture: never actually spawns" } });
     expect(blocked.isError).toBe(true);
     expect(JSON.stringify(blocked.content)).toContain("maxAgents limit reached (2)");
     await client.callTool({ name: "kill_agent", arguments: { name: "helper" } });
   });
 
   it("dismiss_agent rejects running ad-hoc entries and declared entries", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "running-helper", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "running-helper", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const running = await client.callTool({ name: "dismiss_agent", arguments: { name: "running-helper" } });
     expect(running.isError).toBe(true);
     expect(JSON.stringify(running.content)).toContain("use kill_agent first");
@@ -1126,7 +1168,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("dismiss_agent removes stopped ad-hoc entries; kill_agent points stopped ad-hoc users to dismiss_agent", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "stopped-helper", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "stopped-helper", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const session = sessionName(HASH, "stopped-helper");
     expect(sessions.has(session)).toBe(true);
     sessions.delete(session); // simulate a clean-exited pane that has already disappeared from tmux.
@@ -1442,9 +1484,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(notRunning.isError).toBe(true);
     expect(JSON.stringify(notRunning.content)).toContain("not running");
 
-    // a running TERMINAL-kind ad-hoc entry (echo isn't a known AI CLI) is rejected as a target — this
-    // fails the static kindOf check BEFORE the doorbell append, so it rings no doorbell.
-    await client.callTool({ name: "spawn_agent", arguments: { name: "notify-target", cmd: "echo hi", parent: "claude" } });
+    // a running TERMINAL-kind ad-hoc entry is rejected as a target — this fails the static kindOf check
+    // BEFORE the doorbell append, so it rings no doorbell. SDD 478 M9: the terminal now comes from the
+    // explicit Terminal operation rather than from spawn_agent guessing `echo` was not an AI CLI, which
+    // makes this the stronger test — the row is a terminal because someone SAID so.
+    await client.callTool({ name: "spawn_terminal", arguments: { name: "notify-target", cmd: "echo hi" } });
     const toTerminal = await client.callTool({ name: "notify_agent", arguments: { to: "notify-target", summary: "done", agent: "claude" } });
     expect(toTerminal.isError).toBe(true);
     expect(JSON.stringify(toTerminal.content)).toMatch(/not an agent/);
@@ -1518,7 +1562,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("list_agents exposes advisory postmortem capabilities for stopped ad-hoc rows", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-cap", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-cap", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const session = sessionName(HASH, "postmortem-cap");
     panes.set(session, "alpha\nbeta\ngamma");
     dead.set(session, 0);
@@ -1539,10 +1583,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("read_output returns retained postmortem output for clean-exited rows and distinguishes missing rows", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-read", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "postmortem-read", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const session = sessionName(HASH, "postmortem-read");
     panes.set(session, "one\ntwo\nthree");
     dead.set(session, 0);
+    await manager.list(); // refresh the cached tmux snapshot so the clean exit is visible to dismiss
     await manager.dismissCleanExitPane("postmortem-read");
 
     const read = await client.callTool({ name: "read_output", arguments: { name: "postmortem-read", lines: 2 } });
@@ -1636,7 +1681,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("wait_for_agent can include a bounded final tail when the dead pane still exists", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const session = sessionName(HASH, "wait-tail");
     panes.set(session, "red\ngreen\nblue");
     dead.set(session, 0);
@@ -1654,7 +1699,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("wait_for_agent still succeeds with tailUnavailableReason when final-tail capture fails", async () => {
-    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail-missing", cmd: "echo hi", parent: "claude" } });
+    await client.callTool({ name: "spawn_agent", arguments: { name: "wait-tail-missing", cmd: "opencode", parent: "claude", skip_contract_reason: "lifecycle fixture: no delegated work" } });
     const session = sessionName(HASH, "wait-tail-missing");
     panes.set(session, "__THROW__");
     dead.set(session, 0);

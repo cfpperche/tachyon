@@ -62,12 +62,71 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   Terminals and the delegation contract moves. Blocks M9 only; everything before it can proceed. Owner:
   the human.
 
+### M9 (`t-8f3f7d`) — "supported" turned out not to mean "attested"
+
+The plan, the spec and the architecture doc all said the ad-hoc door admits "a supported, attested LLM
+runtime", and M1 had established that `ATTESTED_RUNTIMES` is the one answer to "which runtimes may
+operate an Agent". Read literally that settles it — and reading it literally is wrong, which took a
+measurement to see rather than an argument.
+
+`agents:` already admits only a profile pointer whose executable is attested. So the ad-hoc door is the
+*only* door through which OpenCode, Hermes, Gemini and Qwen can be agents at all. Applying the canonical
+bar here would not have tightened a door; it would have removed four runtimes from the product, and with
+them measured, shipped machinery: private XDG/HERMES homes, resume adapters, native fork, activity
+normalizers, attention manifests, and OpenCode's credential preflight (`t-0338fc`, landed the same day).
+This spec's own non-goals disclaim "changing what an LLM runtime *is*, or which runtimes are attested",
+so a migration step reaching that conclusion is a signal the reading is wrong, not a mandate.
+
+The fix is a second list rather than a wider first one. `ATTESTED_RUNTIMES` keeps answering "may this
+back a canonical profile"; `SUPPORTED_ADHOC_AGENT_RUNTIMES` answers "can Tachyon hand this a delegation
+and get an answer back". Every attested runtime is in the second; the reverse is deliberately false, and
+a test asserts both directions so the two cannot quietly merge.
+
+### The membership evidence, measured door by door
+
+Per runtime, against the tree: a resume adapter (`src/resume/adapters.ts`), a brief channel
+(`PROMPT_ADAPTERS` via `instructionsDeliverable`) and Bridge MCP wiring (`AgentManager.withRuntimeBridge`,
+which reaches exactly `claude`/`codex`/`opencode`/`grok`/`hermes`/`pi` and returns `{ wired: false }` for
+everything else).
+
+| runtime | resume | brief | Bridge |
+|---|---|---|---|
+| claude, codex, grok, pi | yes | yes | yes |
+| opencode | yes | yes (`--prompt`) | yes (`OPENCODE_CONFIG`) |
+| hermes | yes | yes (`HERMES_TUI_QUERY`) | yes (`HERMES_HOME`) |
+| gemini | yes | yes (`-i`) | **no** |
+| qwen | yes | **no** | **no** |
+
+Gemini and Qwen are admitted anyway, because removing a working capability inside a boundary migration
+is the decision-by-negation this work was told not to make. What they cannot do is written into their
+entries and owned by `t-59f67c`: a delegated Gemini child receives the contract and has no way to answer
+it; a Qwen child receives neither.
+
+`antigravity` and `continue` are absent, and that removes nothing: they have resume adapters but are not
+AI CLIs to any authoring surface, so the old inference already produced Terminals for them.
+
+## Deviations (M9)
+
+**The manager stopped choosing the arm, which exposed a door the inventory missed.** Removing
+`suggestKindForCommand` from `spawnCore` meant every ad-hoc caller had to declare its kind — and there
+were two, not one. Pipeline inline `cmd:` nodes deliberately accept both kinds ("an exit-based one-shot
+(sh / codex exec) runs its command as-is"), and `pipelines:` has nowhere to write a kind down. That door
+now makes its own suggestion at its own call site, visible and testable, instead of sharing the
+manager's; migrating it properly is `t-c003e1`.
+
+**`delivery_join` is excluded from the admission check on purpose.** It is a different door with its own
+contract, and SDD 368 T10 measured that an unrecognized reviewer runtime runs there with an advisory
+rather than a refusal. Folding it in would have withdrawn that quietly.
+
+**An omitted `kind` means `agent`, not "figure it out".** That is the strict arm: a caller who forgets
+gets a refusal naming `spawn_terminal`, never a Terminal silently holding agent capabilities.
+
 ## Ratification
 
 - **2026-07-27:** the human ratified `spec.md` § Intent and § Acceptance criteria.
-- **Ad-hoc spawn decision:** `spawn_agent` remains Agent-only and accepts supported, attested LLM
-  runtimes through a lighter path without a canonical profile. Generic commands use an explicit
-  Terminal operation. M9 (`t-8f3f7d`) is unblocked.
+- **Ad-hoc spawn decision:** `spawn_agent` remains Agent-only and accepts supported LLM runtimes through
+  a lighter path without a canonical profile. Generic commands use an explicit Terminal operation.
+  M9 (`t-8f3f7d`) is unblocked — and delivered; see § M9 above for why "supported" is its own list.
 
 - **Is `kind:` under `agents:` retained at all?** A canonical `agents:` entry is a profile pointer, so
   `kind: terminal` under `agents:` is self-contradictory. Deleting the key is cleaner than validating

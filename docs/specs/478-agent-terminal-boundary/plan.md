@@ -219,7 +219,8 @@ ambiguous → refuse with the fix in the message.*
 | `terminals:` in `tachyon.yml` | any command; no agent-only key | `terminals.<n>: '<key>' applies only to agents` — extend from 4 keys to all 16 |
 | Agent Studio commit | attested runtime, `executable === adapter` | already correct (`agentProfileProjection.ts:258`) |
 | Terminal Studio commit | generic command | must refuse an attested-runtime command with "declare this as an agent in Agent Studio" |
-| Bridge `spawn_agent` (`cmd`) | a supported, attested LLM runtime through the ad-hoc Agent path | generic commands are refused with "use the Terminal operation"; kind is never inferred |
+| Bridge `spawn_agent` (`cmd`) | a runtime declared in `SUPPORTED_ADHOC_AGENT_RUNTIMES` | generic and unresolvable commands are refused naming `spawn_terminal`; kind is never inferred (`t-8f3f7d`) |
+| Bridge `spawn_terminal` (`cmd`) | any command, verbatim | nothing — there is no agent parameter to refuse; the arm has no field for one (`t-8f3f7d`) |
 | Session ledger rehydrate | a record carrying an explicit `kind` | drop the `inferKind` fallback; a kindless record is refused, not guessed |
 | `tachyon.init` scaffold | emits `terminals:` for generic commands | — |
 
@@ -287,6 +288,13 @@ The modules the *migration* will touch are inventoried above; no source file is 
   canonical profile. Only supported LLM runtimes are accepted; generic commands use an explicit
   Terminal operation. Rejected turning ad-hoc children into Terminals because task, lineage,
   delegation and worktree are Agent semantics.
+  - _Settled by M9 (`t-8f3f7d`): "supported" is NOT `ATTESTED_RUNTIMES`. Reading it that way would have
+    removed OpenCode, Hermes, Gemini and Qwen as agents everywhere, since `agents:` already admits only
+    attested executables and the ad-hoc path is their only door — orphaning measured resume adapters,
+    private homes, activity readers, attention manifests and OpenCode's credential preflight as a side
+    effect of a migration whose non-goals disclaim changing which runtimes are attested. The door gets
+    its own declared capability instead, and each entry records the mechanism that earns it a place plus
+    any shortfall against the delegation contract (`t-59f67c` owns Gemini's and Qwen's)._
 - **`attention` on terminals may be the wrong call.** If it turns out Agent-only, the `t-9418ac`
   needs-input scenario loses its home and must go headless — a small, contained reversal, which is why
   it is recorded as an open question rather than blocking.
