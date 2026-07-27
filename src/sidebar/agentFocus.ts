@@ -2,6 +2,8 @@
  * spec 390 — resolve the human-glance "focus line" for an agent row.
  * Pure: no IO. Priority: open MC task (assignee) → spawn brief → continuity Current Goal → omit.
  */
+import type { EntryKind } from "../config/loadConfig.js";
+
 export type FocusSource = "task" | "brief" | "continuity";
 
 export interface AgentFocus {
@@ -94,8 +96,8 @@ export function briefFromLedger(ledger?: FocusLedgerInput | null): string | unde
 
 export interface ResolveAgentFocusInput {
   agent: string;
-  /** AI agent only — terminals omit focus. */
-  ai?: boolean;
+  /** SDD 478 M5 — the managed-entry arm; terminals carry no focus. */
+  kind?: EntryKind;
   tasks?: readonly FocusTaskInput[];
   ledger?: FocusLedgerInput | null;
   continuityBody?: string | null;
@@ -106,7 +108,7 @@ export interface ResolveAgentFocusInput {
  * (or the row is not an AI agent).
  */
 export function resolveAgentFocus(input: ResolveAgentFocusInput): AgentFocus | undefined {
-  if (input.ai === false) return undefined;
+  if (input.kind === "terminal") return undefined;
 
   const task = pickFocusTask(input.agent, input.tasks ?? []);
   if (task) {

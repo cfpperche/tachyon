@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { actionsFor, primaryActions, moreActions, type ActionId } from "../../src/sidebar/actions";
 import type { AgentVM } from "../../src/sidebar/types";
 
-const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", ai: true, ...o });
+const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", kind: "agent", ...o });
 
 describe("sidebar action matrix (spec 237)", () => {
   it("running → graceful stop + forced kill + restart, no spawn", () => {
@@ -21,7 +21,7 @@ describe("sidebar action matrix (spec 237)", () => {
 
   it("spec 238 — activity is offered for AI agents even without a live pane, but not for terminals", () => {
     expect(primaryActions(A({ status: "running" }))).toContain("activity");
-    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("activity"); // terminal: no transcript
+    expect(actionsFor(A({ status: "running", kind: "terminal" }))).not.toContain("activity"); // terminal: no transcript
     expect(actionsFor(A({ status: "stopped" }))).toContain("activity"); // durable history, not tied to a pane
     expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(["activity"]);
     expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
@@ -117,8 +117,8 @@ describe("sidebar action matrix (spec 237)", () => {
   it("capability gates: fork/verify/reanchor/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", forkable: true }))).toContain("fork");
     expect(actionsFor(A({ status: "idle", verifiable: true }))).toContain("verify");
-    expect(actionsFor(A({ status: "running", ai: true }))).toContain("reanchor");
-    expect(actionsFor(A({ status: "stopped", ai: false }))).not.toContain("reanchor");
+    expect(actionsFor(A({ status: "running", kind: "agent" }))).toContain("reanchor");
+    expect(actionsFor(A({ status: "stopped", kind: "terminal" }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
     expect(actionsFor(A({ status: "running", adhoc: true }))).toContain("remove");
     expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("remove");
@@ -127,23 +127,23 @@ describe("sidebar action matrix (spec 237)", () => {
   it("spec 322 — probes: offered wherever activity is (ai, pane-independent), more-menu only, never terminals", () => {
     expect(actionsFor(A({ status: "running" }))).toContain("probes");
     expect(actionsFor(A({ status: "stopped" }))).toContain("probes"); // durable records, no pane needed
-    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("probes"); // terminals never launch probes
+    expect(actionsFor(A({ status: "running", kind: "terminal" }))).not.toContain("probes"); // terminals never launch probes
     expect(primaryActions(A({ status: "running" }))).not.toContain("probes"); // "…" menu only
     expect(moreActions(A({ status: "running" }))).toContain("probes");
   });
   it("spec 381 — injectPrompt is offered for running AI only (with reanchor family)", () => {
-    expect(actionsFor(A({ status: "running", ai: true }))).toContain("injectPrompt");
-    expect(actionsFor(A({ status: "idle", ai: true }))).toContain("injectPrompt");
-    expect(actionsFor(A({ status: "running", ai: false }))).not.toContain("injectPrompt");
-    expect(actionsFor(A({ status: "stopped", ai: true }))).not.toContain("injectPrompt");
-    expect(primaryActions(A({ status: "running", ai: true }))).not.toContain("injectPrompt");
-    expect(moreActions(A({ status: "running", ai: true }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "running", kind: "agent" }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "idle", kind: "agent" }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "running", kind: "terminal" }))).not.toContain("injectPrompt");
+    expect(actionsFor(A({ status: "stopped", kind: "agent" }))).not.toContain("injectPrompt");
+    expect(primaryActions(A({ status: "running", kind: "agent" }))).not.toContain("injectPrompt");
+    expect(moreActions(A({ status: "running", kind: "agent" }))).toContain("injectPrompt");
   });
 
   it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
-    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reanchor");
-    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("injectPrompt");
-    expect(actionsFor(A({ status: "throttled", ai: true }))).toContain("reinjectContinuity");
+    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("reanchor");
+    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("injectPrompt");
+    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("reinjectContinuity");
     expect(actionsFor(A({ status: "throttled" }))).toContain("stop");
     expect(actionsFor(A({ status: "throttled" }))).toContain("kill");
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
@@ -199,11 +199,11 @@ describe("sidebar action matrix (spec 237)", () => {
   });
 
   it("fork lives in the 'more' menu, never inline — the quick-actions bar is runtime-uniform", () => {
-    const forkable = A({ status: "running", ai: true, forkable: true });
+    const forkable = A({ status: "running", kind: "agent", forkable: true });
     expect(primaryActions(forkable)).not.toContain("fork");
     expect(moreActions(forkable)).toContain("fork");
     // the inline bar is identical whether or not the runtime supports fork
-    const plain = A({ status: "running", ai: true });
+    const plain = A({ status: "running", kind: "agent" });
     expect(primaryActions(forkable)).toEqual(primaryActions(plain));
   });
 });

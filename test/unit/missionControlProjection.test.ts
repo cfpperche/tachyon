@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { EDITOR_HUMAN_ACTOR } from "../../src/validations/types.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import {
   isMissionControlViewV1,
@@ -49,7 +50,7 @@ describe("Mission Control wire projection", () => {
     });
     const open = await validationStore.create({ title: "Human check", author: "human", executor: "human", now: "2026-07-14T12:02:00.000Z" });
     const closed = await validationStore.create({ title: "Old check", author: "human", now: "2026-07-14T12:03:00.000Z" });
-    await validationStore.closeRound(closed.id, { outcome: "passed", result_note: "done", now: "2026-07-14T12:04:00.000Z" });
+    await validationStore.closeRound(closed.id, { actor: EDITOR_HUMAN_ACTOR, outcome: "passed", result_note: "done", now: "2026-07-14T12:04:00.000Z" });
     const source = buildBoardSnapshot({
       store: taskStore,
       declaredAgents: ["codex"],

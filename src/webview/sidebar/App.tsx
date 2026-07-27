@@ -8,7 +8,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
-import { attentionWindow, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
+import { attentionRows, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
 import { placeMoreMenu } from "./menuPosition";
 import {
   AGENT_STATUS_FILTERS,
@@ -738,7 +738,7 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
 
 /** spec 415 — Tachyon's sole non-modal attention surface. */
 function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
-  const { rows, visible, queued } = useMemo(() => attentionWindow(fleets), [fleets]);
+  const rows = useMemo(() => attentionRows(fleets), [fleets]);
   if (rows.length === 0) return null;
   return (
     <section class="attention-stack" aria-labelledby="attention-title">
@@ -747,7 +747,6 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
           <Icon name="bell-dot" /> Attention
           <span class="notice-unread" title={`${rows.length} open`}>{rows.length}</span>
         </span>
-        {queued > 0 && <span class="attention-queued" aria-label={`${queued} queued`}>+{queued} queued</span>}
         <Button class="attention-clear"
           title="Dismiss all attention items"
           onClick={() => {
@@ -762,7 +761,7 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
         </Button>
       </div>
       <div class="attention-list" role="list">
-        {visible.map(({ n, hash, folder }) => {
+        {rows.map(({ n, hash, folder }) => {
           const { body, author } = splitNoticeAuthor(n.message);
           return (
           <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`}>

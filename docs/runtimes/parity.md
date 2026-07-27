@@ -51,7 +51,8 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 | 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
 | 15 | **Runtime-managed native memory** | Adapter inventories the exact runtime/version's persistent learned-context mechanism and behaviorally verifies disable/enable, injection, mutation, isolation and lifecycle semantics. A written setting without behavioral proof is at most `~`; plugin memory is separate from the built-in runtime mark. |
-| 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs the signal measured on a stated version AND consumed by Tachyon; `~` means measured but not yet consumed; `✗` means the runtime gives no reliable signal. Inferring auth state from silence or exit code alone never qualifies. |
+| 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs a **turn-attached** signal measured on a stated version AND consumed by Tachyon — turn-attached is what makes it work mid-run as well as at launch. `~` means measured but not yet consumed, OR consumed only at the launch boundary because the runtime emits nothing during a turn (`t-0338fc`). `✗` means the runtime gives no reliable signal anywhere. Inferring auth state from silence or exit code alone never qualifies. |
+| 17 | **Ad-hoc Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter ad-hoc path — no canonical profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from canonical attestation — see §3.6.1. |
 
 For the Codex marks in rows 7, 9, and 12, **✓** is scoped to canonical profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
@@ -120,13 +121,18 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 | 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
 | 15 Runtime-managed native memory | ~ | ~ | ✗ | ~ | ✗ | **✗** |
-| 16 Auth-required detection | ✓ | ✓ | **✗** | ✓ | ~ | **✗** |
+| 16 Auth-required detection | ✓ | ✓ | ~‖ | ✓ | ~ | **✗** |
+| 17 Ad-hoc Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
 † **Grok harness materialization exists** (`GROK_HOME`, hooks, Bridge fold), but `runtimeProfile.grok.isolation` is still **`project-scoped`** for governance. Non-harness **parented** Grok spawns still require an isolated worktree (`assertVerifiedTranscriptIsolation`). See Grok section + §3.4.
 
 ‡ **Pi default private home + exact resource harness exist.** SDD 406 snapshots declared workspace-local extensions/skills/prompts/themes/packages into the per-agent home, disables automatic discovery and passes only explicit private CLI paths. Remote package acquisition/global inheritance remain intentionally unsupported.
+
+# **Ad-hoc Agent is not an Outros capability, with two named exceptions** (`t-8f3f7d`, SDD 478 M9). A generic command — a shell, a server, a build, a renamed binary, anything whose executable cannot be resolved — is refused by `spawn_agent` and belongs to `spawn_terminal`. The exceptions are the secondary runtimes that DO have measured machinery: Hermes is a full `✓`, and Gemini and Qwen are `~` with declared gaps. §3.6.1 has the per-runtime evidence.
+
+‖ **OpenCode auth-required is a LAUNCH-boundary signal, not a turn one** (`t-0338fc`, SDD 477). OpenCode is the only runtime measured to answer a credential-free turn *successfully*, on the fallback model `big-pickle` — so there is nothing in a transcript to match, and `RUNTIME_AUTH_PROFILES` still declares no matcher for it. What exists instead is a measured **credential-store** signal: `opencode providers list` reports its own inventory (`0 credentials`, plus a separate `Environment` section for provider keys found in the environment, covering both of OpenCode's auth paths), and `OpencodeLaunchPreflight` refuses the launch on an empty one rather than letting the agent start unauthenticated. Two bounds keep this `~` and not `✓`: it proves a credential is **readable**, not valid, and it fires only before launch — a credential expiring mid-run is still undetected for OpenCode. See §3.7.
 
 § **Grok headless probe** (`t-7426de`, SDD 257): `src/probe/adapters/grok.ts` — `grok -p --output-format json`, golden fixtures + binary-gated `--version` smoke. Live model call remains opt-in (`PROBE_LIVE_SMOKE=1`). OpenCode / Pi / Hermes adapters deferred.
 
@@ -175,7 +181,7 @@ Current adapter evidence:
 |---|---|---|---|---|---|:---:|
 | Claude | canonical policy projects reviewed global scalar families; unselected global keys stay opaque and unauthored, so a personal `~/.claude/settings.json` carrying `$schema`, `statusLine`, `tui`, … never blocks activation (`t-45e80d`); selected auth/bootstrap remains external | canonical policy projects reviewed workspace scalar families; unselected workspace keys fail closed; selected owner-captured skills/hooks/MCP require exact Claude grants; ambient `settings.local.json`, plugin roots and unselected workspace tooling remain excluded | private `CLAUDE_CONFIG_DIR`; generated closed settings, typed `--model`/`--effort` selectors, captured skill tree, strict selected-MCP+Bridge config, and manifest-last provenance | credential symlink plus onboarding markers; auth is not profile-authored; a refresh that detaches the symlink is harvested and every private home is re-converged on the authority, and a genuinely dead session refuses at materialize (`t-9598cc`) | fresh/restart/resume regenerate the same selected generation and remove stale state; fork copies the typed projection into a distinct private home and seeds the exact transcript across home/cwd namespaces (`t-fdd3a0`, `t-088454`, SDD 465/463, 2026-07-26) | ✓ |
 | Codex | canonical policy projects reviewed global scalar families; auth stays external | canonical policy projects reviewed workspace scalar families; unselected keys fail closed | private `CODEX_HOME`; atomically regenerated selectors/scalars plus captured profile skills/MCP/hooks and Bridge | OAuth credentials | fresh/restart/resume regenerate an identical private projection before launch (`t-1a3d50`, 2026-07-25); fork is unavailable; native extensions remain explicitly unsupported | ✓ |
-| OpenCode | ambient global XDG excluded | `inherit: workspace` snapshots `opencode.json`; `none` starts empty | private XDG config/data/state plus MCP overlay | runtime auth state not fully classified here | spawn/restart/resume wiring exists; per-family refresh evidence incomplete | ~ |
+| OpenCode | ambient global XDG excluded | `inherit: workspace` snapshots `opencode.json`; `none` starts empty | private XDG config/data/state plus MCP overlay | `auth.json` copied (never symlinked) into the private `XDG_DATA_HOME`, and a launch whose credential store comes back empty is refused rather than degraded (`t-0338fc`); validity of the copied credential is still not classified here | spawn/restart/resume wiring exists; per-family refresh evidence incomplete | ~ |
 | Grok | ambient config, memory and plugins excluded | harness can snapshot `.grok/config.toml`; canonical non-harness writes Bridge-only config | private `GROK_HOME`, exact workspace/cwd trust store and hooks | auth symlink plus reconciliation | regenerated equivalently on fresh/restart/resume; stale trust removed without losing auth/MCP (`t-15d7e7`) | ✗ |
 | Pi | safe global JSON settings seeded once, executable resources removed; canonical profiles exclude ambient `trust.json` | exact declared resource snapshots | private agent/session homes; exact canonical workspace/cwd trust replaces stale grants and denials | private auth snapshot; provider authority remains external | trust regenerates equivalently on fresh/restart/resume while auth/settings/resources remain private (`t-20c856`, audit `t-68ee7a`); fork stays under the single-live-Pi safety limit | ~ |
 | Hermes | global non-MCP `config.yaml` is seeded; `inherit: none` still keeps that base | workspace `.hermes/config.yaml` may replace the global base; MCP is overlaid | private `HERMES_HOME`; `state.db` is runtime-owned | OAuth `auth.json` and API-key `.env` are externally linked/reconciled | spawn/resume paths exist; no canonical profile inspector or per-family policy | ✗ |
@@ -215,7 +221,8 @@ in the same change.
 |-----|------------------|--------------|----------|
 | Brief | CLI arg = prompt (positional) | `INSTRUCTION_ARG.claude` + `composeCommand` / `effectiveCmd` | code `loadConfig.ts` |
 | Bridge | `--mcp-config` (+ harness `--strict-mcp-config`) | `withRuntimeBridge` → `materializeBridgeMcp` | code + dogfood ongoing |
-| Attention | TUI pane + rate-limit strings | shared patterns + `RateLimitRuntime` + **composer** profile carrying the measured all-dim suggestion rule (`t-c5f29b`) | code `patterns.ts` / `runtimeProfile.claude` |
+| Attention | TUI pane + rate-limit strings | shared patterns + `RateLimitRuntime` + **composer** profile carrying the measured all-dim suggestion rule (`t-c5f29b`) and the measured history-echo rule (`t-6ffa13`) | code `patterns.ts` / `runtimeProfile.claude` |
+| Composer occupancy | live editor carries no background; a submitted message is echoed into the transcript with its glyph painted (`\x1b[48;5;237m❯ `) | `ansiHistoryEchoStyle: "prompt-background"` keeps `findComposerRegion` from selecting an echoed message as the editable region; `ansiEmptyContentStyle: "all-dim"` keeps a dim suggestion from counting as a draft | **✓** `t-6ffa13` units over `capture-pane -e` lines measured on 2.1.220 (2026-07-27), incl. a localized post-turn suggestion |
 | Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
@@ -309,13 +316,13 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 
 ### 3.3 Secondary runtimes
 
-| Runtime | Brief | Resume | Bridge | Harness | Activity | Native config | Notes |
-|---------|:-----:|:------:|:------:|:-------:|:--------:|:-------------:|-------|
-| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | ✗ | Thin overall |
-| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | ✗ | Thin overall |
-| Qwen | — | ✓ (`--continue` style) | — | — | — | ✗ | Thin |
-| Continue | — | ✓ (`--resume <id>`) | — | — | — | ✗ | Thin (not “no resume”) |
-| Hermes | ✓ (`HERMES_TUI_QUERY` + forced TUI) | ✓ adapter + live session follow (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` MCP) | ✓ (isolated MCP set; optional auth; hooks rejected) | ✓ (`state.db`, timestamp/model, bounded backfill) | ✗ | Operational inheritance exists, but canonical policy/inspector does not. Hardened seams: 2026-07-16 (`agentManager`, `harness`, `resume`, `hermesStorageReader`). No fork or permission reader. Detail: [`hermes.md`](./hermes.md). |
+| Runtime | Brief | Resume | Bridge | Harness | Activity | Native config | Ad-hoc Agent (17) | Notes |
+|---------|:-----:|:------:|:------:|:-------:|:--------:|:-------------:|:-----------------:|-------|
+| Gemini | ✓ (`-i`) | ✓ adapter | — | — | — | ✗ | ~ | Thin overall. Admitted ad-hoc, but with no Bridge it cannot answer the delegation it receives (`t-59f67c`) |
+| Antigravity | ✓ (`--prompt-interactive`) | ✓ (`--conversation` / `--continue`) | — | — | — | ✗ | ✗ | Thin overall. Never was an ad-hoc agent — absent from `KNOWN_AI_CLIS`, so the old inference already produced a Terminal |
+| Qwen | — | ✓ (`--continue` style) | — | — | — | ✗ | ~ | Thin. Admitted ad-hoc, but receives neither the brief nor a way to report (`t-59f67c`) |
+| Continue | — | ✓ (`--resume <id>`) | — | — | — | ✗ | ✗ | Thin (not “no resume”). Never was an ad-hoc agent, same reason as Antigravity |
+| Hermes | ✓ (`HERMES_TUI_QUERY` + forced TUI) | ✓ adapter + live session follow (`--resume`/`-c`) | ✓ (`HERMES_HOME` + `config.yaml` MCP) | ✓ (isolated MCP set; optional auth; hooks rejected) | ✓ (`state.db`, timestamp/model, bounded backfill) | ✗ | ✓ | Operational inheritance exists, but canonical policy/inspector does not. Hardened seams: 2026-07-16 (`agentManager`, `harness`, `resume`, `hermesStorageReader`). No fork or permission reader. Detail: [`hermes.md`](./hermes.md). |
 
 Promoting a secondary runtime means walking §2 with **native** measurements, then filling the summary table.
 
@@ -343,7 +350,7 @@ Anyone who is **not** a first-class matrix column (§3.1) and **not** a filled s
 
 | Bucket | Examples | How Tachyon classifies today |
 |--------|----------|------------------------------|
-| **A. Known basename, thin / no family adapters** | `aider`, `goose`, `amp`, `cursor-agent`, `copilot`, `verboo` (in `KNOWN_AI_CLIS` for kind inference) but **not** in `ResumeRuntime` / `RUNTIME_BY_BIN` | `inferKind` → **agent**; no resume/fork/Bridge family path |
+| **A. Known basename, thin / no family adapters** | `aider`, `goose`, `amp`, `cursor-agent`, `copilot`, `verboo` (in `KNOWN_AI_CLIS` as authoring suggestions) but **not** in `ResumeRuntime` / `RUNTIME_BY_BIN` | **`spawn_agent` refuses them** (SDD 478 M9): a quick-add chip is not evidence Tachyon can operate something, and they have no resume/brief/Bridge path. They run as Terminals via `spawn_terminal`. A human authoring by hand still sees `agent` PRE-SELECTED for them, and can override it |
 | **B. Renamed binary / path alias** | `~/bin/my-claude`, `claude-custom` if basename ≠ catalog | Basename-driven selection fails → treated as unknown CLI |
 | **C. Shell wrappers** | `bash -lc '…'`, custom scripts that hide the real binary | Opening-prompt + adapters **do not** unwrap; `openingPromptCapability` → `unsupported` |
 | **D. Package launchers** | `npx …`, `bunx …`, `pnpx …`, `env VAR=… cmd` | `resolveBinary` / `resolveRuntimeBinary` may recover a basename when the launcher shape is recognized; otherwise Outros |
@@ -356,7 +363,8 @@ Anyone who is **not** a first-class matrix column (§3.1) and **not** a filled s
 
 | Mechanism | Seam | Outros behavior |
 |-----------|------|-----------------|
-| Kind inference | `inferKind` / `KNOWN_AI_CLIS` | Basename in the list → default **agent** (attention on); else **terminal**. Explicit `kind:` wins. |
+| Kind **suggestion** (authoring only) | `suggestKindForCommand` / `KNOWN_AI_CLIS` | Basename in the list → **pre-selects** agent (attention on) for a human who can override it; else terminal. Explicit `kind:` wins. Since SDD 478 M4 this never decides a stored entity. |
+| Kind **admission** (entity creation) | `admitAdhocAgentCommand` / `SUPPORTED_ADHOC_AGENT_RUNTIMES` | `spawn_agent` admits only a declared runtime; every other command — including bucket A/B/C names — is refused and named to `spawn_terminal` (§3.6.1) |
 | Runtime id | `runtimeOf` / `RUNTIME_BY_BIN` | Unknown basename → `null` (no `ResumeRuntime`) |
 | Opening prompt / Soul | `runtimePromptAdapter`, `openingPromptCapability`, `composeCommand` | No adapter → instructions **stored but not delivered** (`composeCommand` returns bare `cmd`); Soul **fails closed** with a direct-command diagnostic |
 | Bridge | `AgentManager.withRuntimeBridge` | Only `claude` / `codex` / `opencode` / `grok` / `hermes` / `pi` (and harness fold) inject MCP/home. All other binaries: `{ wired: false }` — **no silent MCP** |
@@ -474,6 +482,68 @@ no path that answers on its own.
 
 Remedies for parented Grok ad-hoc today: `worktree: true`, gated delegation into a registered Tachyon worktree, or harness / non-parented top-level spawn. Code changes that reclassify isolation or bind `HOME` for ad-hoc belong in follow-up tasks — not silent gate weakening.
 
+#### 3.6.1 Which runtimes the ad-hoc door admits, and on what evidence
+
+**Purpose:** §3.6 above answers *how* an admitted ad-hoc child is isolated. This answers the prior
+question — *which commands may become one at all*, and which are Terminals. Before SDD 478 M9 the
+answer was inferred from the command string (`KNOWN_AI_CLIS` → agent, else terminal), so `spawn_agent`
+could hand a shell a task, a lineage, a brief and a worktree.
+
+**Capability of record:** `SUPPORTED_ADHOC_AGENT_RUNTIMES` in `src/agents/adhocAdmission.ts`. Verified
+2026-07-27 · task `t-8f3f7d`.
+
+**This is not canonical attestation, and the two must not be merged.** `ATTESTED_RUNTIMES` answers
+"may this back a canonical profile"; this list answers "can Tachyon hand this a delegation and get an
+answer back". Every attested runtime is in this list; the reverse is deliberately false. Using the
+canonical bar here would have removed OpenCode, Hermes, Gemini and Qwen as agents everywhere —
+`agents:` already admits only attested executables, so the ad-hoc path is their only door — orphaning
+measured resume adapters, private homes, activity readers, attention manifests and OpenCode's
+credential preflight. `test/unit/adhocAdmission.test.ts` asserts the relation in **both** directions,
+so the lists cannot quietly converge.
+
+**What each column is measured against:** *Resume* = an entry in `ADAPTERS` (`src/resume/adapters.ts`),
+so the child survives restart/resume as the same entity. *Brief* = a channel `instructionsDeliverable`
+recognizes, so the spec 246 contract can reach it. *Bridge* = a branch in
+`AgentManager.withRuntimeBridge`, so it can answer with `notify_agent` and the task tools; every other
+binary lands on `{ wired: false }` (§3.5.2).
+
+| Runtime | Canonical profile | Resume | Brief channel | Bridge | Ad-hoc Agent | Declared gap |
+|---|:---:|:---:|---|---|:---:|---|
+| Claude | ✓ | ✓ | startup argument | `--mcp-config` file | **✓ full** | — |
+| Codex | ✓ | ✓ | startup argument | `-c mcp_servers.tachyon_bridge` | **✓ full** | — |
+| Grok | ✓ | ✓ | startup argument | private `GROK_HOME` | **✓ full** | — |
+| Pi | ✓ | ✓ | startup argument | staged Pi Bridge extension | **✓ full** | — |
+| OpenCode | ✗ | ✓ | TUI prefill (`--prompt`) | `OPENCODE_CONFIG` | **✓ full** | — |
+| Hermes | ✗ | ✓ | `HERMES_TUI_QUERY` env | private `HERMES_HOME` | **✓ full** | — |
+| Gemini | ✗ | ✓ | startup argument (`-i`) | **none** | **~ partial** | receives the contract, cannot answer it — no `notify_agent`, no task tools (`t-59f67c`) |
+| Qwen | ✗ | ✓ | **none** | **none** | **~ partial** | receives neither the contract nor a way to report on it (`t-59f67c`) |
+| Antigravity, Continue | ✗ | ✓ | — | none | **✗ Terminal** | none — they were never ad-hoc agents (absent from `KNOWN_AI_CLIS`, so the old inference already produced Terminals) |
+| `aider`, `goose`, `amp`, `cursor-agent`, `copilot`, `verboo`, `agy` | ✗ | ✗ | — | none | **✗ Terminal** | none — authoring-catalog names with no adapter of any kind |
+| Everything else (`sh`, servers, builds, renamed binaries, wrappers) | ✗ | ✗ | — | none | **✗ Terminal** | — |
+
+Gemini and Qwen are admitted **on purpose**. Removing a working capability inside a boundary migration
+would be decision by negation; the shortfall is written into their capability entries and owned by a
+task instead. Read the `~` as "Tachyon will start it and hand it the delegation it can take, and the
+operator should not expect a completion signal".
+
+**The Terminal half is explicit, not a fallback.** `spawn_terminal` (Bridge) starts any command
+verbatim and has exactly three parameters — `name`, `cmd`, `cwd`. There is no parameter for a task, a
+lineage, a brief, a worktree or a delegation gate, so the agent-only capabilities of §3.1 are
+unrepresentable on it rather than validated away. A refusal from `spawn_agent` always names it.
+
+**Two doors are deliberately outside this rule**, because each has its own measured contract:
+`delivery_join` runs an unrecognized reviewer runtime with an advisory (SDD 368 T10), and pipeline
+inline `cmd:` nodes accept both kinds by design with nowhere in `pipelines:` to declare which
+(`t-c003e1`).
+
+**Evidence:** `test/unit/adhocAdmission.test.ts` (31 cases — admission, launcher resolution, refusal
+text, the declaration-vs-code agreement, and both directions of the attested relation); door cases in
+`test/unit/bridge.test.ts` and `test/unit/agentManager.test.ts`; and
+`npm run dogfood:adhoc-agent-boundary`, which drives the installed CLIs so the declaration cannot rot
+unnoticed — 13/13 on 2026-07-27 against claude 2.1.220, codex-cli 0.145.0, grok 0.2.112, pi 0.80.10,
+opencode 1.18.5 and Hermes 0.18.2. Gemini and Qwen were absent on that machine and are reported as
+skipped rather than passed, because absence is not evidence about a runtime.
+
 ---
 
 ## 4. How to update this document
@@ -537,6 +607,9 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-27 | **The ad-hoc door declares which runtimes may become Agents (`t-8f3f7d`, SDD 478 M9):** `spawn_agent` used to take any command and let `KNOWN_AI_CLIS` decide the outcome — a catalog name became an Agent, everything else became a Terminal — so the Bridge could hand a shell a task, a lineage, a brief and a worktree, and the tool named for agents could not guarantee it had produced one. Admission is now a declared capability (`SUPPORTED_ADHOC_AGENT_RUNTIMES`) matched against the RESOLVED executable, through the same launcher-aware parse the launch preflight uses: `env`/`npx`/absolute paths resolve, and shell composition is refused rather than guessed at, because a Terminal runs a command verbatim while an Agent's identity depends on which runtime actually starts. New capability row 17 and §3.6.1 record the per-runtime evidence: **full** ad-hoc support for claude/codex/grok/pi/opencode/hermes (resume + brief + Bridge), **partial** for gemini (no Bridge — it receives the delegation and cannot answer) and qwen (neither), both admitted deliberately with the gap owned by `t-59f67c` rather than removed by negation. The list is NOT `ATTESTED_RUNTIMES` and a test asserts both directions: the canonical bar would have deleted OpenCode, Hermes, Gemini and Qwen as agents everywhere, since `agents:` already admits only attested executables. The Terminal half is explicit — `spawn_terminal` takes `name`/`cmd`/`cwd` and has no parameter for a task, lineage, brief, worktree or gate, so agent capabilities are unrepresentable on it rather than validated away, and every refusal names it. Also corrected here: §3.5.1 bucket A and §3.5.2 no longer claim `inferKind` promotes `aider`/`goose`/`amp`/`cursor-agent`/`copilot`/`verboo` to agents — they are refused, and the surviving helper is an authoring suggestion a human can override. Evidence: `test/unit/adhocAdmission.test.ts` (31), door cases in `bridge.test.ts` and `agentManager.test.ts`, and `npm run dogfood:adhoc-agent-boundary` (13/13 against the installed CLIs; it found that `opencode --help` writes its usage to stderr and exits 0, so a stdout-only probe reported a flag missing that is still there). |
+| 2026-07-27 | **Tachyon's own notice was read back as a human draft (`t-6ffa13`):** reported as "the post-turn suggestion blocks notifications", and the measurement said otherwise. Captured on the live `claude-opus5` pane (Claude Code 2.1.220): the post-turn suggestion — including a LOCALIZED one, `\x1b[39m❯\u00a0\x1b[2mFinalize t-18f6a5 quando o full terminar; permaneça aberto.\x1b[0m` — already classified as EMPTY, as did the startup placeholder (which is dim per WORD, with `\x1b[0m` between them) and the empty composer in both the 16-colour and 256-colour themes. What occupied the composer was the runtime's echo of an ALREADY-SUBMITTED message: `\x1b[38;5;239m\x1b[48;5;237m❯ \x1b[38;5;231m[tachyon] task ... assigned to you\x1b[39m`. `findComposerRegion` picks the LAST `promptLine` match in the tail window, so whenever the echo was the last one, an already-sent message became the "editable region". The echo is normally TACHYON'S OWN notice, which makes it a loop Tachyon feeds itself: notify_agent submits → the runtime echoes → the echo reads as a draft → later notify_agent calls queue (`deliverNotice`) and write_input refuses (`refused-composer`) → the pane goes quiet, and occupancy only recomputes on content change, so it never recovers. Fix is region selection only: a new measured `ansiHistoryEchoStyle: "prompt-background"` excludes echoes from being chosen as the composer. The discriminator is ANSI, not text — the echo paints its glyph with a background colour and the live editor never carries one in any state. A first attempt keyed on the U+00A0 separator instead (the live composer uses it, the echo an ordinary space) and was rejected by the cross-runtime behaviour suite: it also swallowed an UNSTYLED `> existing draft`, which is the permissive direction. Keying on the background fails closed instead — a plain capture has no background to read, so the line keeps counting as the composer and injection is still refused. Declared for Claude only; a typed draft still blocks and the dim-suggestion rule is untouched. Evidence: `test/unit/claudeComposerHistoryEcho.test.ts` (11 tests on the captured bytes) with `claudeComposerSuggestion`/`composerDimTruecolor` green. |
+| 2026-07-27 | **OpenCode's silent fallback is closed at the launch boundary (`t-0338fc`, SDD 477):** OpenCode was row 16's only `✗` — with no credential it does not error, it answers on the fallback model `big-pickle`, so an agent could look perfectly healthy while running a model the operator never chose. Three candidate signals were measured on 1.18.5 before one was chosen, and two were rejected by measurement rather than by preference: `run --format json` emits `step_start`/`text`/`step_finish` with **no model field at all** (the effective model surfaces only in session storage, *after* the turn has run), and an explicit `-m` pin does **not** degrade — it fails outright, so the silent fallback is specific to the unpinned default path, which is exactly how Tachyon launches. The signal that works is the runtime's own credential store: `opencode providers list` reports `└  0 credentials` on an empty private home, lists each provider on a real one, and reports environment-provided keys as their own section — covering BOTH of OpenCode's authentication paths. `OpencodeLaunchPreflight` consumes it and refuses the launch, surfacing the same human sentence a transcript-detected signal produces (naming agent, runtime and the safe action, carrying only a count). Nothing was inferred from silence, latency or cost: `RUNTIME_AUTH_PROFILES` still declares no OpenCode matcher, because a credential-free turn genuinely looks like work. Row 16 moves `✗` → `~`, held there by two honest bounds: the probe proves a credential is **readable**, not valid, and it fires only before launch, so a mid-run expiry is still undetected. The gate fails **closed** on an unreadable probe — justified narrowly by measuring that the read is local (it works from a cold private home with the network black-holed, under a second), so a failure means a broken environment rather than a flaky network. Evidence: `npm run dogfood:auth-required-parity` (10/10 against the real CLIs, now driving the gate both ways — credential-free home refused, the operator's own home admitted) plus `test/unit/opencodeLaunchPreflight.test.ts` (21 tests on the captured bytes). |
 | 2026-07-27 | **The auth-required AGENT STATE, and the hold that goes with it (`t-5bfb72`, SDD 477 increment 3):** increment 2 stopped a LAUNCH that failed to authenticate; a live agent that lost its login mid-run was still read as ordinary idleness — the original incident. `AgentAttention.authRequired` now latches from the same declared matchers read against the running pane, and carries the measured evidence so every consumer names the runtime and the human action without re-deriving them. It is an independent latch, not a new attention state: the row still reads `idle`, and the badge is what tells "finished" apart from "cannot start another turn". The hold is both of Tachyon's automatic re-entry paths — the crash-restart policy is forced to `never` and rate-limit auto-continue is cancelled rather than scheduled — while assignment is left untouched, so the task simply stays where it was. Recovery needed no new API: the latch releases on the first genuine new-turn edge, which an unauthenticated runtime cannot produce, so a restart that works clears the hold and a restart into a still-broken login re-latches. Two limits are declared rather than papered over: the live read matches the wording a runtime writes into the TRANSCRIPT, not the interactive sign-in screens measured for Codex and Grok; and because no genuinely expired credential has been observed rendering live, the read is gated to the last 12 non-empty lines of a pane that has already gone quiet — enough that Claude's false-positive footer, and an agent merely READING these strings (this repository stores all of them verbatim), can never park anything. Evidence: `test/unit/attention.test.ts` (8 new tests incl. the working-agent-reading-the-fixtures case and the restart-suppression composition), `test/unit/authRequired.test.ts` (scrollback window), sidebar preview fixture `auth-required`. |
 | 2026-07-27 | **Auth-required detection implemented for the measured runtimes (`t-16cd93`, SDD 477 increment 2):** `src/runtime/authRequired.ts` declares a per-runtime matcher with the version it was measured on, and the launch boundary now attaches the human action to an authentication rejection — the agent's failure names the runtime and what to do, and states that Tachyon will not retry or restart it automatically. There is deliberately NO shared fallback regex: absence of a profile is a declaration, which is why OpenCode can never be reported auth-required. Two negative properties are pinned by tests because they are the ways this feature could do harm: Claude's bare TUI footer `Not logged in · Run /login` must NOT match (measured on a fully functional agent mid-task — matching it would park healthy agents), and rate limit, quota, permission, network and invalid-session failures are excluded before any matcher runs, so "stuck" never collapses into "log in again". Evidence: `npm run dogfood:auth-required-parity` (7/7 against the real CLIs, re-deriving every signal from credential-free homes and re-confirming OpenCode's silence) plus `test/unit/authRequired.test.ts` (24 tests). |
 | 2026-07-27 | **Authentication / loss-of-session measured across the fleet (`t-16cd93`, SDD 477):** an agent lost its provider login mid-run and Tachyon read it as ordinary idleness — a coordinator could keep assigning work and restarting forever. Capability row 16 and §3.7 now record, per runtime, the auth mechanism, the MEASURED unauthenticated signal, whether an official non-interactive refresh exists, the human action and the recovery path. Claude/Codex/Grok/Pi/Hermes all emit a usable signal (structured JSON for the first three); **OpenCode emits none** — it silently answers on the fallback model `big-pickle`, so an agent can look healthy while running a model nobody chose. Also measured and load-bearing: Claude's TUI footer `Not logged in · Run /login` appeared on a fully functional agent mid-task, so a pane detector keyed on it would park healthy agents — the trustworthy Claude signal is turn-attached. All six are `~` (measured, not yet consumed) pending the SDD 477 implementation. |
@@ -596,7 +669,7 @@ boundaries are worth stating plainly rather than leaving to be discovered:
 | Claude 2.1.220 | OAuth login → `.credentials.json` in `CLAUDE_CONFIG_DIR` (Tachyon symlinks it) | headless result `is_error: true`, `result: "Not logged in · Please run /login"` | none measured | `/login` in the runtime | explicit restart/retry after login |
 | Codex 0.145.0 | ChatGPT login / device code / API key → `auth.json` in `CODEX_HOME` | `{"type":"error"}` + `turn.failed`: `401 Unauthorized: Missing bearer or basic authentication in header`, after **5 automatic reconnects**; TUI renders a sign-in menu | device code and API key exist as CLI options | sign in, or provide an API key | explicit restart/retry |
 | Grok 0.2.112 | OAuth/device code → `auth.json` in `GROK_HOME` | `{"type":"error","message":"Not signed in. To authenticate without a browser, run: grok login --device-code …"}`; TUI shows the device-code approval screen | **yes** — `grok login --device-code`, or `XAI_API_KEY` | run the device-code flow | explicit restart/retry |
-| OpenCode 1.18.4 | `auth.json` under `XDG_DATA_HOME/opencode` | **NONE** — it answers normally on the fallback model `big-pickle` | n/a | re-seed auth | n/a |
+| OpenCode 1.18.5 | `auth.json` under `XDG_DATA_HOME/opencode`, **or** a provider key in the environment | **none in a turn** — it answers normally on the fallback model `big-pickle`. Measured instead from the credential store: `opencode providers list` → `└  0 credentials` (and no `Environment` section), consumed as a **launch refusal** (`t-0338fc`) | n/a | `opencode providers login`, or set a provider API key | re-launch after login |
 | Pi 0.80.10 | API key / OAuth via env or `/login` | `No API key found for the selected model.` + `Use /login to log into a provider via OAuth or API key.` | env-var API key | `/login`, or set the provider env var | explicit restart/retry |
 | Hermes 0.18.2 | provider key in `~/.hermes/.env` | `agent failed: No inference provider configured. Run 'hermes model' … or set an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, …)` | env-var/`.env` key | `hermes model`, or set a provider key | explicit restart/retry |
 
@@ -609,4 +682,17 @@ turn-attached — the runtime *answering* the login error.
 
 **OpenCode fails silently in the dangerous direction**: with no credential it does not error, it
 degrades to a fallback model and answers. An agent can therefore look healthy while running a model
-the operator did not choose. That is `✗` and a filed gap, not something to infer.
+the operator did not choose. Nothing about that was inferred away — `t-0338fc` re-measured it on
+1.18.5 and confirmed there is still nothing in a turn to match (`run --format json` carries no model
+field at all; the effective `big-pickle` surfaces only in session storage, *after* the turn). What
+changed is where the question is asked: the runtime's own credential store answers it *before* the
+launch, so the failure is refused at the boundary instead of being invisible afterwards. The mark is
+`~`, not `✓` — a credential expiring mid-run is still undetected for OpenCode.
+
+**Where the OpenCode gate deliberately fails closed.** An unreadable probe — timeout, non-zero exit,
+or output that is not the measured inventory shape — refuses the launch rather than assuming the
+credential is fine. That is the opposite of the rule everywhere else in this spec, and the reason is
+specific to this runtime: the probe was measured to be a *local* read (it works from a cold private
+home with the network black-holed, in under a second), so a failure means a broken environment, and
+the cost of guessing "probably fine" is precisely the invisible degradation the gate exists to stop.
+A refusal is loud, immediate and names the probe; the alternative failure is silent.

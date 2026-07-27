@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, suggestKindForCommand, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -47,19 +47,17 @@ import {
   isExplicitCodexModelCommand,
   parseLaunchCommand,
   RuntimeLaunchPreflightError,
-  RuntimeLaunchPreflightRegistry,
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
-import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
-import { ClaudeLaunchPreflight } from "../runtime/adapters/claudeLaunchPreflight.js";
-import { GrokLaunchPreflight } from "../runtime/adapters/grokLaunchPreflight.js";
+import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { AdhocAgentAdmissionError, admitAdhocAgentCommand } from "./adhocAdmission.js";
+import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
@@ -414,6 +412,13 @@ export type SpawnReveal = "reveal" | "preserve" | "silent";
 export interface SpawnOptions {
   /** present = ad-hoc agent (not declared in tachyon.yml) */
   cmd?: string;
+  /**
+   * SDD 478 M9 — what the caller is asking to create. Required alongside `cmd`, because the manager
+   * no longer infers it: which entity an ad-hoc command produces is a decision belonging to the door
+   * that took the request, and this manager serves several. An `agent` request is admitted only for
+   * an attested runtime (`admitAdhocAgentCommand`); a `terminal` request has no agent fields to carry.
+   */
+  kind?: EntryKind;
   cwd?: string;
   /** role prompt for ad-hoc agents — delivered via composeCommand like declared ones */
   instructions?: string;
@@ -900,13 +905,7 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
-    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({
-      codex: new CodexLaunchPreflight(),
-      claude: new ClaudeLaunchPreflight(),
-      // t-85c586 — grok ships a bounded catalog command AND refuses anything outside it, so a pin
-      // is authoritatively checkable rather than merely provisional.
-      grok: new GrokLaunchPreflight(),
-    });
+    this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 
@@ -955,6 +954,15 @@ export class AgentManager {
       ...env,
       TACHYON_AGENT_NAME: name,
     }, cwd);
+    // SDD 477 / t-0338fc — an unauthenticated runtime is a HUMAN's problem, surfaced with the same
+    // sentence a transcript-detected one gets, so the launch boundary names the agent, the runtime and
+    // the safe action rather than a bare code. Refused unconditionally: this is the one case where
+    // letting the launch through produces a healthy-looking agent answering on a model nobody chose.
+    if (result.state === "unauthenticated") {
+      const evidence = authRequiredFromPreflight(result.runtime, result.reportedLine);
+      if (evidence) this.opts.notify?.(describeAuthRequired(name, evidence), "warn");
+      throw new RuntimeLaunchPreflightError(result);
+    }
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
     if (result.state === "unverifiable" && parsed.model && failClosedUnverifiable) throw new RuntimeLaunchPreflightError(result);
   }
@@ -1917,9 +1925,25 @@ export class AgentManager {
       };
       // SDD 478 M2 — an ad-hoc entry is built on ONE arm, so a generic command cannot carry
       // `instructions` or a worktree request: both are Agent capabilities, and until now this door
-      // handed them to whatever it spawned. Which entity an ad-hoc spawn may produce at all is M9;
-      // this only stops the Terminal arm from being handed capabilities it has no field for.
-      def = suggestKindForCommand(opts.cmd) === "agent"
+      // handed them to whatever it spawned.
+      //
+      // M9 — and the arm is now DECLARED by the caller rather than inferred here from the command
+      // string. This manager serves several doors; each knows what it was asked for, and only the
+      // door can produce the refusal that names the alternative. An `agent` request is still checked
+      // against the attested set here, because that is the invariant, not the door's discretion.
+      //
+      // An omitted kind means `agent`, which is the STRICT arm: a caller that forgot to say gets a
+      // refusal naming the Terminal operation, never a Terminal silently holding agent capabilities.
+      //
+      // A canonical Delivery execution is a different door: it arrives with an immutable Delivery, an
+      // owned subset and an expected HEAD, and SDD 368 T10 measured that an unrecognized reviewer
+      // runtime is run with an advisory rather than refused. That policy is not M9's to withdraw.
+      const requested = opts.kind ?? "agent";
+      if (requested === "agent" && !opts.deliveryJoin && !forced?.attempt) {
+        const admission = admitAdhocAgentCommand(opts.cmd);
+        if (!admission.ok) throw new AdhocAgentAdmissionError(admission.reason);
+      }
+      def = requested === "agent"
         ? {
           ...base,
           kind: "agent",

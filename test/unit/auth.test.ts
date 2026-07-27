@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(73); // SDD 443 adds continue_task; spec 444 adds worktree_hygiene.
+      expect(tools.length).toBe(74); // SDD 443 adds continue_task; spec 444 adds worktree_hygiene; SDD 478 M9 adds spawn_terminal.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(73); // SDD 443 adds continue_task; spec 444 adds worktree_hygiene.
+      expect((await client.listTools()).tools.length).toBe(74); // SDD 443 adds continue_task; spec 444 adds worktree_hygiene; SDD 478 M9 adds spawn_terminal.
       await client.close();
     } finally {
       await bridge.dispose();

@@ -34,11 +34,11 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     vm: {
       ...base,
       agents: [
-        { name: "feature-auth", status: "running", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, ai: true,
+        { name: "feature-auth", status: "running", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, kind: "agent",
           evidence: { total: 3, stale: 0, warn: 1, error: 0 } },
-        { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, ai: true,
+        { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, kind: "agent",
           evidence: { total: 2, stale: 2, warn: 0, error: 0 } },
-        { name: "migration", status: "running", worktree: "tachyon/migration", verify: "fail", verifiable: true, ai: true,
+        { name: "migration", status: "running", worktree: "tachyon/migration", verify: "fail", verifiable: true, kind: "agent",
           evidence: { total: 5, stale: 1, warn: 2, error: 1 } },
       ],
     } as FleetVM,
@@ -52,10 +52,10 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     vm: {
       ...base,
       agents: [
-        { name: "sonnet-worker", model: "Sonnet 5", status: "idle", ai: true },
-        { name: "claude-held", model: "Opus 5", status: "idle", ai: true,
+        { name: "sonnet-worker", model: "Sonnet 5", status: "idle", kind: "agent" },
+        { name: "claude-held", model: "Opus 5", status: "idle", kind: "agent",
           authRequired: { runtime: "claude", action: "run /login in the Claude runtime, then restart the agent explicitly" } },
-        { name: "grok-held", model: "grok-4", status: "idle", ai: true, worktree: "tachyon/grok-held",
+        { name: "grok-held", model: "grok-4", status: "idle", kind: "agent", worktree: "tachyon/grok-held",
           authRequired: { runtime: "grok", action: "run `grok login --device-code`, or set XAI_API_KEY, then restart the agent explicitly" } },
       ],
     } as FleetVM,
@@ -63,7 +63,7 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
 
   error: {
     provenance: "synthetic-edge",
-    vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, ai: true }] } as FleetVM,
+    vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, kind: "agent" }] } as FleetVM,
   },
 
   "declared-owner": {
@@ -71,16 +71,52 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     vm: {
       ...base,
       agents: [
-        { name: "claude", model: "Opus 4.8", status: "idle", ai: true },
-        { name: "codex", model: "GPT-5.1 Codex", status: "running", ai: true },
-        { name: "reviewer", model: "Sonnet 5", status: "running", declaredOwner: "claude", ai: true },
-        { name: "runtime-reviewer", model: "Sonnet 5", status: "running", parent: "codex", declaredOwner: "claude", ai: true },
-        { name: "gated-reviewer", model: "GPT-5.1 Codex", status: "running", delegator: "codex", worktree: "tachyon/gated-reviewer", verify: "stale", verifiable: true, ai: true },
-        { name: "orphan-owned", status: "stopped", declaredOwner: "missing-owner", ai: true },
+        { name: "claude", model: "Opus 4.8", status: "idle", kind: "agent" },
+        { name: "codex", model: "GPT-5.1 Codex", status: "running", kind: "agent" },
+        { name: "reviewer", model: "Sonnet 5", status: "running", declaredOwner: "claude", kind: "agent" },
+        { name: "runtime-reviewer", model: "Sonnet 5", status: "running", parent: "codex", declaredOwner: "claude", kind: "agent" },
+        { name: "gated-reviewer", model: "GPT-5.1 Codex", status: "running", delegator: "codex", worktree: "tachyon/gated-reviewer", verify: "stale", verifiable: true, kind: "agent" },
+        { name: "orphan-owned", status: "stopped", declaredOwner: "missing-owner", kind: "agent" },
       ],
     } as FleetVM,
   },
 
+  // t-fde5b6 — the scroll proof: far more attention than the panel's max-height can show. The panel
+  // must stay the same height and scroll internally, never grow or push the rest of the sidebar.
+  "attention-burst": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: SAMPLE.agents,
+      notices: Array.from({ length: 24 }, (_, index) => ({
+        id: `attention-burst-${index + 1}`,
+        message: `Burst attention ${index + 1} — emitted straight into the list`,
+        level: (["info", "warn", "error"] as const)[index % 3]!,
+        at: new Date(Date.UTC(2026, 6, 27, 18, index)).toISOString(),
+        collapsedCount: 1,
+        actions: [],
+        read: false,
+        actionsLive: false,
+      })),
+    },
+  },
+  "attention-single": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: SAMPLE.agents,
+      notices: [{
+        id: "attention-single-1",
+        message: "codex needs a decision on the release boundary",
+        level: "info" as const,
+        at: new Date(Date.UTC(2026, 6, 27, 18, 0)).toISOString(),
+        collapsedCount: 1,
+        actions: [],
+        read: false,
+        actionsLive: false,
+      }],
+    },
+  },
   "attention-overflow": {
     provenance: "synthetic-edge",
     vm: {
@@ -95,7 +131,7 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
           "grok proposed a schedule change for approval",
           "The persistent engine recovered a wedged tmux server",
           "A worktree action requires manual inspection",
-          "Queued item promoted after one of the cards is resolved",
+          "A seventh item now lands in the list as it is emitted",
         ][index]!,
         level: (["info", "info", "error", "warn", "warn", "error", "info"] as const)[index]!,
         at: new Date(Date.UTC(2026, 6, 19, 20, index)).toISOString(),

@@ -3,11 +3,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { TASK_PRIORITIES, type ArtifactRef, type TaskPriority } from "../tasks/types.js";
 import {
+  isValidationActorKind,
   isValidationExecutor,
   isValidationOutcome,
   isValidationStatus,
   VALIDATION_ID_RE,
   type Validation,
+  type ValidationActor,
   type ValidationCloseInput,
   type ValidationCreateInput,
   type ValidationRound,
@@ -94,6 +96,7 @@ export class ValidationStore {
       assertExpect(current, input.expect);
       const next = applyUpdate(current, input);
       assertTransition(current, next);
+      assertAgentMayNotClaimHumanWork(current, next, input.actor);
       if (JSON.stringify(stripRuntime(input)) === "{}") throw new Error("update_validation requires at least one field");
       if (JSON.stringify(current) === JSON.stringify(next)) throw new Error("update_validation requires at least one changed field");
       this.writeExistingValidation(next);
@@ -106,6 +109,7 @@ export class ValidationStore {
     return this.withMutation(async () => {
       const current = this.get(id);
       assertExpect(current, input.expect);
+      assertActorMayClose(current, input.actor);
       if (current.status === "closed") throw new Error("validation is already closed; reopen it before recording another round");
       if (!isValidationOutcome(input.outcome)) throw new Error(`invalid validation outcome '${String(input.outcome)}'`);
       const evidence = input.evidence_refs ? normalizeArtifactRefs("evidence_refs", input.evidence_refs, 20) : [];
@@ -120,6 +124,7 @@ export class ValidationStore {
         outcome: input.outcome,
         ...(evidence.length ? { evidence_refs: evidence } : {}),
         ...(note ? { result_note: boundedString(note, "result_note", 4000) } : {}),
+        closedBy: normalizeActor(input.actor),
       };
       const next: Validation = { ...current, status: "closed", rounds: [...current.rounds, round], updatedAt: now };
       this.writeExistingValidation(next);
@@ -227,6 +232,7 @@ function normalizeRounds(input: unknown): ValidationRound[] | null {
       ...(row.outcome ? { outcome: row.outcome } : {}),
       ...(evidence.length ? { evidence_refs: evidence } : {}),
       ...(typeof row.result_note === "string" ? optionalStringField("result_note", row.result_note, 4000) : {}),
+      ...(isValidationActorKind((row.closedBy as ValidationActor | undefined)?.kind) ? { closedBy: normalizeActor(row.closedBy as ValidationActor) } : {}),
     });
   }
   return out;
@@ -264,6 +270,37 @@ function applyUpdate(current: Validation, input: ValidationUpdateInput): Validat
   }
   if (next.status === "pending") delete next.assignee;
   return next;
+}
+
+/**
+ * t-98256c — `executor: "human"` is a reservation, not a hint. `next_validation` already refuses to
+ * HAND human-only work to an agent; without this, an agent could still close that work itself and
+ * the "human-owned pending validation" the queue promises would be provable by nobody.
+ *
+ * Only the agent arm is refused. A human, master, legacy or external caller is not the fleet — the
+ * risk this closes is an agent attesting to a check a human was supposed to perform, and refusing
+ * the human's own tooling would break the very queue this protects.
+ */
+function assertActorMayClose(validation: Validation, actor: ValidationActor): void {
+  if (validation.executor !== "human" || actor.kind !== "agent") return;
+  throw new Error(
+    `validation '${validation.id}' is reserved for a human (executor: human) — an agent cannot close it. ` +
+    "A human closes it in Control → Validations, or hands it to the fleet by setting executor to 'agent' or 'either' first.",
+  );
+}
+
+/** The same reservation, guarding its obvious bypass: an agent handing human-only work to itself. */
+function assertAgentMayNotClaimHumanWork(current: Validation, next: Validation, actor: ValidationActor): void {
+  if (current.executor !== "human" || actor.kind !== "agent" || next.executor === "human") return;
+  throw new Error(
+    `validation '${current.id}' is reserved for a human (executor: human) — an agent cannot change its executor. ` +
+    "Only a human can hand it to the fleet.",
+  );
+}
+
+function normalizeActor(actor: ValidationActor): ValidationActor {
+  if (!actor || !isValidationActorKind(actor.kind)) throw new Error(`invalid validation actor kind '${String(actor?.kind)}'`);
+  return { kind: actor.kind, ...(actor.name ? { name: boundedString(actor.name, "actor.name", 64) } : {}) };
 }
 
 function assertExpect(validation: Validation, expect?: ValidationUpdateExpect): void {

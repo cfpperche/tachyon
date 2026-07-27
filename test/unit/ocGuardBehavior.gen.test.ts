@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../../src/agents/AgentManager.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
@@ -39,6 +40,7 @@ describe("container-generated delegation behavior", () => {
       getConfig: () => config,
       getMaxAgents: () => 8,
       ledger,
+      launchPreflight: hermeticLaunchPreflight(),
       resolveSpawnCwd: async (ctx) => {
         expect(ctx.parent).toBe("boss");
         expect(asAgent(ctx.def)?.worktree).toBe(true);

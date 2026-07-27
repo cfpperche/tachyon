@@ -1,4 +1,4 @@
-import type { AgentVM } from "./types";
+import { isAgentRow, type AgentVM } from "./types";
 
 /**
  * spec 237 — the pure capability/action matrix (no vscode, no preact). Mirrors the tree's `when`-clause
@@ -46,7 +46,7 @@ const isRunning = (a: AgentVM) =>
   a.status === "running" || a.status === "needs" || a.status === "throttled" || a.status === "done" || a.status === "idle" || a.status === "stop-failed";
 /** Activity is a durable, per-agent history. It does not require a live tmux pane; a stopped AI row may still
  *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
-const canViewActivity = (a: AgentVM) => !!a.ai;
+const canViewActivity = (a: AgentVM) => isAgentRow(a);
 /** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
  *  row has no pane. Clean-exit postmortems are deliberately not user-facing terminals: the next meaningful
  *  actions are Activity, Resume, or Restart, not reopening a dead pane. */
@@ -55,8 +55,8 @@ const isCleanExit = (a: AgentVM) => a.status === "stopped" && !!a.exited;
 const isCleanExitPostmortem = (a: AgentVM) => isCleanExit(a) && hasPane(a);
 const canRestart = (_a: AgentVM) => true;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
- *  clean-exit) when resumable. Terminals (ai:false) have no transcript, so never resume. */
-const canResume = (a: AgentVM) => !!a.resumable && !!a.ai && (a.status === "stopped" || a.status === "crashed");
+ *  clean-exit) when resumable. Terminals have no transcript, so they never resume. */
+const canResume = (a: AgentVM) => !!a.resumable && isAgentRow(a) && (a.status === "stopped" || a.status === "crashed");
 
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
@@ -78,7 +78,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (a.forkable) out.push("fork");
   if (a.verifiable) out.push("verify");
   // spec 381 — injectPrompt joins reanchor/reinject as mid-session operator ops on live AI panes
-  if (isRunning(a) && a.ai) out.push("reanchor", "reinjectContinuity", "injectPrompt");
+  if (isRunning(a) && isAgentRow(a)) out.push("reanchor", "reinjectContinuity", "injectPrompt");
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
   if (!a.adhoc) out.push("edit", "editYaml", "clone");

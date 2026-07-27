@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { EDITOR_HUMAN_ACTOR as HUMAN } from "../../src/validations/types.js";
 
 const fresh = (): string => fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-validation-store-"));
 
@@ -31,7 +32,7 @@ describe("ValidationStore", () => {
     const root = fresh();
     const store = new ValidationStore(root);
     const v = await store.create({ title: "Install smoke", author: "human", executor: "human" });
-    await expect(store.update(v.id, { status: "triaged", expect: { updatedAt: "stale" } })).rejects.toThrow("precondition-failed");
+    await expect(store.update(v.id, { actor: HUMAN, status: "triaged", expect: { updatedAt: "stale" } })).rejects.toThrow("precondition-failed");
 
     fs.mkdirSync(path.join(root, ".tachyon", "validations"), { recursive: true });
     fs.writeFileSync(path.join(root, ".tachyon", "validations", "v-ffffff.json"), "{ nope", "utf8");
@@ -48,13 +49,13 @@ describe("ValidationStore", () => {
     const store = new ValidationStore(fresh());
     const triaged = await store.create({ title: "Dogfood Activity filters", author: "human", executor: "human", assignee: "human" });
 
-    await expect(store.closeRound(triaged.id, { outcome: "failed", expect: { updatedAt: triaged.updatedAt } })).rejects.toThrow("requires evidence_refs or result_note");
-    const failed = await store.closeRound(triaged.id, { outcome: "failed", result_note: "Filter menu overlaps on narrow panel." });
+    await expect(store.closeRound(triaged.id, { actor: HUMAN, outcome: "failed", expect: { updatedAt: triaged.updatedAt } })).rejects.toThrow("requires evidence_refs or result_note");
+    const failed = await store.closeRound(triaged.id, { actor: HUMAN, outcome: "failed", result_note: "Filter menu overlaps on narrow panel." });
     expect(failed).toMatchObject({ status: "closed", rounds: [{ n: 1, outcome: "failed", result_note: "Filter menu overlaps on narrow panel." }] });
-    await expect(store.closeRound(triaged.id, { outcome: "failed", result_note: "second close without reopen" })).rejects.toThrow("already closed");
+    await expect(store.closeRound(triaged.id, { actor: HUMAN, outcome: "failed", result_note: "second close without reopen" })).rejects.toThrow("already closed");
 
-    const rerun = await store.update(triaged.id, { status: "triaged", assignee: "human", expect: { updatedAt: failed.updatedAt } });
-    const passed = await store.closeRound(triaged.id, { outcome: "passed", evidence_refs: [{ type: "screenshot", ref: "/tmp/activity-pass.png" }], expect: { updatedAt: rerun.updatedAt } });
+    const rerun = await store.update(triaged.id, { actor: HUMAN, status: "triaged", assignee: "human", expect: { updatedAt: failed.updatedAt } });
+    const passed = await store.closeRound(triaged.id, { actor: HUMAN, outcome: "passed", evidence_refs: [{ type: "screenshot", ref: "/tmp/activity-pass.png" }], expect: { updatedAt: rerun.updatedAt } });
     expect(passed.rounds.map((r) => r.outcome)).toEqual(["failed", "passed"]);
     expect(passed.rounds[0].result_note).toContain("overlaps");
   });

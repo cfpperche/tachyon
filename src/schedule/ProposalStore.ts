@@ -15,7 +15,11 @@ import type { ScheduleDef } from "../config/loadConfig.js";
 export interface ScheduleProposal {
   id: string;
   name: string;
-  /** self-declared author (agent name) */
+  /**
+   * Who proposed it. t-fbefec — over the Bridge this is the RESOLVED caller (the agent's own name,
+   * or `(kind)` for a non-agent caller), never self-declared and never the placeholder "agent" every
+   * proposal used to carry: the human reads this when authorizing the tachyon.yml write.
+   */
   by: string;
   /** why the agent wants it — shown to the human */
   reason?: string;

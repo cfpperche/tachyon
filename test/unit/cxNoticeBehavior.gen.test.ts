@@ -145,7 +145,7 @@ describe("container-generated delegation behavior", () => {
   it("a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
 
     forceStateOf(ws, "parent", "working");
@@ -154,7 +154,7 @@ describe("container-generated delegation behavior", () => {
     expect(sent.has(parentSession)).toBe(false);
 
     await ws.manager.kill("cwdProbe");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
 
     forceStateOf(ws, "parent", "idle");
     await recoverOnIdleOf(ws)("parent", false);
@@ -175,7 +175,7 @@ describe("container-generated delegation behavior", () => {
   it("t-572cef: a live child whose incarnation entry is missing (modeling a reload survivor) still has its poke delivered", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
 
     // Model what rehydrateFromLedger leaves for a session that survived a reload: the child is
@@ -198,7 +198,7 @@ describe("container-generated delegation behavior", () => {
   it("t-572cef: a text-identical notify_agent relay is not absorbed into a child poke's dedup slot and survives the child's death", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
     const duplicateLine = "[tachyon] child 'cwdProbe' is waiting for input: duplicate text";
 
@@ -213,7 +213,7 @@ describe("container-generated delegation behavior", () => {
     // stale and must drop, but the relay (never tagged with cwdProbe's incarnation) must not have been
     // merged into it, so it still gets delivered.
     await ws.manager.kill("cwdProbe");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
 
     forceStateOf(ws, "parent", "idle");
     await recoverOnIdleOf(ws)("parent", false);

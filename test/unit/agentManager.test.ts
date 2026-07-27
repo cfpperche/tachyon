@@ -8,6 +8,7 @@ import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableEr
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { asAgent, parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -30,6 +31,9 @@ import type { AgentVM } from "../../src/sidebar/types.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+
+/** t-0338fc — see the helper: opencode's adapter executes the runtime, so it is stubbed here. */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
 function canonicalSpawnReceipt(worktree: { path: string; branch: string }, head = "head") {
   return {
@@ -275,6 +279,7 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
       ? { home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }
       : null,
     materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
+    launchPreflight: HERMETIC_PREFLIGHT,
   });
   return { manager, sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
@@ -454,7 +459,7 @@ describe("AgentManager", () => {
   it("rejects spawning an unknown agent without an ad-hoc cmd, accepts with one", async () => {
     const { manager, sessions } = makeManager("agents:\n  a:\n    cmd: x\n");
     await expect(manager.spawn("ghost")).rejects.toThrow("unknown agent");
-    await manager.spawn("ghost", { cmd: "echo hi" });
+    await manager.spawn("ghost", { cmd: "claude" });
     expect(sessions.has(`tachyon-${HASH}-ghost`)).toBe(true);
   });
 
@@ -1102,7 +1107,7 @@ describe("AgentManager", () => {
   it("lists declared + running + ad-hoc agents merged", async () => {
     const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\n");
     await manager.spawn("a");
-    await manager.spawn("extra", { cmd: "sleep 1" });
+    await manager.spawn("extra", { cmd: "sleep 1", kind: "terminal" });
     const list = await manager.list();
     expect(list.map((i) => [i.name, i.running, i.declared])).toEqual([
       ["a", true, true],
@@ -1149,7 +1154,7 @@ describe("AgentManager", () => {
   it("lineage: parent recorded, exposed in list, promoted on parent death, cleared on child kill", async () => {
     const { manager } = makeManager("agents:\n  orchestrator:\n    cmd: claude\n");
     await manager.spawn("orchestrator");
-    await manager.spawn("worker", { cmd: "sh", parent: "orchestrator" });
+    await manager.spawn("worker", { cmd: "opencode", parent: "orchestrator" });
     let worker = (await manager.list()).find((a) => a.name === "worker");
     expect(worker?.parent).toBe("orchestrator");
     expect(manager.parentOf("worker")).toBe("orchestrator"); // spec 332 — the death-poke wiring's lookup
@@ -1222,7 +1227,7 @@ describe("AgentManager", () => {
   });
 
   it("non-AI child silently drops undeliverable guidance (sh has no instruction arg)", async () => {
-    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "w", { cmd: "sh", parent: "a" });
+    const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "w", { cmd: "sh", kind: "terminal" });
     expect(cmd).toBe("sh"); // sh has no instruction arg at all — nowhere for a primer to go either
   });
 
@@ -1699,9 +1704,10 @@ describe("AgentManager", () => {
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
       getMaxAgents: () => 8,
       onSpawned: (n, r) => reveals.push([n, r]),
+      launchPreflight: HERMETIC_PREFLIGHT,
     });
     await manager.spawn("a"); // human/declared → a start is the reason a surface should exist
-    await manager.spawn("child", { cmd: "sh", parent: "a", reveal: false }); // Bridge child
+    await manager.spawn("child", { cmd: "opencode", parent: "a", reveal: false }); // Bridge child
     expect(reveals).toEqual([
       ["a", "reveal"],
       ["child", "silent"],
@@ -1963,7 +1969,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       confirmDeliveryJoin: opts.confirmDeliveryJoin,
       failDeliveryJoin: opts.failDeliveryJoin,
       isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
-      launchPreflight: opts.launchPreflight,
+      launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
@@ -3764,13 +3770,13 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("persists the spawn contract + skip reason on the ledger def and survives reload (spec 246 D8/D6)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
     const contract = { task: "add retry to upload", context: "client.ts times out on flaky nets", constraints: "no new deps", deliverable: "a unit test proving backoff" };
-    // the manager records opts.contract unconditionally (the Bridge owns the gate); a terminal cmd keeps adapters out of this test.
-    await manager.spawn("helper", { cmd: "echo hi", parent: "main", contract });
+    // the manager records opts.contract unconditionally (the Bridge owns the gate).
+    await manager.spawn("helper", { cmd: "opencode", parent: "main", contract });
     expect(ledger.get("helper")?.def?.contract).toEqual(contract);
     // reload: a fresh ledger over the same dir re-parses the persisted def (parseDef whitelist preserves it)
     expect(new SessionLedger(ws).get("helper")?.def?.contract).toEqual(contract);
 
-    await manager.spawn("skipper", { cmd: "echo hi", parent: "main", contractSkipReason: "trivial throwaway probe" });
+    await manager.spawn("skipper", { cmd: "opencode", parent: "main", contractSkipReason: "trivial throwaway probe" });
     expect(ledger.get("skipper")?.def?.contractSkipReason).toBe("trivial throwaway probe");
     expect(new SessionLedger(ws).get("skipper")?.def?.contractSkipReason).toBe("trivial throwaway probe");
   });
@@ -3785,7 +3791,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("kill of an ad-hoc agent deletes its durable activity log (pin p-4dadd3 dogfood follow-up: kill→remove path)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
-    await manager.spawn("oneshot", { cmd: "echo hi", parent: "main" }); // ad-hoc → gets a session + ledger row
+    await manager.spawn("oneshot", { cmd: "opencode", parent: "main" }); // ad-hoc → gets a session + ledger row
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("oneshot")}.jsonl`);
@@ -3814,7 +3820,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("removeEphemeralFootprint routes through canonical forgetAgent cleanup, idempotently (spec 247)", async () => {
     const removedHomes: string[] = [];
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", { removeHarnessHome: (name) => removedHomes.push(name) });
-    await manager.spawn("eph", { cmd: "echo hi", parent: "main" }); // ad-hoc → ledger row
+    await manager.spawn("eph", { cmd: "opencode", parent: "main" }); // ad-hoc → ledger row
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("eph")}.jsonl`);
@@ -5841,7 +5847,7 @@ describe("live rename (agent/terminal, running or not)", () => {
   it("children pointing at the renamed parent follow (lineage)", async () => {
     const { manager } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
-    await manager.spawn("worker", { cmd: "sh", parent: "claude" });
+    await manager.spawn("worker", { cmd: "opencode", parent: "claude" });
     await manager.rename("claude", "ace");
     const worker = (await manager.list()).find((a) => a.name === "worker");
     expect(worker?.parent).toBe("ace");
@@ -5849,7 +5855,7 @@ describe("live rename (agent/terminal, running or not)", () => {
 
   it("an ad-hoc agent keeps its definition across rename (restart still works)", async () => {
     const { manager, sessions } = makeManager("agents:\n  decoy:\n    cmd: x\n");
-    await manager.spawn("ghost", { cmd: "echo hi" });
+    await manager.spawn("ghost", { cmd: "claude" });
     await manager.rename("ghost", "spirit");
     await manager.restart("spirit", { stop: "force", session: "new" }); // needs the moved ad-hoc definition
     expect(sessions.has(`tachyon-${HASH}-spirit`)).toBe(true);
@@ -5915,6 +5921,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       ledger,
       // Production always wires canonical Delivery storage; most unit cases do not inspect it.
       recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
+      launchPreflight: HERMETIC_PREFLIGHT,
       ...extra,
     });
     dirs.push(ws);
@@ -5926,11 +5933,75 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
     // t-85c586 moved grok OUT of this case (it has an authoritative adapter now), so the property is
     // asserted on a runtime that still has none — the point was never grok, it was "no catalog".
+    // t-0338fc gave opencode an adapter, but a CREDENTIAL one: it deliberately still answers the model
+    // question with `unverifiable`, so a pin fails closed here exactly as it did before it existed.
     await expect(h.manager.spawn("oc-child", { cmd: "opencode --model some-model" })).rejects.toMatchObject({
       code: "runtime_preflight_unverifiable",
     });
     expect(h.sessions.size).toBe(0);
     expect(h.ledger.get("oc-child")).toBeUndefined();
+  });
+
+  it("t-8f3f7d refuses a generic ad-hoc AGENT at the manager, not only at the Bridge", async () => {
+    // Defence in depth: the Bridge produces the friendly refusal, but the manager serves several doors
+    // and the invariant is the manager's, not any one door's discretion.
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+    await expect(h.manager.spawn("shelly", { cmd: "sh", kind: "agent" })).rejects.toMatchObject({
+      code: "adhoc_agent_runtime_unsupported",
+    });
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("shelly")).toBeUndefined();
+  });
+
+  it("t-8f3f7d treats an omitted kind as the STRICT arm, so a forgetful caller never gets a silent terminal", async () => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+    await expect(h.manager.spawn("forgot", { cmd: "npm run dev" })).rejects.toMatchObject({
+      code: "adhoc_agent_runtime_unsupported",
+    });
+    expect(h.sessions.size).toBe(0);
+  });
+
+  it("t-8f3f7d builds a declared terminal on the Terminal arm, with no agent capability to hand it", async () => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+    await h.manager.spawn("devserver", { cmd: "npm run dev", kind: "terminal" });
+    expect(h.manager.kindOf("devserver")).toBe("terminal");
+    const def = h.manager.defOf("devserver")!;
+    expect(def.kind).toBe("terminal");
+    // asAgent is the ONLY way to reach an agent-only field, and it refuses this arm outright.
+    expect(asAgent(def)).toBeUndefined();
+  });
+
+  it("t-8f3f7d reads an ad-hoc entry's kind back on restart instead of recomputing it", async () => {
+    // The M4 property, now exercised through the M9 door: a stored terminal stays a terminal across a
+    // relaunch even though its command would never be admitted as an agent.
+    const h = harness("agents:\n  boss:\n    cmd: claude\n");
+    await h.manager.spawn("devserver", { cmd: "npm run dev", kind: "terminal" });
+    await h.manager.restart("devserver", { stop: "force", session: "new" });
+    expect(h.manager.kindOf("devserver")).toBe("terminal");
+    expect(h.sessions.has(h.manager.session("devserver"))).toBe(true);
+  });
+
+  it("t-0338fc refuses an opencode launch whose credential store is empty, and tells the human why", async () => {
+    // The measured hazard: without this gate the spawn SUCCEEDS and the agent answers on `big-pickle`,
+    // so the failure everyone sees is not a failure at all. Refused with no model pinned — the silent
+    // fallback is specific to the unpinned default path, which is how Tachyon launches opencode.
+    const notices: Array<{ text: string; level?: string }> = [];
+    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
+      notify: (text, level) => { notices.push({ text, ...(level ? { level } : {}) }); },
+      launchPreflight: hermeticLaunchPreflight("┌  Credentials /p/auth.json\n│\n└  0 credentials\n"),
+    });
+
+    await expect(h.manager.spawn("oc-child", { cmd: "opencode" })).rejects.toMatchObject({
+      code: "runtime_auth_unavailable",
+    });
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("oc-child")).toBeUndefined();
+    expect(notices).toEqual([{
+      text: "agent 'oc-child' cannot run: the opencode runtime reports it is not authenticated"
+        + " — run `opencode providers login` (or set a provider API key in the agent's environment), then launch the agent again."
+        + " Tachyon will not retry or restart it automatically.",
+      level: "warn",
+    }]);
   });
 
   it("t-85c586 admits a grok pin the catalog lists and refuses one it does not", async () => {
@@ -6148,7 +6219,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const other = path.join(ws, "other");
     fs.mkdirSync(other, { recursive: true });
     await expect(
-      manager.spawn("kid", { cmd: "sh", parent: "boss", cwd: other }),
+      manager.spawn("kid", { cmd: "opencode", parent: "boss", cwd: other }),
     ).rejects.toThrow(/cwd is not used for parented ad-hoc|inherit the parent's cwd/i);
   });
 
@@ -6778,7 +6849,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     });
 
     const failure = await manager.spawn("reviewer", {
-      cmd: "sh",
+      cmd: "claude",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
       gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
@@ -6843,7 +6914,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     });
 
     const failure = await manager.spawn("reviewer", {
-      cmd: "sh",
+      cmd: "claude",
       delegator: "boss",
       contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
       gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
@@ -7112,7 +7183,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
 
   it("dismissAdhoc revokes the token too (idempotent if kill already revoked it)", async () => {
     const { manager, registry } = registryBackedManager("agents:\n  a:\n    cmd: x\n");
-    await manager.spawn("a", { cmd: "sh -c true" });
+    await manager.spawn("a", { cmd: "claude" });
     await manager.kill("a");
     expect(() => manager.dismissAdhoc("a")).not.toThrow();
     expect(registry.isLive("a", SCOPE)).toBe(false);
@@ -7374,7 +7445,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
 
   it("kill of an AD-HOC one-shot removes its durable transcript too (kill IS the forget for ad-hoc — spec 247 parity, not a new gap)", async () => {
     const { manager, ws } = pipeTranscriptHarness("agents:\n  decoy:\n    cmd: x\n");
-    await manager.spawn("oneshot", { cmd: "sh" });
+    await manager.spawn("oneshot", { cmd: "claude" });
     expect(paneTranscriptExists(ws, "oneshot")).toBe(true);
     await manager.kill("oneshot");
     expect(paneTranscriptExists(ws, "oneshot")).toBe(false);

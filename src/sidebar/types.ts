@@ -4,6 +4,7 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
+import type { EntryKind } from "../config/loadConfig.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
@@ -96,13 +97,28 @@ export interface AgentVM {
   authRequired?: { runtime: string; action: string };
   /** t-8354ae — row is shown while tachyon.yml is invalid (ledger and/or LKG). */
   configInvalid?: boolean;
+  /**
+   * SDD 478 M5 — the managed-entry arm this row renders, carried straight through from the config
+   * union. It replaces `ai?: boolean`, which was a SECOND, independent encoding of the same
+   * distinction: optional, so its absence meant "agent" to the model/focus code and "terminal" to
+   * the action gate, and settable without the union ever agreeing.
+   */
+  kind: EntryKind;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
-  ai?: boolean; // an AI agent (vs a terminal/process)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
   forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
   canDismiss?: boolean; // legacy capability bit: stopped ad-hoc postmortem row is removable without tachyon.yml edits
 }
+/**
+ * SDD 478 M5 — the sidebar's one narrowing, mirroring `asAgent` in the config layer. Rows are not a
+ * discriminated union of shapes (every row renders from the same fields), so this reads the arm
+ * rather than granting one; what matters is that there is exactly ONE place that asks.
+ */
+export function isAgentRow(row: Pick<AgentVM, "kind">): boolean {
+  return row.kind === "agent";
+}
+
 export type RunState = "idle" | "running" | "paused" | "failed";
 export interface PipelineNodeVM {
   id: string;
@@ -175,7 +191,7 @@ export interface FleetVM {
   bridge: BridgeVM;
   agents: AgentVM[];
   proposals?: ProposalVM[];
-  /** Terminals are managed entries with ai:false — same row model + reduced action set. */
+  /** Terminals are managed entries on the `kind: "terminal"` arm — same row model, reduced actions. */
   terminals: AgentVM[];
   pipelines: PipelineVM[];
   schedules: ScheduleVM[];
@@ -234,19 +250,19 @@ export const SAMPLE: FleetVM = {
   handoff: { exists: true, staleness: "needs_distill", pendingCount: 3 },
   bridge: { port: "42551", connected: true },
   agents: [
-    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, ai: true },
-    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, ai: true, adhoc: true },
-    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, verify: "pass", verifiable: true, forked: true, forkable: true, ai: true },
-    { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", ai: true },
-    { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", ai: true },
-    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, ai: true },
-    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", verify: "fail", verifiable: true, ai: true },
-    { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", ai: true, adhoc: true },
-    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", verifiable: true, ai: true },
+    { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, kind: "agent" },
+    { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, kind: "agent", adhoc: true },
+    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, verify: "pass", verifiable: true, forked: true, forkable: true, kind: "agent" },
+    { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
+    { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
+    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, kind: "agent" },
+    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", verify: "fail", verifiable: true, kind: "agent" },
+    { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent", adhoc: true },
+    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", verifiable: true, kind: "agent" },
   ],
   terminals: [
-    { name: "dev", status: "running", sub: "npm run dev" },
-    { name: "shell", status: "idle", sub: "bash" },
+    { name: "dev", kind: "terminal", status: "running", sub: "npm run dev" },
+    { name: "shell", kind: "terminal", status: "idle", sub: "bash" },
   ],
   pipelines: [
     { name: "feature", status: "running", nodes: [

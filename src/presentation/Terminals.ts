@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import * as vscode from "vscode";
+import type { EntryKind } from "../config/loadConfig.js";
 import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "../tmux/TmuxService.js";
 import type {
   TerminalManifestStore,
@@ -9,13 +10,20 @@ import type {
 
 export type { TerminalManifestStore, TerminalRestoreEntry } from "../workspace/TerminalPresentation.js";
 
+/**
+ * SDD 478 M5 — one icon per arm of the managed-entry union, exhaustively. A `Record<EntryKind, …>`
+ * means a new arm fails to compile here instead of silently inheriting the robot, which is what the
+ * old `kind === "terminal" ? … : "hubot"` ternary did.
+ */
+const ENTRY_ICON: Record<EntryKind, string> = { agent: "hubot", terminal: "terminal" };
+
 /** The editor-tab icon for an opened session, by what it IS. ThemeIcons tint themselves with the tab
  *  foreground (active/inactive), unlike a custom SVG — so each kind reads clearly: an AI agent shows a
  *  robot, a terminal shows a terminal, a one-shot command a play glyph, a runbook an ordered list. */
-function sessionIcon(agent: string, kind: "agent" | "terminal"): vscode.ThemeIcon {
+function sessionIcon(agent: string, kind: EntryKind): vscode.ThemeIcon {
   if (agent.startsWith("cmd:")) return new vscode.ThemeIcon("play");
   if (agent.startsWith("rb:")) return new vscode.ThemeIcon("list-ordered");
-  return new vscode.ThemeIcon(kind === "terminal" ? "terminal" : "hubot");
+  return new vscode.ThemeIcon(ENTRY_ICON[kind]);
 }
 
 /**

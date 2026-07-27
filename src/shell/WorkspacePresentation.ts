@@ -141,7 +141,7 @@ export function pluginFleetPresentation(
         name: agent.name,
         status: pluginAgentStatus(agent.running, agent.attention, agent.unseen),
         ...(agent.attention ? { attention: agent.attention } : {}),
-        ai: true,
+        kind: "agent",
         adhoc: !agent.declared,
       })),
     terminals: [],

@@ -5,6 +5,24 @@ export type RuntimeLaunchPreflight =
   | { state: "supported"; runtime: string; model?: string; source: string }
   | { state: "provisional"; runtime: string; model: string; source: "runtime-startup-readiness" }
   | { state: "unsupported"; code: "runtime_model_unavailable"; runtime: string; model: string; suggestions: string[] }
+  /**
+   * SDD 477 / `t-0338fc` — the runtime's own credential store says it holds nothing to authenticate
+   * with. This is a separate axis from model availability: the launch is refused because the runtime
+   * would otherwise run *unauthenticated*, not because a requested model is missing.
+   *
+   * Only a runtime whose credential store was MEASURED to answer this question may produce it.
+   * Silence, a non-zero exit, latency and cost are never this state (SDD 477 forbids inferring auth
+   * from any of them) — the store has to positively report an empty inventory.
+   */
+  | {
+    state: "unauthenticated";
+    code: "runtime_auth_unavailable";
+    runtime: string;
+    humanAction: string;
+    /** The store's own summary line, so the refusal cites what was read rather than asserting it. */
+    reportedLine: string;
+    source: string;
+  }
   | { state: "unverifiable"; code: "runtime_preflight_unverifiable"; runtime?: string; reason: string }
   | { state: "failed"; code: "runtime_preflight_failed"; runtime?: string; reason: string };
 
@@ -128,19 +146,28 @@ function bunxCommandIndex(tokens: string[], start: number): number | undefined {
 }
 
 export class RuntimeLaunchPreflightError extends Error {
-  readonly code: "runtime_model_unavailable" | "runtime_preflight_failed" | "runtime_preflight_unverifiable";
+  readonly code: "runtime_model_unavailable" | "runtime_auth_unavailable" | "runtime_preflight_failed" | "runtime_preflight_unverifiable";
   readonly model?: string;
   readonly suggestions: string[];
+  /**
+   * SDD 477 — present only for `runtime_auth_unavailable`: what a human must do, in the runtime's own
+   * terms. Never credential material — the probe's inventory is a count, and no path, token or file
+   * content is carried here.
+   */
+  readonly humanAction?: string;
 
-  constructor(result: Extract<RuntimeLaunchPreflight, { state: "unsupported" | "failed" | "unverifiable" }>) {
+  constructor(result: Extract<RuntimeLaunchPreflight, { state: "unsupported" | "unauthenticated" | "failed" | "unverifiable" }>) {
     const detail = result.state === "unsupported"
       ? `model '${result.model}' is unavailable${result.suggestions.length ? `; available close matches: ${result.suggestions.join(", ")}` : ""}`
-      : result.reason;
+      : result.state === "unauthenticated"
+        ? `the ${result.runtime} runtime holds no readable credential — ${result.humanAction}`
+        : result.reason;
     super(`${result.code}: ${detail}`);
     this.name = "RuntimeLaunchPreflightError";
     this.code = result.code;
     this.model = result.state === "unsupported" ? result.model : undefined;
     this.suggestions = result.state === "unsupported" ? result.suggestions : [];
+    if (result.state === "unauthenticated") this.humanAction = result.humanAction;
   }
 }
 

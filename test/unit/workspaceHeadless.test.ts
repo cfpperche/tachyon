@@ -1726,7 +1726,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     );
     try {
       const receipt = await ws.manager.spawn("command-gate", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "preserve behavior",
@@ -1781,7 +1781,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     vi.spyOn(ws.worktrees, "headState").mockResolvedValueOnce({ headRef: "", dirty: false });
     try {
       await expect(ws.manager.spawn("rollback-gate", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "prepare safely",
@@ -1899,7 +1899,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     );
     try {
       await expect(ws.manager.spawn("unconfigured", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "preserve behavior",
@@ -1947,7 +1947,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     );
     try {
       await expect(ws.manager.spawn("oversized-gate", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "reject oversized verifier",
@@ -1960,7 +1960,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       })).rejects.toThrow(/at most 2048 UTF-8 bytes/);
 
       await expect(ws.manager.spawn("control-gate", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "reject terminal injection",
@@ -1973,7 +1973,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       })).rejects.toThrow(/behavior_test must not contain control characters/);
 
       await expect(ws.manager.spawn("control-owns", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "reject terminal injection",
@@ -2017,7 +2017,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
     try {
       const failure = await ws.manager.spawn("missingoracle", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract: {
           task: "should fail at oracle bind",
@@ -2069,7 +2069,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     try {
       const contract = { task: "fill generated behavior", context: "stub fixture", constraints: "stay scoped", doneWhen: "generated stub passes" };
       const receipt = await ws.manager.spawn("stubber", {
-        cmd: "sh",
+        cmd: "claude",
         delegator: "boss",
         contract,
         gate: { behaviorTest: "generated behavior stays canonical", owns: ["src"] },
@@ -2624,7 +2624,7 @@ describe("Workspace — death-poke wiring (spec 332)", () => {
   it("does not poke for terminal children", async () => {
     const { ws, dead, sent } = await makeWorkspace();
     await ws.manager.spawn("b");
-    await ws.manager.spawn("server", { cmd: "npm run dev", parent: "b" });
+    await ws.manager.spawn("server", { cmd: "npm run dev", kind: "terminal" });
     const childSession = ws.manager.session("server");
     const parentSession = ws.manager.session("b");
     dead.set(childSession, 0);
@@ -2782,7 +2782,7 @@ describe("Workspace — needs-input parent poke (t-8605be)", () => {
   it("pokes the live parent with the child's matched prompt line when it enters needs-input", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("b"); // the parent, running
-    await ws.manager.spawn("child1", { cmd: "sh", parent: "b" });
+    await ws.manager.spawn("child1", { cmd: "opencode", parent: "b" });
     const parentSession = ws.manager.session("b");
     pokeOf(ws)("child1", "1) yes  2) no");
     await flush();
@@ -2793,7 +2793,7 @@ describe("Workspace — needs-input parent poke (t-8605be)", () => {
   it("falls back to a generic line when no matched prompt text is available", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("b");
-    await ws.manager.spawn("child2", { cmd: "sh", parent: "b" });
+    await ws.manager.spawn("child2", { cmd: "opencode", parent: "b" });
     const parentSession = ws.manager.session("b");
     pokeOf(ws)("child2", undefined);
     await flush();
@@ -2813,7 +2813,7 @@ describe("Workspace — needs-input parent poke (t-8605be)", () => {
   it("queues (via deliverNotice, per 341) rather than typing into a busy parent", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("b");
-    await ws.manager.spawn("child3", { cmd: "sh", parent: "b" });
+    await ws.manager.spawn("child3", { cmd: "opencode", parent: "b" });
     const parentSession = ws.manager.session("b");
     const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
     (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>

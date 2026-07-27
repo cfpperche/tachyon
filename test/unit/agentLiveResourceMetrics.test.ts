@@ -10,7 +10,7 @@ describe("spec 386 — agent live resource metrics", () => {
   it("maps resources onto AgentVM", () => {
     const vm = toAgentVM(
       { name: "codex", running: true, dead: false, crashed: false },
-      { resources: { cpuPct: 42.2, memMb: 512 }, ai: true },
+      { resources: { cpuPct: 42.2, memMb: 512 }, kind: "agent" },
     );
     expect(vm.resources).toEqual({ cpuPct: 42.2, memMb: 512 });
   });

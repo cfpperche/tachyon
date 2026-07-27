@@ -165,7 +165,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
 
     // the SAME fact drives the sidebar row.
     const observed = service.observedModelFor(root, "ws", "worker");
-    const vm = toAgentVM(agentRaw("worker", "codex"), { ai: true, model: observed });
+    const vm = toAgentVM(agentRaw("worker", "codex"), { kind: "agent", model: observed });
     expect(vm).toMatchObject({ model: "GPT-5.6 Sol", modelSource: "observed", modelDivergence: true });
   });
 
@@ -241,7 +241,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
 
   it("AgentVM keeps model:string and gains additive modelSource/modelObservedAt/modelStale/modelDivergence siblings", () => {
     const vm = toAgentVM(agentRaw("worker", "codex"), {
-      ai: true,
+      kind: "agent",
       model: { id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: true },
     });
     expect(typeof vm.model).toBe("string");
