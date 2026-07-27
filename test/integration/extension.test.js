@@ -3,13 +3,21 @@ const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const vscode = require("vscode");
 
+/**
+ * t-05097f — the gate talks to the tmux server the EXTENSION is using, not the shared default.
+ * `.vscode-test.mjs` gives each run a unique `TACHYON_TMUX_SOCKET`; hardcoding `-L tachyon` here
+ * pointed these helpers at the fleet's server instead, which is how a "Stop All" scenario came to
+ * list real running agents and how sessions leaked between runs.
+ */
+const TMUX_SOCKET = process.env.TACHYON_TMUX_SOCKET || "tachyon";
+
 function workspaceHash(p) {
   return crypto.createHash("sha256").update(p).digest("hex").slice(0, 8);
 }
 
 function tachyonSessions() {
   try {
-    return execFileSync("tmux", ["-L", "tachyon", "list-sessions", "-F", "#{session_name}"], {
+    return execFileSync("tmux", ["-L", TMUX_SOCKET, "list-sessions", "-F", "#{session_name}"], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -157,7 +165,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const session = `tachyon-${wsHash}-survivor`;
     const created = execFileSync(
       "tmux",
-      ["-L", "tachyon", "display-message", "-p", "-t", `=${session}:`, "#{session_created}"],
+      ["-L", TMUX_SOCKET, "display-message", "-p", "-t", `=${session}:`, "#{session_created}"],
       { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
     assert.strictEqual(created, expected, "survivor was restarted (creation time changed) or killed");
@@ -172,7 +180,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const session = `tachyon-${wsHash}-echoer`;
     const createdOf = () => {
       try {
-        return execFileSync("tmux", ["-L", "tachyon", "display-message", "-p", "-t", `=${session}:`, "#{session_created}"], {
+        return execFileSync("tmux", ["-L", TMUX_SOCKET, "display-message", "-p", "-t", `=${session}:`, "#{session_created}"], {
           encoding: "utf8",
           stdio: ["pipe", "pipe", "pipe"],
         }).trim();
@@ -209,10 +217,10 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(alive, "prompter terminal not running");
     execFileSync(
       "tmux",
-      ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "printf 'Do you want to continue? [y/n] '"],
+      ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "printf 'Do you want to continue? [y/n] '"],
       { stdio: "pipe" },
     );
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
 
     // Real poller (3s) + pattern-stability gate (2.5s) — give it up to 30s.
     let state;
@@ -227,8 +235,8 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(/\[y\/n\]/i.test(state.matchedLine || ""), "matched line should carry the prompt");
 
     // Answering resets the episode back to working.
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "y"], { stdio: "pipe" });
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "y"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
     let reset = false;
     for (let i = 0; i < 30 && !reset; i++) {
       await sleep(500);
@@ -241,8 +249,8 @@ describe("Tachyon extension (VSCode host smoke)", () => {
   it("a crash is exposed with its exit code; the dead pane survives for postmortem (spec 190)", async function () {
     this.timeout(45000);
     const session = `tachyon-${wsHash}-prompter`; // terminal, restart: never (default)
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 3"], { stdio: "pipe" });
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "exit 3"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
 
     let info;
     for (let i = 0; i < 60; i++) {
@@ -267,8 +275,8 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       alive = tachyonSessions().includes(session);
     }
     assert.ok(alive, "flaky terminal not running before the crash test");
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 5"], { stdio: "pipe" });
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "-l", "--", "exit 5"], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
 
     // poller (3s) + backoff (2s) — the agent must come back on its own
     let back = false;

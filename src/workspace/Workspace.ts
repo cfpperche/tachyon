@@ -5612,14 +5612,21 @@ export class Workspace {
 
     // Fresh autostart for declared agents not already present (resumed ones now are).
     const pending = await this.manager.autostartPending();
+    // t-05097f — count what actually STARTED, not what we intended to start. The summary below used
+    // `pending.length`, so it reported "3 started" whether three sessions were born or none were,
+    // which is precisely how a gate run could claim success while emitting no `new-session` at all.
+    let started = 0;
+    const autostartFailures: string[] = [];
     for (const agent of pending) {
       try {
         await this.manager.spawn(agent);
+        started += 1;
       } catch (err) {
         // Benign race with resume/re-entry/rebind: session can be live before spawn runs.
         // Same swallow as autostartNewlyDeclared — do not toast "already running" as a failure.
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes("already running")) {
+          autostartFailures.push(agent);
           this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, msg), "error");
         }
       }
@@ -5630,7 +5637,12 @@ export class Workspace {
     const parts: string[] = [];
     if (surviving.length > 0) parts.push(this.t("{0} re-discovered", surviving.length));
     if (resumed > 0) parts.push(this.t("{0} resumed with context", resumed));
-    if (pending.length > 0) parts.push(this.t("{0} started", pending.length));
+    if (started > 0) parts.push(this.t("{0} started", started));
+    // A failed autostart is stated in the same summary, so the shortfall is visible where the count
+    // is read — the per-agent error above only reaches whoever is watching notifications live.
+    if (autostartFailures.length > 0) {
+      parts.push(this.t("{0} failed to start ({1})", autostartFailures.length, autostartFailures.join(", ")));
+    }
     if (parts.length > 0) this.host.notify(parts.join(", "));
     if (this.resumable.length > 0) this.offerResume();
   }
