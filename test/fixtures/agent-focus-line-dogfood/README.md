@@ -1,5 +1,12 @@
 # agent-focus-line dogfood (spec 390)
 
+> **Create the agents first (SDD 478).** This fixture declares no agents. An `agents:` entry is a
+> pointer to a canonical profile, and the authority that attests it is custodied by the host (VS Code
+> secret storage), so no checked-in fixture can ship one. After arming the Dev Host, create the rows
+> below with **Tachyon: Agent Studio**, then continue.
+
+> Create `grok`, `solo` and `idle` (all grok, autostart off). `helper` stays ad-hoc.
+
 ## Seeded focus sources
 
 | Agent | Expected focus | Source |
