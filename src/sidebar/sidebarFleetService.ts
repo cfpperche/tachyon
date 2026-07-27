@@ -24,6 +24,10 @@ import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
 import type { WorktreeManager } from "../worktree/WorktreeManager.js";
 import type { ResourceSampler } from "../attention/resourceSample.js";
+import { truncateByCodePoint } from "../bridge/notifyAgent.js";
+
+/** Display-only cap for a notice row; the inbox keeps the whole line. */
+const NOTICE_MESSAGE_RENDER_CAP = 240;
 
 export interface SidebarFleetSource {
   workspaceRoot: string;
@@ -307,7 +311,10 @@ export async function buildSidebarFleet(
   }));
   const notices = (source.listNoticeInbox?.() ?? []).slice(0, 50).map((n) => ({
     id: n.id,
-    message: n.message.length > 240 ? `${n.message.slice(0, 239)}…` : n.message,
+    // t-b15872 — by CODE POINT: `slice` counts UTF-16 units, so a cut landing inside a surrogate
+    // pair rendered a lone surrogate. The full line is kept in the notice inbox either way, so this
+    // is display-only shortening; the marker says how much is not shown.
+    message: truncateByCodePoint(n.message, NOTICE_MESSAGE_RENDER_CAP, "— open the notice for the rest"),
     level: n.level,
     at: n.at,
     collapsedCount: n.collapsedCount,
