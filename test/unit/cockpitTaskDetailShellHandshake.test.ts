@@ -56,6 +56,9 @@ function fakeWorkspace(opts: { hash?: string; name?: string } = {}) {
   } as unknown as Workspace;
 }
 
+/** The fake Workspace's root, which the cast above hides from the type. */
+const alphaRoot = (ws: Workspace): string => (ws as unknown as { workspaceRoot: string }).workspaceRoot;
+
 function depsFor(...all: Workspace[]) {
   const missionBoard: CockpitMissionBoard = {
     getWorkspaces: () => all.map((w) => legacyMissionControlTarget(w)),
@@ -135,5 +138,92 @@ describe("t-2f6cdd: a Control panel opened straight onto task-detail still compl
     expect(task?.vm?.id).toBe(target.id);
     expect(task?.vm?.task?.title).toBe("beta needs a human");
     expect(task?.vm?.tombstone).toBe(false);
+  });
+
+  it("picks the root by wsHash even when the SAME task id exists in another root", async () => {
+    // The sharpest multi-root question: is the root chosen by the route's wsHash, or does something
+    // upstream match on task id alone / fall back to the first folder? With the id present in both
+    // roots those two behaviours are indistinguishable in every other test — here they are not.
+    //
+    // This one PASSES with the defect restored too, on purpose: root selection was never what broke,
+    // and a case that holds in both states is what proves the fix did not quietly become the thing
+    // keeping it green. The other five in this file all fail without the fix.
+    const alpha = fakeWorkspace({ hash: "ws-alpha", name: "Alpha" });
+    const beta = fakeWorkspace({ hash: "ws-beta", name: "Beta" });
+    const target = await beta.taskStore.create({ title: "the one the human clicked", author: "human" });
+    // same id, different content, in the OTHER root — written directly because ids are store-minted.
+    const impostorDir = path.join(alphaRoot(alpha), ".tachyon", "tasks");
+    fs.mkdirSync(impostorDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(impostorDir, `${target.id}.json`),
+      JSON.stringify({
+        id: target.id,
+        title: "a stranger's task with the same id",
+        status: "inbox",
+        author: "human",
+        createdAt: "2026-07-27T00:00:00.000Z",
+        updatedAt: "2026-07-27T00:00:00.000Z",
+      }),
+    );
+
+    await openCockpit(depsFor(alpha, beta), { route: { kind: "task-detail", wsHash: beta.wsHash, taskId: target.id } });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    const task = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "task") as
+      | { vm?: { wsHash?: string; task?: { title?: string } } }
+      | undefined;
+    expect(task?.vm?.wsHash).toBe("ws-beta");
+    expect(task?.vm?.task?.title).toBe("the one the human clicked");
+    expect(task?.vm?.task?.title).not.toBe("a stranger's task with the same id");
+  });
+
+  it("keeps resolving the same root when the webview re-READYs (reload)", async () => {
+    // A reloaded webview replays the handshake. Before the fix that second READY was swallowed too,
+    // which is why reloading a blank Control never recovered it; it must now re-init AND land on the
+    // same root, not drift to the first folder on the way back.
+    const alpha = fakeWorkspace({ hash: "ws-alpha", name: "Alpha" });
+    const beta = fakeWorkspace({ hash: "ws-beta", name: "Beta" });
+    await alpha.taskStore.create({ title: "alpha's own task", author: "human" });
+    const target = await beta.taskStore.create({ title: "beta needs a human", author: "human" });
+
+    await openCockpit(depsFor(alpha, beta), { route: { kind: "task-detail", wsHash: beta.wsHash, taskId: target.id } });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    const inits = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "init");
+    expect(inits.length).toBe(2);
+    const tasks = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "task") as Array<{
+      vm?: { wsHash?: string; task?: { title?: string } };
+    }>;
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    for (const t of tasks) {
+      expect(t.vm?.wsHash).toBe("ws-beta");
+      expect(t.vm?.task?.title).toBe("beta needs a human");
+    }
+  });
+
+  it("shows a visible tombstone, never a blank shell, when the route names a root that is gone", async () => {
+    // A stale Attention card can name a folder that has since been closed. The contract is that this
+    // fails VISIBLY with a way out — the detail's tombstone — and that the shell still initialises,
+    // because a shell that never initialises is the blank tab this task is about.
+    const alpha = fakeWorkspace({ hash: "ws-alpha", name: "Alpha" });
+    const orphan = await alpha.taskStore.create({ title: "raised by a folder no longer open", author: "human" });
+
+    await openCockpit(depsFor(alpha), { route: { kind: "task-detail", wsHash: "ws-closed", taskId: orphan.id } });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    const init = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "init");
+    expect(init, `no init posted; got ${JSON.stringify(postedTypes())}`).toBeDefined();
+
+    const task = __createdPanels[0].webview.posted.find((m) => (m as { type?: string }).type === "task") as
+      | { vm?: { wsHash?: string; id?: string; tombstone?: boolean } }
+      | undefined;
+    expect(task?.vm?.tombstone).toBe(true);
+    expect(task?.vm?.wsHash).toBe("ws-closed");
+    expect(task?.vm?.id).toBe(orphan.id);
   });
 });
