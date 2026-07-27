@@ -19,6 +19,7 @@ import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { validationSummary, type ValidationStore } from "../validations/ValidationStore.js";
 import { nextValidation } from "../validations/nextValidation.js";
 import { discoverValidationCandidates } from "../validations/discovery.js";
+import type { ValidationActor } from "../validations/types.js";
 import type { Waiters, WaitCondition } from "./Waiters.js";
 import {
   waitForOutput,
@@ -632,6 +633,12 @@ type ToolResult = {
 
 function ok(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
+}
+
+/** t-98256c — the validation actor is the Bridge-resolved caller, never a tool field (spec 351). */
+function validationActor(deps: Pick<BridgeDeps, "caller">): ValidationActor {
+  const caller = deps.caller ?? { kind: "legacy" as const };
+  return caller.kind === "agent" && caller.name ? { kind: "agent", name: caller.name } : { kind: caller.kind };
 }
 
 function gitDeliveryActor(deps: Pick<BridgeDeps, "caller">): GitDeliveryActor {
@@ -4019,7 +4026,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Patch a Validation. Use expect:{assignee:null} when claiming an unassigned validation returned by " +
-        "next_validation; precondition failures are structured errors and mean you must re-query.",
+        "next_validation; precondition failures are structured errors and mean you must re-query. An agent cannot " +
+        "change the executor of a validation reserved for a human ('human') — only a human hands that work to the fleet.",
       inputSchema: {
         id: VALIDATION_ID,
         title: z.string().min(1).max(300).optional(),
@@ -4040,7 +4048,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (changedFields.length === 0) {
           throw new Error("update_validation requires at least one field");
         }
-        const validation = await deps.validations.update(id, patch);
+        const validation = await deps.validations.update(id, { ...patch, actor: validationActor(deps) });
         deps.onValidationsChanged?.();
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {
@@ -4090,7 +4098,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Close the current Validation round with an outcome. Must include result_note or evidence_refs; Tachyon " +
-        "stores failed/skipped rounds so a later rerun can add a new round instead of erasing history.",
+        "stores failed/skipped rounds so a later rerun can add a new round instead of erasing history. A validation " +
+        "with executor 'human' is reserved: an agent cannot close it, and cannot hand it to itself by changing the " +
+        "executor either — ask the human to close it in Control → Validations. The round records who closed it, " +
+        "resolved by the Bridge from your token rather than from anything you can declare.",
       inputSchema: {
         id: VALIDATION_ID,
         outcome: VALIDATION_OUTCOME,
@@ -4102,7 +4113,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ id, outcome, result_note, evidence_refs, assignee, expect }) => {
       try {
-        const validation = await deps.validations.closeRound(id, { outcome, result_note, evidence_refs, assignee, expect });
+        const validation = await deps.validations.closeRound(id, { actor: validationActor(deps), outcome, result_note, evidence_refs, assignee, expect });
         deps.onValidationsChanged?.();
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {

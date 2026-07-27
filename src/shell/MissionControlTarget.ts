@@ -4,7 +4,7 @@ import type { ReorderLaneInput, TaskStore } from "../tasks/TaskStore.js";
 import type { TaskPriority, TaskStatus } from "../tasks/types.js";
 import { missionControlBoardSnapshot } from "../runtime-api/missionControlProjection.js";
 import type { MissionControlTaskPatchV1 } from "../runtime-api/missionControlCommands.js";
-import type { Validation, ValidationCloseInput, ValidationUpdateExpect } from "../validations/types.js";
+import { EDITOR_HUMAN_ACTOR, type Validation, type ValidationCloseInput, type ValidationUpdateExpect } from "../validations/types.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
@@ -51,9 +51,10 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     }),
     updateTask: async (id, patch) => { await source.taskStore.update(id, patch); },
     reorderLane: async (status, priority, input) => { await source.taskStore.reorderLane(status, priority, input); },
-    closeValidation: async (id, input) => { await source.validationStore.closeRound(id, input); },
+    // t-98256c — the in-process shell path is the human in the editor, same as the engine command.
+    closeValidation: async (id, input) => { await source.validationStore.closeRound(id, { ...input, actor: EDITOR_HUMAN_ACTOR }); },
     listValidations: () => source.validationStore.list(),
-    assignValidation: async (id, assignee, expect) => { await source.validationStore.update(id, { assignee, ...(expect ? { expect } : {}) }); },
+    assignValidation: async (id, assignee, expect) => { await source.validationStore.update(id, { actor: EDITOR_HUMAN_ACTOR, assignee, ...(expect ? { expect } : {}) }); },
   };
 }
 
