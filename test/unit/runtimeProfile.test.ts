@@ -16,13 +16,15 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     });
     expect(profile?.canonicalLimitations).toEqual([]);
     // t-c5f29b re-measured this composer on Claude Code 2.1.220 and added the all-dim suggestion
-    // rule, so the verification date moves with the measurement instead of staying at 2026-07-19.
+    // rule; t-6ffa13 re-measured it again and added the history-echo rule. The verification date
+    // moves with the measurement instead of staying at 2026-07-19.
     expect(profile?.composer).toMatchObject({
       tailLines: 8,
       ansiEmptyContentStyle: "all-dim",
+      ansiHistoryEchoStyle: "prompt-background",
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-26",
+      verifiedAt: "2026-07-27",
     });
     expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
     expect(profile?.gracefulStop?.steps).toEqual([

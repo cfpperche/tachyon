@@ -33,6 +33,21 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   /** Runtime-specific line shape inside the editable region that means the human has a draft. */
   occupiedLine: RegExp;
   /**
+   * Runtime-specific ANSI style that marks a prompt-glyph line as an ALREADY-SUBMITTED message the
+   * runtime echoed back into its transcript. Such a line matches `promptLine`, but it is HISTORY
+   * rather than the editable region, and history can never be a human draft.
+   *
+   * `"prompt-background"`: the glyph is painted with an SGR background colour. `t-6ffa13` measured
+   * Claude Code 2.1.220 — a submitted message renders as `\x1b[38;5;239m\x1b[48;5;237m❯ …` while the
+   * live composer carries no background in any state (empty, suggestion, typed draft).
+   *
+   * Declare this ONLY from a measured rendering difference, never from what the text says, and note
+   * the direction of danger: a wrong declaration is PERMISSIVE, because a line dismissed as history
+   * stops protecting the draft it might really be. With no escaped capture there is no background to
+   * read, so the detector keeps treating the line as the composer and still refuses.
+   */
+  ansiHistoryEchoStyle?: "prompt-background";
+  /**
    * Runtime-specific ANSI style rule that can make otherwise non-empty prompt content count as empty.
    *
    * Declare this ONLY for a runtime measured to render suggestion text inside an otherwise empty
@@ -192,10 +207,13 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      // t-6ffa13 — a submitted message echoed into the transcript paints its glyph with a background
+      // (measured: \x1b[38;5;239m\x1b[48;5;237m❯ ). The live composer never carries one, in any state.
+      ansiHistoryEchoStyle: "prompt-background",
       ansiEmptyContentStyle: "all-dim",
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-26",
+      verifiedAt: "2026-07-27",
       notes:
         "t-3fe20f: live Claude Code CLI renders its composer prompt as U+276F '❯' (measured on tachyon-b349073a-claude, " +
         "raw bytes e2 9d af), not ASCII '>'; the unmeasured t-f30324 regex never matched, permanently wedging isReady() " +

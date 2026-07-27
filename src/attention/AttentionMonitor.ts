@@ -792,7 +792,17 @@ function findComposerRegion(lines: string[], composer: ComposerRegionProfile): {
   }
   if (composer.promptLine) {
     for (let i = lines.length - 1; i >= first; i--) {
-      if (composer.promptLine.test(stripAnsi(lines[i]))) return { start: i, end: lines.length };
+      const plain = stripAnsi(lines[i]);
+      if (!composer.promptLine.test(plain)) continue;
+      // t-6ffa13 — a runtime that echoes submitted messages back into its transcript renders them
+      // with the prompt glyph too, so `promptLine` alone cannot tell the editor from its own
+      // history. Skipping the echo matters because the echo is usually TACHYON'S OWN notice:
+      // notify_agent submits a line, the runtime echoes it, the echo is read as a human draft, and
+      // every later notify_agent/write_input to that agent is queued or refused — a loop Tachyon
+      // feeds itself, and one a quiet pane never leaves, because occupancy is only recomputed when
+      // the pane content changes.
+      if (composer.ansiHistoryEchoStyle === "prompt-background" && promptGlyphHasBackground(lines[i], plain)) continue;
+      return { start: i, end: lines.length };
     }
   }
   return null;
@@ -815,21 +825,34 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
 
+/**
+ * t-6ffa13 — is this prompt glyph painted with a background colour? That is how the runtime renders
+ * a message it has ALREADY accepted, echoed into its transcript; the live editor carries none.
+ * Absent styling (a plain capture) yields false, so the caller keeps treating the line as the
+ * composer and stays conservative.
+ */
+function promptGlyphHasBackground(rawLine: string, plainLine = stripAnsi(rawLine)): boolean {
+  const prompt = /(?:❯|>|›)/.exec(plainLine);
+  if (!prompt) return false;
+  return visibleCharsWithStyle(rawLine)[prompt.index]?.bg === true;
+}
+
 function hasOnlyDimComposerContent(rawLine: string, plainLine = stripAnsi(rawLine)): boolean {
   const prompt = /(?:❯|>|›)\s?/.exec(plainLine);
   if (!prompt) return false;
   const contentStart = prompt.index + prompt[0].length;
-  const styled = visibleCharsWithDim(rawLine);
+  const styled = visibleCharsWithStyle(rawLine);
   const content = styled.slice(contentStart).filter((ch) => /\S/.test(ch.char));
   return content.length > 0 && content.every((ch) => ch.dim);
 }
 
-function visibleCharsWithDim(text: string): Array<{ char: string; dim: boolean }> {
-  const chars: Array<{ char: string; dim: boolean }> = [];
+function visibleCharsWithStyle(text: string): Array<{ char: string; dim: boolean; bg: boolean }> {
+  const chars: Array<{ char: string; dim: boolean; bg: boolean }> = [];
   let dim = false;
+  let bg = false;
   let index = 0;
   for (const match of text.matchAll(ANSI_SGR_RE)) {
-    for (const char of text.slice(index, match.index).replace(ANSI_RE, "")) chars.push({ char, dim });
+    for (const char of text.slice(index, match.index).replace(ANSI_RE, "")) chars.push({ char, dim, bg });
     const codes = (match[1] || "0").split(";").map((code) => (code === "" ? 0 : Number.parseInt(code, 10)));
     // t-3eaa8b — walk the parameters instead of scanning them as a set. SGR 38/48/58 carry an
     // extended colour whose SUB-parameters are ordinary numbers, so `38;2;r;g;b` (truecolor)
@@ -841,18 +864,23 @@ function visibleCharsWithDim(text: string): Array<{ char: string; dim: boolean }
       if (code === 38 || code === 48 || code === 58) {
         // 5;<n> = 256-colour, 2;<r>;<g>;<b> = truecolor. Anything else: stop trusting this run.
         const mode = codes[i + 1];
+        // Only a WELL-FORMED extended colour counts as a background. A malformed run must not claim
+        // one, because a claimed background is what dismisses a line as history (t-6ffa13).
+        if (code === 48 && (mode === 5 || mode === 2)) bg = true;
         if (mode === 5) i += 2;
         else if (mode === 2) i += 4;
         else i = codes.length;
         continue;
       }
-      if (code === 0) dim = false;
+      if (code === 0) { dim = false; bg = false; }
       else if (code === 2) dim = true;
       else if (code === 22) dim = false;
+      else if (code === 49) bg = false;
+      else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) bg = true;
     }
     index = match.index + match[0].length;
   }
-  for (const char of text.slice(index).replace(ANSI_RE, "")) chars.push({ char, dim });
+  for (const char of text.slice(index).replace(ANSI_RE, "")) chars.push({ char, dim, bg });
   return chars;
 }
 
