@@ -1907,7 +1907,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     panel.dispose();
     if (isCockpitSingletonClaimed()) return;
     if (!state?.wsHash) return;
-    void openCockpit(makeCockpitDeps(), { section: "handoff", wsHash: state.wsHash });
+    // t-ace77f — the legacy panel's workspace is exactly the locator the detail route needs.
+    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(state.wsHash) });
   });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
@@ -2649,9 +2650,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
-      // t-610705 (Phase C.3) — Handoff lives in Control (cockpit section); no second peer panel.
+      // t-610705 (Phase C.3) — Handoff lives in Control; no second peer panel.
+      // t-ace77f — and inside Control it is a DETAIL ROUTE, not a tab: this command (the sidebar's
+      // `handoff · N` bar and the palette) is the entry point, and the document's breadcrumb leaves
+      // to Overview. Without a resolvable workspace there is no document to open — the picker
+      // already warned, so opening Control on Overview is the honest landing.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), { section: "handoff", ...(ws ? { wsHash: ws.wsHash } : {}) });
+      await openCockpit(makeCockpitDeps(), ws
+        ? { route: cockpitRoutes.projectHandoff(ws.wsHash) }
+        : { section: "overview" });
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.
