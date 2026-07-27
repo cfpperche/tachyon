@@ -173,8 +173,20 @@
      anything), plus a visible darker outline so it doesn't collapse into `needs` at a glance. */
   .sdot.throttled { background: var(--ds-warn); border: 1px solid color-mix(in srgb, var(--ds-warn) 65%, black); }
   .sdot.idle { background: var(--idle); }
-  /* t-a39c7d — done(unseen): calm ok ring (finished, eyes not yet on pane) */
-  .sdot.done { background: var(--ds-ok); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-ok) 50%, transparent); opacity: 0.9; }
+  /* t-a39c7d — done(unseen): finished a turn, nobody has looked yet.
+     t-0d689f — this used to be a FILLED ok dot with a 1px translucent ring, which at 7px is the same
+     silhouette as `.running`. Measured: agents the Bridge reported as `attention: idle` (idle+unseen
+     → `done`) rendered green exactly like the working ones, so the human could not tell "producing
+     output" from "finished, unread". Now it is a dot with a detached outer ring — a different SHAPE,
+     not a different shade of the same green — so the two never collapse, including for anyone who
+     cannot separate them by colour. The gap is painted in the sidebar background so the ring reads
+     as detached rather than as a thicker dot. */
+  .sdot.done {
+    background: var(--ds-ok);
+    box-shadow:
+      0 0 0 1.5px var(--vscode-sideBar-background, var(--vscode-editor-background, transparent)),
+      0 0 0 3px var(--ds-ok);
+  }
   .sdot.stopping { background: var(--ds-muted); box-shadow: 0 0 4px var(--ds-muted); }
   .sdot.stop-failed { background: var(--ds-err); box-shadow: 0 0 4px color-mix(in srgb, var(--ds-err) 60%, transparent); }
   .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
