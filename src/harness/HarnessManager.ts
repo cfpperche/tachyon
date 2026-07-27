@@ -183,17 +183,29 @@ function isReadableNoFollowJsonObjectFile(file: string): boolean {
   }
 }
 
-/** Rank fields for comparing Grok/Hermes auth.json candidates (t-2b0a08 / t-6c8437). */
+/** Rank fields for comparing Grok/Hermes/Claude credential candidates (t-2b0a08 / t-6c8437 / t-9598cc). */
 export interface AuthCredentialRank {
   mtimeMs: number;
   createTimeMs: number;
-  /** Latest `expires_at` across entries; 0 if none. */
+  /** Latest access expiry across entries; 0 if none. */
   expiresAtMs: number;
   /**
    * Access token still within `expires_at` (or no expiry field → treat as valid).
    * Expired host auth must lose to a non-expired private refresh even when mtimes confuse us.
    */
   accessValid: boolean;
+  /**
+   * t-9598cc — latest REFRESH-token expiry across entries; 0 if none. Claude states this
+   * (`refreshTokenExpiresAt`); Grok/Hermes do not, so absence is not evidence of anything.
+   */
+  refreshExpiresAtMs: number;
+  /**
+   * Refresh token still usable (or no refresh-expiry field → treat as usable). This is what separates
+   * "the access token lapsed and the runtime will silently renew it" from "the session is genuinely
+   * dead and only a human `/login` can fix it" — a distinction Tachyon could not previously make for
+   * Claude, so a merely-lapsed access token and an unprojected home looked identical.
+   */
+  refreshValid: boolean;
 }
 
 /**
@@ -202,46 +214,81 @@ export interface AuthCredentialRank {
  * home can end up with a *different* live key, and only the newest is valid server-side.
  * Ranking: non-expired access preferred, then OIDC `create_time`, then mtime (t-6c8437).
  */
+/**
+ * An instant stated either as an ISO string (Grok/Hermes `expires_at`, `create_time`) or as epoch
+ * milliseconds (Claude `expiresAt`, `refreshTokenExpiresAt`). t-9598cc: reading only the ISO form
+ * meant every Claude credential parsed as "no expiry stated", which ranks as permanently valid — so
+ * an expired credential with a newer mtime beat a live one, and nothing could tell a lapsed session
+ * from a home that was never projected.
+ */
+function credentialInstantMs(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  if (typeof value === "string") {
+    const ms = Date.parse(value);
+    if (Number.isFinite(ms)) return ms;
+  }
+  return undefined;
+}
+
 export function authCredentialRank(file: string, nowMs: number = Date.now()): AuthCredentialRank {
   let mtimeMs = 0;
   try {
     mtimeMs = fs.statSync(file).mtimeMs;
   } catch {
-    return { mtimeMs: 0, createTimeMs: 0, expiresAtMs: 0, accessValid: false };
+    return { mtimeMs: 0, createTimeMs: 0, expiresAtMs: 0, accessValid: false, refreshExpiresAtMs: 0, refreshValid: false };
   }
   let createTimeMs = 0;
   let expiresAtMs = 0;
   let sawExpires = false;
+  let refreshExpiresAtMs = 0;
+  let sawRefreshExpires = false;
   try {
     const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       for (const value of Object.values(parsed)) {
         if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-        const ct = (value as { create_time?: unknown }).create_time;
-        if (typeof ct === "string") {
-          const ms = Date.parse(ct);
-          if (Number.isFinite(ms) && ms > createTimeMs) createTimeMs = ms;
+        const entry = value as Record<string, unknown>;
+        const ct = credentialInstantMs(entry.create_time);
+        if (ct !== undefined && ct > createTimeMs) createTimeMs = ct;
+        // `expires_at` (Grok/Hermes, ISO) and `expiresAt` (Claude, epoch ms) mean the same thing.
+        for (const key of ["expires_at", "expiresAt"] as const) {
+          const ms = credentialInstantMs(entry[key]);
+          if (ms === undefined) continue;
+          sawExpires = true;
+          if (ms > expiresAtMs) expiresAtMs = ms;
         }
-        const exp = (value as { expires_at?: unknown }).expires_at;
-        if (typeof exp === "string") {
-          const ms = Date.parse(exp);
-          if (Number.isFinite(ms)) {
-            sawExpires = true;
-            if (ms > expiresAtMs) expiresAtMs = ms;
-          }
+        for (const key of ["refresh_token_expires_at", "refreshTokenExpiresAt"] as const) {
+          const ms = credentialInstantMs(entry[key]);
+          if (ms === undefined) continue;
+          sawRefreshExpires = true;
+          if (ms > refreshExpiresAtMs) refreshExpiresAtMs = ms;
         }
       }
     }
   } catch {
     /* rank by mtime only */
   }
-  // No expires_at (legacy test fixtures) → do not punish; OIDC entries with past expiry lose.
+  // No expiry stated (legacy test fixtures, Grok entries) → do not punish; stated past expiry loses.
   const accessValid = !sawExpires || expiresAtMs > nowMs;
-  return { mtimeMs, createTimeMs, expiresAtMs, accessValid };
+  const refreshValid = !sawRefreshExpires || refreshExpiresAtMs > nowMs;
+  return { mtimeMs, createTimeMs, expiresAtMs, accessValid, refreshExpiresAtMs, refreshValid };
 }
+
+/** Loses to every readable candidate — the seed for a "best so far" scan. */
+export const WORST_AUTH_RANK: AuthCredentialRank = {
+  mtimeMs: 0,
+  createTimeMs: 0,
+  expiresAtMs: 0,
+  accessValid: false,
+  refreshExpiresAtMs: 0,
+  refreshValid: false,
+};
 
 export function authRankBetter(a: AuthCredentialRank, b: AuthCredentialRank): boolean {
   if (a.accessValid !== b.accessValid) return a.accessValid;
+  // A credential whose refresh window has closed cannot renew itself; it loses to one that can.
+  // Runtimes that state no refresh expiry rank equal here, so this never reorders Grok/Hermes.
+  if (a.refreshValid !== b.refreshValid) return a.refreshValid;
   if (a.createTimeMs !== b.createTimeMs) return a.createTimeMs > b.createTimeMs;
   return a.mtimeMs > b.mtimeMs;
 }
@@ -363,7 +410,7 @@ export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: 
   let promoted = false;
   let bestPrivate: string | undefined;
   // t-381750 — must match AuthCredentialRank after t-6c8437 (expiresAtMs + accessValid).
-  let bestRank: AuthCredentialRank = { mtimeMs: 0, createTimeMs: 0, expiresAtMs: 0, accessValid: false };
+  let bestRank: AuthCredentialRank = WORST_AUTH_RANK;
 
   for (const home of privateHomes) {
     const privateAuth = path.join(home, "auth.json");
@@ -408,6 +455,288 @@ export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: 
     relinked += 1;
   }
   return { promoted, relinked };
+}
+
+/** The credential file a private `CLAUDE_CONFIG_DIR` authenticates from. */
+export const CLAUDE_CREDENTIALS_FILE = ".credentials.json";
+
+/**
+ * t-9598cc — how a private Claude home currently stands relative to the authority home.
+ *
+ * Claude Code writes `.credentials.json` by create+rename under `CLAUDE_CONFIG_DIR`, which REPLACES
+ * Tachyon's symlink with a regular file the moment it refreshes its OAuth token. This is the exact
+ * mechanism already measured for Grok (t-2b0a08, t-6c8437) and it was never handled for Claude, so a
+ * private home silently detached from `~/.claude/.credentials.json` and stayed detached: a later
+ * global `/login` refreshed the authority and the private snapshot kept serving a dead token.
+ *
+ * Measured 2026-07-27: `.tachyon/harness/claude-opus5/.credentials.json` was a regular file whose
+ * contents differed from the authority's, while sibling homes were still symlinks.
+ *
+ * The two axes are reported separately on purpose. "Where does this home read from?" and "is that
+ * credential any good?" have different recoveries, and collapsing them is what made a merely-lapsed
+ * access token, a never-projected home, and a genuinely dead session all present as one opaque
+ * `runtime_auth_rejected`.
+ */
+export type ClaudeCredentialProjection =
+  /** Symlink to this authority's credential — the healthy state. */
+  | "linked"
+  /** A regular file: the runtime refreshed in-session and replaced the link. Harvestable. */
+  | "detached"
+  /** Nothing at this path — a fresh or cleaned home that was never projected. */
+  | "absent"
+  /** A symlink somewhere else — a deliberately separate account/profile. Never reconciled. */
+  | "foreign";
+
+export type ClaudeCredentialHealth =
+  /** Access token still inside its stated window. */
+  | "valid"
+  /** Access lapsed but the refresh token is still live — the runtime renews this itself. */
+  | "refreshable"
+  /** Both windows closed: only a human `claude /login` recovers this. */
+  | "expired"
+  /** Present but not a readable JSON object. */
+  | "unreadable"
+  /** No credential to judge. */
+  | "absent";
+
+export interface ClaudeCredentialState {
+  projection: ClaudeCredentialProjection;
+  health: ClaudeCredentialHealth;
+  /** Resolved target when `projection` is a symlink; the file itself when it is a regular file. */
+  source?: string;
+}
+
+function claudeCredentialHealth(file: string, nowMs: number): ClaudeCredentialHealth {
+  if (!fs.existsSync(file)) return "absent";
+  if (!isReadableJsonObjectFile(file)) return "unreadable";
+  const rank = authCredentialRank(file, nowMs);
+  if (rank.accessValid) return "valid";
+  return rank.refreshValid ? "refreshable" : "expired";
+}
+
+/**
+ * Classify one private Claude home against the authority credential. Pure observation — never
+ * repairs, so a caller can report before it acts (and so the diagnosis is table-testable).
+ */
+export function claudeCredentialState(
+  privateHome: string,
+  realAuth: string,
+  nowMs: number = Date.now(),
+): ClaudeCredentialState {
+  const privateAuth = path.join(privateHome, CLAUDE_CREDENTIALS_FILE);
+  let st: fs.Stats;
+  try {
+    st = fs.lstatSync(privateAuth);
+  } catch {
+    return { projection: "absent", health: claudeCredentialHealth(realAuth, nowMs) };
+  }
+  if (st.isSymbolicLink()) {
+    let target: string;
+    try {
+      target = fs.readlinkSync(privateAuth);
+    } catch {
+      return { projection: "absent", health: "absent" };
+    }
+    const resolved = path.isAbsolute(target) ? target : path.resolve(privateHome, target);
+    return {
+      projection: resolved === realAuth ? "linked" : "foreign",
+      health: claudeCredentialHealth(resolved, nowMs),
+      source: resolved,
+    };
+  }
+  return { projection: "detached", health: claudeCredentialHealth(privateAuth, nowMs), source: privateAuth };
+}
+
+/** The non-secret account marker a home is bound to (`.claude.json` → `oauthAccount.accountUuid`). */
+export function claudeHomeAccountId(claudeJsonPath: string): string | undefined {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(claudeJsonPath, "utf8")) as Record<string, unknown>;
+    const account = parsed.oauthAccount;
+    if (account && typeof account === "object" && !Array.isArray(account)) {
+      const uuid = (account as { accountUuid?: unknown }).accountUuid;
+      if (typeof uuid === "string" && uuid.trim()) return uuid.trim();
+    }
+    const userId = parsed.userID;
+    return typeof userId === "string" && userId.trim() ? userId.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Private Claude homes under this workspace: `<harness>/<agent>` directories that actually carry a
+ * Claude projection. Presence of `.credentials.json` or `.claude.json` is the marker — a codex or
+ * grok agent's home sits in the same root and must not be swept in. Pure path scan.
+ */
+export function listWorkspaceClaudePrivateHomes(workspaceRoot: string): string[] {
+  const homes: string[] = [];
+  const root = harnessRoot(workspaceRoot);
+  try {
+    for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const home = path.join(root, ent.name);
+      const claudeish = [CLAUDE_CREDENTIALS_FILE, ".claude.json"].some((file) => {
+        try {
+          fs.lstatSync(path.join(home, file));
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (claudeish) homes.push(home);
+    }
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  return homes;
+}
+
+/**
+ * Cheap signal that at least one private Claude home is out of step with the authority — either it
+ * detached (in-session refresh) or its link points at a credential that is gone. Lets the agent-list
+ * tick skip the reconcile entirely in the common converged case.
+ */
+export function privateClaudeAuthNeedsReconcile(
+  workspaceRoot: string,
+  realClaudeHome: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const realAuth = path.join(realClaudeHome, CLAUDE_CREDENTIALS_FILE);
+  for (const home of listWorkspaceClaudePrivateHomes(workspaceRoot)) {
+    const state = claudeCredentialState(home, realAuth, nowMs);
+    if (state.projection === "detached") return true;
+    if (state.projection === "linked" && state.health === "absent") return true;
+  }
+  return false;
+}
+
+export interface ClaudeAuthReconcileResult {
+  promoted: boolean;
+  relinked: number;
+  /** Homes left untouched because they belong to another account/profile. */
+  skipped: string[];
+}
+
+/**
+ * Workspace-wide Claude auth reconcile — the Grok fix (t-2b0a08 / t-6c8437) applied to the runtime
+ * that has the same failure mode:
+ *  1. harvest every private regular `.credentials.json` (in-session refresh replaced the symlink);
+ *  2. promote the freshest onto the authority, so a refresh is never destroyed by re-linking;
+ *  3. re-symlink EVERY eligible private home to that one authority file, so a global `/login`
+ *     reaches homes that are not being materialized right now.
+ *
+ * Step 3 is the one the measured bug needed: re-linking only the home being spawned left every other
+ * agent's stale snapshot alive, which is how a refreshed global credential failed to reach an
+ * existing harness at all.
+ *
+ * Account isolation: a home whose credential is a symlink to a DIFFERENT target, or whose
+ * `.claude.json` names a different `oauthAccount`, is a deliberately separate profile. It is neither
+ * harvested from nor relinked — sharing one workspace must never merge two accounts' sessions.
+ */
+export function reconcileWorkspaceClaudeAuth(
+  workspaceRoot: string,
+  realClaudeHome: string,
+  realClaudeJson: string,
+  nowMs: number = Date.now(),
+): ClaudeAuthReconcileResult {
+  const realAuth = path.join(realClaudeHome, CLAUDE_CREDENTIALS_FILE);
+  const authorityAccount = claudeHomeAccountId(realClaudeJson);
+  const skipped: string[] = [];
+  const eligible: string[] = [];
+
+  for (const home of listWorkspaceClaudePrivateHomes(workspaceRoot)) {
+    const homeAccount = claudeHomeAccountId(path.join(home, ".claude.json"));
+    const foreignAccount = !!authorityAccount && !!homeAccount && homeAccount !== authorityAccount;
+    const foreignLink = claudeCredentialState(home, realAuth, nowMs).projection === "foreign";
+    if (foreignAccount || foreignLink) skipped.push(home);
+    else eligible.push(home);
+  }
+
+  let promoted = false;
+  let bestPrivate: string | undefined;
+  let bestRank = WORST_AUTH_RANK;
+  for (const home of eligible) {
+    const privateAuth = path.join(home, CLAUDE_CREDENTIALS_FILE);
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    if (!st.isFile() || st.isSymbolicLink()) continue;
+    if (!isReadableJsonObjectFile(privateAuth)) continue;
+    const rank = authCredentialRank(privateAuth, nowMs);
+    if (!bestPrivate || authRankBetter(rank, bestRank)) {
+      bestPrivate = privateAuth;
+      bestRank = rank;
+    }
+  }
+
+  if (bestPrivate) {
+    if (fs.existsSync(realAuth)) {
+      if (authRankBetter(bestRank, authCredentialRank(realAuth, nowMs))) {
+        fs.mkdirSync(path.dirname(realAuth), { recursive: true });
+        fs.copyFileSync(bestPrivate, realAuth);
+        fs.chmodSync(realAuth, 0o600);
+        promoted = true;
+      }
+    } else {
+      fs.mkdirSync(path.dirname(realAuth), { recursive: true });
+      fs.copyFileSync(bestPrivate, realAuth);
+      fs.chmodSync(realAuth, 0o600);
+      promoted = true;
+    }
+  }
+
+  if (!fs.existsSync(realAuth)) return { promoted, relinked: 0, skipped };
+
+  let relinked = 0;
+  for (const home of eligible) {
+    const privateAuth = path.join(home, CLAUDE_CREDENTIALS_FILE);
+    // Only converge homes that already have (or had) a credential path; never seed an unrelated dir.
+    try {
+      fs.lstatSync(privateAuth);
+    } catch {
+      continue;
+    }
+    ensureAuthSymlink(privateAuth, realAuth);
+    relinked += 1;
+  }
+  return { promoted, relinked, skipped };
+}
+
+/**
+ * Fail a Claude launch at the harness boundary — before any tmux session exists — when the projected
+ * credential cannot authenticate. Parity with `assertReadableGrokAuth` (t-303f2b).
+ *
+ * Why here and not at launch readiness: `materializeRuntimeHarness` runs before the pane is created,
+ * so throwing here leaves nothing half-started. The measured cascade went the other way — the agent
+ * launched, `runtime_auth_rejected` arrived from readiness, and the compensation that followed had a
+ * live session, a prepared worktree and a materialized home to unwind.
+ *
+ * `refreshable` is deliberately NOT a failure: a lapsed access token with a live refresh token is the
+ * ordinary state of a credential between renewals, and the runtime renews it itself.
+ */
+export function assertUsableClaudeAuth(agent: string, privateHome: string, realAuth: string, nowMs: number = Date.now()): void {
+  const state = claudeCredentialState(privateHome, realAuth, nowMs);
+  if (state.projection === "absent") {
+    throw new HarnessUnavailableError(
+      agent,
+      `no Claude credential projected into ${privateHome} (authority ${realAuth}) — a redirected CLAUDE_CONFIG_DIR starts logged out; run claude /login, then restart this agent`,
+    );
+  }
+  if (state.health === "unreadable") {
+    throw new HarnessUnavailableError(
+      agent,
+      `Claude credential for '${agent}' is not readable JSON at ${state.source ?? privateHome} — run claude /login to rewrite it, then restart this agent`,
+    );
+  }
+  if (state.health === "expired") {
+    throw new HarnessUnavailableError(
+      agent,
+      `Claude session for '${agent}' is expired at ${state.source ?? privateHome}: both the access and refresh windows have closed, so this is a real re-login and not a stale projection — run claude /login, then restart this agent`,
+    );
+  }
 }
 
 /** The per-agent config home. Agent names are already fs-safe (NAME_RE). */
@@ -858,6 +1187,9 @@ export class HarnessManager {
   /** t-6c8437 — throttle in-session harvest so agent-list ticks stay cheap. */
   private lastGrokHarvestMs = 0;
   private static readonly GROK_HARVEST_MIN_INTERVAL_MS = 5_000;
+  /** t-9598cc — same throttle for the Claude reconcile. */
+  private lastClaudeHarvestMs = 0;
+  private static readonly CLAUDE_HARVEST_MIN_INTERVAL_MS = 5_000;
 
   constructor(
     private readonly workspaceRoot: string,
@@ -1664,6 +1996,12 @@ export class HarnessManager {
     if (adapter.runtime === "grok") {
       this.reconcileGrokAuthFromWorkspace();
     }
+    // t-9598cc — Claude has the same in-session-refresh detachment as Grok. Harvest BEFORE the
+    // ensureAuthSymlink below, which would otherwise overwrite a fresher private credential with a
+    // staler authority one, and converge every sibling home so a global /login actually reaches them.
+    if (adapter.runtime === "claude") {
+      this.reconcileClaudeAuthFromWorkspace();
+    }
     const authSourceHome =
       adapter.runtime === "codex"
         ? this.realCodexHome
@@ -1695,6 +2033,13 @@ export class HarnessManager {
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
       ensureAuthSymlink(authLink, authTarget);
+    }
+
+    // t-9598cc — parity with grok/hermes (t-303f2b): prove the projected credential can actually
+    // authenticate before the home is handed back, so an expired session fails here with a named
+    // recovery instead of surfacing as runtime_auth_rejected after a pane and a worktree exist.
+    if (adapter.runtime === "claude") {
+      assertUsableClaudeAuth(agent, home, path.join(authSourceHome, CLAUDE_CREDENTIALS_FILE));
     }
 
     if (adapter.runtime === "codex" || adapter.runtime === "grok" || adapter.runtime === "hermes") {
@@ -2368,6 +2713,31 @@ export class HarnessManager {
     if (elapsed >= 0 && elapsed < HarnessManager.GROK_HARVEST_MIN_INTERVAL_MS) return null;
     if (!privateGrokAuthNeedsHarvest(this.workspaceRoot)) return null;
     return this.reconcileGrokAuthFromWorkspace();
+  }
+
+  /**
+   * t-9598cc — the Claude counterpart. Harvest every private `.credentials.json` that the runtime
+   * detached by refreshing in-session, promote the freshest onto `~/.claude/.credentials.json`, and
+   * re-symlink every eligible private home back onto it.
+   *
+   * Call on materialize AND on agent-list refresh: the measured failure was a home that nobody
+   * materialized after the global `/login`, so its stale snapshot outlived the refresh indefinitely.
+   */
+  reconcileClaudeAuthFromWorkspace(nowMs: number = Date.now()): ClaudeAuthReconcileResult {
+    this.lastClaudeHarvestMs = nowMs;
+    return reconcileWorkspaceClaudeAuth(this.workspaceRoot, this.realHome, this.realClaudeJson, nowMs);
+  }
+
+  /**
+   * Throttled reconcile for the agent-list tick, mirroring `maybeHarvestGrokAuthFromWorkspace`.
+   * No-op inside the throttle window or when every private home is already converged — so the common
+   * case costs one cheap directory scan.
+   */
+  maybeReconcileClaudeAuthFromWorkspace(nowMs: number = Date.now()): ClaudeAuthReconcileResult | null {
+    const elapsed = nowMs - this.lastClaudeHarvestMs;
+    if (elapsed >= 0 && elapsed < HarnessManager.CLAUDE_HARVEST_MIN_INTERVAL_MS) return null;
+    if (!privateClaudeAuthNeedsReconcile(this.workspaceRoot, this.realHome, nowMs)) return null;
+    return this.reconcileClaudeAuthFromWorkspace(nowMs);
   }
 
   materializeBridgeMcpGrok(

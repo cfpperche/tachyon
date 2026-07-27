@@ -3244,6 +3244,13 @@ export class Workspace {
     } catch {
       /* best-effort; never block the agents view on auth I/O */
     }
+    // t-9598cc — same for Claude: a private home that detached on refresh must not outlive a global
+    // /login just because nobody happens to materialize that agent again.
+    try {
+      this.harness.maybeReconcileClaudeAuthFromWorkspace();
+    } catch {
+      /* best-effort; never block the agents view on auth I/O */
+    }
     try {
       this.deps.onViewsChanged("agents");
     } catch {
