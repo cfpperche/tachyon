@@ -5847,7 +5847,34 @@ export class Workspace {
     return reconcileProfileTransactions(this.workspaceRoot, this.makeSoulProfileAccess());
   }
 
+  /**
+   * `t-e81ec5` — refuse a soul mutation the declaration shape can never accept, and say so.
+   *
+   * `createSoulProfile` works by adding an inline `soul:` key to the declared agent. Every declared
+   * agent is now a canonical profile pointer, and a pointer cannot coexist with inline fields, so the
+   * whole transaction used to run and then fail deep in the config writer as `soul/io-error` — a code
+   * that says "the disk misbehaved" for something no retry can fix. Agent Studio still shows the
+   * button, so this was a live surface that always failed and explained nothing.
+   *
+   * The refusal is early and structural. It does not remove the capability: it names why this path is
+   * closed and where soul actually lives, which is the same rule SDD 478 M6 made contractual for every
+   * other door — a refusal must name the fix.
+   */
+  private assertSoulMutable(agentName: string): void {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" }>;
+    }) | undefined)?.agentSources;
+    if (sources?.[agentName]?.mode !== "profile") return;
+    throw new SoulError(
+      "soul/canonical-profile-unsupported",
+      `agent '${agentName}' is a canonical profile pointer, which cannot carry an inline 'soul:' key. `
+      + "Soul for a canonical agent belongs to the formation lane (SDD 427), which is not yet wired to "
+      + "the spawn path — see t-e50d4f (survey: t-50bbd4). This operation would have failed while writing the config.",
+    );
+  }
+
   async createSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    this.assertSoulMutable(agentName);
     return createSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
   }
 
