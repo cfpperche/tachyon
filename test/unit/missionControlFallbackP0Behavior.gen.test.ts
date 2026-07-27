@@ -29,7 +29,7 @@ describe("container-generated delegation behavior", () => {
       const task = await ws.taskStore.create({ title: "Task data wins", author: "human" });
       const targetWs = legacyMissionControlTarget(ws);
 
-      const vmPromise = buildMissionVm(targetWs, [targetWs], new MissionAgentLists(), () => {});
+      const vmPromise = buildMissionVm(targetWs, new MissionAgentLists(), () => {});
       let settled = false;
       void vmPromise.then(() => { settled = true; });
       await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS - 1);

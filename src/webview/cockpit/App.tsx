@@ -1360,6 +1360,23 @@ export function App(p: CockpitAppProps) {
           hint={s.overviewHint}
           actions={
             <div class="ck-overview-actions">
+              {/* t-46eb4f — THE global workspace scope, and the only one in Control. It lives here,
+                  in Overview, and is always visible: with a single root it still answers "which root
+                  am I looking at", which the header's old >1-workspace condition never did. Every
+                  other screen consumes the resulting scope; none offers its own copy of it. */}
+              <KitSelect
+                aria-label="Control workspace"
+                data-testid="control-workspace-select"
+                class="ck-workspace-select"
+                value={m.selectedWsHash ?? ALL_WORKSPACES}
+                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+                options={[
+                  // "All workspaces" is only a real choice when there is more than one: with a lone
+                  // root it and that root select the same data, so offering both is noise.
+                  ...(m.workspaces.length > 1 ? [{ value: ALL_WORKSPACES, label: s.allWorkspaces }] : []),
+                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+                ]}
+              />
               <label class="ck-auto" title={s.auto}>
                 <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
                 {s.auto}
@@ -1866,23 +1883,9 @@ export function App(p: CockpitAppProps) {
                 );
               })}
             </div>
-            {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
-                single-workspace case (nothing to choose). Radix Select rejects an empty-string item
-                value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
-                (the wire/host side keeps "" = All). */}
-            {m && m.workspaces.length > 1 ? (
-              <KitSelect
-                aria-label="Control workspace"
-                data-testid="control-workspace-select"
-                class="ck-workspace-select"
-                value={m.selectedWsHash ?? ALL_WORKSPACES}
-                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
-                options={[
-                  { value: ALL_WORKSPACES, label: "All workspaces" },
-                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
-                ]}
-              />
-            ) : null}
+            {/* t-46eb4f — the shell-level scope selector moved into Overview (and stopped hiding
+                itself on a single root). The nav strip chooses a SCREEN; the root is chosen once,
+                in one place, and every screen reads it. */}
           </div>
         </header>
       )}

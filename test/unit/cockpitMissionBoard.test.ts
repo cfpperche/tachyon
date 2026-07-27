@@ -15,8 +15,9 @@ import type { Workspace } from "../../src/workspace/Workspace.js";
  * t-610705 Phase B #6 — board ROUTING coverage for Control → Mission, ported from the retired
  * MissionControlPanelManager's tests: the standalone panel is gone, so the cockpit host is now the
  * one path for every board action (updateTask/reorderLane/closeValidation/openTask/copyTaskId/
- * switchWorkspace) and must keep the same behavior contract (fan-out on success only, taskError on
- * store rejection, snapshot re-post on workspace switch).
+ * openTask/copyTaskId) and must keep the same behavior contract (fan-out on success only, taskError on
+ * store rejection, snapshot re-post when the global scope changes — t-46eb4f retired the Board's own
+ * `switchWorkspace` mirror).
  */
 
 const dirs: string[] = [];
@@ -180,14 +181,16 @@ describe("Control → Mission board routing", () => {
     expect(__getClipboardText()).toBe("t-abc123");
   });
 
-  it("switches the board to another workspace and posts that workspace's snapshot", async () => {
+  it("follows the ONE global workspace scope and posts that workspace's snapshot (t-46eb4f)", async () => {
     const wsA = fakeWorkspace(mkroot(), {}, { hash: "ws-a", name: "Alpha" });
     const wsB = fakeWorkspace(mkroot(), {}, { hash: "ws-b", name: "Beta" });
     await wsB.taskStore.create({ title: "beta task", author: "human" });
     const { board } = boardOf([target(wsA), target(wsB)]);
     await openCockpit(makeFakeCockpitDeps(board), { section: "mission", wsHash: "ws-a" });
 
-    __createdPanels[0].webview.__receive({ type: "switchWorkspace", wsHash: "ws-b" });
+    // t-46eb4f — the Board no longer has (or needs) a workspace control of its own: the scope is
+    // chosen once, in Overview, and the Board renders whatever it is handed.
+    __createdPanels[0].webview.__receive({ type: "switchControlWorkspace", wsHash: "ws-b" });
     await flush();
 
     const latest = snapshots().at(-1);

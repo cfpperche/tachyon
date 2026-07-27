@@ -119,7 +119,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 11 Restart | ✓ | ✓ | ✓ | ✓ | ✓ | **✓**¶ |
 | 12 Native config parity | ✓ | ✓ | ~ | ✗ | ~ | **✗** |
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
-| 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
+| 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ | **✗** |
 | 15 Runtime-managed native memory | ~ | ~ | ✗ | ~ | ✗ | **✗** |
 | 16 Auth-required detection | ✓ | ✓ | ~‖ | ✓ | ~ | **✗** |
 | 17 Ad-hoc Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |

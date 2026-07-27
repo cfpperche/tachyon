@@ -175,7 +175,8 @@ export const strings: CockpitStrings = {
   companionAllowedHostsSave: "Save allowed hosts",
   companionPaired: "Paired",
   companionNotPaired: "Not paired",
-  companionPickWorkspace: "Select a single workspace in the header to manage Companion settings.",
+  allWorkspaces: "All workspaces",
+  companionPickWorkspace: "Select a single workspace in Overview to manage Companion settings.",
   companionBaseUrl: "Engine Base URL",
   companionShowPairCode: "Show pair code",
   companionCopyBaseUrl: "Copy URL",
@@ -742,5 +743,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "multi-workspace-scoped": {
     provenance: "synthetic-edge",
     vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
+  },
+  // t-46eb4f — Overview with more than one root attached: the ONE global scope selector, offering
+  // "All workspaces" plus each root. The single-root case is the `default` fixture, where the same
+  // selector is still rendered (it just has one option) — it no longer hides itself.
+  "multi-workspace-overview": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel([...bundles, goldenBundle], { section: "overview", nowIso: now }),
   },
 };

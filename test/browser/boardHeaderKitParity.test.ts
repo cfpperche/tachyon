@@ -14,7 +14,6 @@ import type { MissionControlVM } from "../../src/webview/mission-control/message
 const FIXTURE_VM: MissionControlVM = {
   folder: "/tmp/demo",
   wsHash: "ws1",
-  workspaces: [{ hash: "ws1", folder: "/tmp/demo" }],
   snapshot: { views: [], allowedDropStatuses: {}, chips: [] },
 };
 
