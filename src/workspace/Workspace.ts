@@ -2384,7 +2384,22 @@ export class Workspace {
           // an inline `cmd:` node — an ephemeral ad-hoc, dismissed when done. Deliver the task +
           // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
-          await this.manager.spawn(name, { cmd: def.cmd, env, pipeline: { runId, nodeId }, reveal: false, ...(signalBased ? { taskBrief: taskInstr } : {}) });
+          //
+          // SDD 478 M9 — the manager no longer infers which arm an ad-hoc command lands on, so this
+          // door states it. A pipeline node genuinely accepts both by design, and unlike `spawn_agent`
+          // it is a DECLARED config surface with no place yet to write the kind down: the suggestion is
+          // therefore made here, visibly, instead of hiding inside the manager where every door shared
+          // it. Migrating this door to a declared `kind:` is its own task (t-c003e1), not M9's.
+          await this.manager.spawn(name, {
+            cmd: def.cmd,
+            // Paired with `cmd`: the manager reads the kind only on the ad-hoc path, and a node
+            // reaching here without a cmd already resolved as a declared entry, exactly as before.
+            kind: def.cmd ? suggestKindForCommand(def.cmd) : undefined,
+            env,
+            pipeline: { runId, nodeId },
+            reveal: false,
+            ...(signalBased ? { taskBrief: taskInstr } : {}),
+          });
         }
       },
       runVerify: async ({ runId, nodeId }) => {

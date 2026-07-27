@@ -60,9 +60,20 @@ identity.
    attested runtime belongs in a profile. The diagnostic names the block to move to, because the entire
    cost of the incident above was three increments spent discovering which block the entry belonged in.
 
-For ad-hoc delegation, `spawn_agent` remains Agent-only: it accepts a supported, attested LLM runtime
-through a lighter path that does not require a canonical profile. Generic commands use an explicit
-Terminal operation instead.
+For ad-hoc delegation, `spawn_agent` remains Agent-only: it accepts a supported LLM runtime through a
+lighter path that does not require a canonical profile. Generic commands use `spawn_terminal`, an
+explicit Terminal operation with no agent parameters at all.
+
+**"Supported" here is a different list from "attested", and deliberately so.** `ATTESTED_RUNTIMES`
+answers which runtime may back a **canonical profile**; `SUPPORTED_ADHOC_AGENT_RUNTIMES`
+(`src/agents/adhocAdmission.ts`) answers which runtime Tachyon can hand a delegation and get an answer
+back from. Every attested runtime is in the second list; the reverse is false, because OpenCode,
+Hermes, Gemini and Qwen have measured resume adapters, private homes, activity readers and attention
+manifests without being profile-backed. Using the canonical bar for the ad-hoc door would have deleted
+them as agents outright — `agents:` already admits only attested executables, so the ad-hoc path is
+their only door — and that is a product decision, not a migration side effect. Each entry states the
+mechanism that earns it a place, and any shortfall against the delegation contract is written down in
+the same entry rather than settled by silently refusing the runtime.
 
 ## Where to declare what
 
@@ -98,9 +109,9 @@ declares a non-attested command under `agents:`.
 
 ## Status
 
-The rule is ratified. SDD 478 inventories the whole surface and orders the migration (M1–M9); **M1–M4
-have landed**, and what remains is the doors (M6, M9), the fixture shim (M7, M8) and the parallel UI
-encoding (M5). Read that spec before changing anything on this boundary.
+The rule is ratified. SDD 478 inventories the whole surface and orders the migration (M1–M9); **M1–M4,
+M6 and M9 have landed**, and what remains is the fixture shim (M7, M8) and the parallel UI encoding
+(M5). Read that spec before changing anything on this boundary.
 
 **M1 has landed.** Which runtimes may operate an Agent is answered in exactly one place —
 `ATTESTED_RUNTIMES` in `src/runtime/attestedRuntimes.ts` (`claude`, `codex`, `grok`, `pi`). The three
@@ -118,6 +129,21 @@ a conditional can no longer *be* what grants a capability, because the field is 
 **M4 has landed.** The kind is read back from the ledger exactly as written, and a record that never
 carried one is refused rather than guessed — so editing the list of known binaries can no longer
 reclassify rows already on disk. The surviving helper is named `suggestKindForCommand` because that
-is all it is: a pre-selection an authoring surface shows a human, who can override it. Where it is
-still called without a human in the loop — the ad-hoc spawn door (M9) and the inline `agents:` kind
-default (M6) — the name now makes the violation legible instead of looking authoritative.
+is all it is: a pre-selection an authoring surface shows a human, who can override it.
+
+**M9 has landed.** The ad-hoc door no longer infers. `spawn_agent` admits only a runtime declared in
+`SUPPORTED_ADHOC_AGENT_RUNTIMES`, resolving the executable through the same launcher-aware parse the
+launch preflight uses and refusing anything it cannot name — shell composition included, because a
+Terminal runs a command verbatim while an Agent's identity depends on which runtime actually starts.
+`spawn_terminal` is the other half: name, cmd, cwd, and no parameter to put a task, a lineage, a brief,
+a worktree or a gate into. The manager stopped choosing the arm at all — `SpawnOptions.kind` is
+declared by the door that took the request, and an omitted kind means the strict arm, so a forgetful
+caller gets a refusal naming `spawn_terminal` rather than a Terminal quietly holding agent fields.
+
+Two boundaries are worth stating because they look like omissions otherwise. A `delivery_join`
+execution is a **different door** with its own contract, and SDD 368 T10 measured that an unrecognized
+reviewer runtime runs there with an advisory rather than a refusal — M9 does not withdraw that.
+And pipeline inline `cmd:` nodes genuinely accept both kinds by design, with nowhere in
+`pipelines:` to write the kind down yet; that door now makes its own suggestion at the call site
+instead of sharing the manager's, and migrating it is `t-c003e1`. Those two are the last places
+`suggestKindForCommand` runs without a human in the loop.

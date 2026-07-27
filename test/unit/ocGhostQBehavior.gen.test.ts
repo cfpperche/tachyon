@@ -153,7 +153,7 @@ describe("container-generated delegation behavior", () => {
   it("a queued parent notice about a killed child is purged and never flushed to the parent pane", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
 
     // Repro step 1: parent is busy (working) → the child's needs-input poke gets ENQUEUED into the parent's
@@ -190,7 +190,7 @@ describe("container-generated delegation behavior", () => {
     // delivery semantics for alive agents.
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("liveChild", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("liveChild", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
 
     forceStateOf(ws, "parent", "working");
@@ -212,7 +212,7 @@ describe("container-generated delegation behavior", () => {
     // must not be mistaken for a real child-death poke, even when the quoted name is in recentlyKilled.
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("parent");
-    await ws.manager.spawn("cwdProbe", { cmd: "sh", parent: "parent" });
+    await ws.manager.spawn("cwdProbe", { cmd: "opencode", parent: "parent" });
     const parentSession = ws.manager.session("parent");
 
     forceStateOf(ws, "parent", "working");

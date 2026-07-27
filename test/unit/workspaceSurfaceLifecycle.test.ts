@@ -173,7 +173,7 @@ describe("t-b88106 — a relaunch preserves the agent's surface (real Workspace 
   it("a Bridge-spawned child never opens a surface, and restarting it does not either (F3)", async () => {
     const { ws } = await makeWorkspace();
     await ws.manager.spawn("worker");
-    await ws.manager.spawn("child", { cmd: "sh", parent: "worker", reveal: false });
+    await ws.manager.spawn("child", { cmd: "opencode", parent: "worker", reveal: false });
     expect(liveSurfaces("child")).toHaveLength(0);
 
     await ws.manager.restart("child", { stop: "force", session: "new" });
