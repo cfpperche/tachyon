@@ -52,6 +52,7 @@ import {
 } from "../runtime/launchPreflight.js";
 import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
 import { ClaudeLaunchPreflight } from "../runtime/adapters/claudeLaunchPreflight.js";
+import { GrokLaunchPreflight } from "../runtime/adapters/grokLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -837,6 +838,9 @@ export class AgentManager {
     this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({
       codex: new CodexLaunchPreflight(),
       claude: new ClaudeLaunchPreflight(),
+      // t-85c586 — grok ships a bounded catalog command AND refuses anything outside it, so a pin
+      // is authoritatively checkable rather than merely provisional.
+      grok: new GrokLaunchPreflight(),
     });
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }

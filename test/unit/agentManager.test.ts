@@ -6,6 +6,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
+import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -5587,11 +5589,33 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   it("SDD 370 fails delegated explicit models closed when the runtime has no catalog adapter", async () => {
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
 
-    await expect(h.manager.spawn("grok-child", { cmd: "grok --model grok-4.5" })).rejects.toMatchObject({
+    // t-85c586 moved grok OUT of this case (it has an authoritative adapter now), so the property is
+    // asserted on a runtime that still has none — the point was never grok, it was "no catalog".
+    await expect(h.manager.spawn("oc-child", { cmd: "opencode --model some-model" })).rejects.toMatchObject({
       code: "runtime_preflight_unverifiable",
     });
     expect(h.sessions.size).toBe(0);
-    expect(h.ledger.get("grok-child")).toBeUndefined();
+    expect(h.ledger.get("oc-child")).toBeUndefined();
+  });
+
+  it("t-85c586 admits a grok pin the catalog lists and refuses one it does not", async () => {
+    // The adapter is injected with a stubbed probe: the verdicts belong to Tachyon's logic, and the
+    // real-CLI agreement is the dogfood's job, so this stays deterministic off-machine.
+    const catalog = ["You are logged in with grok.com.", "", "Available models:", "  * grok-4.5 (default)"].join("\n");
+    const launchPreflight = new RuntimeLaunchPreflightRegistry({
+      grok: new GrokLaunchPreflight(async () => ({ code: 0, text: catalog })),
+    });
+
+    const ok = harness("agents:\n  boss:\n    cmd: claude\n", { launchPreflight });
+    await ok.manager.spawn("grok-ok", { cmd: "grok --model grok-4.5" });
+    expect(ok.ledger.get("grok-ok")).toBeDefined();
+
+    const bad = harness("agents:\n  boss:\n    cmd: claude\n", { launchPreflight });
+    await expect(bad.manager.spawn("grok-bad", { cmd: "grok --model grok-4.5-build" })).rejects.toMatchObject({
+      code: "runtime_model_unavailable",
+    });
+    expect(bad.sessions.size).toBe(0);
+    expect(bad.ledger.get("grok-bad")).toBeUndefined();
   });
 
   it.each(["sonnet", "claude-sonnet-5"])("delegated Claude explicit model %s enters bounded startup validation", async (model) => {

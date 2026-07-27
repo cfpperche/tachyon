@@ -22,6 +22,8 @@ const output = (slugs: readonly string[] = catalogSlugs, extra: Partial<CodexPro
 
 describe("runtime launch preflight", () => {
   it("reports an explicit unverifiable result when no runtime adapter exists", async () => {
+    // Exercises the EMPTY-registry path. `grok` is just the example command here — production wires
+    // a real grok adapter since t-85c586 (see grokLaunchPreflight.test.ts).
     const registry = new RuntimeLaunchPreflightRegistry({});
     await expect(registry.check(parseLaunchCommand("grok --model grok-4.5")!, {})).resolves.toEqual({
       state: "unverifiable",
