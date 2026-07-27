@@ -135,7 +135,6 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
     throw new EngineSupervisorError("RUNTIME_VERIFICATION_FAILED", "the staged Tachyon engine runtime failed verification", boundedError(error));
   }
   const hash = workspaceHash(canonicalRoot);
-  recordEngineIdentityDiagnostic(canonicalRoot);
   if (options.controlSocketPath && !path.isAbsolute(options.controlSocketPath)) {
     throw new EngineSupervisorError("INVALID_OPTIONS", "persistent engine control socket path must be absolute");
   }
@@ -235,45 +234,6 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
  * WITHOUT the override the digest is computed over exactly the bytes it always was, so every
  * production path, socket and unit name is byte-for-byte unchanged.
  */
-/**
- * t-05097f — TEMPORARY diagnostic at the one authoritative point: where the engine's identity is
- * resolved and therefore where "reuse or launch" is decided.
- *
- * Everything measurable from outside proved ambiguous — a `pgrep` over `/proc/<pid>/environ` said
- * the socket override was absent, while a test file inside the extension host had demonstrably read
- * it. Only this function can say what the launching process actually saw.
- *
- * Records PRESENCE and a short DIGEST, never the raw values: the tmpdir is a filesystem path and the
- * socket name is attacker-influencable in principle, and a diagnostic that leaks either into a
- * world-readable log is a worse bug than the one it investigates.
- *
- * Opt-in via TACHYON_ENGINE_IDENTITY_DIAGNOSTIC (a file path). Absent — which is every production
- * run — this is a single undefined check and writes nothing.
- */
-function recordEngineIdentityDiagnostic(canonicalRoot: string, env: NodeJS.ProcessEnv = process.env): void {
-  const target = env.TACHYON_ENGINE_IDENTITY_DIAGNOSTIC?.trim();
-  if (!target) return;
-  const digest = (value: string | undefined): string =>
-    value === undefined ? "absent" : value.trim() === "" ? "blank" : createHash("sha256").update(value).digest("hex").slice(0, 12);
-  const line = JSON.stringify({
-    at: new Date().toISOString(),
-    runId: env.TACHYON_GATE_RUN_ID ?? "unset",
-    pid: process.pid,
-    ppid: process.ppid,
-    canonicalRoot,
-    tmuxSocket: digest(env[TMUX_SOCKET_ENV]),
-    tmuxTmpdir: digest(env.TMUX_TMPDIR),
-    engineWorkspaceKey: engineWorkspaceKey(canonicalRoot, env),
-    unitName: engineSystemdUnitName(canonicalRoot, env),
-  });
-  try {
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.appendFileSync(target, `${line}\n`, { mode: 0o600 });
-  } catch {
-    /* diagnostics must never fail a launch */
-  }
-}
-
 export function engineWorkspaceKey(workspaceRoot: string, env: NodeJS.ProcessEnv = process.env): string {
   const real = fs.realpathSync(workspaceRoot);
   const socketOverride = env[TMUX_SOCKET_ENV]?.trim();

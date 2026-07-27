@@ -61,10 +61,6 @@ const GATE_RUN_ID = `gate-${process.pid}-${Date.now().toString(36)}`;
 const TMUX_ISOLATION_ENV = {
   TACHYON_TMUX_SOCKET: `tachyon-${GATE_RUN_ID}`,
   TMUX_TMPDIR,
-  // t-05097f TEMPORARY — see recordEngineIdentityDiagnostic. Correlates every identity resolution
-  // with the run that caused it; remove with the diagnostic once the question is answered.
-  TACHYON_GATE_RUN_ID: GATE_RUN_ID,
-  TACHYON_ENGINE_IDENTITY_DIAGNOSTIC: path.join(STAGING_ROOT, "engine-identity.jsonl"),
 };
 
 const GATE_ENV = { ...ENGINE_RUNTIME_ENV, ...TMUX_ISOLATION_ENV };
