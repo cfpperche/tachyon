@@ -32,7 +32,15 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   readyLine?: RegExp;
   /** Runtime-specific line shape inside the editable region that means the human has a draft. */
   occupiedLine: RegExp;
-  /** Runtime-specific ANSI style rule that can make otherwise non-empty prompt content count as empty. */
+  /**
+   * Runtime-specific ANSI style rule that can make otherwise non-empty prompt content count as empty.
+   *
+   * Declare this ONLY for a runtime measured to render suggestion text inside an otherwise empty
+   * composer (claude `t-c5f29b`, codex `t-aee74e`). It is what lets content NOT count as a human
+   * draft, so declaring it speculatively weakens the protection against injecting over typed text.
+   * `t-3eaa8b` measured grok/opencode/pi/hermes across empty, typed-draft and post-turn states and
+   * found no such suggestion in any of them — hence no declaration for those four.
+   */
   ansiEmptyContentStyle?: "all-dim";
 }
 

@@ -722,9 +722,25 @@ function visibleCharsWithDim(text: string): Array<{ char: string; dim: boolean }
   for (const match of text.matchAll(ANSI_SGR_RE)) {
     for (const char of text.slice(index, match.index).replace(ANSI_RE, "")) chars.push({ char, dim });
     const codes = (match[1] || "0").split(";").map((code) => (code === "" ? 0 : Number.parseInt(code, 10)));
-    if (codes.some((code) => code === 0)) dim = false;
-    if (codes.some((code) => code === 2)) dim = true;
-    if (codes.some((code) => code === 22)) dim = false;
+    // t-3eaa8b — walk the parameters instead of scanning them as a set. SGR 38/48/58 carry an
+    // extended colour whose SUB-parameters are ordinary numbers, so `38;2;r;g;b` (truecolor)
+    // contains a literal 2 that a set-scan reads as "dim". Measured on grok 0.2.112, whose composer
+    // is truecolor: a human's typed draft came out entirely "dim" and the composer therefore read as
+    // EMPTY — the dangerous direction, since that is what lets injection overwrite typed text.
+    for (let i = 0; i < codes.length; i++) {
+      const code = codes[i]!;
+      if (code === 38 || code === 48 || code === 58) {
+        // 5;<n> = 256-colour, 2;<r>;<g>;<b> = truecolor. Anything else: stop trusting this run.
+        const mode = codes[i + 1];
+        if (mode === 5) i += 2;
+        else if (mode === 2) i += 4;
+        else i = codes.length;
+        continue;
+      }
+      if (code === 0) dim = false;
+      else if (code === 2) dim = true;
+      else if (code === 22) dim = false;
+    }
     index = match.index + match[0].length;
   }
   for (const char of text.slice(index).replace(ANSI_RE, "")) chars.push({ char, dim });
