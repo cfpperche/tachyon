@@ -22,6 +22,7 @@ import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../.
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /**
  * True end-to-end: a real MCP client (the official SDK) talking streamable-HTTP to a
@@ -120,7 +121,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let claudeComposerOccupied = false;
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
-  const evRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ev-"));
+  const evRoot = makeTempDir("tachyon-bridge-ev-");
   const evLedger = new SessionLedger(evRoot);
   evLedger.record("claude", { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/claude", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/claude", declared: true });
   const EV_HEAD = "abc123";

@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { containedInBase, hygieneReport } from "../../src/git-delivery/classify.js";
@@ -8,11 +7,12 @@ import { resolveGitDeliverySettings } from "../../src/git-delivery/settings.js";
 import { deterministicGitDeliveryId, GitDeliveryStore, GitDeliveryUniquenessError } from "../../src/git-delivery/store.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
 import type { GitExec, GitResult } from "../../src/worktree/WorktreeManager.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const actor = { kind: "agent" as const, name: "owner" };
 
 function tmpRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-gd-"));
+  return makeTempDir("tachyon-gd-");
 }
 
 function baseDelivery(overrides: Partial<GitDelivery> = {}): GitDelivery {

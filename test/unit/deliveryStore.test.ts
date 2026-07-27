@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
@@ -13,12 +12,13 @@ import {
   DeliveryVersionConflictError,
 } from "../../src/delivery/store.js";
 import type { Delivery, DeliveryCreateInput } from "../../src/delivery/types.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const actor = { kind: "agent" as const, name: "coordinator" };
 const now = "2026-07-10T12:00:00.000Z";
 const AUTHORITY_KEY = Buffer.alloc(32, 0x42);
 
-function root(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-delivery-")); }
+function root(): string { return makeTempDir("tachyon-delivery-"); }
 
 function authorityHeadHarness(): {
   port: DeliveryAuthorityHeadPort;

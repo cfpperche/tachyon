@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { briefFilePath, deliverableBody, BRIEF_FILE_THRESHOLD } from "../../src/agents/briefFile.js";
 import { forgetAgent } from "../../src/agents/forgetAgent.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("T12 private derived agent files", () => {
   it("keeps one private copy per agent and removes only generated copies on permanent forget", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-t12-"));
+    const workspaceRoot = makeTempDir("tachyon-t12-");
     const agent = "private-agent";
     const firstBody = `distinctive-first-${"a".repeat(BRIEF_FILE_THRESHOLD)}`;
     const finalBody = `distinctive-final-${"b".repeat(BRIEF_FILE_THRESHOLD)}`;

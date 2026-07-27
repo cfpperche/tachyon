@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseOwnerRows, latestOwnerFor, buildCodexSessionStartHookConfig, buildOwnershipSettings, PERSISTENCE_STOP_RECORDER_SOURCE, SESSION_CONTINUITY_POINTER_SOURCE, SESSION_HANDOFF_POINTER_SOURCE, SESSION_OWNER_RECORDER_SOURCE, appendOwnerRow, compactSessionOwnerRows, compactSpawnSettings, persistenceHookFailureFile, prunePersistenceLedger, readSessionOwners, removeSessionOwnerRows, removeSpawnSettings, resolveRotationFollow, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   const row = (o: Record<string, unknown>) => JSON.stringify(o);
@@ -50,7 +50,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("removeSessionOwnerRows removes only the deleted agent's ownership rows", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-cleanup-"));
+    const tmp = makeTempDir("tachyon-owner-cleanup-");
     const file = path.join(tmp, "session-owners.jsonl");
     fs.writeFileSync(file, [
       row({ agent: "drop", sessionId: "d1", transcriptPath: "/p/d1.jsonl", cwd: "/ws" }),
@@ -67,7 +67,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("compactSessionOwnerRows keeps only ownership rows for known agents", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-compact-"));
+    const tmp = makeTempDir("tachyon-owner-compact-");
     const file = path.join(tmp, "session-owners.jsonl");
     fs.writeFileSync(file, [
       row({ agent: "declared", sessionId: "s-declared", transcriptPath: "/p/declared.jsonl", cwd: "/ws" }),
@@ -83,7 +83,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("removeSpawnSettings removes one agent's per-spawn settings file idempotently", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-spawn-settings-remove-"));
+    const tmp = makeTempDir("tachyon-spawn-settings-remove-");
     fs.mkdirSync(path.dirname(spawnSettingsPath(tmp, "drop")), { recursive: true });
     fs.writeFileSync(spawnSettingsPath(tmp, "drop"), "{}\n", "utf8");
     fs.writeFileSync(spawnSettingsPath(tmp, "keep"), "{}\n", "utf8");
@@ -96,7 +96,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("compactSpawnSettings drops settings for agents no longer known to the workspace", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-spawn-settings-compact-"));
+    const tmp = makeTempDir("tachyon-spawn-settings-compact-");
     fs.mkdirSync(path.dirname(spawnSettingsPath(tmp, "declared")), { recursive: true });
     for (const name of ["declared", "ledger", "live", "stale"]) fs.writeFileSync(spawnSettingsPath(tmp, name), "{}\n", "utf8");
     fs.writeFileSync(path.join(tmp, ".tachyon", "spawn-settings", "README.txt"), "keep\n", "utf8");
@@ -111,7 +111,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("appendOwnerRow appends one durable row, creating the directory if needed", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-owner-append-"));
+    const tmp = makeTempDir("tachyon-owner-append-");
     const file = sessionOwnersFile(tmp);
     appendOwnerRow(file, { agent: "a", sessionId: "s1", transcriptPath: "/p/s1.jsonl", cwd: "/ws", source: "rotation-follow", ts: "2026-07-14T00:00:00Z" });
     appendOwnerRow(file, { agent: "a", sessionId: "s2", transcriptPath: "/p/s2.jsonl", cwd: "/ws", source: "rotation-follow", ts: "2026-07-14T00:01:00Z" });
@@ -122,7 +122,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
 
   describe("resolveRotationFollow (t-9f2641 — mid-run transcript rotation follow)", () => {
     const mk = (files: Record<string, number>) => {
-      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-rotation-follow-"));
+      const tmp = makeTempDir("tachyon-rotation-follow-");
       for (const [name, mtimeMs] of Object.entries(files)) {
         const p = path.join(tmp, name);
         fs.writeFileSync(p, "{}\n", "utf8");
@@ -311,7 +311,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 317: materialized hooks log sanitized failures and still exit cleanly", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-hook-failure-"));
+    const tmp = makeTempDir("tachyon-hook-failure-");
     const cases = [
       {
         source: SESSION_OWNER_RECORDER_SOURCE,
@@ -367,7 +367,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 317: parse failures do not leak malformed hook stdin into the failure ledger", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-hook-parse-failure-"));
+    const tmp = makeTempDir("tachyon-hook-parse-failure-");
     const script = path.join(tmp, "session-owner-record.cjs");
     const ownersFile = path.join(tmp, "session-owners.jsonl");
     const failureFile = path.join(tmp, "persistence-hooks-failures.jsonl");
@@ -394,7 +394,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 317: failure logging remains best-effort when the failure ledger cannot be written", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-hook-failure-swallow-"));
+    const tmp = makeTempDir("tachyon-hook-failure-swallow-");
     const script = path.join(tmp, "persistence-stop-record.cjs");
     const badOut = path.join(tmp, "bad-out");
     const unwritableFailureTarget = path.join(tmp, "failure-target-is-directory");
@@ -416,7 +416,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 319: persistence ledger retention keeps recent valid rows and latest row per key", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-retention-"));
+    const tmp = makeTempDir("tachyon-ledger-retention-");
     const file = path.join(tmp, "persistence-stop.jsonl");
     const rows = [
       { agent: "a", event: "Stop", ts: "old-a" },
@@ -437,7 +437,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 319: persistence ledger retention enforces a hard byte cap when possible", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-byte-retention-"));
+    const tmp = makeTempDir("tachyon-ledger-byte-retention-");
     const file = path.join(tmp, "persistence-hooks-failures.jsonl");
     fs.writeFileSync(file, Array.from({ length: 20 }, (_x, i) => JSON.stringify({
       agent: `agent-${i}`,
@@ -454,7 +454,7 @@ describe("sessionOwners — pure ledger helpers (spec 243)", () => {
   });
 
   it("spec 319: Stop recorder prunes its ledger after appending", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-stop-retention-"));
+    const tmp = makeTempDir("tachyon-stop-retention-");
     const script = path.join(tmp, "persistence-stop-record.cjs");
     const stopFile = path.join(tmp, "persistence-stop.jsonl");
     const failureFile = path.join(tmp, "failures.jsonl");

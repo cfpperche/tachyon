@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("agent soul lifecycle composition closure", () => {
   it("agent soul lifecycle composition closure", async () => {
@@ -41,7 +40,7 @@ describe("agent soul lifecycle composition closure", () => {
     });
 
     const { SessionLedger } = await import("../../src/resume/SessionLedger.js");
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "soul-ledger-"));
+    const root = makeTempDir("soul-ledger-");
     const ledger = new SessionLedger(root);
     ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", role: "reviewer", soul: true, taskBrief: "Current execution task." }, cwd: root, declared: false, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
     expect(fs.readFileSync(ledger.path, "utf8")).not.toContain(identityBody);

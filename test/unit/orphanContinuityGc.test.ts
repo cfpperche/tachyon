@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { deleteActivityLog, agentLogId } from "../../src/activity/logStore.js";
@@ -8,9 +7,10 @@ import {
   isOrphanAgent,
   listContinuityAgentNames,
 } from "../../src/continuity/orphanGc.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 function tmpRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-orphan-gc-"));
+  return makeTempDir("tachyon-orphan-gc-");
 }
 
 describe("t-8310ca orphan continuity/activity GC", () => {

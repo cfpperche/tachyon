@@ -1,11 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import nodePath from "node:path";
 import { EventEmitter } from "node:events";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxService } from "../../src/tmux/TmuxService.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */
 class FakeMcp {
@@ -28,7 +26,7 @@ function wireNotifyAgent(deps: Partial<BridgeDeps> & { workspaceRoot: string }) 
 }
 
 function tmpRoot(): string {
-  return fs.mkdtempSync(nodePath.join(os.tmpdir(), "snbell-notify-behavior-"));
+  return makeTempDir("snbell-notify-behavior-");
 }
 
 describe("container-generated delegation behavior", () => {
