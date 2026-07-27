@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { panelIcon } from "./shared/panelIcon.js";
-import type { FleetVM, AgentVM, PinPreviewAttachmentVM, PinPreviewVM } from "../sidebar/types.js";
+import { isAgentRow, type FleetVM, type AgentVM, type PinPreviewAttachmentVM, type PinPreviewVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { READY } from "./shared/ready.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -452,7 +452,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
 function ctxOf(a: AgentVM): string {
   const state = a.status === "crashed" ? "crashed" : a.status === "stopped" ? "stopped" : "running";
-  return agentContextValue({ state, ai: !!a.ai, adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
+  return agentContextValue({ state, ai: isAgentRow(a), adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
 }
 
 export function pinDocPreview(doc: TiptapJSON | null): string {

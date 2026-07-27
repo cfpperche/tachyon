@@ -52,7 +52,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
     expect(branch).toBe("main");
     const vm = toAgentVM(
       { name: "shared", running: true, dead: false, crashed: false },
-      { liveBranch: branch!, worktreePath: repo, ai: true },
+      { liveBranch: branch!, worktreePath: repo, kind: "agent" },
     );
     expect(vm.liveBranch).toBe("main");
     expect(vm.worktree).toBeUndefined();
@@ -70,7 +70,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
         worktree: record.branch,
         liveBranch: (await m.currentBranch(record.path))!,
         worktreePath: record.path,
-        ai: true,
+        kind: "agent",
       },
     );
     expect(aligned).toMatchObject({ liveBranch: "tachyon/soul", worktree: "tachyon/soul" });
@@ -89,7 +89,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
         liveBranch: live!,
         branchDrift: drift,
         worktreePath: record.path,
-        ai: true,
+        kind: "agent",
       },
     );
     expect(drifted).toMatchObject({

@@ -42,7 +42,7 @@ function buildDegradedFleet(opts: {
           declaredOwner: e.declaredOwner,
         },
         {
-          ai: true,
+          kind: "agent",
           adhoc: !e.declared,
           resumable: e.resumable,
           configInvalid: true,

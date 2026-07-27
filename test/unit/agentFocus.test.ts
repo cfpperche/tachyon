@@ -47,7 +47,7 @@ describe("agentFocus (spec 390)", () => {
     ];
     const taskWin = resolveAgentFocus({
       agent: "codex",
-      ai: true,
+      kind: "agent",
       tasks,
       ledger: { contractTask: "should lose" },
       continuityBody: "# Current Goal\nshould lose",
@@ -56,7 +56,7 @@ describe("agentFocus (spec 390)", () => {
 
     const briefWin = resolveAgentFocus({
       agent: "worker",
-      ai: true,
+      kind: "agent",
       tasks,
       ledger: { contractTask: "Implement salvage recovery" },
       continuityBody: "# Current Goal\nignore me",
@@ -65,12 +65,12 @@ describe("agentFocus (spec 390)", () => {
 
     const goalWin = resolveAgentFocus({
       agent: "grok",
-      ai: true,
+      kind: "agent",
       continuityBody: "# Current Goal\nProduct design for focus line",
     });
     expect(goalWin).toMatchObject({ source: "continuity", text: "Product design for focus line" });
 
-    expect(resolveAgentFocus({ agent: "empty", ai: true })).toBeUndefined();
-    expect(resolveAgentFocus({ agent: "shell", ai: false, continuityBody: "# Current Goal\nx" })).toBeUndefined();
+    expect(resolveAgentFocus({ agent: "empty", kind: "agent" })).toBeUndefined();
+    expect(resolveAgentFocus({ agent: "shell", kind: "terminal", continuityBody: "# Current Goal\nx" })).toBeUndefined();
   });
 });

@@ -3,7 +3,7 @@ import { agentAncestorNames, agentGroupParent, agentHierarchyRows, agentIsNested
 import { groupByParent, sortRows } from "../../src/sidebar/sortRows";
 import type { AgentVM } from "../../src/sidebar/types";
 
-const agent = (name: string, extra: Partial<AgentVM> = {}): AgentVM => ({ name, status: "running", ai: true, ...extra });
+const agent = (name: string, extra: Partial<AgentVM> = {}): AgentVM => ({ name, status: "running", kind: "agent", ...extra });
 
 const renderOrder = (agents: AgentVM[]): string[] => {
   const sorted = sortRows(agents, "name-asc", (a) => a.name);

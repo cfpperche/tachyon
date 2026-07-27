@@ -1,5 +1,5 @@
 import type { ActivityItem, ActivityViewModel } from "./activityView.js";
-import type { AgentVM } from "../sidebar/types.js";
+import { isAgentRow, type AgentVM } from "../sidebar/types.js";
 
 export const SHARE_TEXT_CAP = 6000;
 export const SHARE_URL_TEXT_CAP = 1600;
@@ -85,7 +85,7 @@ export function resolveActivityShare(
 
 export function internalShareTargets(agents: AgentVM[], sourceAgent: string): ActivityShareTarget[] {
   return agents
-    .filter((a) => a.name !== sourceAgent && !!a.ai && !a.exited && a.status !== "stopped" && a.status !== "crashed" && a.status !== "stopping")
+    .filter((a) => a.name !== sourceAgent && isAgentRow(a) && !a.exited && a.status !== "stopped" && a.status !== "crashed" && a.status !== "stopping")
     .map((a) => ({ name: a.name, label: `${a.name}${a.status === "throttled" ? " (throttled)" : ""}` }));
 }
 

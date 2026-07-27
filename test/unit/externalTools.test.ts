@@ -58,7 +58,7 @@ describe("ExternalToolRegistry", () => {
   it("projects summaries through toAgentVM", () => {
     const registry = new ExternalToolRegistry();
     registry.upsert({ id: "a", agent: "cx", kind: "browser", tool: "chrome", source: "proc-tree", confidence: "weak" });
-    const vm = toAgentVM({ name: "cx", running: true, dead: false, crashed: false }, { ai: true, externalTools: registry.summary("cx") });
+    const vm = toAgentVM({ name: "cx", running: true, dead: false, crashed: false }, { kind: "agent", externalTools: registry.summary("cx") });
 
     expect(vm.externalTools?.active).toBe(1);
     expect(vm.externalTools?.strongestConfidence).toBe("weak");
