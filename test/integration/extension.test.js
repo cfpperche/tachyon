@@ -87,10 +87,12 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const ext = vscode.extensions.getExtension("cfpperche.tachyon");
     const contributes = ext.packageJSON.contributes;
     assert.ok(contributes.viewsContainers.activitybar.some((c) => c.id === "tachyon"));
-    // spec 237 — the native tree was retired; the Preact webview is the only contributed view.
+    // spec 237 retired the native tree, leaving the Preact webview as the sidebar. spec 349 then
+    // added the plugin surface host as a second contributed view (t-9418ac: this assertion still
+    // listed only the first and had been failing ever since, independently of where the suite runs).
     assert.deepStrictEqual(
       contributes.views.tachyon.map((v) => v.id),
-      ["tachyonSidebarPrototype"],
+      ["tachyonSidebarPrototype", "tachyonPluginSurfaces"],
     );
     assert.strictEqual(contributes.views.tachyon.find((v) => v.id === "tachyonSidebarPrototype")?.type, "webview");
     await vscode.commands.executeCommand("tachyon.refreshViews"); // must not throw
