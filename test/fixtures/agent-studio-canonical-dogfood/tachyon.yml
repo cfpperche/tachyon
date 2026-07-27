@@ -1,5 +1,14 @@
 # Disposable Dev Host fixture for canonical Agent Studio create/edit dogfood.
+#
+# SDD 478 M7 — `agents: {}` alone is not a loadable roster ("must be a non-empty mapping ... or
+# declare a 'terminals' block"), so the fixture whose whole point is starting from zero agents
+# could not be opened. The terminal below is that non-empty half; every agent in this scenario is
+# created through Agent Studio, which is what the fixture exists to exercise.
 settings:
   maxAgents: 8
 
 agents: {}
+terminals:
+  shell:
+    cmd: sh
+    autostart: false

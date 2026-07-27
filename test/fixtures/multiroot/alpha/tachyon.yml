@@ -1,4 +1,6 @@
-agents:
+# SDD 478 M7 — `cmd: sh` is a process, so this row was never an agent; multi-root resolution is
+# what the fixture proves, and a terminal proves it identically.
+terminals:
   alpha-agent:
     cmd: sh
     autostart: true

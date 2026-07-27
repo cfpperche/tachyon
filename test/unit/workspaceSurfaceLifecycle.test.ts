@@ -106,7 +106,10 @@ afterEach(() => {
 
 async function makeWorkspace() {
   const root = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  worker:\n    cmd: sh\n", "utf8");
+  // SDD 478 M7 — these cases are about the editor SURFACE, which the boundary marks shared: a
+  // supervised process has one exactly like an agent does. `cmd: sh` is a terminal, so it is
+  // declared as one instead of riding the retired inline-agents shim.
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  worker:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const fake = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
