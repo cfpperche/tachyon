@@ -112,6 +112,17 @@ describe("codex adapter — invocation + capability (D5)", () => {
     expect(built.env?.CODEX_HOME).toBe(path.join("/scratch", PRIVATE_HOME_DIRNAME));
   });
 
+  it("runs outside a git repository — the CLI refuses without this (t-7cc65e)", async () => {
+    // Measured on codex-cli 0.145.0: without the flag, a non-repo cwd produces
+    // "Not inside a trusted directory and --skip-git-repo-check was not specified", exit 1, no JSON
+    // and no artifact — while Claude and Grok answer the same question fine. It does NOT widen the
+    // probe: with this flag and --sandbox read-only, a write request still came back refused and no
+    // file was created.
+    const built = await adapter.buildInvocation(spec, "/scratch");
+    expect(built.args).toContain("--skip-git-repo-check");
+    expect(built.args).toEqual(expect.arrayContaining(["--sandbox", "read-only"]));
+  });
+
   it("narrows the probe surface: no plugins, remote plugins, apps or skill search", async () => {
     const built = await adapter.buildInvocation(spec, "/scratch");
     for (const feature of ["plugins", "remote_plugin", "apps", "skill_search"]) {

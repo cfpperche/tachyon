@@ -89,7 +89,7 @@ const repoRoot = process.cwd();
 const humanHome = humanCodexHome();
 
 /** Launch one real Codex probe through the real service and return everything it produced. */
-async function runRealProbe(opts: { model?: string; timeoutMs?: number; adapter?: HeadlessCaptureAdapter; root?: string }) {
+async function runRealProbe(opts: { model?: string; timeoutMs?: number; adapter?: HeadlessCaptureAdapter; root?: string; cwd?: string }) {
   const root = opts.root ?? temporaryDir("tachyon-codex-dogfood-");
   const store = new ProbeStore(root);
   const service = new ProbeService({
@@ -101,7 +101,7 @@ async function runRealProbe(opts: { model?: string; timeoutMs?: number; adapter?
     archetype: "freeform",
     brief: { prompt: "Reply with exactly: ok" } as never,
     ...(opts.model ? { model: opts.model } : {}),
-    cwd: repoRoot,
+    cwd: opts.cwd ?? repoRoot,
     ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
     caller: "dogfood",
   } as never);
@@ -235,8 +235,22 @@ console.log("\n== 5: a probe killed by the wall-clock cap ==");
   ));
 }
 
-// ── 6: no rollout at all (codex died before writing one) — preserved, unproven, nothing invented.
-console.log("\n== 6: an explicit model with no rollout to correlate ==");
+// ── 6: a cwd that is not a git repository still answers (t-7cc65e).
+console.log("\n== 6: probing from a NON-git-repo directory ==");
+{
+  // Codex refuses a non-repo cwd outright unless the probe passes --skip-git-repo-check, while the
+  // same question answers fine on Claude and Grok. A probe has to work wherever its caller is.
+  const plain = temporaryDir("tachyon-codex-nonrepo-");
+  const { envelope } = await runRealProbe({ model: MODEL, cwd: plain });
+  checks.push(report(
+    "a probe launched outside a git repository completes and still proves its model",
+    envelope.status === "completed" && envelope.result?.modelProof?.verdict === "proven",
+    { cwd: plain, status: envelope.status, verdict: envelope.result?.modelProof?.verdict, answer: envelope.result?.lastMessage?.slice(0, 40) },
+  ));
+}
+
+// ── 7: no rollout at all (codex died before writing one) — preserved, unproven, nothing invented.
+console.log("\n== 7: an explicit model with no rollout to correlate ==");
 {
   const emptyHome = temporaryDir("tachyon-codex-norollout-");
   const stdout = JSON.stringify({ type: "thread.started", thread_id: "019fa07e-f2a7-7da1-a3b9-fe2cebc3884c" });

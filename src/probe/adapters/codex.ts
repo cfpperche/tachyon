@@ -85,6 +85,15 @@ export function createCodexAdapter(deps: CodexAdapterDeps = {}): HeadlessCapture
         // relocates config, sessions, history, caches and state, not only the session file.
         "--ignore-user-config",
         "--ignore-rules",
+        // t-7cc65e — a probe answers a bounded question wherever the caller happens to be, and Codex
+        // otherwise refuses outright when that cwd is not a git repository: "Not inside a trusted
+        // directory and --skip-git-repo-check was not specified" (exit 1, no JSON, no artifact). The
+        // same question answers fine on Claude and Grok, so the refusal was pure fleet asymmetry.
+        // This is not a loosening of the probe's real boundary: measured on codex-cli 0.145.0, with
+        // this flag AND --sandbox read-only, a write request still comes back refused and no file is
+        // created. The sandbox is the boundary; the git-repo check is about directory trust, which
+        // Tachyon already answers by owning the private CODEX_HOME and its trusted-folder seed.
+        "--skip-git-repo-check",
         ...NARROW_SURFACE,
         ...sandboxFlag(spec),
       ];
