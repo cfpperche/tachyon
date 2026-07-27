@@ -16,7 +16,7 @@ import {
 import { agentSoulManifestPath, agentSoulPath, cleanupStaleSoulLaunchReservationsSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir, withSoulProfileAdmission } from "../../src/agents/soul.js";
 import { createHash } from "node:crypto";
 import { agentStanzaCasToken } from "../../src/config/YamlConfigEditor.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import {
   AGENT_STUDIO_HOST_MESSAGE_NAMES,
   AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
@@ -41,7 +41,7 @@ describe("container-generated delegation behavior", () => {
         fs.writeFileSync(configPath, text.endsWith("\n") ? text : `${text}\n`);
         return text;
       },
-      isSoulEnabled: (name) => parseConfig(fs.readFileSync(configPath, "utf8")).config?.agents[name]?.soul === true,
+      isSoulEnabled: (name) => asAgent(parseConfig(fs.readFileSync(configPath, "utf8")).config?.agents[name])?.soul === true,
     };
 
     const reservations = soulLaunchReservationsDir(root);

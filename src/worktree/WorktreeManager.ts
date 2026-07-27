@@ -15,7 +15,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AgentDef, TachyonConfig } from "../config/loadConfig.js";
+import type { AgentEntry, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 import type { VerifyState } from "./verify.js";
 import type { WorktreeEvidence } from "./evidence.js";
@@ -84,7 +84,7 @@ export function pathFor(base: string, wsHash: string, agent: string): string {
  * a template without it would collide every agent onto one branch). The result is validated
  * authoritatively via `git check-ref-format` in ensure() — this is pure string resolution.
  */
-export function branchFor(agent: string, settings: TachyonConfig["settings"], agentDef: Pick<AgentDef, "branch">): string {
+export function branchFor(agent: string, settings: TachyonConfig["settings"], agentDef: Pick<AgentEntry, "branch">): string {
   if (agentDef.branch) return agentDef.branch;
   const template = settings.worktree?.branch;
   if (template) {

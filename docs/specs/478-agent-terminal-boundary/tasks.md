@@ -38,9 +38,14 @@ compatibility shim.
       by construction), the private-home inspector registry is exhaustive over it, `KNOWN_AI_CLIS` is
       composed from it, and `test/unit/attestedRuntime.test.ts` fails if one list moves without the
       others. `inferKind` still runs at the persistence and ad-hoc doors — that is M4/M9, not M1.
-- [ ] `t-914f4e` · **M2 — the discriminated union.** Split `ManagedEntryDef` into `AgentEntry | TerminalEntry`;
+- [x] `t-914f4e` · **M2 — the discriminated union.** Split `ManagedEntryDef` into `AgentEntry | TerminalEntry`;
       the twelve currently-unguarded agent-only fields leave the Terminal arm. Compiler output from
       this step is the true work list for M3.
+      Landed with `asAgent()` as the single narrowing and `test/unit/managedEntryUnion.test.ts` as the
+      build-level proof (`@ts-expect-error` per agent-only field). **The compiler reported 325 errors
+      across 30 files** — the risk in § Risks & unknowns was real: the true M3 surface is ~2.8× the
+      115-conditional grep. `runtime`/`profile` are NOT yet required on the Agent arm: every ad-hoc
+      spawn and legacy fixture would need a shim, so they land with M6/M7/M9.
 - [ ] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
       narrowing. Mechanical once M2 lands.
 - [ ] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate

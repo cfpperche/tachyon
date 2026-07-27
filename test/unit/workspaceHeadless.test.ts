@@ -29,6 +29,7 @@ import { stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
+import { asAgent } from "../../src/config/loadConfig.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -236,12 +237,12 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
 
 it("rejects nonboolean soul on reload and retains the prior known-good config", async () => {
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  ada:\n    cmd: codex\n    soul: true\n" });
-  expect(ws.config?.agents.ada.soul).toBe(true);
+  expect(asAgent(ws.config?.agents.ada)?.soul).toBe(true);
   fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents:\n  ada:\n    cmd: codex\n    soul: SOUL.md\n", "utf8");
 
   expect(ws.reloadConfig()).toBe(false);
   expect(ws.configFailure?.errors).toContain("agents.ada.soul: must be a boolean");
-  expect(ws.config?.agents.ada.soul).toBe(true);
+  expect(asAgent(ws.config?.agents.ada)?.soul).toBe(true);
   expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
   ws.dispose();
 });
@@ -296,7 +297,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
     fs.writeFileSync(path.join(profileDir, "agent.yml"), profile.replace("reviewer", "coder"));
     profileWatch!.onEvent();
     expect(ws.configFailure?.errors.join("\n")).toContain("profile/authority-boundary");
-    expect(ws.config?.agents.codex.role).toBe("reviewer");
+    expect(asAgent(ws.config?.agents.codex)?.role).toBe("reviewer");
     expect(() => ws.assertNotLkgOnlySpawn("codex")).toThrow("trusted configuration is invalid");
   } finally {
     ws.dispose();
@@ -336,7 +337,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
       expectedRevision: edited.revision,
       enabled: false,
     });
-    expect(ws.config?.agents.reviewer.profileLifecycle?.enabled).toBe(false);
+    expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle?.enabled).toBe(false);
     await expect(ws.manager.spawn("reviewer")).rejects.toThrow("canonical agent profile is disabled");
     expect(fake.sessions.size).toBe(0);
   } finally {
@@ -486,8 +487,8 @@ it("exports, imports and clones portable profiles through the Workspace boundary
     const imported = await ws.importAgentProfileBundle("imported", exported.bytes);
 
     expect(new Set([source.snapshot.agentId, imported.lifecycle.snapshot.agentId, cloned.lifecycle.snapshot.agentId]).size).toBe(3);
-    expect(ws.config?.agents.imported?.profileLifecycle?.enabled).toBe(false);
-    expect(ws.config?.agents.cloned?.profileLifecycle?.enabled).toBe(false);
+    expect(asAgent(ws.config?.agents.imported)?.profileLifecycle?.enabled).toBe(false);
+    expect(asAgent(ws.config?.agents.cloned)?.profileLifecycle?.enabled).toBe(false);
     expect(cloned.bundleSha256).toBe(exported.sha256);
     await expect(ws.manager.spawn("imported")).rejects.toThrow("canonical agent profile is disabled");
   } finally {
@@ -520,7 +521,7 @@ it("renames a running canonical profile and keeps the same live session through 
     await ws.renameAgent("reviewer", "maintainer");
 
     expect(ws.config?.agents.reviewer).toBeUndefined();
-    expect(ws.config?.agents.maintainer?.profileLifecycle).toMatchObject({ agentId: created.snapshot.agentId });
+    expect(asAgent(ws.config?.agents.maintainer)?.profileLifecycle).toMatchObject({ agentId: created.snapshot.agentId });
     expect(await ws.inspectAgentProfileLifecycle("maintainer")).toMatchObject({ agentId: created.snapshot.agentId });
     expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
     expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({ profileId: evolution.profileId, agent: "maintainer" });
@@ -604,7 +605,7 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
     });
     await ws.manager.spawn("reviewer");
     await expect(ws.forgetCanonicalProfileAgent("reviewer")).rejects.toThrow("fully stopped");
-    expect(ws.config?.agents.reviewer?.profileLifecycle).toBeDefined();
+    expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle).toBeDefined();
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
   } finally {
     ws.dispose();

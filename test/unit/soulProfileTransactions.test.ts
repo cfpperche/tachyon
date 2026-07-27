@@ -24,7 +24,7 @@ import {
 } from "../../src/agents/soulProfileTransactions.js";
 import { agentSoulManifestPath, agentSoulPath, cleanupStaleSoulLaunchReservationsSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, soulLaunchReservationsDir, SOUL_MAX_BYTES, SOUL_MINIMAL_TEMPLATE, withSoulProfileAdmission } from "../../src/agents/soul.js";
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 
 async function workspace(yaml?: string) {
   const root = await mkdtemp(path.join(tmpdir(), "tachyon-profile-tx-"));
@@ -43,7 +43,7 @@ async function workspace(yaml?: string) {
     },
     isSoulEnabled: (name) => {
       const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-      return parseConfig(current).config?.agents[name]?.soul === true;
+      return asAgent(parseConfig(current).config?.agents[name])?.soul === true;
     },
   };
   return { root, file, access, read: () => fs.readFileSync(file, "utf8") };

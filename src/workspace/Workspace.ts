@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { CONFIG_FILENAMES, inferKind, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, inferKind, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -1015,7 +1015,7 @@ export class Workspace {
           name,
           entry,
           cwd ?? this.workspaceRoot,
-          { exactTrust: this.config?.agents[name]?.profileLifecycle !== undefined },
+          { exactTrust: asAgent(this.config?.agents[name])?.profileLifecycle !== undefined },
         ) : undefined;
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
@@ -1198,13 +1198,15 @@ export class Workspace {
         }
         const pl = this.pipelineNodeCwd.get(ctx.name);
         if (pl) return { cwd: pl.cwd, worktree: pl.worktree };
-        const forceWorktree = ctx.gate ? true : ctx.def.worktree;
+        // A worktree, its branch and its setup are Agent capabilities — a terminal declares none.
+        const ctxAgent = asAgent(ctx.def);
+        const forceWorktree = ctx.gate ? true : ctxAgent?.worktree;
         const resolved = await resolveWorktreeCwd(
           {
             name: ctx.name,
             worktree: forceWorktree,
-            branch: ctx.def.branch,
-            worktreeSetup: ctx.def.worktreeSetup,
+            branch: ctxAgent?.branch,
+            worktreeSetup: ctxAgent?.worktreeSetup,
             parent: ctx.gate ? undefined : ctx.parent,
             isRestart: ctx.isRestart,
           },
@@ -1625,7 +1627,7 @@ export class Workspace {
     this.evolutionStore = new EvolutionStore(workspaceRoot, {
       reservedSkillNames: (name) => declaredHarnessSkillNames(
         workspaceRoot,
-        this.config?.agents[name]?.harness?.skills,
+        asAgent(this.config?.agents[name])?.harness?.skills,
       ),
       authorityIntegrityKey: () => this.authorityIntegrityKey,
       authorityHead: this.canonicalAuthorityHeadPort(),
@@ -2536,7 +2538,7 @@ export class Workspace {
    *  `input: required`)? True iff it declares non-empty instructions, an isolated harness, or a non-custom
    *  role template. Conservative — an unknown/bare agent returns false (→ `task` stays required). */
   private agentHasPersona = (name: string): boolean => {
-    const a = this.config?.agents[name];
+    const a = asAgent(this.config?.agents[name]);
     if (!a) return false;
     if (typeof a.instructions === "string" && a.instructions.trim().length > 0) return true;
     if (a.harness) return true;
@@ -2882,7 +2884,7 @@ export class Workspace {
     // a pipeline node runs in the RUN's worktree, so a referenced agent must not own one (spec 230).
     const owns = Object.values(pipeline.nodes)
       .map((n) => n.agent)
-      .filter((a): a is string => !!a && !!this.config?.agents[a]?.worktree);
+      .filter((a): a is string => !!a && !!asAgent(this.config?.agents[a])?.worktree);
     if (owns.length > 0) {
       this.host.notify(this.t("pipeline '{0}': agent(s) {1} own a worktree — pipeline agents must not (the run owns the worktree)", name, [...new Set(owns)].join(", ")), "error");
       return null;
@@ -3267,7 +3269,7 @@ export class Workspace {
     const affected: string[] = [];
     for (const agent of live) {
       if (!agent.running || agent.kind !== "agent") continue;
-      const def = this.config?.agents[agent.name];
+      const def = asAgent(this.config?.agents[agent.name]);
       if (def?.profileNativeConfig?.adapter !== runtime) continue;
       const selected = Object.values(def.profileNativeConfig.sources ?? {}).includes(scope);
       if (!selected) continue;
@@ -3642,7 +3644,8 @@ export class Workspace {
     if (this.manager.kindOf(agent) !== "agent") throw new Error(`'${agent}' is a terminal — re-anchoring applies only to agents`);
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
-    const def = this.manager.defOf(agent);
+    // The kind guard above already refused a terminal, so the Agent arm is the only one left.
+    const def = asAgent(this.manager.defOf(agent));
     const canonicalGate = await this.canonicalPrimerGate(agent);
     const sessionEvolution = this.ledger.get(agent)?.evolution;
     if (def?.soul) {
@@ -3834,12 +3837,12 @@ export class Workspace {
   }
 
   isCanonicalProfileAgent(name: string): boolean {
-    return this.config?.agents[name]?.profileLifecycle !== undefined;
+    return asAgent(this.config?.agents[name])?.profileLifecycle !== undefined;
   }
 
   /** Recoverable retirement for a profile-backed declared agent. */
   async forgetCanonicalProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
-    const lifecycle = this.config?.agents[name]?.profileLifecycle;
+    const lifecycle = asAgent(this.config?.agents[name])?.profileLifecycle;
     if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const inspected = await this.inspectAgentProfileLifecycle(name);
     if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
@@ -4638,7 +4641,7 @@ export class Workspace {
     const wt = rec?.worktree;
     if (!wt) throw new Error(this.t("'{0}' has no worktree — verify is worktree-scoped", agent));
     if (!fs.existsSync(wt.path)) throw new Error(this.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
-    const verify = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
+    const verify = effectiveVerify(asAgent(this.config?.agents[agent]) ?? {}, this.config?.settings ?? {});
     if (!verify) throw new Error(this.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
 
     // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
@@ -4688,7 +4691,7 @@ export class Workspace {
    */
   async verifyInfo(agent: string): Promise<{ command: string; state?: VerifyState; stale: boolean; badge: VerifyBadge } | undefined> {
     const wt = this.ledger.get(agent)?.worktree;
-    const command = effectiveVerify(this.config?.agents[agent] ?? {}, this.config?.settings ?? {});
+    const command = effectiveVerify(asAgent(this.config?.agents[agent]) ?? {}, this.config?.settings ?? {});
     if (!wt || !command) return undefined;
     // A recorded result only counts if it ran the CURRENTLY-effective verify command (review fix:
     // changing `verify:` must not show the old command's result as fresh — treat it as not-verified).
@@ -5123,7 +5126,7 @@ export class Workspace {
       return;
     }
     this.profileSpawnBlocked.add(agentName);
-    const definition = this.config?.agents[agentName];
+    const definition = asAgent(this.config?.agents[agentName]);
     if (definition?.profileLifecycle) {
       definition.profileLifecycle = { ...definition.profileLifecycle, enabled: false };
     }
@@ -5762,7 +5765,7 @@ export class Workspace {
         if (!result.ok) throw new Error(result.errors[0] ?? "could not write tachyon.yml");
         return text;
       },
-      isSoulEnabled: (name: string) => this.config?.agents[name]?.soul === true,
+      isSoulEnabled: (name: string) => asAgent(this.config?.agents[name])?.soul === true,
     };
   }
 
@@ -5966,7 +5969,7 @@ export class Workspace {
    * Attention state self-heals on the next tick; watchers rebuild on reload.
    */
   async renameAgent(oldName: string, newName: string, expectedRevision?: string): Promise<void> {
-    const profileLifecycle = this.config?.agents[oldName]?.profileLifecycle;
+    const profileLifecycle = asAgent(this.config?.agents[oldName])?.profileLifecycle;
     if (profileLifecycle) {
       const inspected = await this.inspectAgentProfileLifecycle(oldName);
       if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {

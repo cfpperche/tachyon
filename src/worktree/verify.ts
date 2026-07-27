@@ -8,7 +8,7 @@
  * handoff lives in the MCP bridge. Unit-tested with no git, no runner.
  */
 
-import type { TachyonConfig, AgentDef } from "../config/loadConfig.js";
+import type { TachyonConfig, AgentEntry } from "../config/loadConfig.js";
 
 /** Recorded outcome of the last verify run, keyed to the commit it ran against. */
 export interface VerifyState {
@@ -30,7 +30,7 @@ export type VerifyBadge = "verified" | "failing" | "stale";
  * `settings.worktree.verify` (OQ1 → both, per-agent wins). undefined → no gate, no badge.
  */
 export function effectiveVerify(
-  agentDef: Pick<AgentDef, "verify">,
+  agentDef: Pick<AgentEntry, "verify">,
   settings: TachyonConfig["settings"],
 ): string | undefined {
   const a = agentDef.verify?.trim();

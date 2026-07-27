@@ -3,7 +3,7 @@ import path from "node:path";
 import { TextDecoder } from "node:util";
 import { parseDocument } from "yaml";
 import { z } from "zod";
-import type { AgentDef } from "./loadConfig.js";
+import type { AgentEntry } from "./loadConfig.js";
 import {
   AgentProfileReadError,
   closeCanonicalAgentProfile,
@@ -157,7 +157,7 @@ export interface ResolveAgentProfileInput {
   agentName: string;
   legacy?: {
     source?: string;
-    definition: AgentDef;
+    definition: AgentEntry;
     /** Trusted public adapter identity; never parsed from the opaque legacy command. */
     runtime: { adapterId: string; executableId: string };
   };
@@ -883,7 +883,7 @@ function resolveCapabilities(
   };
 }
 
-function legacyDefinition(definition: AgentDef, runtime: { adapterId: string; executableId: string }): NormalizedAgentDefinition {
+function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; executableId: string }): NormalizedAgentDefinition {
   const legacyEnvironmentNames = Object.keys(definition.env ?? {}).sort(compareText);
   return {
     runtime: {

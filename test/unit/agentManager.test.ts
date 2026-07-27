@@ -8,7 +8,7 @@ import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableEr
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
-import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
@@ -385,7 +385,7 @@ describe("AgentManager", () => {
         expectedTargetDigest: detail.currentTargetDigest,
       });
       const config = configOf("agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
-      config.agents.reviewer!.profileEvolution = {
+      asAgent(config.agents.reviewer)!.profileEvolution = {
         profileId: "another-profile",
         selectorSha256: "a".repeat(64),
       };
@@ -1974,7 +1974,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       prepareDeliveryJoin: async () => { prepared += 1; throw new Error("must not prepare"); },
       confirmDeliveryJoin: async () => undefined,
     });
-    h.manager.defOf("reviewer")!.profileLifecycle = {
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
       enabled: false,
       agentId: "11111111-1111-4111-8111-111111111111",
       canonicalSha256: "a".repeat(64),
@@ -4378,7 +4378,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         return true;
       },
     });
-    const sourceDef = h.manager.defOf("claude")!;
+    const sourceDef = asAgent(h.manager.defOf("claude"))!;
     sourceDef.profileLifecycle = {
       enabled: true,
       agentId: "11111111-1111-4111-8111-111111111111",
@@ -4452,7 +4452,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         return true;
       },
     });
-    h.manager.defOf("claude")!.profileLifecycle = {
+    asAgent(h.manager.defOf("claude"))!.profileLifecycle = {
       enabled: true,
       agentId: "11111111-1111-4111-8111-111111111111",
       canonicalSha256: "a".repeat(64),
@@ -4482,7 +4482,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         removed.push(name);
       },
     });
-    h.manager.defOf("claude")!.profileLifecycle = {
+    asAgent(h.manager.defOf("claude"))!.profileLifecycle = {
       enabled: true,
       agentId: "11111111-1111-4111-8111-111111111111",
       canonicalSha256: "a".repeat(64),
@@ -5024,7 +5024,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         },
         materializeBridgeMcpGrok: () => undefined,
       });
-      h.manager.defOf("grok")!.profileLifecycle = {
+      asAgent(h.manager.defOf("grok"))!.profileLifecycle = {
         enabled: true,
         agentId: "11111111-1111-4111-8111-111111111111",
         canonicalSha256: "a".repeat(64),
@@ -5155,7 +5155,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       }));
       const harness = new HarnessManager(h.ws, realClaudeHome, {}, realClaudeJson);
       const materialized: string[] = [];
-      h.manager.defOf("claude")!.profileLifecycle = {
+      asAgent(h.manager.defOf("claude"))!.profileLifecycle = {
         enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
       };
       const nativeConfig: ResolvedAgentNativeConfigProjection = {
@@ -5182,8 +5182,8 @@ describe("AgentManager — session resume (spec 209)", () => {
         hooks: { Stop: [{ hooks: [{ type: "command", command: "selected-hook" }] }] },
         pi: { extensions: [], prompts: [], themes: [], packages: [] },
       };
-      h.manager.defOf("claude")!.profileNativeConfig = nativeConfig;
-      h.manager.defOf("claude")!.profileCapabilities = capabilities;
+      asAgent(h.manager.defOf("claude"))!.profileNativeConfig = nativeConfig;
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = capabilities;
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
         const result = harness.materializeCanonicalClaudeProfileHome(name, adapterFor("claude")!, {
           nativeConfig,
@@ -5273,7 +5273,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
       };
       const materialized: Array<{ config: string; trust: string }> = [];
-      h.manager.defOf("grok")!.profileLifecycle = {
+      asAgent(h.manager.defOf("grok"))!.profileLifecycle = {
         enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
       };
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
@@ -5345,7 +5345,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         realPiHome,
       );
       const materialized: string[] = [];
-      h.manager.defOf("pi")!.profileLifecycle = {
+      asAgent(h.manager.defOf("pi"))!.profileLifecycle = {
         enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
       };
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, cwd }) => {
@@ -5427,11 +5427,11 @@ describe("AgentManager — session resume (spec 209)", () => {
         realCodexHome,
       );
       const materialized: string[] = [];
-      (h.manager.defOf("codex")!).profileLifecycle = {
+      asAgent(h.manager.defOf("codex"))!.profileLifecycle = {
         enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
       };
-      (h.manager.defOf("codex")!).profileNativeConfig = nativeConfig;
-      (h.manager.defOf("codex")!).profileCapabilities = capabilities;
+      asAgent(h.manager.defOf("codex"))!.profileNativeConfig = nativeConfig;
+      asAgent(h.manager.defOf("codex"))!.profileCapabilities = capabilities;
       // The actual launch boundary is what matters: each lifecycle path invokes the same real private-home writer.
       (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) => {
         const result = harness.materializeCanonicalCodexProfileHome(name, adapterFor("codex")!, {
@@ -6164,7 +6164,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     let seenWorktree: boolean | undefined;
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n", {
       resolveSpawnCwd: async (ctx) => {
-        seenWorktree = ctx.def.worktree;
+        seenWorktree = asAgent(ctx.def)?.worktree;
         return null;
       },
     });

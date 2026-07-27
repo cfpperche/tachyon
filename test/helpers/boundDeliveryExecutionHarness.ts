@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect } from "vitest";
 import { AgentManager, type DeliveryJoinRequest } from "../../src/agents/AgentManager.js";
-import { parseConfig, type ManagedEntryDef } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, type ManagedEntryDef } from "../../src/config/loadConfig.js";
 import { TmuxService, TmuxError, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -175,7 +175,7 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
     for (const file of ["old-rule.md", "new-rule.md"]) fs.writeFileSync(path.join(root, file), file);
     for (const dir of ["old-skill", "new-skill"]) { fs.mkdirSync(path.join(root, dir)); fs.writeFileSync(path.join(root, dir, "SKILL.md"), dir); }
     const config = parseConfig(`agents:\n  reviewer:\n    cmd: codex --model gpt-5\n    role: reviewer\n    instructions: durable reviewer\n    env:\n      MODE: old\n    isolate: transcript\n    watch: [old-watch]\n    attention:\n      enabled: true\n      silenceSec: 9\n      patterns: [old-attention]\n    harness:\n      inherit: none\n      mcp:\n        old-mcp:\n          command: old-mcp\n          args: [old-arg]\n          env:\n            OLD_SECRET: \${OLD_SECRET}\n      hooks:\n        SessionStart: [old-hook]\n      instructions: [old-rule.md]\n      skills: [old-skill]\n`).config!;
-    const source = config.agents.reviewer!;
+    const source = asAgent(config.agents.reviewer)!;
     // `rules` is a Claude-only parser field, but the Delivery clone must still
     // defend every nested definition field if a live config object changes.
     source.harness!.rules = ["old-rule.md"];

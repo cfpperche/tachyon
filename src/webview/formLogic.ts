@@ -1,5 +1,5 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { inferKind, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, inferKind, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { binaryOf } from "../resume/adapters.js";
 
 /**
@@ -465,26 +465,29 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
 }
 
 /** Pre-fills the form from an existing definition (edit mode). */
-export function fromDef(name: string, def: AgentDef): FormState {
-  const h = def.harness;
+/** SDD 478 — the studio edits an entry of either kind, so every agent-only field is read through
+ *  the Agent arm and falls back to the blank default for a terminal. */
+export function fromDef(name: string, entry: AgentDef): FormState {
+  const def = asAgent(entry);
+  const h = def?.harness;
   return {
     name,
-    cmd: def.cmd,
-    kind: def.kind,
-    instructions: def.instructions ?? "",
-    soul: def.soul === true,
-    selfEvolution: def.selfEvolution?.enabled === true,
-    role: def.role ?? "",
-    watch: def.watch.join(", "),
+    cmd: entry.cmd,
+    kind: entry.kind,
+    instructions: def?.instructions ?? "",
+    soul: def?.soul === true,
+    selfEvolution: def?.selfEvolution?.enabled === true,
+    role: def?.role ?? "",
+    watch: entry.watch.join(", "),
     steps: "",
-    cwd: def.cwd ?? "",
-    autostart: def.autostart,
-    restartOnCrash: def.restart === "on-crash",
-    attention: def.attention.enabled,
-    worktree: def.worktree ?? false,
-    branch: def.branch ?? "",
-    worktreeSetup: (def.worktreeSetup ?? []).join("\n"),
-    verify: def.verify ?? "",
+    cwd: entry.cwd ?? "",
+    autostart: entry.autostart,
+    restartOnCrash: entry.restart === "on-crash",
+    attention: entry.attention.enabled,
+    worktree: def?.worktree ?? false,
+    branch: def?.branch ?? "",
+    worktreeSetup: (def?.worktreeSetup ?? []).join("\n"),
+    verify: def?.verify ?? "",
     ...SCHED_DEFAULTS,
     // spec 226/228 — round-trip the harness into the form (mcp/hooks back to YAML text for editing).
     harness: !!h,

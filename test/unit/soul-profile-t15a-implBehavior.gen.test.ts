@@ -20,7 +20,7 @@ import {
   SOUL_MINIMAL_TEMPLATE,
   soulLaunchReservationsDir,
 } from "../../src/agents/soul.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { agentStanzaCasToken } from "../../src/config/YamlConfigEditor.js";
 import { AGENT_STUDIO_DOMAIN_MESSAGE_NAMES } from "../../src/webview/agent-studio-shell/domain.js";
 import {
@@ -42,7 +42,7 @@ function accessFor(file: string): ProfileTxConfigAccess {
     },
     isSoulEnabled: (name) => {
       const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
-      return parseConfig(text).config?.agents[name]?.soul === true;
+      return asAgent(parseConfig(text).config?.agents[name])?.soul === true;
     },
   };
 }

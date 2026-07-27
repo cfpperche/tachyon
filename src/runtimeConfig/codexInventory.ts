@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
-import type { AgentDef } from "../config/loadConfig.js";
+import { asAgent, type AgentDef } from "../config/loadConfig.js";
 import { codexNativeConfigRevision, type CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
 import { binaryOf } from "../resume/adapters.js";
 import type {
@@ -149,7 +149,7 @@ export function inspectCodexRuntimeConfig(input: {
   const global = inspectSource("global", input.workspaceRoot, homeDir);
   const workspace = inspectSource("workspace", input.workspaceRoot, homeDir);
   const potentialAgents = Object.entries(input.agents)
-    .filter(([, definition]) => definition.profileNativeConfig?.adapter === "codex" || binaryOf(definition.cmd) === "codex")
+    .filter(([, definition]) => asAgent(definition)?.profileNativeConfig?.adapter === "codex" || binaryOf(definition.cmd) === "codex")
     .map(([name]) => name)
     .sort();
   return {

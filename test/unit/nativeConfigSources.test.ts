@@ -14,6 +14,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
 import { TmuxService } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { asAgent } from "../../src/config/loadConfig.js";
 
 /**
  * t-59a11b — `sources` is deliberately non-enumerable so it never widens the serialized projection
@@ -115,7 +116,7 @@ describe("native config source ownership (t-59a11b)", () => {
     });
 
     const result = load(root, "claude", authority("claude", bytes, CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR), homeDir);
-    const projection = result.config?.agents.claude?.profileNativeConfig;
+    const projection = asAgent(result.config?.agents.claude)?.profileNativeConfig;
 
     expect(result.errors).toEqual([]);
     // Settings ARE projected here — the case that previously lost the metadata.
@@ -137,7 +138,7 @@ describe("native config source ownership (t-59a11b)", () => {
     });
 
     const result = load(root, "codex", authority("codex", bytes, CODEX_EMPTY_NATIVE_INPUT_INSPECTOR), homeDir);
-    const projection = result.config?.agents.codex?.profileNativeConfig;
+    const projection = asAgent(result.config?.agents.codex)?.profileNativeConfig;
 
     expect(result.errors).toEqual([]);
     expect(projection?.permissions).toEqual({ approvalPolicy: "on-request" });
@@ -156,7 +157,7 @@ describe("native config source ownership (t-59a11b)", () => {
     });
 
     const result = load(root, "claude", authority("claude", bytes, CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR), homeDir);
-    const projection = result.config!.agents.claude!.profileNativeConfig!;
+    const projection = asAgent(result.config!.agents.claude)!.profileNativeConfig!;
 
     // Readable by the lifecycle, invisible to anything that serializes or structurally compares
     // the projection — this is why it stays non-enumerable rather than becoming a normal field.

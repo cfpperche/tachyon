@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveSoul } from "../../src/agents/soul.js";
 import { openingPromptCapability } from "../../src/agents/openingPromptCapability.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 
 describe("container-generated delegation behavior", () => {
   it("agent soul profile foundation", async () => {
@@ -15,7 +15,7 @@ describe("container-generated delegation behavior", () => {
     await writeFile(path.join(dir, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
     const parsed = parseConfig("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
     expect(parsed.errors).toEqual([]);
-    expect(parsed.config?.agents.reviewer.soul).toBe(true);
+    expect(asAgent(parsed.config?.agents.reviewer)?.soul).toBe(true);
     const soul = await resolveSoul(root, "reviewer");
     expect(soul.body).toBe("Calm, exact, and candid.\r\n");
     expect(soul.profileId).toBe("123e4567-e89b-42d3-a456-426614174000");

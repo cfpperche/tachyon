@@ -1,5 +1,5 @@
 import { isMap, isScalar, parseDocument, type Scalar, type YAMLMap } from "yaml";
-import { parseConfig, type AgentDef, type ParseResult, type TachyonConfig } from "./loadConfig.js";
+import { asAgent, parseConfig, type AgentEntry, type ParseResult, type TachyonConfig } from "./loadConfig.js";
 import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { scanAgentProfilePointers } from "./agentProfilePointer.js";
@@ -80,7 +80,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   const doc = parseDocument(input.yamlText, { uniqueKeys: true });
   const errors: string[] = [];
   const profileSources: Record<string, AgentConfigSource> = {};
-  const projected = new Map<string, AgentDef>();
+  const projected = new Map<string, AgentEntry>();
 
   for (const agentName of declaredAgentNames(doc)) {
     if (!isValidAgentName(agentName)) continue;
@@ -141,10 +141,15 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     return profileName === undefined;
   });
   for (const [agentName, definition] of projected) {
-    if (definition.profileCapabilities) parsed.config.agents[agentName]!.profileCapabilities = definition.profileCapabilities;
-    if (definition.profileNativeConfig) parsed.config.agents[agentName]!.profileNativeConfig = definition.profileNativeConfig;
-    if (definition.profileEvolution) parsed.config.agents[agentName]!.profileEvolution = definition.profileEvolution;
-    if (definition.profileLifecycle) parsed.config.agents[agentName]!.profileLifecycle = definition.profileLifecycle;
+    // A canonical profile projects an Agent, and the re-parse carries its stored `kind: agent`
+    // through — so this narrowing always succeeds. If it ever did not, the internal projections
+    // below would have no arm to land on, which is a refusal rather than a silent drop.
+    const entry = asAgent(parsed.config.agents[agentName]);
+    if (!entry) return { errors: [`agents.${agentName}.profile: canonical projection did not reload as an agent`], warnings: [] };
+    if (definition.profileCapabilities) entry.profileCapabilities = definition.profileCapabilities;
+    if (definition.profileNativeConfig) entry.profileNativeConfig = definition.profileNativeConfig;
+    if (definition.profileEvolution) entry.profileEvolution = definition.profileEvolution;
+    if (definition.profileLifecycle) entry.profileLifecycle = definition.profileLifecycle;
   }
   const agentSources: Record<string, AgentConfigSource> = {};
   for (const name of Object.keys(parsed.config.agents)) {

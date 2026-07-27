@@ -117,7 +117,12 @@ const HARNESS_RESERVED_FLAGS = ["--mcp-config", "--strict-mcp-config", "--settin
  *  harness agent that re-declares it (the harness uses XDG_CONFIG_HOME instead). */
 const OPENCODE_CONFIG_ENV_VAR = "OPENCODE_CONFIG";
 
-export interface ManagedEntryDef {
+/**
+ * The process facts an Agent and a Terminal genuinely share: both are supervised processes with a
+ * command, a working dir, an environment, a start policy, a watch set and a restart policy.
+ * Attention is shared too — pane-watching is runtime-agnostic (SDD 478 § Invariant matrix).
+ */
+export interface ManagedEntryBase {
   cmd: string;
   cwd?: string;
   env?: Record<string, string>;
@@ -125,7 +130,18 @@ export interface ManagedEntryDef {
   watch: string[];
   attention: AttentionDef;
   restart: RestartPolicy;
-  kind: EntryKind;
+}
+
+/**
+ * SDD 478 M2 — the Agent arm. Every agent-only capability lives HERE and nowhere else, which is the
+ * whole point: `terminal.harness` is a compile error rather than a validator someone must remember
+ * to add. Before this split all seventeen fields below were structurally present on every terminal
+ * and only five were actually refused; the other twelve (`worktree`, `branch`, `worktreeSetup`,
+ * `verify`, `harness`, `subagents`, and the profile projections) were declarable and silently never
+ * read — validation drifting per field, which is why the boundary is a type and not a validator.
+ */
+export interface AgentEntry extends ManagedEntryBase {
+  kind: "agent";
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
   /** spec 216 — built-in role template (coder/reviewer/tester/orchestrator/custom); composed
@@ -171,14 +187,41 @@ export interface ManagedEntryDef {
   subagents?: string[];
 }
 
+/**
+ * SDD 478 M2 — the Terminal arm: a generic process and deliberately nothing else. There is no
+ * `harness`, no `worktree`, no `verify`, no `soul` — not optional, ABSENT. A terminal has no
+ * identity, task, memory, model, provider authentication or agent lifecycle, and the type is now
+ * what says so.
+ */
+export interface TerminalEntry extends ManagedEntryBase {
+  kind: "terminal";
+}
+
 /** Closed v1 opt-in. Absence and enabled:false are equivalent disabled states. */
 export interface SelfEvolutionDef {
   enabled: boolean;
 }
 
-/** Compatibility name for the unified managed-entry definition. Prefer `ManagedEntryDef`
- *  in new code; `AgentDef` remains exported for existing imports and public surfaces. */
+/**
+ * A managed entry is an Agent or a Terminal — never one struct with a discriminator and sixteen
+ * optional properties. The discriminant is the STORED `kind` literal; no layer may re-derive it
+ * from a command string (removing the remaining inference at the persistence and ad-hoc doors is
+ * SDD 478 M4/M9).
+ */
+export type ManagedEntryDef = AgentEntry | TerminalEntry;
+
+/** Compatibility name for the managed-entry union. Prefer `ManagedEntryDef` in new code;
+ *  `AgentDef` remains exported for existing imports and public surfaces. */
 export type AgentDef = ManagedEntryDef;
+
+/**
+ * SDD 478 — the single narrowing. A caller that wants an agent-only capability asks for the Agent
+ * arm and gets `undefined` for a terminal; a caller that forgets does not compile. This replaces
+ * asking `kind === "agent"` and then reaching for a field that the answer did not actually grant.
+ */
+export function asAgent(entry: ManagedEntryDef | null | undefined): AgentEntry | undefined {
+  return entry?.kind === "agent" ? entry : undefined;
+}
 
 /**
  * spec 210 — cheap parse-time pre-filter for an obviously-bad literal branch name.
@@ -343,7 +386,7 @@ export function codexFlagCmd(cmd: string, flag: string): string {
 }
 
 /** The command actually spawned: cmd + instructions arg when the runtime accepts one. */
-export function composeCommand(def: Pick<AgentDef, "cmd" | "instructions">): string {
+export function composeCommand(def: Pick<AgentEntry, "cmd" | "instructions">): string {
   if (!def.instructions || def.instructions.trim().length === 0) return def.cmd;
   const adapter = runtimePromptAdapter(def.cmd);
   if (!adapter) return def.cmd; // unknown CLI — stored but not delivered (documented)
@@ -794,6 +837,12 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
   }
+  // SDD 478 M2 — the kind is settled above and does not change below, so this is the entry's single
+  // narrowing: every agent-only key is written through it, and a terminal has nowhere to put one.
+  // Where the parser already REFUSES a key for a terminal it keeps doing so; the twelve keys that
+  // were merely unread on a terminal are now dropped instead of stored. Turning those drops into
+  // refusals that name the block to move to is M6.
+  const agentEntry = asAgent(agent);
   if (def.cwd !== undefined) {
     if (typeof def.cwd !== "string") errors.push(`${section}.${name}.cwd: must be a string`);
     else agent.cwd = def.cwd;
@@ -863,8 +912,8 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (!forceTerminal && def.instructions !== undefined) {
     if (typeof def.instructions !== "string") {
       errors.push(`agents.${name}.instructions: must be a string`);
-    } else if (def.instructions.trim().length > 0) {
-      agent.instructions = def.instructions;
+    } else if (agentEntry && def.instructions.trim().length > 0) {
+      agentEntry.instructions = def.instructions;
     }
   }
   if (def.role !== undefined) {
@@ -913,7 +962,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.worktree !== undefined) {
     if (typeof def.worktree !== "boolean") errors.push(`${section}.${name}.worktree: must be a boolean`);
-    else agent.worktree = def.worktree;
+    else if (agentEntry) agentEntry.worktree = def.worktree;
   }
   if (def.branch !== undefined) {
     if (typeof def.branch !== "string") {
@@ -921,27 +970,27 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     } else {
       const bad = validateBranchLiteral(def.branch);
       if (bad) errors.push(`${section}.${name}.branch: ${bad}`);
-      else agent.branch = def.branch;
+      else if (agentEntry) agentEntry.branch = def.branch;
     }
   }
   if (def.worktreeSetup !== undefined) {
     const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
     if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
       errors.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
-    } else {
-      agent.worktreeSetup = list as string[];
+    } else if (agentEntry) {
+      agentEntry.worktreeSetup = list as string[];
     }
   }
   if (def.verify !== undefined) {
     if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
       errors.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
-    } else {
-      agent.verify = def.verify.trim();
+    } else if (agentEntry) {
+      agentEntry.verify = def.verify.trim();
     }
   }
   if (def.harness !== undefined) {
     const harness = parseHarness(name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
-    if (harness) agent.harness = harness;
+    if (harness && agentEntry) agentEntry.harness = harness;
   }
   if (def.isolate !== undefined) {
     // spec 358 phase 2 — read-compat only. New configs should use the two-axis model:
@@ -992,8 +1041,11 @@ function buildDeclaredOwner(
   warnings: string[],
 ): Record<string, string> {
   const declaredOwner: Record<string, string> = {};
-  for (const [owner, def] of Object.entries(agents)) {
-    if (!def.subagents) continue;
+  for (const [owner, entry] of Object.entries(agents)) {
+    // Ownership is an Agent capability on both ends: only an agent can declare subagents, and the
+    // terminal case below is a refusal rather than a lookup miss.
+    const def = asAgent(entry);
+    if (!def?.subagents) continue;
     const kept: string[] = [];
     for (const child of def.subagents) {
       const target = agents[child];
@@ -1017,7 +1069,7 @@ function buildDeclaredOwner(
         errors.push(`agents.${owner}.subagents: '${child}' is already declared as a subagent of '${existing}'`);
         continue;
       }
-      if (target.subagents?.includes(owner)) {
+      if (asAgent(target)?.subagents?.includes(owner)) {
         errors.push(`agents.${owner}.subagents: '${child}' creates a direct ownership cycle with '${owner}'`);
         continue;
       }
@@ -1028,7 +1080,7 @@ function buildDeclaredOwner(
     else def.subagents = kept;
   }
   for (const [child, owner] of Object.entries(declaredOwner)) {
-    if (agents[child]?.subagents && agents[child].subagents!.length > 0) {
+    if ((asAgent(agents[child])?.subagents?.length ?? 0) > 0) {
       errors.push(`agents.${owner}.subagents: '${child}' declares its own subagents; nested subagent trees are not supported in v1`);
       delete declaredOwner[child];
     }
@@ -1098,9 +1150,10 @@ export function parseConfig(yamlText: string): ParseResult {
     }
     const enabledByFold = new Map<string, string>();
     const evolutionEnabledByFold = new Map<string, string>();
-    for (const [name, agent] of Object.entries(agents)) {
+    for (const [name, entry] of Object.entries(agents)) {
       const folded = asciiFoldAgentName(name);
-      if (agent.soul === true) {
+      const agent = asAgent(entry);
+      if (agent?.soul === true) {
         const prior = enabledByFold.get(folded);
         if (prior !== undefined) {
           errors.push(`agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding`);
@@ -1108,7 +1161,7 @@ export function parseConfig(yamlText: string): ParseResult {
           enabledByFold.set(folded, name);
         }
       }
-      if (agent.selfEvolution?.enabled === true) {
+      if (agent?.selfEvolution?.enabled === true) {
         const prior = evolutionEnabledByFold.get(folded);
         if (prior !== undefined) {
           errors.push(`agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding`);
