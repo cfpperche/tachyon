@@ -174,10 +174,27 @@ and the shipped `dist/webview/sidebar.css` in headless Chrome, at 320px and 220p
 Regenerate: `npm run build && npx vitest run --config vitest.browser.config.ts test/browser/cardPreviewShots.test.ts`.
 Not part of `verify:full` (needs a system Chrome and a built `dist/`).
 
-**Observed while reviewing the shots, and filed rather than hidden:** at 220px a very long branch name
-overflows its badge horizontally (visible in `configured-narrow-220`). It is PRE-EXISTING card
-behavior — the default card does the same, and no template causes it — but it bears on the spec's
-narrow-sidebar criterion, so it is tracked separately.
+**The preview MOUNTED, measured in a real DOM** — `test/browser/cardPreviewShadow.test.ts` compiles the
+real block, mounts it with preact, and reads the live DOM rather than the source:
+
+- the shadow root really attaches, the sidebar stylesheet loads INSIDE it, and 10 real `.row` cards
+  render there with `display: flex` actually applied — the sheet applied, not merely downloaded;
+- no `.sdot`/`.row-meta` rule reaches the host page's stylesheets — the no-bleed claim, checked;
+- **zero overflow**: the page never scrolls horizontally and neither 320px nor 220px pane exceeds its
+  own width. Artifacts: `settings-block-mounted.png`, `settings-block-shadow-preview.png`.
+
+That measurement found a real defect and it is FIXED here rather than filed away: a long branch name
+overflowed its badge by **116px** at 320px. Truncation is the component's job (spec.md § narrow
+sidebar), so `.row-meta > .ds-badge` now ellipsizes, with the full value still in the tooltip —
+`configured-narrow-220.png` shows `tachyon/change/a-branc…` fitting the card. `t-b164b2` closes with
+this change.
+
+**Still owed by a human, and pre-armed:** none of the above is inside VS Code. The dev-host pointer is
+armed on this checkout (`npm run dogfood:dev-host -- point-status` → armed, fixture `sample-workspace`),
+so the remaining step is one keypress: open VS Code on this worktree, Run and Debug → "Tachyon: Dev
+Host", F5, then Control → Settings → "Agent card layout". The `code` CLI available here refuses
+`--extensionDevelopmentPath` ("not supported for code"), so an agent cannot start the Extension
+Development Host itself.
 
 **Phase 1: opt-out**, with a stronger substitute — the golden file is the visual record in text
 (every element, attribute, tooltip and handler of 60 cards), and it is *more* sensitive than a
