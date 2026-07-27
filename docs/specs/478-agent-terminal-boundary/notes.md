@@ -136,3 +136,16 @@ gets a refusal naming `spawn_terminal`, never a Terminal silently holding agent 
   narrowing sites: a place that reads `def.harness` without checking `kind` at all does not appear in
   the grep but will fail to compile after M2. The true number is knowable only after M2, which is why
   M3 is not estimated here.
+
+## Verification log
+
+### 2026-07-27T19:57Z — pass (1/1) — source: tasks.md
+- `npm run verify:full:quiet` — pass (546 files, 6237 passed, 4 skipped; `verified tree 4c4ffe240ede`)
+- `npm run typecheck` — pass (3 projects)
+
+Run at closure, on the tree carrying the closure edits merged with `main` at `e250084e`. The gate is
+declared for a spec that changes no source because the tree had to stay green THROUGH the migration
+this spec ordered — and it did, at every one of M1–M9, each landing on a tree its own run had
+recorded. This entry is written after the run, per the `/sdd verify` write discipline, so it names
+the tree measured immediately before it.
+
