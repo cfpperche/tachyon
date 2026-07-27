@@ -2,13 +2,15 @@
 
 _Created 2026-07-27._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence). -->
 
-**This is a proposal.** Nothing here is ratified, no product code exists for it, and no
-implementation tasks were created. It exists to be read and argued with. §"Decisions that need a
-human" is the shortest path through it.
+**Ratified 2026-07-27** (task `t-067540`, journal `j-946d602f8d47`): the human accepted all five
+proposed decisions as written, and added one boundary that was not in the proposal — **V1 applies to
+agent cards only; terminal rows are out of scope.** §"Decisions, as ratified" records each one and
+what it now binds. Implementation proceeds in the phases at the end of `plan.md`; `tasks.md` is the
+ordered backlog.
 
 ## Intent
 
@@ -29,14 +31,19 @@ customization surface must make a card that is *worse for its owner* hard to bui
 
 ## Acceptance criteria
 
-_Unchecked on purpose: this is a draft, and each box is a scenario the implementation would have to
-prove, not a claim about today._
+_Each box is a scenario the implementation has to prove. A box is checked when a test proves it, and
+names that test; the rest belong to phases 2–5 and stay open until then._
 
-- [ ] **Scenario: no configuration behaves exactly as today**
+- [x] **Scenario: no configuration behaves exactly as today** — phase 1,
+      `test/unit/sidebarCardTemplateEquality.test.ts`
   - **Given** a workspace with no card-template configuration of any kind
   - **When** the sidebar renders any agent row
   - **Then** the output is byte-identical to the current card, because the default template *is* the
     current layout expressed in the catalog — not a re-implementation that happens to look similar.
+  - *Proven by* rendering the real `AgentRow` over a 60-card fixture matrix and comparing it, byte for
+    byte, against output captured from the renderer at `76546c4d` — **before** the refactor, so the
+    golden is evidence about the prior card and not about the new one. Terminal rows are in the same
+    matrix: they share the component, and V1 must not move them.
 - [ ] **Scenario: a person reorders and hides elements**
   - **Given** a template listing a subset of catalog components in a chosen order
   - **When** the sidebar renders
@@ -81,6 +88,10 @@ prove, not a claim about today._
 
 ## Non-goals
 
+- **Terminal rows** (ratified boundary, 2026-07-27). They render through the same component, so this
+  is not "not yet implemented" but a rule the code has to carry: `resolveCardTemplate` returns the
+  default for a non-agent row whatever is configured, and the equality matrix renders terminal rows so
+  a regression shows up as a failing card rather than as a review someone forgot to do.
 - Any template language, expression syntax, or user-supplied markup/CSS/JS.
 - Per-agent templates (per-runtime and project-default only, in v1).
 - Restyling: colors, spacing, typography and the badge vocabulary stay the product's.
@@ -88,10 +99,14 @@ prove, not a claim about today._
 - Changing what any element *means* — this proposal moves elements, it does not redefine them.
 - A migration for people who configured nothing: there is nothing to migrate, by construction.
 
-## Decisions that need a human
+## Decisions, as ratified
 
-Plain language, no jargon. Each fork changes the shape of the implementation, so none of them should
-be decided by whoever writes the code.
+All five forks were decided on 2026-07-27, each as proposed. They are kept in the words they were
+asked in — a decision is easier to revisit when you can still read the question — with what each one
+now binds recorded underneath.
+
+**Plus one boundary the human added:** V1 customizes **agent cards only**. Terminal rows share the
+component and are explicitly out of scope; see § Non-goals.
 
 1. **Whose preference is this — the project's or the person's?**
    A layout written in `tachyon.yml` travels with the repo: every teammate and every agent-authored
@@ -100,36 +115,56 @@ be decided by whoever writes the code.
    here") feel like project knowledge. *Proposed:* project default in `tachyon.yml`, optional
    personal override in VS Code settings, personal wins, and the settings UI says which one is in
    effect. Alternative: pick exactly one home and refuse the other.
+   **Ratified as proposed.** Binds phase 2 (project home) and phase 5 (personal override + the
+   "which one is in effect" statement, which is part of the feature, not a nicety).
 
 2. **Does a runtime override start from the default or from nothing?**
    If it extends the default, adding a new element to the product later makes it appear inside every
    override — good for discovery, surprising for someone who curated their layout. If it replaces,
    overrides stay exactly as written and silently miss new elements forever. *Proposed:* the
    override declares it (`extends: default` or `replace`), with no default guess.
+   **Ratified as proposed.** Binds phase 3: an override omitting the switch is refused by name, not
+   resolved by picking the friendlier reading.
 
 3. **May a person hide a failure signal?**
    Someone who hides "auth required" to get a tidy card will eventually stare at an idle agent that
    cannot run. *Proposed:* critical states are re-admitted automatically for the affected row only,
    with a tooltip explaining that the template omitted it. Alternative: honor the preference
    literally and accept the silence.
+   **Ratified as proposed.** The four components this covers — `auth-required`, `config-invalid`,
+   `awaiting-human`, and `verify` in its fail state — are already marked `critical` in the catalog
+   (`src/sidebar/cardTemplate.ts`) and pinned by test, so phase 2 implements re-admission against a
+   set that was fixed here rather than one chosen while writing the loader.
 
 4. **How much layout is enough?**
    *Proposed v1:* a flat ordered list of components in three fixed regions (header, meta, footer),
    plus per-component options from a closed set. No nesting, no columns, no conditionals. This is
    deliberately less power than a person will eventually ask for — the question is whether that is
    the right starting point or a frustration.
+   **Ratified as proposed.** Phase 1 found one thing the flat list cannot express and the catalog
+   must: the model label and its provenance marker render *inside* `.name`, not beside it. That is
+   declared by the catalog (`inlineWith`), so the template a person writes stays a flat ordered list
+   exactly as ratified — see `plan.md` § What phase 1 changed in this design.
 
 5. **Where does the live preview live?**
    *Proposed:* Control → Settings, beside the Companion block, which is already an editable settings
    block with host round-trips. Alternative: only the dev preview harness (cheaper, but then the
    person editing YAML has no feedback until they save and look).
+   **Ratified as proposed.** Binds phase 4.
 
 ## Open questions
 
 - Should a template be able to declare a *compact* variant that the sidebar switches to under a
   width threshold, or is one template per runtime enough with components handling their own
   truncation? (Leaning: components handle it; a second template doubles the validation surface.)
-- Do terminals get their own template arm, or is "runtime" the only axis? Terminal rows share the
-  component catalog but never carry model/continuity/evidence.
+- ~~Do terminals get their own template arm, or is "runtime" the only axis?~~ **Answered on
+  ratification: no.** Terminal rows are out of scope for V1 entirely — not a second arm, not a
+  reduced one. Revisiting it is a new spec, not a phase of this one.
 - Does the preview need real fleet data (a live row from this workspace) or are fixtures enough for
   the decision the human is making while editing?
+- Raised by phase 1, for phase 2 to answer: `.row-meta` exists when `hasMeta` is true, a predicate
+  that is *not* "some meta component rendered" — a row with `worktree` set but no live branch renders
+  an empty `.row-meta` div today. Once a template can omit components, that gap widens: does an
+  all-omitted meta region collapse the wrapper, or does the wrapper stay a product decision? Phase 1
+  preserved the existing behavior exactly, including the empty div, rather than deciding this
+  silently (`test/fixtures/sidebar/agentCardFixtures.ts`, fixture `empty-meta-quirk`).
