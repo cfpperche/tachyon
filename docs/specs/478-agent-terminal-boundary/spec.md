@@ -2,15 +2,13 @@
 
 _Created 2026-07-27._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
-<!-- DRAFTED FROM THE RATIFIED HUMAN DECISION OF 2026-07-27 (t-9c7a5d), NOT YET RATIFIED AS A SPEC.
-     Intent belongs to the human: read § Intent and § Acceptance criteria and correct them before
-     `plan.md` is treated as agreed. -->
+<!-- Ratified by the human on 2026-07-27, including the ad-hoc spawn_agent decision. -->
 
 ## Intent
 
@@ -99,12 +97,11 @@ sufficient to execute from — not about the migration having happened.
 
 ## Open questions
 
-- **What replaces `KNOWN_AI_CLIS` for ad-hoc spawn?** This is the largest fork and the one most likely
-  to need the human. An ad-hoc `spawn_agent` with a `cmd` has no profile and no host authority, so
-  under the ratified rule it cannot be an Agent — yet ad-hoc AI children are a real, used capability,
-  and `spawn_agent`'s own delegation contract (spec 246) depends on them being agents. Either ad-hoc
-  agents get a lighter attested path, or they become Terminals and the delegation contract moves with
-  them. Nothing else in this spec is blocked on the answer, but the migration's last step is.
+- **Resolved — ad-hoc `spawn_agent`.** `spawn_agent` remains an Agent operation and accepts only a
+  supported, attested LLM runtime through a lighter path that does not require a canonical profile.
+  Generic commands use an explicit Terminal operation instead. An ad-hoc child does not become a
+  Terminal, because task, lineage, delegation and worktree are Agent semantics. Ratified by the human
+  on 2026-07-27; implemented by M9 (`t-8f3f7d`).
 - **Does `Terminal` keep `attention` at all?** Today it can opt in, and `t-9418ac` used exactly that to
   re-base the needs-input scenario. Attention is pane-shaped and runtime-agnostic, so "shared" is
   defensible — but it is also the one capability that makes a terminal look agent-like in the sidebar.

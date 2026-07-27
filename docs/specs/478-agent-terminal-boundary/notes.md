@@ -62,6 +62,13 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   Terminals and the delegation contract moves. Blocks M9 only; everything before it can proceed. Owner:
   the human.
 
+## Ratification
+
+- **2026-07-27:** the human ratified `spec.md` § Intent and § Acceptance criteria.
+- **Ad-hoc spawn decision:** `spawn_agent` remains Agent-only and accepts supported, attested LLM
+  runtimes through a lighter path without a canonical profile. Generic commands use an explicit
+  Terminal operation. M9 (`t-8f3f7d`) is unblocked.
+
 - **Is `kind:` under `agents:` retained at all?** A canonical `agents:` entry is a profile pointer, so
   `kind: terminal` under `agents:` is self-contradictory. Deleting the key is cleaner than validating
   it, but it is a config-surface break. Not urgent — it can ride M6.

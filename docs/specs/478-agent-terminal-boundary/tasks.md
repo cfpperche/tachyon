@@ -24,8 +24,8 @@ The migration steps below are deliberately NOT executed here — each is filed a
 - [x] Record the key decisions with their rejected alternatives — `plan.md` § Key decisions.
 - [x] Write the durable architectural statement outside the spec directory —
       `docs/architecture/agent-vs-terminal.md`.
-- [ ] Have the human ratify `spec.md` § Intent and § Acceptance criteria (drafted from the ratified
-      decision, not yet ratified as a spec) and resolve the ad-hoc-`spawn_agent` open question.
+- [x] Human ratified `spec.md` § Intent and § Acceptance criteria on 2026-07-27 and chose the lighter
+      attested Agent path for ad-hoc `spawn_agent`; generic commands use an explicit Terminal operation.
 
 ### The migration backlog (filed as queue tasks, executed elsewhere)
 
@@ -52,8 +52,8 @@ compatibility shim.
       for an unbounded window.
 - [ ] `t-a31844` · **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
       non-attested command under `agents:`.
-- [ ] `t-8f3f7d` · **M9 — resolve ad-hoc `spawn_agent`.** Blocked on the open question; product change, not a
-      refactor.
+- [ ] `t-8f3f7d` · **M9 — enforce ad-hoc `spawn_agent`.** Accept only supported, attested LLM runtimes
+      through the lighter Agent path; route generic commands to an explicit Terminal operation.
 
 ## Verification
 
@@ -97,9 +97,8 @@ grep -rl allowLegacyAgentFixtures test/ | wc -l # 0
 There is no runnable behavior to exercise end-to-end; the behavior appears in M1–M9, each of which
 carries its own dogfood. Fabricating a command here would prove nothing about what shipped.
 
-**Human dogfood:** read `docs/architecture/agent-vs-terminal.md` and confirm the boundary it states is
-the boundary you decided; then answer the ad-hoc-`spawn_agent` open question in `spec.md`, which is the
-one fork that blocks M9.
+**Human dogfood:** completed 2026-07-27 — the human confirmed the boundary and ratified the lighter
+attested Agent path for ad-hoc `spawn_agent`; generic commands use an explicit Terminal operation.
 
 ## Visual QA
 

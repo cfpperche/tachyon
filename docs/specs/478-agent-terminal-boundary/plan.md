@@ -211,7 +211,7 @@ ambiguous → refuse with the fix in the message.*
 | `terminals:` in `tachyon.yml` | any command; no agent-only key | `terminals.<n>: '<key>' applies only to agents` — extend from 4 keys to all 16 |
 | Agent Studio commit | attested runtime, `executable === adapter` | already correct (`agentProfileProjection.ts:258`) |
 | Terminal Studio commit | generic command | must refuse an attested-runtime command with "declare this as an agent in Agent Studio" |
-| Bridge `spawn_agent` (`cmd`) | **open question** — see `spec.md` | must stop inferring; either attest or route to a terminal spawn |
+| Bridge `spawn_agent` (`cmd`) | a supported, attested LLM runtime through the ad-hoc Agent path | generic commands are refused with "use the Terminal operation"; kind is never inferred |
 | Session ledger rehydrate | a record carrying an explicit `kind` | drop the `inferKind` fallback; a kindless record is refused, not guessed |
 | `tachyon.init` scaffold | emits `terminals:` for generic commands | — |
 
@@ -275,9 +275,10 @@ The modules the *migration* will touch are inventoried above; no source file is 
 - **The union's blast radius is 115 call sites in 40 files.** Mitigated by ordering: the union lands
   first and the compiler enumerates the rest, so the work is discovered rather than estimated. The risk
   is that it is discovered to be much larger than 115 — narrowing failures are not 1:1 with the grep.
-- **The ad-hoc `spawn_agent` fork is unresolved and blocks the last migration step.** Everything before
-  it can proceed; if the answer is "ad-hoc agents become terminals", the delegation contract of spec 246
-  moves, which is a product change, not a refactor.
+- **Ad-hoc `spawn_agent` stays Agent-only.** The human chose a lighter attested Agent path without a
+  canonical profile. Only supported LLM runtimes are accepted; generic commands use an explicit
+  Terminal operation. Rejected turning ad-hoc children into Terminals because task, lineage,
+  delegation and worktree are Agent semantics.
 - **`attention` on terminals may be the wrong call.** If it turns out Agent-only, the `t-9418ac`
   needs-input scenario loses its home and must go headless — a small, contained reversal, which is why
   it is recorded as an open question rather than blocking.

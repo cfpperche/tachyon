@@ -60,6 +60,10 @@ identity.
    attested runtime belongs in a profile. The diagnostic names the block to move to, because the entire
    cost of the incident above was three increments spent discovering which block the entry belonged in.
 
+For ad-hoc delegation, `spawn_agent` remains Agent-only: it accepts a supported, attested LLM runtime
+through a lighter path that does not require a canonical profile. Generic commands use an explicit
+Terminal operation instead.
+
 ## Where to declare what
 
 ```yaml
