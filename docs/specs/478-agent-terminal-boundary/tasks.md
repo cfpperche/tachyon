@@ -32,27 +32,27 @@ The migration steps below are deliberately NOT executed here — each is filed a
 Ordered. Each step must leave the tree green on `npm run verify:full:quiet`; none requires a
 compatibility shim.
 
-- [ ] **M1 — one runtime list.** Collapse `KNOWN_AI_CLIS` / `ResumeRuntime` / the attested literal set
+- [ ] `t-939a18` · **M1 — one runtime list.** Collapse `KNOWN_AI_CLIS` / `ResumeRuntime` / the attested literal set
       into `AttestedRuntime` plus explicit subset assertions. Blocks M2 (the Agent arm needs the type).
-- [ ] **M2 — the discriminated union.** Split `ManagedEntryDef` into `AgentEntry | TerminalEntry`;
+- [ ] `t-914f4e` · **M2 — the discriminated union.** Split `ManagedEntryDef` into `AgentEntry | TerminalEntry`;
       the twelve currently-unguarded agent-only fields leave the Terminal arm. Compiler output from
       this step is the true work list for M3.
-- [ ] **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
+- [ ] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
       narrowing. Mechanical once M2 lands.
-- [ ] **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
+- [ ] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
       (`:471`, `:499`); a kindless record is refused, not guessed. Rename the surviving authoring-time
       helper to say it is a suggestion.
-- [ ] **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
+- [ ] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
       `isAgentKind = !isScheduleOrCommandOrRunbook` in favour of the union. Carries visual proof.
-- [ ] **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
+- [ ] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
       `terminals:` parser refuses all 16 agent-only keys, not 4; every refusal names the block to move
       to.
-- [ ] **M7 — remove the shim and its fixtures together.** Delete `allowLegacyAgentFixtures` and
+- [ ] `t-ddf054` · **M7 — remove the shim and its fixtures together.** Absorbs `t-315ce9`. Delete `allowLegacyAgentFixtures` and
       migrate the 15 inline-`agents:` fixtures in the same change. One task, so the suite is never red
       for an unbounded window.
-- [ ] **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
+- [ ] `t-a31844` · **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
       non-attested command under `agents:`.
-- [ ] **M9 — resolve ad-hoc `spawn_agent`.** Blocked on the open question; product change, not a
+- [ ] `t-8f3f7d` · **M9 — resolve ad-hoc `spawn_agent`.** Blocked on the open question; product change, not a
       refactor.
 
 ## Verification
@@ -67,8 +67,11 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] Every layer that infers the distinction from a command string is listed with its replacement
       (encoding 2 → M1/M4; `SessionLedger` → M4; `spawn_agent` → M9).
 - [x] The migration is ordered and shim-free, and names the dead seam it removes (M7).
-- [ ] Follow-up tasks exist for M1–M9 with no duplicates of each other or of `t-05097f`, `t-8247ec`,
-      `t-1e5ab8`.
+- [x] Follow-up tasks exist for M1–M9 with no duplicates of each other or of `t-05097f`, `t-8247ec`,
+      `t-1e5ab8`. Two pre-existing tasks overlap and are RELATED rather than duplicated: `t-315ce9`
+      (one inline fixture) is absorbed by M7, since migrating it alone would leave the other 14 on the
+      shim; `t-e787dc` (ad-hoc `parent`/`cwd` parameters) is a different question from M9, which asks
+      what the resulting entity IS.
 
 The counts in the inventory are re-derivable, which is what makes them checkable rather than asserted:
 
