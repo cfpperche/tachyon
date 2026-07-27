@@ -66,8 +66,18 @@ const UNATTESTED_AI_CLIS = [
 export const KNOWN_AI_CLIS: string[] = [...ATTESTED_RUNTIMES, ...UNATTESTED_AI_CLIS];
 
 
-/** agent = known AI CLI; everything else (servers, shells, builds) = terminal. Explicit `kind:` wins. */
-export function inferKind(cmd: string): EntryKind {
+/**
+ * The kind an AUTHORING surface should pre-select for a command a human is typing: a known AI CLI
+ * suggests `agent`, everything else (servers, shells, builds) suggests `terminal`.
+ *
+ * SDD 478 M4 — this is a SUGGESTION and the name now says so. It is not an answer to "what is this
+ * entity": that answer is declared and stored, and the persistence boundary reads it back rather
+ * than re-deriving it (a change to `KNOWN_AI_CLIS` used to silently reclassify rows already on
+ * disk). Never call it where the result is persisted or where an entity is created without a human
+ * seeing and being able to override the choice; the remaining such call sites are the ad-hoc spawn
+ * door (M9) and the inline `agents:` kind default (M6), and they are meant to be visible.
+ */
+export function suggestKindForCommand(cmd: string): EntryKind {
   return KNOWN_AI_CLIS.includes(resolveBinary(cmd)) ? "agent" : "terminal";
 }
 
@@ -826,7 +836,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     watch: [],
     attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
     restart: "never",
-    kind: forceTerminal ? "terminal" : inferKind(def.cmd),
+    kind: forceTerminal ? "terminal" : suggestKindForCommand(def.cmd),
   };
   if (forceTerminal) {
     if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);

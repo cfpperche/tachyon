@@ -29,7 +29,7 @@ function fakeWorkspace(opts: {
       commandNames: () => Object.keys(commands),
       verifyCandidates: () => [],
       defaultCwd: "/ws/root",
-      inferKind: () => "schedule",
+      suggestKindForCommand: () => "schedule",
       onSubmit: () => undefined,
     }),
     studioSubmit: (submit: StudioSubmit) => {

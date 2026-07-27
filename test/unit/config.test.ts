@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { asAgent, parseConfig, inferKind, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
 const VALID = `
@@ -846,7 +846,7 @@ describe("parseConfig", () => {
   });
 });
 
-describe("resolveBinary / inferKind / composeCommand — launcher see-through (spec 246 codex #1/#3)", () => {
+describe("resolveBinary / suggestKindForCommand / composeCommand — launcher see-through (spec 246 codex #1/#3)", () => {
   it("classifies soul delivery honestly and reuses launcher resolution for instructions", () => {
     expect(openingPromptCapability("env FOO=1 opencode")).toEqual({ status: "prompt", runtime: "opencode", channel: "tui-prefill" });
     expect(openingPromptCapability("npx codex")).toMatchObject({ status: "prompt", runtime: "codex", channel: "startup-argument" });
@@ -870,11 +870,11 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
     expect(resolveBinary("echo hi")).toBe("echo");
   });
 
-  it("inferKind classifies launcher-wrapped AI CLIs as agents (incl. env -u …)", () => {
-    expect(inferKind("npx claude")).toBe("agent");
-    expect(inferKind("env -u ANTHROPIC_API_KEY claude")).toBe("agent"); // #3: was a false-negative terminal
-    expect(inferKind("agy")).toBe("agent");
-    expect(inferKind("echo hi")).toBe("terminal");
+  it("suggestKindForCommand classifies launcher-wrapped AI CLIs as agents (incl. env -u …)", () => {
+    expect(suggestKindForCommand("npx claude")).toBe("agent");
+    expect(suggestKindForCommand("env -u ANTHROPIC_API_KEY claude")).toBe("agent"); // #3: was a false-negative terminal
+    expect(suggestKindForCommand("agy")).toBe("agent");
+    expect(suggestKindForCommand("echo hi")).toBe("terminal");
   });
 
   it("composeCommand delivers the prompt for a launcher-wrapped AI CLI (#1 — brief was silently dropped)", () => {
@@ -888,7 +888,7 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
 
   it("composeCommand delivers the prompt for grok (Cap 1 — was silently dropped without INSTRUCTION_ARG)", () => {
     expect(resolveBinary("grok")).toBe("grok");
-    expect(inferKind("grok")).toBe("agent");
+    expect(suggestKindForCommand("grok")).toBe("agent");
     // After injectResumeId the cmd is typically `grok -s <uuid>`; brief must still append as positional.
     const withSession = composeCommand({
       cmd: "grok -s 01169069-d12c-4701-aa17-697c245b229a",
@@ -902,7 +902,7 @@ describe("resolveBinary / inferKind / composeCommand — launcher see-through (s
 
   it("composeCommand marks hermes deliverable but leaves argv bare (brief via HERMES_TUI_QUERY)", () => {
     expect(resolveBinary("hermes")).toBe("hermes");
-    expect(inferKind("hermes")).toBe("agent");
+    expect(suggestKindForCommand("hermes")).toBe("agent");
     // No positional / -z (oneshot exits); AgentManager injects HERMES_TUI_QUERY separately.
     expect(composeCommand({ cmd: "hermes", instructions: "TASK: ship it" })).toBe("hermes");
     expect(composeCommand({ cmd: "hermes --tui", instructions: "hello" })).toBe("hermes --tui");

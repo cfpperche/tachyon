@@ -56,9 +56,16 @@ compatibility shim.
       parser refusals M6 owns (~17), and the ledger rehydrate M4 owns (1). The grep count is therefore
       the wrong meter: after M2 the compiler already forbids a conditional from being what grants a
       capability, because the field lives on the arm.
-- [ ] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
+- [x] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
       (`:471`, `:499`); a kindless record is refused, not guessed. Rename the surviving authoring-time
       helper to say it is a suggestion.
+      `parseDef` refuses a def whose kind was not stored (the row survives if it holds anything else,
+      e.g. resume state); the pre-211 flat-record migration is DELETED rather than kept, because that
+      shape never carried a kind and migrating it *was* the inference. `inferKind` →
+      `suggestKindForCommand` at every call site, which leaves the two remaining inferring doors
+      (`AgentManager` ad-hoc spawn → M9, the inline `agents:` kind default → M6) reading as the
+      suggestions they are. `test/unit/ledgerStoredKind.test.ts` pins both halves, including a stored
+      kind that contradicts what the command would suggest.
 - [ ] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
       `isAgentKind = !isScheduleOrCommandOrRunbook` in favour of the union. Carries visual proof.
 - [ ] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the

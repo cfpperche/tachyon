@@ -18,7 +18,7 @@ function fakeWorkspace(opts: { runbooks?: Record<string, RunbookDef>; commands?:
       commandNames: () => Object.keys(commands),
       verifyCandidates: () => [],
       defaultCwd: "/ws/root",
-      inferKind: () => "runbook",
+      suggestKindForCommand: () => "runbook",
       onSubmit: () => undefined,
     }),
     studioSubmit: (submit: StudioSubmit) => {

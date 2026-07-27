@@ -77,7 +77,7 @@ function fakeWorkspace(opts: {
       commandNames: () => [],
       verifyCandidates: () => ["npm test"],
       defaultCwd: "/ws/root",
-      inferKind: () => "agent",
+      suggestKindForCommand: () => "agent",
       onSubmit: () => undefined,
     }),
     studioSubmit: (submit: StudioSubmit) => {

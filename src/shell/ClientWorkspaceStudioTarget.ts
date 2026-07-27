@@ -5,7 +5,7 @@ import { SoulError, isSoulErrorCode } from "../agents/soul.js";
 import {
   asAgent,
   CONFIG_FILENAMES,
-  inferKind,
+  suggestKindForCommand,
   type TachyonConfig,
 } from "../config/loadConfig.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
@@ -103,7 +103,7 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       commandNames: () => Object.keys(this.config?.commands ?? {}),
       verifyCandidates: () => collectVerifyCandidates(this.workspaceRoot, this.config),
       defaultCwd: this.workspaceRoot,
-      inferKind,
+      suggestKindForCommand,
       onSubmit: this.studioSubmit,
     };
   }

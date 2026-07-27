@@ -3,7 +3,7 @@
  *
  * Before this module the question "which runtimes may operate an Agent" was answered in three
  * places that disagreed by construction (measured at 2320c2be): `KNOWN_AI_CLIS` (15 binaries,
- * deciding `inferKind`), `ResumeRuntime` (10 runtimes, deciding what resumes) and a literal
+ * deciding kind inference — now the authoring-only `suggestKindForCommand`), `ResumeRuntime` (10 runtimes, deciding what resumes) and a literal
  * four-element array in `agentProfileProjection` (deciding what may be a canonical agent). So
  * `opencode`, `gemini` and `qwen` were agents to the first, resumable to the second and
  * unattestable to the third — an entry could be simultaneously "an agent" and "not attestable as
