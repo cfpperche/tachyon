@@ -15,7 +15,14 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RUNTIME_AUTH_PROFILES, classifyAuthRequired, describeAuthRequired } from "../../src/runtime/authRequired.js";
+import {
+  RUNTIME_AUTH_PROFILES,
+  authRequiredFromPreflight,
+  classifyAuthRequired,
+  describeAuthRequired,
+} from "../../src/runtime/authRequired.js";
+import { OpencodeLaunchPreflight } from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
+import { parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
 import type { ResumeRuntime } from "../../src/resume/adapters.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-authreq-dogfood-"));
@@ -82,16 +89,23 @@ try {
     ));
   }
 
-  console.log("\n== 2: OpenCode is silent — the declared gap, re-confirmed ==");
+  console.log("\n== 2: OpenCode's TURN is silent — the transcript gap, re-confirmed ==");
+  const ocEmpty = emptyHome("oc");
+  const ocEmptyEnv = {
+    XDG_CONFIG_HOME: path.join(ocEmpty, "cfg"),
+    XDG_DATA_HOME: path.join(ocEmpty, "data"),
+    XDG_STATE_HOME: path.join(ocEmpty, "state"),
+    XDG_CACHE_HOME: path.join(ocEmpty, "cache"),
+  };
   {
-    // Measured 1.18.4: with no credential it does not error, it answers on the fallback model. This
-    // check exists to catch the day that CHANGES, so the gap is re-opened deliberately, not forgotten.
-    const home = emptyHome("oc");
+    // Measured 1.18.4 and re-measured 1.18.5: with no credential it does not error, it answers on the
+    // fallback model. This check exists to catch the day that CHANGES, so the gap is re-opened
+    // deliberately rather than forgotten.
     let output: string;
     try {
       output = execFileSync("opencode", ["run", "say ok"], {
         cwd,
-        env: { ...process.env, XDG_CONFIG_HOME: path.join(home, "cfg"), XDG_DATA_HOME: path.join(home, "data"), XDG_STATE_HOME: path.join(home, "state") },
+        env: { ...process.env, ...ocEmptyEnv },
         encoding: "utf8", timeout: 180_000, stdio: ["ignore", "pipe", "pipe"],
       });
     } catch (error) {
@@ -100,9 +114,46 @@ try {
     }
     const declared = RUNTIME_AUTH_PROFILES.opencode !== undefined;
     checks.push(report(
-      "opencode declares no profile and classifies nothing (t-0338fc)",
+      "opencode declares no transcript profile and classifies nothing (t-0338fc)",
       !declared && classifyAuthRequired("opencode", output) === undefined,
       { declaredProfile: declared, sawOutput: output.replace(/\s+/g, " ").trim().slice(0, 140) },
+    ));
+  }
+
+  console.log("\n== 2b: OpenCode's credential STORE is not silent — the measured mitigation (t-0338fc) ==");
+  {
+    // The gate that replaced the gap. Driven against the REAL CLI both ways, because a preflight that
+    // only ever says "refuse" is not a gate, it is an outage: the credential-free home must refuse AND
+    // the operator's own home must pass.
+    const adapter = new OpencodeLaunchPreflight();
+    const parsed = parseLaunchCommand("opencode");
+    if (!parsed) throw new Error("the launch parser stopped recognising a bare `opencode` command");
+
+    const refused = await adapter.check(parsed, { ...process.env, ...ocEmptyEnv }, cwd);
+    checks.push(report(
+      "a credential-free private home is refused at the launch boundary, not silently degraded",
+      refused.state === "unauthenticated" && refused.code === "runtime_auth_unavailable",
+      refused,
+    ));
+
+    const sentence = refused.state === "unauthenticated"
+      ? describeAuthRequired("some-agent", authRequiredFromPreflight(refused.runtime, refused.reportedLine)!)
+      : "";
+    checks.push(report(
+      "the refusal names the agent, the runtime and the safe action, and carries no credential",
+      sentence.includes("some-agent") && sentence.includes("opencode")
+      && sentence.includes("opencode providers login")
+      && sentence.includes("will not retry or restart it automatically")
+      && !/sk-|Bearer\s+\S{8,}|eyJ[A-Za-z0-9_-]{10,}/.test(sentence),
+      sentence.slice(0, 220),
+    ));
+
+    // The operator's REAL home, read-only: `providers list` reports an inventory, it never writes.
+    const allowed = await adapter.check(parsed, process.env, cwd);
+    checks.push(report(
+      "a real, credentialed home is NOT refused (the gate is a gate, not an outage)",
+      allowed.state !== "unauthenticated" && allowed.state !== "failed",
+      allowed,
     ));
   }
 

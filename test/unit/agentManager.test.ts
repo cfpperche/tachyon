@@ -8,6 +8,7 @@ import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableEr
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { asAgent, parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
@@ -30,6 +31,9 @@ import type { AgentVM } from "../../src/sidebar/types.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
+
+/** t-0338fc — see the helper: opencode's adapter executes the runtime, so it is stubbed here. */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
 function canonicalSpawnReceipt(worktree: { path: string; branch: string }, head = "head") {
   return {
@@ -1963,7 +1967,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       confirmDeliveryJoin: opts.confirmDeliveryJoin,
       failDeliveryJoin: opts.failDeliveryJoin,
       isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
-      launchPreflight: opts.launchPreflight,
+      launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
@@ -5915,6 +5919,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       ledger,
       // Production always wires canonical Delivery storage; most unit cases do not inspect it.
       recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
+      launchPreflight: HERMETIC_PREFLIGHT,
       ...extra,
     });
     dirs.push(ws);
@@ -5926,11 +5931,36 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
     // t-85c586 moved grok OUT of this case (it has an authoritative adapter now), so the property is
     // asserted on a runtime that still has none — the point was never grok, it was "no catalog".
+    // t-0338fc gave opencode an adapter, but a CREDENTIAL one: it deliberately still answers the model
+    // question with `unverifiable`, so a pin fails closed here exactly as it did before it existed.
     await expect(h.manager.spawn("oc-child", { cmd: "opencode --model some-model" })).rejects.toMatchObject({
       code: "runtime_preflight_unverifiable",
     });
     expect(h.sessions.size).toBe(0);
     expect(h.ledger.get("oc-child")).toBeUndefined();
+  });
+
+  it("t-0338fc refuses an opencode launch whose credential store is empty, and tells the human why", async () => {
+    // The measured hazard: without this gate the spawn SUCCEEDS and the agent answers on `big-pickle`,
+    // so the failure everyone sees is not a failure at all. Refused with no model pinned — the silent
+    // fallback is specific to the unpinned default path, which is how Tachyon launches opencode.
+    const notices: Array<{ text: string; level?: string }> = [];
+    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
+      notify: (text, level) => { notices.push({ text, ...(level ? { level } : {}) }); },
+      launchPreflight: hermeticLaunchPreflight("┌  Credentials /p/auth.json\n│\n└  0 credentials\n"),
+    });
+
+    await expect(h.manager.spawn("oc-child", { cmd: "opencode" })).rejects.toMatchObject({
+      code: "runtime_auth_unavailable",
+    });
+    expect(h.sessions.size).toBe(0);
+    expect(h.ledger.get("oc-child")).toBeUndefined();
+    expect(notices).toEqual([{
+      text: "agent 'oc-child' cannot run: the opencode runtime reports it is not authenticated"
+        + " — run `opencode providers login` (or set a provider API key in the agent's environment), then launch the agent again."
+        + " Tachyon will not retry or restart it automatically.",
+      level: "warn",
+    }]);
   });
 
   it("t-85c586 admits a grok pin the catalog lists and refuses one it does not", async () => {

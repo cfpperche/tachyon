@@ -47,19 +47,16 @@ import {
   isExplicitCodexModelCommand,
   parseLaunchCommand,
   RuntimeLaunchPreflightError,
-  RuntimeLaunchPreflightRegistry,
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
-import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
-import { ClaudeLaunchPreflight } from "../runtime/adapters/claudeLaunchPreflight.js";
-import { GrokLaunchPreflight } from "../runtime/adapters/grokLaunchPreflight.js";
+import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
@@ -900,13 +897,7 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
-    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({
-      codex: new CodexLaunchPreflight(),
-      claude: new ClaudeLaunchPreflight(),
-      // t-85c586 — grok ships a bounded catalog command AND refuses anything outside it, so a pin
-      // is authoritatively checkable rather than merely provisional.
-      grok: new GrokLaunchPreflight(),
-    });
+    this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 
@@ -955,6 +946,15 @@ export class AgentManager {
       ...env,
       TACHYON_AGENT_NAME: name,
     }, cwd);
+    // SDD 477 / t-0338fc — an unauthenticated runtime is a HUMAN's problem, surfaced with the same
+    // sentence a transcript-detected one gets, so the launch boundary names the agent, the runtime and
+    // the safe action rather than a bare code. Refused unconditionally: this is the one case where
+    // letting the launch through produces a healthy-looking agent answering on a model nobody chose.
+    if (result.state === "unauthenticated") {
+      const evidence = authRequiredFromPreflight(result.runtime, result.reportedLine);
+      if (evidence) this.opts.notify?.(describeAuthRequired(name, evidence), "warn");
+      throw new RuntimeLaunchPreflightError(result);
+    }
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
     if (result.state === "unverifiable" && parsed.model && failClosedUnverifiable) throw new RuntimeLaunchPreflightError(result);
   }
