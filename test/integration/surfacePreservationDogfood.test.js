@@ -31,6 +31,30 @@ async function goHeadless(agent) {
   assert.strictEqual(surfacesFor(agent).length, 0, `could not take '${agent}' headless`);
 }
 
+/**
+ * `t-fe40c9` — reach headless by CLOSING a surface, and prove a surface was there to close.
+ *
+ * `goHeadless` alone is satisfied by an agent that never had a tab, so a scenario built on it can
+ * pass — or fail — for a reason that has nothing to do with the rule under test. That is not
+ * hypothetical: this suite's first real run reported the t-b88106 defect on a host where the agent's
+ * surface had never appeared, and the tab that broke the assertion came from a present-intent that
+ * outlived an earlier editor host (`t-9b5acb`). Measured from a clean session, all six scenarios pass.
+ *
+ * Opening first also makes the scenario the one the incident describes: an agent that WAS visible,
+ * that a human then closed, and that is relaunched afterwards.
+ */
+async function goHeadlessFromVisible(agent, wsHash) {
+  await goHeadless(agent);
+  await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", agent, wsHash);
+  for (let i = 0; i < 60 && surfacesFor(agent).length === 0; i++) await sleep(50);
+  assert.strictEqual(
+    surfacesFor(agent).length,
+    1,
+    `precondition failed: '${agent}' never showed a surface, so "headless" would be vacuous`,
+  );
+  await goHeadless(agent);
+}
+
 /** Wait for a settled view of an agent's surfaces after a lifecycle action. */
 async function settle(ms = 1500) {
   await sleep(ms);
@@ -94,7 +118,7 @@ describe("t-b88106 — a relaunch preserves an agent's visual state", () => {
   const item = () => ({ agentName: AGENT, workspaceHash: wsHash });
 
   it("restarting a HEADLESS agent opens no editor terminal", async () => {
-    await goHeadless(AGENT);
+    await goHeadlessFromVisible(AGENT, wsHash);
 
     await vscode.commands.executeCommand("tachyon.restartAgentItem", item());
     await settle();
@@ -108,7 +132,7 @@ describe("t-b88106 — a relaunch preserves an agent's visual state", () => {
   });
 
   it("restarting a headless agent does not steal focus to some other terminal either", async () => {
-    await goHeadless(AGENT);
+    await goHeadlessFromVisible(AGENT, wsHash);
     const activeBefore = vscode.window.activeTerminal?.name ?? null;
 
     await vscode.commands.executeCommand("tachyon.restartAgentItem", item());
@@ -118,7 +142,7 @@ describe("t-b88106 — a relaunch preserves an agent's visual state", () => {
   });
 
   it("force+new restart of a headless agent also stays headless", async () => {
-    await goHeadless(AGENT);
+    await goHeadlessFromVisible(AGENT, wsHash);
 
     // The force+new section is what crash recovery and watch-restart use, so it must obey the same
     // rule — those relaunches are not even human-initiated.
