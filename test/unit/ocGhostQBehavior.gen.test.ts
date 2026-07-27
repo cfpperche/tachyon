@@ -119,7 +119,7 @@ afterEach(() => {
 
 async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}) {
   const root = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  parent:\n    cmd: sh\n", "utf8");
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  parent:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sessions, sent } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });

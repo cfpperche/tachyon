@@ -3,15 +3,15 @@
 #
 # Start `dogfood` (or another row) from the sidebar if not already running; open pane via
 # the terminal icon next to "Open terminal" (eye).
-agents:
-  dogfood:
-    cmd: grok
-    autostart: true
-  claude:
-    cmd: claude
-    autostart: false
-  codex:
-    cmd: codex
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create `dogfood` (grok), `claude` and `codex`; only `dogfood` needs autostart.
+terminals:
+  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
+  shell:
+    cmd: sh
     autostart: false
 
 commands:

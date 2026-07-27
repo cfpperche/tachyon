@@ -22,6 +22,7 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../helpers/canonicalAgentFixture.js";
 
 /**
  * Canonical gated behavior for SDD 368 T14 R2.
@@ -504,9 +505,13 @@ describe("container-generated delegation behavior", () => {
     dirs.push(root);
     const storage = fs.mkdtempSync(path.join(os.tmpdir(), "t14-r4-storage-"));
     dirs.push(storage);
+    // SDD 478 M7 — `prestart` is spawned as a real agent, so it is declared as one: a canonical
+    // profile plus the host-custodied authority that attests it. `ordinary` is a supervised shell.
+    const canonical = [writeCanonicalAgent(root, "prestart", { runtime: "claude" })];
+    const secrets = canonicalAgentSecrets(root, canonical);
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      "agents:\n  prestart:\n    cmd: claude\n  ordinary:\n    cmd: sh\n",
+      `${canonicalAgentsYaml(canonical)}terminals:\n  ordinary:\n    cmd: sh\n`,
       "utf8",
     );
 
@@ -535,8 +540,8 @@ describe("container-generated delegation behavior", () => {
         return undefined;
       }
       setState(): void {}
-      getSecret(): Promise<string | undefined> {
-        return Promise.resolve(undefined);
+      getSecret(key: string): Promise<string | undefined> {
+        return Promise.resolve(secrets.get(key));
       }
       setSecret(): Promise<void> {
         return Promise.resolve();

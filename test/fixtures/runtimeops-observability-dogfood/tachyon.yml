@@ -1,14 +1,15 @@
 # SDD 369 RuntimeOps dogfood fixture — Extension Development Host only.
 # Both real CLIs are manual so pressing F5 cannot start an inference runtime or consume provider quota.
-agents:
-  codex-observer:
-    cmd: codex
-    kind: agent
-    autostart: false
-  claude-observer:
-    cmd: claude
-    kind: agent
-    autostart: false
-
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create `codex-observer` (codex) and `claude-observer` (claude), both autostart off.
 settings:
   maxAgents: 2
+
+terminals:
+  # Placeholder so the roster is non-empty before any observer exists. Never autostarts.
+  shell:
+    cmd: sh
+    autostart: false

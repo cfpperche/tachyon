@@ -1,14 +1,19 @@
 # Dogfood fixture for spec 389 — restart matrix.
 # Real LLM agent (grok), stopped — start/restart from the sidebar yourself.
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create one grok agent named `grok`, autostart off, attention on.
 settings:
   maxAgents: 8
 
-agents:
-  grok:
-    cmd: grok
-    # inferred kind: agent (KNOWN_AI_CLIS) — do not force kind on bash shells
+terminals:
+  # The restart matrix also covers terminals, which ARE declarable here.
+  shell:
+    cmd: sh
     autostart: false
-    attention: true
+    restart: on-crash
 
 commands:
   hello:

@@ -6,7 +6,8 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { asAgent, parseConfig, validateTachyonConfigText } from "../../src/config/loadConfig.js";
+import { asAgent, validateTachyonConfigText } from "../../src/config/loadConfig.js";
+import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml, type CanonicalAgentSpec } from "../helpers/canonicalAgentFixture.js";
 
 /**
  * t-099be8 — validate-before-save for agent/UI tachyon.yml edits + dangling subagents degradation.
@@ -37,8 +38,9 @@ class FakeHost implements EngineHost {
     return undefined;
   }
   setState(): void {}
-  getSecret(): Promise<string | undefined> {
-    return Promise.resolve(undefined);
+  readonly secrets = new Map<string, string>();
+  getSecret(key: string): Promise<string | undefined> {
+    return Promise.resolve(this.secrets.get(key));
   }
   setSecret(): Promise<void> {
     return Promise.resolve();
@@ -78,14 +80,27 @@ afterEach(() => {
   for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true });
 });
 
-async function makeWs(yml: string): Promise<{ ws: Workspace; root: string; host: FakeHost }> {
+/**
+ * SDD 478 M7 — `yml` is the roster TEXT the gate is asked to accept or refuse; `canonical` declares
+ * the agents that text points at (a profile on disk plus the host-custodied authority for it),
+ * because an `agents:` entry is a pointer now and cannot carry a definition.
+ */
+async function makeWs(
+  yml: string,
+  canonical: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }> = [],
+): Promise<{ ws: Workspace; root: string; host: FakeHost; roster: string }> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tac-099be8-"));
   roots.push(root);
-  fs.writeFileSync(path.join(root, "tachyon.yml"), yml, "utf8");
+  const fixtures = canonical.map((entry) => writeCanonicalAgent(root, entry.name, entry.spec ?? {}));
+  // With canonical agents the caller passes only the roster TAIL; the pointer block is generated
+  // from the profiles just written, so text and authority cannot drift apart.
+  const roster = fixtures.length > 0 ? canonicalAgentsYaml(fixtures) + yml : yml;
+  fs.writeFileSync(path.join(root, "tachyon.yml"), roster, "utf8");
   const host = new FakeHost(path.join(root, ".storage"));
+  for (const [key, value] of canonicalAgentSecrets(root, fixtures)) host.secrets.set(key, value);
   fs.mkdirSync(host.globalStoragePath(), { recursive: true });
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fakeTmux(), startBridge: false });
-  return { ws, root, host };
+  return { ws, root, host, roster };
 }
 
 describe("t-099be8 tachyon.yml self-edit gate", () => {
@@ -96,45 +111,46 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
   });
 
   it("writeTachyonConfigText refuses invalid content and leaves the file unchanged", async () => {
-    const base = "agents:\n  claude:\n    cmd: claude\n  coder:\n    cmd: codex\n";
+    // SDD 478 M7 — the old bad text was a self-referencing `subagents:`, which no text can carry
+    // any more: `subagents` is agent-only and an `agents:` entry is a pointer. The gate's guarantee
+    // is unchanged, so it is proven with a hard error the roster text can still express.
+    const base = "agents: {}\nterminals:\n  build:\n    cmd: sh\n  coder:\n    cmd: sh\n";
     const { ws, root } = await makeWs(base);
     const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
-    const bad = "agents:\n  claude:\n    cmd: claude\n    subagents: [claude]\n"; // self-ref hard error
+    const bad = "agents: {}\nterminals:\n  build:\n    cmd: sh\n    restart: sometimes\n";
     const result = ws.writeTachyonConfigText(bad);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected reject");
-    expect(result.errors.some((e) => e.includes("cannot reference itself"))).toBe(true);
+    expect(result.errors.some((e) => e.includes("must be 'never' or 'on-crash'"))).toBe(true);
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(before);
-    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
+    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["build", "coder"]);
   });
 
   it("writeTachyonConfigText accepts valid content and reloads the roster", async () => {
-    const { ws, root } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
-    const next = "agents:\n  claude:\n    cmd: claude\n  helper:\n    cmd: codex\n";
+    const { ws, root } = await makeWs("agents: {}\nterminals:\n  build:\n    cmd: sh\n");
+    const next = "agents: {}\nterminals:\n  build:\n    cmd: sh\n  helper:\n    cmd: sh\n";
     const result = ws.writeTachyonConfigText(next);
     expect(result.ok).toBe(true);
-    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["claude", "helper"]);
+    expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["build", "helper"]);
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("helper:");
   });
 
   it("writeTachyonConfigText with dangling subagents saves, warns, and keeps the fleet", async () => {
-    const { ws, host } = await makeWs("agents:\n  claude:\n    cmd: claude\n  coder:\n    cmd: codex\n");
-    // Incident shape: reviewer removed, subagents still lists it.
-    const incident = `agents:
-  claude:
-    cmd: claude
-    subagents: [reviewer]
-  coder:
-    cmd: codex
-`;
-    const result = ws.writeTachyonConfigText(incident);
+    // SDD 478 M7 — the incident shape (a `subagents:` entry naming an agent that no longer exists)
+    // is authored in the canonical profile now, not in the roster text. The degradation under test
+    // is the same: a dangling reference must warn and drop the key, never break the fleet.
+    const { ws, host, roster } = await makeWs("terminals:\n  coder:\n    cmd: sh\n", [
+      { name: "claude", spec: { runtime: "claude", extra: { ownership: { subagents: ["reviewer"] } } } },
+    ]);
+    const result = ws.writeTachyonConfigText(roster);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.warnings.some((w) => w.includes("reviewer") && w.includes("dangling"))).toBe(true);
     expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
     expect(asAgent(ws.config?.agents.claude)?.subagents).toBeUndefined();
-    // reload from disk proves cold-load parity
-    const cold = parseConfig(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8"));
+    // reload from disk proves cold-load parity — through the profile-aware parse, since the roster
+    // on disk is a pointer that only resolves against the workspace's authorities.
+    const cold = ws.parseTrustedConfigText(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8"));
     expect(cold.errors).toEqual([]);
     expect(Object.keys(cold.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
     expect(host.notices.some((n) => n.level === "warn" && n.message.includes("reviewer"))).toBe(true);

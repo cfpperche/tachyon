@@ -45,13 +45,16 @@ describe("parseConfig", () => {
   });
 
   it("t-1a8ae3: keeps the RuntimeOps dev-host fixture inert until the maintainer starts an observer", () => {
+    // SDD 478 M7 — the fixture used to declare the two observers inline, which no workspace will
+    // load any more; they are created in Agent Studio at dogfood time. Inertness is what this case
+    // guards, and it is now structural: nothing the fixture declares can start a runtime at all.
     const yaml = readFileSync("test/fixtures/runtimeops-observability-dogfood/tachyon.yml", "utf8");
     const { config, errors, warnings } = parseConfig(yaml);
 
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]);
-    expect(Object.keys(config?.agents ?? {})).toEqual(["codex-observer", "claude-observer"]);
-    expect(Object.values(config?.agents ?? {}).every((agent) => agent.kind === "agent" && !agent.autostart)).toBe(true);
+    expect(Object.values(config?.agents ?? {}).every((entry) => entry.kind === "terminal" && !entry.autostart)).toBe(true);
+    expect(Object.values(config?.agents ?? {}).some((entry) => entry.kind === "agent")).toBe(false);
   });
 
   it("normalizes watch lists", () => {

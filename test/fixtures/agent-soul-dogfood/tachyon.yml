@@ -1,22 +1,12 @@
 # Spec 377 isolated Dev Host fixture. Start one runtime at a time during Soul dogfood.
-agents:
-  soul-claude:
-    cmd: claude
-    kind: agent
-    soul: true
-    autostart: false
-  soul-codex:
-    cmd: codex
-    kind: agent
-    soul: true
-    autostart: false
-  soul-grok:
-    cmd: grok
-    kind: agent
-    soul: true
-    autostart: false
-  soul-opencode:
-    cmd: opencode
-    kind: agent
-    soul: true
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create soul-claude / soul-codex / soul-grok (and soul-opencode if that runtime is attested
+# by the time you run this), all autostart off, then enable Soul on each from Agent Studio.
+terminals:
+  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
+  shell:
+    cmd: sh
     autostart: false
