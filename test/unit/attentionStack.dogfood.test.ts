@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { attentionWindow, ATTENTION_VISIBLE_CAP } from "../../src/sidebar/attentionStack.js";
+import fs from "node:fs";
+import path from "node:path";
+import { attentionRows, type AttentionRow } from "../../src/sidebar/attentionStack.js";
 import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js";
 import { NOTICE_INBOX_CAP, restoreNoticeInbox } from "../../src/workspace/noticeInbox.js";
 
@@ -21,33 +23,97 @@ function fleet(notices: NoticeVM[]): FleetVM {
 }
 
 describe("Attention Stack headless dogfood (spec 415)", () => {
-  it("shows six oldest items together and keeps the seventh queued", () => {
-    const result = attentionWindow([fleet(Array.from({ length: 7 }, (_, index) => notice(index + 1)))]);
-    expect(ATTENTION_VISIBLE_CAP).toBe(6);
-    expect(result.visible.map((row) => row.n.message)).toEqual([
-      "Attention 1", "Attention 2", "Attention 3", "Attention 4", "Attention 5", "Attention 6",
-    ]);
-    expect(result.queued).toBe(1);
+  // t-fde5b6 — the panel used to render six rows and report the rest as `+N queued`, a second state
+  // the human had to drain. Every open item is now handed to the list; the panel's height and scroll
+  // are unchanged because the CSS container was already bounded and scrollable.
+  it("renders a burst well past the old six-row cap, in emission order", () => {
+    const burst = Array.from({ length: 25 }, (_, index) => notice(index + 1));
+
+    const rows = attentionRows([fleet(burst)]);
+
+    expect(rows).toHaveLength(25);
+    expect(rows.map((row) => row.n.message)).toEqual(burst.map((row) => row.message));
   });
 
-  it("promotes the oldest queued item only after explicit removal", () => {
-    const notices = Array.from({ length: 7 }, (_, index) => notice(index + 1));
-    const before = attentionWindow([fleet(notices)]);
-    const dismissed = before.visible[2]!.n.id;
-    const after = attentionWindow([fleet(notices.filter((row) => row.id !== dismissed))]);
-    expect(before.visible.some((row) => row.n.message === "Attention 7")).toBe(false);
-    expect(after.visible.map((row) => row.n.message)).toEqual([
-      "Attention 1", "Attention 2", "Attention 4", "Attention 5", "Attention 6", "Attention 7",
+  it("keeps an item emitted after the burst, without draining anything first", () => {
+    const burst = Array.from({ length: 9 }, (_, index) => notice(index + 1));
+
+    const rows = attentionRows([fleet([...burst, notice(10)])]);
+
+    expect(rows.at(-1)?.n.message).toBe("Attention 10");
+    expect(rows).toHaveLength(10);
+  });
+
+  it("dismisses one item without reordering or promoting anything", () => {
+    const notices = Array.from({ length: 9 }, (_, index) => notice(index + 1));
+    const before = attentionRows([fleet(notices)]);
+    const dismissed = before[2]!.n.id;
+
+    const after = attentionRows([fleet(notices.filter((row) => row.id !== dismissed))]);
+
+    expect(before.map((row) => row.n.message)).toContain("Attention 9");
+    expect(after.map((row) => row.n.message)).toEqual([
+      "Attention 1", "Attention 2", "Attention 4", "Attention 5",
+      "Attention 6", "Attention 7", "Attention 8", "Attention 9",
     ]);
-    expect(after.queued).toBe(0);
+  });
+
+  it("clears globally by marking every open item read", () => {
+    const notices = Array.from({ length: 9 }, (_, index) => notice(index + 1));
+
+    expect(attentionRows([fleet(notices)])).toHaveLength(9);
+    expect(attentionRows([fleet(notices.map((row) => ({ ...row, read: true })))])).toEqual([]);
+  });
+
+  it("survives reload: a restored inbox renders every row it restored", () => {
+    const persisted = Array.from({ length: 12 }, (_, index) => notice(index + 1));
+    const restored = restoreNoticeInbox(persisted);
+
+    const rows = attentionRows([fleet(restored)]);
+
+    expect(rows).toHaveLength(restored.length);
+    expect(rows.map((row) => row.n.message)).toEqual(restored.map((row) => row.message));
+  });
+
+  it("keeps deduplication intact — a collapsed item is still one row", () => {
+    const collapsed: NoticeVM = { ...notice(1), collapsedCount: 4 };
+
+    const rows = attentionRows([fleet([collapsed, notice(2)])]);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.n.collapsedCount).toBe(4);
   });
 
   it("merges multi-root attention into deterministic global FIFO order", () => {
     const alpha = fleet([notice(1, "a"), notice(3, "a")]);
     const beta = { ...fleet([notice(2, "b")]), folder: { hash: "b", name: "Beta" } };
-    expect(attentionWindow([beta, alpha]).rows.map((row) => row.n.message)).toEqual([
+    expect(attentionRows([beta, alpha]).map((row: AttentionRow) => row.n.message)).toEqual([
       "Attention 1", "Attention 2", "Attention 3",
     ]);
+  });
+
+  it("leaves no `queued` surface behind", () => {
+    // Structural: a behavioural test cannot see a counter that is only ever rendered.
+    const root = path.resolve(__dirname, "..", "..");
+    const app = fs.readFileSync(path.join(root, "src/webview/sidebar/App.tsx"), "utf8");
+    const css = fs.readFileSync(path.join(root, "src/webview/sidebar/sidebar.css"), "utf8");
+    const stack = fs.readFileSync(path.join(root, "src/sidebar/attentionStack.ts"), "utf8");
+
+    expect(app).not.toContain("attention-queued");
+    expect(app).not.toContain("queued");
+    expect(css).not.toContain("attention-queued");
+    expect(stack.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("queued");
+  });
+
+  it("keeps the panel bounded and scrollable in CSS, which is what makes the cap unnecessary", () => {
+    const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/sidebar.css"), "utf8");
+    const stackRule = css.split("\n").find((line) => line.includes(".attention-stack {")) ?? "";
+    const listRule = css.split("\n").find((line) => line.includes(".attention-list {")) ?? "";
+
+    expect(stackRule).toContain("max-height: min(64vh, 600px)");
+    expect(stackRule).toContain("overflow: hidden");
+    expect(listRule).toContain("overflow: auto");
+    expect(listRule).toContain("min-height: 0");
   });
 
   it("restores only validated bounded rows and never restores executable callbacks", () => {

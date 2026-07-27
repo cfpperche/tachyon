@@ -103,6 +103,40 @@
   },
   {
     "view": "sidebar",
+    "fixture": "attention-burst",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=attention-burst",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
+    ]
+  },
+  {
+    "view": "sidebar",
+    "fixture": "attention-single",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=attention-single",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
+    ]
+  },
+  {
+    "view": "sidebar",
     "fixture": "attention-overflow",
     "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=attention-overflow",
     "frame": {
