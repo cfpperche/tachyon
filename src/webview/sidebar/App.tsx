@@ -123,7 +123,7 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
  * only the layout fell back to the default, so this is `role="status"`, warn-toned, and never claims
  * the file is invalid. Without it the fallback is indistinguishable from the feature not working.
  */
-function CardTemplateRefusalBanner({ refusal }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]> }) {
+export function CardTemplateRefusalBanner({ refusal }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]> }) {
   const d = useContext(DispatchCtx);
   const [first, ...rest] = refusal.errors;
   return (

@@ -159,6 +159,26 @@ sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fix
 
 ## Visual QA
 
+**Phase 4 — durable artifacts, generated and inspected.** `docs/screenshots/479-card-templates/`
+(10 PNGs + a manifest), rendered by `test/browser/cardPreviewShots.test.ts` from the REAL `AgentRow`
+and the shipped `dist/webview/sidebar.css` in headless Chrome, at 320px and 220px:
+
+| Shot | What it evidences |
+|---|---|
+| `default-320`, `default-narrow-220` | the card every workspace gets with no configuration |
+| `configured-320`, `configured-narrow-220` | `meta: [harness, branch, verify]` — harness now BEFORE branch, evidence/continuity/attention hidden |
+| `auth-required-readmitted-*` | `meta: []` and the failure rows still carry `config invalid`, `auth required`, `✗ verify` — ratified fork 3, seen |
+| `refusal-*` | the warn-toned "Card layout ignored — showing the default" banner with the real refusal text |
+| `terminal-unaffected-*` | a terminal row beside an agent row under a template that hides everything — the V1 boundary |
+
+Regenerate: `npm run build && npx vitest run --config vitest.browser.config.ts test/browser/cardPreviewShots.test.ts`.
+Not part of `verify:full` (needs a system Chrome and a built `dist/`).
+
+**Observed while reviewing the shots, and filed rather than hidden:** at 220px a very long branch name
+overflows its badge horizontally (visible in `configured-narrow-220`). It is PRE-EXISTING card
+behavior — the default card does the same, and no template causes it — but it bears on the spec's
+narrow-sidebar criterion, so it is tracked separately.
+
 **Phase 1: opt-out**, with a stronger substitute — the golden file is the visual record in text
 (every element, attribute, tooltip and handler of 60 cards), and it is *more* sensitive than a
 screenshot, which cannot see a lost `title` or a dropped `onClick`.
