@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -381,8 +381,6 @@ export interface WorkspaceSeams {
   terminals?: TerminalPresentation;
   /** test-only native-profile inspection home; production inspects the real runtime home. */
   agentProfileHomeDir?: string;
-  /** Test fixture compatibility only; production never accepts inline agent definitions. */
-  allowLegacyAgentFixtures?: boolean;
 }
 
 /** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
@@ -624,7 +622,6 @@ export class Workspace {
   /** Host-custodied profile heads selected before any profile-backed config can load. */
   private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
   private readonly agentProfileHomeDir: string | undefined;
-  private readonly allowLegacyAgentFixtures: boolean;
   private agentProfileAuthorityTail: Promise<void> = Promise.resolve();
   /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
   private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
@@ -671,7 +668,6 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
-    this.allowLegacyAgentFixtures = seams.allowLegacyAgentFixtures === true;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
@@ -728,10 +724,7 @@ export class Workspace {
       try {
         const earlyText = fs.readFileSync(earlyFile, "utf8");
         const canonicalSyntax = parseProfileAwareConfigSyntax(earlyText);
-        earlyConfig = this.allowLegacyAgentFixtures
-          && canonicalSyntax.errors.some((error) => error.includes("inline agent definitions are no longer supported"))
-          ? parseConfig(earlyText).config
-          : canonicalSyntax.config;
+        earlyConfig = canonicalSyntax.config;
       } catch {
         // Preserve the historical default-on auth behavior when the file cannot be read.
       }
@@ -2977,7 +2970,7 @@ export class Workspace {
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
    *  the Workspace with no Electron / real tmux / bound port. */
   static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, { ...seams, allowLegacyAgentFixtures: true });
+    return Workspace._create(workspaceRoot, deps, seams);
   }
 
   private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams = {}): Promise<Workspace> {
@@ -4968,10 +4961,6 @@ export class Workspace {
       authorities: this.agentProfileAuthorities,
       homeDir: this.agentProfileHomeDir,
     });
-    if (this.allowLegacyAgentFixtures
-      && parsed.errors.some((error) => error.includes("inline agent definitions are no longer supported"))) {
-      return parseConfig(yamlText);
-    }
     return parsed;
   }
 

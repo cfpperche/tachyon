@@ -6,6 +6,8 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../helpers/canonicalAgentFixture.js";
+import type { AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 
 /**
@@ -99,17 +101,38 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWs(config = "agents:\n  claude:\n    cmd: claude\n", agent = "claude") {
-  const root = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), config, "utf8");
-  const { tmux, sessions, sent } = capturingTmux();
-  const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux, startBridge: false });
-  await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
-  return { ws, root, sessions, sent };
+/** Carries the host-custodied authority the canonical agents below are attested by. */
+class SecretHost extends FakeHost {
+  constructor(storageDir: string, private readonly backend: Map<string, string>) {
+    super(storageDir);
+  }
+  override getSecret(key: string): Promise<string | undefined> {
+    return Promise.resolve(this.backend.get(key));
+  }
+  override setSecret(key: string, value: string): Promise<void> {
+    this.backend.set(key, value);
+    return Promise.resolve();
+  }
 }
 
-async function reloadWs(root: string, tmux: TmuxService) {
-  return Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux, startBridge: false });
+/**
+ * SDD 478 M7 — continuity is an Agent capability, so these cases need a REAL agent: a canonical
+ * profile plus the authority that attests it. They used to declare `agents: <name>: cmd: <runtime>`
+ * inline, a shape the product refuses and only `allowLegacyAgentFixtures` kept alive.
+ */
+async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude") {
+  const root = mkdir();
+  const fixture = writeCanonicalAgent(root, agent, { runtime });
+  const secrets = canonicalAgentSecrets(root, [fixture]);
+  fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml([fixture]), "utf8");
+  const { tmux, sessions, sent } = capturingTmux();
+  const ws = await Workspace.createForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
+  await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
+  return { ws, root, sessions, sent, secrets };
+}
+
+async function reloadWs(root: string, tmux: TmuxService, secrets: Map<string, string>) {
+  return Workspace.createForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
 }
 
 function appendActivity(root: string, agent: string, n: number): void {
@@ -127,7 +150,7 @@ const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePri
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, sent } = await makeWs();
     ws.continuityStore.write("claude", "# Current Goal\nship 241", { sourceActivitySeq: 0 });
     ws.continuityState.markDiscontinuity("claude", 5);
     await ws.injectContinuity("claude", "compaction-idle");
@@ -136,7 +159,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("D3: clean resume and post-compaction resume are both silent automatically", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, sent } = await makeWs();
     ws.continuityStore.write("claude", "# Current Goal\nx", {});
     await ws.injectContinuity("claude", "resume"); // no discontinuity flag → must stay silent
     expect(sent.length).toBe(0);
@@ -146,7 +169,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("cold start (no brief) does not inject a create-first-brief nudge automatically", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, sent } = await makeWs();
     ws.continuityState.markDiscontinuity("claude");
     await ws.injectContinuity("claude", "compaction-idle");
     expect(sent.length).toBe(0);
@@ -183,9 +206,9 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("spec 312: silent hook suppression survives a VS Code reload while the tmux session keeps running", async () => {
-    const { ws, root, sent } = await makeWs();
+    const { ws, root, sent, secrets } = await makeWs();
     const tmux = (ws as unknown as { tmux: TmuxService }).tmux;
-    const reloaded = await reloadWs(root, tmux);
+    const reloaded = await reloadWs(root, tmux, secrets);
     appendActivity(root, "claude", 30);
 
     await priv(reloaded).maybeRemindCheckpoint("claude");
@@ -196,7 +219,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("spec 312 / t-7bcba6: automatic pane reminders stay suppressed for declared agents (no visible-legacy path)", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, root, sent } = await makeWs();
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
@@ -252,8 +275,13 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
 
   it("spec 316: persistence hook health treats stale or absent evidence conservatively", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  claude:\n    cmd: claude\n", "utf8");
-    const cold = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux: capturingTmux().tmux, startBridge: false });
+    const coldAgent = writeCanonicalAgent(root, "claude", { runtime: "claude" });
+    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml([coldAgent]), "utf8");
+    const cold = await Workspace.createForTest(
+      root,
+      { host: new SecretHost(mkdir(), canonicalAgentSecrets(root, [coldAgent])), onViewsChanged: () => {} },
+      { tmux: capturingTmux().tmux, startBridge: false },
+    );
     expect(cold.persistenceHookHealth("claude")).toMatchObject({ state: "unknown" });
 
     const { ws, root: liveRoot } = await makeWs();
@@ -273,7 +301,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("spec 309: cold-start checkpoint reminder is retired, even after new activity", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, root, sent } = await makeWs();
     appendActivity(root, "claude", 30);
 
     await priv(ws).maybeRemindCheckpoint("claude");
@@ -313,7 +341,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("a malformed brief stays silent automatically + does NOT clear the discontinuity", async () => {
-    const { ws, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, sent } = await makeWs();
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     ws.continuityState.markDiscontinuity("claude");
@@ -323,7 +351,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
   });
 
   it("manual UI reinject can still warn for a malformed brief", async () => {
-    const { ws, root, sent } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, root, sent } = await makeWs();
     fs.mkdirSync(ws.continuityStore.dir, { recursive: true });
     fs.writeFileSync(ws.continuityStore.pathOf("claude"), "garbage no frontmatter", "utf8");
     appendActivity(root, "claude", 30);
