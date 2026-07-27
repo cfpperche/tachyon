@@ -24,7 +24,9 @@ export type CockpitSectionId =
   | "approvals"
   | "mission"
   | "validations"
-  | "handoff"
+  // t-ace77f — Project Handoff is NOT a section: it is a detail route (`project-handoff` in
+  // route.ts) opened from the sidebar's `handoff · N` entry, with its breadcrumb back to Overview.
+  // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
   | "deliveries"
   | "runtime"
@@ -40,7 +42,6 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "approvals",
   "mission",
   "validations",
-  "handoff",
   "worktrees",
   "deliveries",
   "runtime",

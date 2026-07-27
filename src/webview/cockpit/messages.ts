@@ -45,8 +45,6 @@ export interface CockpitStrings {
   missionHint: string;
   validationsTitle: string;
   validationsHint: string;
-  handoffTitle: string;
-  handoffHint: string;
   worktreesTitle: string;
   worktreesHint: string;
   deliveriesTitle: string;
@@ -287,6 +285,9 @@ export type CockpitAction =
    *  delayed click from pin A processed after a fast navigation to pin B would otherwise navigate to
    *  B's returnRoute instead of being silently dropped). See Cockpit.ts's "navigateReturn" case. */
   | { type: "navigateReturn"; routeKey: string }
+  /** t-ace77f — Overview's Handoff entry: the host resolves the workspace and navigates to the
+   *  `project-handoff` route. No section to switch to any more — the tab is gone. */
+  | { type: "openProjectHandoff" }
   /** spec 444 — remove a classified-safe checkout by registry id. The engine re-validates
    *  fail-closed (occupancy, dirty, ownership) on every call; a stale UI verdict is refused, never
    *  forced through. `deleteBranch` is explicit per-click consent, honored only for
@@ -341,6 +342,7 @@ export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" }
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
+export const openProjectHandoffAction = (): CockpitAction => ({ type: "openProjectHandoff" });
 export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetStart",
