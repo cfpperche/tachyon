@@ -1,9 +1,13 @@
-# 479 — sidebar-agent-card-templates — proposed plan
+# 479 — sidebar-agent-card-templates — plan
 
-_Drafted from `spec.md` on 2026-07-27. **Proposal only** — the approach, not the steps, and not yet
-agreed. No `tasks.md` exists on purpose: implementation tasks follow ratification, not this file._
+_Drafted from `spec.md` on 2026-07-27; **ratified the same day** — all five forks as proposed, plus
+one boundary the human added: agent cards only, terminal rows out of scope. `tasks.md` is the ordered
+backlog generated from § Phasing._
 
-Every line number below was read at **`237af29b`**, the base of this proposal's worktree.
+Every line number in § Inventory was read at **`237af29b`** and describes the card *before* phase 1.
+§ What phase 1 changed in this design records where the shipped code diverges from what was proposed,
+and why; the inventory is deliberately left as it was, because it is the measurement the design was
+derived from, not a description of today's file.
 
 ## Inventory — what a card is today
 
@@ -124,17 +128,62 @@ The default template is the current layout expressed in the catalog. The proof o
 asserting that rendering the default template equals rendering today's `AgentRow` for a fixture
 matrix — if that test cannot be written, this design is wrong and should be stopped there.
 
-## Phasing (after ratification, one shippable slice each)
+## What phase 1 changed in this design
 
-1. Catalog + default template + the equality test against today's card. No config surface yet: this
-   phase is complete when the card is rendered *through* the template with zero visible change.
+Phase 1 was the test of the design, so what it had to change is the most useful part of this document.
+Four things, none of which alters the ratified schema a person writes:
+
+1. **The catalog needs an inline relation; the template does not.** `model` and `model-provenance`
+   render *inside* the `.name` span, not beside it (`App.tsx:308` in the inventory) — the sidebar's CSS
+   and the row's reading order both depend on it. A flat ordered list of three regions cannot say
+   that. Rather than add nesting to the template — which is fork 4, ratified against — the CATALOG
+   declares it: `inlineWith: "name"` on `model`, `inlineWith: "model"` on `model-provenance`. The
+   template a person writes stays flat; a host renders its inline members in template order, and only
+   when the host itself renders (so hiding `model` hides its provenance marker, which is the only
+   sensible reading).
+
+2. **The disclosure toggle is not a catalog component.** The proposal's v1 id list omitted it and that
+   omission turned out to be load-bearing: the gutter reveals child *rows*, so a template able to hide
+   it would make collapsed children unreachable — a customization that breaks navigation, not
+   appearance. It stays structural, rendered before the header region, and a test pins its absence
+   from the catalog so a later phase does not "complete" the list by adding it.
+
+3. **The V1 boundary lives in the resolver, not in its callers.** Agent and terminal rows render
+   through the same component, so "terminal rows are out of scope" cannot be a convention. It is
+   `resolveCardTemplate(row, configured)`: a non-agent row takes the default whatever is configured.
+   That function exists in phase 1 with no producer for `configured` — it is written before there is a
+   configuration surface to violate it, and proven by test now rather than reviewed later.
+
+4. **`hasMeta` is untouched, and that is a decision.** Whether `.row-meta` exists is still the
+   product's own predicate; the template only orders what goes inside. This preserves an existing
+   quirk exactly (a row with `worktree` but no live branch renders an empty `.row-meta`), which phase 1
+   pins as a fixture instead of quietly fixing — see the open question it raises in `spec.md`.
+
+The equality proof needed a harness this repository did not have: the unit suite runs in node with no
+DOM, and preact hooks require a rendering component. `test/helpers/staticPreact.ts` bundles the REAL
+component with esbuild (the `dsButtonIconLabel.test.ts` pattern), aliases `preact/hooks` to an inert
+stub, and serializes the vnode tree — including function-valued props as `[fn]`, so a lost `onClick`
+is a diff rather than a silent pass. The golden was captured from the renderer at `76546c4d`
+**before** the refactor: that ordering is what makes the file evidence about the prior card. It is
+also, incidentally, the cheapest visual review this surface has ever had — a card change now shows up
+as a readable text diff.
+
+## Phasing (one shippable slice each)
+
+1. **[done]** Catalog + default template + the equality test against today's card. No config surface:
+   the card is rendered *through* the template with zero visible change.
+   Landed as `src/sidebar/cardTemplate.ts` (closed catalog, default template, `resolveCardTemplate`),
+   `src/webview/sidebar/App.tsx` (`CARD_COMPONENTS`, a `Record<CardComponentId, …>` so an id without a
+   renderer does not compile), and the proof in `test/unit/sidebarCardTemplateEquality.test.ts` +
+   `test/unit/sidebarCardCatalog.test.ts`.
 2. Project template in `tachyon.yml` with the fail-closed loader and the critical-state re-admission.
 3. Per-runtime overrides with the explicit `extends`/`replace` switch.
 4. Settings block with the live preview.
 5. Optional personal override in VS Code settings, with precedence stated in the UI.
 
-Phase 1 is where the design is proven or disproven, and it changes nothing a person can see — a good
-place to stop if the answer comes out wrong.
+Phase 1 was where the design was proven or disproven, and it changed nothing a person can see — a good
+place to stop if the answer had come out wrong. It did not: the default template reproduces all 60
+fixture cards byte for byte, so the catalog can express the card that exists.
 
 ## Rejected alternatives
 
