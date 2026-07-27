@@ -71,6 +71,10 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **Given** a runtime whose auth-required behavior is unmeasured or unreliable
   - **When** its agent stops working
   - **Then** Tachyon does not claim auth-required for it, and the gap is recorded.
+  - _OpenCode is the case this was written for, and `t-0338fc` shows what "recorded" is worth: the gap
+    was measured again rather than reasoned about, which found the signal the runtime does have (its
+    credential store) after ruling out the two everyone assumes it has (`--format json`, an explicit
+    model pin). Its turn matcher is still absent, because a credential-free turn still looks healthy._
 - [x] A runtime-neutral capability declares whether a runtime can report auth-required and by what
   measured signal — no Claude-specific string or file is imposed on any peer.
 - [x] `docs/runtimes/parity.md` carries an authentication/loss-of-session row per runtime with
@@ -97,7 +101,7 @@ already materializes — so nothing touched a real credential. Verbatim signals:
 | claude | 2.1.220 | JSON result `is_error: true`, `result: "Not logged in · Please run /login"` |
 | codex | 0.145.0 | `{"type":"error"}` then `turn.failed`: `unexpected status 401 Unauthorized: Missing bearer or basic authentication in header` — after 5 automatic reconnect attempts |
 | grok | 0.2.112 | `{"type":"error","message":"Not signed in. To authenticate without a browser, run:\n  grok login --device-code\n\nAlternatively, set the XAI_API_KEY environment variable…"}` |
-| opencode | 1.18.4 | **none** — it answered normally on the fallback model `big-pickle` |
+| opencode | 1.18.4 / 1.18.5 | **none in a turn** — it answered normally on the fallback model `big-pickle`. Its store answers instead: `opencode providers list` → `└  0 credentials` (`t-0338fc`) |
 | pi | 0.80.10 | `No API key found for the selected model.` + `Use /login to log into a provider via OAuth or API key.` |
 | hermes | 0.18.2 | `agent failed: No inference provider configured. Run 'hermes model' … or set an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, etc.) in ~/.hermes/.env` |
 
@@ -114,9 +118,23 @@ signal is the one attached to a *turn*: the runtime answering the login error, w
 structurally as `is_error: true` with that `result`.
 
 **OpenCode fails silently in the dangerous direction.** With no credential it does not error; it
-degrades to a fallback model and answers. There is nothing to detect, and worse, an agent can appear
-healthy while running as a different model than the operator believes. That is a declared gap here,
-not something to infer.
+degrades to a fallback model and answers. There is nothing to detect *in a turn*, and worse, an agent
+can appear healthy while running as a different model than the operator believes. That was a declared
+gap here rather than something to infer — and `t-0338fc` then closed it without inferring anything.
+
+**How the OpenCode gap was closed (`t-0338fc`, opencode 1.18.5).** Two candidate signals were
+rejected by measurement: `run --format json` carries no model field at all (the effective `big-pickle`
+appears only in session storage, after the turn), and an explicit `-m` pin does not degrade — it
+fails, so the silent fallback belongs to the unpinned default path, which is how Tachyon launches. The
+signal that does exist is the runtime's own credential store: `opencode providers list` reports
+`└  0 credentials` on an empty private home, lists each provider on a real one, and reports
+environment-provided keys as a separate `Environment` section — covering both of OpenCode's
+authentication paths. `RUNTIME_AUTH_PREFLIGHT` declares it as a **pre-launch** capability alongside
+the turn matchers, and `OpencodeLaunchPreflight` refuses the launch on an empty inventory, through the
+same human sentence a transcript signal produces. `RUNTIME_AUTH_PROFILES` still declares no OpenCode
+matcher, because a credential-free turn genuinely looks like successful work. Two bounds are declared
+rather than glossed: the probe proves a credential is **readable**, not valid, and it fires only
+before launch — a credential expiring mid-run is still undetected for OpenCode.
 
 ## Open questions
 

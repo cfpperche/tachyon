@@ -11,6 +11,10 @@ _Generated from `plan.md` on 2026-07-27. Work top-to-bottom. Check boxes as task
 - [x] Expand `docs/runtimes/parity.md` with capability row 16 and §3.7 (mechanism, measured signal,
       official non-interactive refresh, human action, recovery) per the human's clarification.
 - [x] File the OpenCode gap as its own task rather than inferring a signal (`t-0338fc`).
+- [x] Close that gap with a MEASURED signal rather than an inference (`t-0338fc`): `--format json` and
+      an explicit `-m` pin ruled out by measurement, the credential store (`opencode providers list`)
+      declared in `RUNTIME_AUTH_PREFLIGHT`, and consumed by `OpencodeLaunchPreflight` as a fail-closed
+      launch refusal. Row 16 moves `✗` → `~`; the turn matcher stays absent.
 - [x] Declare the per-runtime auth-required matcher (`src/runtime/authRequired.ts`), measured-or-absent,
       with the version it was measured on.
 - [x] Add the auth-required agent STATE (attention/sidebar/protocol) fed only from a declared matcher
@@ -25,7 +29,9 @@ _Generated from `plan.md` on 2026-07-27. Work top-to-bottom. Check boxes as task
 - [x] Fixtures from the captured bytes for every implemented runtime, plus negative cases for rate
       limit, quota, permission, network and invalid session — and the Claude-footer false positive.
 - [x] Real-runtime dogfood re-deriving every signal from credential-free homes, including OpenCode's
-      silence (`npm run dogfood:auth-required-parity`).
+      silence (`npm run dogfood:auth-required-parity`). Extended by `t-0338fc` to drive the OpenCode
+      gate BOTH ways against the real CLI — a credential-free home refused, the operator's own home
+      admitted — because a preflight that only ever refuses is an outage, not a gate.
 
 ## Verification
 

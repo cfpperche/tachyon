@@ -42,7 +42,7 @@ function fakeStudioDeps(): StudioDeps {
     commandNames: () => [],
     verifyCandidates: () => [],
     defaultCwd: "/repo",
-    inferKind: () => "agent",
+    suggestKindForCommand: () => "agent",
     onSubmit: () => undefined,
   };
 }

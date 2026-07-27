@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, suggestKindForCommand, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -47,19 +47,16 @@ import {
   isExplicitCodexModelCommand,
   parseLaunchCommand,
   RuntimeLaunchPreflightError,
-  RuntimeLaunchPreflightRegistry,
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
-import { CodexLaunchPreflight } from "../runtime/adapters/codexLaunchPreflight.js";
-import { ClaudeLaunchPreflight } from "../runtime/adapters/claudeLaunchPreflight.js";
-import { GrokLaunchPreflight } from "../runtime/adapters/grokLaunchPreflight.js";
+import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
@@ -900,13 +897,7 @@ export class AgentManager {
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
-    this.launchPreflight = opts.launchPreflight ?? new RuntimeLaunchPreflightRegistry({
-      codex: new CodexLaunchPreflight(),
-      claude: new ClaudeLaunchPreflight(),
-      // t-85c586 — grok ships a bounded catalog command AND refuses anything outside it, so a pin
-      // is authoritatively checkable rather than merely provisional.
-      grok: new GrokLaunchPreflight(),
-    });
+    this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
 
@@ -955,6 +946,15 @@ export class AgentManager {
       ...env,
       TACHYON_AGENT_NAME: name,
     }, cwd);
+    // SDD 477 / t-0338fc — an unauthenticated runtime is a HUMAN's problem, surfaced with the same
+    // sentence a transcript-detected one gets, so the launch boundary names the agent, the runtime and
+    // the safe action rather than a bare code. Refused unconditionally: this is the one case where
+    // letting the launch through produces a healthy-looking agent answering on a model nobody chose.
+    if (result.state === "unauthenticated") {
+      const evidence = authRequiredFromPreflight(result.runtime, result.reportedLine);
+      if (evidence) this.opts.notify?.(describeAuthRequired(name, evidence), "warn");
+      throw new RuntimeLaunchPreflightError(result);
+    }
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
     if (result.state === "unverifiable" && parsed.model && failClosedUnverifiable) throw new RuntimeLaunchPreflightError(result);
   }
@@ -985,8 +985,8 @@ export class AgentManager {
     // gate for a declared, still-live Codex session rather than treating its missing entry as
     // ready.  Other/unknown agents retain the historic permissive behavior: we have no stable
     // terminal affordance with which to gate them.
-    const def = this.definitionOf(name);
-    const candidate = def?.kind === "agent" ? adapterFor(def.cmd) : undefined;
+    const agent = this.agentDefinitionOf(name);
+    const candidate = agent ? adapterFor(agent.cmd) : undefined;
     const managedAgent = candidate && LAUNCH_READINESS_RUNTIMES.has(candidate.runtime) ? candidate : undefined;
     if (!this.provisionalAgents.has(name)) {
       if (!managedAgent || !(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return true;
@@ -995,7 +995,7 @@ export class AgentManager {
     // A timeout is deliberately not terminal. Assignment is a later, cheap re-observation
     // point: it can promote a runtime that finished booting after the bounded launch window.
     if (!managedAgent) return false;
-    const observed = this.readinessAdapter(def!.cmd).classify(
+    const observed = this.readinessAdapter(agent!.cmd).classify(
       await this.opts.tmux.capturePane(this.session(name), { lines: 80, joinWrapped: true }).catch(() => ""),
     );
     if (observed?.state === "ready") {
@@ -1020,8 +1020,8 @@ export class AgentManager {
    */
   async matchBootstrapInput(name: string, text: string, submit: boolean): Promise<CodexBootstrapInputMatch | undefined> {
     if (this.readyAgents.has(name)) return undefined;
-    const def = this.definitionOf(name);
-    if (def?.kind !== "agent" || binaryOf(def.cmd) !== "codex") return undefined;
+    const agent = this.agentDefinitionOf(name);
+    if (!agent || binaryOf(agent.cmd) !== "codex") return undefined;
     if (!(await this.opts.tmux.hasSession(this.session(name)).catch(() => false))) return undefined;
     const pane = await this.opts.tmux
       .capturePane(this.session(name), { lines: 80, joinWrapped: true })
@@ -1313,7 +1313,8 @@ export class AgentManager {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
     // even declared role/instructions as a positional startup prompt; several runtimes reject or
     // reinterpret extra arguments on their resume form.
-    if (managesOwnSession(def.cmd) || (def.kind === "agent" && !instructionsDeliverable(def.cmd))) return undefined;
+    const agent = asAgent(def);
+    if (managesOwnSession(def.cmd) || (agent && !instructionsDeliverable(agent.cmd))) return undefined;
     const taskContractCompletion = taskContract ? spawnContractCompletion(taskContract) : undefined;
     if (taskContract && !taskContractCompletion) {
       throw new Error(
@@ -1339,7 +1340,7 @@ export class AgentManager {
       projectGuidanceSources: projectGuidance?.sourceCount ?? 0,
       prompt: composed.manifest,
     };
-    const frame = (deliverable: string | undefined): string | undefined => def.kind === "agent"
+    const frame = (deliverable: string | undefined): string | undefined => agent
       ? wrapWithPrimer(deliverable ?? "", {
           agentName: name,
           delegator: primerCtx?.delegator,
@@ -1375,7 +1376,8 @@ export class AgentManager {
     if (!this.opts.assignedWork) return undefined;
     // Same gate `projectGuidanceFor` uses: a launch with no channel for a startup document gets no
     // record either, and must not be refused over a board it would never have been shown.
-    if (def.kind !== "agent" || managesOwnSession(def.cmd) || !instructionsDeliverable(def.cmd)) return undefined;
+    const agent = asAgent(def);
+    if (!agent || managesOwnSession(agent.cmd) || !instructionsDeliverable(agent.cmd)) return undefined;
     let assigned: AssignedTaskRecord[];
     try {
       assigned = this.opts.assignedWork(name);
@@ -1400,7 +1402,8 @@ export class AgentManager {
     // Workspace.resume(): adding a positional onboarding prompt can change or break its semantics.
     // Unsupported startup adapters cannot carry a prompt either; do not read configured files for a
     // launch that has no delivery channel. Manual re-anchor remains available once such an agent runs.
-    if (def.kind !== "agent" || managesOwnSession(def.cmd) || !instructionsDeliverable(def.cmd)) return undefined;
+    const agent = asAgent(def);
+    if (!agent || managesOwnSession(agent.cmd) || !instructionsDeliverable(agent.cmd)) return undefined;
     return loadAndRenderProjectGuidanceBundle(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
   }
 
@@ -1608,10 +1611,11 @@ export class AgentManager {
       if (request.principal) throw new Error("delivery_join.declared_agent cannot combine with principal");
       if (name === bound) throw new Error("delivery_join execution name must differ from declared_agent");
       const config = this.opts.getConfig();
-      const source = config?.agents[bound];
-      if (!source) throw new UnknownAgentError(bound);
-      this.assertProfileLifecycleEnabled(bound, source);
-      if (source.kind !== "agent") throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
+      const declared = config?.agents[bound];
+      if (!declared) throw new UnknownAgentError(bound);
+      this.assertProfileLifecycleEnabled(bound, declared);
+      const source = asAgent(declared);
+      if (!source) throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
       if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
       if (config?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
       definition = deliveryDefinitionSnapshot(source);
@@ -1915,7 +1919,7 @@ export class AgentManager {
       // `instructions` or a worktree request: both are Agent capabilities, and until now this door
       // handed them to whatever it spawned. Which entity an ad-hoc spawn may produce at all is M9;
       // this only stops the Terminal arm from being handed capabilities it has no field for.
-      def = inferKind(opts.cmd) === "agent"
+      def = suggestKindForCommand(opts.cmd) === "agent"
         ? {
           ...base,
           kind: "agent",
@@ -2129,8 +2133,8 @@ export class AgentManager {
       const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!asAgent(def)?.harness, isolatedWorktree });
       if (footgun) this.opts.notify?.(footgun, "warn");
     }
-    if (parent && def.kind === "agent" && !def.harness) { // narrowed by the discriminant — the Agent arm owns `harness`
-      assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
+    if (parent && adhocAgent && !adhocAgent.harness) {
+      assertVerifiedTranscriptIsolation(adhocAgent.cmd, { name, isolatedWorktree, parented: true });
     }
     // Security review (782f1c6, HIGH): gate on `isolatedWorktree` too, not just lineage — an ungated,
     // shared-cwd delegation (t-e2ebe3) is `parent`-truthy but not worktree-contained, and `bash:"allow"`
@@ -2157,7 +2161,7 @@ export class AgentManager {
         name,
         def.cmd,
         { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...(preparedRuntimeHarness?.env ?? {}) },
-        adhoc && def.kind === "agent",
+        adhoc && !!asAgent(def),
         cwd,
       );
     }
@@ -2189,7 +2193,8 @@ export class AgentManager {
     );
     // t-d42565 — recognized AI runtimes must receive Bridge MCP tools (notify_agent / doorbell) when
     // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
-    if (def.kind === "agent" && (adapter || binaryOf(def.cmd) === "pi") && !spawnBridge.wired) {
+    const spawnedAgent = asAgent(def);
+    if (spawnedAgent && (adapter || binaryOf(spawnedAgent.cmd) === "pi") && !spawnBridge.wired) {
       const bridgeUrl = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
       if (bridgeUrl) {
         throw new Error(

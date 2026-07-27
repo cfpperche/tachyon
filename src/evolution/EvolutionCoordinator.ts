@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { ManagedEntryDef } from "../config/loadConfig.js";
+import { asAgent, type ManagedEntryDef } from "../config/loadConfig.js";
 import type { TaskMutationEvent } from "../tasks/TaskStore.js";
 import type { Task } from "../tasks/types.js";
 import type { EvolutionReview } from "./domain.js";
@@ -58,8 +58,8 @@ export class EvolutionCoordinator {
     if (event.before.status === "done" || event.after.status !== "done") return undefined;
     const agent = event.after.assignee;
     if (!agent) return undefined;
-    const definition = this.deps.declaredAgent(agent);
-    if (!definition || definition.kind !== "agent" || definition.selfEvolution?.enabled !== true) return undefined;
+    const definition = asAgent(this.deps.declaredAgent(agent));
+    if (definition?.selfEvolution?.enabled !== true) return undefined;
     return { agent, revision: evolutionCompletionRevision(event, this.deps.completionNonce?.() ?? nonce) };
   }
 
@@ -82,8 +82,8 @@ export class EvolutionCoordinator {
   private async ensureReview(task: Task, completionRevision: string): Promise<void> {
     const agent = task.assignee;
     if (!agent) return;
-    const definition = this.deps.declaredAgent(agent);
-    if (!definition || definition.kind !== "agent" || definition.selfEvolution?.enabled !== true) return;
+    const definition = asAgent(this.deps.declaredAgent(agent));
+    if (definition?.selfEvolution?.enabled !== true) return;
 
     try {
       const created = await this.deps.store.createReview(agent, {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import {
+  canonicalWorkspaceStudioFormV1,
   engineBundleId,
   isEngineBundleManifestV1,
   isEngineOperationId,
@@ -375,6 +376,31 @@ describe("persistent engine protocol", () => {
       command,
       Array.from({ length: 51 }, (_, index) => `error-${index}`),
     )).toMatchObject({ errors: expect.arrayContaining(["error-0"]), truncated: true });
+  });
+
+  it("canonicalizes a partial Studio form into the exact wire shape (t-8247ec)", () => {
+    // The shape the `tachyon._upsertAgent` seam is called with: only the fields the scenario cares
+    // about. Verbatim it is not a WorkspaceCommandV1, which is what broke the Studio pipeline.
+    const partial = { name: "release", cmd: "", kind: "runbook", steps: "hello", attention: false };
+    expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: partial } })).toBe(false);
+
+    const canonical = canonicalWorkspaceStudioFormV1(partial);
+    expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: canonical } })).toBe(true);
+    expect(canonical).toMatchObject({ name: "release", kind: "runbook", steps: "hello" });
+    // Neutral defaults, not the Studio's UI prefills: an omitted schedule must fail domain
+    // validation rather than save one nobody asked for, and an omitted kind fails closed.
+    expect(canonical).toMatchObject({ schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "run", schedTarget: "", worktree: false });
+    expect(canonicalWorkspaceStudioFormV1({}).kind).toBe("agent");
+    expect(canonicalWorkspaceStudioFormV1(undefined).name).toBe("");
+
+    // Unknown keys are dropped; a present-but-wrong-typed field is drift, not an omission, so it
+    // crosses verbatim and the wire still rejects it.
+    expect("extra" in canonicalWorkspaceStudioFormV1({ ...partial, extra: true })).toBe(false);
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "studio.submit",
+      input: { state: canonicalWorkspaceStudioFormV1({ ...partial, autostart: "yes" }) },
+    })).toBe(false);
   });
 
   it("accepts only exact Mission Control reads and idempotency-keyed mutations", () => {

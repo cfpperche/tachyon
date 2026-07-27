@@ -46,16 +46,40 @@ compatibility shim.
       across 30 files** — the risk in § Risks & unknowns was real: the true M3 surface is ~2.8× the
       115-conditional grep. `runtime`/`profile` are NOT yet required on the Agent arm: every ad-hoc
       spawn and legacy fixture would need a shim, so they land with M6/M7/M9.
-- [ ] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
+- [x] `t-a054f1` · **M3 — one narrowing.** Replace the 115 ad-hoc `kind === "agent"` conditionals with `asAgent()`
       narrowing. Mechanical once M2 lands.
-- [ ] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
+      The 115 turned out to be **three different questions sharing a word** (§ Inventory E). Of the 118
+      matches at `834732dc`, only 15 were an entry's kind gating an Agent capability; those are now
+      `asAgent()` and `AgentManager` has **zero** entity-kind conditionals left. The other 103 are the
+      principal axis (`caller.kind`, 38), the worktree axis (`kind ∈ agent|change`, 5), Studio
+      `FormState.kind` (9), the parallel UI/ledger/projection encoding M5 owns (~30), terminal-side and
+      parser refusals M6 owns (~17), and the ledger rehydrate M4 owns (1). The grep count is therefore
+      the wrong meter: after M2 the compiler already forbids a conditional from being what grants a
+      capability, because the field lives on the arm.
+- [x] `t-18f6a5` · **M4 — stop inferring at persistence.** Remove `inferKind` from `SessionLedger` rehydrate
       (`:471`, `:499`); a kindless record is refused, not guessed. Rename the surviving authoring-time
       helper to say it is a suggestion.
+      `parseDef` refuses a def whose kind was not stored (the row survives if it holds anything else,
+      e.g. resume state); the pre-211 flat-record migration is DELETED rather than kept, because that
+      shape never carried a kind and migrating it *was* the inference. `inferKind` →
+      `suggestKindForCommand` at every call site, which leaves the two remaining inferring doors
+      (`AgentManager` ad-hoc spawn → M9, the inline `agents:` kind default → M6) reading as the
+      suggestions they are. `test/unit/ledgerStoredKind.test.ts` pins both halves, including a stored
+      kind that contradicts what the command would suggest.
 - [ ] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
       `isAgentKind = !isScheduleOrCommandOrRunbook` in favour of the union. Carries visual proof.
-- [ ] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
+- [x] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
       `terminals:` parser refuses all 16 agent-only keys, not 4; every refusal names the block to move
       to.
+      All eleven authorable agent-only keys are refused for a terminal (the other five are internal
+      `profile*` projections, never accepted from YAML), through one `agentOnlyKeyRefusal()` so the
+      ending cannot drift. That ending had to CHANGE, not just spread: it used to read "declare it
+      under agents: with kind: agent", which points at a shape the product refuses — advice that would
+      have reproduced the `t-9418ac` incident rather than prevented it. **The `tachyon.init` door was
+      broken outright**: it emitted an inline `agents:` entry, so the first config Tachyon ever wrote
+      could not be loaded by the canonical loader. It now emits `terminals:` plus a pointer to Agent
+      Studio. `kind:` under `agents:` is deliberately NOT removed — the open question stays open, since
+      nothing measured here requires the config-surface break.
 - [ ] `t-ddf054` · **M7 — remove the shim and its fixtures together.** Absorbs `t-315ce9`. Delete `allowLegacyAgentFixtures` and
       migrate the 15 inline-`agents:` fixtures in the same change. One task, so the suite is never red
       for an unbounded window.

@@ -98,10 +98,9 @@ declares a non-attested command under `agents:`.
 
 ## Status
 
-The rule is ratified. The **enforcement** is partial: today the distinction is still encoded several
-different ways, twelve agent-only fields are structurally representable on a terminal, and the session
-ledger re-derives kind from the command string on every load. SDD 478 inventories all of it and orders
-the migration (M1–M9). Read that spec before changing anything on this boundary.
+The rule is ratified. SDD 478 inventories the whole surface and orders the migration (M1–M9); **M1–M4
+have landed**, and what remains is the doors (M6, M9), the fixture shim (M7, M8) and the parallel UI
+encoding (M5). Read that spec before changing anything on this boundary.
 
 **M1 has landed.** Which runtimes may operate an Agent is answered in exactly one place —
 `ATTESTED_RUNTIMES` in `src/runtime/attestedRuntimes.ts` (`claude`, `codex`, `grok`, `pi`). The three
@@ -109,5 +108,16 @@ lists that used to disagree now derive from it or assert a relation to it: `Resu
 as `AttestedRuntime | <non-attested resumable>`, the private-home inspector registry is exhaustive over
 it, and `KNOWN_AI_CLIS` is composed from it. Add a runtime there and the compiler plus
 `test/unit/attestedRuntime.test.ts` demand the adapter and the inspector that make "attested" mean
-something. `KNOWN_AI_CLIS` remains an authoring *suggestion* and is not an identity claim; retiring the
-inference it feeds at the persistence and ad-hoc doors is M4 and M9.
+something. `KNOWN_AI_CLIS` remains an authoring *suggestion* and is not an identity claim.
+
+**M2 and M3 have landed.** A managed entry is `AgentEntry | TerminalEntry`, discriminated by the
+stored `kind`. Every agent-only capability lives on the Agent arm, so `terminal.harness` is a compile
+error and `asAgent(entry)` is the only way to reach one. That is what makes rule 2 above mechanical:
+a conditional can no longer *be* what grants a capability, because the field is not there to reach.
+
+**M4 has landed.** The kind is read back from the ledger exactly as written, and a record that never
+carried one is refused rather than guessed — so editing the list of known binaries can no longer
+reclassify rows already on disk. The surviving helper is named `suggestKindForCommand` because that
+is all it is: a pre-selection an authoring surface shows a human, who can override it. Where it is
+still called without a human in the loop — the ad-hoc spawn door (M9) and the inline `agents:` kind
+default (M6) — the name now makes the violation legible instead of looking authoritative.

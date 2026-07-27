@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
 import { RESUME_RUNTIMES, adapterForRuntime, runtimeOf, type ResumeRuntime } from "../../src/resume/adapters.js";
-import { KNOWN_AI_CLIS, inferKind } from "../../src/config/loadConfig.js";
+import { KNOWN_AI_CLIS, suggestKindForCommand } from "../../src/config/loadConfig.js";
 import { profileRuntimeInspectorFor } from "../../src/config/agentProfileProjection.js";
 
 /**
@@ -53,7 +53,7 @@ describe("AttestedRuntime — the single runtime list (SDD 478 M1)", () => {
   it("cannot be omitted from the authoring suggestions, which stay a superset", () => {
     for (const runtime of ATTESTED_RUNTIMES) {
       expect(KNOWN_AI_CLIS, `${runtime} is attested but absent from KNOWN_AI_CLIS`).toContain(runtime);
-      expect(inferKind(runtime)).toBe("agent");
+      expect(suggestKindForCommand(runtime)).toBe("agent");
     }
     // The suggestion list stays wider than the attested set — being suggested is not being attested.
     expect(KNOWN_AI_CLIS.length).toBeGreaterThan(ATTESTED_RUNTIMES.length);

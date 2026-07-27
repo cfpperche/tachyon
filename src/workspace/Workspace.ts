@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, inferKind, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -491,6 +491,11 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("isolated harness: MCP servers must be a valid YAML mapping");
     case "harness-hooks-invalid":
       return t("isolated harness: hooks must be a valid YAML mapping");
+    case "terminal-cmd-is-attested-runtime":
+      return t(
+        "command: '{0}' is an LLM runtime Tachyon attests — create it as an agent in Agent Studio; terminals are for generic processes",
+        issue.param ?? "this command",
+      );
     default:
       return issue.code;
   }
@@ -5821,7 +5826,7 @@ export class Workspace {
     return readEvolutionStudioOverview(
       this.evolutionStore,
       agentName,
-      def?.kind === "agent" && def.selfEvolution?.enabled === true,
+      asAgent(def)?.selfEvolution?.enabled === true,
     );
   }
 
@@ -5939,7 +5944,7 @@ export class Workspace {
       commandNames: () => Object.keys(this.config?.commands ?? {}),
       verifyCandidates: () => this.verifyCandidates(),
       defaultCwd: this.workspaceRoot,
-      inferKind,
+      suggestKindForCommand,
       onSubmit: this.studioSubmit,
     };
   }

@@ -41,7 +41,7 @@ function studioWs(config: TachyonConfig, overrides: Partial<WorkspaceStudioTarge
       commandNames: () => [],
       verifyCandidates: () => [],
       defaultCwd: "/repo",
-      inferKind: () => "agent",
+      suggestKindForCommand: () => "agent",
       onSubmit: () => undefined,
     }),
     studioSubmit: () => undefined,

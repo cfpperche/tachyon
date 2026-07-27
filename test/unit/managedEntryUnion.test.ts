@@ -77,19 +77,18 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
     expect(agent?.harness).toEqual({ inherit: "workspace" });
   });
 
-  it("gives a terminal nowhere to keep an agent-only key it declared", () => {
+  it("parses a terminal with no agent-only property on it at all", () => {
     // `worktree`, `branch`, `worktreeSetup` and `verify` were the load-bearing finding of the SDD 478
-    // inventory: declarable on a terminal today, never read, never refused — validation that drifted
-    // per field. The union removes the field, so the value is dropped at the parse boundary. Turning
-    // the drop into a refusal that names `agents:` is M6.
-    const { config, errors } = parseConfig(
-      "terminals:\n  dev:\n    cmd: npm run dev\n    worktree: true\n    branch: tachyon/dev\n    worktreeSetup: npm ci\n    verify: npm test\n",
-    );
+    // inventory: declarable on a terminal, never read, never refused — validation that drifted per
+    // field. The union removed the field, so a parsed terminal cannot carry one; M6 then made
+    // DECLARING one a refusal rather than a silent drop (failClosedDoors.test.ts owns those cases,
+    // which is why this one declares none — a refused config parses to no entry to inspect).
+    const { config, errors } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    autostart: true\n");
     expect(errors).toEqual([]);
     const dev = config?.agents.dev;
     expect(dev?.kind).toBe("terminal");
     expect(asAgent(dev)).toBeUndefined();
-    for (const key of ["worktree", "branch", "worktreeSetup", "verify"]) {
+    for (const key of ["worktree", "branch", "worktreeSetup", "verify", "harness", "soul", "role", "instructions"]) {
       expect(dev, `terminal must not carry '${key}'`).not.toHaveProperty(key);
     }
   });

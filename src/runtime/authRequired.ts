@@ -7,7 +7,9 @@
  * The rule this module exists to hold: auth-required is reached ONLY from a signal that was measured
  * for that specific runtime and version. There is deliberately no shared fallback regex — a generic
  * matcher would claim coverage for runtimes whose wording nobody measured, and would have claimed it
- * for OpenCode, which emits no signal at all (it silently answers on a fallback model, `t-0338fc`).
+ * for OpenCode, which emits no signal in a turn at all (it silently answers on a fallback model).
+ * OpenCode's real signal turned out to live one step earlier — see `RUNTIME_AUTH_PREFLIGHT`
+ * (`t-0338fc`), which is a second declaration rather than a loosening of this one.
  *
  * Two measured facts constrain every matcher here:
  *
@@ -122,9 +124,55 @@ export const RUNTIME_AUTH_PROFILES: Partial<Record<ResumeRuntime, RuntimeAuthPro
     verifiedAt: "2026-07-27",
     notes: "Hermes 0.18.2. Plain-text wording rather than a structured envelope, so the matcher stays narrow.",
   },
-  // opencode: deliberately absent. Measured on 1.18.4 with an empty XDG_DATA_HOME, it does not error —
-  // it answers on the fallback model `big-pickle`. There is nothing to match, and an agent can look
-  // healthy while running a model nobody chose. Tracked as t-0338fc.
+  // opencode: deliberately absent HERE, and this absence is now a measured statement rather than an
+  // open gap. Re-measured on 1.18.5 (t-0338fc): with an empty XDG_DATA_HOME it still does not error —
+  // it answers on the fallback model `big-pickle` — and `--format json` carries no model field either,
+  // so there is nothing in a turn to match. Its auth-required signal is a PRE-LAUNCH one instead; see
+  // RUNTIME_AUTH_PREFLIGHT below.
+};
+
+/**
+ * `t-0338fc` — runtimes whose auth-required signal is a **pre-launch query of the runtime's own
+ * credential store**, not anything the runtime writes into a turn.
+ *
+ * This exists because OpenCode fails in the one direction a transcript matcher cannot see: with no
+ * credential it does not error, it silently degrades to a fallback model and answers. Measured three
+ * ways on 1.18.5 before landing here — `run --format json` reports no model at all, the effective
+ * model (`big-pickle`) surfaces only in session storage *after* the turn, and an explicit `-m` pin
+ * fails rather than degrading — so the only thing that answers "is this runtime authenticated?"
+ * *before* work is burned is asking its credential store directly.
+ *
+ * It is declared alongside the output matchers on purpose: "which runtimes can report auth-required,
+ * and by what measured signal" stays one list to read, with the mechanism named rather than implied.
+ *
+ * The honest bound, stated once here rather than re-derived at each call site: this proves a
+ * credential is READABLE, not that it is VALID. An expired token is still an inventory entry.
+ */
+export interface RuntimeAuthPreflightProfile {
+  /** The command whose output was measured. Recorded so a future version bump can be re-measured. */
+  probe: string;
+  /** Plain instruction for the human. Never contains credential material. */
+  humanAction: string;
+  source: "measured";
+  verified: true;
+  verifiedAt: string;
+  notes: string;
+}
+
+export const RUNTIME_AUTH_PREFLIGHT: Partial<Record<ResumeRuntime, RuntimeAuthPreflightProfile>> = {
+  opencode: {
+    probe: "opencode providers list",
+    humanAction:
+      "run `opencode providers login` (or set a provider API key in the agent's environment), then launch the agent again",
+    source: "measured",
+    verified: true,
+    verifiedAt: "2026-07-27",
+    notes:
+      "opencode 1.18.5. The store answers positively rather than staying silent: an empty private home prints "
+      + "'0 credentials', a real one lists each provider and its count, and environment-provided keys are reported "
+      + "as their own 'Environment' section — so BOTH of OpenCode's authentication paths are covered. The probe is "
+      + "local: measured working from a cold private home with the network black-holed, in under a second.",
+  },
 };
 
 export interface AuthRequiredEvidence {
@@ -137,6 +185,32 @@ export interface AuthRequiredEvidence {
 
 /** Longest line we will echo back into a notification; a CLI notice is never near this. */
 const MAX_EVIDENCE_CHARS = 300;
+
+/**
+ * Build launch-boundary evidence from a credential-store report, so a preflight refusal reaches the
+ * human through exactly the same sentence as a transcript-detected one (`describeAuthRequired`).
+ *
+ * `reportedLine` is the store's own summary line (`0 credentials`) — a count, never a secret.
+ * Returns undefined for any runtime without a declared preflight profile, which is the same refusal
+ * `classifyAuthRequired` makes for a runtime without a declared matcher.
+ */
+export function authRequiredFromPreflight(
+  runtime: string | null | undefined,
+  reportedLine: string,
+): AuthRequiredEvidence | undefined {
+  if (!runtime) return undefined;
+  // The lookup IS the narrowing: a key present in this record is a declared ResumeRuntime by
+  // construction, and an unknown name falls out as undefined rather than being coerced into one.
+  const declared = runtime as ResumeRuntime;
+  const profile = RUNTIME_AUTH_PREFLIGHT[declared];
+  if (!profile) return undefined;
+  const trimmed = reportedLine.trim();
+  return {
+    runtime: declared,
+    matchedLine: trimmed.length > MAX_EVIDENCE_CHARS ? `${trimmed.slice(0, MAX_EVIDENCE_CHARS)}…` : trimmed,
+    humanAction: profile.humanAction,
+  };
+}
 
 /**
  * `t-5bfb72` — how much of a LIVE pane may carry the signal, counted in non-empty lines from the

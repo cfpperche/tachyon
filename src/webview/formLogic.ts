@@ -1,5 +1,6 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { asAgent, inferKind, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, suggestKindForCommand, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 import { binaryOf } from "../resume/adapters.js";
 
 /**
@@ -199,7 +200,8 @@ export interface FormIssue {
     | "harness-home-config-only"
     | "harness-empty"
     | "harness-mcp-invalid"
-    | "harness-hooks-invalid";
+    | "harness-hooks-invalid"
+    | "terminal-cmd-is-attested-runtime";
   blocking: boolean;
   param?: string;
 }
@@ -244,6 +246,12 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     return issues;
   }
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
+  // SDD 478 M6 — a Terminal is a generic process. An attested LLM runtime is an Agent, so Terminal
+  // Studio refuses it here rather than creating a terminal that will silently be denied every agent
+  // capability the runtime exists for. The refusal names the door to use instead.
+  if (state.kind === "terminal" && isAttestedRuntime(resolveBinary(state.cmd))) {
+    issues.push({ code: "terminal-cmd-is-attested-runtime", blocking: true, param: resolveBinary(state.cmd) });
+  }
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
     issues.push({ code: "instructions-not-deliverable", blocking: false });
   }
@@ -321,7 +329,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
     if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
     return entry;
   }
-  const inferred = inferKind(state.cmd);
+  const inferred = suggestKindForCommand(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
   if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();

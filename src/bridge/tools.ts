@@ -33,7 +33,7 @@ import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
-import { parseEvery, parseAt, inferKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, parseEvery, parseAt, suggestKindForCommand, type ScheduleDef } from "../config/loadConfig.js";
 import type { Severity, EvidenceSummary, EvidenceView } from "../worktree/evidence.js";
 import {
   validateSpawnContract,
@@ -683,6 +683,9 @@ function fail(err: unknown): ToolResult {
               message,
               ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.model ? { model: launchFailure.model } : {}),
               ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.suggestions.length ? { suggestions: launchFailure.suggestions } : {}),
+              // SDD 477 / t-0338fc — an auth refusal is only useful if the caller learns what a HUMAN
+              // must do; a coordinator that reads a bare code will just retry into the same wall.
+              ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.humanAction ? { humanAction: launchFailure.humanAction } : {}),
             },
           },
         }
@@ -1518,7 +1521,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
         if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
         if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        const isAdhocAiAgent = (!!cmd && inferKind(cmd) === "agent") || isBoundDeliveryExecution;
+        const isAdhocAiAgent = (!!cmd && suggestKindForCommand(cmd) === "agent") || isBoundDeliveryExecution;
         if (isAdhocAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
             "spawn_agent worktree:true is not a tracked-change lifecycle for an ad-hoc AI agent; use gate with a behavior_test and owned paths",
@@ -3729,7 +3732,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // SDD 370: a known AI runtime may be starting, or may have just been
         // rejected and cleaned up. Do not make either state an actionable task
         // assignment. Unknown names remain valid human/external assignees.
-        if (assignee && deps.manager?.defOf(assignee)?.kind === "agent" && !(await deps.manager.isReady(assignee))) {
+        if (assignee && asAgent(deps.manager?.defOf(assignee)) && !(await deps.manager.isReady(assignee))) {
           throw new Error(`cannot assign task to agent '${assignee}' before its runtime is ready`);
         }
         // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
