@@ -66,8 +66,20 @@ compatibility shim.
       (`AgentManager` ad-hoc spawn → M9, the inline `agents:` kind default → M6) reading as the
       suggestions they are. `test/unit/ledgerStoredKind.test.ts` pins both halves, including a stored
       kind that contradicts what the command would suggest.
-- [ ] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
+- [x] `t-6ebdc8` · **M5 — collapse the parallel UI encoding.** Retire `AgentVM.ai` and
       `isAgentKind = !isScheduleOrCommandOrRunbook` in favour of the union. Carries visual proof.
+      `AgentVM.ai` was worse than duplicated, it was *contradictory*: the bit was optional and its
+      ABSENCE meant opposite things depending on the reader — `agentModel`/`agentFocus` read
+      `ai === false` (undefined ⇒ agent) while the action gate read `!!a.ai` (undefined ⇒ terminal).
+      The row now carries a REQUIRED `kind`, with `isAgentRow()` mirroring `asAgent()` on the UI side,
+      and the icon derives from the arm through a `Record<EntryKind, string>` so a new arm fails to
+      compile instead of inheriting the robot. The third derivation is gone from `Workspace.ts`.
+      The last failures were a rejection, not an omission: `sidebarProjection.ts` validates the wire
+      contract with a `.strict()` zod object, so a row carrying a field the schema did not declare was
+      dropped ENTIRELY — which is why rows vanished from the fleet and `contextValue` lost its suffix
+      at the same time. `kind` is now declared required there too. Visual proof: the Agents and
+      Terminals captures are byte-identical before and after (sha256 `8d62216c5ca7` / `903a5dc253b0`
+      across all three measurements).
 - [x] `t-a7ae2d` · **M6 — fail closed at every door.** Terminal Studio refuses an attested-runtime command; the
       `terminals:` parser refuses all 16 agent-only keys, not 4; every refusal names the block to move
       to.
@@ -80,11 +92,34 @@ compatibility shim.
       could not be loaded by the canonical loader. It now emits `terminals:` plus a pointer to Agent
       Studio. `kind:` under `agents:` is deliberately NOT removed — the open question stays open, since
       nothing measured here requires the config-surface break.
-- [ ] `t-ddf054` · **M7 — remove the shim and its fixtures together.** Absorbs `t-315ce9`. Delete `allowLegacyAgentFixtures` and
+- [x] `t-ddf054` · **M7 — remove the shim and its fixtures together.** Absorbs `t-315ce9`. Delete `allowLegacyAgentFixtures` and
       migrate the 15 inline-`agents:` fixtures in the same change. One task, so the suite is never red
       for an unbounded window.
-- [ ] `t-a31844` · **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
+      The shim was never about the fixtures: removing it turned **86 tests red across 12 files**, because
+      it protected every headless Workspace test that declared an agent inline — the majority. Migrated by
+      judgement per case, not mechanically: agent-capability cases declare a canonical profile plus the
+      host-custodied authority (`test/helpers/canonicalAgentFixture.ts`); supervised processes move to
+      `terminals:`; and argv-carrying Claude cases become ad-hoc agents, the only arm where a command line
+      is authorable after this step. Three surfaces turned out to have NO canonical expression, so the
+      cases resting on them were rebased onto what they actually assert, each with the reason recorded
+      inline: `selfEvolution` (filed as `t-d185e1` — the projected evolution-selector has no writer in
+      `src/`), `createSoulProfile` (filed as `t-e81ec5` — it adds an inline `soul:` to an entry that is now
+      a pointer), and `subagents`, which is no longer authorable in roster text at all. Fixtures: 13 of the
+      16 declared inline agents a real workspace refuses; shells became terminals and runtime agents were
+      removed in favour of an Agent Studio pointer, because no checked-in fixture can ship host-custodied
+      authority. Their READMEs were corrected in the same closure, since instructing a dogfooder to confirm
+      rows that no longer exist just moves the `t-9418ac` wall one step later.
+- [x] `t-a31844` · **M8 — make the ban self-enforcing.** A repository test asserting no fixture declares a
       non-attested command under `agents:`.
+      `test/unit/fixtureAgentDeclarations.test.ts`. The rule is stricter than "non-attested" and that is
+      deliberate: post-M6 an `agents:` entry is a POINTER, so `cmd: claude` is refused for the same reason
+      as `cmd: sh` — the banned thing is the shape, not the binary. Two families, because either alone
+      would rot: the detector is run against a fixture tree built to be wrong (a sweep that reports nothing
+      is indistinguishable from a sweep that cannot see), and a third case pins the walk so the real sweep
+      cannot pass by descending into nothing. Proven in both directions on the real tree — reintroducing a
+      `cmd: sh` fixture fails naming the file, the entry and the fix; removing it returns 6/6 green.
+      Scope is fixture FILES on purpose: inline YAML in test sources is not swept, because much of it is
+      negative cases that must stay free to write the refused shape.
 - [x] `t-8f3f7d` · **M9 — enforce ad-hoc `spawn_agent`.** Accept only supported LLM runtimes through the
       lighter Agent path; route generic commands to `spawn_terminal`. The admitted set is its own
       declared capability (`SUPPORTED_ADHOC_AGENT_RUNTIMES`), separate from canonical attestation in
@@ -110,16 +145,36 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
       shim; `t-e787dc` (ad-hoc `parent`/`cwd` parameters) is a different question from M9, which asks
       what the resulting entity IS.
 
-The counts in the inventory are re-derivable, which is what makes them checkable rather than asserted:
+The counts in the inventory are re-derivable, which is what makes them checkable rather than asserted.
+They are measurements of the tree at `2320c2be`, so they are pinned to it — run against today's tree
+they no longer reproduce, and that is the migration having happened, not the spec having rotted:
+
+```sh
+# As inventoried, at the anchor commit. These still reproduce exactly.
+# `:(glob)` matters: a bare 'src/**/*.ts' pathspec silently misses depth-1 files and reports 113/39.
+git grep -h 'kind === "agent"\|kind !== "agent"\|kind === "terminal"\|kind !== "terminal"' \
+  2320c2be -- ':(glob)src/**/*.ts' ':(glob)src/**/*.tsx' | wc -l   # 115
+git grep -l 'kind === "agent"\|kind !== "agent"\|kind === "terminal"\|kind !== "terminal"' \
+  2320c2be -- ':(glob)src/**/*.ts' ':(glob)src/**/*.tsx' | wc -l   # 40
+git grep -l "^agents:" 2320c2be -- 'test/fixtures/**' | wc -l      # 15
+```
+
+What those same measurements say after M1–M9, and why each moved:
 
 ```sh
 grep -rn 'kind === "agent"\|kind !== "agent"\|kind === "terminal"\|kind !== "terminal"' \
-  --include=*.ts --include=*.tsx src/ | wc -l   # 115
-grep -rl 'kind === "agent"\|kind !== "agent"\|kind === "terminal"\|kind !== "terminal"' \
-  --include=*.ts --include=*.tsx src/ | wc -l   # 40
-grep -rl "^agents:" test/fixtures/ | wc -l      # 15
-grep -rl allowLegacyAgentFixtures test/ | wc -l # 0
+  --include=*.ts --include=*.tsx src/ | wc -l   # 113 — see M3: the raw grep was always the wrong
+                                                #       meter, and what remains is dominated by the
+                                                #       principal/worktree/Studio axes, not entity kind
+grep -rl "^agents:" test/fixtures/ | wc -l      # 2  — both are correct: one empty roster, one pointer
+                                                #      fixture. INLINE declarations are 0, and that is
+                                                #      what M8's guard enforces, not this grep
+grep -rn allowLegacyAgentFixtures src/ | wc -l  # 0  — the seam is gone. Remaining matches in test/ and
+                                                #      plan.md are comments RECORDING its removal
 ```
+
+The load-bearing check is no longer any of these greps — it is `test/unit/fixtureAgentDeclarations.test.ts`,
+which fails in the commit that reintroduces the shape.
 
 **Headless check:** `npm run verify:full:quiet`
 

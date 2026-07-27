@@ -3,6 +3,11 @@
 _Drafted from `spec.md` on 2026-07-27. The approach, not the steps (those go in `tasks.md`)._
 
 All line numbers and counts below were read at **`2320c2be`**, the base of this spec's worktree.
+They are deliberately NOT updated as the migration proceeds: this document is the measurement that
+justified the plan, and rewriting it to today's tree would destroy the record of what was true when
+the decisions were made. For what actually happened, see `tasks.md` (per-step outcomes) and the
+**Closure** in `spec.md`. Two estimates here were measurably wrong, and both are called out where
+they appear — the size of the M3 surface, and what removing the shim would turn red.
 
 ## Inventory
 
@@ -300,6 +305,12 @@ The modules the *migration* will touch are inventoried above; no source file is 
   it is recorded as an open question rather than blocking.
 - **Removing `allowLegacyAgentFixtures` turns 15 fixtures red at once.** This is the intended cost, but
   it must be one task, not spread across others, or the suite is red for an unbounded window.
+  _Outcome (M7, `t-ddf054`): the estimate was low by an order of magnitude — it turned **86 tests
+  across 12 files** red, because the shim was never really about the fixtures. It protected every
+  headless Workspace test that declared an agent inline, which was the majority of them; the fixtures
+  were merely its most visible users. The "one task" judgement is what held: the suite went red and
+  green inside a single change, and the alternative would have left it red across an unbounded window
+  that no one had sized correctly._
 - **`t-05097f` (declared entries never reach tmux) is intermittent and unexplained.** It is not caused by
   this work, but it will make any editor-gate evidence for the migration flaky until it is fixed.
 
