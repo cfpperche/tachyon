@@ -84,12 +84,16 @@ describe("prepareAgentSummary (collapse + trim + cap)", () => {
     expect(prepareAgentSummary("  hello  ")).toBe("hello");
   });
 
-  it("caps at 500 chars with an ellipsis, never dropping the whole thing", () => {
+  it("caps at 500 chars, saying how much was cut rather than only that something was", () => {
+    // t-b15872 — this used to assert a BARE ellipsis. That was the defect: `…` is indistinguishable
+    // from one the author typed, so a truncated delivery read as a complete one, and coordinators
+    // had no way to tell or to reach the rest. The cap is unchanged; the marker now carries the
+    // count, and `notify_agent` itself refuses instead of reaching this path at all.
     const long = "x".repeat(600);
     const out = prepareAgentSummary(long);
-    expect(out.length).toBe(500);
-    expect(out.endsWith("\u2026")).toBe(true);
-    expect(out.startsWith("x".repeat(499))).toBe(true);
+    expect(Array.from(out).length).toBe(500);
+    expect(out).toMatch(/…\[\+\d+ chars\]$/);
+    expect(out.startsWith("x".repeat(480))).toBe(true);
   });
 
   it("a summary that's ENTIRELY control chars sanitizes down to empty", () => {
@@ -121,7 +125,10 @@ describe("composeAgentNotice (dueto: unspoofable provenance)", () => {
   });
 
   it("caps the summary portion at 500 chars inside the envelope", () => {
+    // t-b15872 — same rebase as above: the payload bound is what this pins, not the marker's shape.
     const envelope = composeAgentNotice("a", "b", "y".repeat(1000));
-    expect(envelope).toBe(`[tachyon] a \u2192 b: ${"y".repeat(499)}\u2026`);
+    expect(envelope.startsWith("[tachyon] a \u2192 b: ")).toBe(true);
+    expect(Array.from(envelope.replace("[tachyon] a \u2192 b: ", "")).length).toBe(500);
+    expect(envelope).toMatch(/…\[\+\d+ chars\]$/);
   });
 });

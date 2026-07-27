@@ -49,7 +49,7 @@ import {
 } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
-import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
+import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { appendDoorbellEvent } from "./doorbell.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
@@ -3468,14 +3468,23 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "actively being typed into by a human.",
       inputSchema: {
         to: AGENT_NAME.describe("the recipient agent's name"),
-        summary: z.string().min(1).max(4000).describe("one-line completion/status message — sanitized to a single printable line and capped at 500 chars"),
+        summary: z.string().min(1).max(4000).describe(
+          "one-line completion/status message, at most 500 chars after sanitizing. OVER THAT IT IS REFUSED, "
+            + "never truncated: write the detail where it survives (append_task_note / attach_evidence) and send a "
+            + "short summary instead. A completion should carry task id, state, commit/tree or blocker, and `pointer`.",
+        ),
+        pointer: z.string().min(1).max(200).optional().describe(
+          "durable record holding the full detail — a task id (t-abc123), an artifact ref or a path. Appended to the "
+            + "delivered line and stored with the notice, so the recipient can open it from Attention/Activity "
+            + "instead of reading your pane.",
+        ),
         agent: AGENT_NAME.describe(
           "YOUR agent name — self-declared, NOT verified by the Bridge (auth is one shared token; the Bridge cannot tell callers apart). " +
             "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
         ),
       },
     },
-    async ({ to, summary, agent }) => {
+    async ({ to, summary, agent, pointer }) => {
       try {
         // spec 351 — resolved caller wins for the sender identity (closes t-d7b3a9's "a reviewer
         // self-naming 'codex'" damage: the "From" line is now the AUTHENTICATED sender, not self-declared).
@@ -3521,10 +3530,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
+        // t-b15872 — refuse rather than truncate. The doorbell above is already witnessed, so a
+        // sender that rewrites and retries is not penalised for having been too verbose once.
+        const tooLong = agentSummaryRefusal(summary);
+        if (tooLong) return fail(new Error(tooLong));
         // t-9552f3 — after a witnessed, non-empty completion doorbell: latch sender so attention/backstop
         // stop treating a finished turn with an open pane as active "working" work.
         deps.markCompletionHint?.(agent);
-        const line = composeAgentNotice(agent, to, summary);
+        const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
           ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
           : await deliverNoticeFallback(deps, session, line);

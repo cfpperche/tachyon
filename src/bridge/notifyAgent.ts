@@ -35,10 +35,68 @@ export function sanitizeAgentSummary(raw: string): string {
     .join("");
 }
 
-/** Sanitize → collapse repeated spaces → trim → cap at 500 (ellipsis on truncation, never dropped). */
-export function prepareAgentSummary(raw: string): string {
+/** The bound itself is legitimate and stays; what changes (t-b15872) is what happens at it. */
+export const AGENT_SUMMARY_CAP = SUMMARY_CAP;
+
+/**
+ * Truncate by CODE POINT, never by UTF-16 unit (t-b15872).
+ *
+ * `slice` counts units, so a cut landing inside a surrogate pair emits a LONE SURROGATE — text that
+ * is not well-formed UTF-16 and cannot be encoded as UTF-8. `sanitizeAgentSummary` iterates by code
+ * point precisely to avoid that, and the old one-line `slice` right after it undid the care: a
+ * summary whose 500th unit fell mid-emoji delivered `"…\ud83d…"`. Measured, not theorised.
+ *
+ * The marker says the text was cut and by how much. A bare `…` is indistinguishable from an author
+ * who simply wrote one, which is exactly how a truncated delivery reads as a complete one.
+ */
+export function truncateByCodePoint(text: string, cap: number, note = ""): string {
+  const points = Array.from(text);
+  if (points.length <= cap) return text;
+  const marker = `…[+${points.length - cap} chars${note ? ` ${note}` : ""}]`;
+  // A cap too small to hold the marker must still be a cap: explaining the cut cannot be what
+  // breaks the bound. Below that floor the honest result is a bare code-point cut.
+  if (Array.from(marker).length >= cap) return points.slice(0, cap).join("");
+  const room = cap - Array.from(marker).length;
+  return `${points.slice(0, room).join("").trimEnd()}${marker}`;
+}
+
+/**
+ * Why the summary cannot be delivered as given, or undefined when it fits.
+ *
+ * A bounded envelope is right; silently dropping the tail of a structured delivery is not. The
+ * caller is the only party that still HAS the full text at this point — the Bridge would be
+ * discarding it — so the refusal hands the problem back to whoever can actually solve it, and names
+ * the remedy rather than just the rule.
+ */
+export function agentSummaryRefusal(raw: string): string | undefined {
+  const length = Array.from(prepareAgentSummary(raw, { truncate: false })).length;
+  if (length <= SUMMARY_CAP) return undefined;
+  return (
+    `summary is ${length} chars; notify_agent delivers one bounded line of at most ${SUMMARY_CAP}. `
+    + "Nothing is truncated for you, because the tail of a delivery is usually the part that matters: "
+    + "write the detail where it survives (append_task_note / attach_evidence), then send a short "
+    + "summary carrying task id, state, commit/tree or blocker, and `pointer` set to that durable record."
+  );
+}
+
+/**
+ * Sanitize → collapse repeated spaces → trim, and (by default) cap at 500 code points.
+ *
+ * `truncate: false` yields the cleaned text at full length — used to MEASURE before refusing, so the
+ * length reported back to a caller is the one that would actually have been delivered.
+ */
+export function prepareAgentSummary(raw: string, opts: { truncate?: boolean } = {}): string {
   const cleaned = sanitizeAgentSummary(raw).replace(MULTI_SPACE, " ").trim();
-  return cleaned.length <= SUMMARY_CAP ? cleaned : `${cleaned.slice(0, SUMMARY_CAP - 1).trimEnd()}…`;
+  if (opts.truncate === false) return cleaned;
+  return truncateByCodePoint(cleaned, SUMMARY_CAP);
+}
+
+/**
+ * Durable pointer appended to a delivered notice (t-b15872): where the full record lives, in a form
+ * the recipient can act on without reading the sender's pane. Bounded like everything else here.
+ */
+export function formatNoticePointer(pointer: string): string {
+  return `[details: ${truncateByCodePoint(sanitizeAgentSummary(pointer).replace(MULTI_SPACE, " ").trim(), 120)}]`;
 }
 
 /**
@@ -49,6 +107,20 @@ export function prepareAgentSummary(raw: string): string {
  * only real defense against a wrong `from` is the caller reading its own name off $TACHYON_AGENT_NAME
  * instead of guessing it (spawnContract.ts's identityLine + the tool descriptions now say so).
  */
-export function composeAgentNotice(from: string, to: string, summary: string): string {
-  return `[tachyon] ${from} → ${to}: ${prepareAgentSummary(summary)}`;
+export function composeAgentNotice(from: string, to: string, summary: string, pointer?: string): string {
+  const tail = pointer ? ` ${formatNoticePointer(pointer)}` : "";
+  return `[tachyon] ${from} → ${to}: ${prepareAgentSummary(summary)}${tail}`;
+}
+
+/**
+ * The whole delivered line, bounded (t-b15872).
+ *
+ * The payload was capped but the LINE never was: `AGENT_NAME` carries no max length, only a charset
+ * regex, so two long names could push the envelope past any bound the module claimed to hold. This
+ * is the claim in this file's header ("stays one bounded line") made true rather than asserted.
+ */
+export const AGENT_NOTICE_LINE_CAP = 900;
+
+export function composeBoundedAgentNotice(from: string, to: string, summary: string, pointer?: string): string {
+  return truncateByCodePoint(composeAgentNotice(from, to, summary, pointer), AGENT_NOTICE_LINE_CAP);
 }
