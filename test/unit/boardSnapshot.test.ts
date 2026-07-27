@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { EDITOR_HUMAN_ACTOR } from "../../src/validations/types.js";
 import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 
@@ -115,7 +116,7 @@ describe("buildBoardSnapshot", () => {
   it("includes validation queue counts and discovery candidates without creating validation records", async () => {
     await validationStore.create({ title: "Manual smoke", author: "human", executor: "human" });
     const agentValidation = await validationStore.create({ title: "Review generated asset", author: "claude", executor: "agent", priority: 1 });
-    await validationStore.update(agentValidation.id, { status: "triaged" });
+    await validationStore.update(agentValidation.id, { actor: EDITOR_HUMAN_ACTOR, status: "triaged" });
     const specDir = path.join(root, "docs", "specs", "901-validation");
     fs.mkdirSync(specDir, { recursive: true });
     fs.writeFileSync(path.join(specDir, "tasks.md"), "- [ ] Human dogfood install flow\n", "utf8");
