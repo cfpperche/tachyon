@@ -17,6 +17,7 @@ import {
   type CockpitStrings,
   type CompanionPairOffer,
 } from "./messages";
+import { CardTemplateBlock } from "./CardTemplateBlock";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import {
@@ -1727,6 +1728,12 @@ export function App(p: CockpitAppProps) {
               {s.settingsDoctor}
             </Button>
           </div>
+
+          {/* SDD 479 phase 4 — compose a card layout and watch the REAL card update (ratified fork 5). */}
+          <CardTemplateBlock
+            s={s}
+            onOpenConfig={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
+          />
 
           <div class="ck-settings-block" data-testid="control-settings-companion">
             <h3 class="ck-settings-block-title">{s.companionTitle}</h3>

@@ -1636,3 +1636,18 @@ main.ck-main.ck-main--mission,
 .ck-wt-confirm-card p { margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
 .ck-wt-confirm-card ul { margin: 0 0 var(--ds-3); padding-left: 18px; font-size: var(--ds-small); max-height: 40vh; overflow-y: auto; }
 .ck-wt-confirm-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
+
+/* SDD 479 phase 4 — the card-template block. The PREVIEW itself is styled by sidebar.css inside a
+   shadow root (see CardTemplateBlock.tsx); nothing here may style a card, or the block would start
+   disagreeing with the sidebar it is previewing. These rules cover the composer around it. */
+.ck-card-regions { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.ck-card-region { border: 1px solid var(--vscode-panel-border, #4443); border-radius: 6px; padding: 6px 8px; }
+.ck-card-region-title { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
+.ck-card-entry { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.ck-card-entry-move { display: inline-flex; gap: 2px; flex: 0 0 auto; }
+.ck-card-entry-move .ds-btn { padding: 0 6px; min-width: 0; }
+.ck-card-errors { margin: 6px 0; padding-left: 18px; color: var(--ds-err, #f14c4c); font-size: 11px; }
+.ck-card-yaml {
+  margin: 4px 0 8px; padding: 8px; border-radius: 6px; font-size: 11px; line-height: 1.4;
+  background: var(--vscode-textCodeBlock-background, #0002); overflow-x: auto; white-space: pre;
+}

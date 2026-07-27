@@ -13,6 +13,7 @@ import {
   topLevelComponents,
   type CardComponentId,
   type CardTemplate,
+  type CardTemplateConfig,
 } from "../../src/sidebar/cardTemplate.js";
 
 /**
@@ -103,10 +104,11 @@ describe("SDD 479 — the component catalog is closed and complete", () => {
 });
 
 describe("SDD 479 — V1 boundary: templates reach agent cards only", () => {
-  const configured: CardTemplate = { version: CARD_TEMPLATE_VERSION, header: ["name"], meta: [], footer: ["actions"] };
+  const written: CardTemplate = { version: CARD_TEMPLATE_VERSION, header: ["name"], meta: [], footer: ["actions"] };
+  const configured: CardTemplateConfig = { base: written };
 
   it("gives an agent row the configured template", () => {
-    expect(resolveCardTemplate({ kind: "agent" }, configured)).toBe(configured);
+    expect(resolveCardTemplate({ kind: "agent" }, configured)).toBe(written);
   });
 
   it("gives a terminal row the default template whatever is configured", () => {

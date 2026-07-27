@@ -47,17 +47,27 @@ separate decision surface a human may want to stop at. Only phase 1 is executed 
 
 Ordered; each must leave the tree green on `npm run verify:full:quiet`.
 
-- [ ] `t-7f454e` · **Phase 2 — project template in `tachyon.yml`.** Fail-closed loader modeled on the
-      `settings.companion` block (unknown key refused by name, malformed block dropped whole, errors
-      accumulated), unknown component id / duplicate id / unknown version refused, the default rendered
-      on any error with a diagnostic. Implements critical-state re-admission against the already-declared
-      `CRITICAL_CARD_COMPONENTS`. Must also answer the `.row-meta` wrapper question phase 1 raised.
-- [ ] `t-6a251c` · **Phase 3 — per-runtime overrides** with the explicit `extends: default | replace`
-      switch, no default guess, unknown runtime refused against the product's own runtime list. Depends
-      on phase 2.
-- [ ] `t-e494e1` · **Phase 4 — the live preview** as a Control → Settings block rendering the REAL
-      `AgentRow` against the harness fixtures, at sidebar width plus a narrow pane, errors inline before
-      saving. Depends on phase 2.
+- [x] `t-7f454e` · **Phase 2 — project template in `tachyon.yml`.** Fail-closed loader with the SHAPE of
+      the `settings.companion` block but deliberately NOT its severity (`plan.md` § What phase 2 changed,
+      1): unknown key, unknown component id, wrong region, duplicate id, missing/unknown version, and an
+      inline member whose host is omitted are each refused BY NAME; the block is dropped whole; the
+      sidebar renders the default and says so in a warn-toned banner. Critical re-admission implemented
+      against the already-declared `CRITICAL_CARD_COMPONENTS`, per row AND per state. The `.row-meta`
+      question is answered (the wrapper follows the rendered content), which also fixed a shipped
+      evidence-badge bug the equality matrix caught. `options:` is refused by name and filed as `t-045d44`.
+- [x] `t-6a251c` · **Phase 3 — per-runtime overrides** with the explicit `extends: default | replace`
+      switch and no default guess. An unknown runtime is refused against the product's own list —
+      `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`, not the narrower attested four, because an ad-hoc agent may
+      be OpenCode/Gemini/Qwen/Hermes (`plan.md` § What phase 3 changed). It required giving the row a
+      runtime at all: `AgentVM.runtime`, derived by the same `runtimeOf` the model label uses. Overrides
+      resolve to COMPLETE templates at parse time, so the renderer looks up instead of merging; a
+      partial `extends: replace` is refused by name rather than silently blanking regions.
+- [x] `t-e494e1` · **Phase 4 — the live preview** as a Control → Settings block rendering the REAL
+      `AgentRow` at 320px and 220px, with validation errors inline before anything is saved. The card
+      renders in a SHADOW ROOT with the sidebar's own stylesheet, because that sheet is global and would
+      restyle Control (`plan.md` § What phase 4 changed). It composes and emits YAML rather than writing
+      `tachyon.yml`; the round trip — composer → YAML → the real loader → the same template — is the
+      test that keeps the preview honest.
 - [ ] `t-601051` · **Phase 5 — optional personal override** in VS Code settings, personal wins, and the
       UI says which template is in effect. Depends on phase 2.
 
@@ -75,10 +85,31 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
 - [x] The critical set is exactly the four states ratified in fork 3.
 - [x] The disclosure gutter is NOT a catalog component (hiding it would make collapsed children
       unreachable), and a test fails if a later phase "completes" the list by adding it.
-- [x] Terminal rows are untouched, twice over: `resolveCardTemplate` refuses to give them a configured
-      template, and their cards are in the equality matrix.
-- [ ] Reorder/hide, explicit runtime fallback, refusal of an invalid template, no markup, critical
-      re-admission, live preview, narrow-sidebar behavior, accessibility, versioning — phases 2–5.
+- [x] Terminal rows are untouched, three times over: `resolveCardTemplate` refuses to give them a
+      configured template, the Terminals tab never passes one, and both their cards in the equality
+      matrix and a direct render-with-a-template test prove it.
+- [x] **A written template reorders and hides**, and an omitted region inherits while `meta: []` obeys.
+- [x] **An invalid template is refused whole, by name, without taking the file down with it** — the
+      roster still loads, the sidebar renders the default, and a warn banner names the file.
+- [x] **Markup cannot enter**: every template value is the literal version number or a catalog id, so
+      no person-supplied string has a path to the DOM.
+- [x] **A hidden failure state comes back** for the affected row, with a tooltip saying the template
+      omitted it — and a passing/stale gate does not, so "critical" keeps its meaning.
+- [x] The schema is versioned; an unknown version and a missing version are both refused.
+- [x] `.row-meta` exists only when something in it rendered — pinned per component, since the first
+      implementation put an empty wrapper on every row.
+- [x] **A runtime override falls back explicitly**: the overridden runtime's rows use it, every other
+      row uses the project template, and the override says which inheritance it wants. A partial
+      `replace` and an unknown runtime are both refused by name.
+- [x] The row carries the runtime the override keys on, derived by the same function as the model
+      label — one derivation, so the card and the model can never disagree about what a row is running.
+- [x] **A live preview before saving**: the real component, the real stylesheet, fixture rows in the
+      five states the spec names, at the sidebar's width and its narrowest, with the loader's own
+      refusals shown inline.
+- [x] The YAML the block emits loads back as the template the block previewed — the one property a
+      screenshot could never check.
+- [ ] Personal override with precedence stated in the UI, accessibility of a reordered reading order,
+      per-component options — phase 5, `t-045d44`, and the human dogfood below.
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -86,26 +117,83 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
 
 ## Dogfood
 
-**Dogfood-Opt-Out** for phase 1: this increment is defined by producing **no** observable change, so
-there is nothing a human could exercise that would distinguish it from the tree before it. Asking a
-dogfooder to confirm the sidebar looks the same would produce a "looks fine" that is true whether or
-not the code works. The evidence that fits the claim is the byte-for-byte comparison against the
-renderer that shipped, which is mechanical, complete over the fixture matrix, and re-runnable.
+**Phase 1: Dogfood-Opt-Out.** That increment was defined by producing **no** observable change, so
+nothing a human could exercise would distinguish it from the tree before it. Asking a dogfooder to
+confirm the sidebar looks the same produces a "looks fine" that is true whether or not the code works.
+The evidence that fits that claim is the byte-for-byte comparison, which is mechanical and re-runnable.
 
-Phases 2–5 each carry their own dogfood: from phase 2 onward there is a layout a person can change and
-therefore something a person can judge.
+**Phase 2: there is now something to judge, and it is NOT yet judged by a human.** The recipe below is
+written and ready; it has not been run, because it needs a VS Code host and a person looking at a real
+sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fixture <slug>` →
+`point-status` → F5 there, per `docs/runbooks/dev-host.md`):
+
+1. **It applies.** Add to the workspace `tachyon.yml`:
+   ```yaml
+   settings:
+     sidebar:
+       cardTemplate:
+         version: 1
+         meta: [harness, branch]
+   ```
+   Expect: agent cards show only those two badges, `harness` before `branch` (the reverse of the
+   default's branch-first order — that inversion is what proves the template is in charge). Terminal
+   rows are unchanged.
+2. **It refuses.** Change `harness` to `cpu-graph`. Expect: cards return to the DEFAULT layout, a
+   warn-toned banner reads "Card layout ignored — showing the default", and the message names
+   `settings.sidebar.cardTemplate.meta[0]` and `cpu-graph`. The agents/commands/runbooks lists keep
+   working — the file is not invalid, only the layout was refused.
+3. **It cannot hide an emergency.** With `meta: []`, put an agent into an auth-required state. Expect:
+   the `◆ auth required` badge appears on that row only, and its tooltip explains that the template
+   omits it.
+4. **The empty row really is gone.** With `meta: []`, confirm rows with no badges have no leftover gap
+   where the badge row used to be.
+5. **Phase 4 — the preview.** Open Control → Settings → "Agent card layout". Toggle a badge off and
+   watch the preview's cards change at both widths; confirm the `error` row keeps `auth required`
+   (re-admission) and that the YAML box updates. Paste it into `tachyon.yml` and confirm the sidebar
+   matches what the preview showed. **Look for style bleed in both directions**: Control must not
+   suddenly look like the sidebar, and the preview cards must look like real cards.
+6. **Phase 3 — a runtime override.** Add `runtimes: { claude: { extends: default, meta: [harness] } }`.
+   Expect: Claude rows show only the harness badge; rows on every other runtime keep the project's
+   badges. Then change `extends` to `replace` without listing all three regions and expect a refusal
+   naming the missing ones — not a card that lost its name.
 
 ## Visual QA
 
-**Visual QA Opt-Out** for phase 1, for the same reason and with a stronger substitute: the golden file
-IS the visual record, in text — every element, attribute, tooltip and handler of 60 cards. A screenshot
-comparison would be less sensitive (it cannot see a lost `title` or a dropped `onClick`) and less
-durable (it cannot be diffed in review). From phase 2 the card can actually change, and the visual
-check becomes meaningful.
+**Phase 4 — durable artifacts, generated and inspected.** `docs/screenshots/479-card-templates/`
+(10 PNGs + a manifest), rendered by `test/browser/cardPreviewShots.test.ts` from the REAL `AgentRow`
+and the shipped `dist/webview/sidebar.css` in headless Chrome, at 320px and 220px:
+
+| Shot | What it evidences |
+|---|---|
+| `default-320`, `default-narrow-220` | the card every workspace gets with no configuration |
+| `configured-320`, `configured-narrow-220` | `meta: [harness, branch, verify]` — harness now BEFORE branch, evidence/continuity/attention hidden |
+| `auth-required-readmitted-*` | `meta: []` and the failure rows still carry `config invalid`, `auth required`, `✗ verify` — ratified fork 3, seen |
+| `refusal-*` | the warn-toned "Card layout ignored — showing the default" banner with the real refusal text |
+| `terminal-unaffected-*` | a terminal row beside an agent row under a template that hides everything — the V1 boundary |
+
+Regenerate: `npm run build && npx vitest run --config vitest.browser.config.ts test/browser/cardPreviewShots.test.ts`.
+Not part of `verify:full` (needs a system Chrome and a built `dist/`).
+
+**Observed while reviewing the shots, and filed rather than hidden:** at 220px a very long branch name
+overflows its badge horizontally (visible in `configured-narrow-220`). It is PRE-EXISTING card
+behavior — the default card does the same, and no template causes it — but it bears on the spec's
+narrow-sidebar criterion, so it is tracked separately.
+
+**Phase 1: opt-out**, with a stronger substitute — the golden file is the visual record in text
+(every element, attribute, tooltip and handler of 60 cards), and it is *more* sensitive than a
+screenshot, which cannot see a lost `title` or a dropped `onClick`.
+
+**Phase 2: advisory, and open.** A configured card is a genuinely visual change (badge order, the
+warn-toned banner, spacing once the badge row can vanish), and the golden covers only the DEFAULT card.
+The web-only `visual-qa` plugin cannot drive a VS Code sidebar, so this belongs with the human dogfood
+above — steps 1 and 4 are the ones where appearance, not behavior, is what is being judged.
 
 ## Cookbook
 
-**Cookbook-Opt-Out** for phase 1: no operator surface exists yet. Nothing is configurable, so there is
-nothing to document beyond what the spec already says. The cookbook entry belongs to phase 2, where a
-person first writes a template — and it should be written from the refusal messages, so the
-documentation and the diagnostics cannot disagree.
+**Phase 1: opt-out** — nothing was configurable, so there was nothing to document.
+
+**Phase 2: [`cookbook.md`](./cookbook.md).** Written from the refusal messages themselves, so the
+documentation and the diagnostics cannot drift: where the template lives, the three regions and their
+components, why silence inherits while `[]` obeys, the two components that travel inside a host, what
+cannot be hidden and how the product says so, every refusal message with its exact wording, and two
+worked recipes.

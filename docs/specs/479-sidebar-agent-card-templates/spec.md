@@ -44,37 +44,79 @@ names that test; the rest belong to phases 2–5 and stay open until then._
     byte, against output captured from the renderer at `76546c4d` — **before** the refactor, so the
     golden is evidence about the prior card and not about the new one. Terminal rows are in the same
     matrix: they share the component, and V1 must not move them.
-- [ ] **Scenario: a person reorders and hides elements**
+- [x] **Scenario: a person reorders and hides elements** — phase 2,
+      `test/unit/sidebarCardMetaRegion.test.ts`
   - **Given** a template listing a subset of catalog components in a chosen order
   - **When** the sidebar renders
   - **Then** exactly those components appear, in that order, and every omitted one is absent — with
     the escape-hatch rule below still holding.
-- [ ] **Scenario: a runtime override falls back explicitly**
+  - *Also decided here:* a region the template does not MENTION keeps the default; an explicitly empty
+    list (`meta: []`) hides everything in it. Silence should not delete the actions row from someone
+    who only wanted to reorder badges, but `[]` is a sentence and is honored as one.
+- [x] **Scenario: a runtime override falls back explicitly** — phase 3,
+      `test/unit/sidebarCardRuntimeOverrides.test.ts`
   - **Given** a per-runtime template for `claude` and no template for `codex`
   - **When** rows of both runtimes render
   - **Then** the Claude rows use the override and the Codex rows use the default, and the override
     declares whether it extends the default or replaces it — the answer is never implicit.
-- [ ] **Scenario: an invalid template is refused, not partially applied**
+  - *Two things the ratified wording left unsaid, decided in phase 3 rather than by whoever reads the
+    code next:* (a) `extends: default` layers onto the **project's** template, so product → project →
+    runtime compose and one runtime's override never discards what the project chose for every other
+    row; (b) a **partial** `replace` is refused by name — "exactly as written", written in half, would
+    mean a card with no name and no actions for someone who only wanted different badges.
+  - *The fallback is a lookup miss and nothing else:* overrides resolve to complete templates when the
+    config is parsed, so the renderer never merges and the wire carries no inheritance to re-interpret.
+  - *Which runtimes may be keys:* every runtime Tachyon can run an agent on
+    (`SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`), not the narrower attested four — an ad-hoc agent may be
+    OpenCode/Gemini/Qwen/Hermes, and refusing those keys would refuse an override for rows the product
+    itself creates. Still the product's own list, borrowed rather than redeclared.
+- [x] **Scenario: an invalid template is refused, not partially applied** — phase 2,
+      `test/unit/sidebarCardTemplateConfig.test.ts`
   - **Given** a template naming an unknown component, an unknown option, or a duplicate component
   - **When** the config loads
   - **Then** the sidebar renders the default template, the error names the offending key and the
     file, and no half-applied layout is ever shown.
-- [ ] **Scenario: markup cannot enter**
+  - *Severity, decided here:* a malformed template does **not** invalidate `tachyon.yml`. In this
+    loader any `errors` entry refuses the whole file, which drops the workspace to ledger/last-known-good
+    and makes spawning read-only — bricking a workspace over a cosmetic layout typo is a worse failure
+    than the one being prevented, and this criterion's own wording ("the sidebar renders the default
+    template") presumes a config that still loads. The block is dropped whole, a warning names the key
+    and the file, and the sidebar shows a warn-toned banner saying the layout was ignored.
+- [x] **Scenario: markup cannot enter** — phase 2, by construction plus
+      `test/unit/sidebarCardTemplateConfig.test.ts`
   - **Given** any string a person can type into the template
   - **When** it is rendered
   - **Then** it is rendered as text by the same components that render today's card; the schema
     accepts no HTML, no CSS, no expressions, and no free-form templating syntax at all.
-- [ ] **Scenario: a signal that matters is never fully hidden**
+  - *Why this is now true and not merely intended:* every value a template carries is either the
+    literal `version` number or an id checked against the closed catalog. There is no position in the
+    schema where a person-supplied STRING reaches the DOM — an unknown id is refused by name, so a
+    string can only ever select a fragment the product already renders.
+- [x] **Scenario: a signal that matters is never fully hidden** — phase 2,
+      `test/unit/sidebarCardMetaRegion.test.ts`
   - **Given** a template that omits the components carrying failure states (auth-required,
     config-invalid, verify failure, awaiting-human)
   - **When** a row enters one of those states
   - **Then** the state is still visible — the renderer re-admits the omitted critical component for
     the rows in that state and says why, rather than honoring a preference that hides an emergency.
-- [ ] **Scenario: live preview while editing**
+  - *Bounded on purpose:* re-admission is per row AND per state. A passing or stale verify gate is
+    information, not an emergency, and is not re-admitted — otherwise "critical" would quietly come to
+    mean "always shown".
+- [x] **Scenario: live preview while editing** — phase 4, `test/unit/cardTemplateBlock.test.ts` +
+      `test/unit/cardTemplateEditor.test.ts`
   - **Given** the human is editing the template in Tachyon's settings surface
   - **When** the template text changes
   - **Then** a preview renders the real card component against fixture rows (healthy, attention,
     error, long names, no model, narrow width) and shows validation errors inline, before saving.
+  - *How it stays the real card:* the block imports the sidebar's own `AgentRow` and links the
+    sidebar's own stylesheet — inside a SHADOW ROOT, because `sidebar.css` is a global sheet (it styles
+    `body`, `#root`, `.row`) that would restyle Control if it reached this page. Real component, real
+    CSS, no bleed, and no second renderer that could drift.
+  - *What "editing" means here:* a composer (show/hide + reorder per region), not a YAML text box. The
+    plan rejected an editor only *as the first deliverable* — "if the YAML form proves itself, an
+    editor becomes a thin producer of the same data"; phases 2–3 shipped that form. The block emits the
+    YAML to paste and does not write the file: `tachyon.yml` stays the thing a person reviews and
+    commits. A test proves the emitted YAML loads back as the template the block previewed.
 - [ ] **Scenario: the narrow sidebar still works**
   - **Given** any valid template at the sidebar's minimum practical width
   - **When** rows render
@@ -83,8 +125,9 @@ names that test; the rest belong to phases 2–5 and stay open until then._
 - [ ] Accessibility is a component property, not a template one: each catalog component carries its
       own accessible name/description, and a template that reorders components reorders the reading
       order with them.
-- [ ] The template schema is versioned, and an unknown version is refused with the same fail-closed
-      diagnostic as an unknown component.
+- [x] The template schema is versioned, and an unknown version is refused with the same fail-closed
+      diagnostic as an unknown component — phase 2. A template with no `version` at all is refused too:
+      the field is the contract, not decoration.
 
 ## Non-goals
 
@@ -162,9 +205,21 @@ component and are explicitly out of scope; see § Non-goals.
   reduced one. Revisiting it is a new spec, not a phase of this one.
 - Does the preview need real fleet data (a live row from this workspace) or are fixtures enough for
   the decision the human is making while editing?
-- Raised by phase 1, for phase 2 to answer: `.row-meta` exists when `hasMeta` is true, a predicate
-  that is *not* "some meta component rendered" — a row with `worktree` set but no live branch renders
-  an empty `.row-meta` div today. Once a template can omit components, that gap widens: does an
-  all-omitted meta region collapse the wrapper, or does the wrapper stay a product decision? Phase 1
-  preserved the existing behavior exactly, including the empty div, rather than deciding this
-  silently (`test/fixtures/sidebar/agentCardFixtures.ts`, fixture `empty-meta-quirk`).
+- ~~Raised by phase 1: does an all-omitted meta region collapse the `.row-meta` wrapper?~~
+  **Answered in phase 2: the wrapper follows the rendered content.** `.row-meta` exists when at least
+  one of its components actually rendered — not when the row happens to carry a field. `hasMeta`, the
+  fixed field-based predicate, is gone.
+
+  Two things fell out of implementing it, both recorded in the golden's header:
+
+  1. The change is invisible where it merely removes an empty wrapper, because `sidebar.css` already
+     carried `.row-meta:empty { display: none }`. The DOM is now honest about what the CSS was
+     already hiding.
+  2. **It fixed a shipped bug.** `hasMeta` listed every meta field *except* `evidence`, so a row whose
+     only meta content was the evidence badge (spec 273) rendered no `.row-meta` — and the badge was
+     invisible. Rows usually carry a live branch too, which is why it went unnoticed. The equality
+     matrix caught it: three evidence fixtures changed from "no meta row" to "badge present".
+
+  The invariant this rests on — *every meta component returns `null` when it has nothing to show* —
+  is pinned per component in `test/unit/sidebarCardMetaRegion.test.ts`, because getting it wrong put
+  an empty `.row-meta` on **every** row during development.
