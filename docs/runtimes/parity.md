@@ -51,6 +51,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 13 | **Headless probe (`probe_agent`)** | Runtime has a `HeadlessCaptureAdapter` under `src/probe/adapters/` registered on `ProbeService`, and Bridge `probe_agent` accepts that runtime in schema. Captures a terminal taxonomy result without a durable pane. |
 | 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
 | 15 | **Runtime-managed native memory** | Adapter inventories the exact runtime/version's persistent learned-context mechanism and behaviorally verifies disable/enable, injection, mutation, isolation and lifecycle semantics. A written setting without behavioral proof is at most `~`; plugin memory is separate from the built-in runtime mark. |
+| 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs the signal measured on a stated version AND consumed by Tachyon; `~` means measured but not yet consumed; `✗` means the runtime gives no reliable signal. Inferring auth state from silence or exit code alone never qualifies. |
 
 For the Codex marks in rows 7, 9, and 12, **✓** is scoped to canonical profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
@@ -119,6 +120,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 13 Headless probe | ✓ | ✓ | ✗ | ✓§ | ✗ | **✗** |
 | 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✗ | ✗ |
 | 15 Runtime-managed native memory | ~ | ~ | ✗ | ~ | ✗ | **✗** |
+| 16 Auth-required detection | ~ | ~ | **✗** | ~ | ~ | **✗** |
 
 \* **Pi Bridge** is projected through a Tachyon-owned native extension because Pi has no MCP client.
 
@@ -533,6 +535,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-27 | **Authentication / loss-of-session measured across the fleet (`t-16cd93`, SDD 477):** an agent lost its provider login mid-run and Tachyon read it as ordinary idleness — a coordinator could keep assigning work and restarting forever. Capability row 16 and §3.7 now record, per runtime, the auth mechanism, the MEASURED unauthenticated signal, whether an official non-interactive refresh exists, the human action and the recovery path. Claude/Codex/Grok/Pi/Hermes all emit a usable signal (structured JSON for the first three); **OpenCode emits none** — it silently answers on the fallback model `big-pickle`, so an agent can look healthy while running a model nobody chose. Also measured and load-bearing: Claude's TUI footer `Not logged in · Run /login` appeared on a fully functional agent mid-task, so a pane detector keyed on it would park healthy agents — the trustworthy Claude signal is turn-attached. All six are `~` (measured, not yet consumed) pending the SDD 477 implementation. |
 | 2026-07-26 | **Codex probes work outside a git repository (`t-7cc65e`):** a probe answers a bounded question wherever its caller happens to be, but `codex exec` refused a non-repo cwd outright — *"Not inside a trusted directory and --skip-git-repo-check was not specified"*, exit 1, no JSON events and no artifact, which the adapter honestly mapped to `process_error`. The same question answered fine on Claude (`result: ok`) and Grok in the same directory, so this was pure fleet asymmetry: only Codex failed, and for a directory-trust check rather than anything about the probe. The adapter now passes `--skip-git-repo-check`. Measured that this does NOT widen the probe's boundary: with the flag AND `--sandbox read-only`, a write request came back refused (`BLOCKED`) and no file was created — the sandbox is the boundary, and directory trust is already Tachyon's own since SDD 476 gave each run a private `CODEX_HOME` with a seeded trusted-folder store. Evidence: `npm run dogfood:probe-codex-model-proof` (11/11, now including a probe launched from a non-repo dir). |
 | 2026-07-26 | **Peer composers measured post-turn; extended-colour dim bug fixed (`t-3eaa8b`):** `t-c5f29b` left the peers measured only at startup, which was a weak negative — the Claude incident's suggestion appeared AFTER a turn. Captured grok 0.2.112, opencode 1.18.4/1.18.5, pi 0.80.10 and hermes 0.18.2 in three states each (empty composer, human-typed draft, completed real turn): **none renders suggestion text in the composer in any state**, so none declares `ansiEmptyContentStyle` — with nothing to exempt, declaring it would only weaken a real draft's protection. The measurement did surface a defect in the SHARED rule: the dim parser scanned each escape's parameters as a set looking for `2`, but SGR 38/48/58 introduce an extended colour whose sub-parameters are ordinary numbers, so truecolor `38;2;r;g;b` read as dim. Measured on grok, whose composer IS truecolor: a human's typed draft came out entirely dim and the composer therefore read as EMPTY — the dangerous direction, since empty is what permits injection. Latent only because no truecolor runtime declared the rule yet, which is precisely what this task was about to change. The parser now walks parameters and consumes `5;<n>` / `2;<r>;<g>;<b>` properly, and fails closed on a malformed colour. Evidence: `test/unit/composerDimTruecolor.test.ts` (7 tests on the captured bytes; the truecolor case fails without the fix). |
 | 2026-07-26 | **Canonical Grok can commit again (`t-076a28`):** SDD 456 co-binds `HOME` to the private `GROK_HOME` so Grok cannot discover `$HOME/.claude/settings.json` — but `HOME` is also the agent's `HOME` for everything it shells out to, and git found no global config there, so every canonical Grok agent failed `git commit` with "Author identity unknown". The private home is now seeded with a `.gitconfig` that `[include]`s the operator's real one: identity (and their aliases and signing config) is read live from the file they own, nothing is copied, and nothing drifts. Measured that the isolation is untouched — `grok inspect --json` stays `sources: [] loaded: 0` with the seed present. Two claims from the `t-50fe1d` measurement are **corrected** here by re-measurement: `GIT_CONFIG_GLOBAL` does work (the original one-liner was at fault), and SSH was never broken — OpenSSH resolves `~` for identity files from the passwd database, not `$HOME`, so a private-`HOME` agent still offers the operator's real key even with no ssh-agent running. Only git reads its global config from `$HOME`, which is why only git needed a fix; no SSH follow-up is warranted. Evidence: `test/unit/privateHomeGitIdentity.test.ts` (7 tests driving real git, including the reproduced failure) plus a live `grok inspect` before/after the seed. |
@@ -562,3 +565,31 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 | 2026-07-09 | Initial living matrix; supersedes board task `t-4891dd`. Grok Bridge non-harness marked ✓ after t-843576 dogfood. |
 | 2026-07-09 | Fold Claude + Codex adversarial reviews: Grok Brief → ✗; Grok Permission inject → ✗; OpenCode profile/permission → ~; Attention wording + Grok Attention → ~; Claude/Codex stop → ~ until measured; harness/non-harness axis §3.4; secondary brief inversion (Gemini/Antigravity); open gaps refreshed. |
 | 2026-07-09 | **Cap 1 Grok closed:** `INSTRUCTION_ARG.grok = (q) => q` + unit test; matrix Brief Grok → ✓. |
+
+### 3.7 Authentication / loss of session
+
+**Measured 2026-07-27 (`t-16cd93`, SDD 477).** Each runtime was driven with an isolated,
+credential-free private home — the shape Tachyon already materializes — so no real credential was
+touched. `✓` in row 16 requires the signal to be both measured AND consumed by Tachyon; everything
+below is measured but not yet consumed, hence `~`.
+
+| Runtime | Auth mechanism | Measured unauthenticated signal | Official non-interactive refresh | Human action | Recovery |
+|---|---|---|---|---|---|
+| Claude 2.1.220 | OAuth login → `.credentials.json` in `CLAUDE_CONFIG_DIR` (Tachyon symlinks it) | headless result `is_error: true`, `result: "Not logged in · Please run /login"` | none measured | `/login` in the runtime | explicit restart/retry after login |
+| Codex 0.145.0 | ChatGPT login / device code / API key → `auth.json` in `CODEX_HOME` | `{"type":"error"}` + `turn.failed`: `401 Unauthorized: Missing bearer or basic authentication in header`, after **5 automatic reconnects**; TUI renders a sign-in menu | device code and API key exist as CLI options | sign in, or provide an API key | explicit restart/retry |
+| Grok 0.2.112 | OAuth/device code → `auth.json` in `GROK_HOME` | `{"type":"error","message":"Not signed in. To authenticate without a browser, run: grok login --device-code …"}`; TUI shows the device-code approval screen | **yes** — `grok login --device-code`, or `XAI_API_KEY` | run the device-code flow | explicit restart/retry |
+| OpenCode 1.18.4 | `auth.json` under `XDG_DATA_HOME/opencode` | **NONE** — it answers normally on the fallback model `big-pickle` | n/a | re-seed auth | n/a |
+| Pi 0.80.10 | API key / OAuth via env or `/login` | `No API key found for the selected model.` + `Use /login to log into a provider via OAuth or API key.` | env-var API key | `/login`, or set the provider env var | explicit restart/retry |
+| Hermes 0.18.2 | provider key in `~/.hermes/.env` | `agent failed: No inference provider configured. Run 'hermes model' … or set an API key (OPENROUTER_API_KEY, OPENAI_API_KEY, …)` | env-var/`.env` key | `hermes model`, or set a provider key | explicit restart/retry |
+
+**Two findings that constrain any detector.**
+
+The **Claude TUI footer is not a usable signal**: `Not logged in · Run /login` was observed in the
+footer of a *fully functional* agent, mid-task, which then completed that task and several more. A
+pane detector keyed on that string would park healthy agents. The trustworthy Claude signal is
+turn-attached — the runtime *answering* the login error.
+
+**OpenCode fails silently in the dangerous direction**: with no credential it does not error, it
+degrades to a fallback model and answers. An agent can therefore look healthy while running a model
+the operator did not choose. That is `✗` and a filed gap, not something to infer.
+
