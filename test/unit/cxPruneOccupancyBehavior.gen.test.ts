@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AgentManager } from "../../src/agents/AgentManager.js";
@@ -7,11 +6,12 @@ import { pruneDeliveryRecord } from "../../src/git-delivery/prune.js";
 import type { GitDelivery } from "../../src/git-delivery/types.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import type { GitExec, GitResult, WorktreeOccupancyProbe } from "../../src/worktree/WorktreeManager.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const actor = { kind: "agent" as const, name: "owner" };
 
 function tmpRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-prune-occupancy-"));
+  return makeTempDir("tachyon-prune-occupancy-");
 }
 
 function delivery(worktreePath: string): GitDelivery {

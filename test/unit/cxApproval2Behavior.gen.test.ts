@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type * as vscode from "vscode";
 import { Uri, __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
@@ -15,12 +14,13 @@ import { buildApprovalViewModel } from "../../src/webview/approval/viewModel.js"
 import { renderPrimer } from "../../src/bridge/primer.js";
 import { ApprovalPanelManager } from "../../src/webview/ApprovalPanel.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   beforeEach(() => __resetVscodeMock());
 
   it("the approval view routes resolution through the persistent engine with a verbatim payload and refuses a stale-session injection", async () => {
-    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-"));
+    const ws = makeTempDir("tachyon-cx-approval-");
     const request = buildApprovalRequest({
       id: "a-abc123",
       requester: "child",
@@ -121,7 +121,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("redirects legacy approval panel opens and revives into cockpit Approvals", () => {
-    const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cx-approval-panel-"));
+    const wsRoot = makeTempDir("tachyon-cx-approval-panel-");
     const ws = {
       wsHash: "panel-truth",
       workspaceRoot: wsRoot,

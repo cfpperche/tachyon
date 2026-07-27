@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { AgentManager } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "../../src/agents/briefFile.js";
 import { composeSpawnContractBrief, type SpawnContract } from "../../src/bridge/spawnContract.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 function configOf(yaml: string): TachyonConfig {
   const { config, errors } = parseConfig(yaml);
@@ -20,7 +19,7 @@ async function spawnAndCapture(
   name: string,
   opts: { instructions?: string; taskBrief?: string; contract?: SpawnContract; parent?: string },
 ): Promise<{ cmd: string; workspaceRoot: string }> {
-  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sn-brief-"));
+  const workspaceRoot = makeTempDir("sn-brief-");
   const calls: string[][] = [];
   const tmux = new TmuxService(async (args) => {
     calls.push(args);
@@ -128,7 +127,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("deliverableBody: pure threshold + pointer behavior", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "sn-brief-pure-"));
+    const workspaceRoot = makeTempDir("sn-brief-pure-");
 
     const short = "x".repeat(BRIEF_FILE_THRESHOLD);
     expect(deliverableBody(workspaceRoot, "agent", short)).toBe(short);

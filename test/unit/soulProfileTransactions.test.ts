@@ -1,6 +1,5 @@
 import fs from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, readdir, rm, symlink, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -25,9 +24,10 @@ import {
 import { agentSoulManifestPath, agentSoulPath, cleanupStaleSoulLaunchReservationsSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, soulLaunchReservationsDir, SOUL_MAX_BYTES, SOUL_MINIMAL_TEMPLATE, withSoulProfileAdmission } from "../../src/agents/soul.js";
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 async function workspace(yaml?: string) {
-  const root = await mkdtemp(path.join(tmpdir(), "tachyon-profile-tx-"));
+  const root = makeTempDir("tachyon-profile-tx-");
   const file = path.join(root, "tachyon.yml");
   const text = yaml ?? "agents:\n  Ada:\n    cmd: codex\n";
   await writeFile(file, text);
@@ -65,7 +65,7 @@ describe("soul profile transactions (T15A)", () => {
 
   it("imports exact bytes, never persists the source path, and rejects silent overwrite", async () => {
     const { root, access } = await workspace();
-    const sourceRoot = await mkdtemp(path.join(tmpdir(), "tachyon-import-src-"));
+    const sourceRoot = makeTempDir("tachyon-import-src-");
     const source = path.join(sourceRoot, "identity.md");
     const bytes = Buffer.from("Voice\r\nValues\n");
     await writeFile(source, bytes);
@@ -570,7 +570,7 @@ describe("soul profile transactions (T15A)", () => {
 
   it("fails closed when the transaction root is a symlink outside the workspace", async () => {
     const { root, access } = await workspace();
-    const outside = await mkdtemp(path.join(tmpdir(), "tachyon-profile-tx-outside-"));
+    const outside = makeTempDir("tachyon-profile-tx-outside-");
     await mkdir(path.join(root, ".tachyon"), { recursive: true });
     await symlink(outside, profileTransactionsRoot(root));
     await expect(createSoulProfile(root, "Ada", access)).rejects.toMatchObject({ code: "soul/outside-workspace" });

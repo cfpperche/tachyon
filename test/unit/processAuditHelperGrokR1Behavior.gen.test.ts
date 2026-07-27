@@ -11,6 +11,8 @@ import {
   openSync,
   closeSync,
   readdirSync,
+  lstatSync,
+  unlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -550,7 +552,11 @@ os.rename(moved, target)
       }
       for (const p of scratch) {
         try {
-          rmSync(p, { recursive: true, force: true });
+          // t-25a908 — a symlink whose target was already removed survives `rmSync(force)`: the
+          // existence check resolves the link, gets ENOENT, and `force` swallows it before anything
+          // is unlinked. lstat sees the link itself, so unlink it directly.
+          if (lstatSync(p, { throwIfNoEntry: false })?.isSymbolicLink()) unlinkSync(p);
+          else rmSync(p, { recursive: true, force: true });
         } catch {
           /* ignore */
         }

@@ -1,14 +1,14 @@
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveSoul } from "../../src/agents/soul.js";
 import { openingPromptCapability } from "../../src/agents/openingPromptCapability.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   it("agent soul profile foundation", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-soul-foundation-"));
+    const root = makeTempDir("tachyon-soul-foundation-");
     const dir = path.join(root, ".tachyon", "agents", "reviewer");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "SOUL.md"), "Calm, exact, and candid.\r\n");
