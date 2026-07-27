@@ -635,6 +635,18 @@ function ok(text: string): ToolResult {
   return { content: [{ type: "text", text }] };
 }
 
+/**
+ * t-fbefec — who proposed a schedule, resolved from the token rather than stamped. The human who
+ * approves a proposal is authorizing a config-as-code write, and "agent" (the literal this used to
+ * record for every caller) does not tell them WHICH of the fleet asked, nor that a non-agent caller
+ * asked at all. Non-agent kinds render parenthesized, which `AGENT_NAME_RE` forbids, so a caller
+ * kind can never be mistaken for — or collide with — a real agent name.
+ */
+function proposalAuthor(deps: Pick<BridgeDeps, "caller">): string {
+  const caller = deps.caller ?? { kind: "legacy" as const };
+  return caller.kind === "agent" && caller.name ? caller.name : `(${caller.kind})`;
+}
+
 /** t-98256c — the validation actor is the Bridge-resolved caller, never a tool field (spec 351). */
 function validationActor(deps: Pick<BridgeDeps, "caller">): ValidationActor {
   const caller = deps.caller ?? { kind: "legacy" as const };
@@ -4638,6 +4650,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Propose a scheduled action (a cron-like timer). The proposal is INERT — it never fires — " +
         "until the HUMAN approves it in the sidebar; approving writes it into tachyon.yml. Use this " +
         "when you notice something should run regularly (e.g. tests hourly, a daily standup summary). " +
+        "The proposal is recorded under YOUR name, resolved by the Bridge from your token — there is no " +
+        "author parameter, because the human approving it is authorizing a config-as-code write and must " +
+        "see who asked. " +
         "Exactly one of every (interval like '1h','30m') or at ('HH:MM' daily); exactly one of run (a " +
         "command/runbook name) or spawn (an agent name, optional instructions). Re-proposing the same " +
         "name replaces the prior pending proposal.",
@@ -4662,8 +4677,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (instructions !== undefined) schedule.instructions = instructions;
         const problem = validateProposedSchedule(schedule);
         if (problem) return fail(new Error(problem));
-        const proposal = deps.proposals.create(name, schedule, "agent", reason);
-        deps.onScheduleProposed?.(name, "agent");
+        const by = proposalAuthor(deps);
+        const proposal = deps.proposals.create(name, schedule, by, reason);
+        deps.onScheduleProposed?.(name, by);
         return ok(JSON.stringify({ status: "pending human approval", id: proposal.id, name }));
       } catch (err) {
         return fail(err);
