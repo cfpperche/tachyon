@@ -29,6 +29,7 @@ import { stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
+import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml, type CanonicalAgentSpec } from "../helpers/canonicalAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 
 /**
@@ -223,8 +224,21 @@ afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
 
-async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}, opts: { bCmd?: string; tachyonYaml?: string } = {}) {
+async function makeWorkspace(
+  onViewsChanged: (view: ViewKind) => void = () => {},
+  opts: { bCmd?: string; tachyonYaml?: string; canonical?: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }>; extraYaml?: string } = {},
+) {
   const root = mkdir();
+  // SDD 478 M7 — a case that needs a real AGENT declares one: a canonical profile plus the
+  // host-custodied authority that attests it. `agents:` no longer accepts a definition.
+  if (opts.canonical) {
+    const fixtures = opts.canonical.map((entry) => writeCanonicalAgent(root, entry.name, entry.spec ?? {}));
+    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
+    const host = new SharedSecretHost(mkdir(), canonicalAgentSecrets(root, fixtures));
+    const fake = fakeTmux();
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false });
+    return { ws, host, ...fake };
+  }
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
   // SDD 478 M7 — `a` and `b` are supervised SHELLS, so they are terminals. They were only agents
   // because `allowLegacyAgentFixtures` accepted an inline shape the product refuses; nothing here
@@ -238,15 +252,20 @@ async function makeWorkspace(onViewsChanged: (view: ViewKind) => void = () => {}
   return { ws, host, tmux, sessions, dead, sent, panes, calls };
 }
 
-it("rejects nonboolean soul on reload and retains the prior known-good config", async () => {
-  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  ada:\n    cmd: codex\n    soul: true\n" });
-  expect(asAgent(ws.config?.agents.ada)?.soul).toBe(true);
-  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents:\n  ada:\n    cmd: codex\n    soul: SOUL.md\n", "utf8");
+it("rejects an invalid reload and retains the prior known-good config", async () => {
+  // SDD 478 M7 — this used to prove the point with `soul: SOUL.md` on an inline agent. Neither half
+  // of that is expressible now: `agents:` takes a profile pointer, and a canonical profile cannot
+  // carry `soul` at all (the projection defers it to t-a2827d). The guarantee under test is the
+  // reload boundary itself — a rejected edit must leave the last known-good config live — so it is
+  // proven with an invalid key on the arm that does accept one.
+  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
+  expect(ws.config?.agents.dev.restart).toBe("on-crash");
+  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n", "utf8");
 
   expect(ws.reloadConfig()).toBe(false);
-  expect(ws.configFailure?.errors).toContain("agents.ada.soul: must be a boolean");
-  expect(asAgent(ws.config?.agents.ada)?.soul).toBe(true);
-  expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("ada");
+  expect(ws.configFailure?.errors).toContain("terminals.dev.restart: must be 'never' or 'on-crash'");
+  expect(ws.config?.agents.dev.restart).toBe("on-crash");
+  expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("dev");
   ws.dispose();
 });
 
@@ -626,7 +645,7 @@ it("directs legacy Agent Studio submissions to canonical Agent Studio", async ()
 
 it("moves Evolution on rename while disable and runtime changes retain the same canonical profile", async () => {
   const { ws } = await makeWorkspace(() => {}, {
-    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+    canonical: [{ name: "reviewer", spec: { runtime: "codex", extra: { prompt: { evolution: "evolution" } } } }],
   });
   const profile = await ws.evolutionStore.ensureProfile("reviewer");
   const originalRoot = ws.evolutionStore.rootFor("reviewer");
@@ -690,7 +709,7 @@ it("uses Workspace authority for first-session creation and rejects tampered pro
 
 it("rolls back a declared agent rename when the Evolution destination already exists", async () => {
   const { ws } = await makeWorkspace(() => {}, {
-    tachyonYaml: "agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n",
+    canonical: [{ name: "reviewer", spec: { runtime: "codex", extra: { prompt: { evolution: "evolution" } } } }],
   });
   const reviewer = await ws.evolutionStore.ensureProfile("reviewer");
   const orphan = await ws.evolutionStore.ensureProfile("maintainer");
@@ -706,7 +725,7 @@ it("rolls back a declared agent rename when the Evolution destination already ex
 });
 
 it("runs a profile mutation through the real Workspace config writer without reconciling its own live journal", async () => {
-  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents:\n  Ada:\n    cmd: codex\n" });
+  const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "Ada", spec: { runtime: "codex" } }] });
   try {
     await expect(ws.createSoulProfile("Ada")).resolves.toMatchObject({ action: "create", status: { lifecycle: "active", soulEnabled: true } });
     expect(fs.readFileSync(agentSoulPath(ws.workspaceRoot, "Ada"), "utf8")).toContain("# Soul");
@@ -1126,7 +1145,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("mechanism-only canonical Delivery reuses one worktree through review completion", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
@@ -1218,7 +1237,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("verify_task stops and releases the exact live tail without kill quarantine", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
@@ -1251,7 +1270,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("kill quarantines a cleanly ended predecessor before a successor can join", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]);
     fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const host = new FakeHost(mkdir()); const fake = fakeTmux({ realPaneProcesses: true });
@@ -1281,7 +1300,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("quarantines a replacement pane PID without touching the replacement session", async () => {
     const root = mkdir(); const base = path.join(root, ".tachyon-worktrees");
-    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents:\n  boss:\n    cmd: sh\n`, "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(base)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`, "utf8");
     git(root, ["init"]); git(root, ["config", "user.email", "test@example.com"]); git(root, ["config", "user.name", "Test User"]); fs.writeFileSync(path.join(root, "README.md"), "base\n"); git(root, ["add", "README.md"]); git(root, ["commit", "-m", "base"]);
     const fake = fakeTmux({ realPaneProcesses: true }); const ws = await Workspace.createForTest(root, { host: new FakeHost(mkdir()), onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false }); let original: ChildProcess | undefined;
     try {
@@ -1296,7 +1315,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("serializes host authority-head prepares so concurrent updates cannot lose sibling heads", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
@@ -1342,7 +1361,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("refreshes shared authority custody before a stale host prepares another head", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
     const secrets = new Map<string, string>();
     const firstFake = fakeTmux();
     const secondFake = fakeTmux();
@@ -1379,7 +1398,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("rejects a signed canonical rollback from another host and quarantines only that Delivery", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
     const secrets = new Map<string, string>();
     const firstFake = fakeTmux();
     const secondFake = fakeTmux();
@@ -1436,7 +1455,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const root = mkdir();
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      "agents:\n  bound-old:\n    cmd: sh\n    autostart: false\n  ordinary:\n    cmd: sh\n    autostart: false\n",
+      "agents: {}\nterminals:\n  bound-old:\n    cmd: sh\n    autostart: false\n  ordinary:\n    cmd: sh\n    autostart: false\n",
       "utf8",
     );
     const unsignedStore = new DeliveryStore(root);
@@ -1509,7 +1528,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const root = mkdir();
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      "agents:\n  ordinary:\n    cmd: sh\n    autostart: false\n",
+      "agents: {}\nterminals:\n  ordinary:\n    cmd: sh\n    autostart: false\n",
       "utf8",
     );
     const unsignedStore = new DeliveryStore(root);
@@ -1558,7 +1577,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("keeps anti-rollback CAS intact for ordinary heads while the migration-only initial path stays guarded", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
@@ -1614,7 +1633,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("refreshes a previously absent canonical head after another host creates the Delivery", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
     const secrets = new Map<string, string>();
     const firstFake = fakeTmux();
     const secondFake = fakeTmux();
@@ -1640,7 +1659,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -1694,7 +1713,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -1814,7 +1833,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -1862,7 +1881,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const wtBase = path.join(root, ".tachyon-test-worktrees");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n${namedBehaviorVerifyYaml()}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -1935,7 +1954,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const behaviorSettings = namedBehaviorSettings("test/generated-gates/{agent}.behavior.test.ts");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -1981,7 +2000,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const behaviorSettings = namedBehaviorSettings("test/generated-gates/{agent}.behavior.test.ts");
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
-      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents:\n  boss:\n    cmd: sh\n`,
+      `settings:\n${namedBehaviorVerifyYaml(behaviorSettings.stubPath)}  worktree:\n    base: ${JSON.stringify(wtBase)}\nagents: {}\nterminals:\n  boss:\n    cmd: sh\n`,
       "utf8",
     );
     git(root, ["init"]);
@@ -2208,7 +2227,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("restores persisted terminal tabs from Workspace.start after surviving tmux sessions are ready", async () => {
     const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  a:\n    cmd: sh\n", "utf8");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
     const host = new FakeHost(mkdir());
     const { tmux, sessions } = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });

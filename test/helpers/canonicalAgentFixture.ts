@@ -49,7 +49,11 @@ export interface CanonicalAgentSpec {
    */
   selectors?: { model?: string; provider?: string; reasoningEffort?: string; serviceTier?: string };
   role?: "coder" | "reviewer" | "tester" | "orchestrator" | "custom";
-  soul?: boolean;
+  /**
+   * NOT projectable yet — `projectDefinition` refuses `prompt.soul` ("Soul, instructions and memory
+   * belong to t-a2827d"). Kept out of the spec on purpose so a caller cannot silently produce a
+   * profile the loader rejects; a soul case has no canonical expression until that slice lands.
+   */
   cwd?: string;
   autostart?: boolean;
   attention?: { enabled?: boolean; silenceSec?: number; patterns?: string[] };
@@ -89,7 +93,7 @@ export function writeCanonicalAgent(root: string, name: string, spec: CanonicalA
         },
       }
       : {}),
-    ...(spec.role || spec.soul ? { prompt: { ...(spec.role ? { role: spec.role } : {}), ...(spec.soul ? { soul: true } : {}) } } : {}),
+    ...(spec.role ? { prompt: { role: spec.role } } : {}),
     ...(spec.cwd || spec.autostart !== undefined || spec.attention
       ? {
         ...(spec.cwd ? { workspace: { cwd: spec.cwd } } : {}),
