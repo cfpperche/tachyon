@@ -324,6 +324,54 @@ HOME="$BASE/ambient" grok inspect --json | jq '{grokVersion, permissions}'
 - Live `-p` without auth under that fresh ambient home failed with “Not signed
   in” (expected — no auth seed in bare ambient).
 
+## M4 — the `HOME` co-bind, measured before deciding (`t-50fe1d`, 2026-07-26)
+
+`t-50fe1d` asked whether the ad-hoc path should co-bind `HOME` to the private Bridge `GROK_HOME`,
+the way `Workspace.ts` already does for canonical (`profileLifecycle`) Grok. It said to measure
+first, and the measurement changes the answer.
+
+Arms: private home materialized the way `materializeBridgeMcpGrok` does (`config.toml` + `auth.json`
+symlink), grok 0.2.112, `grok inspect --json` in a scratch git repo.
+
+| # | Env | `permissions.sources` | Live `-p` auth | Sessions | `git commit` |
+|---|-----|----------------------|----------------|----------|--------------|
+| A | `GROK_HOME` private, `HOME` ambient — **today's ad-hoc path** | `["~/.claude/settings.json (settings)"]`, `loaded: 1` | ✓ | private home | ✓ |
+| B | `HOME` **and** `GROK_HOME` = private — **canonical shape** | `[]`, `loaded: 0` | ✓ | private home | ✗ **"Author identity unknown"** |
+| C | B + private `.gitconfig` with `[include] path = <real ~/.gitconfig>` | `[]`, `loaded: 0` | ✓ | private home | ✓ |
+
+Neither arm wrote to the operator's `~/.grok`: the session ids from both live `-p` runs are absent
+from `~/.grok/sessions`. **`GROK_HOME` alone already isolates sessions, config and auth** — the
+co-bind buys exactly one thing, and it is the permission surface.
+
+**What the co-bind buys.** Arm A really does load the operator's `~/.claude/settings.json`. On this
+machine that file carries `permissions.defaultMode: "bypassPermissions"`, so the hole is not
+theoretical: it is ambient inheritance of the single most dangerous value, on the path used by bare
+`cmd: grok`. Arm B closes it completely.
+
+**What the co-bind costs.** A co-bound `HOME` is the agent's `HOME` for everything it shells out to,
+not only for Grok's own config discovery. Measured: `git commit` fails outright with *"Author
+identity unknown"* because `~/.gitconfig` is no longer visible, and the private home contains no
+`.ssh`, so key-based auth has nothing to load (measured as absence — no handshake was attempted).
+Nothing in `src/` supplies a git identity: there is no `GIT_AUTHOR_*`, `GIT_CONFIG_GLOBAL` or seeded
+`.gitconfig` anywhere.
+
+**This already bites canonical Grok.** `Workspace.ts` co-binds `HOME` for every `profileLifecycle`
+Grok agent today, so a canonical Grok agent cannot commit. That is a pre-existing consequence of SDD
+456 that nobody measured; filed separately rather than folded in here.
+
+**Mitigation exists and is cheap** (arm C): seeding the private home with a `.gitconfig` that
+`[include]`s the operator's real one restores commits *and* keeps `loaded: 0`. Pointing
+`GIT_CONFIG_GLOBAL` at the real file instead did **not** work in measurement (still "Author identity
+unknown"), so the include-file form is the one with evidence behind it. It does not restore `.ssh`.
+
+**Ruling (unchanged pending a product call).** `runtimeProfile.grok.isolation` stays
+`project-scoped` and `assertVerifiedTranscriptIsolation` is untouched. Co-binding `HOME` on the
+ad-hoc path is *effective* but not *free*, and shipping it bare would trade a permission hole for
+silently broken commits in the exact scenario ad-hoc exists to serve — an agent working in the
+operator's own workspace. Step 3 of `t-50fe1d` (reclassify to `private-home`) therefore remains
+blocked on a decision, not on more measurement: ship arm C (co-bind + seeded `.gitconfig`, accepting
+the `.ssh` gap) or keep arm A and treat the ambient permission read as a declared limitation.
+
 ## Related seams / reading
 
 - Living matrix: [`docs/runtimes/parity.md`](../runtimes/parity.md) §3.6 Ad-hoc spawn parity, Grok row, §3.4

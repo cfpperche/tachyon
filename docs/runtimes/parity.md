@@ -450,6 +450,15 @@ no path that answers on its own.
 3. Canonical-only `HOME`+`GROK_HOME` co-bind (SDD 456) is **not** the ad-hoc path; runtime-wide profile therefore stays **project-scoped**, and parented non-harness ad-hoc correctly requires an isolated worktree.
 4. Explicit `--model …` refusals on Grok are a **separate** gap: no authoritative model-catalog launch-preflight adapter (not isolation).
 
+5. **The `HOME` co-bind was measured for ad-hoc (`t-50fe1d`, 2026-07-26) and the rating did NOT move.**
+   Co-binding closes the ambient permission read (`loaded: 1` → `loaded: 0`) and keeps auth and
+   sessions private — but a co-bound `HOME` is the agent's `HOME` for everything it shells out to,
+   and `git commit` then fails with "Author identity unknown" (no `~/.gitconfig`, no `.ssh`).
+   Seeding the private home with a `.gitconfig` that `[include]`s the operator's real one restores
+   commits while keeping `loaded: 0`. So the reclassification is blocked on a product decision, not
+   on more evidence — see research §M4. The same co-bind already ships for CANONICAL Grok, where it
+   has the same cost unmitigated (filed separately).
+
 Remedies for parented Grok ad-hoc today: `worktree: true`, gated delegation into a registered Tachyon worktree, or harness / non-parented top-level spawn. Code changes that reclassify isolation or bind `HOME` for ad-hoc belong in follow-up tasks — not silent gate weakening.
 
 ---
