@@ -193,3 +193,141 @@ export function resolveCardTemplate(row: Pick<AgentVM, "kind">, configured?: Car
   if (!configured) return DEFAULT_CARD_TEMPLATE;
   return isAgentRow(row) ? configured : DEFAULT_CARD_TEMPLATE;
 }
+
+/* ────────────────────────────────────────────────────────────────────────────────────────────────
+ * SDD 479 phase 2 — authoring a template
+ * ──────────────────────────────────────────────────────────────────────────────────────────────*/
+
+/** Top-level keys a written template may carry. Anything else is refused BY NAME. */
+const TEMPLATE_KEYS = ["version", ...CARD_REGIONS] as const;
+
+export interface CardTemplateParseResult {
+  /** present only when the template is valid IN FULL — there is no partially applied template */
+  template?: CardTemplate;
+  /** every problem found, each naming the offending key; empty iff `template` is present */
+  errors: string[];
+}
+
+function isMapping(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Validate a written card template. Pure and framework-agnostic so that **one** validator serves every
+ * home the template can have — `tachyon.yml` today, VS Code settings in phase 5. Two validators that
+ * can disagree about the same document is the failure this avoids.
+ *
+ * Fail-closed, and whole: on any error the caller gets `errors` and NO template, because a
+ * partially-applied layout is the one outcome the spec forbids outright. Errors accumulate rather than
+ * throw, so a person fixing their file sees every problem at once instead of one per save.
+ *
+ * A region a template does not mention takes the DEFAULT for that region. An explicitly empty list
+ * (`meta: []`) means "hide them all" and is honored — critical re-admission still applies. The
+ * asymmetry is deliberate: silence should not delete the actions row from someone who only wanted to
+ * reorder badges, but a person who writes `[]` has said what they mean.
+ */
+export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.cardTemplate"): CardTemplateParseResult {
+  const errors: string[] = [];
+  if (!isMapping(raw)) {
+    return { errors: [`${keyPath}: must be a mapping with 'version' and any of ${CARD_REGIONS.join(", ")}`] };
+  }
+
+  for (const key of Object.keys(raw)) {
+    if (!(TEMPLATE_KEYS as readonly string[]).includes(key)) {
+      errors.push(`${keyPath}: unknown key '${key}' (allowed: ${TEMPLATE_KEYS.join(", ")})`);
+    }
+  }
+
+  if (raw.version === undefined) {
+    errors.push(`${keyPath}.version: required (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`);
+  } else if (raw.version !== CARD_TEMPLATE_VERSION) {
+    // Refused, never guessed: a template written for a schema this build does not implement can only
+    // be honored by inventing what its author meant.
+    errors.push(
+      `${keyPath}.version: unknown template version ${JSON.stringify(raw.version)} (this Tachyon understands version ${CARD_TEMPLATE_VERSION})`,
+    );
+  }
+
+  const regions: Partial<Record<CardRegion, CardComponentId[]>> = {};
+  for (const region of CARD_REGIONS) {
+    const value = raw[region];
+    if (value === undefined) continue;
+    if (!Array.isArray(value)) {
+      errors.push(`${keyPath}.${region}: must be a list of component ids`);
+      continue;
+    }
+    const ids: CardComponentId[] = [];
+    for (const [index, entry] of value.entries()) {
+      const at = `${keyPath}.${region}[${index}]`;
+      if (typeof entry !== "string") {
+        errors.push(`${at}: must be a component id (a string), not ${Array.isArray(entry) ? "a list" : typeof entry}`);
+        continue;
+      }
+      if (!isCardComponentId(entry)) {
+        errors.push(`${at}: unknown component '${entry}' — the catalog is ${CARD_COMPONENT_IDS.join(", ")}`);
+        continue;
+      }
+      if (CARD_CATALOG[entry].region !== region) {
+        errors.push(`${at}: '${entry}' belongs to the ${CARD_CATALOG[entry].region} region, not ${region}`);
+        continue;
+      }
+      if (ids.includes(entry)) {
+        errors.push(`${at}: duplicate component '${entry}' in the ${region} region`);
+        continue;
+      }
+      ids.push(entry);
+    }
+    regions[region] = ids;
+  }
+
+  // An inline member with no host can never render; saying so beats shipping a line that does nothing.
+  for (const region of CARD_REGIONS) {
+    const ids = regions[region];
+    if (!ids) continue;
+    for (const id of ids) {
+      const host = CARD_CATALOG[id].inlineWith;
+      if (host && !ids.includes(host)) {
+        errors.push(
+          `${keyPath}.${region}: '${id}' renders inside '${host}', which this template omits — list '${host}' too, or drop '${id}'`,
+        );
+      }
+    }
+  }
+
+  if (errors.length > 0) return { errors };
+  return {
+    template: {
+      version: CARD_TEMPLATE_VERSION,
+      header: regions.header ?? DEFAULT_CARD_TEMPLATE.header,
+      meta: regions.meta ?? DEFAULT_CARD_TEMPLATE.meta,
+      footer: regions.footer ?? DEFAULT_CARD_TEMPLATE.footer,
+    },
+    errors: [],
+  };
+}
+
+/** Is this critical component's state ACTIVE on this row? Re-admission is per row and per state. */
+export function criticalComponentActive(id: CardComponentId, row: AgentVM): boolean {
+  switch (id) {
+    case "config-invalid": return !!row.configInvalid;
+    case "awaiting-human": return !!row.awaitingHuman;
+    case "auth-required": return !!row.authRequired;
+    // `verify` is critical for its FAIL state only — a passing or stale gate is information, not an
+    // emergency, and re-admitting those would make "critical" mean "always shown".
+    case "verify": return row.verify === "fail";
+    default: return false;
+  }
+}
+
+/**
+ * Components the template omits that this row's state re-admits (ratified fork 3).
+ *
+ * The product overrides the person here, and only here. Someone who hides "auth required" to get a
+ * tidy card would otherwise end up staring at an idle agent that cannot run — a preference silently
+ * costing them the one signal that explains the silence. Re-admitted components render at the END of
+ * the meta region, so a curated layout keeps its shape and the emergency is still on the card.
+ */
+export function readmittedCriticalComponents(template: CardTemplate, row: AgentVM): CardComponentId[] {
+  if (!isAgentRow(row)) return [];
+  return CRITICAL_CARD_COMPONENTS.filter((id) => !template.meta.includes(id) && criticalComponentActive(id, row));
+}

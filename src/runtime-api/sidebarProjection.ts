@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from "../sidebar/cardTemplate.js";
 import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "../sidebar/types.js";
 import {
   buildSidebarFleet,
@@ -23,6 +24,8 @@ export interface SidebarViewV1 {
 }
 
 const text = (max: number, min = 0) => z.string().min(min).max(max);
+/** SDD 479 — the wire may only carry ids the catalog actually implements. */
+const cardComponentId = z.enum(CARD_COMPONENT_IDS as unknown as [CardComponentId, ...CardComponentId[]]);
 const name = text(128, 1).regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 const count = z.number().int().nonnegative().max(1_000_000);
 const agentStatus = z.enum(["running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
@@ -206,6 +209,20 @@ const fleet = z.object({
     path: text(4_096, 1),
     errors: z.array(text(2_000, 1)).min(1).max(100),
     summary: text(2_000, 1),
+  }).strict().optional(),
+  // SDD 479 — declared here, or this STRICT object drops the field and the whole fleet with it (the
+  // failure SDD 478 M5 hit: an undeclared field made ROWS vanish, not just that field). The ids are
+  // re-checked against the live catalog, so a wire value the product cannot render never reaches the
+  // renderer even if something upstream stopped validating.
+  cardTemplate: z.object({
+    version: z.literal(CARD_TEMPLATE_VERSION),
+    header: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+    meta: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+    footer: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
+  }).strict().optional(),
+  cardTemplateRefusal: z.object({
+    file: text(256, 1),
+    errors: z.array(text(2_000, 1)).min(1).max(100),
   }).strict().optional(),
 }).strict().superRefine((value, context) => {
   const agentNames = [...value.agents, ...value.terminals].map((row) => row.name);

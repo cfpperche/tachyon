@@ -20,7 +20,11 @@ describe("spec 384 — agent live branch badge", () => {
     expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("config-invalid"));
     expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("attention"));
     // …and the `branch` component is still the BranchBadge itself, not a second rendering of it.
-    expect(appTsx).toMatch(/branch: \(\{ a \}\) => <BranchBadge a=\{a\} \/>/);
+    // Matched loosely on purpose: the first form of this line pinned the exact source text and broke
+    // one increment later, when the renderer legitimately gained a `liveBranch` guard. The rule is
+    // "the catalog's `branch` entry renders BranchBadge", not how it is spelled — and the BEHAVIOUR is
+    // covered by test/unit/sidebarCardMetaRegion.test.ts, which renders the badge and reads it back.
+    expect(appTsx).toMatch(/\n {2}branch: \([^)]*\) =>[\s\S]{0,160}<BranchBadge a=\{a\} \/>/);
     // Old mid-list config-only worktree badge must not remain as a second ⎇ display.
     expect(appTsx).not.toMatch(/a\.worktree\s*&&\s*<span class="badge">⎇/);
   });

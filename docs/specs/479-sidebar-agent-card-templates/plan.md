@@ -176,7 +176,11 @@ as a readable text diff.
    `src/webview/sidebar/App.tsx` (`CARD_COMPONENTS`, a `Record<CardComponentId, …>` so an id without a
    renderer does not compile), and the proof in `test/unit/sidebarCardTemplateEquality.test.ts` +
    `test/unit/sidebarCardCatalog.test.ts`.
-2. Project template in `tachyon.yml` with the fail-closed loader and the critical-state re-admission.
+2. **[done]** Project template in `tachyon.yml` with the fail-closed loader and the critical-state
+   re-admission. Landed as `parseCardTemplate` (one validator, which phase 5's second home reuses
+   rather than reimplements), the `settings.sidebar.cardTemplate` block in `loadConfig.ts`,
+   `FleetVM.cardTemplate` + `cardTemplateRefusal` carried through the strict wire schema,
+   `readmittedCriticalComponents`, and `CardMetaRegion`. See § What phase 2 changed in this design.
 3. Per-runtime overrides with the explicit `extends`/`replace` switch.
 4. Settings block with the live preview.
 5. Optional personal override in VS Code settings, with precedence stated in the UI.
@@ -184,6 +188,38 @@ as a readable text diff.
 Phase 1 was where the design was proven or disproven, and it changed nothing a person can see — a good
 place to stop if the answer had come out wrong. It did not: the default template reproduces all 60
 fixture cards byte for byte, so the catalog can express the card that exists.
+
+## What phase 2 changed in this design
+
+1. **Refusing a template must not refuse the file.** The plan said validation would be "modeled on
+   `settings.companion`", and its SHAPE is — unknown key by name, block dropped whole, errors
+   accumulated. Its SEVERITY could not be: in this loader any `errors` entry returns no config at all
+   (`loadConfig.ts`, `if (errors.length > 0) return { errors, warnings }`), so the workspace falls back
+   to ledger/last-known-good and spawning goes read-only. That is proportionate for a security-relevant
+   key like `companion`; for a layout preference it would mean a typo in a cosmetic setting takes the
+   fleet offline. A malformed template is therefore dropped with a WARNING plus a durable in-sidebar
+   banner, and the rest of the file loads normally.
+
+2. **The template belongs IN the fleet, not beside it.** The plan proposed carrying it like
+   `sortPrefs`/`collapsedKeys`, which ride next to the fleet in the message envelope. Those are one
+   person's preferences across every root; a card template is one PROJECT's, read from that folder's
+   `tachyon.yml`, and multi-root means two folders can legitimately disagree. It is a `FleetVM` field —
+   which also means it must be declared in the strict wire schema, or the projection silently drops the
+   whole fleet (the SDD 478 M5 failure).
+
+3. **An unmentioned region inherits; an empty one obeys.** Not previously decided. Silence deleting a
+   person's actions row is exactly the "worse for its owner, by accident" outcome § Intent says the
+   design must make hard, so an unmentioned region keeps the default. `meta: []` is explicit and is
+   honored — with critical re-admission still applying.
+
+4. **`options:` is refused, not accepted-and-ignored.** The ratified schema sketch shows per-component
+   options (`model.maxChars`, `focus.lines`). No component implements one, and accepting a key the card
+   cannot honor is a promise it does not keep — so the key is refused by name and filed as its own task.
+
+The wrapper question phase 1 left open is answered in `spec.md` § Open questions: `.row-meta` follows
+what its components render. That change also fixed a **shipped bug** the equality matrix caught — the
+old `hasMeta` predicate omitted `evidence`, so spec 273's badge was invisible on any row whose only
+meta content was evidence.
 
 ## Rejected alternatives
 

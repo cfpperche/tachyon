@@ -47,11 +47,14 @@ separate decision surface a human may want to stop at. Only phase 1 is executed 
 
 Ordered; each must leave the tree green on `npm run verify:full:quiet`.
 
-- [ ] `t-7f454e` · **Phase 2 — project template in `tachyon.yml`.** Fail-closed loader modeled on the
-      `settings.companion` block (unknown key refused by name, malformed block dropped whole, errors
-      accumulated), unknown component id / duplicate id / unknown version refused, the default rendered
-      on any error with a diagnostic. Implements critical-state re-admission against the already-declared
-      `CRITICAL_CARD_COMPONENTS`. Must also answer the `.row-meta` wrapper question phase 1 raised.
+- [x] `t-7f454e` · **Phase 2 — project template in `tachyon.yml`.** Fail-closed loader with the SHAPE of
+      the `settings.companion` block but deliberately NOT its severity (`plan.md` § What phase 2 changed,
+      1): unknown key, unknown component id, wrong region, duplicate id, missing/unknown version, and an
+      inline member whose host is omitted are each refused BY NAME; the block is dropped whole; the
+      sidebar renders the default and says so in a warn-toned banner. Critical re-admission implemented
+      against the already-declared `CRITICAL_CARD_COMPONENTS`, per row AND per state. The `.row-meta`
+      question is answered (the wrapper follows the rendered content), which also fixed a shipped
+      evidence-badge bug the equality matrix caught. `options:` is refused by name and filed as `t-045d44`.
 - [ ] `t-6a251c` · **Phase 3 — per-runtime overrides** with the explicit `extends: default | replace`
       switch, no default guess, unknown runtime refused against the product's own runtime list. Depends
       on phase 2.
@@ -75,10 +78,21 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
 - [x] The critical set is exactly the four states ratified in fork 3.
 - [x] The disclosure gutter is NOT a catalog component (hiding it would make collapsed children
       unreachable), and a test fails if a later phase "completes" the list by adding it.
-- [x] Terminal rows are untouched, twice over: `resolveCardTemplate` refuses to give them a configured
-      template, and their cards are in the equality matrix.
-- [ ] Reorder/hide, explicit runtime fallback, refusal of an invalid template, no markup, critical
-      re-admission, live preview, narrow-sidebar behavior, accessibility, versioning — phases 2–5.
+- [x] Terminal rows are untouched, three times over: `resolveCardTemplate` refuses to give them a
+      configured template, the Terminals tab never passes one, and both their cards in the equality
+      matrix and a direct render-with-a-template test prove it.
+- [x] **A written template reorders and hides**, and an omitted region inherits while `meta: []` obeys.
+- [x] **An invalid template is refused whole, by name, without taking the file down with it** — the
+      roster still loads, the sidebar renders the default, and a warn banner names the file.
+- [x] **Markup cannot enter**: every template value is the literal version number or a catalog id, so
+      no person-supplied string has a path to the DOM.
+- [x] **A hidden failure state comes back** for the affected row, with a tooltip saying the template
+      omitted it — and a passing/stale gate does not, so "critical" keeps its meaning.
+- [x] The schema is versioned; an unknown version and a missing version are both refused.
+- [x] `.row-meta` exists only when something in it rendered — pinned per component, since the first
+      implementation put an empty wrapper on every row.
+- [ ] Explicit runtime fallback, live preview, narrow-sidebar behavior at a configured template,
+      accessibility of a reordered reading order, per-component options — phases 3–5 and `t-045d44`.
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -86,26 +100,54 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
 
 ## Dogfood
 
-**Dogfood-Opt-Out** for phase 1: this increment is defined by producing **no** observable change, so
-there is nothing a human could exercise that would distinguish it from the tree before it. Asking a
-dogfooder to confirm the sidebar looks the same would produce a "looks fine" that is true whether or
-not the code works. The evidence that fits the claim is the byte-for-byte comparison against the
-renderer that shipped, which is mechanical, complete over the fixture matrix, and re-runnable.
+**Phase 1: Dogfood-Opt-Out.** That increment was defined by producing **no** observable change, so
+nothing a human could exercise would distinguish it from the tree before it. Asking a dogfooder to
+confirm the sidebar looks the same produces a "looks fine" that is true whether or not the code works.
+The evidence that fits that claim is the byte-for-byte comparison, which is mechanical and re-runnable.
 
-Phases 2–5 each carry their own dogfood: from phase 2 onward there is a layout a person can change and
-therefore something a person can judge.
+**Phase 2: there is now something to judge, and it is NOT yet judged by a human.** The recipe below is
+written and ready; it has not been run, because it needs a VS Code host and a person looking at a real
+sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fixture <slug>` →
+`point-status` → F5 there, per `docs/runbooks/dev-host.md`):
+
+1. **It applies.** Add to the workspace `tachyon.yml`:
+   ```yaml
+   settings:
+     sidebar:
+       cardTemplate:
+         version: 1
+         meta: [harness, branch]
+   ```
+   Expect: agent cards show only those two badges, `harness` before `branch` (the reverse of the
+   default's branch-first order — that inversion is what proves the template is in charge). Terminal
+   rows are unchanged.
+2. **It refuses.** Change `harness` to `cpu-graph`. Expect: cards return to the DEFAULT layout, a
+   warn-toned banner reads "Card layout ignored — showing the default", and the message names
+   `settings.sidebar.cardTemplate.meta[0]` and `cpu-graph`. The agents/commands/runbooks lists keep
+   working — the file is not invalid, only the layout was refused.
+3. **It cannot hide an emergency.** With `meta: []`, put an agent into an auth-required state. Expect:
+   the `◆ auth required` badge appears on that row only, and its tooltip explains that the template
+   omits it.
+4. **The empty row really is gone.** With `meta: []`, confirm rows with no badges have no leftover gap
+   where the badge row used to be.
 
 ## Visual QA
 
-**Visual QA Opt-Out** for phase 1, for the same reason and with a stronger substitute: the golden file
-IS the visual record, in text — every element, attribute, tooltip and handler of 60 cards. A screenshot
-comparison would be less sensitive (it cannot see a lost `title` or a dropped `onClick`) and less
-durable (it cannot be diffed in review). From phase 2 the card can actually change, and the visual
-check becomes meaningful.
+**Phase 1: opt-out**, with a stronger substitute — the golden file is the visual record in text
+(every element, attribute, tooltip and handler of 60 cards), and it is *more* sensitive than a
+screenshot, which cannot see a lost `title` or a dropped `onClick`.
+
+**Phase 2: advisory, and open.** A configured card is a genuinely visual change (badge order, the
+warn-toned banner, spacing once the badge row can vanish), and the golden covers only the DEFAULT card.
+The web-only `visual-qa` plugin cannot drive a VS Code sidebar, so this belongs with the human dogfood
+above — steps 1 and 4 are the ones where appearance, not behavior, is what is being judged.
 
 ## Cookbook
 
-**Cookbook-Opt-Out** for phase 1: no operator surface exists yet. Nothing is configurable, so there is
-nothing to document beyond what the spec already says. The cookbook entry belongs to phase 2, where a
-person first writes a template — and it should be written from the refusal messages, so the
-documentation and the diagnostics cannot disagree.
+**Phase 1: opt-out** — nothing was configurable, so there was nothing to document.
+
+**Phase 2: [`cookbook.md`](./cookbook.md).** Written from the refusal messages themselves, so the
+documentation and the diagnostics cannot drift: where the template lives, the three regions and their
+components, why silence inherits while `[]` obeys, the two components that travel inside a host, what
+cannot be hidden and how the product says so, every refusal message with its exact wording, and two
+worked recipes.

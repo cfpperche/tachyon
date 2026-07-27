@@ -5,16 +5,17 @@ import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { AGENT_CARD_FIXTURES, scrubLocaleTimestamps } from "../fixtures/sidebar/agentCardFixtures.js";
 
 /**
- * SDD 479 phase 1 — the proof obligation the plan named: *the default template IS today's card, not a
+ * SDD 479 — the proof obligation the plan named: *the default template IS today's card, not a
  * re-implementation that happens to look similar.*
  *
- * The golden file was captured from `AgentRow` as it stood at `76546c4d`, BEFORE the renderer was
- * moved onto the component catalog (`npm run test -- sidebarCardTemplateEquality` with
- * `UPDATE_SIDEBAR_CARD_GOLDEN=1`). That ordering is the whole point: the file is evidence about the
- * PRIOR renderer, so a diff here means the template changed the card.
+ * The golden was captured from `AgentRow` as it stood at `76546c4d`, BEFORE the renderer moved onto
+ * the component catalog. That ordering is the whole point: the file is evidence about the PRIOR
+ * renderer, so a diff means the change altered the card.
  *
- * Therefore: **do not regenerate this golden to make a failing test pass.** Regenerate it only when a
- * change is *meant* to alter the card, and then read the diff — it is the visual review, in text.
+ * **Do not regenerate this golden to make a failing test pass.** Regenerate only when a change is
+ * *meant* to alter the card, then READ the diff — it is the visual review, in text. Phase 2 did exactly
+ * that for 5 of the 60 cards, and the golden's own header records which and why, including the
+ * evidence-badge bug this file caught.
  *
  * Terminal rows are in the matrix on purpose. They render through the same component, and SDD 479 v1
  * is scoped to agent cards: if a terminal row moves, the boundary was crossed.
@@ -22,9 +23,20 @@ import { AGENT_CARD_FIXTURES, scrubLocaleTimestamps } from "../fixtures/sidebar/
 const GOLDEN_PATH = path.join(__dirname, "../fixtures/sidebar/agentCardGolden.txt");
 const APP_TSX = path.join(__dirname, "../../src/webview/sidebar/App.tsx");
 const HEADER = [
-  "# SDD 479 phase 1 — agent card golden",
+  "# SDD 479 — agent card golden",
   "#",
-  "# Captured from src/webview/sidebar/App.tsx at 76546c4d, BEFORE the component-catalog refactor.",
+  "# Base capture: src/webview/sidebar/App.tsx at 76546c4d, BEFORE the phase-1 component-catalog",
+  "# refactor. Every card here is still the byte-for-byte output of that pre-catalog renderer EXCEPT",
+  "# the five phase 2 (t-7f454e) changed on purpose:",
+  "#",
+  "#   empty-meta-quirk, badge-hooks-active — the empty `.row-meta` wrapper is gone. DOM only, with no",
+  "#     visual difference: sidebar.css already hid it via `.row-meta:empty { display: none }`. The",
+  "#     wrapper now follows what its components RENDER, which is phase 2's answer to the question",
+  "#     phase 1 left open.",
+  "#   badge-evidence-clean / -warn / -error — the evidence badge (spec 273) now RENDERS. It never did",
+  "#     on a row whose only meta content was evidence, because the old `hasMeta` predicate listed every",
+  "#     other meta field but not `a.evidence`. A real, shipped bug — found by this file, not by review.",
+  "#",
   "# Regenerate ONLY for an intentional card change: UPDATE_SIDEBAR_CARD_GOLDEN=1 npx vitest run test/unit/sidebarCardTemplateEquality.test.ts",
   "# Serialized by test/helpers/staticPreact.ts; fixtures in test/fixtures/sidebar/agentCardFixtures.ts.",
   "",

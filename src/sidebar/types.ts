@@ -4,6 +4,7 @@
  * `SAMPLE` for a model produced by the (extracted) rules layer reading live fleet state — the
  * components don't change. This is the "UI decoupled from rules" contract.
  */
+import type { CardTemplate } from "./cardTemplate.js";
 import type { EntryKind } from "../config/loadConfig.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
@@ -207,6 +208,18 @@ export interface FleetVM {
    * MUST show this banner and must not render the empty-roster placeholder when agents/ledger/LKG exist.
    */
   configError?: ConfigErrorVM;
+  /**
+   * SDD 479 — the project's agent-card layout, per FOLDER (it comes from that folder's tachyon.yml).
+   * Absent means the default card. It rides INSIDE the fleet rather than beside it like `sortPrefs`:
+   * those are one person's preferences across every root, this is one project's, and multi-root means
+   * two folders can legitimately disagree.
+   */
+  cardTemplate?: CardTemplate;
+  /**
+   * SDD 479 — a written template that was refused, and why. The card falls back to the default; this
+   * is what lets the fallback explain itself instead of reading as the feature not working.
+   */
+  cardTemplateRefusal?: { file: string; errors: string[] };
 }
 
 export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
