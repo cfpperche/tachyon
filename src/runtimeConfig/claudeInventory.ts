@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AgentDef } from "../config/loadConfig.js";
+import { asAgent, type AgentDef } from "../config/loadConfig.js";
 import { binaryOf } from "../resume/adapters.js";
 import type {
   RuntimeConfigChange,
@@ -177,7 +177,7 @@ export function inspectClaudeRuntimeConfig(input: {
 }): ClaudeRuntimeConfigInventory {
   const home = input.homeDir ?? os.homedir();
   const potentialAgents = Object.entries(input.agents)
-    .filter(([, definition]) => definition.profileNativeConfig?.adapter === "claude" || binaryOf(definition.cmd) === "claude")
+    .filter(([, definition]) => asAgent(definition)?.profileNativeConfig?.adapter === "claude" || binaryOf(definition.cmd) === "claude")
     .map(([name]) => name)
     .sort();
   return {

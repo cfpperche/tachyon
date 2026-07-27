@@ -5,7 +5,7 @@ import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { ConfigFailure } from "../config/configFailure.js";
 import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
 import type { ConfigLkgSnapshot } from "../config/configLkg.js";
-import type { TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, type TachyonConfig } from "../config/loadConfig.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { isPidAlive, readProcEnvironAgent, readProcEntries, scanExternalToolProcesses } from "../externalTools/procScanner.js";
 import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
@@ -94,7 +94,7 @@ export async function buildSidebarFleet(
     if (!running || kind !== "agent") return false;
     const definition = source.manager.defOf(name);
     const command = definition?.cmd;
-    return !!command && !definition?.harness && forkable(adapterFor(command)) && !managesOwnSession(command);
+    return !!command && !asAgent(definition)?.harness && forkable(adapterFor(command)) && !managesOwnSession(command);
   };
 
   const verifyOf = new Map<string, Verify>();
@@ -199,7 +199,7 @@ export async function buildSidebarFleet(
         verify: verifyOf.get(agent.name),
         verifiable: verifyOf.has(agent.name),
         evidence: evidenceOf.get(agent.name),
-        harness: !!definition?.harness,
+        harness: !!asAgent(definition)?.harness,
         forkable: canFork(agent.name, agent.running, agent.kind),
         forked: source.ledger.get(agent.name)?.def?.fork === true,
         resumable: !agent.running && resumable.has(agent.name),

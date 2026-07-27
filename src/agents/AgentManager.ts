@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, inferKind, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -255,8 +255,8 @@ interface DeliveryLaunchAttempt {
   ledger: boolean;
 }
 
-function deliveryDefinitionSnapshot(source: AgentDef): AgentDef {
-  const clone = structuredClone(source) as AgentDef;
+function deliveryDefinitionSnapshot(source: AgentEntry): AgentEntry {
+  const clone = structuredClone(source) as AgentEntry;
   return {
     ...clone, autostart: false, restart: "never", kind: "agent",
     ...("cwd" in clone ? { cwd: undefined } : {}),
@@ -605,7 +605,7 @@ export interface AgentManagerOptions {
    * harness / the runtime doesn't support one. Owned by Workspace (it has the HarnessManager). Called
    * on EVERY spawn path (spawn/restart/resume/fork) so isolation never silently drops (H3).
    */
-  materializeHarness?: (ctx: { name: string; def: AgentDef; cwd: string }) => MaterializedHarness | null;
+  materializeHarness?: (ctx: { name: string; def: AgentEntry; cwd: string }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
   /** Remove a managed Pi agent's private transcript namespace at ephemeral end-of-life. */
@@ -750,10 +750,11 @@ export class AgentManager {
     const prior = this.opts.ledger?.get(name);
     if (managesOwnSession(def.cmd)) return prior?.evolution;
     if (!instructionsDeliverable(def.cmd)) return undefined;
-    if (def.selfEvolution?.enabled === true) {
+    const agent = asAgent(def);
+    if (agent?.selfEvolution?.enabled === true) {
       const snapshot = await (this.opts.resolveEvolutionSnapshot?.(principal)
         ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal));
-      if (def.profileEvolution && snapshot.profileId !== def.profileEvolution.profileId) {
+      if (agent.profileEvolution && snapshot.profileId !== agent.profileEvolution.profileId) {
         throw new Error(`Agent Evolution active profile does not match canonical selector for '${name}'`);
       }
       return snapshot;
@@ -858,9 +859,16 @@ export class AgentManager {
     return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
   }
 
+  /** SDD 478 — the Agent arm of a declared entry, or undefined for a terminal. Every agent-only
+   *  capability below is read through this narrowing rather than through a `kind` conditional. */
+  private agentDefinitionOf(name: string): AgentEntry | undefined {
+    return asAgent(this.definitionOf(name));
+  }
+
   private assertProfileLifecycleEnabled(name: string, definition = this.definitionOf(name)): void {
-    if (definition?.profileLifecycle) this.opts.assertSpawnAllowed?.(name);
-    if (definition?.profileLifecycle?.enabled !== false) return;
+    const agent = asAgent(definition);
+    if (agent?.profileLifecycle) this.opts.assertSpawnAllowed?.(name);
+    if (agent?.profileLifecycle?.enabled !== false) return;
     throw new Error(`cannot launch '${name}': canonical agent profile is disabled`);
   }
 
@@ -896,7 +904,7 @@ export class AgentManager {
 
   /** Resolve the current canonical identity at an explicit lifecycle boundary. */
   async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
-    const def = this.definitionOf(name);
+    const def = this.agentDefinitionOf(name);
     if (!def?.soul) return undefined;
     const principal = this.soulPrincipal(name);
     return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def));
@@ -1251,8 +1259,8 @@ export class AgentManager {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = composeAgentPrompt({
       soul,
-      role: def.role,
-      instructions: def.instructions,
+      role: asAgent(def)?.role,
+      instructions: asAgent(def)?.instructions,
       evolution,
       bridgeGuidance: guidance,
       taskBrief,
@@ -1330,12 +1338,17 @@ export class AgentManager {
    */
   private materializeRuntimeHarness(name: string, def: AgentDef | undefined, cwd: string): MaterializedHarness | null {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
+    // A private config home is an Agent capability: a terminal has no harness, no transcript
+    // isolation and no canonical profile to project, so the narrowing decides it here.
+    const agent = asAgent(def);
     // spec 357/profile 358 - private-home runtimes need a per-agent config home by default.
-    const needsPrivateHome = !!def?.harness || def?.isolate === "transcript"
-      || isolation?.mechanism === "private-home" || !!def?.profileLifecycle
-      || !!def?.profileFork || !!def?.profileCapabilities || !!def?.profileNativeConfig;
-    if (!def || !needsPrivateHome || !this.opts.materializeHarness) return null;
-    return this.opts.materializeHarness({ name, def, cwd });
+    const needsPrivateHome = !!agent?.harness || agent?.isolate === "transcript"
+      || isolation?.mechanism === "private-home" || !!agent?.profileLifecycle
+      || !!agent?.profileFork || !!agent?.profileCapabilities || !!agent?.profileNativeConfig;
+    // A private config home is materialized for the Agent arm only, so the materializer receives an
+    // AgentEntry and never has to ask what it was handed.
+    if (!agent || !needsPrivateHome || !this.opts.materializeHarness) return null;
+    return this.opts.materializeHarness({ name, def: agent, cwd });
   }
 
   private applyHarness(
@@ -1359,13 +1372,15 @@ export class AgentManager {
    * transcript checks must use THIS, or redirected/default-override transcripts become invisible.
    */
   private runtimeConfigHome(runtime: ResumeRuntime, name: string, def: AgentDef | undefined): string {
-    if (runtime === "opencode" && (def?.harness || def?.isolate === "transcript")) return path.join(harnessHome(this.opts.workspaceRoot, name), "data");
+    // Only an Agent has a redirected config home; a terminal falls through to the host default.
+    const agent = asAgent(def);
+    if (runtime === "opencode" && (agent?.harness || agent?.isolate === "transcript")) return path.join(harnessHome(this.opts.workspaceRoot, name), "data");
     // harness/isolate grok: GROK_HOME is `<harness>/<agent>/.grok` (HarnessManager.grokHome).
-    if (runtime === "grok" && (def?.harness || def?.isolate === "transcript")) {
+    if (runtime === "grok" && (agent?.harness || agent?.isolate === "transcript")) {
       return path.join(harnessHome(this.opts.workspaceRoot, name), ".grok");
     }
-    if (def?.harness || def?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
-    if (runtime === "claude" && (def?.profileLifecycle || def?.profileFork || def?.profileCapabilities || def?.profileNativeConfig)) {
+    if (agent?.harness || agent?.isolate === "transcript") return harnessHome(this.opts.workspaceRoot, name); // spec 226 / 240 / 298
+    if (runtime === "claude" && (agent?.profileLifecycle || agent?.profileFork || agent?.profileCapabilities || agent?.profileNativeConfig)) {
       return harnessHome(this.opts.workspaceRoot, name);
     }
     if (runtime === "codex" && this.opts.materializeHarness) return harnessHome(this.opts.workspaceRoot, name); // spec 357 - default private CODEX_HOME
@@ -1487,7 +1502,7 @@ export class AgentManager {
     if (!this.opts.prepareDeliveryJoin || !this.opts.confirmDeliveryJoin) {
       throw new Error("DELIVERY_LEASE_UNAVAILABLE: Delivery join wiring is unavailable");
     }
-    let definition: AgentDef | undefined;
+    let definition: AgentEntry | undefined;
     const bound = request.declaredAgent;
     if (bound) {
       if (opts.cmd) throw new Error("delivery_join.declared_agent cannot combine with cmd");
@@ -1789,19 +1804,28 @@ export class AgentManager {
     };
     let def = forced?.definition ?? this.definitionOf(name);
     if (opts?.cmd) {
-      def = {
+      const base = {
         cmd: opts.cmd,
         cwd: opts.cwd,
-        instructions: opts.instructions,
         autostart: false,
         watch: [],
         attention: { enabled: true, silenceSec: 8, patterns: [] },
-        restart: "never",
-        kind: inferKind(opts.cmd),
-        // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
-        // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
-        worktree: opts.worktree,
+        restart: "never" as const,
       };
+      // SDD 478 M2 — an ad-hoc entry is built on ONE arm, so a generic command cannot carry
+      // `instructions` or a worktree request: both are Agent capabilities, and until now this door
+      // handed them to whatever it spawned. Which entity an ad-hoc spawn may produce at all is M9;
+      // this only stops the Terminal arm from being handed capabilities it has no field for.
+      def = inferKind(opts.cmd) === "agent"
+        ? {
+          ...base,
+          kind: "agent",
+          instructions: opts.instructions,
+          // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
+          // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
+          worktree: opts.worktree,
+        }
+        : { ...base, kind: "terminal" };
     }
     if (!def) throw new UnknownAgentError(name);
     if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
@@ -1810,7 +1834,7 @@ export class AgentManager {
 
     // Identity preflight remains before dead-pane replacement. Runtime preflight moves below cwd/private-home
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
-    const resolvedSoul = forced?.resolvedSoul ?? (def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+    const resolvedSoul = forced?.resolvedSoul ?? (asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
     const resolvedEvolution = forced?.resolvedEvolution ?? await this.evolutionForFreshSession(name, def);
 
     const session = this.session(name);
@@ -1984,7 +2008,8 @@ export class AgentManager {
     const injected = this.injectResumeId(name, def);
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
-    if (adhoc && adapter?.harness && !selfManaged && !def.harness && def.isolate === undefined) {
+    const adhocAgent = asAgent(def);
+    if (adhoc && adapter?.harness && !selfManaged && adhocAgent && !adhocAgent.harness && adhocAgent.isolate === undefined) {
       // t-303f2b — grok non-harness already gets a private GROK_HOME via materializeBridgeMcpGrok
       // (same path as declared agents). Auto isolate:transcript would materialize a *second* private
       // home under .tachyon/harness/ and race GROK_HOME with withRuntimeBridge; cold dual-homes have
@@ -1993,7 +2018,7 @@ export class AgentManager {
         (adapter.runtime === "grok" && !!this.opts.materializeBridgeMcpGrok) ||
         (adapter.runtime === "hermes" && !!this.opts.materializeBridgeMcpHermes);
       if (!usesBridgePrivateHome) {
-        def = { ...def, isolate: "transcript" };
+        def = { ...adhocAgent, isolate: "transcript" };
       }
     }
     const isolatedWorktree = !!worktree;
@@ -2002,10 +2027,10 @@ export class AgentManager {
     // full extension trust), but it shares the global ~/.local/share opencode state, so warn once
     // at spawn time. Ad-hoc opencode is unaffected — it auto-gets isolate:"transcript" above.
     if (!adhoc) {
-      const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!def.harness, isolatedWorktree });
+      const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!asAgent(def)?.harness, isolatedWorktree });
       if (footgun) this.opts.notify?.(footgun, "warn");
     }
-    if (parent && def.kind === "agent" && !def.harness) {
+    if (parent && def.kind === "agent" && !def.harness) { // narrowed by the discriminant — the Agent arm owns `harness`
       assertVerifiedTranscriptIsolation(def.cmd, { name, isolatedWorktree, parented: true });
     }
     // Security review (782f1c6, HIGH): gate on `isolatedWorktree` too, not just lineage — an ungated,
@@ -2234,9 +2259,9 @@ export class AgentManager {
     const defBlock = {
       cmd: originalCmd,
       kind: def.kind,
-      ...(def.instructions ? { instructions: def.instructions } : {}),
-      ...(def.role ? { role: def.role } : {}),
-      ...(def.soul ? { soul: true } : {}),
+      ...(asAgent(def)?.instructions ? { instructions: asAgent(def)!.instructions } : {}),
+      ...(asAgent(def)?.role ? { role: asAgent(def)!.role } : {}),
+      ...(asAgent(def)?.soul ? { soul: true } : {}),
       ...(taskBrief ? { taskBrief } : {}),
       ...(parent ? { parent } : {}),
       ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
@@ -2485,7 +2510,7 @@ export class AgentManager {
    */
   private withRuntimeBridge(
     name: string,
-    def: Pick<AgentDef, "cmd" | "harness">,
+    def: Pick<AgentEntry, "cmd" | "harness">,
     cmd: string,
     cwd?: string,
     delegated?: { workspaceRoot: string; worktreesBase: string },
@@ -2611,7 +2636,7 @@ export class AgentManager {
    * but don't read "both sites covered" as true of the population that exists today.
    */
   private applyDelegatedOpencodeHarnessPermission(
-    def: Pick<AgentDef, "cmd" | "harness"> | undefined,
+    def: Pick<AgentEntry, "cmd" | "harness"> | undefined,
     env: Record<string, string>,
     delegated?: { workspaceRoot: string; worktreesBase: string },
   ): void {
@@ -2671,7 +2696,7 @@ export class AgentManager {
 
   private withSessionOwnership(
     name: string,
-    def: Pick<AgentDef, "cmd">,
+    def: Pick<AgentEntry, "cmd">,
     cmd: string,
     opts: { declared: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean },
   ): string {
@@ -2978,7 +3003,7 @@ export class AgentManager {
     // holds its claude transcripts; a rename would orphan them (resume would scan the new name's empty
     // home, and GC could delete the old one). Block it, fail-closed, until the home is persisted +
     // moved on rename (follow pass) — same posture as the fork block.
-    if (this.definitionOf(oldName)?.harness) throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
+    if (this.agentDefinitionOf(oldName)?.harness) throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
     if (this.opts.ledger?.get(oldName)?.resume?.runtime === "pi") {
       throw new Error(`cannot rename '${oldName}': renaming a managed Pi session isn't supported yet (phase 2)`);
     }
@@ -3039,7 +3064,7 @@ export class AgentManager {
   /** Capture the exact durable/live bindings before canonical profile authority commits. */
   async prepareCanonicalProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
     if (oldName === newName) throw new Error("canonical live rename source and destination must differ");
-    if (this.definitionOf(oldName)?.harness) {
+    if (this.agentDefinitionOf(oldName)?.harness) {
       throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
     }
     if (this.opts.ledger?.get(oldName)?.resume?.runtime === "pi") {
@@ -3471,7 +3496,7 @@ export class AgentManager {
     // Project guidance is part of the replacement command. Load it before even transient restart
     // state changes so an invalid configured source leaves the live pane and its status untouched.
     const projectGuidance = this.projectGuidanceFor(def);
-    const resolvedSoul = def.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
+    const resolvedSoul = asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
     const resolvedEvolution = await this.evolutionForFreshSession(name, def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
@@ -3934,7 +3959,7 @@ export class AgentManager {
     // def.env, but resume previously injected only bridge env, silently dropping e.g. an
     // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
-    const resumeDef = this.definitionOf(name);
+    const resumeDef = this.agentDefinitionOf(name);
     // Security review (782f1c6): mirror restart's fuller delegated-check (`record.def?.parent` alone
     // misses a GATED agent — gated spawns always force `parent: undefined` and record `delegator`
     // instead, which never lands in `record.def`), and gate on the resumed worktree so an uncontained,
@@ -4077,7 +4102,7 @@ export class AgentManager {
     // spec 226 (v1) — forking an isolated-harness agent isn't supported yet: the fork would need its
     // OWN config home plus a cross-config-home transcript seed. Block it honestly rather than spawn a
     // fork that silently loses the harness's MCP isolation (fail-closed, H9). Follow-pass.
-    if (this.definitionOf(name)?.harness) throw new ForkUnavailableError(name, "forking an isolated-harness agent isn't supported yet (v1)");
+    if (this.agentDefinitionOf(name)?.harness) throw new ForkUnavailableError(name, "forking an isolated-harness agent isn't supported yet (v1)");
     // A self-managing cmd (its own --resume/--continue) has no Tachyon-tracked id to fork, and
     // injectId/forkCommand would compose a malformed double-resume — refuse (codex dueto MINOR).
     if (managesOwnSession(baseCmd)) throw new ForkUnavailableError(name, "it manages its own session (a --resume/--continue command) — nothing for Tachyon to fork");
@@ -4171,7 +4196,7 @@ export class AgentManager {
   async commitFork(plan: ForkPlan): Promise<string> {
     const source = plan.source;
     const sourceRecord = this.opts.ledger?.get(source);
-    const sourceDefinition = this.definitionOf(source);
+    const sourceDefinition = this.agentDefinitionOf(source);
     // RE-RESOLVE the source's CURRENT live inputs at spawn time (codex dueto round-2 MAJOR): the plan +
     // confirm modal may be stale — the source could have restarted or switched sessions while the modal
     // sat open, so trusting plan.sourceId/cwd/worktree would fork an OLD transcript. resolveForkSource
@@ -4215,7 +4240,7 @@ export class AgentManager {
 
     // From here a fresh Git-locked worktree may exist + a session may be spawned. Failures terminate
     // only a provably-created session; the checkout remains locked recovery state and is never removed.
-    const forkDefinition: AgentDef = {
+    const forkDefinition: AgentEntry = {
       cmd: src.baseCmd,
       kind: "agent",
       autostart: false,

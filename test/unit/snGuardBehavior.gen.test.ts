@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../../src/agents/AgentManager.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
@@ -69,7 +69,7 @@ describe("container-generated delegation behavior", () => {
       getMaxAgents: () => 8,
       ledger,
       notify: (message, level) => notifications.push({ message, level }),
-      resolveSpawnCwd: async (ctx) => (ctx.def.worktree ? { cwd: rec.path, worktree: rec } : null),
+      resolveSpawnCwd: async (ctx) => (asAgent(ctx.def)?.worktree ? { cwd: rec.path, worktree: rec } : null),
     });
 
     // 1. Declared opencode, no harness, no worktree isolation → exactly one footgun warning.

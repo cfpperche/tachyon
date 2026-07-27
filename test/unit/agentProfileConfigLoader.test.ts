@@ -18,6 +18,7 @@ import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import { scanAgentProfilePointers } from "../../src/config/agentProfilePointer.js";
 import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
+import { asAgent } from "../../src/config/loadConfig.js";
 
 const roots: string[] = [];
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -194,7 +195,7 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, authority(bytes));
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "codex",
       selectors: {
         model: "gpt-5.6",
@@ -237,7 +238,7 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, authority(bytes), { homeDir });
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "codex",
       selectors: {},
       permissions: { approvalPolicy: "on-request", sandboxMode: "workspace-write" },
@@ -247,8 +248,8 @@ describe("loadProfileAwareConfig", () => {
       },
       featureFlags: { terminalResizeReflow: true },
     });
-    expect(JSON.stringify(result.config?.agents.codex.profileNativeConfig)).not.toContain("must-not-project");
-    expect(JSON.stringify(result.config?.agents.codex.profileNativeConfig)).not.toContain("memories");
+    expect(JSON.stringify(asAgent(result.config?.agents.codex)?.profileNativeConfig)).not.toContain("must-not-project");
+    expect(JSON.stringify(asAgent(result.config?.agents.codex)?.profileNativeConfig)).not.toContain("memories");
   });
 
   it("fails closed when selected workspace config contains an ambient unapproved key", () => {
@@ -328,7 +329,7 @@ describe("loadProfileAwareConfig", () => {
     }));
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "claude",
       selectors: {},
       settings: {
@@ -393,7 +394,7 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "claude",
       selectors: { model: "claude-opus-5", reasoningEffort: "xhigh" },
       settings: { prefersReducedMotion: true, alwaysThinkingEnabled: false },
@@ -431,7 +432,7 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "claude",
       selectors: {},
       settings: { theme: "dark", alwaysThinkingEnabled: true },
@@ -490,7 +491,7 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(authorized.errors).toEqual([]);
-    expect(authorized.config?.agents.codex.profileNativeConfig).toEqual({
+    expect(asAgent(authorized.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "claude",
       selectors: {},
       settings: { permissions: { defaultMode: "bypassPermissions", allow: ["Read"] } },
@@ -648,7 +649,7 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, claudeAuthority);
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileCapabilities).toMatchObject({
+    expect(asAgent(result.config?.agents.codex)?.profileCapabilities).toMatchObject({
       adapter: "claude",
       skills: [{ name: "review", source: { sha256: skillDigest } }],
       mcp: { docs: { command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } } },
@@ -757,7 +758,7 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, authority(bytes));
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.profileCapabilities).toMatchObject({
+    expect(asAgent(result.config?.agents.codex)?.profileCapabilities).toMatchObject({
       adapter: "codex",
       effectiveProfileSha256: result.config?.agentSources.codex.mode === "profile" ? result.config.agentSources.codex.effectiveSha256 : undefined,
       sources: [{ referenceId: "shared-research", scope: "project", owner: "workspace", sha256: skillDigest }],
@@ -785,8 +786,8 @@ describe("loadProfileAwareConfig", () => {
     const result = load(root, authority(bytes, { capabilityGrants: [{ referenceId: "docs-mcp", sourceSha256: sha256(mcp), adapter: "codex", kind: "mcp" }] }));
 
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.codex.harness).toBeUndefined();
-    expect(result.config?.agents.codex.profileCapabilities?.mcp.docs).toEqual({ command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } });
+    expect(asAgent(result.config?.agents.codex)?.harness).toBeUndefined();
+    expect(asAgent(result.config?.agents.codex)?.profileCapabilities?.mcp.docs).toEqual({ command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } });
   });
 
   it("activates the measured Pi profile resource projection and rejects no ambient resource inheritance", () => {

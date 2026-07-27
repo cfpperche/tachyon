@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseConfig, type AgentDef } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, type AgentEntry } from "../../src/config/loadConfig.js";
 import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
@@ -61,13 +61,15 @@ function writeProfile(root: string, profile: Record<string, unknown>, agent = "c
   return file;
 }
 
-function legacyAgent(name = "codex", extra = ""): AgentDef {
+function legacyAgent(name = "codex", extra = ""): AgentEntry {
   const parsed = parseConfig(`agents:\n  ${name}:\n    cmd: codex --model gpt-5.6-sol\n${extra}`);
   expect(parsed.errors).toEqual([]);
-  return parsed.config!.agents[name]!;
+  const agent = asAgent(parsed.config!.agents[name]);
+  expect(agent, `${name} must parse as an agent`).toBeDefined();
+  return agent!;
 }
 
-function legacySource(definition: AgentDef, source?: string): NonNullable<ResolveAgentProfileInput["legacy"]> {
+function legacySource(definition: AgentEntry, source?: string): NonNullable<ResolveAgentProfileInput["legacy"]> {
   return {
     ...(source ? { source } : {}),
     definition,

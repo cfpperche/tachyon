@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { SoulError, isSoulErrorCode } from "../agents/soul.js";
 import {
+  asAgent,
   CONFIG_FILENAMES,
   inferKind,
   type TachyonConfig,
@@ -439,7 +440,8 @@ function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
     const pointers = scanAgentProfilePointers(yamlText);
     if (pointers.errors.length > 0) return { status: "invalid" };
     for (const name of pointers.pointers.keys()) {
-      const def = loaded.config.agents[name];
+      // A profile pointer is an Agent-arm marker; a terminal entry can never carry one.
+      const def = asAgent(loaded.config.agents[name]);
       if (def) def.profilePointer = true;
     }
     return { status: "valid", config: loaded.config };

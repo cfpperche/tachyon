@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AgentManager } from "../../src/agents/AgentManager.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
@@ -41,7 +41,7 @@ describe("container-generated delegation behavior", () => {
       ledger,
       resolveSpawnCwd: async (ctx) => {
         expect(ctx.parent).toBe("boss");
-        expect(ctx.def.worktree).toBe(true);
+        expect(asAgent(ctx.def)?.worktree).toBe(true);
         return { cwd: rec.path, worktree: rec };
       },
     });

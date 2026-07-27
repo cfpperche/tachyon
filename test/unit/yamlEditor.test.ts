@@ -15,7 +15,7 @@ import {
   agentStanzaSourceSlice,
   replaceAgentStanzaValue,
 } from "../../src/config/YamlConfigEditor.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import schema from "../../src/config/tachyon.schema.json";
 
 /** A realistic file: user comments everywhere — they must survive every mutation. */
@@ -87,7 +87,7 @@ describe("YamlConfigEditor", () => {
     expect(cfg.agents.rev).toMatchObject({ cmd: "claude", instructions: "review PRs carefully" });
     // empty instructions are omitted, not written as a blank key
     const cfg2 = expectValid(addAgent(undefined, "t", "sh", "terminal", "   ").text);
-    expect(cfg2.agents.t.instructions).toBeUndefined();
+    expect(asAgent(cfg2.agents.t)?.instructions).toBeUndefined();
     expect(cfg2.agents.t.kind).toBe("terminal");
   });
 
@@ -95,30 +95,30 @@ describe("YamlConfigEditor", () => {
     const base = `agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: codex\n`;
     const editedParent = upsertAgent(base, "claude", { cmd: "claude", subagents: ["reviewer"] }, "claude").text;
     const parentCfg = expectValid(editedParent);
-    expect(parentCfg.agents.claude.subagents).toEqual(["reviewer"]);
+    expect(asAgent(parentCfg.agents.claude)?.subagents).toEqual(["reviewer"]);
     expect(parentCfg.declaredOwner).toEqual({ reviewer: "claude" });
     expect(editedParent).not.toContain("declaredOwner");
 
     const editedChild = upsertAgent(base, "reviewer", { cmd: "codex --model gpt-5" }, "reviewer").text;
     const childCfg = expectValid(editedChild);
-    expect(childCfg.agents.claude.subagents).toEqual(["reviewer"]);
-    expect(childCfg.agents.reviewer.subagents).toBeUndefined();
+    expect(asAgent(childCfg.agents.claude)?.subagents).toEqual(["reviewer"]);
+    expect(asAgent(childCfg.agents.reviewer)?.subagents).toBeUndefined();
     expect(editedChild).not.toContain("declaredOwner");
   });
 
   it("round-trips agent soul and strips it from terminal entries", () => {
     const agentText = upsertAgent(undefined, "ada", { cmd: "codex", soul: true }).text;
-    expect(expectValid(agentText).agents.ada.soul).toBe(true);
+    expect(asAgent(expectValid(agentText).agents.ada)?.soul).toBe(true);
     expect(agentText).toContain("soul: true");
 
     const terminalText = upsertAgent(undefined, "shell", { cmd: "bash", kind: "terminal", soul: true }, undefined, "terminals").text;
-    expect(expectValid(terminalText).agents.shell.soul).toBeUndefined();
+    expect(asAgent(expectValid(terminalText).agents.shell)?.soul).toBeUndefined();
     expect(terminalText).not.toContain("soul:");
   });
 
   it("round-trips Agent Evolution and strips it from terminal entries", () => {
     const agentText = upsertAgent(undefined, "ada", { cmd: "codex", selfEvolution: { enabled: true } }).text;
-    expect(expectValid(agentText).agents.ada.selfEvolution).toEqual({ enabled: true });
+    expect(asAgent(expectValid(agentText).agents.ada)?.selfEvolution).toEqual({ enabled: true });
     expect(agentText).toContain("selfEvolution:");
 
     const terminalText = upsertAgent(
@@ -128,7 +128,7 @@ describe("YamlConfigEditor", () => {
       undefined,
       "terminals",
     ).text;
-    expect(expectValid(terminalText).agents.shell.selfEvolution).toBeUndefined();
+    expect(asAgent(expectValid(terminalText).agents.shell)?.selfEvolution).toBeUndefined();
     expect(terminalText).not.toContain("selfEvolution:");
   });
 

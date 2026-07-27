@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseDocument } from "yaml";
-import type { AgentDef } from "./loadConfig.js";
+import type { AgentEntry } from "./loadConfig.js";
 import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
@@ -106,7 +106,7 @@ export interface ProjectAgentProfileInput {
 }
 
 export type ProjectAgentProfileResult =
-  | { ok: true; definition: AgentDef; resolved: ResolvedAgentProfile }
+  | { ok: true; definition: AgentEntry; resolved: ResolvedAgentProfile }
   | { ok: false; errors: string[] };
 
 function closeQuietly(fd: number): void {
@@ -423,7 +423,7 @@ function projectDefinition(
   resolved: ResolvedAgentProfile,
   evolutionSelector?: { profileId: string; selectorSha256: string },
   nativeConfigProjection?: ResolvedAgentNativeConfigProjection,
-): AgentDef | string[] {
+): AgentEntry | string[] {
   const definition = resolved.definition;
   const errors: string[] = [];
   if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
@@ -454,7 +454,7 @@ function projectDefinition(
   if (attention?.silenceSec === 0) errors.push("profile/projection: attention.silenceSec must be at least 1 for the current runtime");
   if (errors.length > 0) return errors;
 
-  const projected: AgentDef = {
+  const projected: AgentEntry = {
     cmd: definition.runtime.executable,
     autostart: definition.lifecycle?.autostart ?? false,
     watch: [...(definition.lifecycle?.watch ?? [])],

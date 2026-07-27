@@ -6,7 +6,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { parseConfig, validateTachyonConfigText } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, validateTachyonConfigText } from "../../src/config/loadConfig.js";
 
 /**
  * t-099be8 — validate-before-save for agent/UI tachyon.yml edits + dangling subagents degradation.
@@ -132,7 +132,7 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.warnings.some((w) => w.includes("reviewer") && w.includes("dangling"))).toBe(true);
     expect(Object.keys(ws.config?.agents ?? {}).sort()).toEqual(["claude", "coder"]);
-    expect(ws.config?.agents.claude.subagents).toBeUndefined();
+    expect(asAgent(ws.config?.agents.claude)?.subagents).toBeUndefined();
     // reload from disk proves cold-load parity
     const cold = parseConfig(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8"));
     expect(cold.errors).toEqual([]);

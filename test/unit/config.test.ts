@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseConfig, inferKind, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, inferKind, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
 const VALID = `
@@ -94,7 +94,7 @@ describe("parseConfig", () => {
   it("spec 352 — parses subagents and derives child-side declaredOwner metadata", () => {
     const { config, errors } = parseConfig(`agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer, tester]\n  reviewer:\n    cmd: codex\n  tester:\n    cmd: claude\n`);
     expect(errors).toEqual([]);
-    expect(config?.agents.claude.subagents).toEqual(["reviewer", "tester"]);
+    expect(asAgent(config?.agents.claude)?.subagents).toEqual(["reviewer", "tester"]);
     expect(config?.declaredOwner).toEqual({ reviewer: "claude", tester: "claude" });
     expect(config?.agents.reviewer).not.toHaveProperty("declaredOwner");
   });
@@ -102,7 +102,7 @@ describe("parseConfig", () => {
   it("spec 352 — subagents are optional and existing configs derive an empty ownership map", () => {
     const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: x\n`);
     expect(errors).toEqual([]);
-    expect(config?.agents.a.subagents).toBeUndefined();
+    expect(asAgent(config?.agents.a)?.subagents).toBeUndefined();
     expect(config?.declaredOwner).toEqual({});
   });
 
@@ -132,7 +132,7 @@ describe("parseConfig", () => {
     expect(errors).toEqual([]);
     expect(config).toBeDefined();
     expect(Object.keys(config!.agents).sort()).toEqual(["claude", "tester"]);
-    expect(config!.agents.claude.subagents).toEqual(["tester"]);
+    expect(asAgent(config!.agents.claude)?.subagents).toEqual(["tester"]);
     expect(config!.declaredOwner).toEqual({ tester: "claude" });
     expect(warnings.some((w) => w.includes("'reviewer'") && w.includes("dangling"))).toBe(true);
   });
@@ -150,7 +150,7 @@ describe("parseConfig", () => {
     expect(config?.agents.claude).toBeDefined();
     expect(config?.agents.coder).toBeDefined();
     expect(config?.agents.reviewer).toBeUndefined();
-    expect(config?.agents.claude.subagents).toBeUndefined();
+    expect(asAgent(config?.agents.claude)?.subagents).toBeUndefined();
     expect(warnings.some((w) => w.includes("reviewer"))).toBe(true);
   });
 
@@ -229,7 +229,7 @@ describe("parseConfig", () => {
       `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feature/auth\n    worktreeSetup: pnpm install\n`,
     );
     expect(errors).toEqual([]);
-    const a = config?.agents.rev;
+    const a = asAgent(config?.agents.rev);
     expect(a?.worktree).toBe(true);
     expect(a?.branch).toBe("feature/auth");
     expect(a?.worktreeSetup).toEqual(["pnpm install"]);
@@ -239,7 +239,7 @@ describe("parseConfig", () => {
     const { config } = parseConfig(
       `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    worktreeSetup:\n      - pnpm install\n      - cp a b\n`,
     );
-    expect(config?.agents.rev.worktreeSetup).toEqual(["pnpm install", "cp a b"]);
+    expect(asAgent(config?.agents.rev)?.worktreeSetup).toEqual(["pnpm install", "cp a b"]);
   });
 
   it("validates agent worktree fields (type + branch chars)", () => {
@@ -265,7 +265,7 @@ describe("parseConfig", () => {
       `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: "  npm test  "\nsettings:\n  worktree:\n    verify: ci\n`,
     );
     expect(errors).toEqual([]);
-    expect(config?.agents.rev.verify).toBe("npm test");
+    expect(asAgent(config?.agents.rev)?.verify).toBe("npm test");
     expect(config?.settings.worktree?.verify).toBe("ci");
   });
 
@@ -463,7 +463,7 @@ describe("parseConfig", () => {
   it("parses a valid agent role", () => {
     const { config, errors } = parseConfig(`agents:\n  rev:\n    cmd: claude\n    role: reviewer\n`);
     expect(errors).toEqual([]);
-    expect(config?.agents.rev.role).toBe("reviewer");
+    expect(asAgent(config?.agents.rev)?.role).toBe("reviewer");
   });
   it("rejects an unknown role", () => {
     const { errors } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: architect\n`);
@@ -479,7 +479,7 @@ describe("parseConfig", () => {
   });
   it("no role = no role field (today's behavior)", () => {
     const { config } = parseConfig(`agents:\n  a:\n    cmd: claude\n`);
-    expect(config?.agents.a.role).toBeUndefined();
+    expect(asAgent(config?.agents.a)?.role).toBeUndefined();
   });
   it("parses settings.anchor.auto and settings.bridgeGuidance", () => {
     const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: claude\nsettings:\n  anchor:\n    auto: true\n  bridgeGuidance: false\n`);
@@ -523,7 +523,7 @@ describe("parseConfig", () => {
     it("loads on a claude agent with an actionable warning", () => {
       const { config, errors, warnings } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: transcript\n");
       expect(errors).toEqual([]);
-      expect(config?.agents.reviewer.isolate).toBe("transcript");
+      expect(asAgent(config?.agents.reviewer)?.isolate).toBe("transcript");
       expect(warnings).toEqual([
         "agents.reviewer: isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home",
       ]);
@@ -535,7 +535,7 @@ describe("parseConfig", () => {
     it("loads on a codex agent with the same warning", () => {
       const { config, errors, warnings } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
       expect(errors).toEqual([]);
-      expect(config?.agents.c.isolate).toBe("transcript");
+      expect(asAgent(config?.agents.c)?.isolate).toBe("transcript");
       expect(warnings[0]).toContain("codex is private-home by default");
     });
     it("rejects non-claude/codex agents", () => {
@@ -569,7 +569,7 @@ describe("parseConfig", () => {
     it("parses a valid claude harness with mcp + ${VAR} env", () => {
       const { config, errors } = parseConfig(harnessYml(mcpBlock));
       expect(errors).toEqual([]);
-      const h = config?.agents.researcher.harness;
+      const h = asAgent(config?.agents.researcher)?.harness;
       expect(h?.inherit).toBe("workspace");
       expect(h?.mcp?.["fal-ai"].command).toBe("npx");
       expect(h?.mcp?.["fal-ai"].args).toEqual(["-y", "@fal-ai/mcp"]);
@@ -578,13 +578,13 @@ describe("parseConfig", () => {
 
     it("defaults inherit to workspace", () => {
       const { config } = parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n`));
-      expect(config?.agents.researcher.harness?.inherit).toBe("workspace");
+      expect(asAgent(config?.agents.researcher)?.harness?.inherit).toBe("workspace");
     });
 
     it("accepts inherit: none", () => {
       const { config, errors } = parseConfig(harnessYml(`      inherit: none\n      mcp:\n        s:\n          command: x\n`));
       expect(errors).toEqual([]);
-      expect(config?.agents.researcher.harness?.inherit).toBe("none");
+      expect(asAgent(config?.agents.researcher)?.harness?.inherit).toBe("none");
     });
 
     it("rejects inherit: global (v1 follow pass)", () => {
@@ -598,21 +598,21 @@ describe("parseConfig", () => {
     it("accepts harness on a codex agent", () => {
       const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n`);
       expect(errors).toEqual([]);
-      expect(config?.agents.c.harness?.mcp?.s.command).toBe("x");
+      expect(asAgent(config?.agents.c)?.harness?.mcp?.s.command).toBe("x");
     });
 
     it("spec 358: accepts an empty claude harness as a private config-home opt-in", () => {
       const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: claude\n    harness: {}\n`);
       expect(errors).toEqual([]);
-      expect(config?.agents.c.harness).toEqual({ inherit: "workspace" });
+      expect(asAgent(config?.agents.c)?.harness).toEqual({ inherit: "workspace" });
     });
 
     it("spec 311: accepts codex harness instructions/skills/hooks without requiring mcp", () => {
       const { config, errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      instructions: ["agents/researcher.md"]\n      skills: ["skills/research"]\n      hooks:\n        SessionStart:\n          - matcher: startup\n            hooks: [{ type: command, command: "./guard.sh" }]\n`);
       expect(errors).toEqual([]);
-      expect(config?.agents.c.harness?.instructions).toEqual(["agents/researcher.md"]);
-      expect(config?.agents.c.harness?.skills).toEqual(["skills/research"]);
-      expect(config?.agents.c.harness?.hooks?.SessionStart).toBeTruthy();
+      expect(asAgent(config?.agents.c)?.harness?.instructions).toEqual(["agents/researcher.md"]);
+      expect(asAgent(config?.agents.c)?.harness?.skills).toEqual(["skills/research"]);
+      expect(asAgent(config?.agents.c)?.harness?.hooks?.SessionStart).toBeTruthy();
     });
 
     it("spec 311: rejects codex harness rules and points to instructions", () => {
@@ -642,7 +642,7 @@ describe("parseConfig", () => {
       packages: [packages/local-tools]
 `);
       expect(errors).toEqual([]);
-      expect(config?.agents.p.harness).toEqual({
+      expect(asAgent(config?.agents.p)?.harness).toEqual({
         inherit: "workspace",
         extensions: ["tools/review.ts"],
         skills: ["skills/review", "skills/testing"],
@@ -720,14 +720,14 @@ describe("parseConfig", () => {
       for (const bin of ["grok", "hermes"]) {
         const empty = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness: {}\n`);
         expect(empty.errors).toEqual([]);
-        expect(empty.config?.agents.a.harness).toEqual({ inherit: "workspace" });
+        expect(asAgent(empty.config?.agents.a)?.harness).toEqual({ inherit: "workspace" });
 
         const withMcp = parseConfig(
           `agents:\n  a:\n    cmd: ${bin}\n    harness:\n      mcp:\n        s:\n          command: x\n      skills: ["skills/research"]\n`,
         );
         expect(withMcp.errors).toEqual([]);
-        expect(withMcp.config?.agents.a.harness?.mcp?.s.command).toBe("x");
-        expect(withMcp.config?.agents.a.harness?.skills).toEqual(["skills/research"]);
+        expect(asAgent(withMcp.config?.agents.a)?.harness?.mcp?.s.command).toBe("x");
+        expect(asAgent(withMcp.config?.agents.a)?.harness?.skills).toEqual(["skills/research"]);
 
         const bad = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
         expect(bad.errors.some((e) => e.includes("does not support 'rules'/'instructions'"))).toBe(true);
@@ -751,7 +751,7 @@ describe("parseConfig", () => {
     it("spec t-e2ebe3: accepts harness on an opencode agent (XDG layout)", () => {
       const { config, errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      mcp:\n        s:\n          command: x\n`);
       expect(errors).toEqual([]);
-      expect(config?.agents.oc.harness?.mcp?.s.command).toBe("x");
+      expect(asAgent(config?.agents.oc)?.harness?.mcp?.s.command).toBe("x");
     });
 
     it("spec t-e2ebe3: rejects opencode harness with XDG_*_HOME env plumbing (H4)", () => {
@@ -766,7 +766,7 @@ describe("parseConfig", () => {
     it("spec t-e2ebe3: accepts an empty opencode harness as a private XDG-home opt-in (private-home + Bridge only)", () => {
       const { config, errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness: {}\n`);
       expect(errors).toEqual([]);
-      expect(config?.agents.oc.harness).toEqual({ inherit: "workspace" });
+      expect(asAgent(config?.agents.oc)?.harness).toEqual({ inherit: "workspace" });
     });
 
     it("spec t-e2ebe3: rejects opencode harness rules/instructions in v1", () => {
@@ -811,7 +811,7 @@ describe("parseConfig", () => {
         harnessYml(`      rules: ["./rules/r.md"]\n      skills: ["./skills/s"]\n      hooks:\n        SessionStart:\n          - hooks: [{ type: command, command: "echo hi" }]\n`),
       );
       expect(errors).toEqual([]);
-      const h = config?.agents.researcher.harness;
+      const h = asAgent(config?.agents.researcher)?.harness;
       expect(h?.mcp).toBeUndefined();
       expect(h?.rules).toEqual(["./rules/r.md"]);
       expect(h?.skills).toEqual(["./skills/s"]);
@@ -821,7 +821,7 @@ describe("parseConfig", () => {
     it("accepts a rules-only harness (no mcp)", () => {
       const { config, errors } = parseConfig(harnessYml(`      rules: "./r.md"\n`));
       expect(errors).toEqual([]);
-      expect(config?.agents.researcher.harness?.rules).toEqual(["./r.md"]);
+      expect(asAgent(config?.agents.researcher)?.harness?.rules).toEqual(["./r.md"]);
     });
 
     it("rejects an empty harness (no capability declared)", () => {
@@ -914,9 +914,9 @@ describe("agent soul config (spec 377)", () => {
   it("accepts true/false/absence without reading a profile", () => {
     const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    soul: true\n  disabled:\n    cmd: claude\n    soul: false\n  legacy:\n    cmd: gemini\n");
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.enabled.soul).toBe(true);
-    expect(result.config?.agents.disabled.soul).toBe(false);
-    expect(result.config?.agents.legacy.soul).toBeUndefined();
+    expect(asAgent(result.config?.agents.enabled)?.soul).toBe(true);
+    expect(asAgent(result.config?.agents.disabled)?.soul).toBe(false);
+    expect(asAgent(result.config?.agents.legacy)?.soul).toBeUndefined();
   });
 
   it("rejects non-booleans, terminals, and folded enabled-name collisions", () => {
@@ -932,9 +932,9 @@ describe("agent evolution config (spec 421)", () => {
   it("accepts the closed true/false opt-in and preserves absence", () => {
     const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  disabled:\n    cmd: claude\n    selfEvolution: {enabled: false}\n  legacy:\n    cmd: hermes\n");
     expect(result.errors).toEqual([]);
-    expect(result.config?.agents.enabled.selfEvolution).toEqual({ enabled: true });
-    expect(result.config?.agents.disabled.selfEvolution).toEqual({ enabled: false });
-    expect(result.config?.agents.legacy.selfEvolution).toBeUndefined();
+    expect(asAgent(result.config?.agents.enabled)?.selfEvolution).toEqual({ enabled: true });
+    expect(asAgent(result.config?.agents.disabled)?.selfEvolution).toEqual({ enabled: false });
+    expect(asAgent(result.config?.agents.legacy)?.selfEvolution).toBeUndefined();
   });
 
   it("rejects malformed, open, and terminal declarations", () => {
