@@ -1,6 +1,5 @@
 import fs from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile, unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -28,6 +27,7 @@ import {
   importSoulMessage,
   soulProfileStatusMessage,
 } from "../../src/webview/agent-studio-shell/messages.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 function accessFor(file: string): ProfileTxConfigAccess {
   return {
@@ -57,7 +57,7 @@ describe("container-generated delegation behavior", () => {
     expect(createSoulMessage("Ada").type).toBe("createSoul");
     expect(importSoulMessage("Ada", Buffer.from("# Ada\n").toString("base64")).type).toBe("importSoul");
 
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-t15a-gate-"));
+    const root = makeTempDir("tachyon-t15a-gate-");
     const file = path.join(root, "tachyon.yml");
     await writeFile(file, "agents:\n  Ada:\n    cmd: codex\n  Bea:\n    cmd: claude\n    role: reviewer\n");
     const access = accessFor(file);

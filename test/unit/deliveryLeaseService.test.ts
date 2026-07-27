@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it, vi } from "vitest";
@@ -8,6 +7,7 @@ import type { ProcessFencePort } from "../../src/agents/processFence.js";
 import { DeliveryLeaseError, DeliveryLeaseService, waitForDeliveryLease } from "../../src/delivery/leaseService.js";
 import { DeliveryStore, DeliveryStoreBusyError } from "../../src/delivery/store.js";
 import type { Delivery, DeliveryCreateInput } from "../../src/delivery/types.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const now = "2026-07-11T14:00:00.000Z";
 const actor = { kind: "agent" as const, name: "coordinator" };
@@ -18,7 +18,7 @@ const certifiedFence: ProcessFencePort = {
   proveEmpty: async () => ({ state: "proven_empty" }),
 };
 function fixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-lease-"));
+  const root = makeTempDir("tachyon-lease-");
   const worktree = path.join(root, "worktree");
   fs.mkdirSync(worktree);
   const store = new DeliveryStore(root, { now: () => now });

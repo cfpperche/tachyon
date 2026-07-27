@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { TaskStore, mintTaskId } from "../../src/tasks/TaskStore.js";
 import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
 import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
@@ -9,12 +7,13 @@ import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "../../src/webview/TaskStudioAdapter.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import { computeTaskDirty, serializeTaskPatch, canDiscardTaskFields, type TaskFields } from "../../src/webview/task-studio/domain.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /** TaskStudioAdapter in isolation: no vscode or panel, with the legacy target proving the same narrow
  *  contract that the persistent WorkspaceClient target implements. */
 
 function mkroot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "task-studio-adapter-"));
+  return makeTempDir("task-studio-adapter-");
 }
 
 function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}): Workspace {

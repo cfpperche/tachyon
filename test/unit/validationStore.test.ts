@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { EDITOR_HUMAN_ACTOR as HUMAN } from "../../src/validations/types.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
-const fresh = (): string => fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-validation-store-"));
+const fresh = (): string => makeTempDir("tachyon-validation-store-");
 
 describe("ValidationStore", () => {
   it("creates validations with open type/source labels", async () => {

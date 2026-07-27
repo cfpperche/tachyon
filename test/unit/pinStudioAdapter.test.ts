@@ -1,12 +1,11 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { legacyPinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { PinStudioAdapter } from "../../src/webview/PinStudioAdapter.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import { computePinDirty, serializePinPatch, canDiscardPinFields, type PinFields } from "../../src/webview/pin-studio/domain.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /**
  * t-610705 (SDD 410 Phase D, D3) — PinStudioAdapter in isolation: no vscode or panel, with the legacy
@@ -18,7 +17,7 @@ import { computePinDirty, serializePinPatch, canDiscardPinFields, type PinFields
  */
 
 function mkroot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "pin-studio-adapter-"));
+  return makeTempDir("pin-studio-adapter-");
 }
 
 function fakeWorkspace(root = mkroot()): Workspace {

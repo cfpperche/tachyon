@@ -1,11 +1,11 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 function tmpWs(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-ledger-kind-"));
+  return makeTempDir("tachyon-ledger-kind-");
 }
 
 function writeSessions(ws: string, sessions: Record<string, unknown>): void {

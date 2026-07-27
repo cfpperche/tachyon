@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { ActivityLogManager } from "../../src/activity/ActivityLogManager.js";
 import { appendOwnerRow, latestOwnerFor, readSessionOwners, resolveRotationFollow, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { RuntimeOpsSnapshotService } from "../../src/runtimeOps/snapshotService.js";
 import type { LoggedEvent } from "../../src/activity/logStore.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 /**
  * t-9f2641 — behavior gate: a harness-driven resume (or any rotation that keeps the process alive) mints a
@@ -19,7 +19,7 @@ import type { LoggedEvent } from "../../src/activity/logStore.js";
  *     not demoted the way a true process restart would demote it.
  */
 
-const freshDir = (): string => fs.mkdtempSync(path.join(os.tmpdir(), "ownrot4-behavior-"));
+const freshDir = (): string => makeTempDir("ownrot4-behavior-");
 
 function transcriptDir(files: Record<string, number>): string {
   const dir = freshDir();

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { BRIEF_FILE_THRESHOLD, SAFE_INLINE_CEILING, assertSafeBriefTransport, briefFilePath, deliverableBody } from "../../src/agents/briefFile.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   afterEach(() => {
@@ -10,7 +10,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("an oversized brief with an unwritable briefs dir fails the spawn with a clear error instead of inlining past the tmux ceiling", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "x".repeat(SAFE_INLINE_CEILING + 1);
     vi.spyOn(fs, "writeFileSync").mockImplementationOnce(() => {
       throw new Error("EACCES: permission denied, open spawn brief");
@@ -22,7 +22,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("measures the inline safety ceiling in UTF-8 bytes rather than JavaScript characters", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "é".repeat(SAFE_INLINE_CEILING / 2 + 1);
     expect(body.length).toBeLessThan(SAFE_INLINE_CEILING);
     expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(SAFE_INLINE_CEILING);
@@ -34,7 +34,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("a write failure at or below the safe inline ceiling preserves the inline fallback", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "x".repeat(SAFE_INLINE_CEILING);
     expect(body.length).toBeGreaterThan(BRIEF_FILE_THRESHOLD);
     vi.spyOn(fs, "writeFileSync").mockImplementationOnce(() => {
@@ -45,7 +45,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("normal long spawn briefs are written under the spawn namespace", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "x".repeat(BRIEF_FILE_THRESHOLD + 1);
     const file = briefFilePath(workspaceRoot, "writer");
 
@@ -57,7 +57,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("diverts a multibyte body when its UTF-8 bytes cross the file threshold", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "é".repeat(BRIEF_FILE_THRESHOLD / 2 + 1);
     expect(body.length).toBeLessThan(BRIEF_FILE_THRESHOLD);
     expect(Buffer.byteLength(body, "utf8")).toBeGreaterThan(BRIEF_FILE_THRESHOLD);
@@ -69,7 +69,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("diverts apostrophe-heavy content before shell quoting can exceed tmux's argv ceiling", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "'".repeat(BRIEF_FILE_THRESHOLD - 100);
     expect(Buffer.byteLength(body, "utf8")).toBeLessThan(BRIEF_FILE_THRESHOLD);
 
@@ -88,7 +88,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("removes the same-directory temporary file when an atomic replace fails", () => {
-    const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "cx-brief-"));
+    const workspaceRoot = makeTempDir("cx-brief-");
     const body = "x".repeat(BRIEF_FILE_THRESHOLD + 1);
     const file = briefFilePath(workspaceRoot, "atomic-failure");
     vi.spyOn(fs, "renameSync").mockImplementationOnce(() => {
