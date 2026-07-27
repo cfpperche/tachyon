@@ -1,7 +1,5 @@
 import type { FleetVM, NoticeVM } from "./types.js";
 
-export const ATTENTION_VISIBLE_CAP = 6;
-
 /**
  * t-8aeaac follow-up — display-only split of the author baked into `notice.message` text
  * (taskNotificationPolicy's "… by <agent>: title" / the generic notify tool's "[<agent>] …"
@@ -24,8 +22,18 @@ export interface AttentionRow {
   folder?: string;
 }
 
-/** Global deterministic FIFO window over all open workspace-owned attention. */
-export function attentionWindow(fleets: FleetVM[]): { rows: AttentionRow[]; visible: AttentionRow[]; queued: number } {
+/**
+ * Every open workspace-owned attention item, in one deterministic FIFO order.
+ *
+ * `t-fde5b6` — this used to slice the list to a six-row cap and report the remainder as
+ * `+N queued`, which gave the panel a second state the human had to drain. The cap bought nothing:
+ * `.attention-stack` is already `max-height: min(64vh, 600px)` with `overflow: hidden`, and
+ * `.attention-list` inside it is `overflow: auto`. The container was bounded and scrollable either
+ * way, so the cap only decided whether an item was RENDERED — never how tall the panel got. Handing
+ * back every row therefore keeps the exact same maximum height and the same scroll, and a burst
+ * lands in the list as it is emitted instead of waiting behind a counter.
+ */
+export function attentionRows(fleets: FleetVM[]): AttentionRow[] {
   const rows = fleets
     .flatMap((f) => (f.notices ?? []).filter((n) => !n.read).map((n): AttentionRow => ({
       n,
@@ -35,6 +43,5 @@ export function attentionWindow(fleets: FleetVM[]): { rows: AttentionRow[]; visi
     .sort((a, b) => Date.parse(a.n.at) - Date.parse(b.n.at)
       || (a.hash ?? "").localeCompare(b.hash ?? "")
       || a.n.id.localeCompare(b.n.id));
-  const visible = rows.slice(0, ATTENTION_VISIBLE_CAP);
-  return { rows, visible, queued: rows.length - visible.length };
+  return rows;
 }
