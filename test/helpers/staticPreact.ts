@@ -23,8 +23,22 @@ import path from "node:path";
 
 const HOOKS_STUB = path.join(__dirname, "preactHooksStub.ts");
 
+export interface LoadWebviewModuleOptions {
+  /**
+   * t-2f6cdd — `platform: "neutral"` leaves `mainFields`/`conditions` EMPTY, so a component whose
+   * import graph reaches a real npm package (task-detail's `MarkdownView` pulls markdown-it and its
+   * plugins) fails to resolve where the sidebar's self-contained tree did not. Opting a caller into
+   * node-style resolution is additive: the sidebar golden keeps the exact resolution it was captured
+   * under, because it does not pass this.
+   */
+  packageResolution?: boolean;
+}
+
 /** Compile+bundle a webview module and load it as a self-contained ESM data URI (no DOM needed). */
-export async function loadWebviewModule(entryPath: string): Promise<Record<string, unknown>> {
+export async function loadWebviewModule(
+  entryPath: string,
+  options: LoadWebviewModuleOptions = {},
+): Promise<Record<string, unknown>> {
   const result = await esbuild.build({
     entryPoints: [entryPath],
     bundle: true,
@@ -33,6 +47,9 @@ export async function loadWebviewModule(entryPath: string): Promise<Record<strin
     jsx: "automatic",
     jsxImportSource: "preact",
     alias: { "preact/hooks": HOOKS_STUB },
+    ...(options.packageResolution
+      ? { mainFields: ["module", "main"], conditions: ["import", "module", "default"] }
+      : {}),
     write: false,
     logLevel: "silent",
   });
