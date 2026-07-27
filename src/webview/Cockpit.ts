@@ -293,8 +293,6 @@ function strings(): CockpitStrings {
     missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
-    handoffTitle: t("Project Handoff"),
-    handoffHint: t("Shared, curated project state — the doc a fresh agent reads first (embedded)."),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
@@ -858,7 +856,6 @@ function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
   const map: Partial<Record<CockpitSectionId, string>> = {
     mission: s.navMission,
     validations: s.navValidations,
-    handoff: s.navHandoff,
     approvals: s.navApprovals,
     plugins: s.navPlugins,
     runtime: s.navRuntime,
@@ -1082,9 +1079,12 @@ export async function openCockpit(
   // last had (or the loading state if nothing yet). Handoff's own VM already models "no file yet"
   // via `exists: false`, which isn't a failure case at all.
   const sendHandoff = async () => {
-    if (panel !== live || !isSection(currentRoute, "handoff")) return;
+    // t-ace77f — a detail route now, so the workspace comes from the ROUTE's own immutable locator
+    // (the router's rule for every entity route): switching Control's workspace scope while a
+    // handoff document is open must not swap the document under the reader.
+    if (panel !== live || currentRoute.kind !== "project-handoff") return;
     const epoch = navEpoch;
-    const ws = resolveHandoffWs(deps.handoff);
+    const ws = resolveHandoffWs(deps.handoff, currentRoute.wsHash);
     if (!ws) return;
     try {
       const snap = await ws.loadHandoff();
@@ -1116,9 +1116,10 @@ export async function openCockpit(
     // handshake/poll (case READY/"refresh" in the main switch below), which already calls
     // sendSectionModule() → sendHandoff() for the active section. Only Handoff's OWN action types
     // need a dedicated handler.
-    if (!m?.type || !isSection(currentRoute, "handoff")) return false;
+    if (!m?.type || currentRoute.kind !== "project-handoff") return false;
+    const routeWsHash = currentRoute.wsHash;
     if (m.type === "openFile") {
-      const ws = resolveHandoffWs(deps.handoff);
+      const ws = resolveHandoffWs(deps.handoff, routeWsHash);
       if (ws) {
         try {
           const filePath = await ws.ensureHandoffFile();
@@ -1131,7 +1132,7 @@ export async function openCockpit(
       return true;
     }
     if (m.type === "distill") {
-      const ws = resolveHandoffWs(deps.handoff);
+      const ws = resolveHandoffWs(deps.handoff, routeWsHash);
       const action = parseHandoffDistillAction(m);
       if (!action) {
         notify("Invalid handoff distillation request.", "warn");
@@ -1592,7 +1593,7 @@ export async function openCockpit(
     bindPluginsIfNeeded();
     if (isSection(currentRoute, "mission")) await sendMission();
     else if (isSection(currentRoute, "validations")) await sendValidations();
-    else if (isSection(currentRoute, "handoff")) await sendHandoff();
+    else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
@@ -1872,6 +1873,19 @@ export async function openCockpit(
             await sendSectionModule();
           });
           return;
+        case "openProjectHandoff": {
+          // t-ace77f — same resolve-then-navigate shape as fleetActivity: pick the workspace ONCE
+          // at dispatch time (Control's current scope, falling back like every other action), then
+          // bake that hash into the route as the document's immutable locator.
+          const ws = resolveHandoffWs(deps.handoff);
+          if (ws) {
+            await requestNavigate(routes.projectHandoff(ws.wsHash), live, async () => {
+              await sendModel();
+              await sendSectionModule();
+            });
+          }
+          return;
+        }
         case "navigateReturn":
           // t-610705 (Phase D, D3) — pin's ONLY breadcrumb action. The DESTINATION is deliberately
           // never client-sent (design-dueto probe-43bca1cc: a client-sent route payload widens the
@@ -2216,7 +2230,7 @@ export async function openCockpit(
     const taskDetailIsActive = currentRoute.kind === "task-detail";
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
-    const handoffIsActive = isSection(currentRoute, "handoff");
+    const handoffIsActive = currentRoute.kind === "project-handoff";
     // t-610705 (Phase D, D0/D1a) — studio-frame.css is shared by every StudioPanelManagerBase-based
     // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1b/D2/D3 add
     // theirs alongside command/terminal/runbook/schedule here, one `studioX ? uri(...) : undefined`

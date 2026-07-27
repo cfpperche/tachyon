@@ -302,3 +302,56 @@ describe("exhaustiveness seam (route.ts's core promise, not yet load-bearing)", 
     expect(() => formatRoute(r)).not.toThrow();
   });
 });
+
+describe("project-handoff route (t-ace77f)", () => {
+  it("is not a section any more — Control has no Handoff tab", () => {
+    expect(COCKPIT_SECTION_ORDER).not.toContain("handoff");
+    expect(decodeRoute({ kind: "section", section: "handoff" })).toBeNull();
+  });
+
+  it("builds, keys and formats one document per workspace", () => {
+    const r = routes.projectHandoff("ws-1");
+    expect(r).toEqual({ kind: "project-handoff", wsHash: "ws-1" });
+    expect(routeKey(r)).toBe("project-handoff:ws-1");
+    expect(routeKey(routes.projectHandoff("ws-2"))).not.toBe(routeKey(r));
+    expect(formatRoute(r)).toBe("project handoff");
+  });
+
+  it("leaves by breadcrumb to Overview, and lights no tab while open", () => {
+    const r = routes.projectHandoff("ws-1");
+    expect(parentRoute(r)).toEqual({ kind: "section", section: "overview" });
+    // nav-less, like Pin Studio: "overview" here would render the Overview tab as active.
+    expect(navSection(r)).toBeNull();
+  });
+
+  it("keeps polling, exactly as it did while it was a section", () => {
+    expect(refreshPolicy(routes.projectHandoff("ws-1"))).toBe("poll");
+  });
+
+  it("decodes only a well-formed route — deep links are not a loose bag of fields", () => {
+    expect(decodeRoute({ kind: "project-handoff", wsHash: "ws-1" })).toEqual(routes.projectHandoff("ws-1"));
+    expect(decodeRoute({ kind: "project-handoff" })).toBeNull();
+    expect(decodeRoute({ kind: "project-handoff", wsHash: "" })).toBeNull();
+    expect(decodeRoute({ kind: "project-handoff", wsHash: "ws-1", extra: 1 })).toBeNull();
+    expect(decodeRoute({ kind: "project-handoff", wsHash: 7 })).toBeNull();
+  });
+
+  it("reopens the document after a reload that persisted the retired Handoff tab", () => {
+    // v2 record written before the tab was retired…
+    expect(decodePanelState({ schemaVersion: 2, view: "tachyonCockpit", route: { kind: "section", section: "handoff" }, wsHash: "ws-1" }))
+      .toEqual({ route: routes.projectHandoff("ws-1"), wsHash: "ws-1" });
+    // …and the v1 shape that predates routes entirely.
+    expect(decodePanelState({ schemaVersion: 1, view: "tachyonCockpit", section: "handoff", wsHash: "ws-1" }))
+      .toEqual({ route: routes.projectHandoff("ws-1"), wsHash: "ws-1" });
+    // With no workspace recorded there is no document to open — Overview is the honest landing.
+    expect(decodePanelState({ schemaVersion: 2, view: "tachyonCockpit", route: { kind: "section", section: "handoff" } }))
+      .toEqual({ route: routes.section("overview"), wsHash: undefined });
+  });
+
+  it("is a legal pin returnRoute (a non-studio route like any other)", () => {
+    const back: CockpitNonStudioRoute = routes.projectHandoff("ws-1");
+    const pin = routes.studioEdit("pin", "ws-1", "p-1", back);
+    expect(parentRoute(pin)).toEqual(back);
+    expect(decodeRoute({ kind: "studio-edit", studio: "pin", wsHash: "ws-1", entityId: "p-1", returnRoute: back })).toEqual(pin);
+  });
+});

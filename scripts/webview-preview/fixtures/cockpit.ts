@@ -47,8 +47,6 @@ export const strings: CockpitStrings = {
   missionHint: "Work queue — tasks and lanes. Agents live in the sidebar Fleet.",
   validationsTitle: "Validations",
   validationsHint: "Validation queue — close dogfoods and checks (not on the Board).",
-  handoffTitle: "Project Handoff",
-  handoffHint: "Shared, curated project state — the doc a fresh agent reads first (embedded).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
   deliveriesTitle: "Deliveries",
@@ -718,9 +716,16 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
-  // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet
-  // subroutes above): same simple section-only pattern as validations/approvals.
-  handoff: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "handoff", nowIso: now }) },
+  // t-ace77f — Handoff is a DETAIL ROUTE, not a section: the model still carries a background
+  // section (nav-less routes fall back to overview at every call site) and `activeRoute` is what
+  // actually renders, same shape as the task-detail/Fleet-subroute fixtures above.
+  handoff: {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+      activeRoute: cockpitRoutes.projectHandoff("b349073a"),
+    },
+  },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
   tmux: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "tmux", nowIso: now }) },

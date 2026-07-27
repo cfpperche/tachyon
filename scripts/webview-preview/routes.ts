@@ -172,9 +172,6 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "plugins") {
         const plugins = pluginsFixtures.default?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
-      } else if (model.section === "handoff") {
-        const handoff = handoffFixtures.default?.vm;
-        if (handoff) msgs.push(handoffMessage(handoff));
       }
       // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail
       // and the Fleet subroutes below all nav to a section with no embed push of its own for THEM,
@@ -186,6 +183,11 @@ export const ROUTES: Record<string, Route> = {
       } else if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
         const feed = activityFixtures.default?.vm;
         if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
+      } else if (activeRoute?.kind === "project-handoff") {
+        // t-ace77f — Handoff moved from a section push to a detail route, exactly like task-detail
+        // above: same fixture VM, same envelope, now keyed off the route instead of the tab.
+        const handoff = handoffFixtures.default?.vm;
+        if (handoff) msgs.push(handoffMessage(handoff));
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));

@@ -12,6 +12,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import {
   formatCompanionPairClipboard,
   navigateReturnAction,
+  openProjectHandoffAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
@@ -331,7 +332,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "handoff", "approvals", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -340,7 +341,6 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   approvals: { icon: "pass", navKey: "navApprovals" },
   mission: { icon: "checklist", navKey: "navMission" },
   validations: { icon: "checklist", navKey: "navValidations" },
-  handoff: { icon: "book", navKey: "navHandoff" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   runtime: { icon: "graph", navKey: "navRuntime" },
@@ -1181,7 +1181,10 @@ export function App(p: CockpitAppProps) {
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute;
+  // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
+  // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
+  const isProjectHandoff = activeRoute?.kind === "project-handoff";
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff;
   // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
   // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
   // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
@@ -1189,13 +1192,13 @@ export function App(p: CockpitAppProps) {
   // through `model.section` itself (design-dueto probe-43bca1cc minor finding: coercing null to
   // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
   // from "Overview is genuinely active").
-  const isNavlessStudio = !!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin";
+  const isNavlessStudio = (!!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin") || isProjectHandoff;
   // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
   // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
   // very top, and the content area gets the vertical space the tab strip would have used. Each
   // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
-  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute;
+  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute || isProjectHandoff;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -1253,6 +1256,24 @@ export function App(p: CockpitAppProps) {
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute?.kind === "project-handoff") {
+    // t-ace77f — checked before the section branch, same as every other subroute: `model.section`
+    // reads "overview" underneath (the nav-less fallback), but the document is what renders.
+    const parent = parentRoute(activeRoute);
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s[TAB_META[parent.section].navKey]}
+        </Button>
+      );
+    }
+    body = (
+      <div class="ck-embed-host" data-testid="control-handoff">
+        <Suspense fallback={<SectionFallback />}>
+          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
         </Suspense>
       </div>
     );
@@ -1418,7 +1439,7 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("validations")}>
               {s.navValidations}
             </Button>
-            <Button variant="default" onClick={() => p.onSetSection("handoff")}>
+            <Button variant="default" data-testid="control-overview-open-handoff" onClick={() => p.onPost(openProjectHandoffAction())}>
               {s.navHandoff}
             </Button>
             <Button variant="default" onClick={() => p.onSetSection("runtime")}>
@@ -1541,14 +1562,6 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-validations-host">
         <Suspense fallback={<SectionFallback />}>
           <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
-        </Suspense>
-      </div>
-    );
-  } else if (section === "handoff") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-handoff">
-        <Suspense fallback={<SectionFallback />}>
-          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
         </Suspense>
       </div>
     );
