@@ -61,12 +61,22 @@ describe("container-generated delegation behavior", () => {
       }
     }
 
-    // Honest fact, not intuition: no runtime has measured overlay data yet, so every
-    // runtime resolves the exact same base rule set today. If this ever diverges without
-    // an intentional overlay landing, this assertion is what catches it.
-    const [first, ...rest] = resolved;
-    for (const { runtime, manifest } of rest) {
-      expect(manifest.rules, `${runtime} rules should equal ${first.runtime} rules (no overlays exist yet)`).toEqual(first.manifest.rules);
+    // Overlays are the ONLY sanctioned way a runtime's rule set may differ from base, and each one
+    // must be measured. t-4e6ba5 landed the first (grok's native tool-authorization modal). Every
+    // other runtime must still resolve base exactly — this is what catches an accidental divergence
+    // or an overlay that quietly leaks into peers.
+    const OVERLAY_RUNTIMES = new Set(["grok"]);
+    const base = resolved.find((entry) => !OVERLAY_RUNTIMES.has(entry.runtime))!;
+    for (const { runtime, manifest } of resolved) {
+      if (OVERLAY_RUNTIMES.has(runtime)) {
+        // An overlay EXTENDS base: every base rule survives, and the overlay adds at least one.
+        expect(manifest.rules.length, `${runtime} should extend base, not replace it`).toBeGreaterThan(base.manifest.rules.length);
+        for (const rule of base.manifest.rules) {
+          expect(manifest.rules, `${runtime} dropped base rule ${rule.id}`).toContainEqual(rule);
+        }
+        continue;
+      }
+      expect(manifest.rules, `${runtime} rules should equal ${base.runtime} rules (it has no overlay)`).toEqual(base.manifest.rules);
     }
   });
 });

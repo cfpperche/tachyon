@@ -1,0 +1,31 @@
+{
+  "version": "2026.07.26.1",
+  "evidence": "Measured on grok 0.2.112 (2026-07-26, t-4e6ba5) by asking a live agent under `--permission-mode default` to delete a file OUTSIDE its workspace, then capturing the pane. Verbatim tail:\n    ┃  Remove target.txt from /tmp/grok-outside\n    ┃  rm -f /tmp/grok-outside/target.txt\n    ┃\n    ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n    ┃  2 (○) Yes, proceed\n    ┃  3 (○) No, reject (type to add feedback)\n    ┃\n    1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel\nNothing in the base manifest matches this chrome: there is no [y/n], no 'do you want to', and the numbered options are '1 (●)' with NO period, so base's '❯\\s*\\d+\\.' menu rule misses them. The pane also keeps changing while the prompt waits (an elapsed-time counter ticks every second), which is why the agent stayed 'working' and governed input was refused as busy. The footer is the bottom-most line, so matching it keeps distanceFromBottom at 0 and lets classifyForPrecedence beat that content churn — the first option line sits 4 non-empty lines up, past PATTERN_POSITION_TOLERANCE. NOTE for whoever answers: the highlighted option is SESSION STATE, not a constant. A first prompt highlights option 1 (always-approve); after answering '2' the next prompt arrives with '2 (●)'. A bare Enter therefore sends an unpredictable decision, and on a first prompt that decision is blanket approval. Answer with an explicit digit. Verified on the live pane: sending '2' performed the single action, left the footer WITHOUT 'always-approve', and the next out-of-workspace action prompted again — so the one-time grant really is one-time.",
+  "rules": [
+    {
+      "id": "grok_tool_authorization",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Two independent signatures of the same modal, both measured above. The footer is matched because it is the bottom-most line; the radio options are matched so a variant that drops or reworks the footer still registers.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "\\bctrl\\+o:always-approve\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "^\\s*\\d+/\\d+:select\\b",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "^\\s*(?:[│┃]\\s*)?\\d+\\s*\\([●○]\\)\\s*\\S"
+          }
+        ]
+      }
+    }
+  ]
+}

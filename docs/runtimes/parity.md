@@ -262,7 +262,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 |-----|------------------|--------------|----------|
 | Brief | positional `[PROMPT]` after options | `INSTRUCTION_ARG.grok = (q) => q` via `composeCommand` / `effectiveCmd` (after `injectResumeId` → `grok -s <uuid> '<brief>'`) | **✓** 2026-07-09 unit `config.test.ts` + code (was ✗ until Cap 1 fix) |
 | Bridge | `GROK_HOME` + `[mcp_servers.tachyon_bridge]` (`headers` + `${VAR}`) | non-harness: `materializeBridgeMcpGrok`; harness: `buildGrokHarnessConfig` | **✓** 2026-07-09 dogfood (t-843576) — `grok mcp list`; native tools after stop/resume |
-| Attention | same global pane patterns as peers | no composer profile; not in `RateLimitRuntime` | **~** (not “unclassified”) |
+| Attention | global pane patterns **plus** the first measured per-runtime overlay (`manifests/grok.json`) | native tool-authorization modal detected as `needs-input` (`t-4e6ba5`); still no composer profile; not in `RateLimitRuntime` | **~** overall, but tool-auth prompts **✓** 2026-07-26 measured on grok 0.2.112 + real-pane check |
 | Resume | `-r` / `-c` | adapter `resumeCommand` (`mintsId`) | **✓** 2026-07-09 live stop/resume |
 | Fork | `-r <id> --fork-session` | `forkCommand` | adapter 2026-07-09 |
 | Harness | `GROK_HOME` + hooks dir | harness + lifecycle hooks + Bridge fold **exist**; auth seed + **rematerialize** (below) | **✓** materialization; auth rematerialize **✓** t-2b0a08 unit |
@@ -428,6 +428,18 @@ and `Workspace` → `HarnessManager.materializePiHomeOnly` / `materializePiHome`
 (SDD 401/406). Opt-in `def.harness` only layers exact resource snapshots; it is
 not `ResumeAdapter.harness`.
 
+**Grok ad-hoc attention (`t-4e6ba5`, closes the gap `t-1d49df` journalled):** a parented ad-hoc Grok
+that hits its native tool-authorization modal used to stay `attention: working` — no coordinator
+notification, and `write_input(answering=true)` refused as busy, so the only way through was polling
+and typing straight into tmux. Measured on grok 0.2.112: the modal shares no signature with any base
+rule (`1 (●)` has no period, so base's `❯\s*\d+\.` misses it) **and** the pane keeps animating while
+it waits, which is what held it in `working`. `manifests/grok.json` — the first measured per-runtime
+overlay — matches the modal at the bottom of the tail, where a recognized prompt outranks
+content-change classification. Answering stays entirely human/coordinator work: the highlighted
+option is session state (a first prompt highlights `1`, which is `always-approve`; after answering
+`2` the next prompt arrives with `2 (●)`), so an answer must always name its digit and Tachyon ships
+no path that answers on its own.
+
 **Grok ad-hoc ruling (do not weaken without new measurement):**
 
 1. `GROK_HOME` **does** isolate sessions/config from ambient `~/.grok` (dual-home
@@ -503,6 +515,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-07-26 | **Grok tool-authorization prompts reach the coordinator (`t-4e6ba5`):** Grok's native modal (`1 always-approve / 2 Yes, proceed / 3 reject`) left the agent classified `working` — no notification, governed input refused as busy. Measured on grok 0.2.112 by making a live agent act OUTSIDE its workspace under `--permission-mode default`: the modal matches nothing in the base manifest (its options are `1 (●)`, no period, so base's `❯\s*\d+\.` menu rule misses them) **and** the pane keeps animating while it waits (an elapsed-time counter ticks every second), which is what pinned it to `working`. Fixed with `src/attention/manifests/grok.json`, the first measured per-runtime overlay in a mechanism that shipped empty; it matches the modal's bottom-most footer so a recognized prompt outranks content churn (the first option line sits past `PATTERN_POSITION_TOLERANCE`). Nothing auto-answers: the highlighted option is session state — a first prompt highlights always-approve, and after answering `2` the next prompt arrives with `2 (●)` — so a bare Enter is unpredictable and an answer must name its digit. Verified live that `2` performs the single action, leaves the footer without `always-approve`, and the next out-of-workspace action prompts again. Evidence: `test/unit/grokAuthorizationPrompt.test.ts` (11 tests, 5 fail without the overlay) plus a real-pane run of the actual `AttentionMonitor` reaching `needs-input`. |
 | 2026-07-26 | **Claude composer suggestion is not a human draft (`t-c5f29b`):** Claude Code renders suggestion text INSIDE an otherwise empty composer, and Tachyon read it as a typed draft — refusing continuity with `refused-composer: non-empty composer draft` while the human had nothing to clear and no key would clear it. Measured on a live pane, Claude Code 2.1.220: the suggestion is entirely SGR-dim (`\x1b[39m❯ \x1b[2mTry "fix typecheck errors"\x1b[0m`), a typed draft carries no dim at all (`\x1b[39m❯ integre em main e verifique o tree` — the incident's own text, typed), and the separator after `❯` is U+00A0 in BOTH cases so it discriminates nothing. Claude therefore adopts the same measured `ansiEmptyContentStyle: "all-dim"` rule Codex has carried since `t-aee74e`; no new heuristic was invented, and with no escaped capture the detector still refuses rather than guessing. A real draft keeps blocking injection. Peers measured on an empty composer (grok 0.2.112, opencode 1.18.4, pi 0.80.10, hermes 0.18.2) render no such text; their post-turn behavior is unmeasured and filed separately. Evidence: `npm run dogfood:claude-composer-suggestion` (5/5 against the real CLI) plus `test/unit/claudeComposerSuggestion.test.ts`. |
 | 2026-07-26 | **Ad-hoc spawn parity review fix (`t-1d49df` / `grok-adhoc-fixer`):** (1) Pi §3.6 row no longer mislabels private home as adapter-harness auto-isolate — `ResumeAdapter.pi` has no `harness`; home comes from profile `private-home` → `materializeRuntimeHarness` / `materializePiHomeOnly`. (2) Research appendix commits sanitized M1–M3 protocol + redacted outputs so HOME ambient / dual-home claims are independently re-runnable. Grok fail-closed worktree gate **unchanged**. |
 | 2026-07-26 | **Ad-hoc spawn parity (§3.6 / `t-1d49df`):** measured Grok 0.2.112 — `GROK_HOME` isolates sessions; ad-hoc still omits `HOME` so ambient Claude settings load; runtime-wide **project-scoped** + parented worktree gate **kept**. Research: [`adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md). |
