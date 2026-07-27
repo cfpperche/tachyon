@@ -49,9 +49,12 @@ export function agentIsStopped(a: Pick<AgentVM, "status">): boolean {
  * awaitingHuman / attention that is not mere progress ("working").
  * Includes stop-failed (not in grouping.agentNeedsAttention).
  */
-export function agentNeedsYou(a: Pick<AgentVM, "status" | "attention" | "awaitingHuman">): boolean {
+export function agentNeedsYou(a: Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "authRequired">): boolean {
   if (a.status === "needs" || a.status === "throttled" || a.status === "stop-failed" || a.status === "done") return true;
   if (a.awaitingHuman) return true;
+  // SDD 477 / t-5bfb72 — a lost login reads as plain "idle", which is the whole defect. Only a human
+  // can clear it, so it belongs in the attention filter even though the row keeps its idle status.
+  if (a.authRequired) return true;
   if (a.attention) {
     const key = a.attention.trim().toLowerCase();
     if (key && !PROGRESS_ATTENTION.has(key)) return true;
@@ -60,7 +63,7 @@ export function agentNeedsYou(a: Pick<AgentVM, "status" | "attention" | "awaitin
 }
 
 export function agentMatchesStatusFilter(
-  a: Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "focus">,
+  a: Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "authRequired" | "focus">,
   filter: AgentStatusFilter,
 ): boolean {
   if (filter === "all") return true;
@@ -83,7 +86,7 @@ export interface AgentStatusFilterCounts {
 
 /** Counts over the full fleet (not the filtered subset) — dropdown anchors stay stable. */
 export function countAgentStatusFilters(
-  agents: readonly Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "focus">[],
+  agents: readonly Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "authRequired" | "focus">[],
 ): AgentStatusFilterCounts {
   const c: AgentStatusFilterCounts = { all: agents.length, live: 0, attention: 0, stopped: 0, ontask: 0, hasfocus: 0 };
   for (const a of agents) {
@@ -96,7 +99,7 @@ export function countAgentStatusFilters(
   return c;
 }
 
-export function filterAgentsByStatus<T extends Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "focus">>(
+export function filterAgentsByStatus<T extends Pick<AgentVM, "status" | "attention" | "awaitingHuman" | "authRequired" | "focus">>(
   agents: readonly T[],
   filter: AgentStatusFilter,
 ): T[] {

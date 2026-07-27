@@ -54,6 +54,11 @@ describe("agentStatusFilter (t-eddf90)", () => {
     expect(agentNeedsYou({ status: "stopped" })).toBe(false);
   });
 
+  it("SDD 477: an auth-required row needs you even though its status is plain idle", () => {
+    expect(agentNeedsYou({ status: "idle" })).toBe(false);
+    expect(agentNeedsYou({ status: "idle", authRequired: { runtime: "claude", action: "run /login" } })).toBe(true);
+  });
+
   it("screenshot fleet counts: All 8 · Live 4 · Needs you 1 · Stopped 4 (focus chips 0 without focus)", () => {
     expect(countAgentStatusFilters(FLEET)).toEqual({
       all: 8, live: 4, attention: 1, stopped: 4, ontask: 0, hasfocus: 0,

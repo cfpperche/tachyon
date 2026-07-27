@@ -2,6 +2,7 @@ import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type ComposerRegionProfile } from "../runtime/runtimeProfile.js";
+import { AUTH_SIGNAL_TAIL_LINES, classifyAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
 
@@ -59,6 +60,14 @@ export interface AgentAttention {
   awaitingHuman: boolean;
   /** the one-line reason passed to flagAwaitingHuman; present only while awaitingHuman is true. */
   awaitingHumanReason?: string;
+  /**
+   * SDD 477 / `t-5bfb72` — the agent has gone idle because its runtime says it is not authenticated,
+   * not because it finished. Another independent latch (never a new AttentionState), carrying the
+   * measured evidence so every consumer can name the runtime and the human action without
+   * re-deriving them. Undefined means "not latched", which is also what every runtime without a
+   * measured profile can ever produce.
+   */
+  authRequired?: AuthRequiredEvidence;
   /**
    * t-a39c7d — herdr-style done(unseen): agent finished a turn (idle, or completion-hinted idle)
    * and the human has not focused the pane yet. Orthogonal to AttentionState (state stays idle).
@@ -142,6 +151,16 @@ interface Snapshot {
   awaitingHumanReason: string | undefined;
   /** t-35d95a — one-shot guard so the toast fires exactly once per awaiting-human episode */
   awaitingHumanNotified: boolean;
+  /** t-5bfb72 — latched measured auth-required evidence; cleared on the next new-turn edge */
+  authRequired: AuthRequiredEvidence | undefined;
+  /** t-5bfb72 — one-shot guard so the auth-required attention fires exactly once per episode */
+  authRequiredNotified: boolean;
+  /** t-5bfb72 — epoch ms since the CURRENT auth signal has been continuously visible in the tail;
+   *  null while none is. Debounced exactly like a prompt match, for the same reason: a pane read
+   *  mid-redraw is not evidence that a human must go and log in. */
+  authSince: number | null;
+  /** t-5bfb72 — the matched line the current authSince window belongs to */
+  authKey: string | null;
   /** t-a39c7d — finished turn not yet viewed by human (done = idle + unseen). */
   unseen: boolean;
   /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
@@ -208,6 +227,7 @@ export class AttentionMonitor {
       stalled: snap.stalled,
       awaitingHuman: snap.awaitingHuman,
       awaitingHumanReason: snap.awaitingHumanReason,
+      authRequired: snap.authRequired,
       unseen: snap.unseen,
       composerOccupied: snap.composerOccupied,
       stale: this.stale,
@@ -230,6 +250,27 @@ export class AttentionMonitor {
   /** t-35d95a — true once flagAwaitingHuman has latched this agent, cleared on the next new-turn edge. */
   isAwaitingHuman(agent: string): boolean {
     return this.snaps.get(agent)?.awaitingHuman ?? false;
+  }
+
+  /**
+   * t-5bfb72 — the measured evidence that this agent cannot execute until a human logs its runtime
+   * back in, or undefined. This is the read every HOLD consults: while it answers, no automatic
+   * restart and no automatic retry may run against the agent, because both would burn a task queue
+   * against a wall a human has to remove.
+   */
+  authRequiredOf(agent: string): AuthRequiredEvidence | undefined {
+    return this.snaps.get(agent)?.authRequired;
+  }
+
+  isAuthRequired(agent: string): boolean {
+    return this.snaps.get(agent)?.authRequired !== undefined;
+  }
+
+  /** t-5bfb72 — agents currently held for authentication. */
+  authRequiredAgents(): Set<string> {
+    const out = new Set<string>();
+    for (const [agent, snap] of this.snaps) if (snap.authRequired) out.add(agent);
+    return out;
   }
 
   /** t-35d95a — agents currently latched awaiting a human (request_human_attention was called and
@@ -379,6 +420,10 @@ export class AttentionMonitor {
           awaitingHuman: false,
           awaitingHumanReason: undefined,
           awaitingHumanNotified: false,
+          authRequired: undefined,
+          authRequiredNotified: false,
+          authSince: null,
+          authKey: null,
           unseen: false,
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
@@ -433,6 +478,12 @@ export class AttentionMonitor {
         snap.stallNotified = false;
         snap.composerOccupied = await this.isComposerOccupied(agent, content);
       }
+
+      // t-5bfb72 — track how long the runtime's own "you are not authenticated" line has been sitting
+      // in the tail. Tracked on every tick (not only once idle) so the debounce is already satisfied
+      // by the time the pane goes quiet; the LATCH itself is taken in the idle branch below, because
+      // "idle" is the state this whole spec exists to disambiguate.
+      this.trackAuthSignal(agent, snap, content, now);
 
       // t-64f501 — needs-input/error precedence: a recognized pattern in the CURRENT pane
       // snapshot wins over content-change/working classification. A modal permission prompt
@@ -525,6 +576,7 @@ export class AttentionMonitor {
         }
         this.transition(agent, snap, "idle", now);
         this.detectAwaitingHumanOnIdle(agent, snap);
+        this.detectAuthRequiredOnIdle(agent, snap, now);
         // t-47bfe8 — once idle, evaluate the continuous-inactivity stall window. stableMs grew past
         // silenceSec just now; if it ALSO already grew past STALL_AFTER_MS (e.g. the heartbeat cap
         // just decayed a long-frozen-but-CPU-busy pane from working → idle), this fires on the same
@@ -578,6 +630,17 @@ export class AttentionMonitor {
       snap.awaitingHumanReason = undefined;
       snap.awaitingHumanNotified = false;
     }
+    // t-5bfb72 — a new turn is the observable proof that the hold is over: an agent whose runtime
+    // refuses to authenticate cannot start one. This is what makes recovery EXPLICIT without a
+    // dedicated clear-API — a human logs in and restarts (or retries), the agent works, the latch
+    // drops. It is also what bounds a false positive to a single quiet episode instead of forever.
+    // If the login was not actually fixed, the runtime answers the same notice and this re-latches.
+    if (isNewTurnEdge && snap.authRequired) {
+      snap.authRequired = undefined;
+      snap.authRequiredNotified = false;
+      snap.authSince = null;
+      snap.authKey = null;
+    }
     let notify = false;
     if (state === "needs-input") {
       // One notification per episode; the episode key is when this content appeared. Unlike the
@@ -591,6 +654,52 @@ export class AttentionMonitor {
         notify = true;
       }
     }
+    this.onChange?.(agent, this.toAttention(agent, snap), notify);
+  }
+
+  /**
+   * t-5bfb72 — maintain the stability window for the measured auth signal. Keyed on the matched LINE
+   * rather than the pattern: unlike a rate-limit countdown, these notices do not tick, so a changed
+   * line genuinely is a different notice and deserves a fresh window.
+   */
+  private trackAuthSignal(agent: string, snap: Snapshot, content: string, now: number): void {
+    const evidence = classifyAuthRequired(this.manifestRuntimeFromCmd(agent), content, {
+      tailLines: AUTH_SIGNAL_TAIL_LINES,
+    });
+    if (!evidence) {
+      snap.authSince = null;
+      snap.authKey = null;
+      return;
+    }
+    if (snap.authKey !== evidence.matchedLine) {
+      snap.authSince = now;
+      snap.authKey = evidence.matchedLine;
+    }
+  }
+
+  /**
+   * t-5bfb72 — take the latch once a stable, measured auth signal has outlived the pane going quiet.
+   *
+   * Deliberately gated on idle. The signal's whole purpose is to tell "finished its turn" apart from
+   * "cannot execute another one", and only an idle agent is ambiguous in that way; requiring idle also
+   * keeps the same bytes appearing mid-turn — a file being read, a test fixture, this very spec — from
+   * parking an agent that is plainly still working.
+   *
+   * Nothing here stops, kills or rewinds anything. The latch's only powers are to ask for a human and
+   * to withhold AUTOMATIC restart/retry, so the cost of being wrong is a badge and a paused robot,
+   * while the cost of not latching is a queue burned against a login prompt.
+   */
+  private detectAuthRequiredOnIdle(agent: string, snap: Snapshot, now: number): void {
+    if (snap.authRequired) return;
+    if (snap.authSince === null) return;
+    if (now - snap.authSince < PATTERN_STABLE_MS) return;
+    const evidence = classifyAuthRequired(this.manifestRuntimeFromCmd(agent), snap.content, {
+      tailLines: AUTH_SIGNAL_TAIL_LINES,
+    });
+    if (!evidence) return;
+    snap.authRequired = evidence;
+    const notify = !snap.authRequiredNotified;
+    snap.authRequiredNotified = true;
     this.onChange?.(agent, this.toAttention(agent, snap), notify);
   }
 

@@ -208,6 +208,16 @@ function AgentBadges({ a }: { a: AgentVM }) {
           ◆ needs you
         </Badge>
       )}
+      {/* SDD 477 — err tone, not warn: this row will never move again on its own, and nothing but a
+          human logging the runtime back in can change that. */}
+      {a.authRequired && (
+        <Badge
+          tone="err"
+          title={`${a.authRequired.runtime} reports this agent is not authenticated — ${a.authRequired.action}. Tachyon will not retry or restart it automatically.`}
+        >
+          ◆ auth required
+        </Badge>
+      )}
       {a.verify === "pass" && <Badge tone="ok">✓ verified</Badge>}
       {a.verify === "fail" && <Badge tone="err">✗ verify</Badge>}
       {a.verify === "stale" && <Badge>⊘ stale</Badge>}
@@ -265,7 +275,7 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
   const hasHidden = collapsed && hiddenCount > 0;
   const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
   const attentionVisible = a.attention && a.attention !== "working";
-  const hasMeta = a.configInvalid || a.sub || attentionVisible || a.awaitingHuman || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
+  const hasMeta = a.configInvalid || a.sub || attentionVisible || a.awaitingHuman || a.authRequired || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
   const cpu = a.resources?.cpuPct;
   const hot = cpu !== undefined && cpu >= 80;
   const focusTitle = a.focus

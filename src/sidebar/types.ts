@@ -89,6 +89,11 @@ export interface AgentVM {
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention): an AUTHORED
    *  "I need a human" signal, independent of `attention`/`status`. Undefined = not latched. */
   awaitingHuman?: { reason: string };
+  /** SDD 477 / t-5bfb72 — AttentionMonitor.authRequired latch: the runtime itself reported it is not
+   *  authenticated, so this row is idle because it CANNOT run, not because it finished. Independent
+   *  of `attention`/`status`; undefined = not latched. `action` is the measured human action; neither
+   *  field ever carries credential material. */
+  authRequired?: { runtime: string; action: string };
   /** t-8354ae — row is shown while tachyon.yml is invalid (ledger and/or LKG). */
   configInvalid?: boolean;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)

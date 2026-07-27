@@ -34,27 +34,35 @@ a false positive parks a healthy agent and a false negative burns a task queue a
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: an unauthenticated agent is named, not merely idle**
+- [x] **Scenario: an unauthenticated agent is named, not merely idle**
   - **Given** a runtime with a measured auth-required signal
   - **When** that signal is observed for a live agent
   - **Then** the agent surfaces as auth-required human attention naming the runtime, the agent and
     the safe human action, and is not reported as idle or as a generic crash.
-  - _Partially delivered (increment 2): a LAUNCH that fails for authentication now names runtime,
-    agent and action. A live agent that loses its credential MID-RUN is not yet surfaced — that is
-    the auth-required agent state below, tracked as `t-5bfb72`._
+  - _Launch is covered by increment 2. MID-RUN is covered by increment 3 (`t-5bfb72`): the same
+    measured matcher runs against the live pane and latches `AgentAttention.authRequired`, which
+    surfaces as its own sidebar badge (the row's status stays `idle` — the latch is what tells the two
+    apart), a warn toast, and a notice to the parent so a coordinator stops handing it work._
 - [x] **Scenario: no token is ever surfaced**
   - **Given** any auth-required notification or stored state
   - **When** it is read by a human or an agent
   - **Then** it contains no credential material, no token fragment and no credential file contents.
-- [ ] **Scenario: assigned work is held, not burned**
+- [x] **Scenario: assigned work is held, not burned**
   - **Given** an agent in auth-required with an assigned task
   - **When** the state holds
   - **Then** the task remains assigned and un-executed, and no automatic restart or retry loop runs
     against the unauthenticated agent.
-- [ ] **Scenario: explicit recovery after a human login**
+  - _Both of Tachyon's automatic re-entry paths are gated on the latch: the crash-restart policy is
+    overridden to `never`, and rate-limit auto-continue is cancelled rather than scheduled. Nothing in
+    the path touches assignment — no code reassigns or clears an assignee on this state, so the task
+    stays exactly where it was._
+- [x] **Scenario: explicit recovery after a human login**
   - **Given** an agent that was auth-required and a human has logged the runtime back in
   - **When** a human or coordinator explicitly restarts or retries
   - **Then** the agent runs again and its held task is still assigned.
+  - _Recovery needs no new API: the latch is released by the first genuine new-turn edge, which an
+    unauthenticated runtime cannot produce. So a restart that works releases the hold and restores the
+    configured restart policy, while a restart into a still-broken login simply re-latches._
 - [x] **Scenario: auth is distinguished from its neighbours**
   - **Given** a rate-limit, quota, permission, network or invalid-session failure
   - **When** it is classified
@@ -112,9 +120,15 @@ not something to infer.
 
 ## Open questions
 
-- **Live TUI detection for Claude.** The measured, trustworthy signal is turn-attached; whether an
-  equally reliable pane-observable form exists (distinct from the spurious footer) needs a
-  reproduction with a genuinely expired credential, which cannot be fabricated from a valid one.
+- **Live TUI detection for Claude — still open.** Increment 3 reads the live pane with the same
+  turn-attached matcher, narrowed further: the signal must sit within the last 12 non-empty lines and
+  the pane must already have gone quiet. That is enough to keep the measured false positive (the
+  footer) and the obvious hazard (an agent *reading* these strings — this repository stores them
+  verbatim) from parking anything. What it is NOT is a measurement: nobody has yet watched a genuinely
+  expired Claude credential render live, and that reproduction cannot be fabricated from a valid one.
+  So the gates are deliberately conservative, and the failure they are tuned for is the recoverable
+  one: the latch withholds automatic restart/retry and asks for a human, but never stops, kills or
+  rewinds anything, and any real turn releases it.
 - **Codex's five automatic reconnects.** They happen inside the CLI before it reports failure. Any
   Tachyon-side retry policy must sit outside that, so the two do not compound.
 - **Refresh capability.** Grok documents a non-interactive device-code flow and an env-var key; pi

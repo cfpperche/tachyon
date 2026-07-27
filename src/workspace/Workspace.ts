@@ -111,6 +111,7 @@ import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
 import { GatedCompletionMonitor, type GatedCandidateRecord } from "./GatedCompletionMonitor.js";
@@ -1440,7 +1441,11 @@ export class Workspace {
         if (shouldToast && attention.state === "needs-input") {
           this.pokeParentOnNeedsInput(agent, attention.matchedLine);
         }
-        if (attention.state === "throttled") this.scheduleRateLimitAutoContinue(agent, attention);
+        // SDD 477 / t-5bfb72 — the HOLD. Rate-limit auto-continue is Tachyon's one automatic retry
+        // loop against a live pane, and poking a logged-out runtime just re-reads the same login
+        // notice forever. An auth-required agent is waiting on a human, not on a clock.
+        if (attention.authRequired) this.cancelRateLimitAutoContinue(agent);
+        else if (attention.state === "throttled") this.scheduleRateLimitAutoContinue(agent, attention);
         else this.cancelRateLimitAutoContinue(agent);
         if (shouldToast && attention.state === "throttled") {
           this.pokeParentOnThrottle(agent, attention);
@@ -1471,6 +1476,18 @@ export class Workspace {
           this.host.notify(this.t("'{0}' needs you: {1}", agent, reason), "info", [
             { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
           ]);
+        }
+        // SDD 477 / t-5bfb72 — a lost login is human-actionable and nothing else can clear it, so it
+        // is told to BOTH audiences: the human who has to run the login, and the parent that would
+        // otherwise keep handing this agent work. `shouldToast` is the monitor's own per-episode
+        // one-shot, so neither is repeated while the hold sits. Unlike the needs-input toast this one
+        // is NOT suppressed when the terminal is focused: the pane shows a login notice that looks
+        // like ordinary output, which is exactly the misreading this spec exists to fix.
+        if (shouldToast && attention.authRequired) {
+          this.host.notify(describeAuthRequired(agent, attention.authRequired), "warn", [
+            { label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
+          ]);
+          this.pokeParentOnAuthRequired(agent, attention.authRequired);
         }
       },
       // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
@@ -1516,7 +1533,14 @@ export class Workspace {
     this.lifecycle = new LifecycleMonitor(
       {
         agentStates: () => this.manager.agentStates(),
-        policyOf: (agent) => this.config?.agents[agent]?.restart ?? "never",
+        // SDD 477 / t-5bfb72 — the HOLD, second half. A held agent's configured restart policy is
+        // overridden to "never" for as long as the latch stands: restarting into a runtime that
+        // still has no credential produces an identical failure, and the backoff would then give up
+        // and mark the agent crashed — losing the one fact a human needs. The latch clears itself on
+        // the first real turn (see AttentionMonitor.transition), so an explicit restart AFTER a login
+        // restores the configured policy without anyone having to remember to re-enable it.
+        policyOf: (agent) =>
+          this.monitor.isAuthRequired(agent) ? "never" : (this.config?.agents[agent]?.restart ?? "never"),
         scheduleRestart: (agent, delayMs) => {
           setTimeout(() => {
             // spec 389 — crash recovery is force + new (not operator graceful+resume).
@@ -5208,6 +5232,30 @@ export class Workspace {
     void this.tmux
       .hasSession(session)
       .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`, this.sourceNoticeMetadata(agent)) : undefined))
+      .catch(() => undefined);
+  }
+
+  /**
+   * SDD 477 / t-5bfb72 — tell the coordinator, not just the human. A parent that cannot see this
+   * keeps assigning and re-poking a child that will never run, which is the exact loop the spec set
+   * out to stop. The notice names the runtime and the human action and carries no credential
+   * material — `describeAuthRequired` echoes only the CLI's own notice line.
+   */
+  private pokeParentOnAuthRequired(agent: string, evidence: AuthRequiredEvidence): void {
+    const parent = this.manager.parentOf(agent);
+    if (!parent) return;
+    const session = this.manager.session(parent);
+    void this.tmux
+      .hasSession(session)
+      .then((alive) =>
+        alive
+          ? this.deliverNotice(
+              parent,
+              `[tachyon] child '${agent}' is held: ${describeAuthRequired(agent, evidence)}`,
+              this.sourceNoticeMetadata(agent),
+            )
+          : undefined,
+      )
       .catch(() => undefined);
   }
 

@@ -58,6 +58,25 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(toAgentVM(raw({ name: "dead", dead: true }), { awaitingHuman: { reason: "x" } }).awaitingHuman).toBeUndefined();
     expect(toAgentVM(raw({ name: "clean", cleanExited: true }), { awaitingHuman: { reason: "x" } }).awaitingHuman).toBeUndefined();
   });
+  it("t-5bfb72: the auth-required latch rides its own field, on a row that still reads idle", () => {
+    // The whole point of SDD 477: this agent looks exactly like a finished one, and the badge is the
+    // only thing that says a human has to act before it will ever move again.
+    const vm = toAgentVM(raw({ name: "a", running: true }), {
+      attention: "idle",
+      authRequired: { runtime: "claude", action: "run /login in the Claude runtime, then restart the agent explicitly" },
+    });
+    expect(vm.status).toBe("idle");
+    expect(vm.authRequired).toEqual({
+      runtime: "claude",
+      action: "run /login in the Claude runtime, then restart the agent explicitly",
+    });
+  });
+  it("t-5bfb72: does not expose a stale auth-required latch on stopped, dead, or clean-exited rows", () => {
+    const held = { authRequired: { runtime: "claude", action: "run /login" } };
+    expect(toAgentVM(raw({ name: "stopped" }), held).authRequired).toBeUndefined();
+    expect(toAgentVM(raw({ name: "dead", dead: true }), held).authRequired).toBeUndefined();
+    expect(toAgentVM(raw({ name: "clean", cleanExited: true }), held).authRequired).toBeUndefined();
+  });
   it("does not expose stale attention on stopped, dead, or clean-exited rows", () => {
     expect(toAgentVM(raw({ name: "stopped" }), { attention: "working" })).toMatchObject({ status: "stopped" });
     expect(toAgentVM(raw({ name: "dead", dead: true }), { attention: "working" })).toMatchObject({ status: "stopped", sub: "exited (0)" });

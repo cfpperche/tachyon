@@ -227,6 +227,9 @@ export interface AgentExtras {
   canDismiss?: boolean;
   /** t-35d95a — AttentionMonitor.awaitingHuman latch (request_human_attention); undefined = not latched. */
   awaitingHuman?: { reason: string };
+  /** SDD 477 / t-5bfb72 — the runtime says this agent is not authenticated; undefined = not latched.
+   *  `action` is the measured human action, never credential material. */
+  authRequired?: { runtime: string; action: string };
   /** t-a39c7d — idle turn finished and not yet focused by human (sidebar status "done"). */
   unseen?: boolean;
   /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
@@ -255,6 +258,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const alive = a.running && !a.dead && !a.cleanExited;
   const visibleAttention = alive ? x.attention : undefined;
   const visibleAwaitingHuman = alive ? x.awaitingHuman : undefined;
+  const visibleAuthRequired = alive ? x.authRequired : undefined;
   const visibleUnseen = alive ? x.unseen === true : false;
   // spec 390 — never surface "working" as a badge (live-dot already means alive/busy).
   const attention =
@@ -309,6 +313,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.evidence ? { evidence: x.evidence } : {}),
     ...(x.externalTools ? { externalTools: x.externalTools } : {}),
     ...(visibleAwaitingHuman ? { awaitingHuman: visibleAwaitingHuman } : {}),
+    ...(visibleAuthRequired ? { authRequired: visibleAuthRequired } : {}),
     ...(x.configInvalid ? { configInvalid: true } : {}),
   };
 }

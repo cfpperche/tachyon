@@ -10,6 +10,7 @@ import {
   type AgentAttention,
 } from "../../src/attention/AttentionMonitor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 
 // Captured verbatim from the spec 186 spike — a real Claude Code trust prompt pane.
 const CLAUDE_TRUST_PROMPT = `
@@ -917,5 +918,161 @@ describe("AttentionMonitor — selective capture via window activity (t-4ecf9a)"
     f.agents.hot.activity = 2;
     await f.advance(1000);
     expect(f.captures).toEqual(["hot"]);
+  });
+});
+
+/**
+ * SDD 477 / t-5bfb72 — the auth-required agent state.
+ *
+ * The incident: an agent lost its provider login mid-run and Tachyon read it as ordinary idleness, so
+ * a coordinator could keep assigning work and restarting forever. These tests pin the two directions
+ * that matter — the state is REACHED from a measured signal on a quiet pane, and it is NOT reached
+ * from any of the shapes that would park a healthy agent.
+ */
+const CLAUDE_LOGIN_TURN = "Not logged in · Please run /login";
+const CLAUDE_LOGIN_FOOTER = "Not logged in · Run /login";
+
+/** A quiet Claude pane whose last real output is the turn-attached login error. */
+function loggedOutPane(notice = CLAUDE_LOGIN_TURN): string {
+  return [`● ${notice}`, "", "╭──────────────────────────────╮", "│ >                            │", "╰──────────────────────────────╯"].join("\n");
+}
+
+/** Drive a pane from fresh snapshot to "idle long enough for the latch to be decidable". */
+async function settleIdle(f: ReturnType<typeof makeMonitor>): Promise<void> {
+  await f.advance(0); // baseline snapshot
+  await f.advance(SETTINGS.silenceSec * 1000 + 1000); // → idle, auth stability window opens
+  await f.advance(PATTERN_STABLE_MS + 100); // → stability window satisfied
+}
+
+describe("AttentionMonitor — auth-required (SDD 477)", () => {
+  it("a measured signal on a quiet pane latches auth-required, naming runtime and action", async () => {
+    const f = makeMonitor({ claude: { content: loggedOutPane(), cpu: 0, settings: SETTINGS, cmd: "claude" } });
+    await settleIdle(f);
+
+    const attention = f.monitor.stateOf("claude");
+    // The state stays idle — this is an independent latch, not a new AttentionState.
+    expect(attention?.state).toBe("idle");
+    expect(attention?.authRequired?.runtime).toBe("claude");
+    expect(attention?.authRequired?.humanAction).toContain("/login");
+    expect(attention?.authRequired?.matchedLine).toContain("Please run /login");
+    expect(f.monitor.isAuthRequired("claude")).toBe(true);
+    expect(f.monitor.authRequiredAgents()).toEqual(new Set(["claude"]));
+
+    // One attention event per episode, and it keeps holding on later quiet ticks.
+    expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(1);
+    await f.advance(30_000);
+    expect(f.monitor.isAuthRequired("claude")).toBe(true);
+    expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(1);
+  });
+
+  it("the debounce must elapse — a single tick of the signal is not evidence", async () => {
+    const f = makeMonitor({ claude: { content: loggedOutPane(), cpu: 0, settings: SETTINGS, cmd: "claude" } });
+    await f.advance(0);
+    await f.advance(SETTINGS.silenceSec * 1000 + 1000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+  });
+
+  it("a working agent never latches, however the bytes got on screen", async () => {
+    // The exact failure this guards: an agent READING the measured signals (this repository stores
+    // them verbatim) while perfectly authenticated. Its pane keeps moving, so it is never idle.
+    const f = makeMonitor({ claude: { content: "opening authRequired.test.ts", cpu: 100, settings: SETTINGS, cmd: "claude" } });
+    await f.advance(0);
+    for (let i = 0; i < 5; i++) {
+      f.agents.claude.content = `${loggedOutPane()}\n reading fixture line ${i}`;
+      await f.advance(3000);
+    }
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+  });
+
+  it("Claude's TUI footer never latches, even on a quiet pane", async () => {
+    // Measured on a fully functional agent mid-task. A detector keyed on it parks healthy agents.
+    const f = makeMonitor({
+      claude: { content: `● Propagating… (3m 43s)\n\n❯ \n  ? for shortcuts        ${CLAUDE_LOGIN_FOOTER}`, cpu: 0, settings: SETTINGS, cmd: "claude" },
+    });
+    await settleIdle(f);
+    expect(f.monitor.stateOf("claude")?.state).toBe("idle");
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+  });
+
+  it("a signal buried in scrollback never latches", async () => {
+    const scrolled = [loggedOutPane(), ...Array.from({ length: 20 }, (_, i) => `  ${i}. later output`)].join("\n");
+    const f = makeMonitor({ claude: { content: scrolled, cpu: 0, settings: SETTINGS, cmd: "claude" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+  });
+
+  it("a runtime with no measured profile never latches", async () => {
+    // opencode emits nothing when unauthenticated (it answers on a fallback model) — t-0338fc.
+    const f = makeMonitor({ oc: { content: loggedOutPane(), cpu: 0, settings: SETTINGS, cmd: "opencode" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("oc")).toBe(false);
+  });
+
+  it("a neighbouring failure on the same pane never becomes auth-required", async () => {
+    const f = makeMonitor({
+      claude: { content: `Error: rate limit exceeded, please try again later\n${loggedOutPane()}`, cpu: 0, settings: SETTINGS, cmd: "claude" },
+    });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+  });
+
+  it("a real new turn releases the hold; a login that did not take re-latches", async () => {
+    const f = makeMonitor({ claude: { content: loggedOutPane(), cpu: 0, settings: SETTINGS, cmd: "claude" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("claude")).toBe(true);
+
+    // Explicit restart after a human login: the agent produces a turn, which it could not do while
+    // unauthenticated. That edge — and only that edge — is the release.
+    f.agents.claude.content = "● Working on the task again…";
+    await f.advance(3000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+    expect(f.monitor.stateOf("claude")?.authRequired).toBeUndefined();
+
+    // If the login had NOT actually been fixed, the runtime answers the same notice and the hold
+    // comes back — the release is self-correcting in both directions.
+    f.agents.claude.content = loggedOutPane("Login expired · Please run /login");
+    await f.advance(3000); // the notice arrives — still a moving pane
+    await f.advance(SETTINGS.silenceSec * 1000 + 1000); // it goes quiet again → re-latch
+    expect(f.monitor.isAuthRequired("claude")).toBe(true);
+    expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(2);
+  });
+
+  it("the hold suppresses automatic restart, and clearing it restores the configured policy", async () => {
+    // The composition Workspace wires: LifecycleMonitor.policyOf consults the auth latch, so a
+    // crash-restart loop cannot run against an agent only a human can unblock.
+    const f = makeMonitor({ claude: { content: loggedOutPane(), cpu: 0, settings: SETTINGS, cmd: "claude" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("claude")).toBe(true);
+
+    const restarts: string[] = [];
+    const states = new Map<string, { dead: boolean; exitCode?: number }>([["claude", { dead: false }]]);
+    const lifecycle = new LifecycleMonitor(
+      {
+        agentStates: async () => new Map(states),
+        // Verbatim shape of the Workspace wiring.
+        policyOf: (agent) => (f.monitor.isAuthRequired(agent) ? "never" : "on-crash"),
+        scheduleRestart: (agent) => restarts.push(agent),
+        now: () => Date.now(),
+      },
+      {},
+    );
+    await lifecycle.tick();
+    states.set("claude", { dead: true, exitCode: 1 });
+    await lifecycle.tick();
+    expect(restarts).toEqual([]);
+
+    // Human logs in and restarts explicitly: the agent takes a turn, the latch drops, and the
+    // configured on-crash policy is in force again with nobody having to re-enable it.
+    f.agents.claude.content = "● back to work";
+    await f.advance(3000);
+    expect(f.monitor.isAuthRequired("claude")).toBe(false);
+    states.set("claude", { dead: false });
+    await lifecycle.tick();
+    states.set("claude", { dead: true, exitCode: 1 });
+    await lifecycle.tick();
+    expect(restarts).toEqual(["claude"]);
   });
 });

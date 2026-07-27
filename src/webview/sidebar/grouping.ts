@@ -19,7 +19,7 @@ export interface AgentHierarchyRow {
 }
 
 function agentNeedsAttention(a: AgentVM): boolean {
-  return !!a.attention || !!a.awaitingHuman || a.status === "needs" || a.status === "throttled";
+  return !!a.attention || !!a.awaitingHuman || !!a.authRequired || a.status === "needs" || a.status === "throttled";
 }
 
 function directChildrenOf(agents: readonly AgentVM[]): Map<string, AgentVM[]> {

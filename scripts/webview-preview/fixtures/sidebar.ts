@@ -44,6 +44,23 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     } as FleetVM,
   },
 
+  // SDD 477 / t-5bfb72 — the state this spec exists for: rows that read "idle" but cannot execute
+  // until a human logs the runtime back in. The point of the fixture is the CONTRAST — `sonnet-worker`
+  // is genuinely idle and `grok-held` is held, and only the badge tells them apart.
+  "auth-required": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        { name: "sonnet-worker", model: "Sonnet 5", status: "idle", ai: true },
+        { name: "claude-held", model: "Opus 5", status: "idle", ai: true,
+          authRequired: { runtime: "claude", action: "run /login in the Claude runtime, then restart the agent explicitly" } },
+        { name: "grok-held", model: "grok-4", status: "idle", ai: true, worktree: "tachyon/grok-held",
+          authRequired: { runtime: "grok", action: "run `grok login --device-code`, or set XAI_API_KEY, then restart the agent explicitly" } },
+      ],
+    } as FleetVM,
+  },
+
   error: {
     provenance: "synthetic-edge",
     vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, ai: true }] } as FleetVM,

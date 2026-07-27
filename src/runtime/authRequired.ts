@@ -139,24 +139,40 @@ export interface AuthRequiredEvidence {
 const MAX_EVIDENCE_CHARS = 300;
 
 /**
+ * `t-5bfb72` — how much of a LIVE pane may carry the signal, counted in non-empty lines from the
+ * bottom. A launch capture is a short, purpose-built read and scans whole; a running agent's pane is
+ * scrollback, and scrollback is full of text the agent merely *looked at*. This repository is the
+ * sharpest case: `test/unit/authRequired.test.ts` holds every measured signal verbatim, so an agent
+ * that opens that file has the bytes on screen while being perfectly authenticated.
+ *
+ * 12 clears the tallest composer frame we profile (the login notice sits above it, and the runtime
+ * hint lines below) without reaching back into the body of the turn.
+ */
+export const AUTH_SIGNAL_TAIL_LINES = 12;
+
+/**
  * Classify runtime output as auth-required, or not at all.
  *
  * Returns undefined for every runtime without a measured profile, and for every output that matches a
  * neighbouring condition first. Both are the same deliberate refusal: without measured evidence this
  * must not guess, because a false positive parks a healthy agent and a false negative burns a queue.
+ *
+ * `tailLines` bounds where the SIGNAL may sit (non-empty lines from the bottom); neighbours are still
+ * excluded from the whole output, because a rate limit anywhere in view is a reason to stay quiet.
  */
 export function classifyAuthRequired(
   runtime: ResumeRuntime | null | undefined,
   output: string,
+  opts?: { tailLines?: number },
 ): AuthRequiredEvidence | undefined {
   if (!runtime) return undefined;
   const profile = RUNTIME_AUTH_PROFILES[runtime];
   if (!profile || !output) return undefined;
   // Neighbours win outright: they are separate conditions with separate recoveries.
   if (NEIGHBOURS.some((pattern) => pattern.test(output))) return undefined;
-  for (const line of output.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
+  let lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (opts?.tailLines !== undefined) lines = lines.slice(-opts.tailLines);
+  for (const trimmed of lines) {
     if (!profile.signals.some((pattern) => pattern.test(trimmed))) continue;
     return {
       runtime,

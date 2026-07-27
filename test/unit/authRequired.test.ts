@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AUTH_SIGNAL_TAIL_LINES,
   RUNTIME_AUTH_PROFILES,
   classifyAuthRequired,
   describeAuthRequired,
@@ -86,6 +87,36 @@ describe("SDD 477 — the false positive that would park healthy agents", () => 
   it("but the turn-attached form in the same pane DOES classify", () => {
     const pane = ["● thinking", CLAUDE_TURN, "❯ "].join("\n");
     expect(classifyAuthRequired("claude", pane)?.runtime).toBe("claude");
+  });
+});
+
+describe("SDD 477 / t-5bfb72 — scrollback is not evidence", () => {
+  // A live pane is scrollback, and scrollback is full of text the agent merely LOOKED at. This
+  // repository is the sharpest case: the file you are reading holds every measured signal verbatim.
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => `  ${i}. ordinary output`);
+
+  it("a signal above the tail window is ignored when a window is given", () => {
+    const pane = [CLAUDE_TURN, ...filler(AUTH_SIGNAL_TAIL_LINES + 3)].join("\n");
+    expect(classifyAuthRequired("claude", pane, { tailLines: AUTH_SIGNAL_TAIL_LINES })).toBeUndefined();
+    // Unwindowed (the launch-boundary read, which captures a short purpose-built pane) still matches.
+    expect(classifyAuthRequired("claude", pane)?.runtime).toBe("claude");
+  });
+
+  it("the same signal inside the window still classifies", () => {
+    const pane = [...filler(40), CLAUDE_TURN, "", "╭─────────╮", "│ > │", "╰─────────╯"].join("\n");
+    expect(classifyAuthRequired("claude", pane, { tailLines: AUTH_SIGNAL_TAIL_LINES })?.runtime).toBe("claude");
+  });
+
+  it("blank lines do not consume the window", () => {
+    // The window counts non-empty lines: a composer frame padded with blanks must not push a genuine
+    // notice out of view.
+    const pane = [CLAUDE_TURN, ...Array.from({ length: 60 }, () => ""), "❯ "].join("\n");
+    expect(classifyAuthRequired("claude", pane, { tailLines: AUTH_SIGNAL_TAIL_LINES })?.runtime).toBe("claude");
+  });
+
+  it("a neighbour anywhere in the pane still wins over a windowed signal", () => {
+    const pane = ["Error: rate limit exceeded, please retry later", ...filler(30), CODEX].join("\n");
+    expect(classifyAuthRequired("codex", pane, { tailLines: AUTH_SIGNAL_TAIL_LINES })).toBeUndefined();
   });
 });
 
