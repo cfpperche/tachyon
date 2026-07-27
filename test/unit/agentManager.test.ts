@@ -6502,6 +6502,143 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("reviewer")).toBeDefined();
   });
 
+  /**
+   * t-55d4d0 — a deliberate preservation is a receipt, not a compensation failure.
+   *
+   * Both failed-launch compensators pushed their "recovery state was preserved" note into the same
+   * list as real cleanup faults, and then keyed the verdict on that list being non-empty. So on the
+   * paths where compensation had COMPLETELY succeeded, the operator was still told it was incomplete
+   * (measured 2026-07-27 on a runtime_auth_rejected spawn) and could not tell "intervene, state is
+   * unaccounted for" from "this checkout was kept on purpose".
+   */
+  describe("t-55d4d0 compensation receipts are not compensation failures", () => {
+    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const CONTRACT = { task: "t", context: "c", constraints: "x", doneWhen: "d" };
+    const GATE = { behaviorTest: "b", owns: ["src"] };
+
+    /** tmux that refuses to create a session and reports none afterwards (compensation can complete). */
+    function newSessionFails(): TmuxService {
+      return new TmuxService(async (args: string[]): Promise<ExecResult> => {
+        if (args.includes("new-session")) throw new Error("injected newSession failure");
+        if (args[2] === "has-session") throw new Error("none");
+        if (args[2] === "list-sessions") throw new Error("no server running");
+        if (args[2] === "list-panes") throw new Error("no server running");
+        return { stdout: "", stderr: "" };
+      });
+    }
+
+    describe("session creation", () => {
+      it("reports a withheld rollback as completed compensation, naming what was preserved", async () => {
+        // No exact prepared HEAD to roll back TO — withholding is the safe choice, not a fault.
+        const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+          tmux: newSessionFails(),
+          resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true }),
+          rollbackPreparedWorktree: async () => { throw new Error("must not roll back without a prepared HEAD"); },
+        });
+
+        const failure = await manager.spawn("reviewer", { cmd: "claude" }).catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(AggregateError);
+        const agg = failure as AggregateError;
+        expect(agg.message).not.toContain("compensation was incomplete");
+        expect(agg.message).toContain("compensation completed and recovery state was preserved for inspection");
+        expect(agg.errors[0]).toMatchObject({ message: "injected newSession failure" });
+        expect(agg.errors.map((entry: Error) => entry.message).join("\n"))
+          .toContain("worktree recovery state was preserved deliberately");
+      });
+
+      it("still reports incomplete compensation when the rollback itself fails", async () => {
+        const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+          tmux: newSessionFails(),
+          resolveSpawnCwd: async () => ({
+            cwd: REC.path, worktree: REC, preparationHeadBefore: "before", preparationHeadAfter: "after",
+          }),
+          rollbackPreparedWorktree: async () => { throw new Error("rollback exploded"); },
+        });
+
+        const failure = await manager.spawn("reviewer", { cmd: "claude" }).catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(AggregateError);
+        const agg = failure as AggregateError;
+        expect(agg.message).toContain("compensation was incomplete");
+        expect(agg.errors.map((entry: Error) => entry.message).join("\n"))
+          .toContain("instead of automatic cleanup");
+      });
+
+      it("leaves a fully-compensated launch throwing its original error alone", async () => {
+        const rolledBack: string[] = [];
+        const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+          tmux: newSessionFails(),
+          resolveSpawnCwd: async () => ({
+            cwd: REC.path, worktree: REC, preparationHeadBefore: "before", preparationHeadAfter: "after",
+          }),
+          rollbackPreparedWorktree: async () => { rolledBack.push(REC.path); },
+        });
+
+        const failure = await manager.spawn("reviewer", { cmd: "claude" }).catch((error: unknown) => error);
+
+        expect(rolledBack).toEqual([REC.path]);
+        expect(failure).not.toBeInstanceOf(AggregateError);
+        expect((failure as Error).message).toBe("injected newSession failure");
+      });
+    });
+
+    describe("delegation reconciliation", () => {
+      it("THE MEASURED REPORT: a clean quarantine no longer claims compensation was incomplete", async () => {
+        const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+          resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
+          recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
+        });
+
+        const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss", contract: CONTRACT, gate: GATE })
+          .catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(AggregateError);
+        const agg = failure as AggregateError;
+        expect(agg.message).not.toContain("compensation was incomplete");
+        expect(agg.message).toContain("delegation reconciliation failed; compensation completed and recovery state was preserved for inspection");
+        expect(agg.errors[0]).toMatchObject({ message: "canonical reject" });
+        // The receipt survives — an operator still has to be told the checkout is on disk, and why.
+        const receipt = agg.errors.map((entry: Error) => entry.message).join("\n");
+        expect(receipt).toContain("checkout recovery state was preserved deliberately");
+        expect(receipt).toContain(REC.path);
+        expect(receipt).toContain("may have written work");
+        // Compensation genuinely completed: the ungated restart recipe is gone.
+        expect(ledger.get("reviewer")).toBeUndefined();
+      });
+
+      it("still reports incomplete compensation when the runtime cannot be proven dead", async () => {
+        const sessions = new Set<string>();
+        const tmux = new TmuxService(async (args: string[]): Promise<ExecResult> => {
+          const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
+          if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); return { stdout: "", stderr: "" }; }
+          if (args[2] === "has-session") { if (!sessions.has(target)) throw new Error("none"); return { stdout: "", stderr: "" }; }
+          if (args[2] === "kill-session") throw new Error("injected kill failure");
+          if (args[2] === "list-sessions") return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
+          if (args[2] === "list-panes") return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
+          return { stdout: "", stderr: "" };
+        });
+        const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
+          tmux,
+          resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
+          recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
+        });
+
+        const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss", contract: CONTRACT, gate: GATE })
+          .catch((error: unknown) => error);
+
+        expect(failure).toBeInstanceOf(AggregateError);
+        const agg = failure as AggregateError;
+        expect(agg.message).toContain("compensation was incomplete");
+        const messages = agg.errors.map((entry: Error) => entry.message).join("\n");
+        expect(messages).toContain("failed to kill rejected delegated runtime");
+        expect(messages).toContain("may still be live");
+        // Unproven death keeps the recovery handle visible on purpose.
+        expect(ledger.get("reviewer")).toBeDefined();
+      });
+    });
+  });
+
   it("keeps the checkout quarantined but removes ungated restart authority after a dead runtime's canonical Delivery is rejected", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const removed: string[] = [];

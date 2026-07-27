@@ -700,6 +700,54 @@ export function newlyDeclaredAutostart(
 }
 
 /**
+ * t-55d4d0 — what a failed launch left behind, split by whether Tachyon CHOSE it or merely SUFFERED it.
+ *
+ * `failures` are compensation steps that did not work: a session that would not die, a token that
+ * would not revoke, a ledger row that would not clear. They mean state is unaccounted for and a human
+ * must look.
+ *
+ * `receipts` are deliberate preservations. Keeping a checkout whose branch tip may hold real agent
+ * commits, or withholding a rollback that has no exact prepared HEAD to roll back to, is the CORRECT
+ * outcome — it is reported so the operator knows what is on disk, not because anything went wrong.
+ *
+ * The two used to share one list, so filing a receipt flipped the verdict to "compensation was
+ * incomplete" on the very path where compensation had completely succeeded (measured 2026-07-27: a
+ * `runtime_auth_rejected` spawn reported incomplete compensation after a clean quarantine, leaving
+ * the human unable to tell "intervene" from "this checkout is deliberate").
+ */
+interface LaunchCompensation {
+  failures: Error[];
+  receipts: Error[];
+}
+
+function newLaunchCompensation(): LaunchCompensation {
+  return { failures: [], receipts: [] };
+}
+
+/**
+ * The error to throw after compensating a failed launch. Receipts are never dropped — an operator
+ * still has to be told a checkout was kept — but only real failures change the verdict.
+ */
+function launchCompensationError(primary: unknown, outcome: LaunchCompensation, subject: string): unknown {
+  const cause = primary instanceof Error ? primary : new Error(String(primary));
+  if (outcome.failures.length > 0) {
+    return new AggregateError(
+      [cause, ...outcome.failures, ...outcome.receipts],
+      `${subject} failed and compensation was incomplete`,
+      { cause },
+    );
+  }
+  if (outcome.receipts.length > 0) {
+    return new AggregateError(
+      [cause, ...outcome.receipts],
+      `${subject} failed; compensation completed and recovery state was preserved for inspection`,
+      { cause },
+    );
+  }
+  return primary;
+}
+
+/**
  * Lifecycle orchestration over TmuxService. tmux is the source of truth for what's
  * running; the only in-memory state is the definition of ad-hoc (MCP-spawned) agents,
  * which does not survive an extension restart by design.
@@ -2215,31 +2263,30 @@ export class AgentManager {
       // ordinary launch, a same-named pane observed after newSession fails is ambiguous: it may belong
       // to a concurrent creator, so never kill it without an ownership receipt.
       if (forced) throw error;
-      const cleanupErrors: Error[] = [];
+      const compensation = newLaunchCompensation();
       let sessionGone = false;
       try {
         sessionGone = !(await this.opts.tmux.hasSession(session));
       } catch (cleanupError) {
-        cleanupErrors.push(new Error("failed to probe partially-created agent session", { cause: cleanupError }));
+        compensation.failures.push(new Error("failed to probe partially-created agent session", { cause: cleanupError }));
       }
       if (sessionGone) {
         if (launchTokenMinted) {
           try { revokeLaunchToken(); }
-          catch (cleanupError) { cleanupErrors.push(new Error("failed to revoke token after session creation failure", { cause: cleanupError })); }
+          catch (cleanupError) { compensation.failures.push(new Error("failed to revoke token after session creation failure", { cause: cleanupError })); }
         }
         if (createdWorktree && !preparationHeadAfter) {
-          cleanupErrors.push(new Error("session creation failed without an exact prepared HEAD; worktree recovery state was preserved"));
+          // Withholding rollback here is the safe choice, not a fault: without an exact prepared HEAD
+          // there is nothing to roll back TO, and guessing could discard real work.
+          compensation.receipts.push(new Error("worktree recovery state was preserved deliberately: session creation failed without an exact prepared HEAD to roll back to; inspect it before retry"));
         } else {
           try { await rollbackLaunchPreparation(); }
-          catch (cleanupError) { cleanupErrors.push(new Error("agent worktree recovery state was preserved instead of automatic cleanup", { cause: cleanupError })); }
+          catch (cleanupError) { compensation.failures.push(new Error("agent worktree recovery state was preserved instead of automatic cleanup", { cause: cleanupError })); }
         }
       } else {
-        cleanupErrors.push(new Error("agent session creation is uncertain; worktree recovery state was preserved"));
+        compensation.failures.push(new Error("agent session creation is uncertain; worktree recovery state was preserved"));
       }
-      if (cleanupErrors.length) {
-        throw new AggregateError([error, ...cleanupErrors], `agent '${name}' session creation failed and compensation was incomplete`, { cause: error });
-      }
-      throw error;
+      throw launchCompensationError(error, compensation, `agent '${name}' session creation`);
     }
     if (forced?.attempt) {
       forced.attempt.session = "completed";
@@ -2407,43 +2454,40 @@ export class AgentManager {
       } catch (error) {
         // Keep the ledger/cwd as a visible recovery handle until tmux proves the runtime is dead.
         // Every eligible cleanup is attempted and failures retain the reconciliation error as cause.
-        const cleanupErrors: Error[] = [];
+        const compensation = newLaunchCompensation();
         try { await this.opts.tmux.killSession(session); }
-        catch (cleanupError) { cleanupErrors.push(new Error("failed to kill rejected delegated runtime", { cause: cleanupError })); }
+        catch (cleanupError) { compensation.failures.push(new Error("failed to kill rejected delegated runtime", { cause: cleanupError })); }
         let sessionGone = false;
         try { sessionGone = !(await this.opts.tmux.hasSession(session)); }
-        catch (cleanupError) { cleanupErrors.push(new Error("failed to verify rejected delegated runtime liveness", { cause: cleanupError })); }
+        catch (cleanupError) { compensation.failures.push(new Error("failed to verify rejected delegated runtime liveness", { cause: cleanupError })); }
         if (sessionGone) {
           if (launchTokenMinted) {
             try { revokeLaunchToken(); }
-            catch (cleanupError) { cleanupErrors.push(new Error("failed to revoke rejected delegation token", { cause: cleanupError })); }
+            catch (cleanupError) { compensation.failures.push(new Error("failed to revoke rejected delegation token", { cause: cleanupError })); }
           }
           // The delegation contract never became durable. Once the runtime is proven absent, its
           // ordinary ledger row must not survive as an ungated restart/resume recipe after reload.
           try { this.opts.ledger?.remove(name); }
           catch (cleanupError) {
-            cleanupErrors.push(new Error("failed to remove restartable ledger row after delegation rejection", { cause: cleanupError }));
+            compensation.failures.push(new Error("failed to remove restartable ledger row after delegation rejection", { cause: cleanupError }));
             // A one-shot remove fault must still fail closed on reload. Reuse the typed invalid
             // Delivery marker: generic restart/resume already refuses every row carrying it.
             try {
               const recovery = this.opts.ledger?.get(name);
               if (recovery) this.opts.ledger?.record(name, { ...recovery, delivery: { invalid: true } });
             } catch (markerError) {
-              cleanupErrors.push(new Error("failed to quarantine rejected delegation ledger row", { cause: markerError }));
+              compensation.failures.push(new Error("failed to quarantine rejected delegation ledger row", { cause: markerError }));
             }
           }
           clearTransientState();
           // The runtime existed long enough to pass readiness and may have written legitimate work.
-          // Keep the Git-quarantined checkout as the recovery receipt; deleting its current branch
+          // Keeping the Git-quarantined checkout is the decision, not a leftover: deleting its branch
           // tip could turn fast agent commits into dangling objects.
-          cleanupErrors.push(new Error(`canonical Delivery persistence failed; checkout recovery state was preserved${worktree ? ` at ${worktree.path}` : ""}`));
+          compensation.receipts.push(new Error(`checkout recovery state was preserved deliberately${worktree ? ` at ${worktree.path}` : ""}: the runtime passed readiness and may have written work, so its branch tip is kept`));
         } else {
-          cleanupErrors.push(new Error("rejected delegated runtime may still be live; durable recovery state was preserved"));
+          compensation.failures.push(new Error("rejected delegated runtime may still be live; durable recovery state was preserved"));
         }
-        if (cleanupErrors.length) {
-          throw new AggregateError([error, ...cleanupErrors], "delegation reconciliation failed and compensation was incomplete", { cause: error });
-        }
-        throw error;
+        throw launchCompensationError(error, compensation, "delegation reconciliation");
       }
     }
     if (preparationLocked && worktree) {
