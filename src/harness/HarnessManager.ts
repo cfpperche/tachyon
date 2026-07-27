@@ -456,6 +456,45 @@ export function bridgeGrokHome(workspaceRoot: string, agent: string): string {
 }
 
 /**
+ * t-076a28 — restore the operator's git identity inside a private home that is ALSO the agent's
+ * `HOME`.
+ *
+ * SDD 456 co-binds `HOME` to the private `GROK_HOME` for canonical Grok so the runtime cannot
+ * discover `$HOME/.claude/settings.json`. But `HOME` is not only where Grok looks for config — it is
+ * the `HOME` of everything the agent shells out to. Measured on the co-bound home: `git commit`
+ * fails outright with *"Author identity unknown"*, because `~/.gitconfig` is no longer on any path
+ * git consults. A canonical Grok agent therefore could not commit at all.
+ *
+ * The fix is an include, not a copy: the private `.gitconfig` points at the operator's real global
+ * config, so identity (and their aliases, signing config, everything else) is read live from the one
+ * file they own. Nothing is duplicated and nothing drifts.
+ *
+ * Deliberately narrow. This restores git's *global config discovery* only; it does not re-expose the
+ * rest of the real `HOME`, and specifically NOT `~/.ssh` — see the Grok row in
+ * `docs/runtimes/parity.md` for why SSH is a declared limitation rather than a seeded credential.
+ *
+ * Measured: adding this file keeps `grok inspect --json` at `permissions.sources: []` / `loaded: 0`,
+ * so the isolation it exists to protect is untouched. A `[include]` whose target is missing is
+ * silently ignored by git, but this writes nothing when there is no real config to include, so a
+ * private home never carries a dangling pointer.
+ */
+export function seedPrivateHomeGitIdentity(
+  home: string,
+  homeDir: string = os.homedir(),
+  exists: (p: string) => boolean = (p) => {
+    try { return fs.statSync(p).isFile(); } catch { return false; }
+  },
+): string | undefined {
+  const real = path.join(homeDir, ".gitconfig");
+  // Never point a private home at ITSELF: that would be a self-include loop if home === homeDir.
+  if (path.resolve(home) === path.resolve(homeDir) || !exists(real)) return undefined;
+  fs.mkdirSync(home, { recursive: true });
+  const file = path.join(home, ".gitconfig");
+  fs.writeFileSync(file, `# Tachyon-managed (t-076a28): the agent's HOME is private, so git would\n# otherwise find no global config. Read the operator's real one live.\n[include]\n\tpath = ${real}\n`, "utf8");
+  return file;
+}
+
+/**
  * Seed Grok's native folder-trust store (`$GROK_HOME/trusted_folders.toml`) so the interactive
  * "Do you trust the contents of this directory?" gate does not block a Tachyon-managed spawn.
  *

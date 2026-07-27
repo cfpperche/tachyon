@@ -96,7 +96,7 @@ import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, type PipelineRun } from "../pipeline/runState.js";
 import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
-import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome } from "../harness/HarnessManager.js";
+import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
@@ -963,6 +963,14 @@ export class Workspace {
           // Grok 0.2.112 consults `$HOME/.claude/settings.json` for permission settings even when
           // GROK_HOME is redirected. A canonical profile owns the complete forming namespace, so bind
           // HOME to the same private directory; auth continues to come only from GROK_HOME/auth.json.
+          //
+          // t-076a28 — co-binding HOME also hides the operator's `~/.gitconfig` from everything the
+          // agent shells out to, which left canonical Grok agents unable to commit at all ("Author
+          // identity unknown"). Seed an INCLUDE of their real global config: identity is read live
+          // from the file they own, the permission isolation above is unaffected (measured: still
+          // `loaded: 0`), and nothing else from the real HOME is re-exposed — `~/.ssh` deliberately
+          // stays out of reach, declared as a limitation rather than seeded as a credential.
+          seedPrivateHomeGitIdentity(home);
           return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
         }
         return null;

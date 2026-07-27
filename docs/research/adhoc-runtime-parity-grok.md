@@ -350,19 +350,31 @@ theoretical: it is ambient inheritance of the single most dangerous value, on th
 
 **What the co-bind costs.** A co-bound `HOME` is the agent's `HOME` for everything it shells out to,
 not only for Grok's own config discovery. Measured: `git commit` fails outright with *"Author
-identity unknown"* because `~/.gitconfig` is no longer visible, and the private home contains no
-`.ssh`, so key-based auth has nothing to load (measured as absence — no handshake was attempted).
-Nothing in `src/` supplies a git identity: there is no `GIT_AUTHOR_*`, `GIT_CONFIG_GLOBAL` or seeded
-`.gitconfig` anywhere.
+identity unknown"*, because `~/.gitconfig` is no longer on any path git consults. Nothing in `src/`
+supplied a git identity at the time of measurement: no `GIT_AUTHOR_*`, no `GIT_CONFIG_GLOBAL`, no
+seeded `.gitconfig`.
+
+**Correction (`t-076a28`, re-measured): SSH is NOT affected.** The first pass inferred an SSH failure
+from the private home having no `.ssh` and said so while flagging that no handshake had been
+attempted. The handshake disagrees: under a private `HOME`, with no ssh-agent at all
+(`SSH_AUTH_SOCK` unset), `ssh -T git@github.com` authenticates. `ssh -v` shows why — it resolves
+`~` for identity files from the **passwd database**, not `$HOME`, and offers
+`/home/<user>/.ssh/id_ed25519` regardless. That is the crisp asymmetry: git reads its global config
+from `$HOME`, so it breaks; ssh does not, so it does not. Only git needed fixing.
 
 **This already bites canonical Grok.** `Workspace.ts` co-binds `HOME` for every `profileLifecycle`
 Grok agent today, so a canonical Grok agent cannot commit. That is a pre-existing consequence of SDD
 456 that nobody measured; filed separately rather than folded in here.
 
 **Mitigation exists and is cheap** (arm C): seeding the private home with a `.gitconfig` that
-`[include]`s the operator's real one restores commits *and* keeps `loaded: 0`. Pointing
-`GIT_CONFIG_GLOBAL` at the real file instead did **not** work in measurement (still "Author identity
-unknown"), so the include-file form is the one with evidence behind it. It does not restore `.ssh`.
+`[include]`s the operator's real one restores commits *and* keeps `loaded: 0`. Shipped for canonical
+Grok in `t-076a28`.
+
+**Correction (`t-076a28`): `GIT_CONFIG_GLOBAL` works too.** The first pass reported that pointing it
+at the real file failed; re-measured cleanly, it succeeds — the original one-liner was at fault, not
+the mechanism. The include form was shipped anyway, for reasons that survive that correction: a file
+in `HOME` is found by anything that honours `HOME`, whereas an env var is lost by any subprocess that
+re-execs with a scrubbed environment.
 
 **Ruling (unchanged pending a product call).** `runtimeProfile.grok.isolation` stays
 `project-scoped` and `assertVerifiedTranscriptIsolation` is untouched. Co-binding `HOME` on the
