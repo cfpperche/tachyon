@@ -886,6 +886,18 @@ export class Workspace {
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
       ledger: this.ledger,
+      // t-e3aaae — a session:new restart states the agent's board assignment from the store instead
+      // of leaving the fresh conversation to rediscover it. `taskStore` is constructed later in this
+      // constructor; the resolver only ever runs at restart time, long after that.
+      assignedWork: (name) => this.taskStore.listRaw()
+        .filter((task) => task.assignee === name && task.status === "active")
+        .map((task) => ({
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          ...(task.priority === undefined ? {} : { priority: task.priority }),
+          ...(task.body === undefined ? {} : { body: task.body }),
+        })),
       resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
         this.workspaceRoot,
         principal,

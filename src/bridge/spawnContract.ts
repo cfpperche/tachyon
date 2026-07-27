@@ -158,6 +158,60 @@ export function taskJournalGuidance(): string {
 }
 
 /**
+ * The waiting guidance handed to a contract-skipped spawn — an agent parked until a human or a
+ * coordinator assigns it something. Lives here, beside the other fixed protocol renderings, so
+ * `briefCarriesTaskSubstance` can recognize it from the same literal the Bridge emits.
+ */
+export function idleSpawnGuidance(skipReason: string): string {
+  return [
+    "Task: absent — awaiting assignment.",
+    `Recorded skip reason: ${normalizeField(skipReason)}`,
+    "Wait for a direct task assignment. Do not scan unrelated tasks, pins, or continuity and do not invent work.",
+  ].join("\n");
+}
+
+/**
+ * t-e3aaae — the fixed protocol blocks this module (and the contract-skipped spawn path) emit
+ * AROUND task substance. Recognized by their opening literal, which is fixed protocol text rather
+ * than caller input, so an agent name or parent name interpolated into one never defeats the match.
+ *
+ * Why this exists: `def.taskBrief` is one flat string that carries both the protocol boilerplate and
+ * the task, so "is there a task?" was answered by "is the string non-empty?". A brief made of
+ * nothing but these blocks is non-empty and yet says nothing about what to do — and a restart
+ * re-delivering such a row announced `task brief (present)` over pure boilerplate (measured: agent
+ * `claude-opus5`, whose persisted brief was identity + doorbell + no-blocking guidance and nothing
+ * else). Presence must be a claim about substance, so it is measured on the residue.
+ */
+const PROTOCOL_BOILERPLATE_OPENINGS: RegExp[] = [
+  /^You are agent \S+ \(that is also the value of your \$TACHYON_AGENT_NAME env var\)\./,
+  /^When the deliverable\/done_when is met, call notify_agent\(to: "/,
+  /^Don't block on an interactive prompt: /,
+  /^Task-local notes policy: /,
+  /^Task: absent — awaiting assignment\./,
+  /^Recorded skip reason: /,
+  /^Wait for a direct task assignment\./,
+];
+
+/**
+ * The part of a composed brief that is NOT fixed protocol boilerplate — i.e. what the agent was
+ * actually told to do. Blank-line separated blocks are the composition unit every renderer above
+ * joins on, so classification happens per block and a real task sitting beside boilerplate survives.
+ */
+export function briefTaskSubstance(brief: string | undefined): string {
+  if (!brief) return "";
+  return brief
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter((block) => block && !PROTOCOL_BOILERPLATE_OPENINGS.some((pattern) => pattern.test(block)))
+    .join("\n\n");
+}
+
+/** True when a composed brief carries task substance of its own, not just protocol boilerplate. */
+export function briefCarriesTaskSubstance(brief: string | undefined): boolean {
+  return briefTaskSubstance(brief).length > 0;
+}
+
+/**
  * t-d7b3a9 layer A — the very first line a freshly-spawned child reads: its own name, said outright.
  * TACHYON_AGENT_NAME is injected into every spawn's env (AgentManager.ts) but nothing ever told the
  * agent that, so a child guesses parent/sender fields from context instead of reading them off the

@@ -41,6 +41,7 @@ import {
   notifyParentGuidance,
   noInteractivePromptGuidance,
   identityLine,
+  idleSpawnGuidance,
   normalizeField,
   type DelegationGate,
   type SpawnContract,
@@ -1537,11 +1538,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             }
             deps.notify(`agent '${parent ?? "?"}' spawned '${name}' WITHOUT a delegation contract — reason: ${normalizeField(skip_contract_reason)}`, "warn");
             if (!suppliedTaskBrief) {
-              brief = [
-                "Task: absent — awaiting assignment.",
-                `Recorded skip reason: ${normalizeField(skip_contract_reason)}`,
-                "Wait for a direct task assignment. Do not scan unrelated tasks, pins, or continuity and do not invent work.",
-              ].join("\n");
+              brief = idleSpawnGuidance(skip_contract_reason);
             }
             // spec 332 — the skip-reason path bypasses the full contract, but a delegated child with a
             // parent still gets taught to notify_agent(<parent>) on completion (dueto: the guidance is
