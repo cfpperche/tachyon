@@ -20,6 +20,12 @@ import {
   parseEnvFile,
   readWorkspaceMcpServers,
   realConfigHome,
+  authCredentialRank,
+  authRankBetter,
+  claudeCredentialState,
+  listWorkspaceClaudePrivateHomes,
+  privateClaudeAuthNeedsReconcile,
+  reconcileWorkspaceClaudeAuth,
   defaultRealCodexHome,
   defaultRealPiHome,
   defaultRealGrokHome,
@@ -1812,5 +1818,354 @@ describe("HarnessManager materialize (fs)", () => {
     expect(readWorkspaceMcpServers(ws)).toBeNull();
     fs.writeFileSync(path.join(ws, ".mcp.json"), "not json");
     expect(readWorkspaceMcpServers(ws)).toBeNull();
+  });
+});
+
+/**
+ * t-9598cc — Claude private homes did not follow a global re-login.
+ *
+ * Claude Code writes `.credentials.json` by create+rename under `CLAUDE_CONFIG_DIR`, replacing
+ * Tachyon's symlink with a regular file whenever it refreshes its OAuth token — the same mechanism
+ * already measured for Grok (t-2b0a08 / t-6c8437). Claude had none of Grok's reconcile, so a home
+ * that detached stayed detached: a later `/login` refreshed `~/.claude/.credentials.json` and the
+ * private snapshot kept serving a dead token, surfacing only as `runtime_auth_rejected` at launch.
+ *
+ * Measured 2026-07-27: `.tachyon/harness/claude-opus5/.credentials.json` was a regular file whose
+ * contents differed from the authority's, while sibling homes were still symlinks.
+ */
+describe("t-9598cc Claude credential projection and refresh", () => {
+  const NOW = Date.parse("2026-07-27T12:30:00.000Z");
+  const HOUR = 3_600_000;
+  let ws: string;
+  let realHome: string;
+  const PROC = { FAL_KEY: "real-key" };
+
+  /** The shape Claude actually writes: epoch-ms `expiresAt` / `refreshTokenExpiresAt`, camelCase. */
+  function claudeCredential(opts: { token: string; accessInHours: number; refreshInHours?: number }): string {
+    return JSON.stringify({
+      claudeAiOauth: {
+        accessToken: opts.token,
+        refreshToken: `${opts.token}-refresh`,
+        expiresAt: NOW + opts.accessInHours * HOUR,
+        refreshTokenExpiresAt: NOW + (opts.refreshInHours ?? 24 * 30) * HOUR,
+        scopes: ["user:inference"],
+        subscriptionType: "max",
+      },
+    });
+  }
+
+  function tokenOf(file: string): string {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as { claudeAiOauth: { accessToken: string } };
+    return parsed.claudeAiOauth.accessToken;
+  }
+
+  /** Detach a home the way the runtime does: replace the symlink with a regular file. */
+  function detach(home: string, contents: string, mtime?: Date): string {
+    const file = path.join(home, ".credentials.json");
+    fs.rmSync(file, { force: true });
+    fs.writeFileSync(file, contents, { mode: 0o600 });
+    if (mtime) fs.utimesSync(file, mtime, mtime);
+    return file;
+  }
+
+  function manager(): HarnessManager {
+    return new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
+  }
+
+  beforeEach(() => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-claude-cred-"));
+    ws = path.join(base, "ws");
+    realHome = path.join(base, "realhome");
+    fs.mkdirSync(ws, { recursive: true });
+    fs.mkdirSync(realHome, { recursive: true });
+    fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "AUTHORITY", accessInHours: 8 }));
+    fs.writeFileSync(path.join(realHome, ".claude.json"), JSON.stringify({
+      hasCompletedOnboarding: true,
+      oauthAccount: { accountUuid: "acct-primary", emailAddress: "primary@example.test" },
+    }));
+  });
+  afterEach(() => {
+    fs.rmSync(path.dirname(ws), { recursive: true, force: true });
+  });
+
+  describe("credential ranking understands the Claude shape", () => {
+    it("reads epoch-ms expiresAt, which used to parse as 'no expiry stated'", () => {
+      const live = path.join(realHome, "live.json");
+      const dead = path.join(realHome, "dead.json");
+      fs.writeFileSync(live, claudeCredential({ token: "LIVE", accessInHours: 4 }));
+      fs.writeFileSync(dead, claudeCredential({ token: "DEAD", accessInHours: -4 }));
+
+      expect(authCredentialRank(live, NOW).accessValid).toBe(true);
+      expect(authCredentialRank(dead, NOW).accessValid).toBe(false);
+      expect(authCredentialRank(live, NOW).expiresAtMs).toBe(NOW + 4 * HOUR);
+    });
+
+    it("separates a lapsed access token from a dead session via the refresh window", () => {
+      const refreshable = path.join(realHome, "refreshable.json");
+      const expired = path.join(realHome, "expired.json");
+      fs.writeFileSync(refreshable, claudeCredential({ token: "R", accessInHours: -1, refreshInHours: 240 }));
+      fs.writeFileSync(expired, claudeCredential({ token: "E", accessInHours: -1, refreshInHours: -1 }));
+
+      expect(authCredentialRank(refreshable, NOW)).toMatchObject({ accessValid: false, refreshValid: true });
+      expect(authCredentialRank(expired, NOW)).toMatchObject({ accessValid: false, refreshValid: false });
+    });
+
+    it("prefers a live credential over an expired one that merely has a newer mtime", () => {
+      const live = path.join(realHome, "live.json");
+      const dead = path.join(realHome, "dead.json");
+      fs.writeFileSync(live, claudeCredential({ token: "LIVE", accessInHours: 4 }));
+      fs.writeFileSync(dead, claudeCredential({ token: "DEAD", accessInHours: -4 }));
+      const older = new Date(NOW - 10 * HOUR);
+      const newer = new Date(NOW - 1 * HOUR);
+      fs.utimesSync(live, older, older);
+      fs.utimesSync(dead, newer, newer);
+
+      expect(authRankBetter(authCredentialRank(live, NOW), authCredentialRank(dead, NOW))).toBe(true);
+      expect(authRankBetter(authCredentialRank(dead, NOW), authCredentialRank(live, NOW))).toBe(false);
+    });
+
+    it("leaves the Grok/Hermes ISO shape ranking exactly as before", () => {
+      const grokish = path.join(realHome, "grok.json");
+      fs.writeFileSync(grokish, JSON.stringify({
+        "https://auth.x.ai::x": { key: "K", create_time: "2026-07-20T00:00:00.000Z", expires_at: "2099-01-01T00:00:00.000Z" },
+      }));
+      const rank = authCredentialRank(grokish, NOW);
+
+      expect(rank.accessValid).toBe(true);
+      expect(rank.createTimeMs).toBe(Date.parse("2026-07-20T00:00:00.000Z"));
+      // Grok states no refresh expiry — absence must not be read as "dead".
+      expect(rank.refreshValid).toBe(true);
+      expect(rank.refreshExpiresAtMs).toBe(0);
+    });
+  });
+
+  describe("claudeCredentialState separates where-from from how-good", () => {
+    it("reports a healthy projection as linked", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+
+      expect(claudeCredentialState(res.home, path.join(realHome, ".credentials.json"), NOW))
+        .toMatchObject({ projection: "linked", health: "valid" });
+    });
+
+    it("reports an in-session refresh as detached, not as an expired session", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      detach(res.home, claudeCredential({ token: "PRIVATE", accessInHours: 6 }));
+
+      expect(claudeCredentialState(res.home, path.join(realHome, ".credentials.json"), NOW))
+        .toMatchObject({ projection: "detached", health: "valid" });
+    });
+
+    it("reports a never-projected home as absent rather than guessing at the credential", () => {
+      const home = harnessHome(ws, "never-run");
+      fs.mkdirSync(home, { recursive: true });
+
+      expect(claudeCredentialState(home, path.join(realHome, ".credentials.json"), NOW))
+        .toMatchObject({ projection: "absent", health: "valid" });
+    });
+
+    it("reports a link to another authority as foreign", () => {
+      const other = path.join(path.dirname(ws), "other-account");
+      fs.mkdirSync(other, { recursive: true });
+      const otherAuth = path.join(other, ".credentials.json");
+      fs.writeFileSync(otherAuth, claudeCredential({ token: "OTHER", accessInHours: 5 }));
+      const home = harnessHome(ws, "second-account");
+      fs.mkdirSync(home, { recursive: true });
+      fs.symlinkSync(otherAuth, path.join(home, ".credentials.json"));
+
+      expect(claudeCredentialState(home, path.join(realHome, ".credentials.json"), NOW))
+        .toMatchObject({ projection: "foreign", health: "valid" });
+    });
+
+    it.each([
+      ["refreshable", { accessInHours: -1, refreshInHours: 240 }, "refreshable"],
+      ["expired", { accessInHours: -1, refreshInHours: -1 }, "expired"],
+    ] as const)("grades a %s detached credential", (_label, windows, health) => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      detach(res.home, claudeCredential({ token: "P", ...windows }));
+
+      expect(claudeCredentialState(res.home, path.join(realHome, ".credentials.json"), NOW).health).toBe(health);
+    });
+
+    it("grades an unparseable credential as unreadable, not as expired", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      detach(res.home, "{ truncated");
+
+      expect(claudeCredentialState(res.home, path.join(realHome, ".credentials.json"), NOW).health).toBe("unreadable");
+    });
+  });
+
+  describe("workspace reconcile", () => {
+    it("THE MEASURED BUG: a stale private snapshot does not survive a newer global login", () => {
+      const mgr = manager();
+      const stale = mgr.materialize("claude-opus5", DEF("none"), claude);
+      // The agent refreshed in-session at 12:15, detaching from the authority.
+      detach(stale.home, claudeCredential({ token: "STALE_12_15", accessInHours: -1, refreshInHours: -1 }),
+        new Date(Date.parse("2026-07-27T12:15:00.000Z")));
+      // The human then logged in globally at 12:28. Nothing re-materialized this agent.
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "GLOBAL_12_28", accessInHours: 8 }));
+
+      const result = reconcileWorkspaceClaudeAuth(ws, realHome, path.join(realHome, ".claude.json"), NOW);
+
+      expect(result.promoted).toBe(false); // the dead private token must NOT be promoted over the fresh login
+      expect(result.relinked).toBe(1);
+      const link = path.join(stale.home, ".credentials.json");
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(tokenOf(link)).toBe("GLOBAL_12_28");
+      expect(tokenOf(path.join(realHome, ".credentials.json"))).toBe("GLOBAL_12_28");
+    });
+
+    it("harvests a fresher in-session refresh instead of destroying it", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "AUTHORITY_DEAD", accessInHours: -2, refreshInHours: -2 }));
+      detach(res.home, claudeCredential({ token: "PRIVATE_LIVE", accessInHours: 6 }));
+
+      const result = reconcileWorkspaceClaudeAuth(ws, realHome, path.join(realHome, ".claude.json"), NOW);
+
+      expect(result.promoted).toBe(true);
+      expect(tokenOf(path.join(realHome, ".credentials.json"))).toBe("PRIVATE_LIVE");
+      expect(fs.lstatSync(path.join(res.home, ".credentials.json")).isSymbolicLink()).toBe(true);
+    });
+
+    it("converges every simultaneous Claude agent onto one live credential", () => {
+      const mgr = manager();
+      const homes = ["alpha", "beta", "gamma"].map((name) => mgr.materialize(name, DEF("none"), claude).home);
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "AUTHORITY_DEAD", accessInHours: -2, refreshInHours: -2 }));
+      // Only beta refreshed; alpha and gamma still point at the now-dead authority.
+      detach(homes[1], claudeCredential({ token: "BETA_LIVE", accessInHours: 6 }));
+
+      const result = reconcileWorkspaceClaudeAuth(ws, realHome, path.join(realHome, ".claude.json"), NOW);
+
+      expect(result.promoted).toBe(true);
+      expect(result.relinked).toBe(3);
+      for (const home of homes) {
+        const link = path.join(home, ".credentials.json");
+        expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+        expect(tokenOf(link)).toBe("BETA_LIVE");
+      }
+    });
+
+    it("never merges a named second account into the primary authority", () => {
+      const mgr = manager();
+      const primary = mgr.materialize("alpha", DEF("none"), claude);
+      const secondary = harnessHome(ws, "second-account");
+      fs.mkdirSync(secondary, { recursive: true });
+      fs.writeFileSync(path.join(secondary, ".claude.json"), JSON.stringify({
+        oauthAccount: { accountUuid: "acct-secondary", emailAddress: "other@example.test" },
+      }));
+      // Its own live credential, newer than the primary authority's.
+      fs.writeFileSync(path.join(secondary, ".credentials.json"), claudeCredential({ token: "SECOND_ACCOUNT", accessInHours: 12 }));
+
+      const result = reconcileWorkspaceClaudeAuth(ws, realHome, path.join(realHome, ".claude.json"), NOW);
+
+      expect(result.skipped).toEqual([secondary]);
+      expect(tokenOf(path.join(realHome, ".credentials.json"))).toBe("AUTHORITY");
+      // The second account keeps its own regular file — never relinked onto the primary.
+      expect(fs.lstatSync(path.join(secondary, ".credentials.json")).isSymbolicLink()).toBe(false);
+      expect(tokenOf(path.join(secondary, ".credentials.json"))).toBe("SECOND_ACCOUNT");
+      // The primary agent is still converged.
+      expect(fs.lstatSync(path.join(primary.home, ".credentials.json")).isSymbolicLink()).toBe(true);
+    });
+
+    it("leaves a home linked to another authority alone", () => {
+      const other = path.join(path.dirname(ws), "other-authority");
+      fs.mkdirSync(other, { recursive: true });
+      const otherAuth = path.join(other, ".credentials.json");
+      fs.writeFileSync(otherAuth, claudeCredential({ token: "OTHER", accessInHours: 5 }));
+      const home = harnessHome(ws, "linked-elsewhere");
+      fs.mkdirSync(home, { recursive: true });
+      fs.symlinkSync(otherAuth, path.join(home, ".credentials.json"));
+
+      const result = reconcileWorkspaceClaudeAuth(ws, realHome, path.join(realHome, ".claude.json"), NOW);
+
+      expect(result.skipped).toEqual([home]);
+      expect(fs.readlinkSync(path.join(home, ".credentials.json"))).toBe(otherAuth);
+    });
+
+    it("does not sweep in a non-Claude agent home sharing the harness root", () => {
+      const mgr = manager();
+      mgr.materialize("alpha", DEF("none"), claude);
+      const codexHome = harnessHome(ws, "codex-agent");
+      fs.mkdirSync(codexHome, { recursive: true });
+      fs.writeFileSync(path.join(codexHome, "config.toml"), "model = 'x'\n");
+
+      expect(listWorkspaceClaudePrivateHomes(ws)).toEqual([harnessHome(ws, "alpha")]);
+    });
+  });
+
+  describe("materialize converges and fails closed", () => {
+    it("materializing one agent repairs another agent's detached stale home", () => {
+      const mgr = manager();
+      const stale = mgr.materialize("alpha", DEF("none"), claude);
+      detach(stale.home, claudeCredential({ token: "ALPHA_OLD", accessInHours: -3, refreshInHours: -3 }),
+        new Date(NOW - 3 * HOUR));
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "AFTER_LOGIN", accessInHours: 8 }));
+
+      mgr.materialize("beta", DEF("none"), claude);
+
+      const link = path.join(stale.home, ".credentials.json");
+      expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(tokenOf(link)).toBe("AFTER_LOGIN");
+    });
+
+    it("materialize no longer overwrites a fresher private credential with a staler authority one", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "AUTHORITY_DEAD", accessInHours: -2, refreshInHours: -2 }));
+      detach(res.home, claudeCredential({ token: "PRIVATE_LIVE", accessInHours: 6 }));
+
+      mgr.materialize("alpha", DEF("none"), claude);
+
+      expect(tokenOf(path.join(realHome, ".credentials.json"))).toBe("PRIVATE_LIVE");
+      expect(tokenOf(path.join(res.home, ".credentials.json"))).toBe("PRIVATE_LIVE");
+    });
+
+    it("refuses at the harness boundary when the session is genuinely dead, naming the recovery", () => {
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "DEAD", accessInHours: -5, refreshInHours: -5 }));
+      const mgr = manager();
+
+      expect(() => mgr.materialize("alpha", DEF("none"), claude)).toThrow(HarnessUnavailableError);
+      expect(() => mgr.materialize("alpha", DEF("none"), claude)).toThrow(/expired.*claude \/login/s);
+    });
+
+    it("does not refuse a merely-lapsed access token the runtime will renew itself", () => {
+      fs.writeFileSync(path.join(realHome, ".credentials.json"), claudeCredential({ token: "LAPSED", accessInHours: -1, refreshInHours: 240 }));
+      const mgr = manager();
+
+      expect(() => mgr.materialize("alpha", DEF("none"), claude)).not.toThrow();
+    });
+
+    it("names the missing projection instead of reporting an expired session", () => {
+      fs.rmSync(path.join(realHome, ".credentials.json"));
+      const mgr = manager();
+
+      expect(() => mgr.materialize("alpha", DEF("none"), claude)).toThrow(/no credentials at .*claude \/login/s);
+    });
+  });
+
+  describe("in-session reconcile tick", () => {
+    it("stays quiet while every home is converged and fires once one detaches", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+
+      expect(privateClaudeAuthNeedsReconcile(ws, realHome, NOW)).toBe(false);
+      detach(res.home, claudeCredential({ token: "REFRESHED", accessInHours: 6 }));
+      expect(privateClaudeAuthNeedsReconcile(ws, realHome, NOW)).toBe(true);
+    });
+
+    it("throttles repeated ticks", () => {
+      const mgr = manager();
+      const res = mgr.materialize("alpha", DEF("none"), claude);
+      detach(res.home, claudeCredential({ token: "REFRESHED", accessInHours: 6 }));
+
+      const first = mgr.maybeReconcileClaudeAuthFromWorkspace(NOW + 60_000);
+      expect(first).not.toBeNull();
+      expect(first!.relinked).toBe(1);
+      expect(mgr.maybeReconcileClaudeAuthFromWorkspace(NOW + 60_100)).toBeNull();
+    });
   });
 });
