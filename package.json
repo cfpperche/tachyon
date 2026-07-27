@@ -926,6 +926,7 @@
     "dogfood:probe-model-proof": "vite-node --script scripts/dogfood/probe-model-proof.ts",
     "dogfood:claude-composer-suggestion": "vite-node --script scripts/dogfood/claude-composer-suggestion.ts",
     "dogfood:grok-model-preflight": "vite-node --script scripts/dogfood/grok-model-preflight.ts",
+    "dogfood:auth-required-parity": "vite-node --script scripts/dogfood/auth-required-parity.ts",
     "dogfood:probe-provenance-parity": "vite-node --script scripts/dogfood/probe-provenance-parity.ts",
     "dogfood:probe-codex-model-proof": "vite-node --script scripts/dogfood/probe-codex-model-proof.ts",
     "dogfood:probes-model-column": "vite-node --script scripts/dogfood/probes-model-column.ts",

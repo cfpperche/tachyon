@@ -1,3 +1,5 @@
+import type { AuthRequiredEvidence } from "./authRequired.js";
+
 /** Bounded post-launch observation. This deliberately inspects only terminal state,
  * never sends a prompt or makes an inference request. */
 export type RuntimeLaunchReadiness =
@@ -8,9 +10,17 @@ export type RuntimeLaunchReadiness =
 export type RuntimeLaunchRejectionCode = Extract<RuntimeLaunchReadiness, { state: "rejected" }>["code"];
 
 export class RuntimeLaunchReadinessError extends Error {
-  constructor(readonly code: RuntimeLaunchRejectionCode) {
-    super(code);
+  /**
+   * SDD 477 — when the rejection is an authentication one AND the runtime declared a measured signal,
+   * the error carries what a human must do. Absent for every other rejection, and for any runtime
+   * whose auth signal has not been measured: an unexplained rejection is honest, a guessed one is not.
+   */
+  readonly authRequired?: AuthRequiredEvidence;
+
+  constructor(readonly code: RuntimeLaunchRejectionCode, authRequired?: AuthRequiredEvidence) {
+    super(authRequired ? `${code}: ${authRequired.humanAction}` : code);
     this.name = "RuntimeLaunchReadinessError";
+    if (authRequired) this.authRequired = authRequired;
   }
 }
 

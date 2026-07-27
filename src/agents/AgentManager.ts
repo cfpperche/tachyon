@@ -59,6 +59,7 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
+import { classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
@@ -973,7 +974,24 @@ export class AgentManager {
       aliveAtDeadline: "pending",
     });
     if (readiness.state === "rejected") {
-      const primary = new RuntimeLaunchReadinessError(readiness.code);
+      // SDD 477 — an auth rejection is a HUMAN's problem, not a retryable fault. When the runtime
+      // declared a measured signal, re-read the pane once to attach what the human must do, so the
+      // failure names the runtime and the safe action instead of a bare code that invites a retry.
+      let authRequired: AuthRequiredEvidence | undefined;
+      if (readiness.code === "runtime_auth_rejected") {
+        try {
+          authRequired = classifyAuthRequired(
+            adapter.runtime,
+            await this.opts.tmux.capturePane(session, { lines: 80, joinWrapped: true }),
+          );
+        } catch {
+          /* the pane may already be gone; an unexplained auth rejection is still honest */
+        }
+      }
+      const primary = new RuntimeLaunchReadinessError(readiness.code, authRequired);
+      if (authRequired) {
+        this.opts.notify?.(describeAuthRequired(name, authRequired), "warn");
+      }
       const failures: Error[] = [primary];
       try { await this.opts.tmux.killSession(session); }
       catch (error) { failures.push(new Error("failed to kill rejected launch", { cause: error })); }

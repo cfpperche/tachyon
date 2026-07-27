@@ -2,7 +2,7 @@
 
 _Created 2026-07-27._
 
-**Status:** draft
+**Status:** in-progress
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -39,7 +39,10 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **When** that signal is observed for a live agent
   - **Then** the agent surfaces as auth-required human attention naming the runtime, the agent and
     the safe human action, and is not reported as idle or as a generic crash.
-- [ ] **Scenario: no token is ever surfaced**
+  - _Partially delivered (increment 2): a LAUNCH that fails for authentication now names runtime,
+    agent and action. A live agent that loses its credential MID-RUN is not yet surfaced — that is
+    the auth-required agent state below, tracked as `t-5bfb72`._
+- [x] **Scenario: no token is ever surfaced**
   - **Given** any auth-required notification or stored state
   - **When** it is read by a human or an agent
   - **Then** it contains no credential material, no token fragment and no credential file contents.
@@ -52,19 +55,19 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **Given** an agent that was auth-required and a human has logged the runtime back in
   - **When** a human or coordinator explicitly restarts or retries
   - **Then** the agent runs again and its held task is still assigned.
-- [ ] **Scenario: auth is distinguished from its neighbours**
+- [x] **Scenario: auth is distinguished from its neighbours**
   - **Given** a rate-limit, quota, permission, network or invalid-session failure
   - **When** it is classified
   - **Then** it does NOT become auth-required.
-- [ ] **Scenario: a runtime without a measured signal never guesses**
+- [x] **Scenario: a runtime without a measured signal never guesses**
   - **Given** a runtime whose auth-required behavior is unmeasured or unreliable
   - **When** its agent stops working
   - **Then** Tachyon does not claim auth-required for it, and the gap is recorded.
-- [ ] A runtime-neutral capability declares whether a runtime can report auth-required and by what
+- [x] A runtime-neutral capability declares whether a runtime can report auth-required and by what
   measured signal — no Claude-specific string or file is imposed on any peer.
-- [ ] `docs/runtimes/parity.md` carries an authentication/loss-of-session row per runtime with
+- [x] `docs/runtimes/parity.md` carries an authentication/loss-of-session row per runtime with
   mechanism, measured signal, official non-interactive refresh, human action and recovery.
-- [ ] Auto-refresh is implemented only where the provider documents an official non-interactive flow
+- [x] Auto-refresh is implemented only where the provider documents an official non-interactive flow
   that was measured; no fabricated refresh, no indiscriminate secret copying, no automatic login.
 
 ## Non-goals
