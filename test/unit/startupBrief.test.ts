@@ -61,6 +61,40 @@ describe("startup brief manifest rendering", () => {
     expect(renderStartupBriefInventory(value)).toContain("Task: unstructured brief");
   });
 
+  it("t-e3aaae: names the assigned task on record instead of reporting an absent objective", () => {
+    const value = manifest({
+      prompt: {
+        ...emptyPrompt,
+        sessionRecord: { isolation: "worktree", assignedTaskIds: ["t-5bfb72"], assignedCount: 1 },
+      },
+    });
+
+    expect(renderStartupBriefSummary(value)).toContain("work on record (worktree; t-5bfb72)");
+    expect(renderStartupBriefSummary(value)).not.toContain("Task objective: absent");
+    expect(renderStartupBriefInventory(value)).toContain("Work on record: isolation worktree; assigned t-5bfb72");
+  });
+
+  it("t-e3aaae: a restart with nothing assigned still reports an absent objective", () => {
+    const value = manifest({
+      prompt: { ...emptyPrompt, sessionRecord: { isolation: "shared", assignedTaskIds: [], assignedCount: 0 } },
+    });
+
+    expect(renderStartupBriefSummary(value)).toContain("work on record (shared; no assigned work)");
+    expect(renderStartupBriefSummary(value)).toContain("Task objective: absent — awaiting assignment.");
+    expect(renderStartupBriefInventory(value)).toContain("Work on record: isolation shared; assigned no assigned work");
+  });
+
+  it("t-e3aaae: collapses a long assignment list to ids plus a truthful remainder", () => {
+    const value = manifest({
+      prompt: {
+        ...emptyPrompt,
+        sessionRecord: { isolation: "worktree", assignedTaskIds: ["t-000001", "t-000002", "t-000003"], assignedCount: 7 },
+      },
+    });
+
+    expect(renderStartupBriefSummary(value)).toContain("t-000001, t-000002, t-000003, +4 more");
+  });
+
   it("keeps every valid rendering below a fixed byte budget", () => {
     const maximal = manifest({
       projectGuidanceSources: 8,
@@ -70,6 +104,7 @@ describe("startup brief manifest rendering", () => {
         persistentInstructions: true,
         bridgeGuidance: true,
         task: { kind: "contract", completion: "done_when" },
+        sessionRecord: { isolation: "worktree", assignedTaskIds: ["t-000001", "t-000002", "t-000003"], assignedCount: 99 },
       },
     });
 

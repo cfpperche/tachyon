@@ -6,6 +6,9 @@ import {
   noInteractivePromptGuidance,
   identityLine,
   taskJournalGuidance,
+  idleSpawnGuidance,
+  briefCarriesTaskSubstance,
+  briefTaskSubstance,
   normalizeField,
   spawnContractCompletion,
   type SpawnContract,
@@ -242,6 +245,55 @@ describe("composeSpawnContractBrief — t-8605be no-blocking-on-prompts guidance
 
   it("noInteractivePromptGuidance interpolates the exact parent name", () => {
     expect(noInteractivePromptGuidance("codex-2")).toContain('notify_agent(to: "codex-2"');
+  });
+});
+
+describe("t-e3aaae brief task substance", () => {
+  // Drift guard: every fixed protocol rendering this module emits must be recognized as boilerplate.
+  // If one is reworded without updating the recognizer, a boilerplate-only brief would start
+  // claiming to carry a task again — which is the whole defect.
+  it.each([
+    ["identity line", identityLine("claude-opus5")],
+    ["notify-parent guidance", notifyParentGuidance("codex-canonico")],
+    ["no-interactive-prompt guidance", noInteractivePromptGuidance("codex-canonico")],
+    ["task journal guidance", taskJournalGuidance()],
+    ["idle spawn guidance", idleSpawnGuidance("parked until the human names the task")],
+  ])("classifies the %s as protocol boilerplate, not task substance", (_label, rendering) => {
+    expect(briefCarriesTaskSubstance(rendering)).toBe(false);
+  });
+
+  it("finds no substance in the persisted brief that made a restart claim a task it never had", () => {
+    // Verbatim shape of agent `claude-opus5`'s ledger row on 2026-07-27: identity + doorbell +
+    // no-blocking guidance, and nothing whatsoever about the work.
+    const persisted = [
+      identityLine("claude-opus5"),
+      notifyParentGuidance("codex-canonico"),
+      noInteractivePromptGuidance("codex-canonico"),
+    ].join("\n\n");
+
+    expect(briefCarriesTaskSubstance(persisted)).toBe(false);
+    expect(briefTaskSubstance(persisted)).toBe("");
+  });
+
+  it("keeps real task text that sits beside the boilerplate", () => {
+    const brief = composeSpawnContractBrief("worker-1", good, undefined, "orchestrator");
+
+    expect(briefCarriesTaskSubstance(brief)).toBe(true);
+    expect(briefTaskSubstance(brief)).toContain("TASK:");
+    expect(briefTaskSubstance(brief)).not.toContain("$TACHYON_AGENT_NAME");
+  });
+
+  it("treats an empty or whitespace-only brief as no substance", () => {
+    expect(briefCarriesTaskSubstance(undefined)).toBe(false);
+    expect(briefCarriesTaskSubstance("")).toBe(false);
+    expect(briefCarriesTaskSubstance("   \n\n  ")).toBe(false);
+  });
+
+  it("counts free-form instructions handed to a contract-skipped spawn as substance", () => {
+    const brief = `${identityLine("worker-1")}\n\nFinish the migration in docs/specs/478 and report the SHA.\n\n${notifyParentGuidance("orchestrator")}`;
+
+    expect(briefCarriesTaskSubstance(brief)).toBe(true);
+    expect(briefTaskSubstance(brief)).toBe("Finish the migration in docs/specs/478 and report the SHA.");
   });
 });
 

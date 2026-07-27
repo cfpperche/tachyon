@@ -1,7 +1,9 @@
 import type { Role } from "../roles/templates.js";
 import { bridgeGuidanceTail, composeInstructions, roleTemplate, withBridgeGuidance } from "../roles/templates.js";
+import { briefCarriesTaskSubstance } from "../bridge/spawnContract.js";
 import type { ResolvedSoul } from "./soul.js";
 import { renderEvolutionPromptLayer, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
+import { renderSessionWorkRecord, sessionRecordManifest, type SessionWorkRecord } from "./sessionWorkRecord.js";
 
 export interface AgentPromptLayers {
   soul?: ResolvedSoul;
@@ -16,6 +18,8 @@ export interface AgentPromptLayers {
   taskBrief?: string;
   /** Present only when taskBrief was rendered from the validated structured SpawnContract. */
   taskContractCompletion?: "deliverable" | "done_when";
+  /** t-e3aaae — durable work record for a session:new restart (isolation + assigned board tasks). */
+  sessionWorkRecord?: SessionWorkRecord;
 }
 
 export type PromptTaskLayer =
@@ -34,6 +38,8 @@ export interface AgentPromptManifest {
   selectedMemory?: true;
   bridgeGuidance: boolean;
   task: PromptTaskLayer;
+  /** t-e3aaae — present when a restart materialized the durable work record into the brief. */
+  sessionRecord?: { isolation: "worktree" | "shared"; assignedTaskIds: string[]; assignedCount: number };
 }
 
 export interface SoulSnapshot {
@@ -59,7 +65,11 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
   if (layers.evolution && present(layers.formationEvolution)) {
     throw new Error("legacy and canonical Evolution layers cannot be composed together");
   }
-  const hasTaskBrief = !!present(layers.taskBrief);
+  // t-e3aaae — a brief carries a task only when something other than the fixed protocol boilerplate
+  // survives in it. A validated contract is substance by construction; anything else must prove it,
+  // so a boilerplate-only row can never announce itself as `task brief (present)`.
+  const hasTaskBrief = !!layers.taskContractCompletion || briefCarriesTaskSubstance(present(layers.taskBrief));
+  const sessionRecord = layers.sessionWorkRecord ? renderSessionWorkRecord(layers.sessionWorkRecord) : undefined;
   const manifest: AgentPromptManifest = {
     soul: !!layers.soul,
     role: !!layers.role && layers.role !== "custom",
@@ -73,9 +83,10 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
       : layers.taskContractCompletion
         ? { kind: "contract", completion: layers.taskContractCompletion }
         : { kind: "brief" },
+    ...(layers.sessionWorkRecord ? { sessionRecord: sessionRecordManifest(layers.sessionWorkRecord) } : {}),
   };
   if (!layers.soul && !layers.evolution && !present(layers.formationEvolution) && !present(layers.selectedMemory)) {
-    const legacyInstructions = [layers.instructions, layers.taskBrief].filter(Boolean).join("\n\n") || undefined;
+    const legacyInstructions = [layers.instructions, layers.taskBrief, sessionRecord].filter(Boolean).join("\n\n") || undefined;
     const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
     return { body, manifest };
   }
@@ -100,6 +111,8 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     present(layers.selectedMemory),
     guidance,
     present(layers.taskBrief),
+    // Last in the body: the durable work record is the most recent thing a restarted session knows.
+    sessionRecord,
   ].filter(Boolean).join("\n\n") || undefined;
   return {
     body,

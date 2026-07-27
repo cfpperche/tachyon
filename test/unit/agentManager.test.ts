@@ -18,6 +18,7 @@ import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
+import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
 import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
 import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
@@ -709,6 +710,288 @@ describe("AgentManager", () => {
       expect(result.session).toBe("resume");
       expect(result.resumed).toBe(false);
       expect(respawnArgs.length).toBe(1);
+    });
+  });
+
+  /**
+   * t-e3aaae — a session:new restart mints a NEW conversation, so everything the agent learned after
+   * it was spawned is gone. Measured failure: `claude-opus5` was parked with skip_contract_reason,
+   * handed `t-5bfb72` afterwards, restarted graceful+new, and came back to a brief made of nothing
+   * but its own name and the doorbell guidance. It recovered the task by scanning the board for
+   * `assignee == me && status == active`, and — with nothing on record about isolation — committed
+   * straight to the primary checkout. The replacement brief must STATE both facts.
+   */
+  describe("t-e3aaae restart states the work on record", () => {
+    const ASSIGNED = {
+      id: "t-5bfb72",
+      title: "SDD 477 auth-required mid-run",
+      status: "active",
+      priority: 2,
+      body: "Hold the assigned task while the credential is missing; recovery stays human-explicit.",
+    };
+    // The exact poisoned ledger shape: protocol boilerplate only, no task text anywhere.
+    const BOILERPLATE_BRIEF = [
+      identityLine("worker"),
+      notifyParentGuidance("codex-canonico"),
+      noInteractivePromptGuidance("codex-canonico"),
+    ].join("\n\n");
+
+    function harness(root: string, overrides: Partial<AgentManagerOptions> = {}) {
+      const fake = fakeTmux();
+      const ledger = new SessionLedger(root);
+      const manager = new AgentManager({
+        tmux: fake.tmux,
+        wsHash: workspaceHash(root),
+        workspaceRoot: root,
+        getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
+        getMaxAgents: () => 8,
+        ledger,
+        assignedWork: () => [ASSIGNED],
+        ...overrides,
+      });
+      return { fake, ledger, manager, session: sessionName(workspaceHash(root), "worker") };
+    }
+
+    /** Everything the replacement session was actually handed (inline pane payload + brief file). */
+    function delivered(root: string, fake: ReturnType<typeof fakeTmux>, from: { news: number; respawns: number }): string {
+      const panes = [
+        ...fake.newSessionArgs.slice(from.news),
+        ...fake.respawnArgs.slice(from.respawns),
+      ].map((args) => args.at(-1) ?? "");
+      const file = briefFilePath(root, "worker");
+      return [...panes, fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""].join("\n");
+    }
+
+    function mark(fake: ReturnType<typeof fakeTmux>) {
+      return { news: fake.newSessionArgs.length, respawns: fake.respawnArgs.length };
+    }
+
+    // The four ways a session ends up needing a fresh conversation. They differ only in how the
+    // previous process died, and every one of them must arrive at the same stated record.
+    const ENTRY_CONDITIONS = [
+      ["clean exit", (fake: ReturnType<typeof fakeTmux>, session: string) => { fake.dead.set(session, 0); }, { stop: "graceful", session: "new" }],
+      ["auth-rejected", (fake: ReturnType<typeof fakeTmux>, session: string) => {
+        fake.dead.set(session, 1);
+        fake.panes.set(session, "Invalid API key · Please run /login");
+      }, { stop: "graceful", session: "new" }],
+      // Context exhaustion leaves the pane ALIVE but useless — the graceful stop times out and the
+      // session is hard-killed before the replacement starts. This is the measured repro's shape.
+      ["context exhaustion", (fake: ReturnType<typeof fakeTmux>, session: string) => {
+        fake.panes.set(session, "Context low · Run /compact to compact the conversation");
+      }, { stop: "graceful", session: "new", gracefulTimeoutMs: 0 }],
+      ["stopped session", (fake: ReturnType<typeof fakeTmux>, session: string) => { fake.sessions.delete(session); }, { stop: "force", session: "new" }],
+    ] as const;
+
+    it.each(ENTRY_CONDITIONS)("materializes the assigned task after %s", async (_label, arrange, restartOpts) => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-entry-"));
+      try {
+        const { fake, manager, session } = harness(root);
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        arrange(fake, session);
+        const from = mark(fake);
+
+        await manager.restart("worker", { ...restartOpts });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("t-5bfb72");
+        expect(brief).toContain("SDD 477 auth-required mid-run");
+        expect(brief).toContain("Hold the assigned task while the credential is missing");
+        expect(brief).toContain("you do not need to look it up");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("states the shared checkout authorizes nothing, so main is not the default place to work", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-shared-"));
+      try {
+        const { fake, manager } = harness(root);
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("Isolation: none on record");
+        expect(brief).toContain("nothing here authorizes committing to the trunk");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("restates the durable worktree and branch the agent must stay inside", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-worktree-"));
+      const checkout = path.join(root, "wt");
+      fs.mkdirSync(checkout, { recursive: true });
+      try {
+        const worktree = {
+          path: checkout,
+          branch: "tachyon/change/t-5bfb72",
+          tachyonCreatedBranch: true,
+          baseRef: "main",
+          createdAt: "2026-07-27T00:00:00.000Z",
+        };
+        const { fake, manager } = harness(root, {
+          resolveSpawnCwd: async () => ({ cwd: checkout, worktree }),
+        });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain(`Isolation: git worktree ${checkout} on branch tachyon/change/t-5bfb72.`);
+        expect(brief).toContain("Do not edit, commit to, or push the primary checkout");
+        expect(brief).not.toContain("Isolation: none on record");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("forbids adopting work off the board when nothing is assigned", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-unassigned-"));
+      try {
+        const { fake, manager } = harness(root, { assignedWork: () => [] });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("Assigned work on record: none.");
+        expect(brief).toContain("Do not adopt work by scanning the board");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("names both assigned tasks rather than letting the agent pick one", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-ambiguous-"));
+      try {
+        const second = { id: "t-939a18", title: "SDD 478 M1", status: "active" };
+        const { fake, manager } = harness(root, { assignedWork: () => [ASSIGNED, second] });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("t-5bfb72");
+        expect(brief).toContain("t-939a18");
+        expect(brief).toContain("say which one you are taking before you start");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("stops calling a boilerplate-only brief a present task", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-header-"));
+      try {
+        // Long enough to divert to the brief file, which is where the manifest header is rendered —
+        // the header is the line that used to announce `task brief (present)` over pure boilerplate.
+        const padded = { ...ASSIGNED, body: `${ASSIGNED.body}\n${"detail. ".repeat(600)}` };
+        const { fake, manager } = harness(root, { assignedWork: () => [padded] });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: `${BOILERPLATE_BRIEF}\n\n${"pad ".repeat(1200)}`, parent: "codex-canonico" });
+        expect(fake.newSessionArgs.at(-1)?.at(-1)).toContain("task brief (present)");
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("work on record (shared; t-5bfb72)");
+        expect(brief).not.toContain("Task objective: absent");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("reports an absent task for a brief that is nothing but protocol boilerplate", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-boilerplate-"));
+      try {
+        // The measured `claude-opus5` row, padded ONLY with more boilerplate so the manifest header
+        // is rendered. Non-emptiness used to be enough to claim a task; substance is now required.
+        const boilerplateOnly = [
+          BOILERPLATE_BRIEF,
+          ...Array.from({ length: 12 }, () => noInteractivePromptGuidance("codex-canonico")),
+        ].join("\n\n");
+        const { fake, manager } = harness(root, { assignedWork: () => [] });
+
+        await manager.spawn("worker", { cmd: "codex", taskBrief: boilerplateOnly, parent: "codex-canonico" });
+
+        const spawned = fake.newSessionArgs.at(-1)?.at(-1) ?? "";
+        expect(spawned).toContain("task contract (absent)");
+        expect(spawned).not.toContain("task brief (present)");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("fails closed when the assignment cannot be read, leaving the live pane untouched", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-failclosed-"));
+      try {
+        let readable = true;
+        const { fake, manager, session } = harness(root, {
+          assignedWork: () => {
+            if (!readable) throw new Error("EIO: task store unreadable");
+            return [ASSIGNED];
+          },
+        });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        readable = false;
+        const from = mark(fake);
+
+        const error = await manager.restart("worker", { stop: "force", session: "new" }).catch((value: unknown) => value);
+
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/assigned work could not be read/);
+        expect(fake.newSessionArgs.length).toBe(from.news);
+        expect(fake.respawnArgs.length).toBe(from.respawns);
+        expect(fake.sessions.has(session)).toBe(true); // the running agent was never replaced
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("claims nothing about assignments when no board resolver is wired", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-unwired-"));
+      try {
+        const { fake, manager } = harness(root, { assignedWork: undefined });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).not.toContain("SESSION RESTART: WORK ON RECORD");
+        expect(brief).not.toContain("work on record (");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("leaves a resume restart alone — it keeps the conversation that already holds the work", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-resume-"));
+      const projects = path.join(root, "projects", "-ws");
+      fs.mkdirSync(projects, { recursive: true });
+      const sid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+      fs.writeFileSync(path.join(projects, `${sid}.jsonl`), "{}\n");
+      try {
+        const { fake, manager, ledger } = harness(root, { fileExists: (p: string) => fs.existsSync(p) });
+        ledger.record("claude", {
+          declared: true,
+          cwd: "/ws",
+          def: { cmd: "claude", kind: "agent" },
+          resume: { runtime: "claude", sessionId: sid, configHome: root },
+        });
+        const from = mark(fake);
+
+        const result = await manager.restart("claude", { stop: "graceful", session: "resume" });
+
+        expect(result.resumed).toBe(true);
+        expect(delivered(root, fake, from)).not.toContain("SESSION RESTART: WORK ON RECORD");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
     });
   });
 

@@ -66,6 +66,7 @@ import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
+import type { AssignedTaskRecord, SessionWorkRecord } from "./sessionWorkRecord.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
@@ -518,6 +519,20 @@ export interface AgentManagerOptions {
   onRestart?: (name: string) => void;
   /** Session-resume ledger (spec 209); absent = resume tracking disabled. */
   ledger?: SessionLedger;
+  /**
+   * t-e3aaae — the board Tasks currently assigned to `name` and in flight. A `session:new` restart
+   * materializes these into the replacement brief so the agent is TOLD its work instead of inferring
+   * it from `assignee == me && status == active`.
+   *
+   * Two contracts:
+   *  - returning `[]` is an answer ("nothing is assigned"), rendered as such;
+   *  - THROWING is fail-closed. The restart is refused before the live pane is touched, because a
+   *    brief that silently omits the assignment is exactly the failure this exists to end.
+   *
+   * Unwired (tests, headless) means the board cannot be consulted at all; the restart then behaves
+   * as it did before this option existed and claims nothing about assignments.
+   */
+  assignedWork?: (name: string) => AssignedTaskRecord[];
   /** Workspace-owned resolver so production startup uses host-custodied Evolution authority. */
   resolveEvolutionSnapshot?: (principal: string) => Promise<EvolutionStartupSnapshot>;
   /**
@@ -1237,6 +1252,7 @@ export class AgentManager {
     soul?: ResolvedSoul,
     evolution?: EvolutionStartupSnapshot,
     projectGuidance?: RenderedProjectGuidanceBundle,
+    sessionWorkRecord?: SessionWorkRecord,
   ): string | undefined {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
     // even declared role/instructions as a positional startup prompt; several runtimes reject or
@@ -1257,6 +1273,7 @@ export class AgentManager {
       bridgeGuidance: guidance,
       taskBrief,
       taskContractCompletion,
+      sessionWorkRecord,
     });
     // Project-owned policy is body content, not product protocol. Put it before the task/role body
     // (task-specific instructions stay more recent) and before the long-brief diversion so an
@@ -1286,6 +1303,40 @@ export class AgentManager {
     const instructions = frame(deliverable);
     if (instructions) assertSafeBriefTransport(instructions, `agent '${name}' startup brief`);
     return instructions?.trim() ? instructions : undefined;
+  }
+
+  /**
+   * t-e3aaae — the durable answer to "what am I working on, and where am I allowed to do it?", for a
+   * restart that mints a NEW conversation. Both halves come from record, never from the pane the
+   * restart just discarded: isolation from the worktree row (or its documented absence), assignments
+   * from the board resolver.
+   *
+   * Fail-closed by design: an unreadable board throws out of here, and because every caller runs it
+   * before the first live-pane mutation, the running agent is left exactly as it was rather than
+   * replaced with a session that cannot say what it is for.
+   */
+  private sessionWorkRecordFor(name: string, def: AgentDef, worktree: WorktreeRecord | undefined, cwd: string): SessionWorkRecord | undefined {
+    if (!this.opts.assignedWork) return undefined;
+    // Same gate `projectGuidanceFor` uses: a launch with no channel for a startup document gets no
+    // record either, and must not be refused over a board it would never have been shown.
+    if (def.kind !== "agent" || managesOwnSession(def.cmd) || !instructionsDeliverable(def.cmd)) return undefined;
+    let assigned: AssignedTaskRecord[];
+    try {
+      assigned = this.opts.assignedWork(name);
+    } catch (error) {
+      throw new Error(
+        `refusing restart for agent '${name}': its assigned work could not be read, so a new session ` +
+        "cannot be told what it is working on; fix the task store and retry",
+        { cause: error },
+      );
+    }
+    const durable = worktree ?? this.opts.ledger?.get(name)?.worktree;
+    return {
+      isolation: durable
+        ? { kind: "worktree", path: durable.path, branch: durable.branch }
+        : { kind: "shared", cwd },
+      assigned,
+    };
   }
 
   private projectGuidanceFor(def: AgentDef): RenderedProjectGuidanceBundle | undefined {
@@ -3512,6 +3563,9 @@ export class AgentManager {
         "expected task/context/constraints strings and exactly one non-empty deliverable or done_when",
       );
     }
+    // Resolved before any cache/pane mutation: an unreadable board must refuse the restart outright
+    // rather than replace the session with one that cannot state its own assignment (t-e3aaae).
+    const restartWorkRecord = this.sessionWorkRecordFor(name, def, worktree, cwd);
     const restartInstructions = this.effectiveInstructions(
       name,
       def,
@@ -3522,6 +3576,7 @@ export class AgentManager {
       resolvedSoul,
       resolvedEvolution,
       projectGuidance,
+      restartWorkRecord,
     );
     this.stoppingSince.delete(name);
     this.stopFailed.delete(name);

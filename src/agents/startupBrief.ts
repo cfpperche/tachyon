@@ -44,6 +44,24 @@ function inventoryTask(task: PromptTaskLayer): string {
   }
 }
 
+/** t-e3aaae — ids first (they are what stops the agent inferring), collapsing to a count past the cap. */
+function sessionRecordIds(record: NonNullable<AgentPromptManifest["sessionRecord"]>): string {
+  if (record.assignedCount === 0) return "no assigned work";
+  const shown = record.assignedTaskIds.join(", ");
+  const hidden = record.assignedCount - record.assignedTaskIds.length;
+  return hidden > 0 ? `${shown}, +${hidden} more` : shown;
+}
+
+function summarySessionRecord(record: AgentPromptManifest["sessionRecord"]): string[] {
+  if (!record) return [];
+  return [`work on record (${record.isolation}; ${sessionRecordIds(record)})`];
+}
+
+function inventorySessionRecord(record: AgentPromptManifest["sessionRecord"]): string[] {
+  if (!record) return [];
+  return [`Work on record: isolation ${record.isolation}; assigned ${sessionRecordIds(record)}`];
+}
+
 function assertBounded(rendered: string, maximum: number, label: string): string {
   const bytes = Buffer.byteLength(rendered, "utf8");
   if (bytes > maximum) throw new Error(`${label} is ${bytes} UTF-8 bytes, above its ${maximum}-byte protocol ceiling`);
@@ -62,8 +80,11 @@ export function renderStartupBriefSummary(manifest: StartupBriefManifest): strin
     ...(prompt.evolution ? [`Agent Evolution (v${prompt.evolution.version}; ${prompt.evolution.digest})`] : []),
     `Bridge guidance (${present(prompt.bridgeGuidance)})`,
     summaryTask(prompt.task),
+    ...summarySessionRecord(prompt.sessionRecord),
   ].join("; ");
-  const objective = prompt.task.kind === "absent"
+  // Only claim "awaiting assignment" when nothing states the work — a materialized board assignment
+  // is an objective even though it reached the agent as a record rather than as a spawn contract.
+  const objective = prompt.task.kind === "absent" && !(prompt.sessionRecord?.assignedCount)
     ? "\nTask objective: absent — awaiting assignment."
     : "";
   return assertBounded(`Contains: ${contents}.${objective}`, MAX_STARTUP_BRIEF_SUMMARY_BYTES, "startup brief summary");
@@ -82,6 +103,7 @@ export function renderStartupBriefInventory(manifest: StartupBriefManifest): str
     ...(prompt.evolution ? [`Agent Evolution: present (version ${prompt.evolution.version}; digest ${prompt.evolution.digest})`] : []),
     `Bridge guidance: ${present(prompt.bridgeGuidance)}`,
     `Task: ${inventoryTask(prompt.task)}`,
+    ...inventorySessionRecord(prompt.sessionRecord),
     "── END STARTUP BRIEF CONTENTS ──",
   ].join("\n");
   return assertBounded(rendered, MAX_STARTUP_BRIEF_INVENTORY_BYTES, "startup brief inventory");
