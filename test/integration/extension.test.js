@@ -26,22 +26,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 describe("Tachyon extension (VSCode host smoke)", () => {
   let wsHash;
 
-  before(() => {
+  before(async function () {
+    this.timeout(90000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "test host opened no workspace");
     wsHash = workspaceHash(folder.uri.fsPath);
-  });
 
-  after(() => {
-    // Belt-and-braces cleanup of this workspace's sessions only.
-    for (const session of tachyonSessions()) {
-      if (session.includes(`-${wsHash}-`)) {
-        try {
-          execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=${session}`], { stdio: "pipe" });
-        } catch {
-          /* already gone */
-        }
-      }
+    // t-9418ac — autostart is asynchronous, so give the declared entries a chance to appear ONCE,
+    // here, instead of letting whichever scenario happens to run first absorb the wait. This does
+    // not assert: a missing entry is reported by the scenario that actually needs it, so one
+    // flaky spawn cannot mask the 17 scenarios that have nothing to do with it.
+    const ext = vscode.extensions.getExtension("cfpperche.tachyon");
+    assert.ok(ext, "extension not found in the test host");
+    await ext.activate();
+
+    const expected = ["echoer", "prompter", "flaky"].map((n) => `tachyon-${wsHash}-${n}`);
+    let missing = expected;
+    for (let i = 0; i < 120 && missing.length > 0; i++) {
+      await sleep(250);
+      const live = tachyonSessions();
+      missing = expected.filter((s) => !live.includes(s));
+    }
+    if (missing.length > 0) {
+      // Measured 2026-07-27 (t-9418ac): with the fixture's config now VALID, the workspace loads all
+      // three entries and `start()` reports "3 started" — yet no `tmux new-session` is ever issued
+      // for them. That is the original bucket-1 defect, finally isolated with the config ruled out;
+      // it is filed separately. Print evidence rather than guessing.
+      const entries = (await vscode.commands.executeCommand("tachyon._agents")) ?? [];
+      console.log(`[t-9418ac] declared entries not in tmux: ${missing.join(", ")}`);
+      console.log(`[t-9418ac] workspace view: ${JSON.stringify(entries.map((e) => ({ n: e.name, k: e.kind, run: e.running, dead: e.dead })))}`);
+      console.log(`[t-9418ac] live sessions: ${tachyonSessions().join(", ") || "(none)"}`);
     }
   });
 
@@ -122,16 +136,14 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
-  it("spawns the autostart agent into a real tmux session (spec scenario 1)", async function () {
+  it("spawns the autostart terminal into a real tmux session (spec scenario 1)", async function () {
     this.timeout(20000);
-    await vscode.commands.executeCommand("tachyon.start");
+    // Readiness is established once in `before`; this pins the observable outcome.
     const expected = `tachyon-${wsHash}-echoer`;
-    let found = false;
-    for (let i = 0; i < 40 && !found; i++) {
-      await sleep(250);
-      found = tachyonSessions().includes(expected);
-    }
-    assert.ok(found, `session ${expected} not found; sessions: ${tachyonSessions().join(", ")}`);
+    assert.ok(
+      tachyonSessions().includes(expected),
+      `session ${expected} not found; sessions: ${tachyonSessions().join(", ")}`,
+    );
   });
 
   it("re-attaches a surviving session without restarting it (spec scenario 4)", async function () {
@@ -153,7 +165,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
 
   // spec 234 — the layout integration tests were removed (layouts feature retired).
 
-  it("restarts the agent when a watched file changes (spec scenario 5)", async function () {
+  it("restarts the terminal when a watched file changes (spec scenario 5)", async function () {
     this.timeout(30000);
     const fs = require("node:fs");
     const path = require("node:path");
@@ -180,19 +192,21 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
     fs.rmSync(trigger, { force: true });
     assert.notStrictEqual(after, before, "session_created unchanged — watch restart never fired");
-    assert.ok(after, "agent not running after watch restart");
+    assert.ok(after, "echoer not running after watch restart");
   });
 
   it("detects a real prompt as needs-input (spec 188 scenario 1)", async function () {
     this.timeout(45000);
     const session = `tachyon-${wsHash}-prompter`;
-    // Wait for the prompter agent (autostart) to be alive, then make it show a prompt.
+    // `prompter` is a TERMINAL that opts into attention. The pane poller is runtime-agnostic, so
+    // what this proves is the live plumbing — real 3s poll, real tmux, real `tachyon._attention`.
+    // The pattern semantics themselves are covered headless in test/unit/attention.test.ts.
     let alive = false;
     for (let i = 0; i < 40 && !alive; i++) {
       await sleep(250);
       alive = tachyonSessions().includes(session);
     }
-    assert.ok(alive, "prompter agent not running");
+    assert.ok(alive, "prompter terminal not running");
     execFileSync(
       "tmux",
       ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "printf 'Do you want to continue? [y/n] '"],
@@ -226,7 +240,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
 
   it("a crash is exposed with its exit code; the dead pane survives for postmortem (spec 190)", async function () {
     this.timeout(45000);
-    const session = `tachyon-${wsHash}-prompter`; // restart: never (default)
+    const session = `tachyon-${wsHash}-prompter`; // terminal, restart: never (default)
     execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 3"], { stdio: "pipe" });
     execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
 
@@ -244,7 +258,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     assert.ok(tachyonSessions().includes(session), "postmortem session should survive the crash");
   });
 
-  it("restart: on-crash auto-restarts a crashed agent (spec 190)", async function () {
+  it("restart: on-crash auto-restarts a crashed terminal (spec 190)", async function () {
     this.timeout(60000);
     const session = `tachyon-${wsHash}-flaky`;
     let alive = false;
@@ -252,7 +266,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       await sleep(250);
       alive = tachyonSessions().includes(session);
     }
-    assert.ok(alive, "flaky agent not running before the crash test");
+    assert.ok(alive, "flaky terminal not running before the crash test");
     execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "exit 5"], { stdio: "pipe" });
     execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
 
@@ -322,39 +336,18 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
-  it("lineage: spawn with parent shows in _agents; orphan promoted on parent kill (spec 197)", async function () {
-    this.timeout(20000);
-    // prompter (declared, running) plays the orchestrator; child is ad-hoc with instructions
-    await vscode.commands.executeCommand("tachyon._spawn", "lineage-child", {
-      cmd: "sh",
-      parent: "prompter",
-    });
-    let agents = await vscode.commands.executeCommand("tachyon._agents");
-    const child = agents.find((a) => a.name === "lineage-child");
-    assert.ok(child && child.running, "child not running");
-    assert.strictEqual(child.parent, "prompter", "lineage not recorded");
-    assert.ok(tachyonSessions().includes(`tachyon-${wsHash}-lineage-child`), "child session missing in tmux");
-  });
-
-  it("wait_for_agent resolves on a real transition (spec 198)", async function () {
-    this.timeout(45000);
-    // dedicated ad-hoc agent (attention on by default) — earlier crash tests leave
-    // prompter dead, so a fresh one guarantees a working->idle transition.
-    await vscode.commands.executeCommand("tachyon._spawn", "waiter-probe", { cmd: "sh" });
-    const session = `tachyon-${wsHash}-waiter-probe`;
-    await sleep(500);
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "-l", "--", "echo poke"], { stdio: "pipe" });
-    execFileSync("tmux", ["-L", "tachyon", "send-keys", "-t", `=${session}:`, "C-m"], { stdio: "pipe" });
-    const started = Date.now();
-    const result = await vscode.commands.executeCommand("tachyon._wait", "waiter-probe", "idle", 30);
-    assert.strictEqual(result.met, true, `expected idle, got ${JSON.stringify(result)}`);
-    assert.strictEqual(result.state, "idle");
-    assert.ok(Date.now() - started >= 4000, "should have actually waited for the transition");
-
-    // waiting on a missing agent resolves immediately as gone
-    const gone = await vscode.commands.executeCommand("tachyon._wait", "ghost-agent", "dead", 5);
-    assert.deepStrictEqual({ met: gone.met, state: gone.state }, { met: true, state: "gone" });
-  });
+  // t-9418ac — two scenarios left this suite deliberately, because both could only run by spawning
+  // `cmd: sh` and calling it an agent:
+  //
+  //   * "lineage: spawn with parent" (spec 197). Lineage is IDENTITY, and identity is agent-only —
+  //     a terminal has no parent to inherit from, so this cannot be re-based on `terminals:` without
+  //     asserting something the product does not mean. Covered headless in test/unit/agentManager.test.ts ("lineage (spec 197)").
+  //   * "wait_for_agent resolves on a real transition" (spec 198). Covered headless in
+  //     test/unit/waiters.test.ts, which drives every branch this exercised (arrival, terminal
+  //     events, gone, timeout, independent settlement) against the real Waiters state machine.
+  //
+  // Neither is a coverage loss: what the editor host added was a fake process standing in for a
+  // runtime. An editor-host E2E for agent semantics is reserved for a real LLM runtime.
 
   it("one-shot command: pass and fail, own namespace, postmortem pane kept (spec 199)", async function () {
     this.timeout(30000);
@@ -489,8 +482,10 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       assert.ok(!act.some((s) => s.name === "nightly-test"), "pending proposal must NOT be active");
 
       // approve -> written into tachyon.yml, dropped from pending, now active
+      // t-9418ac — `_approveProposal` reports a RESULT object now, not a bare boolean. Same class of
+      // rot as the sidebar-views assertion: the command is right, the expectation was stale.
       const ok = await vscode.commands.executeCommand("tachyon._approveProposal", "pp1");
-      assert.strictEqual(ok, true, "approve failed");
+      assert.strictEqual(ok && ok.changed, true, `approve failed: ${JSON.stringify(ok)}`);
       await sleep(400);
       assert.match(fs.readFileSync(ymlPath, "utf8"), /nightly-test:/);
       pending = await vscode.commands.executeCommand("tachyon._proposals");

@@ -24,6 +24,8 @@ import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
 import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "../../src/config/agentNativeConfigPolicy.js";
+import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping.js";
+import type { AgentVM } from "../../src/sidebar/types.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);
@@ -453,6 +455,56 @@ describe("AgentManager", () => {
     await expect(manager.spawn("ghost")).rejects.toThrow("unknown agent");
     await manager.spawn("ghost", { cmd: "echo hi" });
     expect(sessions.has(`tachyon-${HASH}-ghost`)).toBe(true);
+  });
+
+  /**
+   * t-9418ac — lineage is IDENTITY, and identity is agent-only: a terminal has no parent to inherit
+   * from. The editor-host suite used to assert this by spawning `cmd: sh` and calling it an agent,
+   * which the product now (correctly) refuses. Re-based here on the real AgentManager with a fake
+   * tmux, so the semantics are proven without a fake process standing in for a runtime.
+   */
+  describe("lineage (spec 197)", () => {
+    it("records the parent of an ad-hoc child and exposes it on both reads", async () => {
+      const { manager, sessions } = makeManager("agents:\n  orchestrator:\n    cmd: codex\n");
+      await manager.spawn("orchestrator");
+      await manager.spawn("lineage-child", { cmd: "codex", parent: "orchestrator" });
+
+      expect(sessions.has(`tachyon-${HASH}-lineage-child`)).toBe(true);
+      expect(manager.parentOf("lineage-child")).toBe("orchestrator");
+      const child = (await manager.list()).find((a) => a.name === "lineage-child");
+      expect(child?.running).toBe(true);
+      expect(child?.parent).toBe("orchestrator");
+      expect(child?.declared).toBe(false);
+    });
+
+    it("a spawn without a parent records none — lineage is never inferred", async () => {
+      const { manager } = makeManager("agents:\n  orchestrator:\n    cmd: codex\n");
+      await manager.spawn("orchestrator");
+      await manager.spawn("loner", { cmd: "codex" });
+      expect(manager.parentOf("loner")).toBeUndefined();
+      expect((await manager.list()).find((a) => a.name === "loner")?.parent).toBeUndefined();
+    });
+
+    it("the recorded parent OUTLIVES the parent's death — promotion is a render decision", async () => {
+      // Measured, and worth stating because the opposite is the intuitive guess: killing the parent
+      // does NOT rewrite or erase the child's link (`kill` only forgets the DEAD agent's own parent).
+      // The child is promoted to top level when it is RENDERED, because the sidebar nests only
+      // against parents that are actually present in the row set. Keeping the recorded fact and
+      // deciding presentation separately is what lets a re-spawned parent re-adopt its children.
+      const { manager } = makeManager("agents:\n  orchestrator:\n    cmd: codex\n");
+      await manager.spawn("orchestrator");
+      await manager.spawn("lineage-child", { cmd: "codex", parent: "orchestrator" });
+      expect(manager.parentOf("lineage-child")).toBe("orchestrator");
+
+      await manager.kill("orchestrator");
+      expect(manager.parentOf("lineage-child")).toBe("orchestrator");
+
+      // The render half: with the parent gone from the row set, the child nests under nobody.
+      const orphan = { name: "lineage-child", status: "running", parent: "orchestrator" } as AgentVM;
+      expect(agentGroupParent(orphan)).toBe("orchestrator");
+      expect(agentIsNested(orphan, new Set(["lineage-child"]))).toBe(false);
+      expect(agentIsNested(orphan, new Set(["lineage-child", "orchestrator"]))).toBe(true);
+    });
   });
 
   it("rejects double-spawn of a running agent", async () => {

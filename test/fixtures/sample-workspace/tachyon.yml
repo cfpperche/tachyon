@@ -1,4 +1,22 @@
-agents:
+# t-9418ac — this fixture declares NO agents, deliberately.
+#
+# An Agent is a runtime operated by an LLM CLI that Tachyon attests; a Terminal is a generic
+# process. `cmd: sh` is a process, so it can never be an agent — not even here. The suite used to
+# declare three of them under `agents:` (one with `kind: agent` forced on, precisely because `sh`
+# infers `terminal`), which the product now rejects outright: every entry under `agents:` must be a
+# canonical profile pointer backed by a host authority. That one rejection invalidated the WHOLE
+# config, which is why commands, runbooks and schedules were failing too — none of them has anything
+# to do with agents.
+#
+# So the scenarios below are declared as what they always actually were: terminals. Autostart,
+# watch-restart, restart-on-crash and attention are all supported under `terminals:`, so nothing is
+# weakened by filing them correctly — they were never exercising agent semantics.
+#
+# Agent semantics (identity, lineage, waiting on an agent) are NOT tested here. They belong to
+# headless domain tests with doubles, which need no fake process standing in for a runtime — see
+# test/unit/agentManager.test.ts (lineage), test/unit/waiters.test.ts and test/unit/attention.test.ts. An
+# editor-host E2E is reserved for what genuinely requires a real LLM runtime.
+terminals:
   echoer:
     cmd: sh
     autostart: true
@@ -6,7 +24,10 @@ agents:
   prompter:
     cmd: sh
     autostart: true
-    kind: agent   # sh would infer terminal; forced agent so attention stays on (live test)
+    # Terminals default attention OFF (servers and builds are silent by nature). This one opts in
+    # explicitly, which is a supported declaration: the pane poller is runtime-agnostic, and what
+    # the scenario proves is that plumbing — not anything about an LLM.
+    attention: true
   flaky:
     cmd: sh
     autostart: true
