@@ -12,6 +12,7 @@ import {
 import { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { AGENT_NAME_PATTERN, asciiFoldAgentName } from "./nameValidation.js";
 import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
+import { ATTESTED_RUNTIMES } from "../runtime/attestedRuntimes.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import {
@@ -36,10 +37,12 @@ export type RestartPolicy = "never" | "on-crash";
 
 export type EntryKind = "agent" | "terminal";
 
-/** CLIs we recognize as AI agents — drives kind inference and attention defaults. */
-export const KNOWN_AI_CLIS = [
-  "claude",
-  "codex",
+/**
+ * Binaries that are AI CLIs but that Tachyon does NOT attest — it cannot vouch for their native
+ * inputs, so none of them may back a canonical agent. They exist for authoring convenience: the
+ * quick-add catalog and the kind suggestion a human sees and can override.
+ */
+const UNATTESTED_AI_CLIS = [
   "agy",
   "opencode",
   "gemini",
@@ -48,12 +51,19 @@ export const KNOWN_AI_CLIS = [
   "amp",
   "cursor-agent",
   "copilot",
-  "grok",
   "qwen",
-  "pi",
   "hermes",
   "verboo",
 ];
+
+/**
+ * CLIs the authoring surfaces recognize as AI CLIs — attention defaults, quick-add chips and the
+ * suggested kind. SDD 478 M1: composed from `ATTESTED_RUNTIMES` rather than restating it, so this
+ * list can neither omit an attested runtime nor contradict the attested set. It is a *suggestion*
+ * list and never the answer to "is this an Agent" — that answer is an attested runtime
+ * (`AttestedRuntime`); see docs/architecture/agent-vs-terminal.md.
+ */
+export const KNOWN_AI_CLIS: string[] = [...ATTESTED_RUNTIMES, ...UNATTESTED_AI_CLIS];
 
 
 /** agent = known AI CLI; everything else (servers, shells, builds) = terminal. Explicit `kind:` wins. */

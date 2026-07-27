@@ -98,8 +98,16 @@ declares a non-attested command under `agents:`.
 
 ## Status
 
-The rule is ratified. The **enforcement** is partial: today the distinction is encoded five different
-ways, three runtime lists disagree with each other, twelve agent-only fields are still structurally
-representable on a terminal, and the session ledger re-derives kind from the command string on every
-load. SDD 478 inventories all of it and orders the migration (M1–M9). Read that spec before changing
-anything on this boundary.
+The rule is ratified. The **enforcement** is partial: today the distinction is still encoded several
+different ways, twelve agent-only fields are structurally representable on a terminal, and the session
+ledger re-derives kind from the command string on every load. SDD 478 inventories all of it and orders
+the migration (M1–M9). Read that spec before changing anything on this boundary.
+
+**M1 has landed.** Which runtimes may operate an Agent is answered in exactly one place —
+`ATTESTED_RUNTIMES` in `src/runtime/attestedRuntimes.ts` (`claude`, `codex`, `grok`, `pi`). The three
+lists that used to disagree now derive from it or assert a relation to it: `ResumeRuntime` is defined
+as `AttestedRuntime | <non-attested resumable>`, the private-home inspector registry is exhaustive over
+it, and `KNOWN_AI_CLIS` is composed from it. Add a runtime there and the compiler plus
+`test/unit/attestedRuntime.test.ts` demand the adapter and the inspector that make "attested" mean
+something. `KNOWN_AI_CLIS` remains an authoring *suggestion* and is not an identity claim; retiring the
+inference it feeds at the persistence and ad-hoc doors is M4 and M9.

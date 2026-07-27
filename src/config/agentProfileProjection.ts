@@ -21,6 +21,7 @@ import {
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
+import { isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
 import {
   projectAgentNativeConfig,
   resolveAgentNativeConfigSupport,
@@ -80,12 +81,20 @@ export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   sha256: crypto.createHash("sha256").update(CLAUDE_INSPECTOR_CONTRACT).digest("hex"),
 });
 
+/**
+ * SDD 478 M1 — keyed by `AttestedRuntime` and exhaustive by type: a runtime added to
+ * `ATTESTED_RUNTIMES` without a measured inspector is a compile error here, which is what keeps
+ * "attested" from drifting into "listed somewhere".
+ */
+const RUNTIME_INSPECTORS = {
+  codex: CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
+  pi: PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
+  grok: GROK_PRIVATE_HOME_INPUT_INSPECTOR,
+  claude: CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
+} satisfies Record<AttestedRuntime, unknown>;
+
 export function profileRuntimeInspectorFor(adapter: string) {
-  if (adapter === "codex") return CODEX_EMPTY_NATIVE_INPUT_INSPECTOR;
-  if (adapter === "pi") return PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR;
-  if (adapter === "grok") return GROK_PRIVATE_HOME_INPUT_INSPECTOR;
-  if (adapter === "claude") return CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR;
-  return undefined;
+  return isAttestedRuntime(adapter) ? RUNTIME_INSPECTORS[adapter] : undefined;
 }
 
 export interface ProjectAgentProfileInput {
@@ -255,7 +264,7 @@ function parseCanonicalProfile(workspaceRoot: string, agentName: string): { prof
 }
 
 function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
-  if (!(["codex", "pi", "grok", "claude"].includes(profile.runtime.adapter)) || profile.runtime.executable !== profile.runtime.adapter) {
+  if (!isAttestedRuntime(profile.runtime.adapter) || profile.runtime.executable !== profile.runtime.adapter) {
     return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi', 'grok' and 'claude' executables"];
   }
   const hasRuntimeSelectors = Boolean(
@@ -418,7 +427,7 @@ function projectDefinition(
   const definition = resolved.definition;
   const errors: string[] = [];
   if (!resolved.agentId) errors.push("profile/projection: canonical profile identity is missing");
-  if (!(["codex", "pi", "grok", "claude"].includes(definition.runtime.adapter)) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
+  if (!isAttestedRuntime(definition.runtime.adapter) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {

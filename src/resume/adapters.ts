@@ -14,7 +14,15 @@
  * (the conversation already holds them) but DO re-pass the original flags.
  */
 
-export type ResumeRuntime = "claude" | "codex" | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "grok" | "hermes" | "pi";
+import type { AttestedRuntime } from "../runtime/attestedRuntimes.js";
+
+/**
+ * Runtimes with a resume adapter. SDD 478 M1: the attested runtimes are spliced in from their one
+ * source rather than restated here, so "attested ⊆ resumable" is a compile-time fact instead of a
+ * parallel truth the two lists could disagree about. The extra members are runtimes Tachyon can
+ * resume but does NOT attest as able to operate an Agent — resumability is not agent-ness.
+ */
+export type ResumeRuntime = AttestedRuntime | "gemini" | "antigravity" | "opencode" | "qwen" | "continue" | "hermes";
 
 export interface ResumeAdapter {
   runtime: ResumeRuntime;
@@ -386,6 +394,14 @@ const ADAPTERS: ResumeAdapter[] = [
 ];
 
 const BY_RUNTIME = new Map(ADAPTERS.map((a) => [a.runtime, a]));
+
+/**
+ * The runtimes that actually have an adapter, in declaration order. Exported so the attested ⊆
+ * resumable relation can be asserted once against the real registry (SDD 478 M1) instead of being
+ * restated as a second literal list — adding an attested runtime without an adapter here fails that
+ * assertion rather than surfacing later as a runtime that cannot resume.
+ */
+export const RESUME_RUNTIMES: readonly ResumeRuntime[] = ADAPTERS.map((a) => a.runtime);
 
 export function adapterFor(cmd: string): ResumeAdapter | null {
   const rt = runtimeOf(cmd);
