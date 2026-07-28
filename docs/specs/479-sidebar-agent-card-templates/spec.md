@@ -160,6 +160,12 @@ component and are explicitly out of scope; see § Non-goals.
    effect. Alternative: pick exactly one home and refuse the other.
    **Ratified as proposed.** Binds phase 2 (project home) and phase 5 (personal override + the
    "which one is in effect" statement, which is part of the feature, not a nicety).
+   *Phase 5 settled two things the wording left open:* (a) "personal wins" is LAYERED — a region the
+   person does not mention keeps the project's, so the homes compose product → project → person, and a
+   person who wants to discard the project's layout writes all three regions (that IS "replace",
+   without a switch to declare it); (b) the personal home is read by the SHELL and never by the engine,
+   because a projection an agent-authored checkout can carry is the wrong place for one person's
+   preference — the same reason `sortPrefs` travels beside the fleet rather than inside it.
 
 2. **Does a runtime override start from the default or from nothing?**
    If it extends the default, adding a new element to the product later makes it appear inside every

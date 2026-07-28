@@ -178,6 +178,20 @@ export interface CockpitStrings {
   cardTemplateReset: string;
   cardTemplateCriticalNote: string;
   cardTemplateInlineNote: string;
+  /** SDD 479 phase 5 — the "which home is in effect" statement and the personal home's controls. */
+  cardTemplateInEffect: string;
+  cardTemplatePersonalActive: string;
+  cardTemplatePersonalRefused: string;
+  cardTemplatePersonalNone: string;
+  cardTemplateProjectNone: string;
+  cardTemplateProjectConfigured: string;
+  cardTemplateProjectRefused: string;
+  cardTemplateHomeLabel: string;
+  cardTemplateHomeProject: string;
+  cardTemplateHomePersonal: string;
+  cardTemplateCopyJson: string;
+  cardTemplateJsonHint: string;
+  cardTemplateOpenSettings: string;
   companionTitle: string;
   companionHint: string;
   companionBody: string;
@@ -258,6 +272,7 @@ export type CockpitAction =
   | { type: "refresh" }
   | { type: "copyDiagnostics" }
   | { type: "openSettings" }
+  | { type: "openPersonalCardTemplate" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId }
   /** t-d16a39 — shell-level workspace scope; "" selects "All workspaces". */
@@ -378,6 +393,13 @@ export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" }
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
+/**
+ * SDD 479 phase 5 — open the settings editor filtered to the personal card-template key. A distinct
+ * action from `openConfigFile`: one home is a file in the repo, the other a key in VS Code settings,
+ * and the block's button must land on the one the person actually picked.
+ */
+export const openPersonalCardTemplateAction = (): CockpitAction => ({ type: "openPersonalCardTemplate" });
+
 export const openProjectHandoffAction = (): CockpitAction => ({ type: "openProjectHandoff" });
 export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
