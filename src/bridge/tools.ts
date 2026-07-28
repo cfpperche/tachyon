@@ -85,8 +85,18 @@ import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliat
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { admitAdhocAgentCommand, SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { sealExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
-import { mintExecution } from "../executionGraph/executionIdentity.js";
+import { mintExecution, mintToolCall } from "../executionGraph/executionIdentity.js";
+
+/**
+ * SDD 480 §3.4 gap 2 — the ambient Bridge call, so an execution started inside a handler can join to
+ * the ToolCall that caused it.
+ *
+ * Async-local rather than module-global on purpose: Bridge handlers interleave freely, and a shared
+ * "current call" would hand one tool's child process to whichever call happened to be in flight.
+ */
+const BRIDGE_CALL = new AsyncLocalStorage<{ toolCallId: string; executionId: string }>();
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
 import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafety.js";
@@ -1017,7 +1027,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     const wrapped = Object.create(target) as McpServer;
     (wrapped as unknown as { registerTool: Register }).registerTool = (name, schema, handler) =>
       originalRegister(name, schema, async (...args: never[]) => {
-        const minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+        // §3.4 gap 1 — the tool call gets an identity, minted BEFORE the handler runs so anything the
+        // handler starts can point back at it. §3.4 gap 2 — that identity is published on the async
+        // context, which is how an execution born inside the handler joins to the call that caused it.
+        const { toolCallId } = mintToolCall({ tool: name });
+        const minted = mintExecution({ agentId: executionCallerId(), carrier: "absent", toolCallId });
         const startedAt = Date.now();
         emitExecution({
           kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
@@ -1025,7 +1039,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           detail: { tool: name },
         });
         try {
-          const result = await handler(...args);
+          // AsyncLocalStorage rather than a module variable: Bridge handlers interleave, and a shared
+          // mutable "current call" would attribute one tool's child process to whichever call happened
+          // to be in flight — the confident wrong parent §5 rules out.
+          const result = await BRIDGE_CALL.run({ toolCallId, executionId: minted.executionId }, () => handler(...args));
           // An MCP tool reports failure by RETURNING `isError`, not by throwing, so a wrapper that
           // only watched for exceptions would record every refusal as a success.
           const failed = !!(result as { isError?: boolean } | undefined)?.isError;
@@ -4587,10 +4604,19 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           // command runner starts its own session and this seam hands it no environment, so the
           // PROCESS cannot be proven to be this execution. The tool call is still recorded, with
           // provenance saying exactly that, instead of being dropped or guessed at.
-          minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+          // §3.4 gap 2 — carry the ambient ToolCall id and edge back to the operation that caused this.
+          // Without the edge the two executions sit in the graph as strangers, which is the gap: the
+          // Bridge knew its caller but emitted nothing an observer could later join on.
+          const call = BRIDGE_CALL.getStore();
+          minted = mintExecution({
+            agentId: executionCallerId(),
+            carrier: "absent",
+            ...(call ? { toolCallId: call.toolCallId } : {}),
+          });
           emitExecution({
             kind: "spawn", node: "TmuxSession", state: "running", provenance: minted.provenance,
             correlation: minted.correlation, at: new Date().toISOString(),
+            ...(call ? { edge: { kind: "invoked" as const, toExecutionId: call.executionId } } : {}),
             detail: { tool: "run_command", command: name },
           });
           await deps.commands.run(name);

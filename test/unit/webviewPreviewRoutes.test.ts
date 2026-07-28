@@ -112,6 +112,11 @@ describe("preview route table", () => {
       "studio-terminal",
       "studio-terminal-edit",
       "task-detail",
+      // t-5564b4 — the content shapes the Task Detail report is about; the single `task-detail`
+      // fixture had no long refs, no attention and no long body, so the catalog could not show it.
+      "task-detail-heavy",
+      "task-detail-sparse",
+      "task-detail-tombstone",
       "tmux",
       "validations",
       "worktrees",
