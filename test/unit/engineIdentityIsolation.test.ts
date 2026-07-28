@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { engineWorkspaceKey, engineSystemdUnitName } from "../../src/engine-service/engineSupervisor.js";
+import {
+  engineWorkspaceKey,
+  engineSystemdUnitName,
+  engineRuntimeDir,
+  engineStorageRoot,
+} from "../../src/engine-service/engineSupervisor.js";
 import { TMUX_SOCKET_ENV, resolveSocketName, DEFAULT_SOCKET_NAME } from "../../src/tmux/TmuxService.js";
 
 /**
@@ -57,5 +62,45 @@ describe("t-05097f engine identity carries tmux isolation", () => {
   it("resolves the socket name from the same env seam", () => {
     expect(resolveSocketName({})).toBe(DEFAULT_SOCKET_NAME);
     expect(resolveSocketName({ [TMUX_SOCKET_ENV]: "gate-x" })).toBe("gate-x");
+  });
+
+  /**
+   * The doc above promises the three durable handles "move together". Nothing was checking that they
+   * do: the tests reached only the key and the unit name, and three of the four derivation sites were
+   * in fact asking for the key WITHOUT the env they had been handed — so `engineRuntimeDir(root, iso)`
+   * returned production's control socket while `engineSystemdUnitName(root, iso)` returned the
+   * isolated unit. Every caller happens to pass `process.env` today, which is why it never showed;
+   * the parameter was a promise the function did not keep, and the first caller to hand over an
+   * explicit env would have adopted the fleet's engine while believing it was isolated.
+   */
+  describe("every durable handle moves with the identity, not just the unit name", () => {
+    const iso = {
+      [TMUX_SOCKET_ENV]: "gate-together",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      XDG_STATE_HOME: "/home/someone/.local/state",
+    };
+    const prod = { XDG_RUNTIME_DIR: "/run/user/1000", XDG_STATE_HOME: "/home/someone/.local/state" };
+
+    it("puts the isolated key in the runtime dir, the storage root and the unit alike", () => {
+      const key = engineWorkspaceKey(root, iso);
+
+      expect(engineRuntimeDir(root, iso)).toContain(key);
+      expect(engineStorageRoot(root, "linux", iso, "/home/someone")).toContain(key);
+      expect(engineSystemdUnitName(root, iso)).toContain(key);
+    });
+
+    it("keeps all of them on production's key when no override is given", () => {
+      const key = engineWorkspaceKey(root, prod);
+
+      expect(engineRuntimeDir(root, prod)).toContain(key);
+      expect(engineStorageRoot(root, "linux", prod, "/home/someone")).toContain(key);
+      expect(engineSystemdUnitName(root, prod)).toContain(key);
+    });
+
+    it("never lets an isolated handle collide with a production one", () => {
+      expect(engineRuntimeDir(root, iso)).not.toBe(engineRuntimeDir(root, prod));
+      expect(engineStorageRoot(root, "linux", iso, "/home/someone"))
+        .not.toBe(engineStorageRoot(root, "linux", prod, "/home/someone"));
+    });
   });
 });

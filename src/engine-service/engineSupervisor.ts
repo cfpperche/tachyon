@@ -264,7 +264,7 @@ export function engineRuntimeDir(
       "Tachyon's persistent engine requires a private XDG_RUNTIME_DIR on Linux.",
     );
   }
-  return path.join(runtime, "tachyon", "engines", engineWorkspaceKey(workspaceRoot));
+  return path.join(runtime, "tachyon", "engines", engineWorkspaceKey(workspaceRoot, env));
 }
 
 /**
@@ -288,7 +288,7 @@ export function ensureSecureEngineRuntimeDir(
   ensureSecureRuntimeDir(tachyon);
   const engines = path.join(tachyon, "engines");
   ensureSecureRuntimeDir(engines);
-  const workspace = path.join(engines, engineWorkspaceKey(workspaceRoot));
+  const workspace = path.join(engines, engineWorkspaceKey(workspaceRoot, env));
   ensureSecureRuntimeDir(workspace);
   return workspace;
 }
@@ -305,7 +305,7 @@ export function engineStorageRoot(
   env: NodeJS.ProcessEnv = process.env,
   home: string = os.homedir(),
 ): string {
-  const key = engineWorkspaceKey(workspaceRoot);
+  const key = engineWorkspaceKey(workspaceRoot, env);
   if (platform === "win32") {
     return path.join(env.LOCALAPPDATA?.trim() || path.join(home, "AppData", "Local"), "Tachyon", "engine-state", key);
   }
