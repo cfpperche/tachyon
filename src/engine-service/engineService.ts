@@ -14,6 +14,7 @@ import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } f
 import type { ViewKind } from "../workspace/EngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
 import { sendManagedAgentInput } from "../agents/agentInputService.js";
+import { openExecutionLedger } from "../executionGraph/executionLedger.js";
 import {
   startHandoffDistillation,
   workspaceHandoffDistillOperations,
@@ -180,6 +181,12 @@ export async function startDaemonEngineService(
     engineInstanceId: instanceId,
   });
   const projections = new EngineProjectionCoordinator(journal, instanceId);
+  // SDD 480 Phase 2 — deliberately NOT `journal` above. That one is keyed to `instanceId`, a fresh
+  // uuid per start, so hanging the execution graph off it would discard the graph on every restart —
+  // the exact opposite of the criterion that a restarted Control rebuilds the same graph. This opens
+  // its own journal on a stable, workspace-scoped stream and keeps every guarantee that primitive was
+  // chosen for.
+  const executionLedger = openExecutionLedger({ storageRoot: options.storageRoot, workspaceHash: hash });
   const stagedPayloads = new StagedPayloadStore(path.dirname(options.controlSocketPath));
   stagedPayloads.cleanupStale();
   let workspace: Workspace | undefined;
@@ -237,6 +244,11 @@ export async function startDaemonEngineService(
       },
       claudeStatusLineCapture,
       piBridgeExtensionPath: path.join(__dirname, "pi-bridge-extension.mjs"),
+      // SDD 480 Phase 2 — the line that turns the graph from two tested halves into a real record:
+      // every seam's sealed event now reaches a durable, sanitized, byte-bounded ledger. Refusals are
+      // counted rather than silent, but recording must never throw into a spawn path, so the guard is
+      // here as well as inside each seam.
+      recordExecution: (event) => { try { executionLedger.record(event); } catch { /* observation only */ } },
     });
     await workspace.start();
     const runningWorkspace = workspace;

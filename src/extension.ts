@@ -28,7 +28,7 @@ import {
   type CockpitDeps,
 } from "./webview/Cockpit.js";
 import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
-import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
@@ -925,6 +925,9 @@ function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { 
   throw new Error("schedule proposal is incomplete");
 }
 
+/** t-af3eef — control-flow marker for "this view did not ask for that slice". Never surfaced. */
+const SKIP_SLICE = Symbol("tachyon.collect.skip");
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   initializeVsCodeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
@@ -1141,7 +1144,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
-    collect: async (): Promise<CockpitWorkspaceBundle[]> => {
+    // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
+    // not needed is not queried and its field is ABSENT, so a caller can tell "not collected" from
+    // "none exist". Navigation used to pay for every slice regardless of the route.
+    collect: async (needs: CockpitCollectNeeds = COLLECT_EVERYTHING): Promise<CockpitWorkspaceBundle[]> => {
       const bundles: CockpitWorkspaceBundle[] = [];
       for (const ws of workspaces()) {
         let identity: CockpitWorkspaceBundle["control"]["identity"] = null;
@@ -1241,9 +1247,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
         // unreachable → an EMPTY list plus a note, never unverified raw-disk rows (maintainer-
         // ratified: untrusted data is not better than no data). The raw reader is deleted.
-        let worktreeRows: CockpitWorkspaceBundle["worktrees"] = [];
+        let worktreeRows: CockpitWorkspaceBundle["worktrees"];
         let worktreesUnavailable: string | undefined;
         try {
+          if (!needs.worktrees) throw SKIP_SLICE;
+          worktreeRows = [];
           const classified = await extensionQuery(ws, { action: "worktrees.classified" });
           const rows = (classified as { worktrees?: unknown[] })?.worktrees;
           if (!Array.isArray(rows)) throw new Error("engine returned no worktrees payload");
@@ -1260,19 +1268,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               folder: ws.folderName,
               wsHash: ws.wsHash,
               tachyonCreatedBranch: e.tachyonCreatedBranch === true,
-              classification: e.classification as CockpitWorkspaceBundle["worktrees"][number]["classification"],
+              classification: e.classification as NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["classification"],
             };
           });
         } catch (err) {
-          worktreesUnavailable = err instanceof Error ? err.message : String(err);
+          // t-af3eef — a SKIPPED slice is not a FAILED one. Leaving both the rows and the
+          // `unavailable` reason absent is the whole point: the view can then say "not collected"
+          // instead of either an empty list or an error it never hit.
+          if (err !== SKIP_SLICE) worktreesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
         // t-43c6fa — the classified engine read is the ONE source for the Deliveries tab, exactly as
         // spec 444 did for Worktrees. Engine unreachable → an EMPTY list plus a note, never
         // unverified raw-disk rows. `readGitDeliveriesFromDisk` is deleted.
-        let deliveryRows: CockpitWorkspaceBundle["deliveries"] = [];
+        let deliveryRows: CockpitWorkspaceBundle["deliveries"];
         let deliveriesUnavailable: string | undefined;
         try {
+          if (!needs.deliveries) throw SKIP_SLICE;
+          deliveryRows = [];
           const classified = await extensionQuery(ws, { action: "deliveries.classified" });
           const rows = (classified as { deliveries?: unknown[] })?.deliveries;
           if (!Array.isArray(rows)) throw new Error("engine returned no deliveries payload");
@@ -1295,7 +1308,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
           });
         } catch (err) {
-          deliveriesUnavailable = err instanceof Error ? err.message : String(err);
+          if (err !== SKIP_SLICE) deliveriesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
         bundles.push({
@@ -1407,6 +1420,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCockpitApprovals();
       },
     },
+    // t-e4f662 — the Human Inbox's staleness threshold, from the SAME loaded config the rest of the
+    // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
+    humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
     validations: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
       onValidationsChanged: () => {

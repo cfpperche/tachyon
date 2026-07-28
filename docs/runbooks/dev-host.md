@@ -430,12 +430,58 @@ npm run dogfood:dev-host -- point-clear           # free this checkout's dev-hos
 `--owner`, `--slot`, `--activate`, `--no-activate`, `--require-owner`, `--all`. (`lane.mjs --owner`
 is unrelated: that is a *lease* owner and still required.)
 
+### Dogfooding a MULTI-ROOT window (t-f0efc5)
+
+Some bugs only exist with two workspace roots open — "resolves the wrong root", anything reading
+`workspaceFolders`, and the worktree-reveal path that branches on whether a `.code-workspace` is open
+at all. `point` handles this without a new verb: point it at a fixture that **carries its own
+`.code-workspace`** and the lane mirrors every declared folder and writes one of its own.
+
+```bash
+cd /path/to/your/worktree
+npm run dogfood:dev-host -- point --fixture multiroot     # test/fixtures/multiroot/ → alpha + beta
+npm run dogfood:dev-host -- point-status                  # reports: workspace mode: multi-root
+```
+
+Then in Run and Debug pick **Tachyon: Dev Host (multi-root)** instead of *Tachyon: Dev Host*.
+`point` and `point-status` both print the mode and name the configuration to use, so you never have to
+work it out from the fixture.
+
+Why two configurations rather than one that adapts: VS Code decides folder-versus-workspace by the
+**extension** of the path it is given, and `launch.json` is tracked and never rewritten per dogfood
+(spec 448). One static argument cannot be both. Keeping the single-root configuration exactly as it
+was is also deliberate — the product genuinely behaves differently in a single-*folder* window
+(`vscode.workspace.workspaceFile === undefined` disables worktree reveal, with its own notice), so
+collapsing both onto a one-folder `.code-workspace` would have made that branch impossible to reach
+by clicking.
+
+What the mirror does, per root: the same rules a single-root mirror uses — `tachyon.yml`, `.tachyon/`,
+`.codex/`, `.claude/` and `.mcp.json` are **real copies** (the engine opens config no-follow, and your
+dogfood mutations must not write back into a tracked fixture); everything else is a symlink so
+Explorer still shows the fixture's files. The fixture's own `.code-workspace` is **not** copied — the
+lane writes `<checkout>/.tachyon/dev-host/workspace.code-workspace` with the paths rewritten to the
+mirrored folders, relative, so F5 stays inside `${workspaceFolder}` (an absolute path re-enters WSL and
+disconnects the window).
+
+Headless needs no change at all: `headless-session up` and the interactive runner read the pointer's
+recorded `workspaceArg` and open whichever shape is armed.
+
+To build your own multi-root fixture, give it one `.code-workspace` naming relative folder paths:
+
+```json
+{ "folders": [{ "path": "alpha" }, { "path": "beta" }] }
+```
+
+Each folder wants its own `tachyon.yml` (`point-status` warns about a root without one — that root
+would open as an ordinary folder and the scenario would silently test less than it claims). Seeded
+`.tachyon/` state per root is gitignored, so force-add it: `git add -f test/fixtures/<name>/<root>/.tachyon`.
+
 | Piece | Location |
 |-------|----------|
-| F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** — static, committed, identical in every checkout, written by no script |
+| F5 config | `.vscode/launch.json` → **Tachyon: Dev Host** (single-root) or **Tachyon: Dev Host (multi-root)** — static, committed, identical in every checkout, written by no script |
 | Dev-host | `<checkout>/.tachyon/dev-host/` (gitignored) — one per checkout |
 | Extension bits | this checkout via `--extensionDevelopmentPath=…/extension` |
-| Opened folder | mirror of the isolated **fixture** (never a repo root) |
+| Opened folder | mirror of the isolated **fixture** (never a repo root); multi-root opens `…/dev-host/workspace.code-workspace` over the same mirror |
 | Dependencies | Install with `npm ci` in the checkout when `node_modules` is absent; F5 refuses a missing dependency tree |
 
 **To dogfood:** open VS Code **on that checkout** and press **F5** → **Tachyon: Dev Host**. Drive only

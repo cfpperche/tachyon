@@ -79,6 +79,28 @@ export function mintExecution(input: MintExecutionInput): MintedExecution {
 }
 
 /**
+ * SDD 480 §7.1 — mint a turn id at input submission.
+ *
+ * Tachyon mints it, always. A runtime that exposes its own turn id contributes that id as an ALIAS —
+ * evidence, corroboration — and never as authority. That is the only answer consistent with §2: a
+ * runtime-owned id does not exist for runtimes that do not expose one, means different things between
+ * the ones that do, and cannot be minted before the turn exists. Minting our own makes `turnId` exist
+ * for every runtime on the same terms and reduces native ids to what they actually are.
+ *
+ * The alias is recorded, not trusted: it is returned alongside so a caller can attach it as evidence,
+ * but nothing downstream may correlate on it.
+ */
+export function mintTurn(input: { agentId: string; nativeTurnId?: string; newId?: () => string }): {
+  turnId: string;
+  /** The runtime's own id, if it offered one. Evidence only — never a correlation key. */
+  nativeAlias?: string;
+} {
+  const turnId = `turn-${(input.newId ?? randomUUID)()}`;
+  const alias = input.nativeTurnId?.trim();
+  return { turnId, ...(alias ? { nativeAlias: alias } : {}) };
+}
+
+/**
  * Read back the identity a running process is carrying, from its environment.
  *
  * Returns `undefined` when the process carries nothing — which is an answer, not a failure. The

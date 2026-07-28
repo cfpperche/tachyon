@@ -45,7 +45,7 @@ import http from "node:http";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { ensureDevHostTmuxLaunchEnv } from "./pointer.mjs";
+import { ensureDevHostTmuxLaunchEnv, readPointerWorkspaceArg } from "./pointer.mjs";
 import { devHostEnv } from "./launch-spec.mjs";
 
 const SELF = "dev-host-interactive";
@@ -106,9 +106,12 @@ async function main() {
   const ptr = path.join(REPO, ".tachyon", "dev-host");
   const slotRoot = resolvePointerSlotRoot(REPO);
   const extensionDir = path.join(slotRoot, "extension");
-  const workspaceDir = fs.existsSync(path.join(slotRoot, "workspace"))
-    ? path.join(slotRoot, "workspace")
-    : path.join(ptr, "workspace");
+  // t-f0efc5 — open what the pointer says to open (see readPointerWorkspaceArg); a multi-root dogfood
+  // needs the `.code-workspace` file, and re-deriving that here is how the two paths drift.
+  const workspaceDir = readPointerWorkspaceArg(slotRoot)
+    ?? (fs.existsSync(path.join(slotRoot, "workspace"))
+      ? path.join(slotRoot, "workspace")
+      : path.join(ptr, "workspace"));
   if (!fs.existsSync(extensionDir)) {
     throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood:dev-host -- point --worktree … --fixture …`);
   }

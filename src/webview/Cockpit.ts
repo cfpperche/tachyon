@@ -21,6 +21,9 @@ import {
   type CockpitModel,
   type CockpitSectionId,
   type CockpitWorkspaceBundle,
+  COLLECT_EVERYTHING,
+  collectNeedsFor,
+  type CockpitCollectNeeds,
 } from "../cockpit/model.js";
 import {
   initMessage,
@@ -78,6 +81,7 @@ import {
   type HumanInboxAction,
 } from "./human-inbox/messages.js";
 import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
+import type { StaleAfter } from "../humanInbox/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import {
   validationsMessage,
@@ -151,6 +155,17 @@ export interface CockpitValidations {
   onValidationsChanged: () => void;
 }
 
+/**
+ * t-e4f662 — the Human Inbox's configured staleness threshold for ONE workspace, from that
+ * workspace's own `tachyon.yml`. Per wsHash rather than per window because it is project-owned
+ * config: in a multi-root window two folders can legitimately answer differently, and reading "the"
+ * threshold would silently pick whichever root came first.
+ *
+ * Unwired, or a workspace that configured nothing, answers undefined and the projection uses the
+ * product default — the same fail-quiet shape every other optional resolver here uses.
+ */
+export type CockpitInboxStaleAfter = (wsHash: string) => StaleAfter | undefined;
+
 /** t-610705 (Phase C.3) — Project Handoff folds into a section (no new route kind — the plan.md
  *  distinction from Fleet's subroutes: Handoff is workspace-scoped like Approvals/Validations, not
  *  an entity with its own immutable locator). WorkspaceHandoffTarget already carries everything the
@@ -209,7 +224,8 @@ export interface CockpitInspector {
  */
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
-  collect: () => Promise<CockpitWorkspaceBundle[]>;
+  /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
+  collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -222,6 +238,8 @@ export interface CockpitDeps {
   studios: CockpitStudios;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
+  /** t-e4f662 — see CockpitInboxStaleAfter. Optional: absent means the product default everywhere. */
+  humanInboxStaleAfter?: CockpitInboxStaleAfter;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
@@ -1044,13 +1062,18 @@ export async function openCockpit(
     const epoch = navEpoch;
     let model: CockpitModel;
     try {
-      const bundles = await deps.collect();
+      // t-af3eef — collect only what this section reads. The section is computed once, below, and
+      // reused for the needs, so there is exactly one authority for "which view is this" and the
+      // needs cannot drift from the model that gets built. Navigation to a section that reads
+      // neither classified slice no longer waits on either.
+      const section = navSection(currentRoute) ?? "overview";
+      const bundles = await deps.collect(collectNeedsFor(section));
       // t-610705 (Phase D, D3) — navSection(currentRoute) is null for pin (nav-less); "overview"
       // here is only "which background section data stays warm underneath the studio form", NOT a
       // claim that the Overview tab is active (tab highlighting is suppressed client-side instead —
       // see cockpit/App.tsx's `isNavlessStudio`).
       model = buildCockpitModel(bundles, {
-        section: navSection(currentRoute) ?? "overview",
+        section,
         wsHash: controlWsHash,
         personalCardTemplate: personalCardTemplateState(),
       });
@@ -1177,6 +1200,11 @@ export async function openCockpit(
       validations: validationWs
         ? buildValidationsViewModel({ folder: approvalWs.folderName, wsHash: approvalWs.wsHash, validations: validationWs.listValidations() }).validations
         : [],
+      // t-e4f662 — this workspace's own threshold; absent falls through to the product default.
+      ...(() => {
+        const configured = deps.humanInboxStaleAfter?.(approvalWs.wsHash);
+        return configured === undefined ? {} : { staleAfterHours: configured };
+      })(),
     });
 
   const sendInbox = async () => {
@@ -2165,7 +2193,9 @@ export async function openCockpit(
           return;
         case "copyDiagnostics": {
           try {
-            const bundles = await deps.collect();
+            // A diagnostics dump is explicitly a full picture of the world, so it pays for both
+            // classified reads on purpose — the one place where the old always-collect cost is right.
+            const bundles = await deps.collect(COLLECT_EVERYTHING);
             const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview" }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied, "ok"));

@@ -209,6 +209,10 @@ export function pathsOf(repoRoot) {
     root: base,
     extension: path.join(base, "extension"),
     workspace: path.join(base, "workspace"),
+    // t-f0efc5 — the multi-root entry point. VS Code decides folder-vs-workspace by EXTENSION, so a
+    // multi-root dogfood needs a real `.code-workspace` path to open; the mirror directory beside it
+    // still holds the folders. Absent for a single-root pointer, and that absence is the mode.
+    workspaceFile: path.join(base, "workspace.code-workspace"),
     runtime: path.join(base, "runtime"),
     meta: path.join(base, "meta.json"),
     userData: path.join(base, "user-data"),
@@ -289,6 +293,83 @@ function replaceSymlink(linkPath, targetAbs) {
  * Portable launch keeps ${workspaceFolder}/.tachyon/dev-host/workspace so the EDH
  * inherits the parent remote authority (same shape as Run Tachyon demo/fixture).
  */
+/**
+ * t-f0efc5 — is this fixture a multi-root workspace? It is when it carries exactly one
+ * `*.code-workspace` file, which is also the file that names the folders.
+ *
+ * Detection is by the fixture's own contents rather than by a flag, so `point --fixture multiroot`
+ * does the right thing without the caller having to know which shape they pointed at — and a fixture
+ * that later gains a workspace file starts opening as one without a lane change.
+ */
+export function detectMultiRootFixture(fixtureAbs) {
+  const fixture = path.resolve(fixtureAbs);
+  let names;
+  try {
+    names = fs.readdirSync(fixture);
+  } catch {
+    return null;
+  }
+  const files = names.filter((name) => name.endsWith(".code-workspace"));
+  if (files.length === 0) return null;
+  if (files.length > 1) {
+    throw new Error(`${SELF}: fixture ${fixture} has ${files.length} .code-workspace files; keep exactly one`);
+  }
+  const file = path.join(fixture, files[0]);
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    throw new Error(`${SELF}: ${file} is not readable JSON: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  const folders = Array.isArray(parsed?.folders) ? parsed.folders : null;
+  if (!folders || folders.length === 0) {
+    throw new Error(`${SELF}: ${file} declares no folders`);
+  }
+  const relPaths = [];
+  for (const entry of folders) {
+    const rel = typeof entry?.path === "string" ? entry.path : null;
+    if (!rel) throw new Error(`${SELF}: ${file} has a folder entry without a string path`);
+    // A fixture that reaches outside itself would mirror something the lane never isolated — the
+    // same rule that keeps the monorepo root from being opened as a workspace.
+    if (path.isAbsolute(rel) || rel.split(/[\\/]/).includes("..")) {
+      throw new Error(`${SELF}: ${file} folder '${rel}' must be a relative path inside the fixture`);
+    }
+    const abs = path.join(fixture, rel);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) {
+      throw new Error(`${SELF}: ${file} folder '${rel}' is not an existing directory`);
+    }
+    relPaths.push(rel);
+  }
+  return { file, folders: relPaths, name: files[0] };
+}
+
+/**
+ * Copy ONE fixture entry into the mirror under the rules the lane already applies: runtime-owned
+ * configuration is a real copy (the engine opens it no-follow, and a dogfood must not write back into
+ * a tracked fixture), everything else a symlink so Explorer still shows fixture files.
+ *
+ * Extracted from `materializeWorkspaceMirror` by t-f0efc5 so a multi-root mirror is the SAME rules
+ * applied per folder, not a second policy that could drift from this one.
+ */
+function mirrorFixtureEntry(fixtureDir, mirrorDir, name) {
+  if (name === ".edh-cache" || name === ".edh-extensions" || name === ".edh-tmux" || name === ".edh-user-data") return;
+  if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") return;
+  // The fixture's own workspace file is not mirrored: the lane writes its own beside the mirror,
+  // with paths rewritten to the mirrored folders.
+  if (name.endsWith(".code-workspace")) return;
+  const src = path.join(fixtureDir, name);
+  const dest = path.join(mirrorDir, name);
+  if (name === ".tachyon" || name === ".codex" || name === ".claude") {
+    fs.cpSync(src, dest, { recursive: true });
+    return;
+  }
+  if (name === "tachyon.yml" || name === ".mcp.json") {
+    fs.copyFileSync(src, dest);
+    return;
+  }
+  fs.symlinkSync(src, dest);
+}
+
 export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
   const fixture = path.resolve(fixtureAbs);
   try {
@@ -298,32 +379,9 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     /* missing */
   }
   fs.mkdirSync(mirrorDir, { recursive: true, mode: 0o700 });
-  for (const name of fs.readdirSync(fixture)) {
-    // CLI-only isolation dirs on the fixture — not needed for F5 and clutter Explorer.
-    if (name === ".edh-cache" || name === ".edh-extensions" || name === ".edh-tmux" || name === ".edh-user-data") {
-      continue;
-    }
-    if (name === ".dev-host-source" || name === ".tachyon-dev-host.json") continue;
-    const src = path.join(fixture, name);
-    const dest = path.join(mirrorDir, name);
-    // Runtime-owned configuration and tachyon.yml must be REAL entries under the mirror. The engine deliberately
-    // opens authoritative config with a no-follow policy; a tachyon.yml symlink therefore fails
-    // closed with ELOOP during real Dev Host Studio saves. Copying the config also keeps destructive
-    // dogfood mutations inside the disposable mirror instead of writing back into a tracked fixture.
-    // Engine AgentManager fails closed if `.tachyon` resolves outside the workspace
-    // (SoulError: Soul launch reservation parent escapes workspace) — common when dogfood
-    // fixtures seed tasks/continuity/sessions under fixture/.tachyon and pointer only
-    // symlinks them. Other entries stay symlinks so Explorer still shows fixture files.
-    if (name === ".tachyon" || name === ".codex" || name === ".claude") {
-      fs.cpSync(src, dest, { recursive: true });
-      continue;
-    }
-    if (name === "tachyon.yml" || name === ".mcp.json") {
-      fs.copyFileSync(src, dest);
-      continue;
-    }
-    fs.symlinkSync(src, dest);
-  }
+  // Runtime-owned configuration and tachyon.yml must be REAL entries under the mirror; everything else
+  // stays a symlink. See `mirrorFixtureEntry` for why each rule exists.
+  for (const name of fs.readdirSync(fixture)) mirrorFixtureEntry(fixture, mirrorDir, name);
   fs.writeFileSync(path.join(mirrorDir, ".dev-host-source"), `${fixture}\n`, "utf8");
   fs.writeFileSync(
     path.join(mirrorDir, ".tachyon-dev-host.json"),
@@ -331,6 +389,67 @@ export function materializeWorkspaceMirror(mirrorDir, fixtureAbs) {
     { encoding: "utf8", mode: 0o600 },
   );
   return mirrorDir;
+}
+
+/**
+ * t-f0efc5 — materialize a MULTI-ROOT fixture: every declared folder mirrored under the same rules,
+ * plus a `.code-workspace` beside the mirror whose paths point at the mirrored copies.
+ *
+ * The workspace file lives OUTSIDE the mirror directory and refers to `./workspace/<folder>` so the
+ * whole thing stays under `${workspaceFolder}/.tachyon/dev-host` — the relative-path rule that keeps
+ * F5 working on WSL Remote (an absolute path re-enters WSL and disconnects the window).
+ *
+ * Returns the workspace-file path, which is what VS Code must be given: it decides folder-vs-workspace
+ * by EXTENSION, so the mirror directory alone can never open as multi-root.
+ */
+export function materializeMultiRootMirror(mirrorDir, workspaceFilePath, fixtureAbs, detected) {
+  const fixture = path.resolve(fixtureAbs);
+  const spec = detected ?? detectMultiRootFixture(fixture);
+  if (!spec) throw new Error(`${SELF}: ${fixture} is not a multi-root fixture (no .code-workspace)`);
+  try {
+    fs.lstatSync(mirrorDir);
+    fs.rmSync(mirrorDir, { recursive: true, force: true });
+  } catch {
+    /* missing */
+  }
+  fs.mkdirSync(mirrorDir, { recursive: true, mode: 0o700 });
+  const folders = [];
+  for (const rel of spec.folders) {
+    const src = path.join(fixture, rel);
+    const dest = path.join(mirrorDir, rel);
+    fs.mkdirSync(dest, { recursive: true, mode: 0o700 });
+    for (const name of fs.readdirSync(src)) mirrorFixtureEntry(src, dest, name);
+    // Each mirrored root carries the same provenance marker a single-root mirror does, so a human
+    // (and `point-status`) can tell what any one of them came from.
+    fs.writeFileSync(path.join(dest, ".dev-host-source"), `${src}\n`, "utf8");
+    folders.push({ path: `./workspace/${rel.split(path.sep).join("/")}` });
+  }
+  fs.writeFileSync(path.join(mirrorDir, ".dev-host-source"), `${fixture}\n`, "utf8");
+  fs.writeFileSync(
+    path.join(mirrorDir, ".tachyon-dev-host.json"),
+    `${JSON.stringify({ schemaVersion: 1, kind: "tachyon-dev-host", multiRoot: true }, null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 },
+  );
+  fs.writeFileSync(workspaceFilePath, `${JSON.stringify({ folders }, null, 2)}\n`, "utf8");
+  return workspaceFilePath;
+}
+
+/**
+ * t-f0efc5 — what this pointer says to OPEN, read from its own meta.
+ *
+ * One reader, shared by F5's documentation and both headless runners, so "a multi-root dogfood is
+ * given the .code-workspace file" is a fact recorded once at point time rather than a rule three
+ * callers re-derive. Returns null when the pointer predates the field or cannot be read — the caller
+ * then falls back to the mirror directory, which is exactly what such a pointer was.
+ */
+export function readPointerWorkspaceArg(slotRootAbs) {
+  try {
+    const meta = JSON.parse(fs.readFileSync(path.join(slotRootAbs, "meta.json"), "utf8"));
+    const arg = typeof meta?.workspaceArg === "string" ? meta.workspaceArg : null;
+    return arg && fs.existsSync(arg) ? arg : null;
+  } catch {
+    return null;
+  }
 }
 
 export function ensureNodeModules(worktreeAbs, repoRootAbs) {
@@ -607,6 +726,18 @@ function readShortSha(worktreeAbs) {
 
 
 const LAUNCH_CONFIG_NAME = "Tachyon: Dev Host";
+/**
+ * t-f0efc5 — the multi-root F5 entry point.
+ *
+ * TWO tracked configurations rather than one rewritten per dogfood: `launch.json` is tracked and spec
+ * 448's whole point is that it is never edited per agent, while VS Code decides folder-vs-workspace by
+ * the EXTENSION of the path it is given — so one static argument cannot serve both shapes. Keeping the
+ * single-root configuration exactly as it was also keeps the single-FOLDER window dogfoodable, which
+ * matters because the product genuinely branches on it (`workspaceFile === undefined` in
+ * extension.ts's worktree reveal); collapsing both onto a one-folder `.code-workspace` would have made
+ * that branch unreachable by clicking.
+ */
+const MULTI_ROOT_LAUNCH_CONFIG_NAME = "Tachyon: Dev Host (multi-root)";
 
 
 /**
@@ -652,7 +783,14 @@ export function point(opts) {
   // Point at the Node executable running this CLI; the engine store will copy and hash that instead.
   replaceSymlink(p.runtime, fs.realpathSync(process.execPath));
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
-  materializeWorkspaceMirror(p.workspace, workspace);
+  // t-f0efc5 — a fixture carrying a `.code-workspace` is mirrored per folder instead, and the lane
+  // writes its own workspace file beside the mirror. `rmIfPresent` first: re-pointing from a
+  // multi-root fixture to a single-root one must not leave the old workspace file behind, or F5's
+  // multi-root configuration would keep opening a mirror that no longer matches it.
+  rmIfPresent(p.workspaceFile);
+  const multiRoot = detectMultiRootFixture(workspace);
+  if (multiRoot) materializeMultiRootMirror(p.workspace, p.workspaceFile, workspace, multiRoot);
+  else materializeWorkspaceMirror(p.workspace, workspace);
 
   let packageName = null;
   try {
@@ -672,6 +810,11 @@ export function point(opts) {
     extensionLink: p.extension,
     workspaceLink: p.workspace,
     workspaceMirror: true,
+    // t-f0efc5 — the mode, and the exact path VS Code must be given for it. `workspaceArg` exists so
+    // the headless runners never re-derive the rule: they open what the pointer says to open.
+    workspaceMode: multiRoot ? "multi-root" : "single-root",
+    workspaceArg: multiRoot ? p.workspaceFile : p.workspace,
+    workspaceFolders: multiRoot ? multiRoot.folders : null,
     tmuxTmpDir,
     launchEnv: launchEnvPath,
     spec: opts.spec ?? null,
@@ -682,10 +825,10 @@ export function point(opts) {
     toolBinLinked: tools.linked,
     toolBinLinkCount: tools.count,
     preparedAt: new Date().toISOString(),
-    launchConfig: LAUNCH_CONFIG_NAME,
+    launchConfig: multiRoot ? MULTI_ROOT_LAUNCH_CONFIG_NAME : LAUNCH_CONFIG_NAME,
     howTo: [
       `Open VS Code on THIS checkout (${repoRoot}) — the dev-host belongs to it`,
-      `Run and Debug → select "${LAUNCH_CONFIG_NAME}"`,
+      `Run and Debug → select "${multiRoot ? MULTI_ROOT_LAUNCH_CONFIG_NAME : LAUNCH_CONFIG_NAME}"`,
       "Press F5 (builds this checkout, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
       "When done: npm run dogfood:dev-host -- point-clear",
@@ -737,6 +880,49 @@ export async function status(repoRoot, opts = {}) {
         /* ignore */
       }
     }
+  }
+
+  // t-f0efc5 — the mode is what tells a human WHICH F5 configuration to pick, so status states it and
+  // validates the artifact that mode requires. An older meta (before this field) reads as single-root,
+  // which is what it was.
+  const workspaceMode = meta.workspaceMode === "multi-root" ? "multi-root" : "single-root";
+  const workspaceArg = typeof meta.workspaceArg === "string" ? meta.workspaceArg : p.workspace;
+  if (workspaceMode === "multi-root") {
+    if (!fs.existsSync(p.workspaceFile)) {
+      warnings.push("multi-root workspace file missing — re-point");
+    } else {
+      let declared = null;
+      try {
+        declared = JSON.parse(fs.readFileSync(p.workspaceFile, "utf8"))?.folders ?? null;
+      } catch {
+        warnings.push("multi-root workspace file is not readable JSON — re-point");
+      }
+      // A folder listed but not mirrored opens as an empty root in the EDH, which reads as a product
+      // bug rather than as a broken pointer. Say it here instead.
+      for (const entry of Array.isArray(declared) ? declared : []) {
+        const rel = typeof entry?.path === "string" ? entry.path.replace(/^\.\//, "") : null;
+        const abs = rel ? path.join(p.base, rel) : null;
+        if (!abs || !fs.existsSync(abs)) {
+          warnings.push(`multi-root folder missing from the mirror: ${entry?.path ?? "(unnamed)"}`);
+          continue;
+        }
+        // The single-root mirror's own invariant, checked per root: `.tachyon` must be a REAL
+        // directory. A symlinked one makes AgentManager fail closed ("Soul launch reservation parent
+        // escapes workspace") only once an agent is spawned — a failure the dogfooder would read as
+        // a product bug rather than as a broken mirror.
+        const tachyonDir = path.join(abs, ".tachyon");
+        if (fs.existsSync(tachyonDir) && fs.lstatSync(tachyonDir).isSymbolicLink()) {
+          warnings.push(`multi-root folder ${entry.path}: .tachyon is a symlink (must be a real copy) — re-point`);
+        }
+        // tachyon.yml is what makes a folder a Tachyon workspace at all; a root without one opens as
+        // an ordinary folder and the multi-root scenario silently tests less than it claims.
+        if (!fs.existsSync(path.join(abs, "tachyon.yml"))) {
+          warnings.push(`multi-root folder ${entry.path}: no tachyon.yml — that root is not a Tachyon workspace`);
+        }
+      }
+    }
+  } else if (fs.existsSync(p.workspaceFile)) {
+    warnings.push("stale multi-root workspace file beside a single-root pointer — re-point or point-clear");
   }
 
   const worktreePath = typeof meta.worktree === "string" ? meta.worktree : null;
@@ -835,6 +1021,10 @@ export async function status(repoRoot, opts = {}) {
     workspaceResolves: workspaceSource ?? (wsOk ? path.resolve(p.workspace) : null),
     workspaceMirrorPath: wsOk ? path.resolve(p.workspace) : null,
     workspaceIsMirror: Boolean(workspaceSource),
+    // t-f0efc5 — which shape this pointer opens, and the exact path that opens it. A human reads the
+    // mode to pick the matching F5 configuration; the headless runners read the arg.
+    workspaceMode,
+    workspaceArg,
     worktreePath,
     worktreeExists,
     distExists,
@@ -861,6 +1051,10 @@ export function printStatus(st) {
   if (st.runtimePath) console.log(`  engine runtime: ${st.runtimePath}`);
   if (st.workspaceResolves) console.log(`  fixture source: ${st.workspaceResolves}`);
   if (st.workspaceMirrorPath) console.log(`  workspace mir:  ${st.workspaceMirrorPath}`);
+  // t-f0efc5 — the two facts a human needs to press the right F5: which shape is armed, and the path
+  // that opens it. Printed for both modes so single-root is stated rather than assumed.
+  if (st.workspaceMode) console.log(`  workspace mode: ${st.workspaceMode}`);
+  if (st.workspaceMode === "multi-root") console.log(`  open with:      ${st.workspaceArg}`);
   if (st.tachyonMirrorIsRealDir === true) console.log(`  mirror .tachyon: real directory (ok)`);
   else if (st.tachyonMirrorIsRealDir === false) console.log(`  mirror .tachyon: NOT a real dir (re-point)`);
   else if (st.workspaceIsMirror) console.log(`  mirror .tachyon: (none in fixture)`);
@@ -942,7 +1136,13 @@ export function assertPointerSessionIdle(pointerRoot) {
  * (2026-07-24). A silent no-op would be worse than a hard stop here: the caller would believe it had
  * armed a scoped dev-host and then be pointed at a different directory than the one that launches.
  */
-const RETIRED_FLAGS = Object.freeze({
+/**
+ * Flags spec 448 removed, with the sentence each refusal carries. Exported so a guard can DERIVE the
+ * set instead of restating it (t-3e5072): the transported project guidance must never instruct one of
+ * these again, and a seventh retirement should extend that guard by being added here — not by
+ * somebody remembering to update a second list.
+ */
+export const RETIRED_FLAGS = Object.freeze({
   "--owner": "the dev-host now belongs to the checkout you run in — cd to your worktree and drop --owner",
   "--slot": "slots were removed; each checkout has exactly one dev-host — cd to your worktree and drop --slot",
   "--activate": "there is no `active` pointer to select any more — the checkout you run in is the target",
@@ -1063,13 +1263,20 @@ Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary ch
     console.log(`  checkout:  ${repoRoot}`);
     console.log(`  worktree:  ${meta.worktree}`);
     console.log(`  workspace: ${meta.workspace}`);
+    // t-f0efc5 — the mode decides which F5 configuration the human picks, so say it here rather than
+    // leaving them to infer it from the fixture's contents.
+    console.log(`  mode:      ${meta.workspaceMode}${meta.workspaceMode === "multi-root" ? ` (${(meta.workspaceFolders ?? []).join(", ")})` : ""}`);
     console.log(`  sha:       ${meta.sha}`);
     if (meta.spec) console.log(`  spec:      ${meta.spec}`);
     if (meta.slug) console.log(`  slug:      ${meta.slug}`);
     if (primary.redirected) console.log(`  deps from: ${primaryRepo} (borrowed node_modules/.tachyon/bin)`);
     console.log("");
     console.log("  launch.json: static, committed, ${workspaceFolder}/.tachyon/dev-host — nothing generated");
-    console.log("  workspace:   real mirror under .tachyon/dev-host/workspace");
+    console.log(
+      meta.workspaceMode === "multi-root"
+        ? "  workspace:   real per-folder mirror + .tachyon/dev-host/workspace.code-workspace"
+        : "  workspace:   real mirror under .tachyon/dev-host/workspace",
+    );
     console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
     console.log("");
     console.log("Human next step:");
