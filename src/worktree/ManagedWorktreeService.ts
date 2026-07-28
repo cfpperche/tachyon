@@ -17,6 +17,13 @@ import {
 } from "./WorktreeManager.js";
 import { classifyManagedWorktree, type WorktreeClassification } from "./classify.js";
 import {
+  resolveHygieneAuthority,
+  type HygieneAuthorityDecision,
+  type HygieneAuthorityGranted,
+  type HygieneLineageSource,
+  type HygieneRelation,
+} from "./hygieneAuthority.js";
+import {
   describeToolingProjection,
   projectPluginTooling,
   resolveAuthorityRoot,
@@ -52,6 +59,41 @@ export interface ManagedWorktreeServiceOpts {
   onRegistryChanged?: () => void;
   /** t-36182f — surface the plugin-tooling projection outcome for a linked worktree (best-effort). */
   notify?: (message: string) => void;
+  /**
+   * t-e74631 — who spawned whom, for hygiene authority. `AgentManager.parentOf` satisfies it.
+   * Optional: absent means lineage is UNKNOWN, not that everyone is an orphan, and the authority
+   * module refuses ancestor claims accordingly rather than granting them.
+   */
+  lineage?: HygieneLineageSource;
+}
+
+/** Where hygiene removals are recorded. Gitignored `.tachyon/`, so the shared checkout stays clean. */
+export const HYGIENE_AUDIT_REL = path.join(".tachyon", "worktree-hygiene.jsonl");
+
+export interface HygieneRemovalResult {
+  removed: boolean;
+  branchDeleted: boolean;
+  error?: string;
+  /** Present once authority was evaluated; absent when the entry was not found at all. */
+  authority?: HygieneAuthorityDecision;
+}
+
+export interface HygieneReconcileOutcome {
+  id: string;
+  path: string;
+  branch: string;
+  taskId?: string;
+  relation?: HygieneRelation;
+  branchDeleted?: boolean;
+  /** Why this entry was left alone. Always present on a refusal — a silent skip is the old bug. */
+  reason?: string;
+}
+
+export interface HygieneReconcileReport {
+  scanned: number;
+  removed: HygieneReconcileOutcome[];
+  refused: HygieneReconcileOutcome[];
+  dryRun: boolean;
 }
 
 export class ManagedWorktreeService {
@@ -389,12 +431,23 @@ export class ManagedWorktreeService {
    * re-validated at the point of deletion — `remove()` alone re-checks only the first two, and a
    * render-time containment verdict must never be trusted at click time.
    */
+  /**
+   * t-e74631 — this is also the ONLY path that grants lineage authority, and the two facts are the
+   * same fact. A delegating parent may ask here precisely because everything below the ask is still
+   * proved at execution time: the widest thing a wrongly-granted ancestor can do is request a removal
+   * this classifier then refuses. `remove()` keeps the narrower owner-only rule because it can force
+   * past dirtiness, and force is not something an ancestor inherits.
+   */
   async removeClassified(
     idOrPath: string,
     opts: { deleteBranch?: boolean; actor: { kind: string; name?: string } },
-  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  ): Promise<HygieneRemovalResult> {
     const entry = findManagedEntry(this.load(), idOrPath);
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
+    // Authority first: it is the cheap check, and a caller with no standing should not learn the
+    // dirtiness of a worktree it may not touch.
+    const authority = resolveHygieneAuthority(entry, opts.actor, this.lineage());
+    if (!authority.allowed) return { removed: false, branchDeleted: false, error: `refused: ${authority.reason}` };
     const classification = await classifyManagedWorktree(entry, {
       git: this.git,
       status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
@@ -402,9 +455,153 @@ export class ManagedWorktreeService {
     });
     if (classification.state !== "ready-to-remove") {
       const why = classification.reasons.join("; ") || classification.state;
-      return { removed: false, branchDeleted: false, error: `refused: not ready-to-remove (${classification.state}: ${why})` };
+      return {
+        removed: false,
+        branchDeleted: false,
+        error: `refused: not ready-to-remove (${classification.state}: ${why})`,
+        authority,
+      };
     }
-    return this.remove(idOrPath, { deleteBranch: opts.deleteBranch, actor: opts.actor });
+    const result = await this.removeEntryEngine(entry, {
+      deleteBranch: opts.deleteBranch === true && entry.tachyonCreatedBranch,
+      force: false,
+      refuseUnlessForceIfDirty: true,
+    });
+    // The audit line is emitted only for a removal that actually happened, and it carries the proofs
+    // rather than a verdict: a later reader can disagree with the decision, but not with what it saw.
+    if (result.removed) this.recordHygieneRemoval(entry, authority, classification, result.branchDeleted);
+    return { ...result, authority };
+  }
+
+  /**
+   * t-e74631 — sweep every change entry the actor may act on and remove the ones that are provably
+   * safe, reporting the refusals rather than swallowing them.
+   *
+   * The point of the sweep is that it does not wait for anybody. Hygiene used to depend on the
+   * creating agent waking up and remembering, which is exactly the thing a finished agent never does
+   * — so residue accumulated until a human noticed. A parent (or the workspace) can now run this
+   * immediately over the whole registry.
+   *
+   * Agent worktrees are never swept: an agent's working home is not residue, and the filter is here
+   * rather than in the authority module so that a caller cannot opt into sweeping them at all.
+   */
+  async reconcileHygiene(opts: {
+    actor: { kind: string; name?: string };
+    deleteBranch?: boolean;
+    /** Report what WOULD happen without touching anything. */
+    dryRun?: boolean;
+  }): Promise<HygieneReconcileReport> {
+    const entries = this.list({ kind: "change", status: "active" });
+    const removed: HygieneReconcileOutcome[] = [];
+    const refused: HygieneReconcileOutcome[] = [];
+    for (const entry of entries) {
+      if (opts.dryRun) {
+        const decision = await this.previewHygiene(entry, opts.actor);
+        (decision.wouldRemove ? removed : refused).push(decision.outcome);
+        continue;
+      }
+      const result = await this.removeClassified(entry.id, { actor: opts.actor, deleteBranch: opts.deleteBranch });
+      const outcome: HygieneReconcileOutcome = {
+        id: entry.id,
+        path: entry.path,
+        branch: entry.branch,
+        ...(entry.taskId ? { taskId: entry.taskId } : {}),
+        ...(result.authority?.allowed ? { relation: result.authority.relation } : {}),
+        ...(result.error ? { reason: result.error } : {}),
+        ...(result.branchDeleted ? { branchDeleted: true } : {}),
+      };
+      (result.removed ? removed : refused).push(outcome);
+    }
+    return { scanned: entries.length, removed, refused, dryRun: opts.dryRun === true };
+  }
+
+  /** What `reconcileHygiene` would do to one entry, without doing it. */
+  private async previewHygiene(
+    entry: ManagedWorktreeEntry,
+    actor: { kind: string; name?: string },
+  ): Promise<{ wouldRemove: boolean; outcome: HygieneReconcileOutcome }> {
+    const base: HygieneReconcileOutcome = {
+      id: entry.id,
+      path: entry.path,
+      branch: entry.branch,
+      ...(entry.taskId ? { taskId: entry.taskId } : {}),
+    };
+    const authority = resolveHygieneAuthority(entry, actor, this.lineage());
+    if (!authority.allowed) return { wouldRemove: false, outcome: { ...base, reason: `refused: ${authority.reason}` } };
+    let classification: WorktreeClassification;
+    try {
+      classification = await classifyManagedWorktree(entry, {
+        git: this.git,
+        status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
+        occupancy: this.opts.occupancy,
+      });
+    } catch (err) {
+      // A classifier that threw proves nothing, so the preview must not claim it would remove.
+      return {
+        wouldRemove: false,
+        outcome: { ...base, relation: authority.relation, reason: `refused: classification failed: ${this.messageOf(err)}` },
+      };
+    }
+    if (classification.state !== "ready-to-remove") {
+      const why = classification.reasons.join("; ") || classification.state;
+      return {
+        wouldRemove: false,
+        outcome: { ...base, relation: authority.relation, reason: `refused: not ready-to-remove (${classification.state}: ${why})` },
+      };
+    }
+    return { wouldRemove: true, outcome: { ...base, relation: authority.relation } };
+  }
+
+  private messageOf(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  private lineage(): HygieneLineageSource {
+    // A workspace with no lineage seam wired is not a workspace where everyone is an orphan: it is one
+    // where lineage is UNKNOWN. Answering `undefined` is correct for that — `resolveHygieneAuthority`
+    // then proves no ancestor relation and refuses, leaving owner and human authority intact.
+    return this.opts.lineage ?? { parentOf: () => undefined };
+  }
+
+  /**
+   * Durable audit for one hygiene removal: who asked, whose it was, by what relation, and which
+   * proofs were true at the moment it happened. Best-effort by design — a failed audit write must not
+   * roll back a removal that already succeeded, and the removal is observable in the registry anyway.
+   */
+  private recordHygieneRemoval(
+    entry: ManagedWorktreeEntry,
+    authority: HygieneAuthorityGranted,
+    classification: WorktreeClassification,
+    branchDeleted: boolean,
+  ): void {
+    try {
+      const line = JSON.stringify({
+        at: this.nowIso(),
+        id: entry.id,
+        path: entry.path,
+        branch: entry.branch,
+        ...(entry.taskId ? { taskId: entry.taskId } : {}),
+        actor: authority.actor,
+        relation: authority.relation,
+        ...(authority.owner ? { owner: authority.owner } : {}),
+        ...(authority.lineage ? { lineage: authority.lineage } : {}),
+        branchDeleted,
+        proofs: {
+          state: classification.state,
+          dirty: classification.dirty,
+          aheadOfBase: classification.aheadOfBase,
+          containedInBase: classification.containedInBase,
+          containedInTrunk: classification.containedInTrunk,
+          trunkRef: classification.trunkRef,
+          tachyonCreatedBranch: entry.tachyonCreatedBranch,
+        },
+      });
+      const file = path.join(this.opts.workspaceRoot, HYGIENE_AUDIT_REL);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${line}\n`, { mode: 0o600 });
+    } catch {
+      /* audit is evidence, not a gate */
+    }
   }
 
   async remove(

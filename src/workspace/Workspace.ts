@@ -833,6 +833,11 @@ export class Workspace {
         // Best-effort refresh signal (agents view re-syncs worktree reveal on host).
         try { this.host.onViewsChanged("agents"); } catch { /* host optional during early boot */ }
       },
+      // t-e74631 — read through a thunk for the same reason `occupancy` above does: AgentManager is
+      // constructed AFTER this service, and lineage is session-local memory that keeps growing as
+      // agents spawn. A snapshot taken here would be empty forever, and "empty" reads as "no
+      // ancestors" — the one answer that must never be guessed in an authorization decision.
+      lineage: { parentOf: (name: string) => this.manager.parentOf(name) },
     });
     // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
     this.deliveryProjection = new DeliveryProjectionService({
@@ -3921,6 +3926,38 @@ export class Workspace {
   }
 
   /**
+   * t-e74631 — remove change worktrees whose work has already landed, at startup.
+   *
+   * The residue this clears is structural, not accidental: hygiene used to depend on the creating
+   * agent waking up and remembering, and an agent that finished its task never wakes again. So 19
+   * accumulated, 14 of them clean and already contained in the trunk. The workspace is nobody's
+   * descendant, so it can do this for every entry regardless of who created it.
+   *
+   * Runs detached and after `rehydrateFromLedger`, for two different reasons: it probes git per
+   * entry, which must never sit in front of activation; and lineage has to be rebuilt before any
+   * authority question is asked of it. Nothing here can delete work — `reconcileHygiene` re-proves
+   * clean, unoccupied and contained per entry, so the worst case is that it removes nothing.
+   */
+  private sweepWorktreeHygiene(): void {
+    void this.managedWorktrees
+      // The host acting on its own registry is the workspace authority — the same principal the
+      // Worktrees tab already uses for `worktree.remove-managed`.
+      .reconcileHygiene({ actor: { kind: "human" }, deleteBranch: true })
+      .then((report) => {
+        if (report.removed.length === 0) return;
+        // Only the removals are announced. Refusals at startup are the NORMAL state — every worktree
+        // with work still in it is a refusal — so surfacing them here would train people to ignore
+        // the notification. `reconcile_worktree_hygiene` reports them in full when someone asks.
+        this.host.notify(
+          this.t("worktree hygiene: removed {0} landed change worktree(s)", report.removed.length),
+          "info",
+        );
+        this.refreshAgentsViews();
+      })
+      .catch(() => { /* best-effort: never let cleanup cost an activation */ });
+  }
+
+  /**
    * t-8310ca — drop continuity brief/state (+ matching activity logs) for agent names that are not
    * declared, not live in tmux, and not in the session ledger. Complements forgetAgent when dismiss
    * never ran. Best-effort; never blocks activation.
@@ -5745,6 +5782,7 @@ export class Workspace {
     await this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
+    this.sweepWorktreeHygiene(); // t-e74631: change worktrees already landed, left behind by finished agents
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
     // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.
