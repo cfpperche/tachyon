@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import net from "node:net";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
@@ -297,12 +298,12 @@ export async function executeExtensionCommand(
         id: command.id,
         decision: command.decision,
         resolvedBy: "vscode",
-        currentSessionOwner: async (session) => (await workspace.manager.list())
-          .find((entry) => entry.session === session && entry.running)?.name,
-        inject: async (session, text) => {
-          await workspace.tmux.sendSubmittedLine(session, text);
-          return { receipt: `tmux:${session}` };
-        },
+        ...approvalResolutionPorts({
+          listEntries: () => workspace.manager.list(),
+          sendSubmittedLine: (session, text) => workspace.tmux.sendSubmittedLine(session, text),
+        }),
+        // Left as it was: this path lets a failing pin completion surface. See t-a77fe6 — the two
+        // callers disagree about that and the disagreement is reported, not silently settled here.
         completePin: (pinId) => workspace.pinStore.setDone(pinId, true),
       });
       // Drop Attention-stack notice cards + Companion SSE (ledger resolve alone does not dismiss UI).

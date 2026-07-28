@@ -97,6 +97,7 @@ import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonic
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -3442,12 +3443,12 @@ export class Workspace {
         id,
         decision,
         resolvedBy: "companion",
-        currentSessionOwner: async (session) =>
-          (await this.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
-        inject: async (session, text) => {
-          await this.tmux.sendSubmittedLine(session, text);
-          return { receipt: `tmux:${session}` };
-        },
+        ...approvalResolutionPorts({
+          listEntries: () => this.manager.list(),
+          sendSubmittedLine: (session, text) => this.tmux.sendSubmittedLine(session, text),
+        }),
+        // Left as it was: this path swallows a failing pin completion. See t-a77fe6 — the editor path
+        // does NOT, and settling that would change behaviour on one of them.
         completePin: (pinId) => {
           try {
             this.pinStore.setDone(pinId, true);
