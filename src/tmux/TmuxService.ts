@@ -4,8 +4,28 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-/** Dedicated tmux server socket — isolates Tachyon from the user's own tmux server and ~/.tmux.conf sessions. */
-export const SOCKET_NAME = "tachyon";
+/**
+ * Env seam for the dedicated tmux server socket name (`t-05097f`).
+ *
+ * The editor-host gate used to run against the SAME socket as the live fleet, because this name was
+ * a hardcoded constant. Measured: its "Stop All" scenario listed `tachyon-b349073a-*` — real running
+ * agents — and its own `tachyon-a2e81f24-*` sessions survived between runs, so the next run found an
+ * entry already live, spawned nothing, and emitted no `new-session` while still reporting it started.
+ * A per-run socket makes each gate execution its own tmux SERVER: it cannot list, stop or reuse a
+ * session it did not create, and nothing leaks into the run after it.
+ */
+export const TMUX_SOCKET_ENV = "TACHYON_TMUX_SOCKET";
+
+/** Default dedicated socket — isolates Tachyon from the user's own tmux server and ~/.tmux.conf sessions. */
+export const DEFAULT_SOCKET_NAME = "tachyon";
+
+/** The socket this process talks to: the env override when set, else the shared default. */
+export function resolveSocketName(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[TMUX_SOCKET_ENV]?.trim();
+  return override ? override : DEFAULT_SOCKET_NAME;
+}
+
+export const SOCKET_NAME = resolveSocketName();
 export const SESSION_PREFIX = "tachyon";
 /** new-session -e (per-session env) requires tmux >= 3.2. */
 export const MIN_TMUX_VERSION = 3.2;
