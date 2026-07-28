@@ -335,6 +335,59 @@ describe("remote WorkspaceClient", () => {
     expect(executions).toBe(1);
     await client.close();
   });
+
+  /**
+   * t-f54b62 — the client says whether the daemon it attached to is the installed bundle.
+   *
+   * Driven through `connectRemoteWorkspaceClient` rather than the classifier alone, because the gap
+   * was never the comparison: the supervisor already computed it and returned
+   * `disposition: "reused-compatible"`, and no caller read it. A test of the pure function would have
+   * been green while the client still had nothing to say.
+   */
+  describe("t-f54b62 engine currency", () => {
+    async function clientAttachedTo(engineBundleId: string) {
+      const root = temp("tachyon-workspace-client-currency-");
+      const workspaceRoot = path.join(root, "workspace");
+      const runtimeRoot = path.join(root, "runtime");
+      fs.mkdirSync(workspaceRoot, { mode: 0o700 });
+      fs.mkdirSync(runtimeRoot, { mode: 0o700 });
+      const socketPath = path.join(runtimeRoot, "control.sock");
+      const live = { ...identity(fs.realpathSync(workspaceRoot), "engine-currency", "bridge-currency"), bundleId: engineBundleId };
+      const server = await startEngineControlServer({
+        socketPath,
+        identity: live,
+        getSnapshot: () => snapshot(live, 0, "currency"),
+      });
+      servers.push(server);
+      return connectRemoteWorkspaceClient({
+        workspaceRoot,
+        // `dummyBundle` is the bundle the host would stage: "a" * 64.
+        bundle: dummyBundle(root),
+        runtime: dummyRuntime(root),
+        shell: { id: "shell-currency", version: "test", locale: "en" },
+        ensure: async () => ({ identity: live, controlSocketPath: socketPath, disposition: "reused-exact" }),
+      });
+    }
+
+    it("reports current when the running daemon is the bundle the host would stage", async () => {
+      const client = await clientAttachedTo("a".repeat(64));
+
+      expect(client.engineCurrency).toMatchObject({ kind: "current", bundleId: "a".repeat(64) });
+      await client.close();
+    });
+
+    it("reports outdated when the daemon predates the installed bundle, and names both", async () => {
+      // The measured production case: a protocol-compatible daemon from before the installed build.
+      const client = await clientAttachedTo("c".repeat(64));
+
+      expect(client.engineCurrency).toMatchObject({
+        kind: "outdated",
+        runningBundleId: "c".repeat(64),
+        expectedBundleId: "a".repeat(64),
+      });
+      await client.close();
+    });
+  });
 });
 
 function identity(workspaceRoot: string, instanceId: string, bridgeInstanceId: string): EngineServiceIdentityV1 {
