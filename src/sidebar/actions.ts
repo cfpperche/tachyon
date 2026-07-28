@@ -10,7 +10,12 @@ export type ActionId =
   | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill"
   | "restart" | "restartNew" | "restartForceNew"
   | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
-  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "rename" | "remove";
+  // t-4662e9 — no `rename`. Renaming a canonical agent is the Agent Form's operation (it carries the
+  // profile lifecycle: authority re-signing, digest, retirement of the old name). The sidebar's action
+  // called a different one, `config.agent.rename`, which only rewrites the tachyon.yml entry — a second,
+  // divergent surface for the same word. It was also pushed unconditionally, so an ad-hoc row offered a
+  // rename for an entity that does not exist to be renamed.
+  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "remove";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
@@ -38,7 +43,6 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   edit: { icon: "edit", label: "Edit in Studio" },
   editYaml: { icon: "file-code", label: "Edit YAML" },
   clone: { icon: "copy", label: "Clone" },
-  rename: { icon: "pencil", label: "Rename" },
   remove: { icon: "trash", label: "Remove" },
 };
 
@@ -82,7 +86,6 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
   if (a.adhoc) out.push("promote");
   if (!a.adhoc) out.push("edit", "editYaml", "clone");
-  out.push("rename");
   out.push("remove");
   return out;
 }

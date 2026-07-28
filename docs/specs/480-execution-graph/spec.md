@@ -1,9 +1,21 @@
 # SDD 480 — Execution Graph
 
-**Status:** Phase 1 **ratified** (human, 2026-07-27). The contract below is settled; Phase 2 may
-begin. Nothing is implemented yet.
+**Status:** **CLOSED** (2026-07-28). All five phases delivered, dogfooded against real operating-system
+objects, and verified. The closure evidence — what was proven and on what — is in `plan.md` § Closure.
+Phase 1 was ratified by the human on 2026-07-27 and the contract below is what shipped.
 
-**Task:** `t-5e6822`. **Prerequisite findings:** `t-05097f`, `t-41f496`, `t-6ebdc8`, `t-9598cc`.
+**Tasks:** `t-5e6822` (spec) → `t-28da05` (identity + ledger) → `t-2f69de` (projection) →
+`t-559857` (canvas + table) → `t-d2bb2f` (dogfood + closure).
+**Prerequisite findings:** `t-05097f`, `t-41f496`, `t-6ebdc8`, `t-9598cc`.
+**Open follow-ups, none blocking:** `t-ca9579` (no runtime supplies a turn-id alias yet),
+`t-7ba92a` (the live engine predates the wiring, so the section reads `no-telemetry` until it
+restarts), `t-441b0f` (host does not yet supply `detailFor`), `t-d5066b` (settled: plugin/external
+tool is not a seam), `t-62cc44` (move the control-byte guard earlier in the verify pipeline).
+
+**What the closing dogfood actually measured**, because it is the one claim everything else rests on:
+a child process whose launcher had exited was reparented to **systemd (PPID 2270)** — its parent
+pointer now a lie about its origin — and it was STILL attributable, because `/proc/<pid>/environ`
+carried the id it was born holding. PPID is a fact about now; the carried id is a fact about origin.
 
 ---
 

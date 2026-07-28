@@ -84,6 +84,7 @@ describe("preview route table", () => {
       "execution-graph-empty",
       "execution-graph-error",
       "execution-graph-no-telemetry",
+      "execution-graph-real",
       "fleet",
       "handoff",
       "mission",

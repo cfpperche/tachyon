@@ -161,10 +161,6 @@
         "title": "%command.editAgentItem%"
       },
       {
-        "command": "tachyon.renameAgentItem",
-        "title": "%command.renameAgentItem%"
-      },
-      {
         "command": "tachyon.deleteAgentItem",
         "title": "%command.deleteAgentItem%",
         "icon": "$(trash)"
@@ -630,10 +626,6 @@
           "when": "false"
         },
         {
-          "command": "tachyon.renameAgentItem",
-          "when": "false"
-        },
-        {
           "command": "tachyon.deleteAgentItem",
           "when": "false"
         },
@@ -980,6 +972,7 @@
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",
+    "dogfood:execution-graph": "vite-node --script scripts/dogfood/execution-graph.ts",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
     "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/engineSupervisor.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
     "dogfood:runtime-observability": "vite-node --script scripts/runtime-observability-dogfood.ts",
