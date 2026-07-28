@@ -33,6 +33,7 @@ import {
 } from "./waitForOutput.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
+import { composerProfileFor } from "../runtime/composerRegion.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { asAgent, parseEvery, parseAt, type ScheduleDef } from "../config/loadConfig.js";
@@ -104,7 +105,19 @@ import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafet
 import type { EvolutionCandidateInputTarget, EvolutionStore } from "../evolution/EvolutionStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
-export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
+/**
+ * t-8d190f — `submit-unconfirmed` is a THIRD outcome, distinct from both. The line was typed and Enter
+ * was pressed, but Tachyon never observed it leave the composer, so it may be sitting staged in the
+ * recipient's editor. It is not `notified` (nothing is proven delivered) and not `queued` (nothing is
+ * held for a later flush); reporting either would be the bug this task fixes.
+ */
+export type NoticeDeliveryResult = {
+  status: "notified" | "queued" | "submit-unconfirmed";
+  dropped?: number;
+  queued?: number;
+  /** Why confirmation failed, propagated from the tmux submit receipt. */
+  submitReason?: string;
+};
 export type NoticeSourceMetadata = { sourceChild?: string; sourceIncarnation?: number };
 
 export interface BridgeDeps {
@@ -881,9 +894,16 @@ async function postmortemTailFor(
   return undefined;
 }
 
-async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string): Promise<NoticeDeliveryResult> {
+async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string, agent?: string): Promise<NoticeDeliveryResult> {
   if (typeof deps.tmux.sendSubmittedLine === "function") {
-    await deps.tmux.sendSubmittedLine(session, line);
+    // t-8d190f — confirm rather than assume. Without a Workspace this is the path notify_agent takes,
+    // so it is exactly where an unsubmitted line used to be reported as delivered.
+    const receipt = await deps.tmux.sendSubmittedLine(session, line, {
+      composer: composerProfileFor(agent ? deps.manager.defOf(agent)?.cmd : undefined),
+    });
+    if (receipt.status === "submit-unconfirmed") {
+      return { status: "submit-unconfirmed", submitReason: receipt.reason };
+    }
   } else {
     await deps.tmux.sendKeys(session, line, true);
   }
@@ -3635,7 +3655,18 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(new Error(`recipient '${name}' has a non-empty composer draft — refused-composer: use notify_agent or wait for the composer to clear`));
         }
         if (typeof deps.tmux.sendSubmittedLine === "function") {
-          await deps.tmux.sendSubmittedLine(session, text);
+          const receipt = await deps.tmux.sendSubmittedLine(session, text, {
+            composer: composerProfileFor(deps.manager.defOf(name)?.cmd),
+          });
+          // t-8d190f — the text is in the recipient's composer but Tachyon never saw it leave. Say so
+          // and name the way out, instead of returning a `submitted` receipt the pane contradicts.
+          if (receipt.status === "submit-unconfirmed") {
+            return ok(
+              `input typed into '${name}' but submission was NOT confirmed after ${receipt.attempts} Enter attempt(s) ` +
+                `(receipt: submit-unconfirmed; reason: ${receipt.reason}) — the text may be staged in the composer ` +
+                `unsent; check with read_output and re-send if it is still there`,
+            );
+          }
         } else {
           await deps.tmux.sendKeys(session, text, true);
         }
@@ -3737,8 +3768,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
           ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
-          : await deliverNoticeFallback(deps, session, line);
+          : await deliverNoticeFallback(deps, session, line, to);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
+        // t-8d190f — never report a delivery that was not observed. The doorbell stays actionable:
+        // the sender is told the line is staged unsent and how to check, rather than being told it
+        // landed and finding out later that the recipient never took a turn.
+        if (result.status === "submit-unconfirmed") {
+          return ok(
+            `typed '${to}' but submission was NOT confirmed (receipt: submit-unconfirmed; reason: ${result.submitReason ?? "unknown"})${suffix}` +
+              ` — the notice may be staged in their composer unsent; verify with read_output('${to}') and re-send if it is still there`,
+          );
+        }
         return ok(result.status === "queued" ? `queued '${to}' for idle delivery${suffix}` : `notified '${to}'${suffix}`);
       } catch (err) {
         return fail(err);

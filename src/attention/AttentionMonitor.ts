@@ -1,7 +1,8 @@
 import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
-import { runtimeProfile, type ComposerRegionProfile } from "../runtime/runtimeProfile.js";
+import { runtimeProfile } from "../runtime/runtimeProfile.js";
+import { isChangeConfinedToComposer, isComposerOccupied } from "../runtime/composerRegion.js";
 import { AUTH_SIGNAL_TAIL_LINES, classifyAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
@@ -764,129 +765,6 @@ export class AttentionMonitor {
     }
     return isComposerOccupied(content, composer);
   }
-}
-
-const ANSI_SGR_RE = /\x1b\[([0-9;]*)m/g;
-const ANSI_RE = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-
-function isChangeConfinedToComposer(previous: string, next: string, composer: ComposerRegionProfile): boolean {
-  const previousLines = previous.split("\n");
-  const nextLines = next.split("\n");
-  const previousRegion = findComposerRegion(previousLines, composer);
-  const nextRegion = findComposerRegion(nextLines, composer);
-  if (!previousRegion || !nextRegion) return false;
-
-  return linesEqual(previousLines.slice(0, previousRegion.start), nextLines.slice(0, nextRegion.start))
-    && linesEqual(previousLines.slice(previousRegion.end), nextLines.slice(nextRegion.end));
-}
-
-function findComposerRegion(lines: string[], composer: ComposerRegionProfile): { start: number; end: number } | null {
-  const first = Math.max(0, lines.length - composer.tailLines);
-  if (composer.frameLine) {
-    const frames: number[] = [];
-    for (let i = first; i < lines.length; i++) if (composer.frameLine.test(stripAnsi(lines[i]))) frames.push(i);
-    if (frames.length < 2) return null;
-    const bottom = frames.at(-1)!;
-    const top = frames.at(-2)!;
-    return top < bottom ? { start: top + 1, end: bottom } : null;
-  }
-  if (composer.promptLine) {
-    for (let i = lines.length - 1; i >= first; i--) {
-      const plain = stripAnsi(lines[i]);
-      if (!composer.promptLine.test(plain)) continue;
-      // t-6ffa13 — a runtime that echoes submitted messages back into its transcript renders them
-      // with the prompt glyph too, so `promptLine` alone cannot tell the editor from its own
-      // history. Skipping the echo matters because the echo is usually TACHYON'S OWN notice:
-      // notify_agent submits a line, the runtime echoes it, the echo is read as a human draft, and
-      // every later notify_agent/write_input to that agent is queued or refused — a loop Tachyon
-      // feeds itself, and one a quiet pane never leaves, because occupancy is only recomputed when
-      // the pane content changes.
-      if (composer.ansiHistoryEchoStyle === "prompt-background" && promptGlyphHasBackground(lines[i], plain)) continue;
-      return { start: i, end: lines.length };
-    }
-  }
-  return null;
-}
-
-function isComposerOccupied(content: string, composer: ComposerRegionProfile): boolean {
-  const lines = content.split("\n");
-  const region = findComposerRegion(lines, composer);
-  return (
-    region !== null &&
-    lines.slice(region.start, region.end).some((line) => {
-      const plainLine = stripAnsi(line);
-      if (!composer.occupiedLine.test(plainLine)) return false;
-      return composer.ansiEmptyContentStyle === "all-dim" ? !hasOnlyDimComposerContent(line, plainLine) : true;
-    })
-  );
-}
-
-function stripAnsi(text: string): string {
-  return text.replace(ANSI_RE, "");
-}
-
-/**
- * t-6ffa13 — is this prompt glyph painted with a background colour? That is how the runtime renders
- * a message it has ALREADY accepted, echoed into its transcript; the live editor carries none.
- * Absent styling (a plain capture) yields false, so the caller keeps treating the line as the
- * composer and stays conservative.
- */
-function promptGlyphHasBackground(rawLine: string, plainLine = stripAnsi(rawLine)): boolean {
-  const prompt = /(?:❯|>|›)/.exec(plainLine);
-  if (!prompt) return false;
-  return visibleCharsWithStyle(rawLine)[prompt.index]?.bg === true;
-}
-
-function hasOnlyDimComposerContent(rawLine: string, plainLine = stripAnsi(rawLine)): boolean {
-  const prompt = /(?:❯|>|›)\s?/.exec(plainLine);
-  if (!prompt) return false;
-  const contentStart = prompt.index + prompt[0].length;
-  const styled = visibleCharsWithStyle(rawLine);
-  const content = styled.slice(contentStart).filter((ch) => /\S/.test(ch.char));
-  return content.length > 0 && content.every((ch) => ch.dim);
-}
-
-function visibleCharsWithStyle(text: string): Array<{ char: string; dim: boolean; bg: boolean }> {
-  const chars: Array<{ char: string; dim: boolean; bg: boolean }> = [];
-  let dim = false;
-  let bg = false;
-  let index = 0;
-  for (const match of text.matchAll(ANSI_SGR_RE)) {
-    for (const char of text.slice(index, match.index).replace(ANSI_RE, "")) chars.push({ char, dim, bg });
-    const codes = (match[1] || "0").split(";").map((code) => (code === "" ? 0 : Number.parseInt(code, 10)));
-    // t-3eaa8b — walk the parameters instead of scanning them as a set. SGR 38/48/58 carry an
-    // extended colour whose SUB-parameters are ordinary numbers, so `38;2;r;g;b` (truecolor)
-    // contains a literal 2 that a set-scan reads as "dim". Measured on grok 0.2.112, whose composer
-    // is truecolor: a human's typed draft came out entirely "dim" and the composer therefore read as
-    // EMPTY — the dangerous direction, since that is what lets injection overwrite typed text.
-    for (let i = 0; i < codes.length; i++) {
-      const code = codes[i]!;
-      if (code === 38 || code === 48 || code === 58) {
-        // 5;<n> = 256-colour, 2;<r>;<g>;<b> = truecolor. Anything else: stop trusting this run.
-        const mode = codes[i + 1];
-        // Only a WELL-FORMED extended colour counts as a background. A malformed run must not claim
-        // one, because a claimed background is what dismisses a line as history (t-6ffa13).
-        if (code === 48 && (mode === 5 || mode === 2)) bg = true;
-        if (mode === 5) i += 2;
-        else if (mode === 2) i += 4;
-        else i = codes.length;
-        continue;
-      }
-      if (code === 0) { dim = false; bg = false; }
-      else if (code === 2) dim = true;
-      else if (code === 22) dim = false;
-      else if (code === 49) bg = false;
-      else if ((code >= 40 && code <= 47) || (code >= 100 && code <= 107)) bg = true;
-    }
-    index = match.index + match[0].length;
-  }
-  for (const char of text.slice(index).replace(ANSI_RE, "")) chars.push({ char, dim, bg });
-  return chars;
-}
-
-function linesEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  return a.every((line, i) => line === b[i]);
 }
 
 /** t-10771a — a narrow "agent ended its turn with a prose question" detector.

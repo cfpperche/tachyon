@@ -3,6 +3,12 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  classifyComposerSubmission,
+  stripAnsi,
+  type ComposerSubmissionState,
+} from "../runtime/composerRegion.js";
+import type { ComposerRegionProfile } from "../runtime/runtimeProfile.js";
 
 /**
  * Env seam for the dedicated tmux server socket name (`t-05097f`).
@@ -670,6 +676,30 @@ export const DETACHED_SESSION_HEIGHT = 50;
  */
 export const SEND_KEYS_LITERAL_MAX_CHARS = 400;
 
+/**
+ * t-8d190f — what a submit attempt actually observed. `submitted` means the composer was seen to stop
+ * holding the text; `submit-unconfirmed` means Tachyon typed and pressed Enter but never got that
+ * evidence, which callers must surface rather than swallow.
+ */
+export interface SubmitReceipt {
+  status: "submitted" | "submit-unconfirmed";
+  reason:
+    /** The composer no longer holds the text — delivery observed. */
+    | "composer-cleared"
+    /** No runtime composer profile: the legacy last-line check saw no stranded line. Weak evidence. */
+    | "no-stranded-line"
+    /** The text is still staged after every retry. This is the reported incident. */
+    | "still-staged"
+    /** Someone else's content joined ours in the editor; retrying would submit theirs. */
+    | "composer-diverged"
+    /** A profiled runtime whose composer region never appeared in any capture. */
+    | "composer-unreadable"
+    /** capture-pane failed, so nothing can be claimed. */
+    | "capture-failed";
+  /** How many Enter presses were sent (always ≥ 1; the text itself is typed only once). */
+  attempts: number;
+}
+
 export interface TmuxServiceOptions {
   /** Bound for waiting behind active operations; injectable for deterministic tests. */
   queueWaitTimeoutMs?: number;
@@ -1186,27 +1216,74 @@ export class TmuxService {
   /**
    * Sends one semantic notice line and submits it. Unlike raw sendKeys(..., true), this
    * gives the recipient TUI a short beat before Enter and retries only when capture
-   * suggests the line is still stranded at the bottom of the pane.
+   * suggests the line has not left the composer.
+   *
+   * t-8d190f — this used to return `void`, so every caller's "submitted" receipt asserted a delivery
+   * nobody had observed. It now returns what it actually saw. The confirmation is that the composer
+   * stopped holding the text; a runtime that never gives us that evidence yields `submit-unconfirmed`
+   * rather than silence, because the incident this fixes was a line sitting staged in the composer
+   * while notify_agent reported success.
+   *
+   * Pass `composer` (the runtime's measured profile) to get real confirmation. Without it the old
+   * last-line heuristic still runs, but its verdict is reported honestly as unconfirmed instead of
+   * being laundered into success — that heuristic cannot see a framed or furniture-trailed composer,
+   * which is precisely how the bug escaped.
    */
-  async sendSubmittedLine(name: string, text: string, options: { delayMs?: number; submitRetries?: number } = {}): Promise<void> {
+  async sendSubmittedLine(
+    name: string,
+    text: string,
+    options: { delayMs?: number; submitRetries?: number; composer?: ComposerRegionProfile } = {},
+  ): Promise<SubmitReceipt> {
     const delayMs = options.delayMs ?? 180;
     const submitRetries = options.submitRetries ?? 3;
+    const composer = options.composer;
+    // Typed EXACTLY once, before the loop. Every retry below sends a bare Enter and never text, so a
+    // retried submit cannot duplicate the line or concatenate itself onto whatever else is staged.
     await this.sendKeys(name, text, false);
     if (delayMs > 0) await sleep(delayMs);
 
+    let lastState: ComposerSubmissionState | "no-profile" = composer ? "unreadable" : "no-profile";
     for (let attempt = 0; attempt <= submitRetries; attempt++) {
       await this.sendKey(name, "C-m");
       if (delayMs > 0) await sleep(delayMs);
       let pane = "";
       try {
-        // -J: stranded-line check is logical-line based; soft wraps at pane width
-        // would otherwise only inspect the last visual fragment (t-24e0f8 / t-ae452f).
-        pane = await this.capturePane(name, { joinWrapped: true });
+        // -J: the composer check is logical-line based; soft wraps at pane width would
+        // otherwise only inspect the last visual fragment (t-24e0f8 / t-ae452f).
+        // Colours are preserved so the t-6ffa13 history-echo rule can tell the live editor from
+        // the runtime's echo of the line we just submitted.
+        pane = await this.capturePane(name, { joinWrapped: true, preserveColors: composer !== undefined });
       } catch {
-        return;
+        // An unobservable pane proves nothing. Saying so is the point of this task.
+        return { status: "submit-unconfirmed", reason: "capture-failed", attempts: attempt + 1 };
       }
-      if (!looksLikeStrandedSubmittedLine(pane, text)) return;
+
+      if (composer) {
+        lastState = classifyComposerSubmission(pane, composer, text);
+        if (lastState === "cleared") return { status: "submitted", reason: "composer-cleared", attempts: attempt + 1 };
+        // Someone typed while we were submitting. Another Enter would submit THEIR text, so stop here
+        // and report it — protecting the other draft matters more than landing our line.
+        if (lastState === "diverged") return { status: "submit-unconfirmed", reason: "composer-diverged", attempts: attempt + 1 };
+        // "holds-text": our line, alone, still in the editor. A lost Enter — press it again.
+        if (lastState === "holds-text") continue;
+      }
+
+      // Either the runtime declares no composer, or this capture shows no composer region at all (a
+      // pane still booting, an editor not rendered yet). There is no composer evidence to read, so
+      // defer to the older check instead of inventing a verdict: calling every such pane
+      // "unconfirmed" would flip behaviour far outside the measured bug.
+      if (!looksLikeStrandedSubmittedLine(stripAnsi(pane), text)) {
+        return { status: "submitted", reason: "no-stranded-line", attempts: attempt + 1 };
+      }
     }
+    // Out of retries with the line never observed to leave. `composer-unreadable` distinguishes "the
+    // profiled editor never appeared, and the legacy check kept calling the line stranded" from
+    // "we watched our text sit in the editor the whole time".
+    return {
+      status: "submit-unconfirmed",
+      reason: lastState === "unreadable" ? "composer-unreadable" : "still-staged",
+      attempts: submitRetries + 1,
+    };
   }
 
   /**

@@ -300,7 +300,8 @@ export async function executeExtensionCommand(
         resolvedBy: "vscode",
         ...approvalResolutionPorts({
           listEntries: () => workspace.manager.list(),
-          sendSubmittedLine: (session, text) => workspace.tmux.sendSubmittedLine(session, text),
+          // t-8d190f — receipt deliberately not consumed here; see the twin note in Workspace.ts.
+          sendSubmittedLine: async (session, text) => { await workspace.tmux.sendSubmittedLine(session, text); },
         }),
         // Left as it was: this path lets a failing pin completion surface. See t-a77fe6 — the two
         // callers disagree about that and the disagreement is reported, not silently settled here.
