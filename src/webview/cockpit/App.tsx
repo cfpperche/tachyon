@@ -1089,13 +1089,20 @@ function RuntimeConfigInventory({
   onOpenSource: (path: string) => void;
   onSaveChanges: (runtime: RuntimeConfigRuntime, documentId: string, expectedRevision: string | undefined, changes: RuntimeConfigChange[]) => void;
 }) {
-  const runtimeLabel = (id: RuntimeConfigRuntime) => id === "claude" ? s.runtimeConfigClaude : s.runtimeConfigCodex;
+  const runtimeLabel = (id: RuntimeConfigRuntime) => ({
+    claude: s.runtimeConfigClaude,
+    codex: s.runtimeConfigCodex,
+    grok: s.runtimeConfigGrok,
+  } as Record<string, string>)[id] ?? id;
   const documentLabel = (id: string) => ({
     "codex-global": s.runtimeConfigGlobalConfig,
     "codex-workspace": s.runtimeConfigWorkspaceConfig,
     "claude-global-settings": s.runtimeConfigGlobalSettings,
     "claude-workspace-settings": s.runtimeConfigWorkspaceSettings,
     "claude-workspace-mcp": s.runtimeConfigWorkspaceMcp,
+    "grok-global-config": s.runtimeConfigGlobalConfig,
+    "grok-workspace-config": s.runtimeConfigWorkspaceConfig,
+    "grok-folder-trust": s.runtimeConfigFolderTrust,
   } as Record<string, string>)[id] ?? id;
   const settingLabel = (key: string, fallback: string) => ({
     theme: s.runtimeConfigTheme,
@@ -1109,13 +1116,13 @@ function RuntimeConfigInventory({
   const runtime = snapshot?.runtimes.find((candidate) => candidate.runtime === runtimeId) ?? snapshot?.runtimes[0];
   const [documentId, setDocumentId] = useState("");
   const [unknownOpen, setUnknownOpen] = useState(false);
-  const [draftSettings, setDraftSettings] = useState<Record<string, string | boolean | string[]>>({});
+  const [draftSettings, setDraftSettings] = useState<Record<string, string | boolean | string[] | number>>({});
   const [draftMcp, setDraftMcp] = useState<Record<string, boolean>>({});
   const config = runtime?.documents.find((document) => document.id === documentId) ?? runtime?.documents[0];
   const snapshotKey = `${runtime?.runtime ?? "missing"}:${config?.id ?? "missing"}:${config?.revision ?? "missing"}`;
   useEffect(() => {
     if (!config) return;
-    const settings: Record<string, string | boolean | string[]> = {};
+    const settings: Record<string, string | boolean | string[] | number> = {};
     for (const setting of config.knownSettings) {
       if (setting.editValue !== undefined) settings[setting.key] = setting.editValue;
     }
@@ -1124,7 +1131,7 @@ function RuntimeConfigInventory({
   }, [snapshotKey]);
   if (!config) return <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>;
   const activeRuntime = runtime!;
-  const initialSettings: Record<string, string | boolean | string[]> = Object.fromEntries(config.knownSettings.filter((setting) => setting.editValue !== undefined).map((setting) => [setting.key, setting.editValue])) as Record<string, string | boolean | string[]>;
+  const initialSettings: Record<string, string | boolean | string[] | number> = Object.fromEntries(config.knownSettings.filter((setting) => setting.editValue !== undefined).map((setting) => [setting.key, setting.editValue])) as Record<string, string | boolean | string[] | number>;
   const initialMcp = Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled]));
   const dirtySettings = Object.keys({ ...initialSettings, ...draftSettings }).some((key) => JSON.stringify(initialSettings[key]) !== JSON.stringify(draftSettings[key]));
   const dirtyMcp = Object.keys({ ...initialMcp, ...draftMcp }).some((name) => initialMcp[name] !== draftMcp[name]);
@@ -1218,15 +1225,22 @@ function RuntimeConfigInventory({
       {(runtime?.pendingAgents?.length ?? 0) > 0 ? <div class="rcp-global-warning" data-testid="runtime-config-pending">
         Current sessions still use the previous source. The next Start, Restart or Resume will apply this change: {runtime!.pendingAgents!.join(", ")}.
       </div> : null}
-      {config.scope === "global" ? <div class="rcp-global-warning">{s.runtimeConfigGlobalWarning}</div> : null}
+      {config.impact ? <div class="rcp-global-warning" data-testid="runtime-config-impact">{config.impact}</div> : null}
+      {config.scope === "global" && !config.readOnly ? <div class="rcp-global-warning">{s.runtimeConfigGlobalWarning}</div> : null}
 
-      <div class="rcp-actions-bar" role="region" aria-label="Runtime configuration actions">
-        <span class="rcp-actions-state" aria-live="polite">{dirty ? "Unsaved changes" : "No pending changes"}</span>
-        <div class="rcp-card-actions">
-          <Button variant="default" disabled={!dirty} onClick={cancel}>Cancel</Button>
-          <Button variant="primary" disabled={!dirty} onClick={save}>{s.runtimeConfigSave}</Button>
+      {config.readOnly ? (
+        <div class="rcp-actions-bar" role="region" aria-label="Runtime configuration actions">
+          <span class="rcp-actions-state" data-testid="runtime-config-read-only">{s.runtimeConfigReadOnlyDocument}</span>
         </div>
-      </div>
+      ) : (
+        <div class="rcp-actions-bar" role="region" aria-label="Runtime configuration actions">
+          <span class="rcp-actions-state" aria-live="polite">{dirty ? "Unsaved changes" : "No pending changes"}</span>
+          <div class="rcp-card-actions">
+            <Button variant="default" disabled={!dirty} onClick={cancel}>Cancel</Button>
+            <Button variant="primary" disabled={!dirty} onClick={save}>{s.runtimeConfigSave}</Button>
+          </div>
+        </div>
+      )}
 
       <div class="rcp-grid">
         <section class="rcp-card rcp-card--settings">
@@ -1241,13 +1255,32 @@ function RuntimeConfigInventory({
             <div class="rcp-setting-list">{config.knownSettings.map((setting) => {
               const boolean = setting.inputKind === "boolean" || setting.key === "tui.status_line_use_colors" || setting.key === "features.terminal_resize_reflow";
               const statusLine = setting.inputKind === "string-list" || setting.key === "tui.status_line";
+              const numeric = setting.inputKind === "number";
               const raw = draftSettings[setting.key];
-              const value = Array.isArray(raw) ? raw.join(", ") : raw === undefined ? "" : String(raw);
+              const value = Array.isArray(raw) ? raw.join(", ") : raw === undefined ? (setting.editable ? "" : setting.value ?? "") : String(raw);
+              const readInput = (event: Event) => (event.currentTarget as HTMLInputElement).value;
               return <div class="rcp-setting rcp-setting--editable" key={`${config.id}:${setting.key}`}>
-                <label>{settingLabel(setting.key, setting.label)}{setting.shadowedBy ? ` (${s.runtimeConfigOverriddenBy} ${setting.shadowedBy})` : ""}</label>
+                <label title={setting.readOnlyReason ?? ""}>
+                  {settingLabel(setting.key, setting.label)}
+                  {setting.shadowedBy ? ` (${s.runtimeConfigOverriddenBy} ${setting.shadowedBy})` : ""}
+                  {setting.readOnlyReason ? <span class="rcp-setting-note"> — {setting.readOnlyReason}</span> : null}
+                </label>
                 <div class="rcp-setting-editor">
                   {boolean ? <input type="checkbox" checked={raw === true} disabled={!setting.editable} onInput={(event) => setDraftSettings((previous) => ({ ...previous, [setting.key]: (event.currentTarget as HTMLInputElement).checked }))} /> : (
-                    <input value={value} disabled={!setting.editable} placeholder={setting.editable ? s.runtimeConfigUnset : "Unsupported value"} onInput={(event) => setDraftSettings((previous) => ({ ...previous, [setting.key]: statusLine ? (event.currentTarget as HTMLInputElement).value.split(",").map((item) => item.trim()).filter(Boolean) : (event.currentTarget as HTMLInputElement).value }))} />
+                    <input
+                      type={numeric ? "number" : "text"}
+                      value={value}
+                      disabled={!setting.editable}
+                      placeholder={setting.editable ? s.runtimeConfigUnset : "Unsupported value"}
+                      onInput={(event) => setDraftSettings((previous) => {
+                        const text = readInput(event);
+                        if (statusLine) return { ...previous, [setting.key]: text.split(",").map((item) => item.trim()).filter(Boolean) };
+                        // A non-numeric draft is kept as typed so the measured host validator, not
+                        // the field, is what refuses it.
+                        if (numeric) return { ...previous, [setting.key]: text.trim() !== "" && Number.isFinite(Number(text)) ? Number(text) : text };
+                        return { ...previous, [setting.key]: text };
+                      })}
+                    />
                   )}
                 </div>
               </div>;

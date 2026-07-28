@@ -1,0 +1,45 @@
+# Controlled Global source for the Grok Runtime Config Dev Host dogfood (SDD 481).
+# Nothing here is executed: the Dev Host never launches Grok from this fixture.
+[cli]
+installer = "internal"
+auto_update = false
+
+[models]
+default = "grok-4.5"
+
+[models."fixture-proxy"]
+api_key = "fixture-never-render-model-key"
+base_url = "https://fixture-never-render-host.invalid"
+
+[ui]
+max_thoughts_width = 120
+compact_mode = false
+permission_mode = "always-approve"
+
+[features]
+telemetry = false
+codebase_indexing = true
+
+[session]
+auto_compact_threshold_percent = 85
+load_envrc = true
+
+[tools]
+respect_gitignore = true
+
+[telemetry]
+events_api_key = "fixture-never-render-telemetry-key"
+
+[[hooks.PreToolUse]]
+matcher = "Bash"
+command = "fixture-never-render-hook-command"
+
+[mcp_servers.fixture_keep]
+command = "fixture-never-render-mcp-command"
+env = { TOKEN = "fixture-never-render-mcp-token" }
+
+[mcp_servers.fixture_disable]
+command = "fixture-never-render-mcp-command"
+
+[fixture_unknown]
+must_survive = "yes"

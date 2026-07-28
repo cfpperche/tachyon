@@ -215,4 +215,42 @@ describe("native config source ownership (t-59a11b)", () => {
     // A scope the profile does not select must stay untouched.
     expect(await ws.markRuntimeConfigPending("claude", "workspace", "rev-2")).toEqual([]);
   });
+
+  /**
+   * SDD 481 — Grok has no native-config projection, so the Claude/Codex rule would mark nobody.
+   * Its measured rule is the opposite way round: the WORKSPACE document reaches a live agent
+   * (Grok discovers `.grok/config.toml` from the working directory) while the GLOBAL one cannot,
+   * because `materializeBridgeMcpGrok` rewrites the private GROK_HOME's config at every spawn.
+   */
+  it("marks a live Grok agent pending for the workspace source only", async () => {
+    const root = temporaryRoot("tachyon-grok-pending-");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  grokkie:\n    cmd: grok\n");
+
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new HeadlessHost(temporaryRoot("tachyon-grok-pending-storage-")), onViewsChanged: () => {} },
+      { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },
+    );
+    workspaces.push(ws);
+
+    const internals = ws as unknown as {
+      config?: { agents: Record<string, unknown> };
+      manager: { list: () => Promise<Array<{ name: string; running: boolean; kind: string }>> };
+    };
+    internals.config = {
+      agents: {
+        grokkie: { cmd: "grok", kind: "agent" },
+        clyde: { cmd: "claude", kind: "agent" },
+      },
+    } as never;
+    internals.manager.list = async () => [
+      { name: "grokkie", running: true, kind: "agent" },
+      { name: "clyde", running: true, kind: "agent" },
+    ];
+
+    expect(await ws.markRuntimeConfigPending("grok", "global", "rev-1")).toEqual([]);
+    expect(ws.runtimeConfigPendingAgents()).toEqual([]);
+    expect(await ws.markRuntimeConfigPending("grok", "workspace", "rev-2")).toEqual(["grokkie"]);
+    expect(ws.runtimeConfigPendingAgents()).toEqual(["grokkie"]);
+  });
 });

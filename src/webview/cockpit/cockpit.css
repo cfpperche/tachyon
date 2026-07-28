@@ -575,6 +575,12 @@ main.ck-main.ck-main--mission,
   font-weight: 600;
 }
 
+/* Why Control shows a key it will not write (measured authority, or an ignored scope). */
+.rcp-setting-note {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
 .rcp-setting-editor {
   display: flex;
   min-width: 0;

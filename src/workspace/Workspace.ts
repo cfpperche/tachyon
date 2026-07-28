@@ -3407,13 +3407,25 @@ export class Workspace {
   }
 
   /** Mark only live canonical agents whose native projection selects this runtime source. */
-  async markRuntimeConfigPending(runtime: "codex" | "claude", scope: "global" | "workspace", revision: string): Promise<string[]> {
+  async markRuntimeConfigPending(runtime: "codex" | "claude" | "grok", scope: "global" | "workspace", revision: string): Promise<string[]> {
     const live = await this.manager.list();
     const affected: string[] = [];
     for (const agent of live) {
       if (!agent.running || agent.kind !== "agent") continue;
       const def = asAgent(this.config?.agents[agent.name]);
-      if (def?.profileNativeConfig?.adapter !== runtime) continue;
+      if (!def) continue;
+      if (runtime === "grok") {
+        // SDD 481 — Grok has no profile native-config projection. Measured on grok 0.2.112:
+        // `materializeBridgeMcpGrok` rewrites the private GROK_HOME's config.toml at every spawn, so
+        // the GLOBAL document reaches no managed agent and marking one pending would promise an
+        // effect that does not exist. The WORKSPACE document is discovered from the working
+        // directory, which every agent here shares, so it applies at the next launch.
+        if (scope !== "workspace" || binaryOf(def.cmd) !== "grok") continue;
+        this.runtimeConfigPending.set(agent.name, { scope, revision });
+        affected.push(agent.name);
+        continue;
+      }
+      if (def.profileNativeConfig?.adapter !== runtime) continue;
       const selected = Object.values(def.profileNativeConfig.sources ?? {}).includes(scope);
       if (!selected) continue;
       this.runtimeConfigPending.set(agent.name, { scope, revision });

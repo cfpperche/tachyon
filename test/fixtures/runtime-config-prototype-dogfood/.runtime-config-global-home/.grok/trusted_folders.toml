@@ -1,0 +1,5 @@
+# Deliberately does NOT trust the Dev Host workspace: Runtime Config must report
+# "Not decided" and refuse to grant trust itself.
+[folders."/fixture/some/other/repo"]
+trusted = true
+decided_at = 1784138766

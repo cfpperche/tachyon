@@ -1,0 +1,7 @@
+# Workspace source. Grok reads ONLY [mcp_servers] from a project config; the [models]
+# section below is inert and exists so Runtime Config can show it as ignored.
+[mcp_servers.fixture_repo_tools]
+command = "fixture-never-render-workspace-mcp"
+
+[models]
+default = "fixture-ignored-in-project-scope"
