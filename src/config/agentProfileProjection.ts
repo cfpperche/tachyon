@@ -50,7 +50,11 @@ const GROK_INSPECTOR_CONTRACT_V1 = [
   "auth.json is an external credential symlink",
   "ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
-const GROK_INSPECTOR_CONTRACT = [
+/**
+ * The Grok contract as it shipped between t-26f508 and t-de73e0, retained VERBATIM for the same
+ * reason as v1: its sha256 is what an authority created in that window names. Never edit it.
+ */
+const GROK_INSPECTOR_CONTRACT_V2 = [
   "tachyon/grok-private-home-input-inspector/v2",
   "literal executable grok",
   "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
@@ -59,6 +63,27 @@ const GROK_INSPECTOR_CONTRACT = [
   "compat cells for cursor, claude and codex are pinned off",
   "memory is disabled in config and pinned off by GROK_MEMORY",
   "auth.json is an external credential symlink",
+  "ambient project .grok tooling and AGENTS.md must be absent",
+  "unselected ambient ~/.grok config, memory and plugins are not inherited",
+].join("\n");
+/**
+ * t-de73e0 — v2 promised "auth.json is an external credential symlink", and that promise is what
+ * destroyed the credential of the machine this was measured on: the runtime WRITES the file it is
+ * handed, and a write through a symlink lands on the person's own credential. The contract now says
+ * what the code does — a private copy, harvested back when the agent refreshes it — because an
+ * inspector contract is an attestation, and attesting to a symlink that must not exist would be
+ * attesting to the defect.
+ */
+const GROK_INSPECTOR_CONTRACT = [
+  "tachyon/grok-private-home-input-inspector/v3",
+  "literal executable grok",
+  "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "config.toml and trusted_folders.toml are rewritten before launch",
+  "config.toml carries only closed global profile-projected scalars plus typed agent-owned selectors",
+  "compat cells for cursor, claude and codex are pinned off",
+  "memory is disabled in config and pinned off by GROK_MEMORY",
+  "auth.json is a private copy of the external credential, never a pointer to it, because the runtime writes it",
+  "a refreshed private credential is harvested back to the external credential",
   "ambient project .grok tooling and AGENTS.md must be absent",
   "unselected ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
@@ -92,7 +117,7 @@ export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
 export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "grok",
   id: "tachyon.grok-private-home-inputs",
-  version: "2",
+  version: "3",
   sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
 });
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
@@ -120,7 +145,7 @@ export function profileRuntimeInspectorFor(adapter: string) {
 
 /**
  * t-26f508 (review by claude-reviewer) — inspector descriptors that an ALREADY-CREATED authority may
- * still name, each superseded by a strictly stricter current inspector of the same id.
+ * still name, each superseded by a current inspector of the same id under the rule stated below.
  *
  * This exists because a version bump is otherwise unrecoverable, and not merely for the agent that
  * bumped. `inspectMeasuredNativeInputs` returns a projection error, `loadProfileAwareConfig` returns
@@ -131,23 +156,49 @@ export function profileRuntimeInspectorFor(adapter: string) {
  * (which the trust model forbids). "No canonical Grok agent exists" was true of this dogfood
  * workspace and says nothing about an installed base that has been able to create one all along.
  *
- * Acceptance is safe only in one direction, and only per named sha: the current inspector must be a
- * strict SUPERSET of the superseded one — it may inspect more and isolate more, never less. v2 adds
- * the ambient project-input refusal and the `[compat.*]`/`[memory]` pins on top of everything v1
- * asserted, so a v1 authority loaded under v2 gets a stricter guarantee than it authorized, never a
- * weaker one. A future contract that RELAXES a guarantee must not be listed here.
+ * THE ADMISSION RULE, stated over reachable states rather than over the two strings. A pair may be
+ * listed only when, for every authority that can LEGITIMATELY name the superseded descriptor, the
+ * current build's behavior is at least as strict. Comparing the contract texts line by line is the
+ * cheap first check, not the rule — a line that reads weaker is disqualifying only if a profile that
+ * names the old descriptor can actually reach the weaker behavior.
+ *
+ * That distinction is load-bearing for the one pair listed here, and it was a second review that
+ * caught it. v2 is equal or stricter than v1 on every line — `GROK_HOME` AND `HOME`, closed scalars,
+ * `[compat.*]` cells, `[memory]`, the ambient project-input refusal — except one: v1 promised
+ * "ambient ~/.grok config, memory and plugins are not inherited" absolutely, while v2 promises it of
+ * UNSELECTED config. v2 therefore admits inheriting what a family explicitly selects, which read as a
+ * string is strictly weaker. It is unreachable for a v1 authority: before this change no Grok
+ * native-config policy existed at all, so a profile created under v1 can carry no selection, making
+ * "unselected" == "all" for exactly the population that can name v1 — and the first transaction able
+ * to add a selection is the same one that adopts v2. Safe by chronology, not by superset.
+ *
+ * So do not read this entry as a precedent that a relaxing line is fine. It is a precedent that the
+ * rule is about what an old authority can REACH. A future pair whose weaker line is reachable must
+ * not be listed, whatever the version numbers say.
  *
  * The attestation still carries the descriptor the AUTHORITY names, so `assertNativeAttestation`'s
  * exact match keeps holding and the record never claims a human authorized v2. `authorityFor` adopts
  * the current inspector on the next lifecycle transaction, which is where re-attestation belongs.
+ * `set-subagents` (t-4c113c) is the one lifecycle operation that does not require a stopped agent, so
+ * adoption can land mid-session; that is deliberate and harmless — re-attestation is strictly
+ * stricter and the live session is not re-projected, since the private home is only rebuilt at the
+ * next launch.
  */
 const SUPERSEDED_RUNTIME_INSPECTORS: Partial<Record<AttestedRuntime, readonly InspectorDescriptor[]>> = {
-  grok: [Object.freeze({
-    adapter: "grok",
-    id: "tachyon.grok-private-home-inputs",
-    version: "1",
-    sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V1).digest("hex"),
-  })],
+  grok: [
+    Object.freeze({
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "1",
+      sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V1).digest("hex"),
+    }),
+    Object.freeze({
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "2",
+      sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V2).digest("hex"),
+    }),
+  ],
 };
 
 export interface InspectorDescriptor {

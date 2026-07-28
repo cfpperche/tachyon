@@ -123,6 +123,14 @@ the fix existed to remove:
   mid-create. `wx` still provides the exclusion (that part IS atomic); the unstamped window is now
   decided by age — fresh means someone is mid-create, stale means the create died.
 
+A third pass then asked for the stronger property rather than the tolerance: publication must never
+expose an empty lock AND never overwrite a holder. `open(wx)`+`write` gives the second but not the
+first; `rename` gives the first but not the second (it replaces a live holder). `link` is the only
+primitive with both — it fails with `EEXIST` on an existing target and what appears at the path is
+the fully-written source — so the pid is written to a private temp and linked into place. The age
+rule stays as the guard for the `open(wx)` fallback (filesystems without hard links) and for a lock
+this module did not write. The fallback is exercised by a test rather than left as dead code.
+
 They also corrected a claim of mine in the other direction: I reported 3 tests failing against the
 pre-fix release path; restoring fuller pre-fix semantics fails 7 of 8. The claim was conservative, not
 inflated, and the correction is theirs. The two residual tests above were likewise confirmed to fail

@@ -9,7 +9,7 @@ import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, t
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
+import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import {
   hasDeliveryMarker,
   isInvalidDeliveryMarker,
@@ -2378,6 +2378,7 @@ export class AgentManager {
       cwd,
       delegatedOpencode,
       adapter?.runtime === "pi" && !selfManaged,
+      spawnBuild.env.GROK_HOME,
     );
     // t-d42565 — recognized AI runtimes must receive Bridge MCP tools (notify_agent / doorbell) when
     // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
@@ -2826,6 +2827,16 @@ export class AgentManager {
     cwd?: string,
     delegated?: { workspaceRoot: string; worktreesBase: string },
     managedPiSession = false,
+    /**
+     * t-ee5c05 — the private `GROK_HOME` `applyHarness` already materialized for THIS spawn, when it
+     * did. Grok is the one runtime whose Bridge wiring rewrites the same file the canonical
+     * materializer owns, so without this the second write would rebuild `config.toml` from the port's
+     * own options and erase the projection the first one just made. For a declared agent the two
+     * option sets are deliberately identical, so it was only redundant; for a FORK the port cannot see
+     * the profile at all (a fork is not in `config.agents`), so it would drop the projection and the
+     * exact-trust store. Reusing what was already built removes the second write entirely.
+     */
+    preparedGrokHome?: string,
   ): { cmd: string; env: Record<string, string>; wired: boolean } {
     const binary = binaryOf(def.cmd);
     let sessionEnv: Record<string, string> = {};
@@ -2866,7 +2877,7 @@ export class AgentManager {
       return { cmd, env: { [OPENCODE_CONFIG_ENV_VAR]: file }, wired: true };
     }
     if (binary === "grok") {
-      const home = this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
+      const home = preparedGrokHome ?? this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
       if (!home) return { cmd, env: {}, wired: false };
       // t-c46c35 — the non-harness canonical Grok path, and the one that actually needed the pin: it
       // deliberately skips `isolate: transcript` (t-303f2b), so it never reaches HarnessManager's
@@ -3921,6 +3932,7 @@ export class AgentManager {
       cwd,
       restartDelegatedOpencode,
       injected.adapter?.runtime === "pi" && !injected.selfManaged,
+      restartBuild.env.GROK_HOME,
     );
     const restartOwnedCmd = this.withSessionOwnership(name, def, restartBridge.cmd, {
       declared: !this.adhoc.has(name),
@@ -4338,6 +4350,7 @@ export class AgentManager {
       cwd,
       resumeDelegatedOpencode,
       runtime === "pi",
+      resumeBuild.env.GROK_HOME,
     );
     this.readinessCache.delete(name); // spec 221: resuming changes the session → drop the cached badge
     // Resume is intentional re-launch — never inherit a prior graceful-stop "stopping" badge.
@@ -4491,26 +4504,6 @@ export class AgentManager {
   }
 
   /**
-   * t-26f508 — Grok's native `--fork-session` works, but `managedPrivateFork` in `commitFork` covers
-   * only Pi and Claude, so a canonical Grok fork would get an unprojected private home AND no
-   * transcript seeded into it: the destination `GROK_HOME` is a fresh `bridge-mcp/<fork>.grok`, where
-   * the source session does not exist, so `--resume <id> --fork-session` would find nothing.
-   *
-   * Refusing is the honest reading of a lifecycle contract that lists fresh, restart and resume and
-   * not fork. Checked at PLAN time as well as at commit, so the confirm modal is never offered for an
-   * operation that cannot succeed.
-   */
-  private assertForkableProfile(source: string, runtime: ResumeRuntime): void {
-    const definition = this.agentDefinitionOf(source);
-    if (runtime === "grok" && (definition?.profileLifecycle || definition?.profileNativeConfig)) {
-      throw new ForkUnavailableError(
-        source,
-        "a canonical Grok profile has no measured private-home fork — its projection and transcript would not follow the fork",
-      );
-    }
-  }
-
-  /**
    * spec 225 — resolve everything needed to fork `name` into a sibling, WITHOUT any side effect
    * (no worktree create, no spawn), so the UI can confirm the fork name + base + dirty warning first.
    * Fail-closed via resolveForkSource. NOTE: commitFork RE-resolves at spawn time, so the id/cwd here
@@ -4518,7 +4511,6 @@ export class AgentManager {
    */
   async planFork(name: string): Promise<ForkPlan> {
     const src = await this.resolveForkSource(name);
-    this.assertForkableProfile(name, src.runtime);
     const forkName = this.uniqueForkName(name, await this.allKnownNames());
     const dirty = src.sourceWorktree
       ? this.opts.worktreeDirty
@@ -4556,9 +4548,6 @@ export class AgentManager {
     const src = await this.resolveForkSource(source);
     const { adapter } = src;
     if (!adapter.forkCommand) throw new ForkUnavailableError(source, `'${src.runtime}' has no native session fork`);
-    // Re-asserted here, not only at plan time: the plan may be stale, and this is the gate that runs
-    // before any worktree, token or session side effect.
-    this.assertForkableProfile(source, src.runtime);
     // Catch account/catalog drift before creating a fork checkout. A second probe below runs only
     // when the prospective cwd differs, covering project-scoped runtime configuration as well.
     await this.assertLaunchPreflight(plan.forkName, src.baseCmd, src.env, true, src.sourceCwd);
@@ -4660,12 +4649,19 @@ export class AgentManager {
       if (!sourceRef) throw new ForkUnavailableError(source, "its exact Pi source transcript is unavailable");
       const forkCmd = adapter.forkCommand(adapter.injectId(src.baseCmd, forkSessionId), sourceRef);
       const session = this.session(forkName);
+      const canonicalPrivateFork = !!sourceDefinition?.profileLifecycle
+        || !!forkDefinition.profileCapabilities
+        || !!forkDefinition.profileNativeConfig;
+      // t-ee5c05 — Grok joins Pi and Claude. Its private home is the bridge home, NOT `harnessHome`;
+      // using the wrong one here would silently disable the partial-home cleanup below, since nothing
+      // is ever created at the path it watches.
       const managedPrivateFork = src.runtime === "pi"
-        || (src.runtime === "claude"
-          && (!!sourceDefinition?.profileLifecycle
-            || !!forkDefinition.profileCapabilities
-            || !!forkDefinition.profileNativeConfig));
-      const privateHome = managedPrivateFork ? harnessHome(this.opts.workspaceRoot, forkName) : undefined;
+        || ((src.runtime === "claude" || src.runtime === "grok") && canonicalPrivateFork);
+      const privateHome = !managedPrivateFork
+        ? undefined
+        : src.runtime === "grok"
+          ? bridgeGrokHome(this.opts.workspaceRoot, forkName)
+          : harnessHome(this.opts.workspaceRoot, forkName);
       const privateHomeExisted = privateHome ? fs.existsSync(privateHome) : true;
       let preparedHarness: MaterializedHarness | null = null;
       try {
@@ -4690,11 +4686,15 @@ export class AgentManager {
         path.resolve(destinationConfigHome) !== path.resolve(src.sourceConfigHome)
         || path.resolve(cwd) !== path.resolve(src.sourceCwd)
       )) {
+        // t-ee5c05 — seed the runtime's declared transcript UNIT. For Claude that is the JSONL file
+        // `transcriptPath` names; for Grok the session is the directory around it, and copying only
+        // that file produces a session the runtime reports as not found.
+        const unit = (file: string) => adapter.transcriptUnit === "session-directory" ? path.dirname(file) : file;
         const seeded = (this.opts.seedTranscript ?? defaultSeedTranscript)(
-          adapter.transcriptPath(src.sourceConfigHome, src.sourceCwd, src.sourceId),
-          adapter.transcriptPath(destinationConfigHome, cwd, src.sourceId),
+          unit(adapter.transcriptPath(src.sourceConfigHome, src.sourceCwd, src.sourceId)),
+          unit(adapter.transcriptPath(destinationConfigHome, cwd, src.sourceId)),
         );
-        if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's private namespace (claude --resume would find nothing)");
+        if (!seeded) throw new ForkUnavailableError(source, "couldn't seed the session transcript into the fork's private namespace (the fork's resume would find nothing)");
       }
       const tokenEnv = this.opts.mintAgentToken?.(forkName);
       tokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
@@ -4713,6 +4713,7 @@ export class AgentManager {
         cwd,
         undefined,
         src.runtime === "pi",
+        forkBuild.env.GROK_HOME,
       );
       if (src.runtime === "pi" && this.opts.getExtraEnv?.()?.[URL_ENV_VAR] && !forkBridge.wired) {
         throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
@@ -4892,12 +4893,36 @@ export class AgentManager {
 function defaultSeedTranscript(from: string, to: string): boolean {
   try {
     if (!fs.existsSync(from)) return false;
+    if (fs.statSync(from).isDirectory()) return seedSessionDirectory(from, to);
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.copyFileSync(from, to);
     return fs.existsSync(to); // verify it actually landed — commitFork fails closed on false
   } catch {
     return false;
   }
+}
+
+/**
+ * t-ee5c05 — seed a whole session directory, for a runtime whose session is not one file
+ * (`transcriptUnit: "session-directory"`). Copies the directory's REGULAR FILES only:
+ *
+ *  - subdirectories are skipped, so the seed stays bounded and cannot recurse into runtime-owned trees
+ *    (Grok keeps a `recap_requests/` directory beside the session's own files);
+ *  - `*.lock` files are skipped, because a lock is a claim by the process that held it in the SOURCE
+ *    home and carrying it into a fresh private home would assert something untrue about the fork.
+ *
+ * Returns false unless at least one file landed, so `commitFork` still fails closed on an empty or
+ * unreadable source rather than spawning a fork whose session the runtime cannot find.
+ */
+function seedSessionDirectory(from: string, to: string): boolean {
+  fs.mkdirSync(to, { recursive: true });
+  let seeded = 0;
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (!entry.isFile() || entry.name.endsWith(".lock")) continue;
+    fs.copyFileSync(path.join(from, entry.name), path.join(to, entry.name));
+    seeded += 1;
+  }
+  return seeded > 0;
 }
 
 function resolveCwd(workspaceRoot: string, cwd?: string): string {

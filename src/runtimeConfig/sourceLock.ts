@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -37,8 +38,11 @@ import path from "node:path";
  *
  *  - releasing by PATH would delete a lock that is no longer ours, so `release` re-reads the pid and
  *    leaves a foreign lock alone;
- *  - creating and stamping are two steps, not one, so a lock can be seen unstamped. Reading that as
- *    "crashed" let a live holder be robbed mid-create; it is now decided by age.
+ *  - creating and stamping were two steps, so a lock could be seen unstamped, and reading that as
+ *    "crashed" let a live holder be robbed mid-create. Publication now goes through `link` (see
+ *    `publish`), which both fails on an existing holder and puts a fully-stamped file in place, so
+ *    the unstamped window does not exist on that path at all. The age rule survives as the guard for
+ *    the weaker fallback and for a lock this module did not write.
  *
  * This mirrors `acquireVerifyFullLock` in `scripts/verify-full.mjs` (t-6a9bc4), which already had to
  * solve exactly this in this repository.
@@ -88,17 +92,47 @@ function holderIsAlive(lock: string, options: RuntimeConfigSourceLockOptions): b
   return alive(pid);
 }
 
-function acquire(lock: string, options: RuntimeConfigSourceLockOptions, stolen = false): void {
+/**
+ * Publish an ALREADY-STAMPED lock, atomically, without ever overwriting a holder.
+ *
+ * `open(wx)` + `write` gives exclusion but publishes an empty file first, so a competitor can see a
+ * lock with no pid. `rename` would fix the emptiness and break the exclusion, because it replaces
+ * whatever is there — it would clobber a live holder. `link` is the one primitive with both
+ * properties: it fails with EEXIST when the target exists, and what appears at the path is the
+ * fully-written source. So the pid is written to a private temp first, and the lock is created by
+ * linking that temp into place. There is no moment at which the lock exists unstamped.
+ *
+ * Hard links need one filesystem (the temp is a sibling, so that holds) and filesystem support. Where
+ * `link` is unsupported the older `open(wx)` path still runs — it is weaker, not wrong, and the age
+ * rule above is exactly what covers its unstamped window.
+ */
+function publish(lock: string): void {
+  const temporary = `${lock}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, `${process.pid}\n`, { mode: 0o600 });
   try {
-    // `wx` is what excludes, and THAT is atomic: exactly one caller creates the file. Stamping the
-    // pid is a second step, so the file exists unstamped for a moment — handled by the grace period
-    // above rather than pretended away.
-    const fd = fs.openSync(lock, "wx", 0o600);
+    fs.linkSync(temporary, lock);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") throw error;
+    if (code !== "EPERM" && code !== "ENOSYS" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
+    const fd = fs.openSync(lock, "wx", 0o600); // throws EEXIST for a holder, same as link
     try {
       fs.writeSync(fd, `${process.pid}\n`);
     } finally {
       fs.closeSync(fd);
     }
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch {
+      /* never created, or already gone */
+    }
+  }
+}
+
+function acquire(lock: string, options: RuntimeConfigSourceLockOptions, stolen = false): void {
+  try {
+    publish(lock);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     if (!stolen && !holderIsAlive(lock, options)) {

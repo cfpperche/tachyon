@@ -7,6 +7,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
@@ -31,6 +32,17 @@ function grokAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * t-de73e0 — this dogfood spawns REAL grok agents, which cannot start without a credential. The file
+ * already skips on an absent binary; an absent credential is the same class of precondition, and it
+ * became reachable when a Grok re-auth inside a private home destroyed `~/.grok/auth.json`. Failing
+ * here would report a product regression where there is an unmet precondition — and passing it by
+ * pretending is worse. A skip is visible in the run summary; recover with `grok login`.
+ */
+function grokCredentialAvailable(): boolean {
+  return fs.existsSync(path.join(os.homedir(), ".grok", "auth.json"));
 }
 
 function tmuxAvailable(): boolean {
@@ -87,7 +99,7 @@ class DogfoodHost {
   onViewsChanged(): void {}
 }
 
-describe.skipIf(!grokAvailable() || !tmuxAvailable())(
+describe.skipIf(!grokAvailable() || !grokCredentialAvailable() || !tmuxAvailable())(
   "SDD 443 dogfood — continue_task with real grok agents (tmux)",
   () => {
     let base: string;
