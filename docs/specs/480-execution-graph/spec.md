@@ -1,7 +1,7 @@
 # SDD 480 — Execution Graph
 
-**Status:** draft — Phase 1 only. This document is the contract and the inventory, submitted for
-ratification *before* the expensive phases. Nothing here is implemented yet.
+**Status:** Phase 1 **ratified** (human, 2026-07-27). The contract below is settled; Phase 2 may
+begin. Nothing is implemented yet.
 
 **Task:** `t-5e6822`. **Prerequisite findings:** `t-05097f`, `t-41f496`, `t-6ebdc8`, `t-9598cc`.
 
@@ -144,19 +144,45 @@ invented subtree is a lie that costs an operator a debugging session.
 Phase 2 is deliberately gated on provenance rather than on schedule: a graph that renders a confident
 wrong parent is worse than no graph, because it will be believed.
 
-## 6. Explicitly out of scope for V1
+## 6. Ratified decisions (human, 2026-07-27)
+
+The three questions this spec opened are answered. They are recorded here as decisions, not as
+options, because later phases depend on them.
+
+### 7.1 Turn identity — Tachyon mints it
+
+`turnId` is minted by **Tachyon at input submission**. A runtime that exposes its own turn id
+contributes that id as **evidence or alias**, never as authority.
+
+This is the only answer consistent with §2. A runtime-owned id is unavailable for runtimes that do
+not expose one, differs in meaning between those that do, and cannot be minted before the turn
+exists — so building on it would make turn identity a per-runtime accident. Minting our own makes
+`turnId` exist for every runtime on the same terms, and reduces native ids to what they actually
+are: corroboration. The parity matrix records which runtimes supply an alias.
+
+### 7.2 Retention — bytes first, age second
+
+The **primary limit is bytes per agent**; age-based cleanup is a complement, not the main control.
+
+Bytes is the limit that actually failed on this host — `ENOSPC` on a shared 7.9 GB `/tmp` took down a
+whole suite mid-run. An age policy alone cannot bound a burst, and an event-count policy prices every
+event the same when a redacted argv and a one-line exit differ by orders of magnitude. Age still
+earns its place: it retires quiet agents that would otherwise hold their share indefinitely.
+
+### 7.3 InternalOperation — every Bridge call
+
+**Every Bridge tool call becomes an `InternalOperation`**, carrying sanitized metadata. Process-level
+detail is attached **only where it is observable and proven**; where it is not, the operation stands
+alone rather than growing an invented subtree.
+
+This is the honest reading of "everything an agent executes": a Bridge call that mutates a task or
+writes a handoff *is* execution, and omitting it would leave the graph confidently incomplete. It is
+also the decision that meets the volume ceiling first, which is why §7.2 binds bytes rather than
+counts — the two answers were chosen together.
+
+## 7. Explicitly out of scope for V1
 
 - **eBPF.** Optional enrichment later; never a V1 requirement. Everything above is achievable with
   correlation Tachyon already controls plus host observation it already performs.
-- Destructive actions of any kind.
+- Destructive actions of any kind, including kill-subtree.
 - Cross-host execution beyond stating the MCP boundary.
-
-## 7. Open questions for ratification
-
-1. **Turn identity.** Is `turnId` minted by Tachyon at input submission, or read from a runtime that
-   exposes one? Runtimes differ, and a per-runtime answer belongs in the parity matrix.
-2. **Retention.** Cap by event count, by age, or by bytes per agent? The host constraints argue for
-   bytes, since that is the limit that actually broke.
-3. **`InternalOperation` granularity.** Every Bridge tool call, or only those that touch the host?
-   Recording all of them is the honest reading of "everything an agent executes", and also the one
-   that risks the volume problem first.
