@@ -108,7 +108,7 @@ function depsFor(root: string, validations: Validation[]): { deps: CockpitDeps; 
   return { deps, calls };
 }
 
-type Posted = { type?: string; vm?: { items?: Array<{ id: string; kind: string }>; counts?: unknown; item?: { id: string; kind: string }; artifacts?: Array<{ name: string; available: boolean; reason?: string; src?: string }> }; kind?: string; id?: string; message?: string };
+type Posted = { type?: string; strings?: unknown; vm?: { items?: Array<{ id: string; kind: string }>; counts?: unknown; item?: { id: string; kind: string }; artifacts?: Array<{ name: string; available: boolean; reason?: string; src?: string }> }; kind?: string; id?: string; message?: string };
 const posted = (type: string): Posted[] => __createdPanels[0].webview.posted.filter((m) => (m as Posted).type === type) as Posted[];
 
 async function openInbox(deps: CockpitDeps): Promise<void> {
@@ -212,6 +212,45 @@ describe("Control → Human Inbox item route", () => {
       available: false,
       reason: "file not found",
     });
+  });
+});
+
+describe("Control → Human Inbox and the shell's handshake", () => {
+  /**
+   * t-2f6cdd landed on main while this branch was open: a panel whose FIRST route was task-detail
+   * rendered nothing at all, because that route's action handler answered READY itself and returned
+   * true — consuming the one handshake that posts `init` (the shell's only source of `strings`),
+   * `model` and the section module. Every route kind added after it inherits the same hazard, and
+   * `openHumanInbox` / the validation notice's Review action both create exactly that shape: a fresh
+   * panel whose first route is the Inbox.
+   *
+   * So this is the class check for THIS route, not a copy of that fix's own test: a bare "ready"
+   * must reach the shell, and the panel must come up with strings, a model, and its content.
+   */
+  it("a panel opened straight onto the inbox section still gets init, model and its list", async () => {
+    const root = workspace();
+    pendingApproval(root, "a-000001");
+    const { deps } = depsFor(root, [validationRecord("v-1")]);
+    await openInbox(deps);
+
+    expect(posted("init").at(-1)?.strings).toBeTruthy();
+    expect(posted("model")).not.toHaveLength(0);
+    expect(posted("humanInbox").at(-1)?.vm?.items?.length).toBe(2);
+  });
+
+  it("a panel opened straight onto an INBOX ITEM still gets init, model and the item", async () => {
+    const root = workspace();
+    const { deps } = depsFor(root, [validationRecord("v-1")]);
+    await openCockpit(deps, { route: cockpitRoutes.inboxItem("ws-1", "validation", "v-1") });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    // strings first — their absence is what rendered `<div class="ds-empty">` and nothing else
+    expect(posted("init").at(-1)?.strings).toBeTruthy();
+    const modelIndex = __createdPanels[0].webview.posted.findIndex((m) => (m as { type?: string }).type === "model");
+    const itemIndex = __createdPanels[0].webview.posted.findIndex((m) => (m as { type?: string }).type === "humanInboxItem");
+    expect(modelIndex).toBeGreaterThanOrEqual(0);
+    expect(itemIndex).toBeGreaterThan(modelIndex); // the model arrives BEFORE the item the client identity-checks against it
   });
 });
 
