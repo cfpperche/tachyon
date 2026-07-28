@@ -9,6 +9,7 @@ import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/ty
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { Validation } from "../../../src/validations/types";
 import type { Fixture } from "../routes";
+import realExecutionGraphVm from "./execution-graph-real.vm.json";
 import { sealExecutionEvent, type SealedExecutionEvent } from "../../../src/executionGraph/eventSchema";
 import { projectExecutions } from "../../../src/executionGraph/executionProjection";
 import { buildExecutionGraphVm } from "../../../src/cockpit/executionGraphVm";
@@ -720,6 +721,16 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "execution-graph": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: executionGraphVm },
+  },
+  /**
+   * SDD 480 Phase 5 — the graph captured from a REAL dogfood run: a real tmux session, a really
+   * reparented process (PPID reassigned to systemd), a real process exit code, and the real engine
+   * unit claimed by three agents. Committed so the surface is validated against data the system
+   * actually produced rather than data a fixture author imagined.
+   */
+  "execution-graph-real": {
+    provenance: "captured-host-vm",
+    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: realExecutionGraphVm as never },
   },
   "execution-graph-empty": {
     provenance: "synthetic-edge",
