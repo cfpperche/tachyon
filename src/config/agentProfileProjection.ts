@@ -37,6 +37,19 @@ import { projectGrokNativeConfig } from "./grokNativeConfigProjection.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
+/**
+ * The Grok contract as it shipped before t-26f508, retained VERBATIM because its sha256 is what an
+ * already-created canonical Grok authority names. Never edit this string: it is a fingerprint of a
+ * contract that is already on disk in someone's workspace, not a description we are free to improve.
+ */
+const GROK_INSPECTOR_CONTRACT_V1 = [
+  "tachyon/grok-private-home-input-inspector/v1",
+  "literal executable grok",
+  "GROK_HOME is Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "config.toml and trusted_folders.toml are rewritten before launch",
+  "auth.json is an external credential symlink",
+  "ambient ~/.grok config, memory and plugins are not inherited",
+].join("\n");
 const GROK_INSPECTOR_CONTRACT = [
   "tachyon/grok-private-home-input-inspector/v2",
   "literal executable grok",
@@ -103,6 +116,70 @@ const RUNTIME_INSPECTORS = {
 
 export function profileRuntimeInspectorFor(adapter: string) {
   return isAttestedRuntime(adapter) ? RUNTIME_INSPECTORS[adapter] : undefined;
+}
+
+/**
+ * t-26f508 (review by claude-reviewer) — inspector descriptors that an ALREADY-CREATED authority may
+ * still name, each superseded by a strictly stricter current inspector of the same id.
+ *
+ * This exists because a version bump is otherwise unrecoverable, and not merely for the agent that
+ * bumped. `inspectMeasuredNativeInputs` returns a projection error, `loadProfileAwareConfig` returns
+ * `{errors}` for the WHOLE config, so a single stale Grok authority stops every agent of every
+ * runtime in that workspace from loading. And nothing can repair it in-product: `authorityFor` copies
+ * `prior.runtimeInspector` on every edit, so a profile created under v1 can never reach v2 by being
+ * edited. The only exits would be `forget` + recreate (destructive) or hand-editing a host authority
+ * (which the trust model forbids). "No canonical Grok agent exists" was true of this dogfood
+ * workspace and says nothing about an installed base that has been able to create one all along.
+ *
+ * Acceptance is safe only in one direction, and only per named sha: the current inspector must be a
+ * strict SUPERSET of the superseded one — it may inspect more and isolate more, never less. v2 adds
+ * the ambient project-input refusal and the `[compat.*]`/`[memory]` pins on top of everything v1
+ * asserted, so a v1 authority loaded under v2 gets a stricter guarantee than it authorized, never a
+ * weaker one. A future contract that RELAXES a guarantee must not be listed here.
+ *
+ * The attestation still carries the descriptor the AUTHORITY names, so `assertNativeAttestation`'s
+ * exact match keeps holding and the record never claims a human authorized v2. `authorityFor` adopts
+ * the current inspector on the next lifecycle transaction, which is where re-attestation belongs.
+ */
+const SUPERSEDED_RUNTIME_INSPECTORS: Partial<Record<AttestedRuntime, readonly InspectorDescriptor[]>> = {
+  grok: [Object.freeze({
+    adapter: "grok",
+    id: "tachyon.grok-private-home-inputs",
+    version: "1",
+    sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V1).digest("hex"),
+  })],
+};
+
+export interface InspectorDescriptor {
+  adapter: string;
+  id: string;
+  version: string;
+  sha256: string;
+}
+
+function sameInspector(a: InspectorDescriptor, b: InspectorDescriptor): boolean {
+  return a.adapter === b.adapter && a.id === b.id && a.version === b.version && a.sha256 === b.sha256;
+}
+
+/**
+ * The descriptor to attest with for `actual`, or undefined when the authority names an inspector this
+ * build does not recognize at all. Returns the CURRENT descriptor on an exact match and the
+ * superseded one when it is explicitly listed, so the caller can attest to what the human authorized.
+ */
+export function acceptedRuntimeInspectorFor(
+  adapter: string,
+  actual: InspectorDescriptor,
+): InspectorDescriptor | undefined {
+  const current = profileRuntimeInspectorFor(adapter);
+  if (current && sameInspector(current, actual)) return current;
+  if (!isAttestedRuntime(adapter)) return undefined;
+  return (SUPERSEDED_RUNTIME_INSPECTORS[adapter] ?? []).find((candidate) => sameInspector(candidate, actual));
+}
+
+/** Whether `actual` is a superseded descriptor this build still accepts — the adoption trigger. */
+export function isSupersededRuntimeInspector(adapter: string, actual: InspectorDescriptor): boolean {
+  if (!isAttestedRuntime(adapter)) return false;
+  return (SUPERSEDED_RUNTIME_INSPECTORS[adapter] ?? []).some((candidate) => sameInspector(candidate, actual));
 }
 
 export interface ProjectAgentProfileInput {
@@ -285,10 +362,13 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
   )) {
     return ["profile/native-attestation: runtime selector migration requires a later measured projector"];
   }
-  const expected = profileRuntimeInspectorFor(profile.runtime.adapter)!;
   const actual = input.authority.runtimeInspector;
-  if (actual.adapter !== expected.adapter || actual.id !== expected.id || actual.version !== expected.version || actual.sha256 !== expected.sha256) {
-    return [`profile/native-attestation: host authority does not select the registered ${expected.adapter} inspector`];
+  // The descriptor to attest with: the current inspector, or an explicitly superseded one this build
+  // still accepts. The CHECKS below are always the current build's — acceptance widens which
+  // authority may load, never which inspection runs (t-26f508 review).
+  const expected = acceptedRuntimeInspectorFor(profile.runtime.adapter, actual);
+  if (!expected) {
+    return [`profile/native-attestation: host authority does not select the registered ${profile.runtime.adapter} inspector`];
   }
 
   const hasCapabilities = [

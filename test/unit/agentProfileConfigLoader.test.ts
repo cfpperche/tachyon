@@ -895,6 +895,67 @@ describe("loadProfileAwareConfig", () => {
     expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/config.toml");
   });
 
+  it("t-26f508 review: a Grok authority created under the superseded v1 inspector still loads", () => {
+    // The hazard this covers is NOT scoped to the stale agent: one projection error makes
+    // loadProfileAwareConfig return {errors} for the WHOLE config, so an upgrade would stop every
+    // agent of every runtime in that workspace from loading — with no in-product repair, because
+    // authorityFor copies the prior inspector on every edit.
+    const root = temporaryRoot("tachyon-agent-profile-grok-superseded-");
+    const directory = path.join(root, ".tachyon", "agents", "grok-old");
+    fs.mkdirSync(directory, { recursive: true });
+    const bytes = Buffer.from(stringify({
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "grok", executable: "grok" },
+    }));
+    fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
+    const v1 = {
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "1",
+      sha256: crypto.createHash("sha256").update([
+        "tachyon/grok-private-home-input-inspector/v1",
+        "literal executable grok",
+        "GROK_HOME is Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+        "config.toml and trusted_folders.toml are rewritten before launch",
+        "auth.json is an external credential symlink",
+        "ambient ~/.grok config, memory and plugins are not inherited",
+      ].join("\n")).digest("hex"),
+    };
+    expect(v1.sha256).not.toBe(GROK_PRIVATE_HOME_INPUT_INSPECTOR.sha256);
+    const result = loadProfileAwareConfig({
+      yamlText: "agents:\n  grok-old:\n    profile: .tachyon/agents/grok-old/agent.yml\n",
+      workspaceRoot: root,
+      authorities: new Map([["grok-old", {
+        schemaVersion: 1 as const,
+        agentName: "grok-old",
+        agentId: AGENT_ID,
+        revision: "profile-r1",
+        canonicalSha256: sha256(bytes),
+        runtimeInspector: v1,
+      }]]),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents["grok-old"]).toMatchObject({ cmd: "grok" });
+
+    // Acceptance is per named sha, not "any older version": an unrecognized descriptor still refuses.
+    const forged = loadProfileAwareConfig({
+      yamlText: "agents:\n  grok-old:\n    profile: .tachyon/agents/grok-old/agent.yml\n",
+      workspaceRoot: root,
+      authorities: new Map([["grok-old", {
+        schemaVersion: 1 as const,
+        agentName: "grok-old",
+        agentId: AGENT_ID,
+        revision: "profile-r1",
+        canonicalSha256: sha256(bytes),
+        runtimeInspector: { ...v1, sha256: "f".repeat(64) },
+      }]]),
+    });
+    expect(forged.config).toBeUndefined();
+    expect(forged.errors.join("\n")).toContain("host authority does not select the registered grok inspector");
+  });
+
   it("rejects a Grok profile when authority selects another runtime inspector", () => {
     const root = temporaryRoot("tachyon-agent-profile-grok-wrong-inspector-");
     const directory = path.join(root, ".tachyon", "agents", "grok");
