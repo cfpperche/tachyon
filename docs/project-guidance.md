@@ -32,14 +32,17 @@ redundant run is not free caution — it is time taken from someone else's gate.
 
 - **While implementing, run focused tests.** The full suite belongs to the tree you deliver, not to
   each step that led there.
-- **Do not re-run a full suite for a tree that is already attested.** § Landing order settles when
-  that holds and is the authority: the evidence binds to the TREE, so a fast-forward changing no
-  content changes no evidence, while a merge produces a third tree that has none yet. Read the rule
-  there rather than carrying a second copy of it here.
+- **Do not hand-manage reuse of an attested tree — just run the command.** `verify:full` decides for
+  itself whether an identical tree already passed, and it decides BEFORE taking the lock, so a
+  reused run costs nothing and blocks nobody. Skipping the command to save time is now the slower
+  path: it trades a few seconds for a claim nobody can check. The decision belongs to
+  `scripts/verify-full.mjs` (t-5d0e9d), which is its authority; `TACHYON_VERIFY_FORCE=1` overrides
+  it, and `node scripts/verify-record.mjs check [<commit-ish>]` answers what is already on file.
+  Why a tree and not a commit is § Landing order's rule, unchanged.
 - **Do not start a full run while another legitimate holder has the lock.** Wait through the governed
   mechanism rather than racing it; a refused start is the mechanism working.
-- **Say so when you skip a run.** "Not re-run, because the tree is byte-identical to the attested one"
-  is a report. Silence is indistinguishable from forgetting.
+- **Say so when a run was reused or skipped.** Report which tree the green belongs to, so a reader can
+  check the claim instead of trusting it. Silence is indistinguishable from forgetting.
 
 ## Reporting and handoff
 
