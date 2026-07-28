@@ -25,7 +25,7 @@ import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
-import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs } from "../runtime/adapters/grokMemory.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
@@ -1836,12 +1836,15 @@ export class HarnessManager {
         silentPersistence: lifecycle?.silentPersistence ?? true,
       });
       this.materializeSkills(agent, def, home);
-      // t-c46c35 — pin the disabled memory policy as argv. `--no-memory` has absolute precedence over
-      // GROK_MEMORY and config.toml, so this is what makes canonical Grok independent of an ambient env
-      // var or a future default flip, rather than inheriting a default that merely happens to be off.
+      // t-0e88f3 — pin the disabled memory policy in BOTH channels, for different reasons. The env pin
+      // carries the guarantee: measurement refuted the flag's documented precedence over GROK_MEMORY,
+      // so an ambient GROK_MEMORY=1 is only overridden by naming the variable ourselves. The flag stays
+      // because it is free and documented, not because it is load-bearing. Ordered so the memory env
+      // cannot be overwritten by a secret of the same name — a `GROK_MEMORY` in the secret map would
+      // otherwise silently re-enable memory on the canonical path.
       return {
         home,
-        env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv },
+        env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv, ...grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY) },
         args: [...args, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)],
       };
     }
@@ -2114,11 +2117,12 @@ export class HarnessManager {
       if (options.inheritNativeConfig === false) fs.rmSync(path.join(home, "config.toml"), { force: true });
       else this.seedCodexHomeOnlyConfig(home);
     }
-    // t-c46c35 — `isolate: transcript` is still a canonical launch, so it carries the same memory pin.
+    // t-c46c35 — `isolate: transcript` is still a canonical launch, so it carries the same memory pin;
+    // t-0e88f3 added the env half, which is the half that holds.
     if (adapter.runtime === "grok") {
       return {
         home,
-        env: { [h.configHomeEnv]: this.grokHome(home) },
+        env: { [h.configHomeEnv]: this.grokHome(home), ...grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY) },
         args: grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY),
       };
     }

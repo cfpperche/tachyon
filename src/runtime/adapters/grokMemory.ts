@@ -1,39 +1,53 @@
 /**
- * t-c46c35 — Grok's native memory, and the one place in this lane where measurement leads to an
- * actual product change rather than to a careful "not proven".
+ * t-0e88f3 — Grok's native memory, and the one place in this lane where a guarantee had to be
+ * withdrawn after measurement contradicted it.
  *
- * Claude gave no free way to see memory state; Codex gave a free readout but no way to see what
- * reaches the model. Grok gives something more useful than either: a control with **absolute
- * precedence**. `--no-memory` always disables, above the env var and above config, so pinning it makes
- * the canonical answer independent of whatever the ambient environment says.
+ * ## The correction, first, because the previous version of this file asserted the opposite
  *
- * ## What was measured (2026-07-28, Grok 0.2.112, installed CLI and shipped docs)
+ * t-c46c35 pinned `--no-memory` on canonical Grok launches and justified it with the shipped guide's
+ * precedence table, which ranks the flag ABOVE the `GROK_MEMORY` environment variable. The stated
+ * point was immunity to a hostile environment. **That immunity does not exist in Grok 0.2.112.**
  *
- * `grok --help` exposes both `--no-memory` ("Disable cross-session memory for this session") and
- * `--experimental-memory`, and the shipped user guide states the precedence outright:
+ * Measured 2026-07-28 (approval a-b4b050, effective model grok-4.5-build, private GROK_HOME projected
+ * by `materializeBridgeMcpGrok`), two arms over a synthetic marker planted in the private store:
  *
- *     1. `--no-memory` CLI flag (always disables)
- *     2. `--experimental-memory` CLI flag (enables)
- *     3. `GROK_MEMORY` env var: `1`/`true` enables, `0`/`false` disables
- *     4. `[memory]` section in config.toml
- *     5. Default: disabled
+ *  - **hostile** — `--no-memory` AND `GROK_MEMORY=1`: the model answered with the exact marker. The
+ *    debug log shows MEMORY_INIT (watcher_config_enabled=true), MEMORY_INJECT_SEARCH results=1 and a
+ *    first-turn injection, and the store was written during the run.
+ *  - **default** — clean environment, no flag: no MEMORY_INIT, no MEMORY_INJECT, the marker never
+ *    reached the model, nothing written.
  *
- * That ordering is the whole reason this task is worth doing. Tachyon's canonical Grok launches were
- * relying on rule 5 — the default — while rules 3 and 4 sit above it and are writable by anyone with
- * an environment or a config file. Pinning rule 1 replaces "we inherit a default that happens to be
- * off" with "we state it, and nothing below can outrank us".
+ * The default arm is what makes this a finding rather than a puzzle. Reading the hostile arm alone
+ * could not separate "the flag is inert" from "the env var outranks the flag"; the default arm shows
+ * the default really is off, so memory became active *because* `GROK_MEMORY` turned it on, and
+ * `--no-memory` failed to outrank it.
+ *
+ * ## What Tachyon does about it
+ *
+ * Precedence Tachyon cannot verify is not a control Tachyon can offer, so the guarantee moved to the
+ * channel Tachyon actually owns: **the spawn environment**. `grokMemoryEnv` pins `GROK_MEMORY=0` on
+ * canonical launches, and the same measurement that refuted the flag is what recommends the variable —
+ * it was decisive enough to overrule the flag, so setting it uses the control the runtime honors
+ * rather than the one it documents.
+ *
+ * Why set `0` rather than remove the variable: removal returns the launch to rule 5, the bare default,
+ * which is exactly the position t-c46c35 set out to improve on. It is also not expressible — the spawn
+ * env is assembled as a `Record<string, string>` and delivered through `tmux new-session -e`, a channel
+ * that can set a variable but not unset one. `0` is an assertion in a channel Tachyon controls end to
+ * end; absence is an assumption about everyone else's environment.
+ *
+ * The flag stays pinned. It is free, it is the documented control, and the measurement showed it to be
+ * inert rather than harmful — it simply may no longer be described as immunity.
  *
  * ## What this module does NOT claim
  *
- * Pinning the flag is a real change with a real guarantee attached, and it is still not a behavioral
- * proof that memory is absent. Grok 0.2.112's `memory` subcommand exposes only `clear` — there is no
- * status or stats readout, so nothing non-billable reports effective memory state, and nothing renders
- * what reaches the model. `disable`, `enable`, `injection` and `mutation` therefore stay `declared`
- * exactly as they did for Claude and Codex, and the fresh/restart/resume/fork absence proof the task
- * asks for still needs an authorized session.
+ * `enable`, `injection` and `mutation` stay `declared`. Grok 0.2.112's `memory` subcommand exposes only
+ * `clear` — no status or stats readout — so nothing non-billable reports effective memory state, and
+ * nothing renders what reaches the model.
  *
- * The honest summary: this task closes the CONTROL gap, which was the part that could be closed
- * without spending anything, and leaves the EVIDENCE gap open and named.
+ * The `disable` axis is `refuted` rather than `declared`: it was measured and the shipped control
+ * failed. That distinction is why `refuted` was added to the evidence vocabulary — see
+ * `MemoryEvidence` in `../nativeMemory.js`.
  */
 import type { MemoryPolicyRequest, RuntimeNativeMemoryCapabilityV1 } from "../nativeMemory.js";
 import type { MemoryLifecycleOperation } from "../nativeMemory.js";
@@ -41,15 +55,39 @@ import type { MemoryLifecycleOperation } from "../nativeMemory.js";
 /** The exact runtime this evidence describes. A different build is unmeasured until someone measures it. */
 export const GROK_MEMORY_MEASURED_VERSION = "0.2.112";
 
-/** The flag with absolute precedence — rule 1 of the documented order. */
+/**
+ * The documented disable flag. Retained on canonical launches, and no longer load-bearing: measurement
+ * put `GROK_MEMORY` above it, so this is the belt and `grokMemoryEnv` is the braces.
+ */
 export const GROK_NO_MEMORY_FLAG = "--no-memory";
 
+/** The environment variable that measurement showed actually decides the outcome. */
+export const GROK_MEMORY_ENV_VAR = "GROK_MEMORY";
+
+/** The value the shipped guide assigns to "disabled" for {@link GROK_MEMORY_ENV_VAR}. */
+export const GROK_MEMORY_DISABLED_VALUE = "0";
+
 /**
- * The documented precedence, highest first, recorded so the reason for pinning survives the decision.
- * Anyone tempted to drop the flag because "the default is already disabled" is looking at rule 5 and
- * missing rules 3 and 4 sitting above it.
+ * The MEASURED precedence, highest first — deliberately not the documented one.
+ *
+ * The shipped guide ranks `--no-memory` first and `GROK_MEMORY` third. At 0.2.112 that is false in the
+ * only case where the ordering matters: with both set, memory ran. This constant records what the
+ * runtime does, so that the next person to reason about Grok's controls reasons from the measurement
+ * rather than from the table that has already misled once.
  */
 export const GROK_MEMORY_PRECEDENCE = [
+  "GROK_MEMORY env var: 1/true enables — MEASURED to outrank --no-memory at 0.2.112, contradicting the shipped guide",
+  "--experimental-memory CLI flag (enables) — documented, not measured against the env var",
+  "--no-memory CLI flag — documented as 'always disables'; MEASURED to be outranked by GROK_MEMORY=1",
+  "[memory] section in config.toml — documented; Tachyon owns this file inside the private GROK_HOME",
+  "default: disabled — MEASURED, on a clean environment with no flag",
+] as const;
+
+/**
+ * The precedence the shipped user guide claims, kept verbatim so the contradiction stays legible.
+ * Reading this next to {@link GROK_MEMORY_PRECEDENCE} is the whole finding in ten lines.
+ */
+export const GROK_MEMORY_DOCUMENTED_PRECEDENCE = [
   "--no-memory CLI flag (always disables)",
   "--experimental-memory CLI flag (enables)",
   "GROK_MEMORY env var: 1/true enables, 0/false disables",
@@ -71,6 +109,18 @@ export function grokMemoryArgs(policy: MemoryPolicyRequest): string[] {
 }
 
 /**
+ * The env a canonical Grok launch contributes for a given memory policy — the control that survived
+ * measurement, and therefore the one carrying the guarantee.
+ *
+ * Same policy keying and same fresh-object discipline as {@link grokMemoryArgs}, for the same reason:
+ * when evidence eventually admits `runtime-managed`, the pin must disappear because the policy
+ * changed, not because someone remembered to edit three launch sites.
+ */
+export function grokMemoryEnv(policy: MemoryPolicyRequest): Record<string, string> {
+  return policy === "disabled" ? { [GROK_MEMORY_ENV_VAR]: GROK_MEMORY_DISABLED_VALUE } : {};
+}
+
+/**
  * The canonical policy for Grok today. Named rather than inlined so the launch path reads as a policy
  * decision, and so the single place to revisit is obvious when evidence changes.
  */
@@ -89,19 +139,19 @@ export interface GrokVerificationPlan {
 export function grokMemoryVerificationPlan(): GrokVerificationPlan {
   return {
     withoutModelCall: [
-      "control precedence — `--no-memory` is documented to outrank GROK_MEMORY and config.toml, and canonical launches now pin it",
+      "control precedence — MEASURED: GROK_MEMORY=1 outranks `--no-memory` at 0.2.112, so canonical launches pin the env var and keep the flag only as a documented no-op",
       "flag reachability — `grok --help` at 0.2.112 exposes --no-memory and --experimental-memory",
       "purge surface — `grok memory clear` exists; note the installed CLI exposes ONLY clear, no status/stats",
       "store path — $GROK_HOME/memory/MEMORY.md plus a repository-identity workspace directory",
     ],
     needsAuthorization: [
-      { axis: "disable", proves: "that a session launched with --no-memory neither reads a planted store nor writes one, even with GROK_MEMORY=1 set" },
-      { axis: "enable", proves: "that the same store IS consulted under --experimental-memory, which fixes the flag as the real control" },
+      { axis: "disable", proves: "that a session launched with the canonical env neither reads a planted store nor writes one, even with a hostile GROK_MEMORY=1 in the ambient environment" },
+      { axis: "enable", proves: "that the same store IS consulted under --experimental-memory, which would fix the flag as a real control in the enabling direction" },
       { axis: "injection", proves: "what first-turn search injection actually places in context, and how large it gets" },
       { axis: "mutation", proves: "whether session-end metadata, LLM flushes or dream consolidation write back" },
     ],
     lifecycle: [
-      { operation: "fresh", method: "new private GROK_HOME with GROK_MEMORY=1 set in the environment; a planted marker must not reach the model, which is the drift case the pin exists for" },
+      { operation: "fresh", method: "new private GROK_HOME with a hostile GROK_MEMORY=1 in the ambient env; a planted marker must not reach the model, which is the drift case the canonical env pin exists for" },
       { operation: "restart", method: "same home, second session; store persists (research says retain) while the pin keeps it unread" },
       { operation: "resume", method: "`--resume` into the same home; retain expected" },
       { operation: "fork", method: "`--fork-session` mints a new session id in the SAME home, and the store is repository-keyed — so a fork shares memory rather than copying it. Registry says `unknown`; this is what would settle it" },
@@ -112,10 +162,10 @@ export function grokMemoryVerificationPlan(): GrokVerificationPlan {
 /**
  * Grok's capability with what this task actually changed.
  *
- * No evidence axis is promoted: pinning a flag is a control improvement, not an observation of
- * behavior, and this lane's whole value is that those two never get conflated. What changes is that
- * the disable control is now exercised by canonical launches rather than only by probes — recorded in
- * `sources` as the behavioral test that proves the launch path emits it.
+ * No axis is promoted to `verified`: the canonical env pin is a control change, and this lane's whole
+ * value is that a control and an observation never get conflated. What DID change is that `disable`
+ * moved off `declared` in the other direction — to `refuted`, because the previously shipped control
+ * was measured and failed.
  */
 export function grokMemoryCapability(base: RuntimeNativeMemoryCapabilityV1): RuntimeNativeMemoryCapabilityV1 {
   return {
@@ -124,7 +174,7 @@ export function grokMemoryCapability(base: RuntimeNativeMemoryCapabilityV1): Run
     sources: [
       ...base.sources,
       { kind: "behavioral-test", ref: "test/unit/grokMemoryAdapter.test.ts" },
-      { kind: "behavioral-test", ref: "docs/research/runtime-native-memory-parity-t-d4c42e.md#grok-2026-07-28" },
+      { kind: "behavioral-test", ref: "docs/research/runtime-native-memory-parity-t-d4c42e.md#grok-2026-07-28-refuted" },
     ],
   };
 }

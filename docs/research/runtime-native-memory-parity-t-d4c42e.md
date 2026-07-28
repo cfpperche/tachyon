@@ -209,16 +209,27 @@ session inherits the same store rather than a copy. Fork is not a memory-isolati
 - **Storage/scope:** `$GROK_HOME/memory/MEMORY.md` plus a repository-identity
   workspace directory, session logs and SQLite index. Clones/worktrees of the
   same origin intentionally share the repository key inside one home.
-- **Controls:** `--no-memory` has absolute precedence; CLI, environment and TOML
-  can enable it; native commands browse/edit/stats/clear memory.
-- **Tachyon today:** probes pin `--no-memory`, and as of `t-c46c35` so do wired
-  canonical launches, so an ambient `GROK_MEMORY=1` or a future default change no
-  longer decides the outcome. Absence is still not behaviorally proven.
-- **Classification:** native; disable mechanism declared and already used by
-  probes, and as of `t-c46c35` WIRED for canonical launches — still not
-  behaviorally verified.
+- **Controls:** the shipped guide claims `--no-memory` has absolute precedence.
+  **Measurement refuted that** (`t-0e88f3`, below): `GROK_MEMORY=1` outranks the
+  flag in headless mode. CLI, environment and TOML can enable it; native commands
+  browse/edit/stats/clear memory.
+- **Tachyon today:** wired canonical launches pin `GROK_MEMORY=0` in the spawn env
+  (`t-0e88f3`) — the control Tachyon owns and the runtime was observed to honor.
+  `--no-memory` is still emitted, as a documented no-op rather than a guarantee.
+  Absence is not behaviorally proven.
+- **Classification:** native; disable mechanism **refuted** as documented and
+  re-implemented through the environment — not behaviorally verified in the new
+  form.
 
 #### Control change, 2026-07-28 (`t-c46c35`) {#grok-2026-07-28}
+
+> **SUPERSEDED — the central claim of this section is false.** Everything below reasons from the
+> shipped guide's precedence table, and a behavioral measurement the same day
+> ([§ Refutation](#grok-2026-07-28-refuted)) contradicted it: `--no-memory` does **not** outrank
+> `GROK_MEMORY=1` at 0.2.112. The section is kept unedited because the reasoning is the artifact — it
+> is a worked example of a conclusion that was careful, well-sourced, internally consistent and wrong,
+> and deleting it would remove the only evidence of how that happens. Read it as a record of what was
+> believed, not as a description of the product.
 
 Measured against Grok 0.2.112 (`grok --help`, `grok memory --help`, and the shipped user guide
 `~/.grok/docs/user-guide/13-memory.md`). No model call, and no memory store read — only shipped
@@ -263,6 +274,82 @@ not reaching the model. That is the drift the pin exists for, and proving it is 
 - **Primary evidence:** installed
   `~/.grok/docs/user-guide/13-memory.md`, `grok --help`,
   `src/probe/adapters/grok.ts`, `src/harness/HarnessManager.ts`.
+
+#### Refutation and re-implementation, 2026-07-28 (`t-0e88f3`) {#grok-2026-07-28-refuted}
+
+Measured under human approval `a-b4b050`, Grok 0.2.112, effective model `grok-4.5-build`, in a private
+`GROK_HOME` projected by the product's own `materializeBridgeMcpGrok`. **This is the first behavioral
+measurement in the lane, and it refuted the thing the previous section had just shipped.**
+
+**Two arms, one planted synthetic marker.**
+
+| Arm | Launch | Result |
+| --- | --- | --- |
+| hostile | `--no-memory` **and** `GROK_MEMORY=1` | model answered with the **exact marker**; `MEMORY_INIT` (`watcher_config_enabled=true`), `MEMORY_INJECT_SEARCH results=1`, first-turn injection; store **written** during the run (`memory/repo-946b4ffe/index.sqlite`, 77,824 bytes) |
+| default | clean env, no flag | no `MEMORY_INIT`, no `MEMORY_INJECT`, marker never reached the model, nothing written |
+
+**The second arm is what makes this a finding rather than a puzzle,** and it cost two cents. Reading
+the hostile arm alone cannot distinguish "the flag is inert" from "the env var outranks the flag" — in
+both worlds memory runs. The default arm shows the default really is off, so memory became active
+*because* `GROK_MEMORY` turned it on, which pins the failure on precedence specifically. A null result
+needs a positive control or it is not a result.
+
+**What was false, precisely.** Not the flag's existence and not its direction — `--no-memory` is a real
+flag that really means disable. What was false is its **rank**: the guide places it above
+`GROK_MEMORY`, and at 0.2.112 it is below. Everything `t-c46c35` built rested on that one row of that
+one table, and nothing in the change was verifiable without spending money, which is exactly why it
+shipped unverified.
+
+**The impact was a false guarantee, not a live defect.** In the ordinary case the default is already
+off, so canonical Grok agents were not running with memory active. What was wrong was the *claim* —
+the module header, `GROK_MEMORY_PRECEDENCE`, the commit message and this document all asserted immunity
+to a hostile environment. Anyone later reasoning "we are safe because we pin rule 1" would have been
+wrong, and preventing that belief is the entire purpose of this lane.
+
+**The fix moves the guarantee to a channel Tachyon owns.** Canonical launches now pin
+`GROK_MEMORY=0` in the spawn env (`grokMemoryEnv`, wired at all three canonical sites:
+`HarnessManager.materialize`, `HarnessManager.materializeHomeOnly`, and `AgentManager.withRuntimeBridge`
+— the last being the common non-harness Bridge-wired agent, which reaches neither materializer). The
+same measurement that refuted the flag is what recommends the variable: it was decisive enough to
+overrule the flag, so setting it uses the control the runtime honors rather than the one it documents.
+
+Two choices inside that fix are worth stating rather than leaving to be re-derived:
+
+- **`0`, not removal.** Removing the variable returns the launch to rule 5, the bare default — the very
+  position `t-c46c35` set out to improve on. It is also not expressible: the spawn env is a
+  `Record<string, string>` delivered through `tmux new-session -e`, a channel that can set a variable
+  but not unset one. `0` is an assertion in a channel Tachyon controls end to end; absence is an
+  assumption about everyone else's environment.
+- **The pin outranks the secret map.** In `materialize` the memory env is spread *after* `secretEnv`, so
+  a user-configured `GROK_MEMORY` secret cannot re-enable memory on the canonical path. That ordering
+  is pinned by test, because getting it backwards would reintroduce the hostile environment through
+  Tachyon's own hands.
+- **The probe adapter was the most exposed caller, not the least.** `src/probe/adapters/grok.ts` pinned
+  `--no-memory` and ran `-p` — and headless is the exact mode the refutation was measured in. A probe
+  inheriting a hostile environment would have had memory injecting into a measurement whose entire
+  value is a bounded, reproducible surface. It now pins the env var too; `ProbeRunner` spreads
+  `Invocation.env` over `process.env`, which is precisely where a hostile value would arrive.
+
+The `--no-memory` flag is still emitted. It is free, it is the documented control, and measurement
+showed it to be inert rather than harmful — it simply may no longer be described as immunity.
+
+**Evidence vocabulary.** `disable` moved from `declared` to **`refuted`**, a value this task added to
+`MemoryEvidence`. `declared` reads as "nobody checked", which is the opposite of what happened, so a
+vocabulary without "tested and failed" downgrades its worst finding into an unmade one exactly when it
+matters most. `refuted` is behavioral in the same sense `verified` is: neither may be authored from
+documentation. A `refuted` axis must carry a `refutations` entry naming the claim, what was measured
+instead, the version and date, and where the evidence lives — enforced at module load by
+`assertRefutationsAreExplained`, because a verdict with no finding behind it is barely better than the
+`declared` it replaced.
+
+**The `disable` axis was NOT promoted for the new control.** The env pin is a control change, not an
+observation; conflating the two is the mistake this section documents. It stays `refuted` until a
+measurement of the *canonical env* passes with a working positive control.
+
+- **Primary evidence:** `t-c46c35` journal `j-b02184d17f19` (arm output, debug log, store bytes);
+  approvals `a-b4b050`, `a-c1a580`, `a-a3db98`; `src/runtime/adapters/grokMemory.ts`,
+  `src/runtime/nativeMemory.ts`, `test/unit/grokMemoryAdapter.test.ts`,
+  `test/unit/runtimeNativeMemory.test.ts`.
 
 ### OpenCode 1.18.4
 

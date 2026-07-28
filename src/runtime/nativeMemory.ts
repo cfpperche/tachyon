@@ -28,8 +28,32 @@
  * less safe than it was yesterday.
  */
 
-/** How strong the claim on one axis is. `verified` may only come from a behavioral observation. */
-export type MemoryEvidence = "unsupported" | "declared" | "verified";
+/**
+ * How strong the claim on one axis is.
+ *
+ * `verified` and `refuted` are the two BEHAVIORAL values, and neither may be authored from
+ * configuration bytes: one says a measurement supported the claim, the other says a measurement
+ * contradicted it. `declared` sits between them as "asserted by a runtime's own documentation, never
+ * observed".
+ *
+ * `refuted` exists because t-0e88f3 found the gap the hard way. Grok's `disable` axis sat at
+ * `declared` after a measurement had PROVED the shipped control did not work — and `declared` reads as
+ * "nobody checked", which is the opposite of what happened. A vocabulary that cannot say "tested and
+ * failed" silently downgrades its worst finding into an unmade one, exactly when the finding matters
+ * most. The axis value is the one-word summary; `refutations` below records what actually failed.
+ */
+export type MemoryEvidence = "unsupported" | "declared" | "verified" | "refuted";
+
+/**
+ * The values that may ONLY come from an observation of the runtime. Authoring either from
+ * documentation is the conflation this module exists to prevent — and it cuts both ways: a claim
+ * cannot be talked into `verified`, and a claim cannot be talked into `refuted` either.
+ */
+export const BEHAVIORAL_MEMORY_EVIDENCE = ["verified", "refuted"] as const;
+
+export function isBehavioralEvidence(evidence: MemoryEvidence): boolean {
+  return (BEHAVIORAL_MEMORY_EVIDENCE as readonly MemoryEvidence[]).includes(evidence);
+}
 
 export type MemoryMechanism = "none" | "native" | "extension" | "external-provider";
 export type MemoryScope = "agent" | "repository" | "global" | "external" | "unknown";
@@ -98,6 +122,26 @@ export interface RuntimeNativeMemoryCapabilityV1 {
   };
   readonly lifecycle: Readonly<Record<MemoryLifecycleOperation, MemoryLifecycle>>;
   readonly sources: ReadonlyArray<{ readonly kind: "installed-source" | "runtime-doc" | "behavioral-test"; readonly ref: string }>;
+  /**
+   * Claims a measurement CONTRADICTED, kept beside the axis rather than folded into it.
+   *
+   * The axis value can only say how strong the evidence is; it cannot say which specific control was
+   * tried and failed, and that is the part a reader needs in order not to repeat the mistake. A
+   * `refuted` axis without one of these entries is a summary with no finding behind it, so
+   * `assertRefutationsAreExplained` refuses the pair at construction rather than letting a bare verdict
+   * ship.
+   */
+  readonly refutations?: ReadonlyArray<{
+    readonly axis: MemoryEvidenceAxis;
+    /** what was asserted — quoted from the source that asserted it, so the claim stays recognizable */
+    readonly claim: string;
+    /** what the runtime actually did instead */
+    readonly measured: string;
+    /** the exact runtime version and date the contradiction was observed at */
+    readonly at: string;
+    /** where the evidence lives, so the verdict can be checked instead of trusted */
+    readonly evidence: string;
+  }>;
   /**
    * An extension/plugin boundary the built-in classification does NOT cover (research § 3). A runtime
    * whose core has no memory can still have a plugin that injects persistent context, and that stays
@@ -188,15 +232,19 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     defaultState: "disabled",
     evidence: {
       inventory: "declared",
-      disable: "declared",
+      // t-0e88f3 — MEASURED AND FAILED, which is a different statement from "unmeasured". The shipped
+      // guide's rule 1 says `--no-memory` always disables; with GROK_MEMORY=1 also set, memory
+      // initialized, injected and wrote. See `refutations` below for the observation itself.
+      disable: "refuted",
       enable: "declared",
       injection: "declared",
       mutation: "declared",
       isolation: "declared",
     },
-    // `--no-memory` has absolute precedence, and Tachyon's probes already pin it — but canonical
-    // launches do not, so an ambient GROK_MEMORY=1 or a future default change is not overridden.
-    control: { detect: "config", disable: "argv", enable: "config", purge: "native-command", export: "native-command" },
+    // `environment`, not `argv`: the flag was the documented control and measurement refuted it, while
+    // the env var demonstrably decided the outcome. Tachyon owns the spawn environment, so this is a
+    // control it can actually hold — see `grokMemoryEnv` in adapters/grokMemory.ts.
+    control: { detect: "config", disable: "environment", enable: "config", purge: "native-command", export: "native-command" },
     injection: { mode: "mixed" },
     mutation: { modes: ["human-confirmed", "agent-tool", "background-extraction"] },
     // Clones and worktrees of one origin intentionally SHARE the repository key inside a home.
@@ -206,6 +254,17 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
       { kind: "installed-source", ref: "~/.grok/docs/user-guide/13-memory.md" },
       { kind: "installed-source", ref: "src/probe/adapters/grok.ts" },
       { kind: "installed-source", ref: RESEARCH },
+      { kind: "behavioral-test", ref: `${RESEARCH}#grok-2026-07-28-refuted` },
+    ],
+    refutations: [
+      {
+        axis: "disable",
+        claim: "shipped user guide 13-memory.md, precedence rule 1: `--no-memory` CLI flag (always disables), ranked above rule 3 `GROK_MEMORY`",
+        measured:
+          "with `--no-memory` AND GROK_MEMORY=1, a marker planted in the private store reached the model verbatim; the debug log shows MEMORY_INIT (watcher_config_enabled=true), MEMORY_INJECT_SEARCH results=1 and a first-turn injection, and the store was written during the run. A default arm with a clean environment and no flag showed none of it, which is what separates 'the flag is inert' from 'the env var outranks it'",
+        at: "Grok 0.2.112, effective model grok-4.5-build, 2026-07-28",
+        evidence: "t-c46c35 journal j-b02184d17f19; t-0e88f3",
+      },
     ],
   },
   opencode: {
@@ -295,6 +354,38 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     },
   },
 };
+
+/**
+ * A `refuted` axis must carry the refutation that produced it, and vice versa.
+ *
+ * Run over the static registry at module load rather than left to a test, because the failure it
+ * prevents is a verdict with no finding behind it — "we measured and it failed", with no record of
+ * WHAT failed, is only marginally better than the `declared` it replaced. The data is authored in this
+ * repository and frozen, so if this throws it throws in CI on the commit that introduced it, never in
+ * front of a user.
+ */
+export function assertRefutationsAreExplained(
+  registry: Readonly<Record<string, RuntimeNativeMemoryCapabilityV1>>,
+): void {
+  for (const capability of Object.values(registry)) {
+    const explained = new Set((capability.refutations ?? []).map((r) => r.axis));
+    for (const axis of MEMORY_EVIDENCE_AXES) {
+      const isRefuted = capability.evidence[axis] === "refuted";
+      if (isRefuted && !explained.has(axis)) {
+        throw new Error(
+          `${capability.adapter}: evidence.${axis} is 'refuted' with no matching refutations entry — a verdict with no finding behind it`,
+        );
+      }
+      if (!isRefuted && explained.has(axis)) {
+        throw new Error(
+          `${capability.adapter}: refutations names '${axis}' but evidence.${axis} is '${capability.evidence[axis]}' — a recorded contradiction the axis does not reflect`,
+        );
+      }
+    }
+  }
+}
+
+assertRefutationsAreExplained(RUNTIME_NATIVE_MEMORY_REGISTRY);
 
 export function nativeMemoryCapability(adapter: string): RuntimeNativeMemoryCapabilityV1 | undefined {
   return RUNTIME_NATIVE_MEMORY_REGISTRY[adapter];
@@ -387,10 +478,16 @@ export function resolveMemoryPolicy(query: MemoryPolicyQuery): MemoryPolicyOutco
     // Rule 1 — merely omitting an enable key is insufficient. Authoring a disable setting proves only
     // that Tachyon wrote bytes; the axis has to have been observed.
     if (capability.evidence.disable !== "verified") {
+      // A refuted axis gets its own sentence. "not verified" is true of it but useless: it reads as a
+      // gap in the record when it is actually a finding, and the reader's next move is completely
+      // different — nobody should go looking for the measurement that was already run and failed.
+      const refutation = capability.refutations?.find((r) => r.axis === "disable");
       return {
         status: "blocked",
         reasons: [
-          `${capability.adapter}: disable is '${capability.evidence.disable}', not verified — writing a disable setting only proves Tachyon authored bytes`,
+          refutation
+            ? `${capability.adapter}: disable is 'refuted' — measured at ${refutation.at} and the control FAILED: ${refutation.measured} (claim was: ${refutation.claim}; evidence: ${refutation.evidence})`
+            : `${capability.adapter}: disable is '${capability.evidence.disable}', not verified — writing a disable setting only proves Tachyon authored bytes`,
           ...(capability.defaultState === "enabled"
             // Rule 4's sharp edge: memory defaults ON and we cannot prove we turned it off.
             ? [`${capability.adapter}: memory is ON by default at ${capability.runtimeVersion}, so canonical readiness is blocked rather than Ready`]

@@ -1,79 +1,148 @@
 import { describe, expect, it } from "vitest";
 import {
   GROK_CANONICAL_MEMORY_POLICY,
+  GROK_MEMORY_DISABLED_VALUE,
+  GROK_MEMORY_DOCUMENTED_PRECEDENCE,
+  GROK_MEMORY_ENV_VAR,
   GROK_MEMORY_MEASURED_VERSION,
   GROK_MEMORY_PRECEDENCE,
   GROK_NO_MEMORY_FLAG,
   grokMemoryArgs,
   grokMemoryCapability,
+  grokMemoryEnv,
   grokMemoryVerificationPlan,
 } from "../../src/runtime/adapters/grokMemory.js";
 import { nativeMemoryCapability, resolveMemoryPolicy } from "../../src/runtime/nativeMemory.js";
 
 /**
- * t-c46c35 — the one task in this lane where measurement produces a product change.
+ * t-0e88f3 — the task that withdrew t-c46c35's guarantee.
  *
- * Measured against Grok 0.2.112 (installed CLI `grok --help` and the shipped user guide
- * `~/.grok/docs/user-guide/13-memory.md`) on 2026-07-28. No model call was made, and no memory store
- * was read — only shipped documentation and flag help.
+ * t-c46c35 pinned `--no-memory` and asserted immunity to a hostile environment, on the strength of the
+ * shipped guide's precedence table. Measurement on 2026-07-28 (approval a-b4b050, Grok 0.2.112,
+ * effective model grok-4.5-build) contradicted the table: with `--no-memory` AND `GROK_MEMORY=1`,
+ * memory initialized, injected a planted marker into the first turn, and wrote to the store. A default
+ * arm on a clean environment showed none of it, which is what separates "the flag is inert" from "the
+ * env var outranks it".
+ *
+ * These tests pin the CORRECTION, so the false claim cannot quietly return.
  */
 
-describe("why the flag is pinned rather than trusted to the default", () => {
-  it("records the documented precedence, highest first", () => {
-    // The reason for the whole change: canonical Grok was relying on rule 5, while rules 3 and 4 sit
-    // ABOVE it and are writable by anyone with an environment or a config file.
-    expect(GROK_MEMORY_PRECEDENCE[0]).toContain("--no-memory");
-    expect(GROK_MEMORY_PRECEDENCE[0]).toContain("always disables");
-    expect(GROK_MEMORY_PRECEDENCE[2]).toContain("GROK_MEMORY");
-    expect(GROK_MEMORY_PRECEDENCE[3]).toContain("config.toml");
-    expect(GROK_MEMORY_PRECEDENCE[4]).toContain("default: disabled");
-    // GROK_MEMORY outranks config, and both outrank the default — which is what made inheriting the
-    // default insufficient.
-    expect(GROK_MEMORY_PRECEDENCE.indexOf("GROK_MEMORY env var: 1/true enables, 0/false disables"))
-      .toBeLessThan(GROK_MEMORY_PRECEDENCE.indexOf("default: disabled"));
+describe("the precedence, as measured rather than as documented", () => {
+  it("puts GROK_MEMORY above --no-memory, which is the finding", () => {
+    // The single most important inversion: the guide ranks the flag first, the runtime does not.
+    const envRank = GROK_MEMORY_PRECEDENCE.findIndex((rule) => rule.startsWith("GROK_MEMORY"));
+    const flagRank = GROK_MEMORY_PRECEDENCE.findIndex((rule) => rule.startsWith("--no-memory"));
+    expect(envRank).toBeGreaterThanOrEqual(0);
+    expect(flagRank).toBeGreaterThanOrEqual(0);
+    expect(envRank, "the env var outranks the flag at 0.2.112").toBeLessThan(flagRank);
   });
 
-  it("emits the flag for the disabled policy", () => {
-    expect(grokMemoryArgs("disabled")).toEqual([GROK_NO_MEMORY_FLAG]);
+  it("marks each rule as MEASURED or merely documented, so the two never blur again", () => {
+    const measured = GROK_MEMORY_PRECEDENCE.filter((rule) => rule.includes("MEASURED"));
+    // The env var, the flag and the default were all observed; --experimental-memory and the config
+    // section were not, and say so.
+    expect(measured).toHaveLength(3);
+    expect(GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("--experimental-memory")))
+      .toContain("not measured");
   });
 
-  it("emits nothing for runtime-managed, so the pin follows the POLICY", () => {
-    // Keyed on policy rather than hardcoded: when evidence eventually admits runtime-managed, the
-    // launch path should stop pinning because the policy changed — not because someone edited a
-    // harness branch and hoped it was the only one.
-    expect(grokMemoryArgs("runtime-managed")).toEqual([]);
+  it("keeps the documented table verbatim, so the contradiction stays legible", () => {
+    // Deleting the claim would hide the lesson. Keeping it beside the measurement is the lesson.
+    expect(GROK_MEMORY_DOCUMENTED_PRECEDENCE[0]).toBe("--no-memory CLI flag (always disables)");
+    expect(GROK_MEMORY_DOCUMENTED_PRECEDENCE[2]).toContain("GROK_MEMORY");
+    const docFlagRank = 0;
+    const docEnvRank = 2;
+    expect(docFlagRank, "the guide's order is the OPPOSITE of the measured one").toBeLessThan(docEnvRank);
   });
 
-  it("hands back a fresh array, so a caller cannot mutate one launch into another", () => {
-    const first = grokMemoryArgs("disabled");
-    first.push("--experimental-memory");
-    expect(grokMemoryArgs("disabled")).toEqual([GROK_NO_MEMORY_FLAG]);
-  });
-
-  it("keeps the canonical policy disabled", () => {
-    expect(GROK_CANONICAL_MEMORY_POLICY).toBe("disabled");
-    expect(grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)).toEqual([GROK_NO_MEMORY_FLAG]);
+  it("no longer claims the flag has absolute precedence anywhere", () => {
+    const everything = [...GROK_MEMORY_PRECEDENCE].join(" ");
+    expect(everything).not.toContain("always disables\"");
+    expect(GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("--no-memory")))
+      .toContain("MEASURED to be outranked");
   });
 });
 
-describe("what the pin does and does NOT promote", () => {
+describe("the control that carries the guarantee is now the env var", () => {
+  it("pins GROK_MEMORY=0 for the disabled policy", () => {
+    expect(grokMemoryEnv("disabled")).toEqual({ [GROK_MEMORY_ENV_VAR]: GROK_MEMORY_DISABLED_VALUE });
+    expect(GROK_MEMORY_ENV_VAR).toBe("GROK_MEMORY");
+    expect(GROK_MEMORY_DISABLED_VALUE).toBe("0");
+  });
+
+  it("emits nothing for runtime-managed, so the pin follows the POLICY", () => {
+    // Same discipline as the argv pin: when evidence eventually admits runtime-managed, the launch
+    // path must stop pinning because the policy changed, not because someone edited three call sites.
+    expect(grokMemoryEnv("runtime-managed")).toEqual({});
+  });
+
+  it("hands back a fresh object, so a caller cannot mutate one launch into another", () => {
+    const first = grokMemoryEnv("disabled");
+    first[GROK_MEMORY_ENV_VAR] = "1";
+    expect(grokMemoryEnv("disabled")).toEqual({ [GROK_MEMORY_ENV_VAR]: GROK_MEMORY_DISABLED_VALUE });
+  });
+
+  it("still emits the flag, which is now belt rather than braces", () => {
+    // Kept because it is free and documented; no longer described as immunity.
+    expect(grokMemoryArgs("disabled")).toEqual([GROK_NO_MEMORY_FLAG]);
+    expect(grokMemoryArgs("runtime-managed")).toEqual([]);
+  });
+
+  it("keeps the canonical policy disabled, in both channels at once", () => {
+    expect(GROK_CANONICAL_MEMORY_POLICY).toBe("disabled");
+    expect(grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)).toEqual([GROK_NO_MEMORY_FLAG]);
+    expect(grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY)).toEqual({ GROK_MEMORY: "0" });
+  });
+});
+
+describe("what the correction does to the evidence record", () => {
   const capability = grokMemoryCapability(nativeMemoryCapability("grok")!);
 
-  it("promotes NO evidence axis, because pinning a flag is not an observation", () => {
-    // The lane's whole value is that control and evidence never get conflated. `--no-memory` having
-    // absolute precedence is a strong guarantee; it is still not a measurement of what Grok did.
-    for (const axis of ["inventory", "disable", "enable", "injection", "mutation", "isolation"] as const) {
+  it("marks disable REFUTED — measured and failed, not merely unmeasured", () => {
+    // The reason `refuted` had to exist: `declared` reads as "nobody checked", which is the opposite
+    // of what happened here.
+    expect(capability.evidence.disable).toBe("refuted");
+  });
+
+  it("leaves every other axis declared, because nothing else was observed", () => {
+    for (const axis of ["inventory", "enable", "injection", "mutation", "isolation"] as const) {
       expect(capability.evidence[axis], `${axis} still needs a session`).toBe("declared");
     }
   });
 
-  it("keeps disable as an argv control — the property the pin relies on", () => {
-    expect(capability.control.disable).toBe("argv");
+  it("moves the disable control from argv to environment", () => {
+    // argv was the control that failed; the environment is the one Tachyon owns and the runtime honors.
+    expect(capability.control.disable).toBe("environment");
+  });
+
+  it("carries the refutation itself, not just the verdict", () => {
+    const refutation = capability.refutations?.find((entry) => entry.axis === "disable");
+    expect(refutation, "a refuted axis without its finding is a summary with nothing behind it").toBeDefined();
+    expect(refutation!.claim).toContain("--no-memory");
+    expect(refutation!.measured).toContain("MEMORY_INJECT_SEARCH");
+    expect(refutation!.at).toContain("0.2.112");
+    expect(refutation!.evidence).toContain("j-b02184d17f19");
   });
 
   it("pins the exact version the evidence describes", () => {
     expect(capability.runtimeVersion).toBe(GROK_MEMORY_MEASURED_VERSION);
     expect(GROK_MEMORY_MEASURED_VERSION).toBe("0.2.112");
+  });
+
+  it("BLOCKS a disabled request, and says the control was refuted rather than unverified", () => {
+    // The two readings lead a reader to opposite next moves: one sends them to run the measurement,
+    // the other tells them it was already run and failed.
+    const outcome = resolveMemoryPolicy({
+      adapter: "grok",
+      requested: "disabled",
+      observedVersion: GROK_MEMORY_MEASURED_VERSION,
+      capability,
+    });
+    expect(outcome.status).toBe("blocked");
+    const said = outcome.reasons.join(" ");
+    expect(said).toContain("refuted");
+    expect(said).toContain("the control FAILED");
+    expect(said).not.toContain("only proves Tachyon authored bytes");
   });
 
   it("still BLOCKS runtime-managed", () => {
@@ -101,9 +170,14 @@ describe("the plan states its own cost before anyone authorizes it", () => {
     for (const entry of plan.needsAuthorization) expect(entry.proves.length).toBeGreaterThan(20);
   });
 
+  it("describes the precedence line as the measured fact, not the documented one", () => {
+    expect(plan.withoutModelCall[0]).toContain("MEASURED");
+    expect(plan.withoutModelCall[0]).toContain("outranks");
+  });
+
   it("makes the fresh case test the DRIFT the pin exists for", () => {
-    // Proving absence in a clean environment would prove the weaker thing. The case that matters is a
-    // hostile one: GROK_MEMORY=1 set, and the marker still not reaching the model.
+    // Proving absence in a clean environment proves the weaker thing. The case that matters is hostile:
+    // GROK_MEMORY=1 in the ambient env, and the marker still not reaching the model.
     expect(plan.lifecycle.find((entry) => entry.operation === "fresh")?.method).toContain("GROK_MEMORY=1");
   });
 

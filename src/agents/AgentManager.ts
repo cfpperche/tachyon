@@ -50,7 +50,7 @@ import {
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
-import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs } from "../runtime/adapters/grokMemory.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -2845,12 +2845,13 @@ export class AgentManager {
       if (!home) return { cmd, env: {}, wired: false };
       // t-c46c35 — the non-harness canonical Grok path, and the one that actually needed the pin: it
       // deliberately skips `isolate: transcript` (t-303f2b), so it never reaches HarnessManager's
-      // materializers. `--no-memory` outranks GROK_MEMORY and config.toml, so appending it last makes
-      // the canonical answer independent of the ambient environment. Only on the wired path — an
-      // unwired command is returned untouched here, exactly as every other runtime above does.
+      // materializers. t-0e88f3 corrected WHICH pin carries the guarantee: `--no-memory` was measured
+      // NOT to outrank GROK_MEMORY=1, so the env pin is the control and the flag is kept only as a
+      // documented no-op. Still only on the wired path — an unwired command is returned untouched here,
+      // exactly as every other runtime above does, and inherits the runtime's own default.
       return {
         cmd: [cmd, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)].join(" "),
-        env: { GROK_HOME: home },
+        env: { GROK_HOME: home, ...grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY) },
         wired: true,
       };
     }

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  BEHAVIORAL_MEMORY_EVIDENCE,
   MEMORY_EVIDENCE_AXES,
   MEMORY_LIFECYCLE_OPERATIONS,
   RUNTIME_NATIVE_MEMORY_REGISTRY,
+  assertRefutationsAreExplained,
   canExportMemory,
+  isBehavioralEvidence,
   nativeMemoryCapability,
   resolveMemoryPolicy,
   type RuntimeNativeMemoryCapabilityV1,
@@ -92,10 +95,56 @@ describe("the registry records what was measured, at the version it was measured
     expect(claude().storage.aliasesWorktrees).toBe(true);      // clones/worktrees share a store
     expect(nativeMemoryCapability("codex")?.defaultState).toBe("disabled");
     expect(nativeMemoryCapability("codex")?.lifecycle.fork).toBe("unavailable");
-    expect(nativeMemoryCapability("grok")?.control.disable).toBe("argv"); // --no-memory has precedence
+    // t-0e88f3 — was `argv` on the strength of the guide's precedence table; measurement refuted it,
+    // so the control moved to the channel Tachyon owns and the runtime honors.
+    expect(nativeMemoryCapability("grok")?.control.disable).toBe("environment");
     // A runtime with no built-in memory can still inject persistent context through a plugin.
     expect(nativeMemoryCapability("opencode")?.mechanism).toBe("none");
     expect(nativeMemoryCapability("opencode")?.extensionBoundary?.present).toBe(true);
+  });
+});
+
+describe("t-0e88f3 — the vocabulary can say 'tested and failed'", () => {
+  it("treats verified and refuted as the two behavioral values", () => {
+    // Both are claims about what a runtime DID, and neither may be authored from documentation. The
+    // symmetry is the point: a claim cannot be talked into either one.
+    expect(BEHAVIORAL_MEMORY_EVIDENCE).toEqual(["verified", "refuted"]);
+    expect(isBehavioralEvidence("verified")).toBe(true);
+    expect(isBehavioralEvidence("refuted")).toBe(true);
+    expect(isBehavioralEvidence("declared")).toBe(false);
+    expect(isBehavioralEvidence("unsupported")).toBe(false);
+  });
+
+  it("refuses a refuted axis with no refutation behind it", () => {
+    // A bare verdict is only marginally better than the `declared` it replaced: it says a measurement
+    // happened without saying what failed, so nobody can check it or avoid repeating it.
+    const bare = {
+      ...nativeMemoryCapability("grok")!,
+      evidence: { ...nativeMemoryCapability("grok")!.evidence, injection: "refuted" as const },
+    };
+    expect(() => assertRefutationsAreExplained({ grok: bare }))
+      .toThrow(/evidence\.injection is 'refuted' with no matching refutations entry/);
+  });
+
+  it("refuses a refutation the axis does not reflect", () => {
+    // The other direction: a recorded contradiction that the axis still reports as `declared` would
+    // leave the finding invisible to every reader who looks at the axis, which is most of them.
+    const mismatched = {
+      ...nativeMemoryCapability("grok")!,
+      evidence: { ...nativeMemoryCapability("grok")!.evidence, disable: "declared" as const },
+    };
+    expect(() => assertRefutationsAreExplained({ grok: mismatched }))
+      .toThrow(/refutations names 'disable' but evidence\.disable is 'declared'/);
+  });
+
+  it("holds for the shipped registry, checked at module load rather than only here", () => {
+    expect(() => assertRefutationsAreExplained(RUNTIME_NATIVE_MEMORY_REGISTRY)).not.toThrow();
+  });
+
+  it("records exactly one refutation today, and it is Grok's disable axis", () => {
+    const refuted = Object.entries(RUNTIME_NATIVE_MEMORY_REGISTRY)
+      .flatMap(([adapter, capability]) => (capability.refutations ?? []).map((r) => `${adapter}.${r.axis}`));
+    expect(refuted).toEqual(["grok.disable"]);
   });
 });
 
