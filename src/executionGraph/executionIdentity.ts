@@ -101,6 +101,19 @@ export function mintTurn(input: { agentId: string; nativeTurnId?: string; newId?
 }
 
 /**
+ * SDD 480 §3.4 gap 1 — mint a tool-call id.
+ *
+ * Minted by Tachyon at the Bridge boundary for the same reason `turnId` is minted at submission: it
+ * has to exist for every tool on the same terms, and it has to exist BEFORE the handler runs, so that
+ * anything the handler starts can point back at it. A tool that starts a process and a tool that only
+ * reads state get one identically — the difference shows up in what they link to, not in whether they
+ * have an identity.
+ */
+export function mintToolCall(input: { tool: string; newId?: () => string } = { tool: "unknown" }): { toolCallId: string } {
+  return { toolCallId: `tc-${(input.newId ?? randomUUID)()}` };
+}
+
+/**
  * Read back the identity a running process is carrying, from its environment.
  *
  * Returns `undefined` when the process carries nothing — which is an answer, not a failure. The
