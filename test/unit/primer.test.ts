@@ -86,6 +86,49 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(combined).not.toContain("workspace config settings.verify");
   });
 
+  /**
+   * `t-21bcb7` — the two lines that carry the lean-verification guidance into every brief.
+   *
+   * Both are cheap to delete and expensive to lose: without them an agent runs the full suite after
+   * each step (the suite holds a machine-wide lock every other agent queues behind) and pastes long
+   * findings into a notify (best-effort pane input, so the findings do not survive).
+   *
+   * The load-bearing half is the NEGATIVE one. Verification economy is Tachyon's policy about
+   * Tachyon's suite; a consumer that configured no checks must not be told how often to run a suite
+   * it never declared. That is the same ownership boundary the primer already keeps for the checks
+   * themselves — so the advice has to be bound to the check, not merely near it.
+   */
+  const FOCUSED = "Use focused tests while implementing; run this on the tree you deliver.";
+
+  it("prices verification per delivery, and only where a check was actually configured", () => {
+    const configured = renderPrimer(gatedAdhoc).beforeFinishing.split("\n");
+    expect(configured).toContain(FOCUSED);
+    // Ordering is the meaning: the advice qualifies the check below it. Above the check it reads as
+    // a rule about the whole section; below it, as an afterthought about something already run.
+    expect(configured.indexOf(FOCUSED)).toBeLessThan(
+      configured.indexOf(`Run configured check (workspace config settings.verify.full): ${fullCheck}`),
+    );
+
+    for (const input of [declared, plainAdhoc]) {
+      const { primer, beforeFinishing } = renderPrimer(input);
+      expect(`${primer}\n${beforeFinishing}`).not.toContain(FOCUSED);
+    }
+  });
+
+  it("points the doorbell at durable detail instead of carrying it", () => {
+    const line = renderPrimer(gatedAdhoc).beforeFinishing
+      .split("\n")
+      .find((candidate) => candidate.includes("notify_agent"));
+    expect(line).toBeDefined();
+    // A notify is not history. It says what happened, which tree it happened on, and where to read
+    // the rest — naming the tree is what lets a reader check the claim against § Landing order.
+    expect(line).toContain("commit/tree");
+    expect(line).toMatch(/where the detail lives/);
+    // Still one instruction on one line: the summary has a one-line cap, and advice that does not
+    // fit the thing it describes teaches the agent to overflow it.
+    expect(renderPrimer(gatedAdhoc).beforeFinishing.split("\n").filter((l) => l.includes("notify_agent"))).toHaveLength(1);
+  });
+
   it("plain ad-hoc identifies its parent as the doorbell target without gate text", () => {
     const { primer, beforeFinishing } = renderPrimer(plainAdhoc);
     expect(primer).toContain('spawned by "claude"');

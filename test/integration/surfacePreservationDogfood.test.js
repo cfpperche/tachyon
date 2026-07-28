@@ -13,6 +13,14 @@ const crypto = require("node:crypto");
 const { execFileSync } = require("node:child_process");
 const vscode = require("vscode");
 
+/**
+ * t-05097f — the gate talks to the tmux server the EXTENSION is using, not the shared default.
+ * `.vscode-test.mjs` gives each run a unique `TACHYON_TMUX_SOCKET`; hardcoding `-L tachyon` here
+ * pointed these helpers at the fleet's server instead, which is how a "Stop All" scenario came to
+ * list real running agents and how sessions leaked between runs.
+ */
+const TMUX_SOCKET = process.env.TACHYON_TMUX_SOCKET || "tachyon";
+
 function workspaceHash(p) {
   return crypto.createHash("sha256").update(p).digest("hex").slice(0, 8);
 }
@@ -62,7 +70,7 @@ async function settle(ms = 1500) {
 
 function tmuxAlive(session) {
   try {
-    execFileSync("tmux", ["-L", "tachyon", "has-session", "-t", `=${session}`], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "has-session", "-t", `=${session}`], { stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -103,14 +111,14 @@ describe("t-b88106 — a relaunch preserves an agent's visual state", () => {
       }
       let sessions;
       try {
-        sessions = execFileSync("tmux", ["-L", "tachyon", "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+        sessions = execFileSync("tmux", ["-L", TMUX_SOCKET, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8" }).trim().split("\n").filter(Boolean);
       } catch {
         sessions = [];
       }
       console.log(`[t-b88106] SKIPPED — the editor host never spawned ${session}.`);
       console.log(`[t-b88106]   tmux as seen by the extension host: ${tmuxVersion}`);
       console.log(`[t-b88106]   PATH: ${process.env.PATH}`);
-      console.log(`[t-b88106]   tachyon sessions on the shared server: ${sessions.join(", ") || "(none)"}`);
+      console.log(`[t-b88106]   tachyon sessions on ${TMUX_SOCKET}: ${sessions.join(", ") || "(none)"}`);
       this.skip();
     }
   });

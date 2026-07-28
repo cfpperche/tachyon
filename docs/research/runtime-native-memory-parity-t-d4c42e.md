@@ -76,6 +76,15 @@ interface RuntimeNativeMemoryCapabilityV1 {
 }
 ```
 
+**Implemented by `t-56daa1`** as `src/runtime/nativeMemory.ts` (the typed capability, the registry of
+what was measured here, and `resolveMemoryPolicy` implementing § "Fail-closed product semantics" rule
+by rule) plus `src/runtime/nativeMemoryVerifier.ts` (the behavioral harness below). The registry is
+authored entirely at `declared`/`unsupported`, matching this document: as of the measurement Tachyon
+had verified nothing behaviorally, so `resolveMemoryPolicy` today BLOCKS every runtime with native
+memory. That is deliberate and not yet wired into canonical readiness — the per-runtime tasks
+(`t-f22211`, `t-c46aad`, `t-c46c35`, `t-b5d28c`, `t-b4a557`) are what run the verifier against an
+exact version and promote an axis.
+
 An adapter must never report `verified` from configuration bytes alone. A
 behavioral verification plants a synthetic marker in an isolated store, starts
 the exact lifecycle operation, observes whether the marker reaches model input
