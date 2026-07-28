@@ -276,8 +276,14 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
   const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
   // A terminal runs a process, not a model. Any other arm (or an unknown one) still resolves.
   const modelFact = x.kind === "terminal" ? undefined : resolveModelFact(a.cmd, x.model);
+  // SDD 479 phase 3 — the runtime this row runs on, so a per-runtime card template can match it.
+  // Derived from the same command, by the same `runtimeOf`, that the model label already uses: the row
+  // cannot report one runtime to the card and a different one to the model. A terminal has none by
+  // construction — it runs a process, and V1 templates never reach terminal rows anyway.
+  const runtime = x.kind === "terminal" ? null : runtimeOf(a.cmd ?? "");
   return {
     name: a.name,
+    ...(runtime ? { runtime } : {}),
     ...(modelFact
       ? {
           model: modelFact.label,

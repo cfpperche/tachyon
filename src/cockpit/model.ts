@@ -21,6 +21,11 @@ export type CockpitSectionId =
   | "overview"
   | "engine"
   | "fleet"
+  // t-e76acc — the unified Human Inbox: approvals + validations under ONE navigation and ONE count.
+  // It is a projection, not a replacement: `approvals` and `validations` below still exist and still
+  // own their kind-specific flows. The ratified direction removes that duplication only once the
+  // unified surface demonstrably covers them, which is a later slice, not this one.
+  | "inbox"
   | "approvals"
   | "mission"
   | "validations"
@@ -39,6 +44,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
   "engine",
   "fleet",
+  "inbox",
   "approvals",
   "mission",
   "validations",
@@ -153,6 +159,16 @@ export interface CockpitWorkspaceBundle {
   /** t-43c6fa — same contract as `worktreesUnavailable`, for the Deliveries classified read. */
   deliveriesUnavailable?: string;
   approvals: CockpitApprovalRow[];
+  /**
+   * t-e76acc — validations still awaiting a HUMAN in this workspace, counted host-side with the very
+   * predicate the Inbox list uses (`validationAwaitsHuman`). A number, not rows: Overview only counts
+   * them, and the section that renders them reads the store itself.
+   *
+   * Absent means "not collected", never "none" — the same fail-loud shape `worktreesUnavailable` uses.
+   * The alternative (default 0) is precisely the § 4.1 defect this whole surface exists to answer: a
+   * counter that reads zero while work waits on disk.
+   */
+  validationsAwaitingHuman?: number;
   tmux?: { state: string; version?: string };
   companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
 }
@@ -200,6 +216,12 @@ export interface CockpitModel {
     agentsRunning: number;
     agentsTotal: number;
     approvalsPending: number;
+    /**
+     * t-e76acc — everything waiting on a human: pending approvals PLUS validations whose executor is
+     * human and which are not closed. The single number the unified navigation shows, and it is a
+     * SUM of the two real reads rather than a third source that could drift from either.
+     */
+    inboxPending: number;
     worktreesActive: number;
     deliveriesOpen: number;
     bridges: Array<{ folder: string; url: string; port?: number; ok: boolean }>;
@@ -262,6 +284,9 @@ export function buildCockpitModel(
   const deliveriesOpen = deliveries.filter((d) => !["pruned", "abandoned"].includes(d.phase)).length;
   const worktreesActive = worktrees.filter((w) => w.status === "active").length;
   const approvalsPending = approvals.filter((a) => !a.status || a.status === "pending").length;
+  // t-e76acc — a missing per-bundle count contributes nothing rather than a zero it cannot vouch for.
+  const validationsAwaitingHuman = scoped.reduce((sum, b) => sum + (b.validationsAwaitingHuman ?? 0), 0);
+  const inboxPending = approvalsPending + validationsAwaitingHuman;
 
   // Companion tabTools UI needs exactly one workspace in scope.
   let companion: CockpitCompanionSettings | undefined;
@@ -295,6 +320,7 @@ export function buildCockpitModel(
       agentsRunning: control.summary.runningAgents,
       agentsTotal: control.summary.totalAgents,
       approvalsPending,
+      inboxPending,
       worktreesActive,
       deliveriesOpen,
       bridges: control.workspaces.map((w) => ({
@@ -322,6 +348,7 @@ export function formatCockpitDiagnostics(model: CockpitModel): string {
     `section: ${model.section}`,
     `fleet agents: ${model.fleet.filter((a) => a.running).length}/${model.fleet.length} running`,
     `approvals pending: ${model.overview.approvalsPending}`,
+    `human inbox waiting: ${model.overview.inboxPending}`,
     `worktrees active: ${model.overview.worktreesActive}`,
     `deliveries open: ${model.overview.deliveriesOpen}`,
     "",

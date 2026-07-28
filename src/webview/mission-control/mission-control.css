@@ -172,3 +172,17 @@
 .col-body::-webkit-scrollbar, .board::-webkit-scrollbar { height: 8px; width: 8px; }
 .col-body::-webkit-scrollbar-thumb, .board::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--ds-fg) 25%, transparent); border-radius: 4px; }
 @media (prefers-reduced-motion: no-preference) { .card { transition: background .09s, border-color .09s, opacity .09s; will-change: transform; } }
+
+/* t-ac79a7 — the clicked card acknowledges the click immediately, while the route loads.
+   The human report was "the screen stays apparently unchanged for a few seconds": the board is on
+   screen for that whole wait, so the card is the most direct place to say "yes, that one". Kept to
+   a border/tint shift plus the platform's own progress cursor — enough to read as "working", not so
+   much that it competes with the card's real state (spotlight, awaiting-human). */
+.card.opening {
+  border-color: var(--ds-accent, var(--vscode-focusBorder, #0e70c0));
+  background: color-mix(in srgb, var(--ds-accent, #0e70c0) 8%, var(--vscode-editor-background, transparent));
+  cursor: progress;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card.opening { transition: background .09s, border-color .09s; }
+}

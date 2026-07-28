@@ -1,10 +1,14 @@
-import { createContext } from "preact";
+import { createContext, Fragment } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
 } from "../../sidebar/types";
+import {
+  inlineMembers, readmittedCriticalComponents, resolveCardTemplate, topLevelComponents,
+  type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
+} from "../../sidebar/cardTemplate";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
@@ -114,6 +118,30 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
   );
 }
 
+/**
+ * SDD 479 — a written card template that could not be honored. The fleet is FINE (the config loaded);
+ * only the layout fell back to the default, so this is `role="status"`, warn-toned, and never claims
+ * the file is invalid. Without it the fallback is indistinguishable from the feature not working.
+ */
+export function CardTemplateRefusalBanner({ refusal }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]> }) {
+  const d = useContext(DispatchCtx);
+  const [first, ...rest] = refusal.errors;
+  return (
+    <div class="config-error-banner card-template-banner" role="status">
+      <div class="config-error-title">
+        <Icon name="warning" />
+        <strong>Card layout ignored — showing the default</strong>
+      </div>
+      <div class="config-error-summary" title={refusal.errors.join("\n")}>
+        {first}{rest.length > 0 ? ` (+${rest.length} more)` : ""}
+      </div>
+      <div class="config-error-actions">
+        <Button variant="default" onClick={() => d.global("openConfig")}>Open {refusal.file}</Button>
+      </div>
+    </div>
+  );
+}
+
 /** spec 378 — a TEXTUAL provenance marker for the model suffix (never styling alone): "· declared"/"· profile"
  *  before the first live observation, "· stale" once an observation survives a process-preserving boundary
  *  (in-TUI /clear, resume) without a fresh one yet, or "≠ declared" when the observed model diverges from
@@ -190,100 +218,288 @@ function ResourceDetail({ a }: { a: AgentVM }) {
   );
 }
 
-function AgentBadges({ a }: { a: AgentVM }) {
-  const externalToolLabel = externalToolBadgeLabel(a);
+/**
+ * SDD 479 phase 1 — everything one catalog component needs to render itself. A card is a function of
+ * this and nothing else: no component reads context or state of its own, which is what lets the
+ * equality proof render the whole matrix statically.
+ */
+interface CardSlot {
+  a: AgentVM;
+  template: CardTemplate;
+  d: SidebarCtx;
+  nested: boolean;
+  hasChildren: boolean;
+  collapsed: boolean;
+  hiddenCount: number;
+  hiddenNeedsAttention: boolean;
+  /** collapsed AND hiding at least one child row */
+  hasHidden: boolean;
+  /** has metrics AND a status live enough to show them */
+  hasResources: boolean;
+  metricsOpen: boolean;
+  onToggle?: () => void;
+  onToggleMetrics?: () => void;
+  /** SDD 479 — critical components this template omits that the row's state puts back (fork 3). */
+  readmitted: readonly CardComponentId[];
+}
+
+/**
+ * SDD 479 — a re-admitted component explains itself in its own tooltip. Someone who curated a layout
+ * and then sees a badge they removed needs to know the product put it back, and why, or the template
+ * looks broken.
+ */
+function cardTitle(slot: CardSlot, id: CardComponentId, base?: string): string | undefined {
+  const note = "Your card template omits this badge — Tachyon is showing it because this row is in that state.";
+  if (!slot.readmitted.includes(id)) return base;
+  return base ? `${base}\n\n${note}` : note;
+  // `base` is optional because not every critical badge carries a tooltip today (`✗ verify` does not).
+  // Returning undefined leaves the attribute off entirely, so an un-configured card is unchanged —
+  // which the phase-1 equality proof checks on every run.
+}
+
+type CardComponentRenderer = (slot: CardSlot) => preact.ComponentChildren;
+
+/**
+ * SDD 479 phase 1 — the closed catalog's renderers, one fragment per id.
+ *
+ * `Record<CardComponentId, …>` is load-bearing: a catalog id with no renderer, or a renderer with no
+ * catalog id, does not compile. That is what keeps the catalog closed in fact and not just in prose —
+ * an id the product cannot render could only be rendered by interpreting it, and interpretation is how
+ * markup gets in (`docs/specs/479-sidebar-agent-card-templates/plan.md` § 1).
+ *
+ * Nothing here decides ORDER or PRESENCE beyond each component's own product-owned condition; the
+ * template decides that, and today the only template is the default one.
+ */
+export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
+  "status-dot": ({ a }) => (
+    <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
+  ),
+
+  name: (slot) => <span class="name">{slot.a.name}<InlineRun slot={slot} host="name" /></span>,
+
+  // The model label and its provenance marker live INSIDE `.name` (catalog `inlineWith`), where the
+  // sidebar's CSS and the row's reading order expect them.
+  model: (slot) =>
+    slot.a.model ? (
+      <><span class="model-sep"> — </span><span class="model">{slot.a.model}</span><InlineRun slot={slot} host="model" /></>
+    ) : null,
+
+  "model-provenance": ({ a }) => <ModelProvenance a={a} />,
+
+  /* spec 386 — metrics pill only (no extra ▤ control): click expands L3–L4, click again collapses */
+  "metrics-pill": (slot) => {
+    if (!slot.hasResources) return null;
+    const { a, metricsOpen } = slot;
+    const cpu = a.resources?.cpuPct;
+    const hot = cpu !== undefined && cpu >= 80;
+    return (
+      <button
+        type="button"
+        class={`peek${hot ? " hot" : ""}${metricsOpen ? " open" : ""}`}
+        title={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+        aria-label={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
+        aria-expanded={metricsOpen}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); slot.onToggleMetrics?.(); }}
+      >
+        <span class="c">{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
+        {" · "}
+        <span class="m">{fmtMem(a.resources!.memMb)}</span>
+      </button>
+    );
+  },
+
+  sub: ({ a }) => (a.sub ? <span class="msub">{a.sub}</span> : null),
+
+  "hidden-count": ({ hasHidden, hiddenCount, hiddenNeedsAttention }) =>
+    hasHidden ? (
+      <Badge tone={hiddenNeedsAttention ? "warn" : "default"} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>
+        {hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}
+      </Badge>
+    ) : null,
+
+  /* spec 384 — branch/worktree badge is FIXED first in the meta list (DEFAULT_CARD_TEMPLATE.meta).
+     The `liveBranch` guard is duplicated from BranchBadge on purpose: `CardMetaRegion` decides whether
+     `.row-meta` exists from what its components RETURN, and a component vnode that renders nothing
+     internally is still a vnode. Every meta renderer must answer "nothing" with null — pinned by
+     test/unit/sidebarCardMetaRegion.test.ts, because getting this wrong put an empty div on EVERY row. */
+  branch: ({ a }) => (a.liveBranch ? <BranchBadge a={a} /> : null),
+
+  "config-invalid": (slot) =>
+    slot.a.configInvalid ? (
+      <Badge tone="err" title={cardTitle(slot, "config-invalid", "tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)")}>
+        config invalid
+      </Badge>
+    ) : null,
+
   // spec 390 — no "delegated by / owned by" text (tree indent is hierarchy); no "working" chip (live-dot).
-  return (
-    <>
-      {/* spec 384 — branch/worktree badge is FIXED first in the list */}
-      <BranchBadge a={a} />
-      {a.configInvalid && (
-        <Badge tone="err" title="tachyon.yml is invalid — row shown from session ledger or last-known-good snapshot (read-only for spawn)">
-          config invalid
-        </Badge>
-      )}
-      {a.attention && a.attention !== "working" && <Badge tone="warn">{a.attention}</Badge>}
-      {a.awaitingHuman && (
-        <Badge tone="warn" title={a.awaitingHuman.reason || "needs a human — request_human_attention"}>
-          ◆ needs you
-        </Badge>
-      )}
-      {/* SDD 477 — err tone, not warn: this row will never move again on its own, and nothing but a
-          human logging the runtime back in can change that. */}
-      {a.authRequired && (
-        <Badge
-          tone="err"
-          title={`${a.authRequired.runtime} reports this agent is not authenticated — ${a.authRequired.action}. Tachyon will not retry or restart it automatically.`}
-        >
-          ◆ auth required
-        </Badge>
-      )}
-      {a.verify === "pass" && <Badge tone="ok">✓ verified</Badge>}
-      {a.verify === "fail" && <Badge tone="err">✗ verify</Badge>}
-      {a.verify === "stale" && <Badge>⊘ stale</Badge>}
-      {a.evidence && (
-        <Badge
-          tone={a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : "default"}
-          title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
-        >
-          ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
-        </Badge>
-      )}
-      {externalToolLabel && (
-        <Badge tone={a.externalTools?.strongestConfidence === "weak" ? "warn" : "default"} title={externalToolBadgeTitle(a)}>
-          {externalToolLabel}
-        </Badge>
-      )}
-      {a.harness && <Badge>⚙ harness</Badge>}
-      {a.resumable &&
-        (a.freshStart ? (
+  attention: ({ a }) => (a.attention && a.attention !== "working" ? <Badge tone="warn">{a.attention}</Badge> : null),
+
+  "awaiting-human": (slot) =>
+    slot.a.awaitingHuman ? (
+      <Badge tone="warn" title={cardTitle(slot, "awaiting-human", slot.a.awaitingHuman.reason || "needs a human — request_human_attention")}>
+        ◆ needs you
+      </Badge>
+    ) : null,
+
+  /* SDD 477 — err tone, not warn: this row will never move again on its own, and nothing but a
+     human logging the runtime back in can change that. */
+  "auth-required": (slot) =>
+    slot.a.authRequired ? (
+      <Badge
+        tone="err"
+        title={cardTitle(slot, "auth-required", `${slot.a.authRequired.runtime} reports this agent is not authenticated — ${slot.a.authRequired.action}. Tachyon will not retry or restart it automatically.`)}
+      >
+        ◆ auth required
+      </Badge>
+    ) : null,
+
+  // Returns null rather than an empty fragment when no gate result applies: `CardMetaRegion` decides
+  // whether `.row-meta` exists from whether its components RENDERED, so "nothing" has to be nothing.
+  verify: (slot) =>
+    slot.a.verify === "pass" ? <Badge tone="ok">✓ verified</Badge>
+      : slot.a.verify === "fail" ? <Badge tone="err" title={cardTitle(slot, "verify")}>✗ verify</Badge>
+        : slot.a.verify === "stale" ? <Badge>⊘ stale</Badge>
+          : null,
+
+  evidence: ({ a }) =>
+    a.evidence ? (
+      <Badge
+        tone={a.evidence.error > 0 ? "err" : a.evidence.warn > 0 ? "warn" : "default"}
+        title={`${a.evidence.total} evidence record(s)${a.evidence.error ? `, ${a.evidence.error} error` : ""}${a.evidence.warn ? `, ${a.evidence.warn} warn` : ""}${a.evidence.stale ? `, ${a.evidence.stale} stale` : ""} — advisory, never gates (list_evidence to read)`}
+      >
+        ⊙ {a.evidence.total}{a.evidence.stale > 0 ? ` (${a.evidence.stale}⊘)` : ""}
+      </Badge>
+    ) : null,
+
+  "external-tools": ({ a }) => {
+    const externalToolLabel = externalToolBadgeLabel(a);
+    return externalToolLabel ? (
+      <Badge tone={a.externalTools?.strongestConfidence === "weak" ? "warn" : "default"} title={externalToolBadgeTitle(a)}>
+        {externalToolLabel}
+      </Badge>
+    ) : null;
+  },
+
+  harness: ({ a }) => (a.harness ? <Badge>⚙ harness</Badge> : null),
+
+  resume: ({ a }) =>
+    a.resumable
+      ? (a.freshStart ? (
           <Badge tone="warn" title="Saved transcript is gone — Resume starts fresh">
             ↻ fresh start
           </Badge>
         ) : (
           <Badge>↻ resumable</Badge>
-        ))}
-      {a.forked && <Badge>⑂ fork</Badge>}
-      {a.continuity === "stale" && (
-        <Badge tone="warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">
-          ◐ continuity stale
-        </Badge>
-      )}
-      {a.continuity === "missing" && (
-        <Badge title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</Badge>
-      )}
-      {a.persistenceHooks && a.persistenceHooks.state !== "active" && (
-        <Badge
-          class="hook-badge"
-          tone={a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "default" : "warn"}
-          title={a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`}
-        >
-          ⛓ hooks {a.persistenceHooks.state}
-        </Badge>
-      )}
-    </>
-  );
+        ))
+      : null,
+
+  fork: ({ a }) => (a.forked ? <Badge>⑂ fork</Badge> : null),
+
+  // Null, not an empty fragment, when the brief is fresh — see the note on `verify`.
+  continuity: ({ a }) =>
+    a.continuity === "stale" ? (
+      <Badge tone="warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">
+        ◐ continuity stale
+      </Badge>
+    ) : a.continuity === "missing" ? (
+      <Badge title="No continuity brief yet — the agent hasn't checkpointed its working state">○ no continuity</Badge>
+    ) : null,
+
+  "persistence-hooks": ({ a }) =>
+    a.persistenceHooks && a.persistenceHooks.state !== "active" ? (
+      <Badge
+        class="hook-badge"
+        tone={a.persistenceHooks.state === "failed" ? "err" : a.persistenceHooks.state === "unknown" ? "default" : "warn"}
+        title={a.persistenceHooks.reason ?? `Persistence hooks ${a.persistenceHooks.state}`}
+      >
+        ⛓ hooks {a.persistenceHooks.state}
+      </Badge>
+    ) : null,
+
+  /* spec 390 — focus line: what the agent is working on (task → brief → continuity goal) */
+  focus: ({ a }) => {
+    const focus = a.focus;
+    if (!focus) return null;
+    const focusTitle = `${focus.source === "continuity" ? "goal" : focus.source}${focus.taskId ? ` · ${focus.taskId}` : ""}\n${focus.full}`;
+    return (
+      <div class="row-focus" title={focusTitle}>
+        <span class="focus-arrow" aria-hidden="true">↳</span>
+        <span class={`focus-src src-${focus.source}`}>
+          {focus.source === "continuity" ? "goal" : focus.source}
+        </span>
+        {focus.taskId && <span class="focus-id">{focus.taskId}</span>}
+        <span class="focus-text">{focus.text}</span>
+      </div>
+    );
+  },
+
+  "metrics-lanes": ({ a, metricsOpen, hasResources }) => (metricsOpen && hasResources ? <ResourceDetail a={a} /> : null),
+
+  actions: ({ a, d }) => (
+    <div class="actions" role="group" aria-label={`${a.name} actions`}>
+      {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
+      {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
+    </div>
+  ),
+};
+
+/** The components a region renders as siblings, in template order. */
+function CardRegionView({ slot, region }: { slot: CardSlot; region: CardRegion }) {
+  return <>{topLevelComponents(slot.template, region).map((id) => <Fragment key={id}>{CARD_COMPONENTS[id](slot)}</Fragment>)}</>;
 }
 
-export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle, metricsOpen = false, onToggleMetrics }: {
+/**
+ * SDD 479 phase 2 — the meta region, plus any critical component this row's state re-admits.
+ *
+ * Returns `null` when NOTHING rendered, and the wrapper follows: `.row-meta` exists when it has
+ * content, not when the row happens to carry a field. That answers the question phase 1 left open —
+ * once a template can omit components, a fixed field-based predicate would leave an empty div
+ * (padding and all) on rows whose badges the person hid. It also retires two pre-existing cases of the
+ * same bug: a row with `worktree` but no live branch, and one whose persistence hooks are healthy.
+ */
+function CardMetaRegion({ slot }: { slot: CardSlot }): preact.VNode | null {
+  const ids = [...topLevelComponents(slot.template, "meta"), ...slot.readmitted];
+  const rendered = ids
+    .map((id) => ({ id, node: CARD_COMPONENTS[id](slot) }))
+    .filter((entry) => entry.node !== null && entry.node !== undefined && entry.node !== false);
+  if (rendered.length === 0) return null;
+  return <div class="row-meta">{rendered.map((entry) => <Fragment key={entry.id}>{entry.node}</Fragment>)}</div>;
+}
+
+/** The components `host` renders inside its own element (catalog `inlineWith`), in template order. */
+function InlineRun({ slot, host }: { slot: CardSlot; host: CardComponentId }) {
+  return <>{inlineMembers(slot.template, host).map((id) => <Fragment key={id}>{CARD_COMPONENTS[id](slot)}</Fragment>)}</>;
+}
+
+export function AgentRow({ a, flash, nested = false, hasChildren = false, collapsed = false, hiddenCount = 0, hiddenNeedsAttention = false, onToggle, metricsOpen = false, onToggleMetrics, cardTemplate }: {
   a: AgentVM; flash: boolean; nested?: boolean; hasChildren?: boolean; collapsed?: boolean; hiddenCount?: number; hiddenNeedsAttention?: boolean; onToggle?: () => void;
   /** spec 386 — metrics detail lanes open for this agent (independent of hierarchy collapse). */
   metricsOpen?: boolean;
   onToggleMetrics?: () => void;
+  /**
+   * SDD 479 — the folder's card configuration: the project template plus any resolved per-runtime
+   * override. Omitted — or a terminal row, or a runtime with no override — renders the default card.
+   */
+  cardTemplate?: CardTemplateConfig;
 }) {
   const d = useContext(DispatchCtx);
   const hasHidden = collapsed && hiddenCount > 0;
   const hasResources = !!a.resources && (a.status === "running" || a.status === "idle" || a.status === "done" || a.status === "needs" || a.status === "throttled" || a.status === "stop-failed");
-  const attentionVisible = a.attention && a.attention !== "working";
-  const hasMeta = a.configInvalid || a.sub || attentionVisible || a.awaitingHuman || a.authRequired || a.liveBranch || a.worktree || a.verify || a.externalTools?.active || a.harness || a.resumable || a.forked || (a.continuity && a.continuity !== "fresh") || a.persistenceHooks || hasHidden;
-  const cpu = a.resources?.cpuPct;
-  const hot = cpu !== undefined && cpu >= 80;
-  const focusTitle = a.focus
-    ? `${a.focus.source === "continuity" ? "goal" : a.focus.source}${a.focus.taskId ? ` · ${a.focus.taskId}` : ""}\n${a.focus.full}`
-    : undefined;
+  // SDD 479 — the resolver, not the caller, enforces both rules: the ratified V1 boundary (a terminal
+  // row takes the default whatever this folder configured) and the per-runtime override lookup.
+  const template = resolveCardTemplate(a, cardTemplate);
+  // Ratified fork 3 — the one place the product overrides the person: a failure state the template
+  // omits is re-admitted for THIS row, and says so in its tooltip.
+  const readmitted = readmittedCriticalComponents(template, a);
+  const slot: CardSlot = {
+    a, template, d, nested, hasChildren, collapsed, hiddenCount, hiddenNeedsAttention,
+    hasHidden, hasResources, metricsOpen, onToggle, onToggleMetrics, readmitted,
+  };
   return (
     <div class={`row${nested ? " child" : ""}${flash ? " flash" : ""}${metricsOpen && hasResources ? " metrics-open" : ""}`} data-name={a.name.toLowerCase()}>
       <div class="row-top">
+        {/* Tree chrome, deliberately NOT a catalog component: it reveals child ROWS, and a template
+            able to hide it would make collapsed children unreachable. */}
         {hasChildren ? (
           <button
             class={`agent-toggle${collapsed ? " collapsed" : ""}`}
@@ -300,51 +516,10 @@ export function AgentRow({ a, flash, nested = false, hasChildren = false, collap
           // never reserves it — stacking would float its dot away from the "↳" connector.
           !nested && <span class="agent-toggle-spacer" aria-hidden="true" />
         )}
-        <span class={`sdot ${a.status}`} role="img" title={STATUS_LABEL[a.status]} aria-label={STATUS_LABEL[a.status]} />
-        <span class="name">{a.name}{a.model && <><span class="model-sep"> — </span><span class="model">{a.model}</span><ModelProvenance a={a} /></>}</span>
-        {/* spec 386 — metrics pill only (no extra ▤ control): click expands L3–L4, click again collapses */}
-        {hasResources && (
-          <button
-            type="button"
-            class={`peek${hot ? " hot" : ""}${metricsOpen ? " open" : ""}`}
-            title={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
-            aria-label={metricsOpen ? `Collapse metrics — ${a.name}` : `Expand metrics — ${a.name}`}
-            aria-expanded={metricsOpen}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleMetrics?.(); }}
-          >
-            <span class="c">{cpu === undefined ? "—" : fmtCpu(cpu)}</span>
-            {" · "}
-            <span class="m">{fmtMem(a.resources!.memMb)}</span>
-          </button>
-        )}
+        <CardRegionView slot={slot} region="header" />
       </div>
-      {hasMeta && (
-        <div class="row-meta">
-          {a.sub ? <span class="msub">{a.sub}</span> : null}
-          {hasHidden && (
-            <Badge tone={hiddenNeedsAttention ? "warn" : "default"} title={hiddenNeedsAttention ? "Collapsed children include attention" : "Collapsed children"}>
-              {hiddenNeedsAttention ? "◆ " : ""}+{hiddenCount}
-            </Badge>
-          )}
-          <AgentBadges a={a} />
-        </div>
-      )}
-      {/* spec 390 — focus line: what the agent is working on (task → brief → continuity goal) */}
-      {a.focus && (
-        <div class="row-focus" title={focusTitle}>
-          <span class="focus-arrow" aria-hidden="true">↳</span>
-          <span class={`focus-src src-${a.focus.source}`}>
-            {a.focus.source === "continuity" ? "goal" : a.focus.source}
-          </span>
-          {a.focus.taskId && <span class="focus-id">{a.focus.taskId}</span>}
-          <span class="focus-text">{a.focus.text}</span>
-        </div>
-      )}
-      {metricsOpen && hasResources && <ResourceDetail a={a} />}
-      <div class="actions" role="group" aria-label={`${a.name} actions`}>
-        {primaryActions(a).map((id) => <Act icon={ACTION_META[id].icon} title={ACTION_META[id].label} on={() => d.action(id, a.name)} />)}
-        {moreActions(a).length > 0 && <MoreBtn items={moreActions(a).map((id) => ({ label: ACTION_META[id].label, icon: ACTION_META[id].icon, run: () => d.action(id, a.name) }))} />}
-      </div>
+      <CardMetaRegion slot={slot} />
+      <CardRegionView slot={slot} region="footer" />
     </div>
   );
 }
@@ -426,7 +601,14 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
   if (tab === "Agents") {
     // t-8354ae — while config is invalid, never show the empty-fleet placeholder as the sole signal
     // (banner + ledger/LKG rows replace the "destroyed fleet" illusion).
-    const banner = fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null;
+    // SDD 479 — a refused card template is reported HERE, beside the config banner, because this is
+    // where the consequence is: the cards below are the default layout, not the one that was written.
+    const banner = (
+      <>
+        {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
+        {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
+      </>
+    );
     // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
     // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
     if (!fleet.agents.length) {
@@ -459,6 +641,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           onToggle={() => toggle(k(`a:${r.agent.name}`))}
           metricsOpen={metricsOpen.has(k(`m:${r.agent.name}`))}
           onToggleMetrics={() => onToggleMetrics(r.agent.name)}
+          cardTemplate={fleet.cardTemplate}
         />
       ))}
     </>;
