@@ -1257,13 +1257,59 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const actor = resolveDeclaredActor(deps, undefined);
         if (!actor.ok) return fail(new Error(actor.message));
         const principal = deps.caller ?? { kind: "legacy" as const };
+        const callerActor = { kind: principal.kind, name: actor.name };
         const result = await deps.managedWorktrees.remove(idOrPath, {
           deleteBranch,
           confirmDirty,
-          actor: { kind: principal.kind, name: actor.name },
+          actor: callerActor,
         });
-        if (!result.removed) return fail(new Error(result.error ?? "remove refused"));
-        return ok(JSON.stringify(result, null, 2));
+        if (result.removed) return ok(JSON.stringify(result, null, 2));
+        // t-e74631 — the owner-only rule above can force past dirtiness, which is why it stays
+        // owner-only. A delegating parent refused there is not out of options: retry through the
+        // classification-gated path, which grants lineage authority precisely BECAUSE it proves
+        // clean/unoccupied/contained at execution time and cannot force anything. Only the
+        // authority verdict is retried — a worktree refused for dirtiness is refused again, by the
+        // same classifier, with the same reason.
+        if (!confirmDirty) {
+          const viaHygiene = await deps.managedWorktrees.removeClassified(idOrPath, { deleteBranch, actor: callerActor });
+          if (viaHygiene.removed) return ok(JSON.stringify(viaHygiene, null, 2));
+          return fail(new Error(viaHygiene.error ?? result.error ?? "remove refused"));
+        }
+        return fail(new Error(result.error ?? "remove refused"));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "reconcile_worktree_hygiene",
+    {
+      description:
+        "t-e74631 — sweep CHANGE worktrees and remove the ones that are provably safe, without " +
+        "waiting for the agent that created each to wake up. Authority is hierarchical: the owner, " +
+        "its registered lineage ancestors, and the host human may all ask. Authority never bypasses " +
+        "the material locks — every removal still re-proves clean, unoccupied, and contained in base " +
+        "or trunk at execution time, and only a Tachyon-created branch is deleted. Agent worktrees " +
+        "are never swept: an agent's working home is not residue. Refusals are always reported with " +
+        "a reason rather than skipped silently. Use dry_run first to see what would go.",
+      inputSchema: {
+        dry_run: z.boolean().optional().default(false).describe("report what would be removed, touching nothing"),
+        delete_branch: z.boolean().optional().default(true).describe("also delete the branch when Tachyon created it"),
+      },
+    },
+    async ({ dry_run, delete_branch }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const report = await deps.managedWorktrees.reconcileHygiene({
+          actor: { kind: principal.kind, name: actor.name },
+          deleteBranch: delete_branch,
+          dryRun: dry_run,
+        });
+        return ok(JSON.stringify(report, null, 2));
       } catch (err) {
         return fail(err);
       }
