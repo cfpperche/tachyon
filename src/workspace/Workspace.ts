@@ -897,15 +897,24 @@ export class Workspace {
       // t-e3aaae — a session:new restart states the agent's board assignment from the store instead
       // of leaving the fresh conversation to rediscover it. `taskStore` is constructed later in this
       // constructor; the resolver only ever runs at restart time, long after that.
+      // t-9d250c — hand over the ROWS, not a decision. Which of them is the current contract (and
+      // which are merely queued behind it) is `selectAssignedWork`'s call, so the "active and mine"
+      // rule and its ordering live in one tested place instead of in this closure.
       assignedWork: (name) => this.taskStore.listRaw()
-        .filter((task) => task.assignee === name && task.status === "active")
+        .filter((task) => task.assignee === name)
         .map((task) => ({
           id: task.id,
           title: task.title,
           status: task.status,
+          ...(task.assignee === undefined ? {} : { assignee: task.assignee }),
           ...(task.priority === undefined ? {} : { priority: task.priority }),
+          ...(task.rank === undefined ? {} : { rank: task.rank }),
+          ...(task.updatedAt === undefined ? {} : { updatedAt: task.updatedAt }),
           ...(task.body === undefined ? {} : { body: task.body }),
         })),
+      // t-9d250c — any task's status, so a restart can say what became of the work its frozen brief
+      // still names. Unknown ids answer undefined and the brief then claims nothing about them.
+      taskStatusById: (id) => this.taskStore.listRaw().find((task) => task.id === id)?.status,
       resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
         this.workspaceRoot,
         principal,

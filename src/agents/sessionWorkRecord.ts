@@ -22,15 +22,9 @@
  */
 
 import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
+import type { AssignedTaskRecord, AssignmentSelection, StaleContractReference } from "./assignmentSelection.js";
 
-/** One board Task currently assigned to the restarted agent, as the store holds it. */
-export interface AssignedTaskRecord {
-  id: string;
-  title: string;
-  status: string;
-  priority?: number;
-  body?: string;
-}
+export type { AssignedTaskRecord };
 
 /** Where this session is allowed to change files, from the durable worktree record (or its absence). */
 export type SessionIsolation =
@@ -39,8 +33,20 @@ export type SessionIsolation =
 
 export interface SessionWorkRecord {
   isolation: SessionIsolation;
-  /** Tasks assigned to this agent and in flight. Empty is a fact, not a missing value. */
-  assigned: AssignedTaskRecord[];
+  /**
+   * t-9d250c — ONE current task and a queue, not a list to choose from. A restarted session that is
+   * handed several equals picks one by feel, and two incidents showed which one it picks: the one the
+   * frozen brief above still names, which is the one most likely to be finished.
+   */
+  assignment: AssignmentSelection;
+  /**
+   * t-9d250c — task ids the replayed spawn brief names that are NOT this session's live work, with
+   * the status the store holds. Naming them is the whole point: the brief above is frozen at spawn
+   * time, so an agent restarted after finishing it reads a contract for work that is over and has no
+   * way to tell, short of checking the board itself — which is exactly the inference this record
+   * exists to remove.
+   */
+  staleContractReferences?: StaleContractReference[];
 }
 
 /** Fixed delimiters — same design rule as the primer: agents recognize the section, never parse prose. */
@@ -72,18 +78,52 @@ function taskLines(task: AssignedTaskRecord): string[] {
   return body ? [head, body] : [head];
 }
 
-function assignmentLines(assigned: AssignedTaskRecord[]): string[] {
-  if (assigned.length === 0) {
+function assignmentLines(assignment: AssignmentSelection): string[] {
+  if (!assignment.current) {
     return [
       "Assigned work on record: none.",
       "Do not adopt work by scanning the board, the pins, or another agent's continuity." +
         " Wait for an explicit assignment.",
     ];
   }
-  const heading = assigned.length === 1
-    ? "Assigned work on record (1 task). This is your task; you do not need to look it up:"
-    : `Assigned work on record (${assigned.length} tasks, all of them yours — say which one you are taking before you start):`;
-  return [heading, ...assigned.flatMap(taskLines)];
+  const lines = [
+    "Your current task, read from the board at restart. This is the contract for this session;" +
+      " you do not need to look it up:",
+    ...taskLines(assignment.current),
+  ];
+  if (assignment.queue.length > 0) {
+    // Named, but never as work to start: the previous wording ("all of them yours — say which one you
+    // are taking") made the choice the agent's, and a fresh session has nothing to choose with.
+    lines.push(
+      `Also assigned to you and still active (${assignment.queue.length}) — NOT your current task.` +
+        " Finish or hand back the one above before starting any of these:",
+      ...assignment.queue.map((task) => `- ${task.id} — ${task.title}`),
+    );
+  }
+  return lines;
+}
+
+/**
+ * What the frozen brief above still names, and what the board says about it now.
+ *
+ * Phrased as record rather than instruction where it can be — the agent is told the status, and told
+ * not to reopen it only when the status positively means the work is over.
+ */
+function staleContractLines(references: StaleContractReference[] | undefined): string[] {
+  if (!references?.length) return [];
+  const closed = references.filter((reference) => reference.closed);
+  const lines = [
+    "The task brief earlier in this document was written when this session was FIRST spawned and is" +
+      " not re-checked against the board. It names work that is no longer yours:",
+    ...references.map((reference) => `- ${reference.id} — status ${reference.status ?? "unknown"} on the board now`),
+  ];
+  if (closed.length > 0) {
+    lines.push(
+      `Do not reopen ${closed.map((reference) => reference.id).join(", ")}: that work is finished.` +
+        " If the brief above describes it, the brief is stale and this record wins.",
+    );
+  }
+  return lines;
 }
 
 /**
@@ -91,10 +131,11 @@ function assignmentLines(assigned: AssignedTaskRecord[]): string[] {
  * through in full (the brief-file diversion, not truncation, keeps the pane payload small).
  */
 export function renderSessionWorkRecord(record: SessionWorkRecord): string {
+  const tasks = [...(record.assignment.current ? [record.assignment.current] : []), ...record.assignment.queue];
   const facts = [
     record.isolation.kind === "worktree" ? record.isolation.path : record.isolation.cwd,
     ...(record.isolation.kind === "worktree" ? [record.isolation.branch] : []),
-    ...record.assigned.flatMap((task) => [task.id, task.title, task.status]),
+    ...tasks.flatMap((task) => [task.id, task.title, task.status]),
   ];
   if (facts.some(containsUnsafeFramingCharacter)) {
     throw new Error("session work record facts must not contain control characters");
@@ -104,7 +145,8 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
     "This session was restarted with a NEW conversation. The previous one is not available to you," +
       " and nothing below came from it — every line is durable record.",
     ...isolationLines(record.isolation),
-    ...assignmentLines(record.assigned),
+    ...assignmentLines(record.assignment),
+    ...staleContractLines(record.staleContractReferences),
     SESSION_RECORD_CLOSE,
   ].join("\n");
 }
@@ -115,9 +157,10 @@ export function sessionRecordManifest(record: SessionWorkRecord): {
   assignedTaskIds: string[];
   assignedCount: number;
 } {
+  const tasks = [...(record.assignment.current ? [record.assignment.current] : []), ...record.assignment.queue];
   return {
     isolation: record.isolation.kind,
-    assignedTaskIds: record.assigned.slice(0, MAX_HEADER_TASK_IDS).map((task) => task.id),
-    assignedCount: record.assigned.length,
+    assignedTaskIds: tasks.slice(0, MAX_HEADER_TASK_IDS).map((task) => task.id),
+    assignedCount: tasks.length,
   };
 }
