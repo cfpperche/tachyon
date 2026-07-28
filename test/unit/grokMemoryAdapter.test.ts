@@ -105,10 +105,20 @@ describe("the control that carries the guarantee is now the env var", () => {
 describe("what the correction does to the evidence record", () => {
   const capability = grokMemoryCapability(nativeMemoryCapability("grok")!);
 
-  it("marks disable REFUTED — measured and failed, not merely unmeasured", () => {
-    // The reason `refuted` had to exist: `declared` reads as "nobody checked", which is the opposite
-    // of what happened here.
-    expect(capability.evidence.disable).toBe("refuted");
+  it("t-325794: marks disable VERIFIED, after isolating the env pin from the flag", () => {
+    // t-0e88f3 left this `refuted` because only the FLAG had been measured, and it failed. The
+    // canonical launch could not promote it either: in the TUI the flag alone already suffices, so
+    // that arm cannot separate the pin's contribution. The isolating arm ran headless — where the
+    // flag is known to LOSE — with a config enabler and no flag, and only GROK_MEMORY differed.
+    expect(capability.evidence.disable).toBe("verified");
+  });
+
+  it("t-325794: keeps the refutation on record after the promotion", () => {
+    // The guide's claim about `--no-memory` is still false. A record of a false claim does not expire
+    // because a DIFFERENT control was later proven to work.
+    const refutation = capability.refutations?.find((entry) => entry.axis === "disable");
+    expect(refutation, "the refutation must survive the promotion").toBeDefined();
+    expect(refutation!.claim).toContain("ALWAYS");
   });
 
   it("leaves every other axis declared, because nothing else was observed", () => {
@@ -151,20 +161,32 @@ describe("what the correction does to the evidence record", () => {
     expect(GROK_MEMORY_MEASURED_VERSION).toBe("0.2.112");
   });
 
-  it("BLOCKS a disabled request, and says the control was refuted rather than unverified", () => {
-    // The two readings lead a reader to opposite next moves: one sends them to run the measurement,
-    // the other tells them it was already run and failed.
+  it("t-325794: ALLOWS a disabled request now that the control itself was observed", () => {
+    // Before the promotion this was blocked, and the reason string named a control that had FAILED.
+    // A request may only be allowed on an observation of the control being asked for.
     const outcome = resolveMemoryPolicy({
       adapter: "grok",
       requested: "disabled",
       observedVersion: GROK_MEMORY_MEASURED_VERSION,
       capability,
     });
+    expect(outcome.status).toBe("allowed");
+    if (outcome.status !== "allowed") throw new Error("unreachable");
+    expect(outcome.policy).toBe("disabled");
+    // Rule 5 — disabling is not deleting, and the caller is told so rather than left to assume.
+    expect(outcome.reasons.join(" ")).toContain("existing bytes are NOT deleted");
+  });
+
+  it("t-325794: a request against another installed version is still blocked", () => {
+    // The promotion is bound to 0.2.112. Evidence measured for one build is not evidence about another.
+    const outcome = resolveMemoryPolicy({
+      adapter: "grok",
+      requested: "disabled",
+      observedVersion: "0.2.113",
+      capability,
+    });
     expect(outcome.status).toBe("blocked");
-    const said = outcome.reasons.join(" ");
-    expect(said).toContain("refuted");
-    expect(said).toContain("the control FAILED");
-    expect(said).not.toContain("only proves Tachyon authored bytes");
+    expect(outcome.reasons.join(" ")).toContain("re-verify before trusting it");
   });
 
   it("still BLOCKS runtime-managed", () => {

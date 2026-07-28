@@ -68,15 +68,29 @@ describe("the registry records what was measured, at the version it was measured
     }
   });
 
-  it("claims NOTHING as verified — that is the measured state, not an omission", () => {
-    // The research says it for each runtime: "disable declared; enable/injection behavior not
-    // verified by Tachyon". If this ever fails, someone hand-edited evidence instead of running the
-    // verifier, which is exactly the shortcut the whole design exists to prevent.
+  it("lets no axis reach `verified` without a behavioral test behind it", () => {
+    // This used to assert that NOTHING was verified, which was true and is no longer: t-325794 ran
+    // the isolating arm for grok's disable axis and promoted it. Keeping the old wording would have
+    // meant either blocking a legitimate promotion or deleting the guard — so it now states the rule
+    // the guard was really for. Hand-editing an axis to `verified` still fails here, because a
+    // promotion that skipped the measurement has no behavioral-test source to point at.
     for (const [adapter, capability] of Object.entries(RUNTIME_NATIVE_MEMORY_REGISTRY)) {
-      for (const axis of MEMORY_EVIDENCE_AXES) {
-        expect(capability.evidence[axis], `${adapter}.${axis} was upgraded without a behavioral test`).not.toBe("verified");
-      }
+      const verified = MEMORY_EVIDENCE_AXES.filter((axis) => capability.evidence[axis] === "verified");
+      if (verified.length === 0) continue;
+      const behavioral = capability.sources.filter((source) => source.kind === "behavioral-test");
+      expect(behavioral.length, `${adapter} claims ${verified.join(", ")} verified with no behavioral-test source`)
+        .toBeGreaterThan(0);
     }
+  });
+
+  it("t-325794: grok's disable is the only promotion so far, and it is sourced", () => {
+    const promoted = Object.entries(RUNTIME_NATIVE_MEMORY_REGISTRY)
+      .flatMap(([adapter, capability]) => MEMORY_EVIDENCE_AXES
+        .filter((axis) => capability.evidence[axis] === "verified")
+        .map((axis) => `${adapter}.${axis}`));
+    expect(promoted).toEqual(["grok.disable"]);
+    expect(nativeMemoryCapability("grok")!.sources.map((s) => s.ref).join(" "))
+      .toContain("disable-verified");
   });
 
   it("gives every lifecycle operation an explicit answer", () => {
@@ -126,15 +140,28 @@ describe("t-0e88f3 — the vocabulary can say 'tested and failed'", () => {
       .toThrow(/evidence\.injection is 'refuted' with no matching refutations entry/);
   });
 
-  it("refuses a refutation the axis does not reflect", () => {
+  it("refuses a BARE refutation the axis does not reflect", () => {
     // The other direction: a recorded contradiction that the axis still reports as `declared` would
     // leave the finding invisible to every reader who looks at the axis, which is most of them.
+    const grok = nativeMemoryCapability("grok")!;
     const mismatched = {
-      ...nativeMemoryCapability("grok")!,
-      evidence: { ...nativeMemoryCapability("grok")!.evidence, disable: "declared" as const },
+      ...grok,
+      evidence: { ...grok.evidence, disable: "declared" as const },
+      // strip the supersededBy that legitimises the shipped pair, leaving a bare contradiction
+      refutations: grok.refutations!.map(({ supersededBy: _drop, ...rest }) => rest),
     };
     expect(() => assertRefutationsAreExplained({ grok: mismatched }))
       .toThrow(/refutations names 'disable' but evidence\.disable is 'declared'/);
+  });
+
+  it("t-325794: allows a RETAINED refutation when it names the control that superseded it", () => {
+    // Grok is the case: `--no-memory` was measured and failed, so the guide's claim stays false, but
+    // the axis is now carried by the env pin. Deleting the refutation to satisfy the axis would erase
+    // a false claim still printed in the shipped guide.
+    const grok = nativeMemoryCapability("grok")!;
+    expect(grok.evidence.disable).toBe("verified");
+    expect(grok.refutations!.find((r) => r.axis === "disable")!.supersededBy).toContain("GROK_MEMORY=0");
+    expect(() => assertRefutationsAreExplained({ grok })).not.toThrow();
   });
 
   it("holds for the shipped registry, checked at module load rather than only here", () => {
@@ -267,14 +294,28 @@ describe("resolution fails closed", () => {
     expect(managed.status).toBe("blocked");
   });
 
-  it("blocks every native runtime in the registry today — the honest state, stated", () => {
+  it("blocks every native runtime whose disable axis nobody has observed", () => {
     // If this ever passes for a runtime, it is because someone ran the verifier and promoted evidence,
-    // which is exactly the intended path. Until then, nothing is quietly allowed.
-    for (const adapter of ["claude", "codex", "grok", "hermes"]) {
+    // which is exactly the intended path. t-325794 walked that path for grok — the FIRST promotion —
+    // so grok is now listed below rather than here, and the guarantee for the rest is unchanged.
+    for (const adapter of ["claude", "codex", "hermes"]) {
       const capability = nativeMemoryCapability(adapter)!;
+      expect(capability.evidence.disable, `${adapter} is unverified`).not.toBe("verified");
       const outcome = resolveMemoryPolicy({ adapter, requested: "disabled", observedVersion: capability.runtimeVersion });
       expect(outcome.status, `${adapter} should still be blocked`).toBe("blocked");
     }
+  });
+
+  it("t-325794: allows grok's disabled request, and ONLY on the version the evidence names", () => {
+    const capability = nativeMemoryCapability("grok")!;
+    expect(resolveMemoryPolicy({ adapter: "grok", requested: "disabled", observedVersion: capability.runtimeVersion }).status)
+      .toBe("allowed");
+    // The promotion does not travel to another build.
+    expect(resolveMemoryPolicy({ adapter: "grok", requested: "disabled", observedVersion: "0.2.999" }).status)
+      .toBe("blocked");
+    // Nor does it unlock the much stronger runtime-managed request.
+    expect(resolveMemoryPolicy({ adapter: "grok", requested: "runtime-managed", observedVersion: capability.runtimeVersion }).status)
+      .toBe("blocked");
   });
 });
 
