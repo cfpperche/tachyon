@@ -1,0 +1,45 @@
+│                        ▘▘ ▝▝                       │ Added Claude Opus 5 (`claude-opus-5`), now the default Opus model — 1M context, fast mode at $10/$50 per Mtok          │
+│         Opus 5 (1M context) · Claude Max ·         │ Added `sandbox.network.strictAllowlist` setting to deny non-allowlisted hosts for sandboxed commands without prompting │
+│         <account>'s Organization         │ /release-notes for more                                                                                                │
+│                  /…/scratchpad/cl                  │                                                                                                                        │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+ ▎ Fable 5 is now a standard part of your Max plan
+ ▎ You can use up to 50% of your weekly usage limit on Fable 5. If you hit your limit, you can continue on Fable 5 with usage credits. Fable 5 draws down usage faster than Opus 4.8. Run /model and
+ ▎ select Fable to use it. Learn more: https://support.claude.com/en/articles/15424964-claude-fable-5-promotional-access
+   +1 more · /status
+
+❯ Run exactly this with Bash and nothing else: sleep 25 && echo finished
+
+● I'll run that command.
+
+  Ran 2 shell commands
+
+● The foreground run was blocked by a harness rule against sleep chained with another command, so I ran the exact same command in the background instead (ID b6wapu1fm). It's running now — I'll report
+  the output when it finishes.
+
+✻ Cooked for 9s · 1 shell still running
+
+● Background command "Sleep 25 seconds then echo" completed (exit code 0)
+
+  Read 1 file
+
+● Done — exit code 0, output:
+
+  finished
+
+✻ Churned for 4s
+
+❯ Run exactly this with Bash and nothing else: sleep 40 && echo finished
+
+  Ran 1 shell command
+
+● Running in the background (bwudywak0) — foreground sleep chained with another command is blocked by the harness, same as last time. I'll report the output when it completes.
+
+✻ Sautéed for 5s · 1 shell still running
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ wait for it to finish
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5 (1M context) · high | cl | (no git) | Context 3% used | cache 99% | 5h 52% | 7d 12%
+  ⏵⏵ accept edits on · 1 shell · ← for agents

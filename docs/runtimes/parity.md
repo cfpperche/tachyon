@@ -241,7 +241,7 @@ in the same change.
 |-----|------------------|--------------|----------|
 | Brief | CLI arg = prompt (positional) | `INSTRUCTION_ARG.claude` + `composeCommand` / `effectiveCmd` | code `loadConfig.ts` |
 | Bridge | `--mcp-config` (+ harness `--strict-mcp-config`) | `withRuntimeBridge` → `materializeBridgeMcp` | code + dogfood ongoing |
-| Attention | TUI pane + rate-limit strings | shared patterns + `RateLimitRuntime` + **composer** profile carrying the measured all-dim suggestion rule (`t-c5f29b`) and the measured history-echo rule (`t-6ffa13`) | code `patterns.ts` / `runtimeProfile.claude` |
+| Attention | TUI pane + rate-limit strings | shared patterns + `RateLimitRuntime` + **composer** profile carrying the measured all-dim suggestion rule (`t-c5f29b`) and the measured history-echo rule (`t-6ffa13`), plus a measured **activity** signal (`t-30ff0d`) so a frozen pane with work still in flight stays `working` instead of decaying to idle | code `patterns.ts` / `runtimeProfile.claude` |
 | Composer occupancy | live editor carries no background; a submitted message is echoed into the transcript with its glyph painted (`\x1b[48;5;237m❯ `) | `ansiHistoryEchoStyle: "prompt-background"` keeps `findComposerRegion` from selecting an echoed message as the editable region; `ansiEmptyContentStyle: "all-dim"` keeps a dim suggestion from counting as a draft | **✓** `t-6ffa13` units over `capture-pane -e` lines measured on 2.1.220 (2026-07-27), incl. a localized post-turn suggestion |
 | Resume | `--resume <id>`; named session `-n` | `resume/adapters.ts` claude (`mintsId` / `nameMint`) | code |
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |

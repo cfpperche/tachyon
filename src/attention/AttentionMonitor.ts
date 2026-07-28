@@ -2,7 +2,7 @@ import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile } from "../runtime/runtimeProfile.js";
-import { isChangeConfinedToComposer, isComposerOccupied } from "../runtime/composerRegion.js";
+import { isChangeConfinedToComposer, isComposerOccupied, stripAnsi } from "../runtime/composerRegion.js";
 import { AUTH_SIGNAL_TAIL_LINES, classifyAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
@@ -575,6 +575,16 @@ export class AttentionMonitor {
           snap.lastTicks = ticks;
           snap.lastTicksAt = ticks === null ? null : now;
         }
+        // t-30ff0d — before calling a still pane idle, ask the pane whether the runtime still owes
+        // this turn work. An agent that handed a command to a background shell (or an MCP server, or
+        // a monitor) freezes its pane AND stops burning CPU, so both inputs above read as idle while
+        // it is plainly mid-flight — the sidebar then shows a whole fleet as stopped. This is the
+        // runtime's own measured statement, bounded to the bottom of the pane; it is not CPU
+        // (t-285503's flap) and not process existence.
+        if (this.hasActivitySignal(agent, snap.content)) {
+          this.transition(agent, snap, "working", now);
+          continue;
+        }
         this.transition(agent, snap, "idle", now);
         this.detectAwaitingHumanOnIdle(agent, snap);
         this.detectAuthRequiredOnIdle(agent, snap, now);
@@ -741,6 +751,21 @@ export class AttentionMonitor {
   private manifestRuntimeFromCmd(agent: string): ResumeRuntime | undefined {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     return cmd ? (runtimeOf(cmd) ?? undefined) : undefined;
+  }
+
+  /**
+   * t-30ff0d — does the pane itself say work is still in flight? Bounded to the runtime's declared
+   * tail so the same claim, once scrolled into transcript history, cannot pin the agent forever.
+   */
+  private hasActivitySignal(agent: string, content: string): boolean {
+    const cmd = this.io.cmdOf?.(agent) ?? "";
+    const runtime = cmd ? runtimeOf(cmd) : null;
+    const activity = runtime ? runtimeProfile(runtime)?.activity : undefined;
+    if (!activity) return false;
+    const lines = content.split("\n").filter((line) => stripAnsi(line).trim().length > 0);
+    return lines
+      .slice(Math.max(0, lines.length - activity.tailLines))
+      .some((line) => activity.runningLine.test(stripAnsi(line)));
   }
 
   private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {
