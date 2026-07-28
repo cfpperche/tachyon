@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+// The verification runner is intentionally plain ESM with no declaration surface — same convention
+// as verifyAttestationReuse.test.ts. Driving the real decision is the point of this file.
+// @ts-expect-error -- see above
 import { decideReuse } from "../../scripts/verify-full.mjs";
 
 /**
