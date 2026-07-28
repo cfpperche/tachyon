@@ -91,6 +91,7 @@ import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
+import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
@@ -371,6 +372,14 @@ export interface WorkspaceDeps {
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
   /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
   piBridgeExtensionPath?: string;
+  /**
+   * SDD 480 Phase 2 — sink for execution-graph events, threaded from here to every seam that starts
+   * something: AgentManager, the Bridge tools, the control-mode client, and input submission.
+   *
+   * Optional on purpose. A Workspace without it behaves exactly as it did before the graph existed,
+   * which is what has kept this wiring reversible one seam at a time.
+   */
+  recordExecution?: (event: SealedExecutionEvent) => void;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -523,6 +532,12 @@ export class Workspace {
   readonly terminals: TerminalPresentation;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
+  /**
+   * SDD 480 Phase 2 — re-exposed from deps so a Workspace structurally satisfies
+   * `ManagedAgentInputSource`, which is how the input-submission seam (turnId, §7.1) reaches the
+   * ledger without engineService having to thread a second object through the call.
+   */
+  readonly recordExecution?: (event: SealedExecutionEvent) => void;
   private readonly canonicalLedger: CanonicalSessionLedger;
   readonly worktrees: WorktreeManager;
   /** spec 392 — product registry + change worktrees over WorktreeManager. */
@@ -678,6 +693,7 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
+    if (deps.recordExecution) this.recordExecution = deps.recordExecution;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
@@ -692,6 +708,8 @@ export class Workspace {
       // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
+        // SDD 480 — the control client's anchor is where `attached`/`shared` enter the real graph.
+        ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
         onDeadMapChanged: () => this.triggerLifecycle(),
         onActivityMapChanged: (map) => {
           this.activityBySession = map;
@@ -890,6 +908,8 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // SDD 480 — the seam that genuinely carries the id into the child's environment.
+      ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
@@ -1793,6 +1813,8 @@ export class Workspace {
         writeTachyonConfig: (yamlText) => this.writeTachyonConfigText(yamlText),
         manager: this.manager,
         tmux: this.tmux,
+        // SDD 480 §7.3 — every Bridge tool call becomes an InternalOperation through this sink.
+        ...(this.deps.recordExecution ? { recordExecution: this.deps.recordExecution } : {}),
         pins: this.pinStore,
         tasks: this.taskStore,
         evolution: this.evolutionStore,
