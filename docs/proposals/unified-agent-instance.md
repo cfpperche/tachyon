@@ -204,3 +204,22 @@ proposal containing:
 
 Implementation remains blocked until the human reads and ratifies that
 proposal.
+
+## Status
+
+That SDD now exists: [`docs/specs/482-unified-agent-instance`](../specs/482-unified-agent-instance/).
+It is measured against the code, and the measurement corrected two things in this proposal rather
+than restating them:
+
+- **The spawn path is already unified.** `AgentManager.spawn` is the only spawn door and every caller
+  already uses it, so migration steps 2-4 above ("create one internal spawn/start port", "adapt
+  Temporary to it", "adapt Saved to it") describe work that is largely done. What is duplicated is the
+  definition STORE, not the pipeline.
+- **Ad-hoc agents are already durable.** `SessionLedger` persists their definition and
+  `rehydrateFromLedger` restores it. What does not survive a restart is the parent edge — so the
+  measured defect is durable identity with non-durable lineage, which this proposal did not name.
+
+`t-5e1113` also requires a governed door for agents to propose Saved Agents; that surface is specified
+in the SDD and is severable from the model unification.
+
+Implementation stays blocked pending human ratification of the SDD.
