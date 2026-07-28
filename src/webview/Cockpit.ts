@@ -65,8 +65,17 @@ import {
   approvalErrorMessage,
   type ApprovalAction,
 } from "./approval/messages.js";
-import { buildApprovalViewModel } from "./approval/viewModel.js";
+import { buildApprovalViewModel, listPendingApprovalViewItems } from "./approval/viewModel.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
+import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel.js";
+import {
+  humanInboxMessage,
+  humanInboxErrorMessage,
+  humanInboxItemMessage,
+  humanInboxItemMissingMessage,
+  type HumanInboxAction,
+} from "./human-inbox/messages.js";
+import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
 import {
   validationsMessage,
   validationErrorMessage,
@@ -262,6 +271,7 @@ function strings(): CockpitStrings {
     navOverview: t("Overview"),
     navEngine: t("Engine"),
     navFleet: t("Fleet"),
+    navInbox: t("Inbox"),
     navApprovals: t("Approvals"),
     navMission: t("Board"),
     navValidations: t("Validations"),
@@ -355,6 +365,7 @@ function strings(): CockpitStrings {
     errors: t("Errors"),
     bridges: t("Bridges"),
     approvals: t("Approvals"),
+    inbox: t("Waiting on you"),
     worktrees: t("Worktrees"),
     deliveries: t("Deliveries"),
     attached: t("attached"),
@@ -626,6 +637,8 @@ let controlWsHash: string | undefined;
 let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
+/** t-e76acc — the unified Human Inbox re-reads on ANY approval or validation mutation, from anywhere. */
+let pushInbox: (() => void) | undefined;
 let pushHandoff: (() => void) | undefined;
 let pushTaskDetail: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
@@ -696,10 +709,15 @@ export function openCockpitAgentTranscript(): void {
 /** Refresh embedded Approvals after resolve/fan-out. */
 export function refreshCockpitApprovals(): void {
   pushApprovals?.();
+  pushInbox?.();
 }
 
 export function refreshCockpitValidations(): void {
   pushValidations?.();
+  // t-e76acc — the Inbox is a projection over the same stores: any push that refreshes one of its
+  // sources refreshes the aggregate too, or the unified count silently goes stale the moment a
+  // validation is closed from the Validations tab.
+  pushInbox?.();
 }
 
 /** t-610705 (Phase C.3) — re-post the Handoff snapshot (wired into onViewsChanged("handoff"),
@@ -944,6 +962,7 @@ export async function openCockpit(
         pushMissionBoard = undefined;
         pushApprovals = undefined;
         pushValidations = undefined;
+        pushInbox = undefined;
         pushHandoff = undefined;
         pushTaskDetail = undefined;
         pushProbes = undefined;
@@ -1079,6 +1098,86 @@ export async function openCockpit(
     } catch (err) {
       if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(validationErrorMessage(err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  /**
+   * t-e76acc — the unified Human Inbox.
+   *
+   * Reads BOTH stores through the SAME two functions the Approvals and Validations sections already
+   * use, then projects them. There is no third read anywhere in this file, which is what keeps the
+   * aggregate from being able to disagree with the surfaces it aggregates.
+   *
+   * A workspace that has approvals but no validations target still renders its approvals, and SAYS
+   * that validations could not be read — an empty half of an inbox must never be indistinguishable
+   * from a quiet one.
+   */
+  const inboxSources = (wsHash?: string) => {
+    const approvalWs = resolveApprovalWs(deps.approvals, wsHash);
+    if (!approvalWs) return undefined;
+    const validationWs = deps.validations.getWorkspaces().find((w) => w.wsHash === approvalWs.wsHash);
+    return { approvalWs, validationWs };
+  };
+
+  const buildInboxVm = (approvalWs: WorkspacePresentationTarget, validationWs: WorkspaceMissionControlTarget | undefined) =>
+    buildHumanInboxViewModel({
+      folder: approvalWs.folderName,
+      wsHash: approvalWs.wsHash,
+      approvals: listPendingApprovalViewItems(approvalWs.workspaceRoot),
+      validations: validationWs
+        ? buildValidationsViewModel({ folder: approvalWs.folderName, wsHash: approvalWs.wsHash, validations: validationWs.listValidations() }).validations
+        : [],
+    });
+
+  const sendInbox = async () => {
+    if (panel !== live || !isSection(currentRoute, "inbox")) return;
+    const epoch = navEpoch;
+    const sources = inboxSources();
+    if (!sources) {
+      live.webview.postMessage(humanInboxErrorMessage("No Tachyon workspace for the Human Inbox."));
+      return;
+    }
+    try {
+      const vm = buildInboxVm(sources.approvalWs, sources.validationWs);
+      if (panel !== live || navEpoch !== epoch) return;
+      live.webview.postMessage(humanInboxMessage(vm));
+      if (!sources.validationWs) {
+        live.webview.postMessage(humanInboxErrorMessage("Validations could not be read for this workspace — approvals only."));
+      }
+    } catch (err) {
+      if (panel !== live || navEpoch !== epoch) return;
+      live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  /**
+   * One opened item, with its evidence resolved for inline preview.
+   *
+   * The workspace comes from the ROUTE's own immutable locator, never the shell scope — the router's
+   * rule for every entity route, and here it also decides which workspace root artifact paths are
+   * allowed to resolve against, so getting it from the selector would be a containment bug as well as
+   * a navigation one.
+   */
+  const sendInboxItem = async () => {
+    if (panel !== live || currentRoute.kind !== "inbox-item") return;
+    const route = currentRoute;
+    const epoch = navEpoch;
+    const sources = inboxSources(route.wsHash);
+    if (!sources || sources.approvalWs.wsHash !== route.wsHash) {
+      live.webview.postMessage(humanInboxErrorMessage("That workspace is no longer attached."));
+      return;
+    }
+    try {
+      const vm = buildInboxVm(sources.approvalWs, sources.validationWs);
+      const item = buildHumanInboxItemViewModel(vm, route.itemKind, route.itemId, {
+        workspaceRoot: sources.approvalWs.workspaceRoot,
+        load: makeInboxArtifactLoader(sources.approvalWs.workspaceRoot),
+      });
+      if (panel !== live || navEpoch !== epoch) return;
+      live.webview.postMessage(item ? humanInboxItemMessage(item) : humanInboxItemMissingMessage(route.itemKind, route.itemId));
+    } catch (err) {
+      if (panel !== live || navEpoch !== epoch) return;
+      live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -1603,6 +1702,8 @@ export async function openCockpit(
     else if (isSection(currentRoute, "validations")) await sendValidations();
     else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
+    else if (isSection(currentRoute, "inbox")) await sendInbox();
+    else if (currentRoute.kind === "inbox-item") await sendInboxItem();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
     else if (isSection(currentRoute, "tmux")) await sendInspector();
@@ -1621,6 +1722,8 @@ export async function openCockpit(
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
+  // t-e76acc — one slot drives BOTH inbox surfaces; each sender no-ops off its own route.
+  pushInbox = () => { void sendInbox(); void sendInboxItem(); };
   pushHandoff = () => { void sendHandoff(); };
   pushTaskDetail = () => { void sendTaskDetail(); };
   pushProbes = () => { void sendProbes(); };
@@ -1755,6 +1858,76 @@ export async function openCockpit(
     return true;
   };
 
+  /**
+   * t-e76acc — acting on an inbox row.
+   *
+   * Every branch dispatches into the SAME typed path that row's own section already uses, with that
+   * path's own authority checks — `deps.approvals.resolve` for an approval, the workspace target's
+   * `closeValidation`/`assignValidation` for a validation. Nothing here resolves anything itself, and
+   * there is deliberately no shared "resolve this row" branch the two kinds pass through: the ratified
+   * rule is that a validation can never be redeemed as an authorization, and the way to keep a rule
+   * like that is to leave no code path that could express it.
+   *
+   * Route-gated, like every other handler in this chain: these action types are unique to the Inbox,
+   * and off an inbox route the handler returns false so `ready`/`refresh` reach the shell.
+   */
+  const handleInboxAction = async (m: Partial<HumanInboxAction>): Promise<boolean> => {
+    if (!m?.type) return false;
+    if (m.type === "refreshInbox") {
+      await sendInbox();
+      await sendInboxItem();
+      return true;
+    }
+    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation")) {
+      const sources = inboxSources();
+      if (!sources) return true;
+      const kind = m.kind;
+      const id = m.id;
+      await requestNavigate(routes.inboxItem(sources.approvalWs.wsHash, kind, id), live, async () => {
+        await sendModel();
+        await sendSectionModule();
+      });
+      return true;
+    }
+    if (m.type === "resolveInboxApproval" && typeof m.id === "string" && (m.decision === "approved" || m.decision === "denied")) {
+      // The approval capability path, unchanged and unshared: same call the Approvals section makes.
+      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : inboxSources()?.approvalWs.wsHash;
+      if (!wsHash) return true;
+      try {
+        await deps.approvals.resolve(wsHash, m.id, m.decision);
+        await sendInbox();
+        await sendInboxItem();
+      } catch (err) {
+        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return true;
+    }
+    if (m.type === "closeInboxValidation" || m.type === "assignInboxValidation") {
+      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : inboxSources()?.approvalWs.wsHash;
+      const ws = wsHash ? deps.validations.getWorkspaces().find((w) => w.wsHash === wsHash) : undefined;
+      if (!ws) {
+        live.webview.postMessage(humanInboxErrorMessage("Validations are not available for this workspace."));
+        return true;
+      }
+      try {
+        if (m.type === "closeInboxValidation" && typeof m.id === "string" && typeof m.note === "string" && m.outcome) {
+          await ws.closeValidation(m.id, { outcome: m.outcome, result_note: m.note });
+        } else if (m.type === "assignInboxValidation" && typeof m.id === "string" && typeof m.assignee === "string" && m.expect) {
+          await ws.assignValidation(m.id, m.assignee, m.expect);
+        } else {
+          return true;
+        }
+        deps.validations.onValidationsChanged();
+        await sendInbox();
+        await sendInboxItem();
+      } catch (err) {
+        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return true;
+    }
+    return false;
+  };
+
   const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
     if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
     if (!isSection(currentRoute, "tmux")) return false;
@@ -1818,6 +1991,10 @@ export async function openCockpit(
       if (await handleMissionAction(msg as Partial<MissionControlAction>)) return;
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
       if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
+      // t-e76acc — the Inbox's action types are its own ("refreshInbox"/"openInboxItem"/…), so there
+      // is no shape collision with the two handlers above; it still runs after them, matching the
+      // chain's existing most-specific-first ordering.
+      if (await handleInboxAction(msg as Partial<HumanInboxAction>)) return;
       if (await handleInspectorAction(msg as Partial<InspectorAction>)) return;
       // t-610705 (Phase C.2) — no shape collision with any registry above (openFile/terminal/
       // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
@@ -2225,6 +2402,9 @@ export async function openCockpit(
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
     const approvalsIsActive = isSection(currentRoute, "approvals");
+    // t-e76acc — ONE condition covers the section and its item subroute: they share a stylesheet, and
+    // a panel opened straight onto an item (revived/deep link) must paint styled too.
+    const inboxIsActive = isSection(currentRoute, "inbox") || currentRoute.kind === "inbox-item";
     const runtimeIsActive = isSection(currentRoute, "runtime");
     const validationsIsActive = isSection(currentRoute, "validations");
     const pluginsIsActive = isSection(currentRoute, "plugins");
@@ -2314,6 +2494,7 @@ export async function openCockpit(
         pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
         pluginsIsActive ? uri("plugins.css") : undefined,
         approvalsIsActive ? uri("approval.css") : undefined,
+        inboxIsActive ? uri("human-inbox.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
         tmuxIsActive ? uri("inspector.css") : undefined,
@@ -2377,6 +2558,10 @@ export async function openCockpit(
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
           approvals: uri("approval.css"),
+          inbox: uri("human-inbox.css"),
+          // t-e76acc — own key, same href: the item route is reachable by deep link without the list
+          // block ever running (see cockpit/App.tsx's lazy blocks for the convention).
+          "inbox-item": uri("human-inbox.css"),
           runtime: uri("runtime-ops.css"),
           validations: uri("validations.css"),
           "plugins-tailwind": uri("plugins.tailwind.css"),

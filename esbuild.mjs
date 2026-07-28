@@ -452,6 +452,8 @@ copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // 
 copyFileSync("src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/approval/approval.css", "dist/webview/approval.css");
 copyFileSync("src/webview/validations/validations.css", "dist/webview/validations.css");
+// t-e76acc — the unified Human Inbox's sheet, co-loaded (or linked eagerly when Control opens on it).
+copyFileSync("src/webview/human-inbox/human-inbox.css", "dist/webview/human-inbox.css");
 copyFileSync("src/webview/rich-doc/rich-doc.css", "dist/webview/rich-doc.css"); // spec 339 — entity-neutral rich-doc editor styles (shared by pin-studio + task-studio + the dev preview harness)
 copyFileSync("src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/task-studio/task-studio.css", "dist/webview/task-studio.css"); // spec 339 — task-studio styles (shared by the webview + the dev preview harness)

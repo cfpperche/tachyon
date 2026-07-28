@@ -99,13 +99,31 @@ export interface CockpitProjectHandoffRoute {
   readonly wsHash: string;
 }
 
+/**
+ * t-e76acc — one Human Inbox item, opened: a subroute of the Inbox section.
+ *
+ * Keyed by `itemKind` AND `itemId`, never the id alone. Approvals and validations are independent
+ * stores with independent id spaces, and a route that named only an id would have to GUESS which
+ * store to read — the exact "a validation could be reached through an approval path" ambiguity the
+ * ratified design refuses to introduce anywhere else. `wsHash` is the entity's immutable locator,
+ * same rule as every other entity route in this file: switching Control's workspace scope while an
+ * item is open must not swap the decision out from under the person deciding it.
+ */
+export interface CockpitInboxItemRoute {
+  readonly kind: "inbox-item";
+  readonly wsHash: string;
+  readonly itemKind: "approval" | "validation";
+  readonly itemId: string;
+}
+
 export type CockpitNonStudioRoute =
   | CockpitSectionRoute
   | CockpitTaskDetailRoute
   | CockpitAgentActivityRoute
   | CockpitAgentProbesRoute
   | CockpitWorkspaceProbesRoute
-  | CockpitProjectHandoffRoute;
+  | CockpitProjectHandoffRoute
+  | CockpitInboxItemRoute;
 
 /**
  * t-610705 (SDD 410 Phase D, D0) — a fresh (unsaved) entity being drafted for one of the
@@ -214,6 +232,8 @@ export function routeKey(route: CockpitRoute): string {
       return `workspace-probes:${route.wsHash}`;
     case "project-handoff":
       return `project-handoff:${route.wsHash}`;
+    case "inbox-item":
+      return `inbox-item:${route.wsHash}:${route.itemKind}:${route.itemId}`;
     case "studio-new":
       return `studio-new:${route.studio}:${route.wsHash}`;
     case "studio-edit":
@@ -234,6 +254,10 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
     case "agent-probes":
     case "workspace-probes":
       return { kind: "section", section: "fleet" };
+    case "inbox-item":
+      // t-e76acc — back to the aggregated list, which is the whole point of the surface: a human
+      // works the inbox down, item by item, without being returned to a per-kind tab each time.
+      return { kind: "section", section: "inbox" };
     case "project-handoff":
       // t-ace77f — Overview, not a Handoff tab: there is no Handoff tab any more, and Overview is
       // where the document's own quick-nav entry lives. Back must never land on a tab that is gone.
@@ -283,6 +307,10 @@ export function navSection(route: CockpitRoute): CockpitSectionId | null {
     case "agent-probes":
     case "workspace-probes":
       return "fleet";
+    case "inbox-item":
+      // the Inbox tab stays lit while one of its items is open — unlike Handoff, this subroute HAS a
+      // home tab, and it is the one whose count the human is working down.
+      return "inbox";
     case "project-handoff":
       // t-ace77f — nav-less, the same tri-state pin uses: no tab reads as active, and callers that
       // need a concrete section for BACKGROUND data fall back to "overview" at their own call site.
@@ -334,6 +362,11 @@ export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
       // a cheap local disk read (ProbeStore), same cost class as Mission/Approvals/Validations —
       // polls like any other section; the fan-out (refreshCockpitProbes) covers the gap between ticks.
       return "poll";
+    case "inbox-item":
+      // t-e76acc — a decision surface, not a dashboard: a 3s refetch under a half-typed result note
+      // (or mid-read of a verbatim approval payload) is only downside. Acting on the item re-pushes
+      // it through the same fan-out the Approvals/Validations sections already use.
+      return "none";
     case "project-handoff":
       // t-ace77f — unchanged from when this was a section: the same 3s tick keeps the `Needs
       // distill` count and the document honest while the human reads. Becoming a route was a
@@ -365,6 +398,8 @@ export function formatRoute(route: CockpitRoute): string {
       return "probes";
     case "project-handoff":
       return "project handoff";
+    case "inbox-item":
+      return `inbox ${route.itemKind} ${route.itemId}`;
     case "studio-new":
       return `${route.studio} new`;
     case "studio-edit":
@@ -381,6 +416,12 @@ export const routes = {
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
   projectHandoff: (wsHash: string): CockpitProjectHandoffRoute => ({ kind: "project-handoff", wsHash }),
+  inboxItem: (wsHash: string, itemKind: "approval" | "validation", itemId: string): CockpitInboxItemRoute => ({
+    kind: "inbox-item",
+    wsHash,
+    itemKind,
+    itemId,
+  }),
   // t-610705 (Phase D, D3) — `returnRoute` defaults to `null` for every caller (every D0-D2 call
   // site is unaffected). Real callers never pass it explicitly even for pin: Cockpit.ts's
   // `navigate()` captures the real value automatically at the moment a pin route commits (design-
@@ -439,6 +480,15 @@ function decodeNonStudioRoute(raw: unknown): CockpitNonStudioRoute | null {
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     if (typeof obj.agent !== "string" || !obj.agent) return null;
     return { kind: obj.kind, wsHash: obj.wsHash, agent: obj.agent };
+  }
+  if (obj.kind === "inbox-item") {
+    if (keys.length !== 4 || !keys.includes("wsHash") || !keys.includes("itemKind") || !keys.includes("itemId")) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    // the closed kind set, checked here rather than trusted: this decoder is the trust boundary for
+    // persisted panel state and every webview message, and an unrecognized kind has no store to read.
+    if (obj.itemKind !== "approval" && obj.itemKind !== "validation") return null;
+    if (typeof obj.itemId !== "string" || !obj.itemId) return null;
+    return { kind: "inbox-item", wsHash: obj.wsHash, itemKind: obj.itemKind, itemId: obj.itemId };
   }
   if (obj.kind === "workspace-probes" || obj.kind === "project-handoff") {
     if (keys.length !== 2 || !keys.includes("wsHash")) return null;

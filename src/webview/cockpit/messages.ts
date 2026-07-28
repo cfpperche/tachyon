@@ -10,6 +10,8 @@ export interface CockpitStrings {
   navOverview: string;
   navEngine: string;
   navFleet: string;
+  /** t-e76acc — the unified Human Inbox tab (approvals + validations, one navigation). */
+  navInbox: string;
   navApprovals: string;
   navMission: string;
   navValidations: string;
@@ -107,6 +109,8 @@ export interface CockpitStrings {
   errors: string;
   bridges: string;
   approvals: string;
+  /** t-e76acc — Overview's single "waiting on a human" metric label. */
+  inbox: string;
   worktrees: string;
   deliveries: string;
   attached: string;

@@ -114,6 +114,7 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/plugins.tailwind.css",
       "/dist/webview/plugins.css",
       "/dist/webview/approval.css",
+      "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
