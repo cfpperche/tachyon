@@ -25,11 +25,50 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 
 const DIR_NAME = "tachyon-verify";
 /** Records are ~300 bytes; this only stops unbounded growth over a long-lived clone. */
 const KEEP = 50;
+
+/**
+ * t-5d0e9d — how long a green stays reusable.
+ *
+ * Age is a backstop, not the real control. The things that decide whether a green still means
+ * something are the tree (which keys the record) and the verifier fingerprint (which is compared
+ * below); both are exact. Age only bounds the blast radius of something neither of those can see —
+ * an upgraded system library, a rotated credential, a machine that drifted. Seven days is long
+ * enough that ordinary landing traffic always hits, and short enough that nothing reuses a green
+ * from a materially different machine-week.
+ */
+export const DEFAULT_MAX_RECORD_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * t-5d0e9d — the out-of-tree inputs a green depends on.
+ *
+ * Deliberately NOT a hash of the verifier's source. `scripts/verify-full.mjs`, `vitest.config.*` and
+ * `package.json` all live IN the tree, and the record is keyed BY the tree — change any of them and
+ * the key changes, so hashing them again would be a second lock on the same door.
+ *
+ * What the tree cannot see is the environment the suite ran in. A green produced under a different
+ * Node major, a different platform, or a different verification command is not evidence about this
+ * one, and none of those leave a mark on the tree. That is exactly the gap this closes.
+ */
+export function verifierFingerprint({ command = "verify:full", gates = [], env = process, extra = {} } = {}) {
+  const material = {
+    command,
+    gates: [...gates],
+    // Major only: a patch bump of Node is not a reason to re-run a whole suite, and treating it as
+    // one would make the cache miss constantly for no gain in truth.
+    node: String(env.version ?? "").split(".")[0],
+    platform: String(env.platform ?? ""),
+    arch: String(env.arch ?? ""),
+    ...extra,
+  };
+  const canonical = JSON.stringify(material, Object.keys(material).sort());
+  return { fingerprint: crypto.createHash("sha256").update(canonical).digest("hex"), material };
+}
 
 function git(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -82,7 +121,7 @@ function prune(dir) {
  * Record that the content currently in `cwd` verified green. Returns the record, or null with a
  * reason when there is nothing honest to file (dirty tree, not a repo).
  */
-export function recordVerification({ cwd = process.cwd(), command, summary, now = () => new Date() } = {}) {
+export function recordVerification({ cwd = process.cwd(), command, summary, fingerprint, now = () => new Date() } = {}) {
   const tree = verifiableTree(cwd);
   if (!tree) return { recorded: false, reason: "working tree is dirty or not a git repo — no commit can claim this run" };
   let commit = null;
@@ -91,11 +130,15 @@ export function recordVerification({ cwd = process.cwd(), command, summary, now 
   const dir = recordDir(cwd);
   fs.mkdirSync(dir, { recursive: true });
   const record = {
-    schema: 1,
+    // schema 2 adds `fingerprint`. A schema-1 record is read as UNUSABLE for reuse rather than
+    // upgraded in place: it was written before anything recorded which environment produced it, so
+    // there is no honest way to claim it matches this one. It still reads fine for `check`.
+    schema: 2,
     tree,
     commit,
     at: now().toISOString(),
     ...(command ? { command } : {}),
+    ...(fingerprint ? { fingerprint } : {}),
     ...(summary ? { summary } : {}),
   };
   const file = path.join(dir, `${tree}.json`);
@@ -111,10 +154,54 @@ export function readRecord(tree, cwd = process.cwd()) {
   try {
     const raw = fs.readFileSync(path.join(recordDir(cwd), `${tree}.json`), "utf8");
     const rec = JSON.parse(raw);
-    return rec && rec.schema === 1 && rec.tree === tree ? rec : undefined;
+    // A record must still name the tree it is filed under. A file that disagrees with its own key has
+    // been tampered with or corrupted, and either way it is not proof of anything.
+    if (!rec || rec.tree !== tree) return undefined;
+    return rec.schema === 1 || rec.schema === 2 ? rec : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * t-5d0e9d — may a green already on file stand in for running the suite again?
+ *
+ * FAIL-CLOSED IN EVERY DIRECTION. Every branch that is not an exact, fresh, same-environment match on
+ * the same tree returns `reuse: false` with a reason. "Cannot tell" is never "verified" — that is the
+ * same rule `check` already followed, applied to a decision that now SKIPS work rather than reporting
+ * on it, which is precisely when the rule earns its keep.
+ *
+ * What is deliberately NOT consulted: the commit sha, the commit message, and anything an agent says
+ * about what it ran. Only the content hash of the tree, the recorded environment, and the clock.
+ */
+export function reuseDecision({
+  tree,
+  fingerprint,
+  cwd = process.cwd(),
+  maxAgeMs = DEFAULT_MAX_RECORD_AGE_MS,
+  now = () => Date.now(),
+  force = false,
+} = {}) {
+  if (force) return { reuse: false, reason: "force-reverify requested" };
+  if (!tree) return { reuse: false, reason: "no committed tree to attest (dirty working tree or not a git repo)" };
+  const record = readRecord(tree, cwd);
+  if (!record) return { reuse: false, reason: `no record for tree ${tree.slice(0, 12)}` };
+  // A pre-fingerprint record cannot say which environment produced it. Reusing it would be assuming
+  // the answer to the exact question the fingerprint was added to ask.
+  if (record.schema !== 2 || !record.fingerprint) {
+    return { reuse: false, reason: "record predates verifier fingerprinting", record };
+  }
+  if (record.fingerprint !== fingerprint) {
+    return { reuse: false, reason: "verifier or environment changed since that run", record };
+  }
+  const at = Date.parse(record.at ?? "");
+  if (!Number.isFinite(at)) return { reuse: false, reason: "record has no usable timestamp", record };
+  const ageMs = now() - at;
+  // A record from the future is a clock that moved, not a fresher proof. Treat it as unusable rather
+  // than letting it outrank every honest record.
+  if (ageMs < 0) return { reuse: false, reason: "record is dated in the future", record };
+  if (ageMs > maxAgeMs) return { reuse: false, reason: `record is stale (${Math.floor(ageMs / 86_400_000)}d old)`, record };
+  return { reuse: true, reason: `tree ${tree.slice(0, 12)} already verified at ${record.at}`, record };
 }
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
