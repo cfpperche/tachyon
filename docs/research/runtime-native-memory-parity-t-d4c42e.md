@@ -129,12 +129,71 @@ memory.
   app-server exposes experimental `memory/reset`.
 - **Tachyon today:** canonical Codex gets a distinct private `CODEX_HOME`.
   Memory keys from ambient config are deliberately excluded and no memory flag
-  is emitted, so the measured default remains off. No behavioral assertion
-  prevents version/default drift.
+  is emitted, so the measured default remains off. Version drift is guarded as of
+  `t-c46aad` — see the measurement below.
 - **Lifecycle:** same home retains state across fresh/restart/resume; native fork
   is unavailable.
 - **Classification:** native; disabled by measured default, but Tachyon control
   remains `declared`, not verified.
+
+#### Behavioral measurement, 2026-07-28 (`t-c46aad`) {#codex-2026-07-28}
+
+Run against Codex CLI 0.145.0 with `CODEX_HOME` pointed at a temporary directory. No model call was
+made and no real `~/.codex` was read.
+
+**Codex reports its own effective memory state, for free.** `codex features list` prints one row per
+feature with stage and effective value, and at 0.145.0 it reads:
+
+```
+memories                             stable             false
+```
+
+Stable, and off. Three things follow at zero spend:
+
+1. **The measured default is a fact with a version attached** rather than a claim inherited from a
+   README — which is what the drift risk here actually needs.
+2. **Both control paths move it, observably.** `codex --enable memories features list` flips the row
+   to `true`, and so does `[features] memories = true` written into the private
+   `CODEX_HOME/config.toml`. So Tachyon's control is checkable end to end without a turn: materialize
+   the canonical config into a private home, ask Codex, read the answer back.
+3. **`CODEX_HOME` is the boundary.** With it pointed at a temp dir, Codex resolved config from there
+   and created its state (`config.toml`, `skills/`, `shell_snapshots/`, `installation_id`) there
+   rather than in the real home.
+
+**The near-miss.** `codex debug prompt-input` renders the model-visible prompt list as JSON with no
+model call — apparently the injection oracle Claude Code never had. It is not. With a synthetic memory
+planted in `<CODEX_HOME>/memories/`, the render was **byte-identical** with the feature off and on,
+while `features list` proved the flag had genuinely flipped underneath. `prompt-input` renders the
+static session context and is blind to memory.
+
+That cuts both ways: the measurement that fails to prove injection also fails to disprove it. Memory
+injection runs as an async pipeline on eligible threads, so `disable`, `enable`, `injection` and
+`mutation` still need a live session, exactly as for Claude. They stay `declared`, canonical policy
+stays `disabled`, and `runtime-managed` stays blocked.
+
+What genuinely improves is `control.detect`, promoted `config` → `runtime-status`: Claude needed a
+billable turn to say anything about memory state, Codex answers for free. That is a control
+capability, recorded where it belongs instead of laundered into an evidence axis it cannot support.
+
+**Drift guard.** This section previously ended "No behavioral assertion prevents version/default
+drift." That was too strong, and the correction matters more than the addition:
+`test/unit/agentProfileConfigLoader.test.ts` already asserted that an ambient **global** config
+setting `memories = true` does not reach the projection. What was genuinely missing, and is now
+covered by `test/unit/codexMemoryAdapter.test.ts`:
+
+- **Version drift** — the real gap. `resolveMemoryPolicy` refuses to answer for any build other than
+  0.145.0, so a release that flips the default cannot inherit this measurement's green.
+- **The Control-editable surface** — `CODEX_EDITABLE_SETTING_KEYS` is a different door from the
+  profile loader, and nothing asserted a memory key stays out of it.
+- **The workspace source** — workspace keys run through the `selectedWorkspaceKeys` branch, which
+  reports rather than silently ignores; the existing coverage was global-sourced only. The projection
+  names `features.memories` as outside the allowlist while still projecting the legitimate sibling key
+  beside it, so the guard means exclusion rather than breakage.
+
+**Fork.** `codex fork` DOES exist at 0.145.0, so the lifecycle field invites the opposite conclusion
+from a reading of `--help`. It forks a conversation, and memory is `CODEX_HOME`-global, so a forked
+session inherits the same store rather than a copy. Fork is not a memory-isolation boundary;
+`unavailable` stays correct, and `CODEX_FORK_NOTE` records why.
 - **Primary evidence:** [Codex memories pipeline](https://github.com/openai/codex/blob/main/codex-rs/core/src/memories/README.md),
   [Codex config schema](https://github.com/openai/codex/blob/main/codex-rs/core/config.schema.json),
   [app-server memory reset](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md),

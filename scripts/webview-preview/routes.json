@@ -234,6 +234,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "execution-graph-real",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-real",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "execution-graph-empty",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-empty",
     "frame": {
