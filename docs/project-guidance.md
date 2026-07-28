@@ -65,7 +65,10 @@ redundant run is not free caution — it is time taken from someone else's gate.
   nowhere else. Preserve the persistent AGENT worktree unconditionally — it is an agent's working
   home, not a per-task checkout, and an agent that did its work there has nothing to remove.
 - **A restart must not resurrect a closed task.** Finishing is a state the next launch reads, not one
-  it re-derives.
+  it re-derives. `selectAssignedWork` (`src/agents/assignmentSelection.ts`, t-9d250c) is the
+  authority and already refuses it: only `active` can become a restarted session's contract. What is
+  still yours is the report — a replayed spawn brief can name a task that has since closed, so say
+  which task you are actually on rather than inheriting the brief's word for it.
 
 ## Release boundary
 
