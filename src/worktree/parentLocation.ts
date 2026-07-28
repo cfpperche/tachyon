@@ -16,6 +16,15 @@ export interface ParentLocationSources {
   ledgerRow: () => { cwd?: string; worktreePath?: string } | undefined;
   /** The managed worktree registry — a durable RECORD of where the parent was put. */
   managedWorktreePath: () => string | undefined;
+  /**
+   * Is the parent DECLARED in this workspace's config?
+   *
+   * A declared agent that has never been started has no row, no worktree and no session, and it is
+   * still unquestionably known — the workspace's own configuration names it. Spawning a child of one
+   * is an ordinary thing to do, so leaving this out made the refusal below reject a normal flow. The
+   * full suite caught exactly that.
+   */
+  isDeclaredAgent: () => boolean;
   /** Live sessions. Consulted last because it costs a round-trip and answers only "it exists". */
   isLiveAgent: () => Promise<boolean>;
 }
@@ -34,5 +43,7 @@ export async function resolveParentLocation(
   // A row with no directory in it is still proof the agent exists — enough to fall back rather than
   // refuse, which is what keeps a restarted coordinator able to spawn.
   if (row) return { known: true };
+  // Cheaper than a session probe and at least as authoritative: the workspace declared this agent.
+  if (sources.isDeclaredAgent()) return { known: true };
   return { known: await sources.isLiveAgent() };
 }

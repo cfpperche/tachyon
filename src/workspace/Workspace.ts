@@ -1296,6 +1296,7 @@ export class Workspace {
                 return r ? { ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.worktree?.path ? { worktreePath: r.worktree.path } : {}) } : undefined;
               },
               managedWorktreePath: () => this.managedWorktrees.list({ kind: "agent" }).find((e) => e.agent === p)?.path,
+              isDeclaredAgent: () => !!this.config?.agents?.[p],
               isLiveAgent: async () => (await this.manager.agentStates()).has(p),
             }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,

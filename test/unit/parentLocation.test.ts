@@ -13,6 +13,7 @@ function sources(over: Partial<ParentLocationSources> = {}): ParentLocationSourc
   return {
     ledgerRow: () => undefined,
     managedWorktreePath: () => undefined,
+    isDeclaredAgent: () => false,
     isLiveAgent: async () => false,
     ...over,
   };
@@ -51,6 +52,17 @@ describe("t-c9da28 — locating a parent, in descending order of authority", () 
     const s = sources({ ledgerRow: () => ({}) });
 
     expect(await resolveParentLocation(s)).toEqual({ known: true });
+  });
+
+  it("accepts a DECLARED parent that has never been started", async () => {
+    // The workspace's own config names it, so it is known even with no row, worktree or session.
+    // Spawning a child of a declared-but-unstarted agent is ordinary; refusing it would be a
+    // regression, and the full suite caught exactly that before this rung existed.
+    const isLiveAgent = vi.fn(async () => false);
+    const s = sources({ isDeclaredAgent: () => true, isLiveAgent });
+
+    expect(await resolveParentLocation(s)).toEqual({ known: true });
+    expect(isLiveAgent).not.toHaveBeenCalled();
   });
 
   it("accepts a live session as proof for a parent no row was ever written for", async () => {
