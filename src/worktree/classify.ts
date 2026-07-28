@@ -24,12 +24,31 @@ export interface WorktreeClassification {
   pathExists: boolean;
   dirty: boolean;
   aheadOfBase: number;
+  /**
+   * t-6ae9a8 — HISTORICAL AND INFORMATIONAL ONLY. `baseRef` is the ref the worktree was CREATED from,
+   * so it goes stale the moment anything lands on the trunk: a fully-landed worktree reads as "N
+   * commits not contained in base" purely because the trunk moved past its birth point. Kept for
+   * diagnostics; never the basis of a safety decision.
+   */
   containedInBase: boolean;
+  /**
+   * t-6ae9a8 — the AUTHORITATIVE containment signal: is HEAD contained in the CURRENT trunk. This is
+   * the question a removal decision actually depends on — "has this work arrived where it was going",
+   * not "was it born recently". Fail-closed: an unresolvable trunk reads as NOT contained.
+   */
+  containedInTrunk: boolean;
+  /** The trunk ref containment was measured against, so a reason line can name it. */
+  trunkRef: string;
   occupant?: WorktreeOccupancy;
 }
 
 export interface ClassifyWorktreeDeps {
   git?: GitExec;
+  /**
+   * t-6ae9a8 — the trunk to measure containment against. Defaults to `main`, which is this
+   * repository's trunk; injectable so a test can pin it and a fork can name a different one.
+   */
+  trunkRef?: string;
   /** Dirty/ahead-of-base probe — the same signature as `WorktreeManager.status`. */
   status: (cwd: string, baseRef: string) => Promise<WorktreeStatus>;
   /** Live-agent occupancy probe — the same signature as `AgentManager.worktreeOccupant`. */
@@ -60,6 +79,39 @@ async function isContainedInBase(git: GitExec, cwd: string, baseRef: string, ahe
   }
 }
 
+/**
+ * t-6ae9a8 — is HEAD contained in `ref` RIGHT NOW, resolving the ref itself rather than trusting a
+ * recorded one.
+ *
+ * This is the question that decides whether a worktree is discardable, and the reason the previous
+ * check answered the wrong one: it compared against the CREATION baseRef, which every landing makes
+ * older. Measured on this host — eight clean worktrees whose commits were all in `main` were each
+ * reported as "N commits not contained in base", so nothing could reclaim them and they accumulated
+ * with a full `node_modules` apiece.
+ *
+ * Two ways to be contained, both accepted: a true ancestor (the fast-forward case), or every commit's
+ * patch already present (squash-merged or cherry-picked, where no ancestry survives). The second is
+ * why `git cherry` is used rather than `merge-base --is-ancestor` alone.
+ *
+ * FAIL-CLOSED at every exit. An unresolvable ref, a failed probe, a thrown call — all read as NOT
+ * contained, because the entire value of this signal is that it never claims a safety it cannot
+ * demonstrate. Loosening that would turn a cleanup into data loss.
+ */
+async function isContainedInRef(git: GitExec, cwd: string, ref: string): Promise<boolean> {
+  try {
+    const resolved = await git(["rev-parse", "--verify", `${ref}^{commit}`], cwd);
+    if (resolved.code !== 0 || !resolved.stdout.trim()) return false;
+    const head = await git(["rev-parse", "HEAD"], cwd);
+    if (head.code !== 0 || !head.stdout.trim()) return false;
+    const ancestor = await git(["merge-base", "--is-ancestor", head.stdout.trim(), resolved.stdout.trim()], cwd);
+    if (ancestor.code === 0) return true;
+    const cherry = await git(["cherry", resolved.stdout.trim(), head.stdout.trim()], cwd);
+    return patchesAllInBase(cherry);
+  } catch {
+    return false;
+  }
+}
+
 export async function classifyManagedWorktree(
   entry: ManagedWorktreeEntry,
   deps: ClassifyWorktreeDeps,
@@ -73,6 +125,8 @@ export async function classifyManagedWorktree(
       dirty: false,
       aheadOfBase: 0,
       containedInBase: false,
+      containedInTrunk: false,
+      trunkRef: deps.trunkRef ?? "main",
     };
   }
 
@@ -99,6 +153,12 @@ export async function classifyManagedWorktree(
   const dirty = probeFailed || status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
   const aheadOfBase = Math.max(0, status.aheadOfBase);
   const containedInBase = !probeFailed && (await isContainedInBase(git, entry.path, entry.baseRef, aheadOfBase));
+  // t-6ae9a8 — measured against the CURRENT trunk, and deliberately NOT gated on `probeFailed`. That
+  // flag means the recorded baseRef could not be resolved or `status` failed against it, which says
+  // nothing about the trunk: a worktree whose birth ref was deleted can still be entirely landed.
+  // Keeping the trunk probe independent is what lets a stale baseRef stop blocking cleanup.
+  const trunkRef = deps.trunkRef ?? "main";
+  const containedInTrunk = await isContainedInRef(git, entry.path, trunkRef);
 
   if (occupant) {
     return {
@@ -108,6 +168,8 @@ export async function classifyManagedWorktree(
       dirty,
       aheadOfBase,
       containedInBase,
+      containedInTrunk,
+      trunkRef,
       occupant,
     };
   }
@@ -115,15 +177,36 @@ export async function classifyManagedWorktree(
   const reasons: string[] = [];
   const statusRejected = status.aheadOfBase < 0;
   const genuinelyDirty = status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
+  // A `git status` that could not run at all still blocks: without it we do not know whether there is
+  // uncommitted work, and that is a data-loss question no containment result can answer.
   if (statusRejected) reasons.push("git status probe failed — treated as unsafe");
-  if (!statusRejected && status.aheadProbeFailed === true) {
-    reasons.push(`base ref '${entry.baseRef}' could not be resolved — ancestry unknown, treated as unsafe`);
-  }
   if (!statusRejected && genuinelyDirty) reasons.push("worktree has uncommitted changes");
-  if (!probeFailed && !containedInBase) reasons.push(`${aheadOfBase} commit(s) not contained in base`);
-
-  if (reasons.length === 0) {
-    return { state: "ready-to-remove", reasons: [], pathExists: true, dirty, aheadOfBase, containedInBase };
+  // t-6ae9a8 — the ONE containment reason, and it names the trunk. An unresolvable creation baseRef is
+  // no longer a blocker on its own: it is a fact about where the worktree was born, and being born
+  // from a ref that has since been deleted says nothing about whether the work arrived. What blocks is
+  // failing to prove the work is IN the trunk.
+  // t-6ae9a8 — EITHER proof is sufficient, and that is the whole fix. Two independent ways for removal
+  // to lose nothing:
+  //   · contained in the recorded base — the work is present in the ref this worktree branched from;
+  //   · contained in the current trunk — the work has since landed where it was going.
+  // The old check demanded the first and only the first, so every landing made a clean worktree look
+  // MORE unsafe rather than less. Requiring both would be stricter than the safety argument needs;
+  // requiring only the stale one is what accumulated eight of them here.
+  const contained = containedInBase || containedInTrunk;
+  // When `git status` itself failed we do not know how many commits are ahead, so appending a
+  // containment count would be noise on top of the one fact that matters: the probe did not run.
+  // The status failure already blocks, and it is the actionable line.
+  if (!contained && !statusRejected) {
+    // Only now does an unresolvable base matter: with no trunk proof either, nothing establishes that
+    // the commits are recoverable, and that is exactly when the classifier must refuse.
+    if (!statusRejected && status.aheadProbeFailed === true) {
+      reasons.push(`base ref '${entry.baseRef}' could not be resolved and HEAD is not in '${trunkRef}' — ancestry unknown, treated as unsafe`);
+    } else {
+      reasons.push(`${aheadOfBase} commit(s) not contained in base or in '${trunkRef}'`);
+    }
   }
-  return { state: "needs-review", reasons, pathExists: true, dirty, aheadOfBase, containedInBase };
+
+  const shape = { pathExists: true, dirty, aheadOfBase, containedInBase, containedInTrunk, trunkRef } as const;
+  if (reasons.length === 0) return { state: "ready-to-remove", reasons: [], ...shape };
+  return { state: "needs-review", reasons, ...shape };
 }
