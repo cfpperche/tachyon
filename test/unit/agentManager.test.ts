@@ -5030,12 +5030,17 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toMatch(/^grok -s /);
       expect(cmds.at(-1)).not.toContain("mcp_servers");
       expect(cmds.at(-1)).not.toContain("--mcp-config");
-      // t-c46c35 — this test used to assert "no argv change". There is one now, and it is the point:
-      // `--no-memory` outranks GROK_MEMORY and config.toml, so canonical Grok no longer depends on the
-      // runtime's default merely happening to be disabled.
+      // t-c46c35 — this test used to assert "no argv change". There is one now.
       expect(cmds.at(-1)).toContain("--no-memory");
-      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
-      expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok"]);
+      // t-0e88f3 — and the argv is no longer what carries the guarantee. `--no-memory` was MEASURED
+      // not to outrank GROK_MEMORY=1, so the env pin below is the control; the flag rides along as a
+      // documented no-op. This is the launch site that matters most: the non-harness Bridge-wired path
+      // is the common canonical Grok agent, and it reaches neither HarnessManager materializer.
+      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME=") || a.startsWith("GROK_MEMORY="));
+      expect(envPairs).toEqual([
+        "GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok",
+        "GROK_MEMORY=0",
+      ]);
       expect(calls).toEqual(["grok"]);
     });
 
@@ -5045,11 +5050,15 @@ describe("AgentManager — session resume (spec 209)", () => {
       // Tachyon is isolating nothing here, so the session inherits the runtime's own disabled default —
       // the pre-existing situation, unchanged. The pin covers the wired canonical path, which is the
       // path that has a private home worth protecting.
-      const { manager, cmds } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+      const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
         materializeBridgeMcpGrok: () => undefined,
       });
       await manager.spawn("grok");
       expect(cmds.at(-1)).not.toContain("--no-memory");
+      // t-0e88f3 — the env pin observes the same boundary as the argv pin. Injecting GROK_MEMORY=0
+      // into a launch Tachyon is otherwise not isolating would claim a guarantee over a session whose
+      // config home, and therefore whose memory store, belongs to the user.
+      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_MEMORY="))).toEqual([]);
     });
 
     it("grok (non-harness): resume re-injects GROK_HOME", async () => {
