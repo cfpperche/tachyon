@@ -106,5 +106,9 @@
   "view.pluginSurfaces": "Superfícies de plugin",
   "command.openAgentPane": "Tachyon: Abrir painel do agente (próprio)",
   "command.openAgentPaneItem": "Abrir painel do agente (próprio)",
-  "config.agentPane.enabled": "Habilita o painel de agente first-party (layer 2, webview+xterm). O terminal integrado do VS Code permanece o caminho padrão."
+  "config.agentPane.enabled": "Habilita o painel de agente first-party (layer 2, webview+xterm). O terminal integrado do VS Code permanece o caminho padrão.",
+  "config.sidebar.cardTemplate": "Seu layout pessoal do card de agente. Opcional, e VENCE o `settings.sidebar.cardTemplate` do projeto no `tachyon.yml` — uma região que você não listar mantém o que o projeto escolheu. Mesmo formato versionado e mesma validação: um template inválido é recusado por inteiro, a sidebar volta para o card do projeto e avisa.",
+  "config.sidebar.cardTemplate.version": "Versão do esquema do template. Obrigatória; este Tachyon entende a versão 1.",
+  "config.sidebar.cardTemplate.region": "Ids de componentes desta região, na ordem em que devem aparecer. Omita a região para manter a do projeto; uma lista vazia esconde tudo nela (um estado de falha ainda é readmitido na linha afetada).",
+  "config.sidebar.cardTemplate.runtimes": "Overrides opcionais por runtime, indexados pelo nome do runtime. Cada um declara `extends: default` ou `extends: replace`, igual ao tachyon.yml."
 }

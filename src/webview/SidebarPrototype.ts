@@ -11,6 +11,22 @@ import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
+import {
+  mergeCardTemplateConfigs,
+  parseCardTemplate,
+  DEFAULT_CARD_TEMPLATE,
+  type CardTemplateConfig,
+} from "../sidebar/cardTemplate.js";
+
+/**
+ * SDD 479 phase 5 — the personal card-template override's VS Code settings key.
+ *
+ * The project's template lives in `tachyon.yml` and travels with the repo; this one belongs to one
+ * person on one machine, which is why it is read HERE (the shell) rather than in the engine's
+ * projection: it is the same class of state as `sortPrefs` and `collapsedKeys` above, and it must not
+ * become something an agent-authored checkout can carry.
+ */
+const PERSONAL_CARD_TEMPLATE_KEY = "sidebar.cardTemplate";
 
 export const PIN_PREVIEW_VIEW_TYPE = "tachyonPinPreview";
 
@@ -99,6 +115,50 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     return (this.collapsedCache ??= this.memento?.get<string[]>(COLLAPSED_KEYS_KEY) ?? []);
   }
 
+  /**
+   * SDD 479 phase 5 — layer the personal override onto ONE folder's project template.
+   *
+   * Per folder, not once for the window: multi-root means two folders can legitimately carry
+   * different project templates, and the personal document's unmentioned regions inherit whichever
+   * one this row's folder actually has. Parsing per folder is what makes "personal wins" mean
+   * "personal wins over THIS project", instead of over whichever root happened to be first.
+   *
+   * Fail-closed and named: an invalid personal override falls back to the project's template (and so
+   * to the default beneath it) and returns the diagnostic, so the fallback can explain itself instead
+   * of reading as the feature not working. `parseCardTemplate` is the SAME validator `tachyon.yml`
+   * uses — a second one that could disagree with it is the failure this phase exists to avoid.
+   */
+  private cardTemplateFor(fleet: FleetVM): { config?: CardTemplateConfig; refusal?: string[] } {
+    const written = vscode.workspace.getConfiguration("tachyon").get<unknown>(PERSONAL_CARD_TEMPLATE_KEY);
+    const project = fleet.cardTemplate;
+    // `null` is what a person leaves behind when they clear the setting in the JSON editor, and an
+    // empty mapping is what the settings UI writes for an untouched object key — neither is an
+    // attempt to configure anything, so neither is a refusal.
+    const projectOnly = mergeCardTemplateConfigs(project, undefined);
+    if (written === undefined || written === null || (typeof written === "object" && !Array.isArray(written) && Object.keys(written as object).length === 0)) {
+      return projectOnly ? { config: projectOnly } : {};
+    }
+    const parsed = parseCardTemplate(written, `tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`, project?.base ?? DEFAULT_CARD_TEMPLATE);
+    if (!parsed.config) {
+      return { ...(projectOnly ? { config: projectOnly } : {}), refusal: parsed.errors };
+    }
+    return { config: mergeCardTemplateConfigs(project, parsed.config) ?? projectOnly ?? undefined };
+  }
+
+  /** The fleets as the webview sees them: the engine's projection plus this person's own layer. */
+  private withPersonalCardTemplate(fleets: FleetVM[]): FleetVM[] {
+    return fleets.map((fleet) => {
+      const { config, refusal } = this.cardTemplateFor(fleet);
+      return {
+        ...fleet,
+        ...(config ? { cardTemplate: config } : {}),
+        ...(refusal?.length
+          ? { personalCardTemplateRefusal: { file: `VS Code settings · tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`, errors: refusal } }
+          : {}),
+      };
+    });
+  }
+
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
@@ -118,7 +178,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       scriptCspSource: false,
     });
     void this.push();
+    // SDD 479 phase 5 — editing the personal override must repaint the cards, or the person is
+    // editing a template they cannot see take effect until something unrelated triggers a refresh.
+    // Scoped to this one key: every other setting has its own listener or does not affect this view.
+    const settingsWatch = vscode.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(`tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`)) void this.push();
+    });
     view.onDidDispose(() => {
+      settingsWatch.dispose();
       if (this.view === view) {
         this.pushGeneration += 1;
         this.view = undefined;
@@ -170,7 +237,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       : undefined;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
-    void view.webview.postMessage(fleetMessage(this.lastFleets, this.sortPrefs(), this.collapsedKeys(), this.appVersion));
+    // SDD 479 phase 5 — the personal layer is applied on the way OUT, not stored: `lastFleets` stays
+    // the engine's own projection, so a settings change re-derives from it without a re-fetch, and
+    // nothing persists a template that belongs to one person on one machine.
+    void view.webview.postMessage(
+      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion),
+    );
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
@@ -201,6 +273,12 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "openControl") return void vscode.commands.executeCommand("tachyon.openControl");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
+      // SDD 479 phase 5 — the personal override's home is a settings KEY, not a file: open the
+      // settings editor already filtered to it, so "Open VS Code settings · tachyon.sidebar.cardTemplate"
+      // lands on the thing it names instead of on the top of a settings page.
+      if (m.op === "openPersonalCardTemplate") {
+        return void vscode.commands.executeCommand("workbench.action.openSettings", `tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`);
+      }
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
       const ws = this.wsFor(m.hash);
       if (ws && m.op === "addPin") void vscode.commands.executeCommand(

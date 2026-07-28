@@ -285,6 +285,40 @@ and refusing those keys would refuse an override for rows this product creates.
    matrix in `test/`). `cardPreviewRows.ts` holds the five states the spec names, in `src/`, where the
    harness can later import them too — the direction that keeps one set rather than three.
 
+## What phase 5 changed in this design
+
+1. **The personal layer needed no `extends` switch — and adding one would have been the mistake.**
+   Phase 3 made a runtime override declare its inheritance because both readings are genuinely useful
+   there. For the personal home the question answers itself: a region the person does not mention keeps
+   the PROJECT's, and someone who wants to discard the project's layout writes all three regions —
+   which IS "replace", spelled out rather than switched on. So `parseCardTemplate` gained a `base`
+   parameter instead of a schema key: the same validator, one more argument, three layers composing
+   product → project → person.
+
+2. **Two homes fail independently, so they get two diagnostics.** A single `cardTemplateRefusal`
+   channel would have to merge a `tachyon.yml` error with a VS Code settings error, and a person
+   fixing one needs to know which to open. `personalCardTemplateRefusal` is its own field, attached by
+   the SHELL — the engine never sees it, because a projection an agent-authored checkout can carry is
+   the wrong place for one person's preference (the same reasoning that keeps `sortPrefs` beside the
+   fleet rather than inside it).
+
+3. **"Which one is in effect" is live state, not a rule restated.** The ratified fork called that
+   sentence part of the feature; the failure it prevents is a personal override quietly contradicting
+   the project, which is indistinguishable from a broken project template. So the block reads BOTH
+   homes through the host (`CockpitCardTemplateState`) and names them — including the difference
+   between a project that configured nothing and one whose template was refused, which otherwise both
+   read as "the default card".
+
+4. **The source travels with the resolution.** `resolveCardTemplateFor` returns the template AND the
+   home that wrote it, and `resolveCardTemplate` is now a one-line wrapper over it. Two functions
+   walking the same precedence chain would eventually disagree, and a UI naming the wrong home is
+   worse than one saying nothing: it sends someone to edit the file that was never in effect.
+
+5. **A narrow-width defect, found by the shots and fixed here.** The refusal banner's button read
+   "Open VS Code settings · tachyon.sidebar.cardTemplate" and overflowed its own banner at 220px — the
+   same class as `t-b164b2`'s badge. The label is short now (the banner's title already says which home
+   was ignored), and `.config-error-actions .ds-btn` ellipsizes so no future label can do it again.
+
 ## Rejected alternatives
 
 - **A string template language** (`{{name}} — {{model}}`). Rejected: it needs an interpreter, an

@@ -53,6 +53,8 @@ const __quickPickCalls: Array<{ items: readonly string[]; options: unknown }> = 
 const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[number]) => void>();
 
 export function __resetVscodeMock(): void {
+  __configValues = {};
+  __configListeners.length = 0;
   __createdPanels.splice(0);
   __registeredWebviewPanelSerializers.splice(0);
   __createdTerminals.splice(0);
@@ -198,9 +200,38 @@ export const window = {
   },
 };
 
+/**
+ * SDD 479 phase 5 — settings values a test wants the code under test to read. Keyed by the FULL id
+ * (`tachyon.sidebar.cardTemplate`), because that is what a reader composes from its section and key,
+ * and a mock that only matched one of the two halves would pass for the wrong reason.
+ */
+let __configValues: Record<string, unknown> = {};
+export function __setConfiguration(values: Record<string, unknown>): void {
+  __configValues = { ...values };
+}
+
+/** Listeners registered via workspace.onDidChangeConfiguration, so a test can fire a change. */
+const __configListeners: Array<(event: { affectsConfiguration(section: string): boolean }) => void> = [];
+export function __fireConfigurationChange(changed: string): void {
+  for (const listener of [...__configListeners]) {
+    listener({ affectsConfiguration: (section: string) => changed === section || changed.startsWith(`${section}.`) });
+  }
+}
+
 export const workspace = {
   workspaceFolders: undefined,
-  getConfiguration: () => ({ get: () => undefined }),
+  getConfiguration: (section?: string) => ({
+    get: (key: string) => __configValues[section ? `${section}.${key}` : key],
+  }),
+  onDidChangeConfiguration: (listener: (event: { affectsConfiguration(section: string): boolean }) => void) => {
+    __configListeners.push(listener);
+    return {
+      dispose: () => {
+        const index = __configListeners.indexOf(listener);
+        if (index >= 0) __configListeners.splice(index, 1);
+      },
+    };
+  },
   createFileSystemWatcher: () => ({
     onDidChange: () => {},
     onDidCreate: () => {},

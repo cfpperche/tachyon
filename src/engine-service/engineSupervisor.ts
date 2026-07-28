@@ -25,6 +25,8 @@ import {
   type EngineServiceIdentityV1,
 } from "./protocol.js";
 import type { StartDaemonEngineServiceOptions } from "./engineService.js";
+import { sealExecutionEvent, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { mintExecution } from "../executionGraph/executionIdentity.js";
 
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_MS = 40;
@@ -66,6 +68,16 @@ export interface EngineDaemonLaunchInput {
   encodedOptions: string;
   unitName: string;
   nodePath: string;
+  /**
+   * SDD 480 Phase 2 — sink for execution-graph events. Optional: a launch without it behaves exactly
+   * as before, which is what keeps this wiring reversible seam by seam.
+   */
+  recordExecution?: (event: SealedExecutionEvent) => void;
+  /**
+   * SDD 480 Phase 2 — execution identity to carry into the unit via `--setenv`. Passed in rather than
+   * minted inside the arg builder so that builder stays a pure function of its input.
+   */
+  executionEnv?: Record<string, string>;
 }
 
 export type EngineDaemonLaunchOutcome = "started" | "contended";
@@ -348,6 +360,12 @@ export function buildEngineSystemdRunArgs(
     const value = env[key];
     if (value !== undefined && value.length <= 4_096 && !value.includes("\0")) args.push(`--setenv=${key}=${value}`);
   }
+  // SDD 480 §3.1 — carry the execution identity into the unit. Appended AFTER the inherited keys so a
+  // stray ambient TACHYON_EXECUTION_* in the host environment cannot shadow the id we minted; the unit
+  // must be attributable to this launch, not to whatever the extension host happened to be holding.
+  for (const [key, value] of Object.entries(input.executionEnv ?? {})) {
+    if (value.length <= 4_096 && !value.includes("\0")) args.push(`--setenv=${key}=${value}`);
+  }
   args.push("--", input.nodePath, input.daemonModule, input.encodedOptions);
   return args;
 }
@@ -356,8 +374,18 @@ export async function launchEngineDaemonWithSystemd(input: EngineDaemonLaunchInp
   if (process.platform !== "linux") {
     throw new EngineSupervisorError("UNSUPPORTED_PLATFORM", `persistent engine launcher is not yet supported on ${process.platform}`);
   }
+  // SDD 480 §3.1 — the engine is a workspace-level daemon started by the extension host, so it is
+  // attributed to `host` rather than to any agent. Claiming an agent here would be exactly the false
+  // ownership the spec forbids: every agent in the workspace uses this unit and none of them started
+  // it. `carrier: "carried"` is real — systemd-run takes `--setenv`, so the unit is born holding the
+  // id and stays attributable after the extension host that launched it is gone.
+  const minted = mintExecution({ agentId: "host", carrier: "carried" });
+  const emit = (raw: RawExecutionEvent): void => {
+    if (!input.recordExecution) return;
+    try { input.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
+  };
   return new Promise((resolve, reject) => {
-    const child = spawn("systemd-run", buildEngineSystemdRunArgs(input), {
+    const child = spawn("systemd-run", buildEngineSystemdRunArgs({ ...input, executionEnv: minted.env }), {
       cwd: input.options.workspaceRoot,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
@@ -371,6 +399,22 @@ export async function launchEngineDaemonWithSystemd(input: EngineDaemonLaunchInp
     const finish = (result: EngineDaemonLaunchOutcome | EngineSupervisorError) => {
       if (settled) return;
       settled = true;
+      // `contended` is deliberately NOT recorded as this execution starting: the unit that is running
+      // belongs to whoever won the race, and minting an id for it here would attach our correlation to
+      // a process we did not start — a confident wrong parent, which is the one outcome the spec rules out.
+      if (result === "started") {
+        emit({
+          kind: "spawn", node: "SystemdUnit", state: "running", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { seam: "engineSupervisor.launchEngineDaemonWithSystemd", unit: input.unitName, workspaceRoot: input.options.workspaceRoot },
+        });
+      } else if (result instanceof EngineSupervisorError) {
+        emit({
+          kind: "fail", node: "SystemdUnit", state: "failed", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { seam: "engineSupervisor.launchEngineDaemonWithSystemd", unit: input.unitName, error: result.code },
+        });
+      }
       result instanceof EngineSupervisorError ? reject(result) : resolve(result);
     };
     child.stdout?.on("data", append);

@@ -68,8 +68,14 @@ Ordered; each must leave the tree green on `npm run verify:full:quiet`.
       restyle Control (`plan.md` § What phase 4 changed). It composes and emits YAML rather than writing
       `tachyon.yml`; the round trip — composer → YAML → the real loader → the same template — is the
       test that keeps the preview honest.
-- [ ] `t-601051` · **Phase 5 — optional personal override** in VS Code settings, personal wins, and the
-      UI says which template is in effect. Depends on phase 2.
+- [x] `t-601051` · **Phase 5 — optional personal override** in VS Code settings (`tachyon.sidebar.cardTemplate`),
+      personal wins, and the UI says which template is in effect. The SAME `parseCardTemplate` validates
+      both homes — it gained a `base` argument rather than a second schema, so a region the person does
+      not mention keeps the PROJECT's and the three layers compose (`plan.md` § What phase 5 changed).
+      Read by the SHELL, never the engine: it is one person's preference, and no projection an
+      agent-authored checkout can carry should hold it. A refused personal override falls back to the
+      project's template (then the default) and raises its OWN banner, because two homes fail
+      independently and a person fixing one needs to know which to open.
 
 ## Verification
 
@@ -108,8 +114,15 @@ _Acceptance checks tied to `spec.md`. Each maps to a checklist item there._
       refusals shown inline.
 - [x] The YAML the block emits loads back as the template the block previewed — the one property a
       screenshot could never check.
-- [ ] Personal override with precedence stated in the UI, accessibility of a reordered reading order,
-      per-component options — phase 5, `t-045d44`, and the human dogfood below.
+- [x] **A personal override wins, and the UI says so** — the override applies over each folder's own
+      project template, keeps the regions it does not mention, and Control's block states which home is
+      in effect from LIVE state (including the difference between a project that configured nothing and
+      one whose template was refused, which otherwise both read as "the default card").
+- [x] The personal home is validated by the SAME function as the project's, refused whole, and falls
+      back to the project's card with its own diagnostic — never to the product default when the
+      project's template is fine.
+- [ ] Accessibility of a reordered reading order, and per-component options — `t-045d44` and the human
+      dogfood below.
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -157,6 +170,22 @@ sidebar. Run it in the change worktree (`npm run dogfood:dev-host -- point --fix
    badges. Then change `extends` to `replace` without listing all three regions and expect a refusal
    naming the missing ones — not a card that lost its name.
 
+**Phase 5: two more steps, same session.**
+
+7. **A personal override wins.** Put this in VS Code settings (`settings.json`):
+   ```json
+   { "tachyon.sidebar.cardTemplate": { "version": 1, "meta": ["harness"] } }
+   ```
+   Expect: every agent row shows only the harness badge, in EVERY folder, whatever each project's
+   `tachyon.yml` says — and a header the project curated is still the project's, because the override
+   said nothing about it. Control → Settings → "Agent card layout" says the personal override is in
+   effect and lists what it is overriding.
+8. **A broken personal override falls back to the PROJECT's, not to the default.** Change `harness`
+   to `cpu-graph`. Expect: a warn banner reading "Personal card layout ignored — using this project's",
+   naming `tachyon.sidebar.cardTemplate.meta[0]`; the cards show the PROJECT's template (step 1's, if
+   it is still in `tachyon.yml`); "Open settings" lands on the key itself; and Control's statement
+   says the override was refused, with the same words.
+
 ## Visual QA
 
 **Phase 4 — durable artifacts, generated and inspected.** `docs/screenshots/479-card-templates/`
@@ -195,6 +224,21 @@ so the remaining step is one keypress: open VS Code on this worktree, Run and De
 Host", F5, then Control → Settings → "Agent card layout". The `code` CLI available here refuses
 `--extensionDevelopmentPath` ("not supported for code"), so an agent cannot start the Extension
 Development Host itself.
+
+**Phase 5 — durable artifacts.** `docs/screenshots/479-personal-card-template/` (8 PNGs + a manifest),
+rendered by `test/browser/cardTemplatePersonalShots.test.ts` from the real components and the shipped
+stylesheets, at Control's width and its narrowest and at the sidebar's 340px/220px:
+
+| Shot | What it evidences |
+|---|---|
+| `in-effect-personal-*` | the statement when a personal override is winning, with what it overrides listed |
+| `in-effect-refused-*` | the case the statement exists for — a refused override, with the loader's own words |
+| `in-effect-none-*` | nothing personal set, and a project whose template was refused told apart from one that configured nothing |
+| `sidebar-personal-refusal-*` | the sidebar banner, which falls back to the PROJECT's card rather than the default |
+
+Each shot also asserts the page does not scroll horizontally at its width. That check earned its keep
+immediately: the banner's button read "Open VS Code settings · tachyon.sidebar.cardTemplate" and
+overflowed its own banner at 220px — fixed here (short label + an ellipsis guard), not filed.
 
 **Phase 1: opt-out**, with a stronger substitute — the golden file is the visual record in text
 (every element, attribute, tooltip and handler of 60 cards), and it is *more* sensitive than a
