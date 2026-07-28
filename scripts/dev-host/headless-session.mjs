@@ -43,7 +43,7 @@ import path from "node:path";
 import { devHostEnv, devHostArgs } from "./launch-spec.mjs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
-import { ensureDevHostTmuxLaunchEnv } from "./pointer.mjs";
+import { ensureDevHostTmuxLaunchEnv, readPointerWorkspaceArg } from "./pointer.mjs";
 
 const SELF = "dev-host-session";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -165,9 +165,14 @@ async function up(opts) {
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) die(`pointed extension has no dist/extension.js — build it (TACHYON_ENGINE_CHANNEL=dev npm run build)`);
   // Prefer real workspace mirror under the slot (same as F5).
-  const workspaceDir = fs.existsSync(path.join(slotRoot, "workspace"))
-    ? path.join(slotRoot, "workspace")
-    : path.join(PTR, "workspace");
+  // t-f0efc5 — the pointer decides WHAT to open, and records it as `workspaceArg`: a multi-root
+  // dogfood must be given the `.code-workspace` file (VS Code decides folder-vs-workspace by
+  // extension), and re-deriving that rule here is how the two paths drift. Falls back to today's
+  // mirror directory for a pointer written before the field existed.
+  const workspaceDir = readPointerWorkspaceArg(slotRoot)
+    ?? (fs.existsSync(path.join(slotRoot, "workspace"))
+      ? path.join(slotRoot, "workspace")
+      : path.join(PTR, "workspace"));
   const pointerGeneration = readPointerGeneration();
 
   try { execFileSync("which", ["Xvfb"]); } catch { die("Xvfb required (apt install xvfb)"); }
