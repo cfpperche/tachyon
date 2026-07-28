@@ -5504,7 +5504,28 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       expect(materialized).toHaveLength(3);
       expect(new Set(materialized.map(({ config }) => config)).size).toBe(1);
-      expect(new Set(materialized.map(({ trust }) => trust)).size).toBe(1);
+      /**
+       * t-6907aa — compared with `decided_at` normalized, because that field is a WALL-CLOCK stamp
+       * and the three materializations happen at three separate moments.
+       *
+       * `seedGrokTrustedFolders` preserves a prior `decided_at` when one exists for the same folder,
+       * but this test deliberately overwrites the file with a DIFFERENT folder key before each
+       * relaunch (`/stale-restart`, `/stale-resume`), so the workspace root has no prior entry to
+       * carry forward and every pass falls back to `Math.floor(Date.now() / 1000)`. Three reads of
+       * the clock agree only while they land inside the same second — which they do when this file
+       * runs alone, and stop doing under `verify:full`'s parallel load. Byte equality was therefore
+       * asserting the scheduler, not the product: it failed a landing gate on a CSS-only change.
+       *
+       * The property the test is named for — regeneration is EXACT and history-independent — is
+       * unchanged and still asserted below: same folder set, `trusted = true` exactly once, no stale
+       * entry. The three now agree on all of that, and differ only where time legitimately does.
+       */
+      const withoutDecidedAt = (trust: string): string =>
+        trust.replace(/^([ \t]*decided_at[ \t]*=[ \t]*)\d+$/gm, "$1<stamp>");
+      expect(new Set(materialized.map(({ trust }) => withoutDecidedAt(trust))).size).toBe(1);
+      // The stamp must still be present and numeric in every pass. Normalizing a field away is how a
+      // relaxed assertion rots into a vacuous one — this keeps the field itself under test.
+      for (const { trust } of materialized) expect(trust).toMatch(/^[ \t]*decided_at[ \t]*=[ \t]*\d+$/m);
       for (const { config, trust } of materialized) {
         expect(config).toContain("[mcp_servers.tachyon_bridge]");
         expect(config).not.toContain("mcp_servers.stale");
