@@ -129,6 +129,9 @@ export const strings: CockpitStrings = {
   running: "running",
   stopped: "stopped",
   checkedAt: "Checked",
+  navLoading: "Loading…",
+  navStalled: "This is taking longer than expected.",
+  navRetry: "Retry",
   open: "Open",
   noneListed: "Nothing listed for this workspace yet.",
   kind: "Kind",
@@ -605,6 +608,14 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
   ],
 };
 
+/**
+ * t-ac79a7 — the task the nav-feedback fixture is "opening". Deliberately a card that really exists
+ * in the board fixture, so the preview shows the acknowledgement on the clicked card (`.card.opening`)
+ * rather than a pending state floating over a board that contains no such task. Exported so the route
+ * registry builds its routeKey from the same constant instead of a literal that could drift.
+ */
+export const NAV_PENDING_TASK_ID = "t-4bf28a";
+
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
@@ -615,6 +626,25 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "task-detail": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-4f2c91") },
+  },
+  /**
+   * t-ac79a7 — the navigation-feedback state, sequenced the way the LIVE host sequences it.
+   *
+   * The model here is the Board with NO activeRoute, because that is what the client is still
+   * holding while a Board click is in flight: `routePending` is posted synchronously from
+   * navigate(), and the task-detail model does not arrive until `deps.collect()` finishes seconds
+   * later (t-af3eef). So the honest picture of "waiting" is the ORIGIN screen plus the progress
+   * bar — not the destination's own loading state, which only appears once the model has landed.
+   *
+   * The route registry pushes the pending envelope for this fixture and deliberately never the
+   * matching `routeReady`, so the surface stays in the bracket for as long as a screenshot needs.
+   * The client escalates on its own timers, so "slow" (after NAV_SLOW_MS) and "stalled" (after
+   * NAV_STALL_MS) are the real client's states photographed at different ages rather than two
+   * hand-built approximations that could drift from it.
+   */
+  "nav-pending": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }),
   },
   // t-610705 (Phase C.2) — Fleet subroutes: same activeRoute-attached-after-buildCockpitModel
   // pattern as task-detail above. nav section for both is "fleet".

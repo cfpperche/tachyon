@@ -278,6 +278,13 @@ export interface CockpitAppProps {
   companionPairOffer?: CompanionPairOffer;
   /** Low-level post for Engine log actions (clear/journal/copy). */
   onPost: (action: CockpitAction) => void;
+  /**
+   * t-ac79a7 — the navigation the host has committed but not finished loading, if any. See the
+   * state's doc comment in cockpit/main.tsx for why it has phases rather than being a boolean.
+   */
+  navPending?: { routeKey: string; phase: "pending" | "slow" | "stalled" };
+  /** t-ac79a7 — retry from the stalled banner. */
+  onRetryNavigation?: () => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
@@ -1571,7 +1578,19 @@ export function App(p: CockpitAppProps) {
     body = (
       <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
         <Suspense fallback={<SectionFallback />}>
-          <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+          <MissionControlApp
+            vm={p.missionVm}
+            lastError={p.missionError}
+            dispatch={p.missionDispatch}
+            // t-ac79a7 — the routeKey is the host's own identifier; the board only needs the task id
+            // out of it. Parsed here rather than shipping a second field, so there is one authority
+            // on what a pending navigation is.
+            pendingTaskId={
+              p.navPending?.routeKey.startsWith("task-detail:")
+                ? p.navPending.routeKey.split(":")[2]
+                : undefined
+            }
+          />
         </Suspense>
       </div>
     );
@@ -1854,8 +1873,27 @@ export function App(p: CockpitAppProps) {
     );
   }
 
+  // t-ac79a7 — the bar and aria-busy go up the instant the host commits the navigation, because
+  // "immediate acknowledgement that the click was accepted" is the actual requirement and the
+  // measured wait is seconds, not frames. The NAV_SLOW_MS grace deliberately gates only the SPOKEN
+  // announcement: a screen reader should not narrate every fast route change, but a sighted user
+  // should never wonder whether their click registered. Read once here so the consumers below
+  // (bar, aria-busy, live region, banner) cannot drift apart.
+  const navBusy = !!p.navPending;
+  const navStalled = p.navPending?.phase === "stalled";
+  const navAnnounce = p.navPending?.phase === "slow" || navStalled;
   return (
     <div class="ck-root">
+      {/* t-ac79a7 — immediate, layout-stable evidence that a navigation is in flight. The bar is
+          position:absolute over the header's bottom edge so showing/hiding it never reflows the
+          content underneath — the requirement is feedback WITHOUT a jump. */}
+      {navBusy && !navStalled ? <div class="ck-nav-progress" data-testid="control-nav-progress" aria-hidden="true" /> : null}
+      {/* Announced politely and owned by no control, so a screen reader hears the navigation without
+          focus moving off whatever the user actuated. Rendered always (not just while busy) because a
+          live region has to exist BEFORE its text changes for the change to be announced. */}
+      <div class="ck-sr-only" role="status" aria-live="polite" data-testid="control-nav-status">
+        {navAnnounce ? (navStalled ? s.navStalled : s.navLoading) : ""}
+      </div>
       {/* t-fullpage-proto — a subroute (task-detail, a Fleet subroute, or any studio) replaces the
           whole section tab strip with ONE minimal "← Back" row; the content area gets the vertical
           space the tabs would have used. `breadcrumb` is null for a genuine deep-link edge case
@@ -1897,8 +1935,32 @@ export function App(p: CockpitAppProps) {
         </header>
       )}
 
-      <main class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
-        {body}
+      <main
+        class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}
+        aria-busy={navBusy ? "true" : undefined}
+      >
+        {/* t-ac79a7 — the stalled end state. Replaces the progress bar rather than joining it: past
+            NAV_STALL_MS the UI has no evidence anything is still progressing, so it stops implying
+            it and offers a way out instead. */}
+        {navStalled ? (
+          <div class="ck-nav-stalled" role="alert" data-testid="control-nav-stalled">
+            <span class="codicon codicon-warning" aria-hidden="true" />
+            <span>{s.navStalled}</span>
+            {p.onRetryNavigation ? (
+              <Button variant="default" icon="refresh" onClick={p.onRetryNavigation}>
+                {s.navRetry}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {/* t-ac79a7 — keyed on the active route so Preact remounts this wrapper when the route
+            actually changes, which is what replays the enter animation. Keying on the route (not on
+            a render counter) is what makes the transition fire ONCE per navigation, on content that
+            is already loaded — a poll re-render of the same route keeps the same key and does not
+            re-animate. `ck-route-content` is a no-op under prefers-reduced-motion (see cockpit.css). */}
+        <div class="ck-route-content" key={activeRoute ? routeKey(activeRoute) : `section:${section}`}>
+          {body}
+        </div>
         {m && !isEmbed ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}

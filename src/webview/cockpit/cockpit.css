@@ -1651,3 +1651,100 @@ main.ck-main.ck-main--mission,
   margin: 4px 0 8px; padding: 8px; border-radius: 6px; font-size: 11px; line-height: 1.4;
   background: var(--vscode-textCodeBlock-background, #0002); overflow-x: auto; white-space: pre;
 }
+
+/* ---------------------------------------------------------------------------
+   t-ac79a7 — navigation feedback.
+
+   A Board click used to leave the screen untouched for seconds (the model push
+   behind it waits on a serial per-workspace engine sweep — see t-af3eef) and
+   then swap abruptly. These rules cover the gap: acknowledge immediately, stay
+   layout-stable while waiting, end in something recoverable, and soften only
+   the moment ready content actually arrives.
+   --------------------------------------------------------------------------- */
+
+/* The bar overlays the header's bottom edge instead of occupying a row, so it
+   can appear and disappear without ever reflowing the content beneath it. */
+.ck-root { position: relative; }
+.ck-nav-progress {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  z-index: 20;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ds-accent, var(--vscode-progressBar-background, #0e70c0)) 22%, transparent);
+  pointer-events: none;
+}
+.ck-nav-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--ds-accent, var(--vscode-progressBar-background, #0e70c0));
+  animation: ck-nav-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes ck-nav-progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
+/* Announced, never seen, never focusable — the live region must not become a
+   tab stop or it would steal focus from whatever the user just actuated. */
+.ck-sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The bounded end state: a real, reachable exit rather than a spinner that
+   never stops. */
+.ck-nav-stalled {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  border: 1px solid var(--ds-warn, var(--vscode-editorWarning-foreground, #cca700));
+  background: color-mix(in srgb, var(--ds-warn, #cca700) 10%, transparent);
+  color: var(--ds-fg, var(--vscode-foreground));
+}
+.ck-nav-stalled .codicon { color: var(--ds-warn, var(--vscode-editorWarning-foreground, #cca700)); }
+
+/* Layout-neutral by construction: in the flex (embed/mission) layouts this
+   wrapper has to carry the same flex participation `.ck-embed-host` expects
+   from its parent, or inserting it would collapse the surface it wraps. In the
+   plain block layout it needs nothing. */
+.ck-main--embed > .ck-route-content,
+.ck-main--mission > .ck-route-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* The only motion in the feature, and only on content that is already loaded:
+   a short opacity/offset settle when a route's ready content mounts. */
+@media (prefers-reduced-motion: no-preference) {
+  .ck-route-content { animation: ck-route-enter 140ms ease-out; }
+}
+@keyframes ck-route-enter {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Reduced motion keeps every state above — the bar, the banner, the
+   announcement — and removes only the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .ck-route-content { animation: none; }
+  .ck-nav-progress::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.55;
+  }
+}

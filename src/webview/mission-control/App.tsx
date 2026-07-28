@@ -47,7 +47,18 @@ const PRIORITIES: TaskPriority[] = [0, 1, 2, 3];
 const ALL_AGENTS = "__all__";
 const FLIP_CARD_ANIMATION_MS = 260;
 
-export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastError?: TaskErrorEvent; dispatch: MissionControlDispatch }) {
+export function App({ vm, lastError, dispatch, pendingTaskId }: {
+  vm?: MissionControlVM;
+  lastError?: TaskErrorEvent;
+  dispatch: MissionControlDispatch;
+  /**
+   * t-ac79a7 — the task whose detail route the host has committed but has not finished loading, so
+   * the card the user actually clicked acknowledges the click on the spot rather than leaving the
+   * board looking inert for the seconds the load takes. Derived from the shell's routePending;
+   * undefined in the standalone/preview harness, where the board renders exactly as before.
+   */
+  pendingTaskId?: string;
+}) {
   // Optional: Control shell wraps ToastProvider; preview harness may not.
   const toast = useToastOptional();
   const [selectedChip, setSelectedChip] = useState<string | undefined>(undefined);
@@ -394,6 +405,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCardDragOver={onCardDragOver}
             onCardDrop={onCardDrop}
             onOpen={dispatch.openTask}
+            pendingTaskId={pendingTaskId}
             onBeginEdit={beginEdit}
             onChangeEdit={changeEdit}
             onSubmitEdit={submitEdit}
@@ -415,6 +427,7 @@ export function App({ vm, lastError, dispatch }: { vm?: MissionControlVM; lastEr
             onCardDragOver={onCardDragOver}
             onCardDrop={onCardDrop}
             onOpen={dispatch.openTask}
+            pendingTaskId={pendingTaskId}
             onBeginEdit={beginEdit}
             onChangeEdit={changeEdit}
             onSubmitEdit={submitEdit}
@@ -442,6 +455,8 @@ interface ColumnProps {
   onCardDragOver(card: BoardCardVM, e: DragEvent): void;
   onCardDrop(card: BoardCardVM, e: DragEvent): void;
   onOpen(id: string): void;
+  /** t-ac79a7 — see App's prop of the same name. */
+  pendingTaskId?: string;
   onBeginEdit(card: BoardCardVM, field: EditSession["field"]): void;
   onChangeEdit(taskId: string, value: string): void;
   onSubmitEdit(taskId: string, value?: string): void;
@@ -464,6 +479,7 @@ function Column(p: ColumnProps) {
       onCardDragOver={(e) => p.onCardDragOver(card, e)}
       onCardDrop={(e) => p.onCardDrop(card, e)}
       onOpen={() => p.onOpen(card.id)}
+      pending={p.pendingTaskId === card.id}
       onBeginEdit={(field) => p.onBeginEdit(card, field)}
       onChangeEdit={(v) => p.onChangeEdit(card.id, v)}
       onSubmitEdit={(v) => p.onSubmitEdit(card.id, v)}
@@ -483,7 +499,7 @@ function Column(p: ColumnProps) {
   );
 }
 
-function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDrop, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu, onCopyId }: {
+function Card({ card, session, pending, onDragStart, onDragEnd, onCardDragOver, onCardDrop, onOpen, onBeginEdit, onChangeEdit, onSubmitEdit, onCancelEdit, onRefreshStale, onContextMenu, onCopyId }: {
   card: BoardCardVM;
   session?: EditSession;
   onDragStart(e: DragEvent): void;
@@ -491,6 +507,8 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   onCardDragOver(e: DragEvent): void;
   onCardDrop(e: DragEvent): void;
   onOpen(): void;
+  /** t-ac79a7 — this card's detail route is committed and still loading. */
+  pending?: boolean;
   onBeginEdit(field: EditSession["field"]): void;
   onChangeEdit(value: string): void;
   onSubmitEdit(value?: string): void;
@@ -502,14 +520,16 @@ function Card({ card, session, onDragStart, onDragEnd, onCardDragOver, onCardDro
   // t-1339a8 — the awaiting_human attention code already flows through `card.attention` (TaskStore.attentionFor
   // → boardModel's toCard); this just adds the highlight treatment on top of the existing generic warning icon.
   const isAwaitingHuman = card.attention.some((a) => a.code === "awaiting_human");
-  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.status === "landed" && "landed", isAwaitingHuman && "awaiting-human"].filter(Boolean).join(" ");
+  // t-ac79a7 — "opening" is the acknowledgement the click itself was missing: it lands the frame the
+  // host commits the route, seconds before the detail can render, so the board never looks inert.
+  const cls = ["card", card.isSpotlight && "next", card.isDimmed && "dimmed", card.status === "landed" && "landed", isAwaitingHuman && "awaiting-human", pending && "opening"].filter(Boolean).join(" ");
   return (
     // SDD 419 — card metadata has stable, independent regions: author/badges above and id/controls below.
     // The controls still stop click/contextmenu propagation so editing or copying never opens the detail tab.
     // spec 335 (Gated v1.1) — a card is ALSO its own reorder drop target (onDragOver/onDrop); isReorderTarget
     // (App.tsx) no-ops these for any card outside the dragged card's status/priority lane, so they never
     // interfere with the existing column-level status-drop affordance.
-    <div class={cls} data-card-id={card.id} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
+    <div class={cls} data-card-id={card.id} aria-busy={pending ? "true" : undefined} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
       {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
       <div class="card-header">
         <span class="card-author" title={`created by ${card.author}`}>{card.author}</span>
