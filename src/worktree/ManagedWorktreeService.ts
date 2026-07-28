@@ -120,6 +120,10 @@ export class ManagedWorktreeService {
               dirty: true,
               aheadOfBase: 0,
               containedInBase: false,
+              // t-6ae9a8 — a classifier that THREW proves nothing about containment, so both signals
+              // stay false. This is the same fail-closed shape the rest of the fallback already uses.
+              containedInTrunk: false,
+              trunkRef: "main",
             },
           };
         }

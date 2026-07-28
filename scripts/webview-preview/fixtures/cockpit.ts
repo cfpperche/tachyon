@@ -340,7 +340,7 @@ const bundles: CockpitWorkspaceBundle[] = [
         folder: "tachyon",
         wsHash: "b349073a",
         tachyonCreatedBranch: true,
-        classification: { state: "ready-to-remove", reasons: [], pathExists: true, dirty: false, aheadOfBase: 0, containedInBase: true },
+        classification: { state: "ready-to-remove", reasons: [], pathExists: true, dirty: false, aheadOfBase: 0, containedInBase: true, containedInTrunk: true, trunkRef: "main" },
       },
       {
         id: "mw-change-dirty",
@@ -352,7 +352,7 @@ const bundles: CockpitWorkspaceBundle[] = [
         folder: "tachyon",
         wsHash: "b349073a",
         tachyonCreatedBranch: true,
-        classification: { state: "needs-review", reasons: ["worktree has uncommitted changes"], pathExists: true, dirty: true, aheadOfBase: 0, containedInBase: true },
+        classification: { state: "needs-review", reasons: ["worktree has uncommitted changes"], pathExists: true, dirty: true, aheadOfBase: 0, containedInBase: true, containedInTrunk: true, trunkRef: "main" },
       },
       {
         id: "mw-change-busy",
@@ -371,6 +371,8 @@ const bundles: CockpitWorkspaceBundle[] = [
           dirty: false,
           aheadOfBase: 2,
           containedInBase: false,
+          containedInTrunk: false,
+          trunkRef: "main",
           occupant: { state: "live", agent: "codex", cwd: "/cache/wt/b349073a/change/fleet-ui" },
         },
       },
@@ -384,7 +386,7 @@ const bundles: CockpitWorkspaceBundle[] = [
         folder: "tachyon",
         wsHash: "b349073a",
         tachyonCreatedBranch: true,
-        classification: { state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false },
+        classification: { state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false, containedInTrunk: false, trunkRef: "main" },
       },
       {
         id: "mw-change-tombstone-2",
@@ -396,7 +398,7 @@ const bundles: CockpitWorkspaceBundle[] = [
         folder: "tachyon",
         wsHash: "b349073a",
         tachyonCreatedBranch: true,
-        classification: { state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false },
+        classification: { state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false, containedInTrunk: false, trunkRef: "main" },
       },
     ],
     // t-43c6fa — one row per classification signal the tab now surfaces (spec 365), so the preview
