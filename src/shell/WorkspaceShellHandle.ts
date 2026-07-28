@@ -77,6 +77,7 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
     return this.studio.studioSubmit(submit);
   }
   inspectAgentProfileStudio(agent: string) { return this.studio.inspectAgentProfileStudio(agent); }
+  agentOwnershipView(agent: string) { return this.studio.agentOwnershipView(agent); }
   commitAgentProfileStudio(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudio"]>[0]) {
     return this.studio.commitAgentProfileStudio(mutation);
   }

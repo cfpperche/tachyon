@@ -35,7 +35,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
-  "agent-profile.studio-inspect", "agent-profile.studio-bundle-export",
+  "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
@@ -77,6 +77,9 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
   z.object({ action: z.literal("agent-profile.studio-inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-export"), agent: name, expectedRevision: sha256 }).strict(),
+  /** t-4c113c — declared-ownership read side. Additive action: an engine that predates it refuses
+   *  the unknown action outright rather than decoding a changed payload. */
+  z.object({ action: z.literal("agent-profile.studio-ownership"), agent: name }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("companion.status") }).strict(),

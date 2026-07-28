@@ -10,7 +10,7 @@ import type {
   EvolutionStudioCandidateDetail,
   EvolutionStudioOverview,
 } from "../evolution/studioProjection.js";
-import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
+import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
 export interface WorkspacePresentationTarget {
@@ -50,6 +50,8 @@ export interface SoulProfileMutationTargetResult {
 /** Agent Studio's operational identity mutations remain daemon-owned after the shell cutover. */
 export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1>;
+  /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
+  agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;
   commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1>;
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1>;

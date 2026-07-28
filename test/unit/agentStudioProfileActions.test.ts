@@ -31,7 +31,10 @@ import {
   exportCanonicalProfileBundleMessage,
   cloneCanonicalProfileBundleMessage,
   importCanonicalProfileBundleMessage,
+  canonicalProfileOwnershipMessage,
+  setCanonicalProfileSubagentsMessage,
 } from "../../src/webview/agent-studio-shell/messages.js";
+import { agentProfileStudioSnapshotSchemaV1 } from "../../src/config/agentProfileStudio.js";
 import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webview/shared/studio/protocol.js";
 import { openingPromptCapability, parseConfig } from "../../src/config/loadConfig.js";
 import { agentStanzaCasToken, setAgentSoulEnablement } from "../../src/config/YamlConfigEditor.js";
@@ -302,5 +305,49 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     const disabled = setAgentSoulEnablement(enabled, "Ada", false).text;
     expect(disabled).not.toMatch(/Ada:[\s\S]*soul:/);
     expect(agentStanzaCasToken(base, "Bea")).toEqual(agentStanzaCasToken(enabled, "Bea"));
+  });
+});
+
+describe("declared subagents protocol (t-4c113c)", () => {
+  const revision = "a".repeat(64);
+
+  it("decodes a bounded, revisioned list and refuses everything shaped almost like it", () => {
+    const message = setCanonicalProfileSubagentsMessage("Ada", revision, ["Bea", "Cleo"]);
+    expect(AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).toContain("setCanonicalProfileSubagents");
+    expect(decodeStudioMessage(message, AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).ok).toBe(true);
+    expect(validateAgentStudioInboundMessage(message)).toEqual({
+      type: "setCanonicalProfileSubagents", agent: "Ada", expectedRevision: revision, subagents: ["Bea", "Cleo"],
+    });
+    // An empty list is the removal, so it must decode rather than be treated as a missing field.
+    expect(validateAgentStudioInboundMessage(setCanonicalProfileSubagentsMessage("Ada", revision, [])))
+      .toMatchObject({ subagents: [] });
+    for (const forged of [
+      { ...message, subagents: ["not a name"] },
+      { ...message, subagents: [1] },
+      { ...message, subagents: "Bea" },
+      { ...message, expectedRevision: "stale" },
+      { ...message, extra: true },
+      { type: "setCanonicalProfileSubagents", agent: "Ada", expectedRevision: revision },
+      { ...message, subagents: Array.from({ length: 129 }, (_, index) => `a${index}`) },
+    ]) expect(validateAgentStudioInboundMessage(forged)).toBeUndefined();
+  });
+
+  it("carries the roster view on its own host message so the engine snapshot stays byte-compatible", () => {
+    const ownership = { subagents: ["Bea"], candidates: ["Bea", "Cleo"] };
+    expect(AGENT_STUDIO_HOST_MESSAGE_NAMES).toContain("canonicalProfileOwnership");
+    expect(validateAgentStudioHostDomainMessage(canonicalProfileOwnershipMessage("Ada", ownership))).toBe(true);
+    expect(validateAgentStudioHostDomainMessage({ type: "canonicalProfileOwnership", agent: "Ada", ownership: { subagents: ["Bea"] } })).toBe(false);
+    expect(validateAgentStudioHostDomainMessage({ type: "canonicalProfileOwnership", agent: "Ada", ownership: { ...ownership, extra: 1 } })).toBe(false);
+    // The snapshot schema is an engine↔shell payload: widening it would make this engine undecodable
+    // to the previous shell, which is exactly the 0.56.110 D1 failure. It must stay untouched.
+    expect(agentProfileStudioSnapshotSchemaV1.shape).not.toHaveProperty("ownership");
+  });
+
+  it("renders the picker from the entity's ownership view and posts the whole list on apply", () => {
+    const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
+    expect(source).toContain("setCanonicalProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])])");
+    expect(source).toContain("profileLabels.ownershipOwnedBy");
+    // The apply button is gated by the same freeze/dirty/conflict rule as every other lifecycle action.
+    expect(source).toContain("disabled={canonicalLifecycleDisabled || !ownershipDirty}");
   });
 });

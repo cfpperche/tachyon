@@ -125,6 +125,9 @@ function assertStudioNativeConfig(editable: AgentProfileStudioEditableV1): void 
 
 const studioAgentName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 
+/** Mirrors `agentProfileSchemaV1.ownership.subagents`; the roster is the same bound on both ends. */
+export const AGENT_OWNERSHIP_MAX_SUBAGENTS = 128;
+
 export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion("operation", [
   z.object({
     schemaVersion: z.literal(1),
@@ -146,6 +149,21 @@ export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion(
     agentName: studioAgentName,
     expectedRevision: z.string().regex(REVISION),
     confirmation: studioAgentName,
+  }).strict(),
+  /**
+   * t-4c113c — declare (or clear) `ownership.subagents` on the OWNER's canonical profile.
+   *
+   * The full list is always sent, never a delta: the roster constraints spec 352 fails closed on
+   * (single owner, one level, no cycle) are properties of the whole list, so a caller that could
+   * add one name without restating the rest would be validating against a list nobody submitted.
+   * An empty list is the removal, which is why this carries no separate "clear" operation.
+   */
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("set-subagents"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    subagents: z.array(studioAgentName).max(AGENT_OWNERSHIP_MAX_SUBAGENTS),
   }).strict(),
 ]);
 
@@ -434,6 +452,122 @@ export function patchProfileFromStudioMutation(
       ...(current.profile.capabilities?.pi ? { pi: structuredClone(current.profile.capabilities.pi) } : {}),
     },
   };
+}
+
+/**
+ * t-4c113c — the roster facts a declared-ownership edit is validated against.
+ *
+ * Deliberately a plain, node-free projection of the loaded roster rather than the roster itself:
+ * the validation below is shared by the browser bundle (to grey out impossible targets) and by the
+ * host (where it is the authority), and only the host can touch `loadConfig`. Terminals are present
+ * WITH `kind: "terminal"` instead of being filtered out, because "that name is a terminal" and "that
+ * name does not exist" are different refusals and spec 352 requires both.
+ */
+export interface AgentOwnershipRosterEntryV1 {
+  name: string;
+  kind: "agent" | "terminal";
+  /** The entry's own declared subagents, as the roster currently reports them. */
+  subagents: readonly string[];
+}
+
+export type AgentOwnershipRosterV1 = readonly AgentOwnershipRosterEntryV1[];
+
+export const agentOwnershipViewSchemaV1 = z.object({
+  /** What this agent declares today. */
+  subagents: z.array(z.string().regex(ID)).max(AGENT_OWNERSHIP_MAX_SUBAGENTS),
+  /** Names it could additionally declare without violating the spec 352 contract. */
+  candidates: z.array(z.string().regex(ID)).max(1024),
+  /** Set when this agent is itself someone's declared subagent — it may then own nothing. */
+  ownedBy: z.string().regex(ID).optional(),
+}).strict();
+
+export type AgentOwnershipViewV1 = z.infer<typeof agentOwnershipViewSchemaV1>;
+
+function ownerOf(child: string, roster: AgentOwnershipRosterV1, exclude?: string): string | undefined {
+  return roster.find((entry) =>
+    entry.kind === "agent" && entry.name !== exclude && entry.subagents.includes(child))?.name;
+}
+
+/**
+ * Read-side projection for the Agent Form. Candidacy answers exactly the questions
+ * `ownershipPatchFromStudioMutation` refuses on, so the UI cannot offer a target the transaction
+ * would then reject.
+ */
+export function agentOwnershipView(owner: string, roster: AgentOwnershipRosterV1): AgentOwnershipViewV1 {
+  const self = roster.find((entry) => entry.name === owner);
+  const subagents = [...(self?.kind === "agent" ? self.subagents : [])].sort();
+  const ownedBy = ownerOf(owner, roster, owner);
+  if (ownedBy !== undefined || self?.kind !== "agent") return { subagents, candidates: [], ...(ownedBy !== undefined ? { ownedBy } : {}) };
+  const candidates = roster
+    .filter((entry) => entry.kind === "agent"
+      && entry.name !== owner
+      && entry.subagents.length === 0
+      && ownerOf(entry.name, roster, owner) === undefined)
+    .map((entry) => entry.name)
+    .sort()
+    // Bounded to the wire schema's cap so an implausibly large roster degrades to a shorter picker
+    // rather than to a snapshot the editor side refuses to decode.
+    .slice(0, 1024);
+  return { subagents, candidates };
+}
+
+/**
+ * t-4c113c — turn a `set-subagents` mutation into the canonical patch, or refuse.
+ *
+ * Every refusal here mirrors a loadConfig rule (`buildDeclaredOwner`), and that is the point: the
+ * config loader is fail-closed, so a declaration that violates the contract would either be dropped
+ * or would fail the reload that the lifecycle transaction activates — rolling the edit back with an
+ * opaque message. Refusing up front turns the same rule into an actionable one. loadConfig remains
+ * the authority; this is the earlier, better-worded gate in front of it.
+ */
+export function ownershipPatchFromStudioMutation(
+  mutation: Extract<AgentProfileStudioLifecycleMutationV1, { operation: "set-subagents" }>,
+  current: AgentProfileLifecycleSnapshot,
+  roster: AgentOwnershipRosterV1,
+): { ownership: AgentProfileV1["ownership"] } {
+  const owner = mutation.agentName;
+  if (owner !== current.agentName || mutation.expectedRevision !== current.revision) {
+    throw new Error(`agent '${owner}' profile revision conflict`);
+  }
+  const byName = new Map(roster.map((entry) => [entry.name, entry]));
+  if (byName.get(owner)?.kind !== "agent") {
+    throw new Error(`agent '${owner}' is not a declared agent; ownership can only be declared by agents`);
+  }
+  const seen = new Set<string>();
+  for (const child of mutation.subagents) {
+    if (seen.has(child)) throw new Error(`ownership target '${child}' is listed twice`);
+    seen.add(child);
+  }
+  if (mutation.subagents.length > 0) {
+    const ownedBy = ownerOf(owner, roster, owner);
+    // A direct cycle IS this condition seen from the other end: if a requested target already lists
+    // the owner, that target is the owner's owner. Naming it here rather than in the per-target loop
+    // keeps one refusal per fact instead of two branches racing for the same state.
+    if (ownedBy !== undefined && mutation.subagents.includes(ownedBy)) {
+      throw new Error(`ownership target '${ownedBy}' creates a direct ownership cycle with '${owner}'`);
+    }
+    if (ownedBy !== undefined) {
+      throw new Error(`agent '${owner}' is already declared as a subagent of '${ownedBy}'; nested subagent trees are not supported`);
+    }
+  }
+  for (const child of mutation.subagents) {
+    if (child === owner) throw new Error(`ownership target '${child}' cannot reference itself`);
+    const entry = byName.get(child);
+    if (!entry) throw new Error(`ownership target '${child}' is not declared in agents/terminals`);
+    if (entry.kind !== "agent") {
+      throw new Error(`ownership target '${child}' resolves to a terminal; subagents must reference agents`);
+    }
+    const otherOwner = ownerOf(child, roster, owner);
+    if (otherOwner !== undefined) {
+      throw new Error(`ownership target '${child}' is already declared as a subagent of '${otherOwner}'`);
+    }
+    if (entry.subagents.length > 0) {
+      throw new Error(`ownership target '${child}' declares its own subagents; nested subagent trees are not supported`);
+    }
+  }
+  // The key is always present so the spread in `targetProfile` CLEARS ownership on an empty list;
+  // an absent key would silently preserve the previous declaration instead of removing it.
+  return { ownership: mutation.subagents.length > 0 ? { subagents: [...mutation.subagents] } : undefined };
 }
 
 export function isAgentProfileStudioSnapshotV1(value: unknown): value is AgentProfileStudioSnapshotV1 {

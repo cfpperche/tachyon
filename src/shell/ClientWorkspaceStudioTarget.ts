@@ -31,10 +31,12 @@ import type {
   WorkspaceAgentStudioTarget,
 } from "./WorkspacePresentation.js";
 import {
+  agentOwnershipViewSchemaV1,
   isAgentProfileStudioSnapshotV1,
   agentProfileStudioLifecycleResultSchemaV1,
   agentProfileStudioBundleCreatedResultSchemaV1,
   agentProfileStudioBundleExportResultSchemaV1,
+  type AgentOwnershipViewV1,
   type AgentProfileStudioBundleCreatedResultV1,
   type AgentProfileStudioBundleExportResultV1,
   type AgentProfileStudioLifecycleMutationV1,
@@ -144,6 +146,26 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       throw new Error("persistent engine returned a malformed canonical Agent Studio snapshot");
     }
     return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  /**
+   * t-4c113c — the editor-side config is a SYNTAX-only parse (`parseProfileAwareConfigSyntax` stubs
+   * every profile pointer), so `agents.<n>.subagents` does not exist here and the roster cannot be
+   * derived locally. The engine, which projects the canonical profiles, is the only place that knows.
+   */
+  async agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent-profile.studio-ownership", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.studio-ownership") {
+      throw new Error("persistent engine returned a mismatched declared-ownership result");
+    }
+    const parsed = agentOwnershipViewSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed declared-ownership result");
+    return parsed.data;
   }
 
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentOwnershipView,
+  agentOwnershipViewSchemaV1,
   agentProfileStudioSnapshotSchemaV1,
   agentProfileStudioLifecycleMutationSchemaV1,
   agentProfileStudioLifecycleResultSchemaV1,
   createProfileFromStudioMutation,
   patchProfileFromStudioMutation,
+  ownershipPatchFromStudioMutation,
   projectAgentProfileStudioSnapshot,
+  type AgentOwnershipRosterV1,
   type AgentProfileStudioMutationV1,
 } from "../../src/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
@@ -302,5 +306,105 @@ describe("canonical Agent Studio projection", () => {
       agentId: "123e4567-e89b-42d3-a456-426614174000",
       privatePath: "/secret",
     }).success).toBe(false);
+  });
+});
+
+describe("declared subagents authoring (t-4c113c)", () => {
+  const owner = "codex-canonico";
+  type RosterOverride = { kind?: "agent" | "terminal"; subagents?: string[] };
+  const roster = (overrides: Record<string, RosterOverride> = {}): AgentOwnershipRosterV1 =>
+    Object.entries<RosterOverride>({
+      [owner]: {},
+      "claude-builder": {},
+      "claude-runtime": {},
+      "claude-reviewer": {},
+      ...overrides,
+    }).map(([name, entry]) => ({
+      name,
+      kind: entry.kind ?? "agent",
+      subagents: entry.subagents ?? [],
+    }));
+
+  const ownerSnapshot = (subagents?: string[]): AgentProfileLifecycleSnapshot => {
+    const base = lifecycleSnapshot();
+    return {
+      ...base,
+      agentName: owner,
+      profile: { ...base.profile, ...(subagents ? { ownership: { subagents } } : {}) },
+    };
+  };
+
+  const setSubagents = (subagents: string[], expectedRevision = "a".repeat(64)) => ({
+    schemaVersion: 1 as const,
+    operation: "set-subagents" as const,
+    agentName: owner,
+    expectedRevision,
+    subagents,
+  });
+
+  it("declares the whole team in one authority-preserving patch and clears it with an empty list", () => {
+    const team = ["claude-builder", "claude-runtime", "claude-reviewer"];
+    expect(ownershipPatchFromStudioMutation(setSubagents(team), ownerSnapshot(), roster())).toEqual({
+      ownership: { subagents: team },
+    });
+    // The key is PRESENT and undefined so the lifecycle patch spread removes the section; an absent
+    // key would leave the previous declaration in place and silently ignore the removal.
+    const cleared = ownershipPatchFromStudioMutation(setSubagents([]), ownerSnapshot(team), roster({ [owner]: { subagents: team } }));
+    expect(cleared).toEqual({ ownership: undefined });
+    expect("ownership" in cleared).toBe(true);
+  });
+
+  it("refuses a stale revision before it touches the roster", () => {
+    expect(() => ownershipPatchFromStudioMutation(setSubagents(["claude-builder"], "e".repeat(64)), ownerSnapshot(), roster()))
+      .toThrow("revision conflict");
+  });
+
+  it("fails closed on every spec 352 ownership violation with a named target", () => {
+    const cases: Array<[string, AgentOwnershipRosterV1, string[], string]> = [
+      ["self-reference", roster(), [owner], "cannot reference itself"],
+      ["dangling", roster(), ["ghost"], "is not declared in agents/terminals"],
+      ["terminal", roster({ shell: { kind: "terminal" } }), ["shell"], "resolves to a terminal"],
+      ["multi-owner", roster({ "claude-builder": { subagents: ["claude-runtime"] } }), ["claude-runtime"], "already declared as a subagent of 'claude-builder'"],
+      ["direct cycle", roster({ "claude-builder": { subagents: [owner] } }), ["claude-builder"], "direct ownership cycle"],
+      ["deep tree", roster({ "claude-builder": { subagents: ["claude-runtime"] } }), ["claude-builder"], "declares its own subagents"],
+      ["duplicate", roster(), ["claude-builder", "claude-builder"], "is listed twice"],
+    ];
+    for (const [label, entries, subagents, message] of cases) {
+      expect(() => ownershipPatchFromStudioMutation(setSubagents(subagents), ownerSnapshot(), entries), label).toThrow(message);
+    }
+  });
+
+  it("refuses to make an owned agent an owner, and offers it no candidates", () => {
+    const owned = roster({ "claude-builder": { subagents: [owner] } });
+    expect(() => ownershipPatchFromStudioMutation(setSubagents(["claude-runtime"]), ownerSnapshot(), owned))
+      .toThrow("nested subagent trees are not supported");
+    // Clearing stays possible — an over-strict refusal would strand a profile nobody can repair.
+    expect(ownershipPatchFromStudioMutation(setSubagents([]), ownerSnapshot(), owned)).toEqual({ ownership: undefined });
+    expect(agentOwnershipView(owner, owned)).toEqual({ subagents: [], candidates: [], ownedBy: "claude-builder" });
+  });
+
+  it("offers only targets the transaction would accept, and never drops what is already declared", () => {
+    const team = ["claude-builder", "claude-runtime"];
+    const current = roster({
+      [owner]: { subagents: team },
+      "claude-reviewer": { subagents: [] },
+      other: { subagents: ["taken"] },
+      taken: {},
+      shell: { kind: "terminal" },
+    });
+    expect(agentOwnershipView(owner, current)).toEqual({
+      subagents: ["claude-builder", "claude-runtime"],
+      // `other` owns something, `taken` is owned, `shell` is a terminal — none may be declared here.
+      candidates: ["claude-builder", "claude-reviewer", "claude-runtime"],
+    });
+  });
+
+  it("keeps the operation strict, revisioned and bounded on the wire", () => {
+    expect(agentProfileStudioLifecycleMutationSchemaV1.parse(setSubagents(["claude-builder"])))
+      .toEqual(setSubagents(["claude-builder"]));
+    expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse(setSubagents([], "stale")).success).toBe(false);
+    expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse({ ...setSubagents([]), enabled: true }).success).toBe(false);
+    expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse(setSubagents(Array.from({ length: 129 }, (_, i) => `a${i}`))).success).toBe(false);
+    expect(agentOwnershipViewSchemaV1.safeParse({ subagents: [], candidates: [], extra: 1 }).success).toBe(false);
   });
 });
