@@ -291,10 +291,25 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   // The model label and its provenance marker live INSIDE `.name` (catalog `inlineWith`), where the
   // sidebar's CSS and the row's reading order expect them.
-  model: (slot) =>
-    slot.a.model ? (
-      <><span class="model-sep"> — </span><span class="model">{slot.a.model}</span><InlineRun slot={slot} host="model" /></>
-    ) : null,
+  //
+  // t-045d44 — `options.model.maxChars` shortens the PAINTED label only. The full value moves into
+  // `title`, because a truncated identifier a person cannot recover is worse than a long one: model
+  // names differ in their tails ("…-4-20250514" vs "…-4-5-20251001"), so a clipped label can read as
+  // a different model entirely. Truncation happens in the string rather than in CSS so the tooltip
+  // can be attached exactly when something was actually hidden.
+  model: (slot) => {
+    const model = slot.a.model;
+    if (!model) return null;
+    const max = slot.template.options?.model?.maxChars;
+    const clipped = max !== undefined && model.length > max ? `${model.slice(0, max - 1)}…` : model;
+    return (
+      <>
+        <span class="model-sep"> — </span>
+        <span class="model" {...(clipped === model ? {} : { title: model })}>{clipped}</span>
+        <InlineRun slot={slot} host="model" />
+      </>
+    );
+  },
 
   "model-provenance": ({ a }) => <ModelProvenance a={a} />,
 
@@ -429,12 +444,17 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
     ) : null,
 
   /* spec 390 — focus line: what the agent is working on (task → brief → continuity goal) */
-  focus: ({ a }) => {
+  focus: ({ a, template }) => {
     const focus = a.focus;
     if (!focus) return null;
     const focusTitle = `${focus.source === "continuity" ? "goal" : focus.source}${focus.taskId ? ` · ${focus.taskId}` : ""}\n${focus.full}`;
+    // t-045d44 — `options.focus.lines` is a CSS concern, so it is passed as a custom property and the
+    // clamping stays in sidebar.css. Wrapping is the COMPONENT's business (spec.md § narrow sidebar);
+    // the template only says how many lines it may use. Absent → no property → the stylesheet's own
+    // single-line rule, unchanged, which is what keeps the default byte-identical.
+    const lines = template.options?.focus?.lines;
     return (
-      <div class="row-focus" title={focusTitle}>
+      <div class="row-focus" title={focusTitle} {...(lines === undefined ? {} : { style: `--card-focus-lines:${lines}` })}>
         <span class="focus-arrow" aria-hidden="true">↳</span>
         <span class={`focus-src src-${focus.source}`}>
           {focus.source === "continuity" ? "goal" : focus.source}

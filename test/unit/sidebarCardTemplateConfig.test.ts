@@ -116,7 +116,10 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
     expect(result.config?.settings.sidebar?.cardTemplateRefusal?.join("\n")).toContain("renders inside 'model'");
   });
 
-  it("refuses an unknown key under settings.sidebar, naming it — including `options`, which is not implemented", () => {
+  // t-045d44 — `options` is implemented now, but INSIDE `cardTemplate`, where the ratified sketch puts
+  // it (plan.md § 2). At `settings.sidebar` level it is still an unknown key, for the original reason:
+  // nothing reads it there. The refusal is unchanged; only the reason it is unknown has narrowed.
+  it("refuses an unknown key under settings.sidebar, naming it — `options` belongs inside cardTemplate", () => {
     const result = load(`settings:
   sidebar:
     cardTemplate:
