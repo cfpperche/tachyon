@@ -20,6 +20,8 @@ import { devHostEnv, devHostArgs, DEV_HOST_ENV_KEYS } from "../../scripts/dev-ho
 const repoRoot = process.cwd();
 const LAUNCH = path.join(repoRoot, ".vscode", "launch.json");
 const DEV_HOST_CONFIG = "Tachyon: Dev Host";
+/** t-f0efc5 — the multi-root twin. Same everything except which path VS Code is told to open. */
+const DEV_HOST_MULTI_ROOT_CONFIG = "Tachyon: Dev Host (multi-root)";
 
 function readLaunchConfigurations(): Array<Record<string, unknown>> {
   // launch.json is jsonc — VS Code allows comments; strip line comments before parsing.
@@ -148,6 +150,39 @@ describe("dev-host launch config (spec 448)", () => {
     for (const flag of ["--user-data-dir", "--remote-debugging-port", "--disable-gpu", "--new-window", "--skip-welcome"]) {
       expect(args, `${flag} is headless plumbing, not part of the F5 path`).not.toContain(flag);
     }
+  });
+
+  it("t-f0efc5: the multi-root configuration opens the .code-workspace, through the same spec", () => {
+    // VS Code decides folder-vs-workspace by EXTENSION, so multi-root cannot be reached by the
+    // single-root configuration's argument. Two static configurations rather than one rewritten per
+    // dogfood: launch.json is tracked, and spec 448's rule is that it is never edited per agent.
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_MULTI_ROOT_CONFIG);
+    expect(config, `${DEV_HOST_MULTI_ROOT_CONFIG} is missing from launch.json`).toBeTruthy();
+    const expected = devHostArgs({
+      workspaceDir: "${workspaceFolder}/.tachyon/dev-host/workspace.code-workspace",
+      extensionPath: "${workspaceFolder}/.tachyon/dev-host/extension",
+    }) as string[];
+    expect(config!.args).toEqual(expected);
+  });
+
+  it("t-f0efc5: both Dev Host configurations share one environment", () => {
+    // A multi-root dogfood that ran with a different environment would be measuring something else.
+    const configs = readLaunchConfigurations();
+    const single = configs.find((c) => c.name === DEV_HOST_CONFIG)!;
+    const multi = configs.find((c) => c.name === DEV_HOST_MULTI_ROOT_CONFIG)!;
+    expect(multi.env).toEqual(single.env);
+    expect(multi.envFile).toEqual(single.envFile);
+    expect(multi.outFiles).toEqual(single.outFiles);
+    expect(multi.preLaunchTask).toEqual(single.preLaunchTask);
+  });
+
+  it("t-f0efc5: the single-root configuration still opens a FOLDER, not a workspace file", () => {
+    // Load-bearing: the product branches on `workspaceFile === undefined` (extension.ts's worktree
+    // reveal), so collapsing both modes onto a one-folder .code-workspace would make the single-folder
+    // branch unreachable by clicking — the exact kind of coverage this lane exists to provide.
+    const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
+    expect((config.args as string[])[0]).toBe("${workspaceFolder}/.tachyon/dev-host/workspace");
+    expect((config.args as string[])[0]).not.toContain(".code-workspace");
   });
 
   it("keeps the harness reading the shared spec rather than its own copy", () => {
