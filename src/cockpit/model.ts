@@ -34,6 +34,9 @@ export type CockpitSectionId =
   // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
   | "deliveries"
+  // SDD 480 Phase 4 — the Execution Graph. Read-only by construction: the section's model is a
+  // projection of the append-only ledger, and the projection cannot describe a destructive action.
+  | "execution-graph"
   | "runtime"
   | "runtime-config"
   | "tmux"
@@ -50,6 +53,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "validations",
   "worktrees",
   "deliveries",
+  "execution-graph",
   "runtime",
   "runtime-config",
   "tmux",
@@ -233,6 +237,13 @@ export interface CockpitWorkspaceBundle {
 
 export interface CockpitModel {
   checkedAt: string;
+  /**
+   * SDD 480 Phase 4 — the Execution Graph view-model for the `execution-graph` section.
+   *
+   * Optional: a host that does not serve the ledger simply omits it and the section renders its
+   * `no-telemetry` state, which is the honest answer rather than an empty diagram.
+   */
+  executionGraph?: import("./executionGraphVm.js").ExecutionGraphVm;
   /** Which NAV TAB reads as active (a subroute's parent section, e.g. task-detail -> "mission"). */
   section: CockpitSectionId;
   /**

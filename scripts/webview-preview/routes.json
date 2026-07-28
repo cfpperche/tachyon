@@ -213,6 +213,90 @@
   },
   {
     "view": "cockpit",
+    "fixture": "execution-graph",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-empty",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-empty",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-no-telemetry",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-no-telemetry",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-error",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-error",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "fleet",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=fleet",
     "frame": {
