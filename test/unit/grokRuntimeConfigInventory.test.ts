@@ -159,12 +159,14 @@ describe("Grok runtime configuration inventory", () => {
     const global = snapshot.documents.find((document) => document.id === GROK_GLOBAL_CONFIG_DOCUMENT)!;
     expect(global.knownSettings.find((setting) => setting.key === "models.default")?.editValue).toBe("grok-4.5");
     // Unowned keys contribute names only, and every value-bearing field is accounted for.
+    // `models.api_key` is absent by NAME too: everything under `models` that Control does not own is
+    // opaque at any depth (review note, t-ce83a2).
     expect(global.unknownKeys).toEqual([
-      "models.api_key",
       "section_nobody_predicted.deeper.password",
       "section_nobody_predicted.token",
       "top_level_secret",
     ]);
+    expect(global.opaqueKeys).toContain("models");
     expect(global.knownSettings.filter((setting) => setting.value !== undefined).map((setting) => setting.key))
       .toEqual(["models.default"]);
   });

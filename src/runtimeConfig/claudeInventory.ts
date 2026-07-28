@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { asAgent, type AgentDef } from "../config/loadConfig.js";
 import { binaryOf } from "../resume/adapters.js";
+import { withRuntimeConfigSourceLock, type RuntimeConfigSourceLockOptions } from "./sourceLock.js";
 import type {
   RuntimeConfigChange,
   RuntimeConfigDocumentInventory,
@@ -222,14 +223,11 @@ export function applyClaudeRuntimeConfigChange(input: {
   documentId: string;
   expectedRevision?: string;
   changes: RuntimeConfigChange[];
+  lock?: RuntimeConfigSourceLockOptions;
 }): { path: string; revision: string } {
   const home = input.homeDir ?? os.homedir();
   const file = targetPath(input.documentId, input.workspaceRoot, home);
-  const lock = `${file}.tachyon-runtime-config.lock`;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  let lockFd: number | undefined;
-  try {
-    lockFd = fs.openSync(lock, "wx", 0o600);
+  return withRuntimeConfigSourceLock(file, () => {
     const before = readRegularFile(file);
     if (before.error) throw new Error(before.error);
     const actualRevision = before.text === undefined ? undefined : digest(before.text);
@@ -253,13 +251,5 @@ export function applyClaudeRuntimeConfigChange(input: {
       try { fs.unlinkSync(temporary); } catch { /* renamed or never created */ }
     }
     return { path: file, revision: digest(text) };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error("Another Runtime Config save is in progress. Reload before trying again.");
-    }
-    throw error;
-  } finally {
-    if (lockFd !== undefined) fs.closeSync(lockFd);
-    try { fs.unlinkSync(lock); } catch { /* lock was never acquired */ }
-  }
+  }, input.lock);
 }

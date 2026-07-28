@@ -6,6 +6,7 @@ import { parse } from "@iarna/toml";
 import type { AgentDef } from "../config/loadConfig.js";
 import { isTachyonManagedGrokHome } from "../harness/HarnessManager.js";
 import { binaryOf } from "../resume/adapters.js";
+import { withRuntimeConfigSourceLock, type RuntimeConfigSourceLockOptions } from "./sourceLock.js";
 import type {
   RuntimeConfigChange,
   RuntimeConfigDocumentInventory,
@@ -110,6 +111,9 @@ const OPAQUE_SECTIONS = new Set([
 /** Bookkeeping Grok writes for itself. Hidden from the inventory and counted instead. */
 const RUNTIME_OWNED_KEYS = new Set(["cli.installer"]);
 
+/** The only leaves under `models` Control owns; everything else there is provider material. */
+const MODEL_OWNED_KEYS = new Set(["models.default"]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -130,14 +134,18 @@ function leafPaths(value: Record<string, unknown>, prefix = ""): string[] {
 }
 
 /**
- * `models` is mixed: `models.default` is an owned scalar, while `[models.<name>]` carries provider
- * credentials. Anything deeper than one level under `models` is treated as provider material.
+ * `models` is mixed: `models.default` is an owned scalar, while the rest of the table carries
+ * provider material (`api_key`, `env_key`, `base_url`, a provider `command`). Everything under
+ * `models` that is not an owned key is therefore opaque, at ANY depth — an earlier version keyed on
+ * depth > 2, which left a `models.api_key` sitting at depth 2 reported by name. Only the name, never
+ * the value, so it was not a leak; naming the owned keys instead of guessing at depth is simply the
+ * rule that cannot drift (review note, t-ce83a2).
  */
 function opaqueSectionOf(leaf: string): string | undefined {
   const segments = leaf.split(".");
   const head = segments[0]!;
   if (OPAQUE_SECTIONS.has(head)) return head;
-  if (head === "models" && segments.length > 2) return "models";
+  if (head === "models" && !MODEL_OWNED_KEYS.has(leaf)) return "models";
   return undefined;
 }
 
@@ -494,14 +502,11 @@ export function applyGrokRuntimeConfigChange(input: {
   documentId: string;
   expectedRevision?: string;
   changes: RuntimeConfigChange[];
+  lock?: RuntimeConfigSourceLockOptions;
 }): { path: string; revision: string } {
   const home = input.grokHome ?? path.join(input.homeDir ?? os.homedir(), ".grok");
   const file = targetPath(input.documentId, input.workspaceRoot, home);
-  const lock = `${file}.tachyon-runtime-config.lock`;
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  let lockFd: number | undefined;
-  try {
-    lockFd = fs.openSync(lock, "wx", 0o600);
+  return withRuntimeConfigSourceLock(file, () => {
     const before = readRegularFile(file);
     if (before.error) throw new Error(before.error);
     const actualRevision = before.text === undefined ? undefined : digest(before.text);
@@ -546,13 +551,5 @@ export function applyGrokRuntimeConfigChange(input: {
       try { fs.unlinkSync(temporary); } catch { /* renamed or never created */ }
     }
     return { path: file, revision: digest(text) };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error("Another Runtime Config save is in progress. Reload before trying again.");
-    }
-    throw error;
-  } finally {
-    if (lockFd !== undefined) fs.closeSync(lockFd);
-    try { fs.unlinkSync(lock); } catch { /* lock was never acquired */ }
-  }
+  }, input.lock);
 }

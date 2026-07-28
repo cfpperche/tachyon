@@ -88,6 +88,29 @@ Kit (Radix) dropdown and opens on `pointerdown` **alone** — a trailing `click(
 back shut, which is why the browser test dispatches `pointerdown` and nothing else. The same applies
 to any future test that drives this control.
 
+## Review findings (claude-reviewer, 2026-07-28)
+
+Two audits passed on probes rather than reading — raw-text CAS (the runtime rewriting its own config,
+an omitted `expectedRevision`, and a creation race all surface as conflicts with the file preserved)
+and secret opacity (six secrets planted at different depths and shapes, none serialized).
+
+The audit also found a defect the slice's own tests missed, and it was a good one: **the lock excluded
+nothing.** Both adapters released it in a `finally` that unlinked unconditionally, so the caller that
+LOST the race deleted the winner's lock on its way out — proven, not argued. The obvious repair is a
+trap of its own: guarding the unlink turns a crashed save into a lock nobody can clear from the UI,
+because that unconditional unlink was accidentally the only thing recovering an orphan.
+
+Fixed as one shared `src/runtimeConfig/sourceLock.ts` used by BOTH adapters, since the duplication is
+what propagated the bug (Claude had it too, shipped in SDD 464; Codex never had a lock). Release is
+owner-only, the lock file carries its holder's pid, an orphan whose holder is gone is stolen once, a
+live holder keeps it, and the refusal names the file to delete. Same shape as `acquireVerifyFullLock`
+(t-6a9bc4), which had to solve this here already. `test/unit/runtimeConfigSourceLock.test.ts` pins it,
+and three of its cases were confirmed to FAIL against the old release path before the fix landed.
+
+Their non-blocking note is also taken: `models.api_key` at depth 2 was classified non-opaque, so the
+NAME appeared in `unknownKeys` (a name, never a value). Opacity under `models` is now keyed on the
+owned-key allowlist rather than depth, which is the rule that cannot drift.
+
 ## Dogfood log
 
 `npm run dogfood:grok-runtime-config` — 2026-07-28, grok 0.2.112 (9bbd559437): **15/15**.
