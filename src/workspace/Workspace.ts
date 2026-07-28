@@ -96,6 +96,7 @@ import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -1286,10 +1287,17 @@ export class Workspace {
           {
             manager: this.worktrees,
             settings: this.config?.settings ?? {},
-            parentCwd: (p) => {
-              const r = this.ledger.get(p);
-              return r?.worktree?.path ?? r?.cwd;
-            },
+            // t-c9da28 — every authority that might still know where the parent runs, in descending
+            // order. The ladder itself lives in `resolveParentLocation` so it is testable; this only
+            // says which objects answer each rung.
+            resolveParent: (p) => resolveParentLocation({
+              ledgerRow: () => {
+                const r = this.ledger.get(p);
+                return r ? { ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.worktree?.path ? { worktreePath: r.worktree.path } : {}) } : undefined;
+              },
+              managedWorktreePath: () => this.managedWorktrees.list({ kind: "agent" }).find((e) => e.agent === p)?.path,
+              isLiveAgent: async () => (await this.manager.agentStates()).has(p),
+            }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => this.host.notify(m, level ?? "info"),

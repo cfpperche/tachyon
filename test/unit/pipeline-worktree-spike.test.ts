@@ -117,7 +117,7 @@ describe("spec 230 spike — run-scoped worktree + cwd override (real git)", () 
       // non-pipeline agent → stock per-agent resolver (no worktree here → null/default)
       return resolveWorktreeCwd(
         { name, worktree: false, isRestart: false },
-        { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+        { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
       );
     }
 

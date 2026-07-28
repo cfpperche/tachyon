@@ -169,7 +169,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
     await expect(resolveWorktreeCwd(
       { name: "locked-drift", worktree: true, branch: "tachyon/locked-drift", isRestart: false },
-      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: (message) => notices.push(message) },
+      { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: (message) => notices.push(message) },
     )).rejects.toMatchObject({ reason: "recovery-preserved" });
     expect(notices).toEqual([]);
   });
@@ -180,7 +180,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
     await expect(resolveWorktreeCwd(
       { name: "invalid-after-lock", worktree: true, branch: "bad branch", isRestart: false },
-      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+      { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
     )).rejects.toMatchObject({ reason: "recovery-preserved" });
   });
 
@@ -218,7 +218,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
       {
         manager: movedManager,
         settings: { worktree: { base: newBase } },
-        parentCwd: () => undefined,
+        resolveParent: async () => ({ known: false }),
         priorRecord: first.record,
         runSetup: async () => {},
         notify: () => {},
@@ -233,7 +233,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
     await expect(resolveWorktreeCwd(
       { name: "missing-locked", worktree: true, branch: "tachyon/missing-locked", isRestart: false },
-      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+      { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
     )).rejects.toMatchObject({ reason: "recovery-preserved" });
   });
 
@@ -258,7 +258,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
 
     await expect(resolveWorktreeCwd(
       { name: "broken-metadata", worktree: true, branch: "tachyon/broken-metadata", isRestart: false },
-      { manager: m, settings: { worktree: { base } }, parentCwd: () => undefined, runSetup: async () => {}, notify: () => {} },
+      { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
     )).rejects.toMatchObject({ reason: "recovery-preserved" });
   });
 
@@ -313,7 +313,7 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
       {
         manager: m,
         settings: { worktree: { base } },
-        parentCwd: () => undefined,
+        resolveParent: async () => ({ known: false }),
         runSetup: async (rec, setup) => {
           const env = { ...process.env, TACHYON_WORKSPACE_ROOT: repo, TACHYON_WORKTREE_ROOT: rec.path };
           for (const c of setup) execFileSync("bash", ["-lc", c], { cwd: rec.path, env });

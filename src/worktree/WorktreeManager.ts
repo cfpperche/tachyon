@@ -917,8 +917,18 @@ export interface WorktreeSpawnCtx {
 export interface WorktreeResolveDeps {
   manager: WorktreeManager;
   settings: TachyonConfig["settings"];
-  /** the cwd the parent agent is running in (its worktree, or the root) — for sub-agent inheritance */
-  parentCwd: (parent: string) => string | undefined;
+  /**
+   * t-c9da28 — where the parent runs, AND whether it is a known agent at all.
+   *
+   * The two facts travel together because their absences mean opposite things and used to collapse
+   * into one `undefined`: a parent nobody has heard of is a caller mistake, while a known parent with
+   * no recorded directory is a gap in OUR records that the child can survive. With only "no cwd" to
+   * go on, this function had to guess which — and it guessed the silent one.
+   *
+   * Async so the caller may consult a live authority instead of one cached row. It is awaited only on
+   * the path that already lacks a recorded cwd, so an ordinary inheriting spawn pays nothing.
+   */
+  resolveParent: (parent: string) => Promise<{ cwd?: string; known: boolean }>;
   /** the prior persisted worktree record for this agent (validated reuse) */
   priorRecord?: WorktreeRecord;
   /** run worktreeSetup in the fresh worktree (sequential/stop-on-failure/non-fatal) — only on create */
@@ -942,8 +952,31 @@ export async function resolveWorktreeCwd(
   deps: WorktreeResolveDeps,
 ): Promise<{ cwd: string; worktree?: WorktreeRecord; created?: boolean; preparationLocked?: boolean; rollbackHeadSha?: string } | null> {
   if (ctx.parent && !ctx.worktree) {
-    const inherited = deps.parentCwd(ctx.parent);
-    return inherited ? { cwd: inherited } : null; // null → AgentManager uses the root
+    const parent = await deps.resolveParent(ctx.parent);
+    if (parent.cwd) return { cwd: parent.cwd };
+    // t-c9da28 — the two ways a parent can have no cwd are not the same failure.
+    //
+    // `spawn_agent` already refuses an explicit `cwd` for a parented child precisely so the caller is
+    // never misled about where it runs. One step earlier, this used to substitute a directory the
+    // caller never asked for — the workspace ROOT, which is the one place an isolated child least
+    // belongs — and say nothing at all.
+    //
+    // An unknown parent is a caller mistake and cannot be repaired by guessing: whatever we picked
+    // would be someone else's checkout. Refuse, and name it.
+    if (!parent.known) {
+      throw new Error(
+        `agent '${ctx.name}' cannot inherit from parent '${ctx.parent}': no such agent is known to this workspace`,
+      );
+    }
+    // A KNOWN parent whose directory we cannot recover is our gap, not the caller's, and the child
+    // still has somewhere to run. Falling back stays — a coordinator that restarted must still be
+    // able to spawn — but it stops being silent, in the same shape this file already uses for
+    // worktree unavailability.
+    deps.notify(
+      `'${ctx.name}' falling back to the workspace root — parent '${ctx.parent}' has no recorded working directory`,
+      "warn",
+    );
+    return null; // null → AgentManager uses the root
   }
   if (!ctx.worktree) return null;
 
