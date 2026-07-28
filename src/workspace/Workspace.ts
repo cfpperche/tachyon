@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
-import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
+import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
@@ -231,6 +231,7 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
+import { composerProfileFor } from "../runtime/composerRegion.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
@@ -3450,7 +3451,10 @@ export class Workspace {
         resolvedBy: "companion",
         ...approvalResolutionPorts({
           listEntries: () => this.manager.list(),
-          sendSubmittedLine: (session, text) => this.tmux.sendSubmittedLine(session, text),
+          // t-8d190f — the submit receipt is deliberately NOT consumed here. Approval resolution owns
+          // its own best-effort policy for both channels (t-a77fe6 / t-7a306a); folding a new failure
+          // mode into it belongs to that contract, not this one.
+          sendSubmittedLine: async (session, text) => { await this.tmux.sendSubmittedLine(session, text); },
         }),
         // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
         // and now reports the failure instead of discarding it; catching here first would put this
@@ -4224,7 +4228,13 @@ export class Workspace {
     if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata);
     }
-    await this.submitNoticeLine(agent, line);
+    const receipt = await this.submitNoticeLine(agent, line);
+    // t-8d190f — a typed-but-unsubmitted line used to report "notified". The doorbell must stay
+    // actionable instead: the caller learns the text is staged and can decide, rather than believing
+    // a delivery that never started a turn.
+    if (receipt.status === "submit-unconfirmed") {
+      return { status: "submit-unconfirmed", submitReason: receipt.reason };
+    }
     return { status: "notified" };
   }
 
@@ -4277,13 +4287,18 @@ export class Workspace {
     return { sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
   }
 
-  private async submitNoticeLine(agent: string, line: string): Promise<void> {
+  private async submitNoticeLine(agent: string, line: string): Promise<SubmitReceipt> {
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) {
       this.noticeQueue.clear(agent);
       throw new Error(`agent '${agent}' is not running`);
     }
-    await this.tmux.sendSubmittedLine(session, line);
+    // t-8d190f — hand the runtime's measured composer profile down so the submit can be CONFIRMED
+    // (the text left the editor) instead of assumed. Undeclared runtimes resolve to undefined and
+    // keep the older, weaker check, reported as unconfirmed rather than as success.
+    return this.tmux.sendSubmittedLine(session, line, {
+      composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
+    });
   }
 
   /** Automatic handoff reminders are hook-only. If the runtime cannot receive hooks, Tachyon stays quiet. */
