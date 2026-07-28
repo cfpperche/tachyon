@@ -14,14 +14,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import {
-  DEFAULT_MAX_RECORD_AGE_MS,
-  readRecord,
-  recordVerification,
-  recordDir,
-  reuseDecision,
-  verifierFingerprint,
-} from "../../scripts/verify-record.mjs";
+// The verification runner is intentionally plain ESM and has no separate declaration surface — same
+// convention as verifyRecord.test.ts. Exercising the real recorder the verify path uses is the point.
+// @ts-expect-error -- see above
+import { DEFAULT_MAX_RECORD_AGE_MS, readRecord, recordVerification, recordDir, reuseDecision, verifierFingerprint } from "../../scripts/verify-record.mjs";
 
 /** A throwaway git repo with one commit, so tree ids are real rather than invented. */
 function repo(): { dir: string; tree: string; commit: (msg: string, file: string, body: string) => string } {
