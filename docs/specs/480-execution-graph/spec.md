@@ -87,9 +87,28 @@ So there is no child of ours to hand an environment to, and no in-process sink f
   a change to the plugin contract, not to this infrastructure, and belongs to whoever owns that
   contract. Recorded as the path forward if these processes are ever wanted in the graph.
 
-Recording a resolution instead of the process was also considered and rejected on value: "a plugin
-asked for a path" is not an execution, and a graph padded with near-misses is harder to trust than one
-that admits its edge.
+##### Recording the RESOLUTION instead of the process — also rejected
+
+The tempting middle path: don't claim the process, but record "plugin X resolved tool Y" as an
+`unproven` `InternalOperation`. It was evaluated on its own merits and rejected, and the deciding
+reason is structural rather than a matter of taste.
+
+**The shim cannot say whose resolution it was.** `runExternalResolver(argv, { workspaceRoot })`
+receives exactly `<plugin> <name>` — there is no agent, no session, no turn, and no tool call in
+scope, because the plugin CLI invoked it directly and nothing upstream passed an identity down.
+
+So such a record would be **unattributable and orphaned in both directions**: no parent, because the
+agent reached the plugin through its own runtime rather than through a Bridge call, so there is no
+`InternalOperation` above it to attach to; and no child, because the process it leads to is not ours.
+It would be a node hanging in the graph, credited to nobody, adjacent to nothing.
+
+That is worse than the gap it fills. §5 rules out a graph that draws a confident wrong parent; a node
+that implies coverage of browser/desktop/screen while connecting to neither the agent that caused it
+nor the process it produced is the same failure wearing an `unproven` label. And it would still need
+new machinery to write at all — a spool the engine ingests — since the ledger is single-writer.
+
+"A plugin asked for a path" is not an execution. A graph that admits its edge is more trustworthy than
+one padded with near-misses.
 
 ### 3.2 What already correlates
 
