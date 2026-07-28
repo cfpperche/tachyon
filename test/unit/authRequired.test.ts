@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
   AUTH_SIGNAL_TAIL_LINES,
   RUNTIME_AUTH_PROFILES,
@@ -162,6 +164,71 @@ describe("SDD 477 — absence is a declaration, never a guess", () => {
     expect(classifyAuthRequired("claude", "")).toBeUndefined();
     expect(classifyAuthRequired(null, CLAUDE_TURN)).toBeUndefined();
     expect(classifyAuthRequired(undefined, CLAUDE_TURN)).toBeUndefined();
+  });
+
+  /**
+   * t-73ea6a — the in-pane half of Grok's auth-error state, which is the form the Attention overlay
+   * actually reads. Driven from the bytes t-d2a4dc captured off a real canonical agent, so the test
+   * fails if the fixture is re-captured with different wording rather than passing on a paraphrase.
+   */
+  describe("grok in-pane auth error (t-73ea6a)", () => {
+    const pane = fs.readFileSync(
+      path.resolve(__dirname, "../fixtures/grok-composer/post-turn.pane.txt"),
+      "utf8",
+    );
+
+    it("classifies the measured pane as auth-required with the runtime's own recovery", () => {
+      const evidence = classifyAuthRequired("grok", pane, { tailLines: AUTH_SIGNAL_TAIL_LINES })!;
+      expect(evidence).toBeDefined();
+      expect(evidence.runtime).toBe("grok");
+      expect(evidence.matchedLine).toMatch(/incorrect api key provided/i);
+      expect(evidence.humanAction).toContain("grok login --device-code");
+    });
+
+    /**
+     * The reason this state was measurable and still unconsumed: Grok's bottom chrome is 12 lines on
+     * its own, so the shared 12-line window never reaches turn output. If someone "simplifies" the
+     * declared window away, this fails.
+     */
+    it("needs the declared per-runtime window — the shared 12-line tail cannot reach it", () => {
+      const lines = pane.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const index = lines.findIndex((line) => /incorrect api key provided/i.test(line));
+      expect(lines.length - 1 - index).toBeGreaterThan(AUTH_SIGNAL_TAIL_LINES);
+      expect(RUNTIME_AUTH_PROFILES.grok?.paneTailLines).toBeGreaterThan(lines.length - 1 - index);
+    });
+
+    /**
+     * The generic wrapper around the provider's message must NOT be what fires. A rate limit renders
+     * through the same `Retry failed:` / `Turn failed in …` chrome, and reporting that as "log in
+     * again" is the collapse SDD 477 was written to prevent.
+     */
+    it("does not fire on the generic failure wrapper, and yields to a rate limit", () => {
+      const generic = [
+        "     ❯ probe line 6",
+        "     Retry failed: API error (status 500 Internal Server Error): upstream is unavailable.",
+        "     Turn failed in 0.2s: Internal error: {",
+        '       "http_status": 500',
+        "     }",
+      ].join("\n");
+      expect(classifyAuthRequired("grok", generic)).toBeUndefined();
+
+      const rateLimited = pane.replace(
+        "invalid-argument: Incorrect API key provided.",
+        "rate limit exceeded: too many requests.",
+      );
+      expect(classifyAuthRequired("grok", rateLimited)).toBeUndefined();
+    });
+
+    /** A neighbour anywhere in view keeps the matcher quiet even when the auth line is also there. */
+    it("stays quiet when a rate limit shares the pane with the auth line", () => {
+      expect(classifyAuthRequired("grok", `${pane}\n     Error: 429 too many requests`)).toBeUndefined();
+    });
+
+    /** The deeper window is Grok's alone — it must not widen anybody else's exposure. */
+    it("does not widen the window for another runtime", () => {
+      expect(RUNTIME_AUTH_PROFILES.claude?.paneTailLines).toBeUndefined();
+      expect(classifyAuthRequired("claude", pane)).toBeUndefined();
+    });
   });
 
   it("every declared profile states the version it was measured on", () => {

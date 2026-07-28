@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { classifyTail, classifyAttentionTail, compileExtraPatterns, parseRateLimitInfo, TAIL_WINDOW } from "../../src/attention/patterns.js";
 import {
   AttentionMonitor,
@@ -963,6 +965,72 @@ describe("AttentionMonitor — auth-required (SDD 477)", () => {
     await f.advance(30_000);
     expect(f.monitor.isAuthRequired("claude")).toBe(true);
     expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(1);
+  });
+
+  /**
+   * t-73ea6a — Grok's auth error reaches the overlay end to end, on the real captured pane. The unit
+   * around `classifyAuthRequired` proves the matcher; this proves the WIRING, which is what gap 4 of
+   * the parity verdict said was missing: measurable, and not consumed.
+   */
+  it("grok: the measured in-pane auth error latches once, and holds without re-notifying", async () => {
+    const pane = fs.readFileSync(
+      path.resolve(__dirname, "../fixtures/grok-composer/post-turn.pane.txt"),
+      "utf8",
+    );
+    const f = makeMonitor({ grok: { content: pane, cpu: 0, settings: SETTINGS, cmd: "grok" } });
+    await settleIdle(f);
+
+    const attention = f.monitor.stateOf("grok");
+    expect(attention?.state).toBe("idle"); // an independent latch, not a new state
+    expect(attention?.authRequired?.runtime).toBe("grok");
+    expect(attention?.authRequired?.humanAction).toContain("grok login --device-code");
+    expect(attention?.authRequired?.matchedLine).toMatch(/incorrect api key provided/i);
+    expect(f.monitor.isAuthRequired("grok")).toBe(true);
+
+    // No loop: one notification for the episode, and it keeps holding on later quiet ticks.
+    expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(1);
+    await f.advance(30_000);
+    expect(f.events.filter((e) => e.notify && e.attention.authRequired)).toHaveLength(1);
+    expect(f.monitor.isAuthRequired("grok")).toBe(true);
+  });
+
+  /**
+   * The release condition the task names: a genuine new turn. An unauthenticated runtime cannot
+   * produce one, so this is what tells "the human fixed it" apart from "the error is still on screen".
+   */
+  it("grok: a real turn after authentication releases the latch", async () => {
+    const pane = fs.readFileSync(
+      path.resolve(__dirname, "../fixtures/grok-composer/post-turn.pane.txt"),
+      "utf8",
+    );
+    const f = makeMonitor({ grok: { content: pane, cpu: 0, settings: SETTINGS, cmd: "grok" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("grok")).toBe(true);
+
+    // The human logs in and the agent actually answers: new output, none of it the failure.
+    f.agents.grok.content = ["  <workspace>", "", "     ❯ probe line 7", "", "     Done.", ""].join("\n");
+    f.agents.grok.cpu = 40;
+    await f.advance(1000);
+    expect(f.monitor.isAuthRequired("grok")).toBe(false);
+  });
+
+  /** A grok pane that never failed must never latch — the signal is turn-attached, not chrome. */
+  it("grok: a healthy pane does not latch", async () => {
+    const healthy = [
+      "  <workspace>",
+      "",
+      "     ❯ probe line 6",
+      "",
+      "     All good.",
+      "",
+      "╭───────────────────────────────╮",
+      "│ ❯                             │",
+      "╰───────────────────────────────╯",
+      "Shift+Tab:mode  │  Ctrl+x:shortcuts",
+    ].join("\n");
+    const f = makeMonitor({ grok: { content: healthy, cpu: 0, settings: SETTINGS, cmd: "grok" } });
+    await settleIdle(f);
+    expect(f.monitor.isAuthRequired("grok")).toBe(false);
   });
 
   it("the debounce must elapse — a single tick of the signal is not evidence", async () => {
