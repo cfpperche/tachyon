@@ -67,6 +67,8 @@ export interface WorkspaceClient {
   readonly workspaceRoot: string;
   readonly workspaceHash: string;
   readonly identity: EngineServiceIdentityV1;
+  /** t-f54b62 — is the daemon serving this workspace the bundle the extension would launch? */
+  readonly engineCurrency: EngineCurrency;
   readonly snapshot: WorkspaceSnapshotEnvelopeV1;
   readonly presentation: WorkspacePresentationSnapshotV1;
   readonly bridgeUrl: string;

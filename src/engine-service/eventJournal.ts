@@ -97,6 +97,22 @@ function fileSize(file: string): number {
   }
 }
 
+/**
+ * t-c6a89e — parse a journal file WITHOUT owning it.
+ *
+ * Constructing `EngineEventJournal` is not a read: it creates the parent directory and, past
+ * `maxEvents`, rewrites the file. A second process doing that to a single-writer log (t-d5066b) is
+ * the corruption this export exists to avoid, so a reader that must not own the file gets the parse —
+ * including every safety check on it: regular file, size cap, ownership and mode, and a refusal of
+ * foreign or out-of-order events.
+ *
+ * Returns `[]` for a file that does not exist. Callers that need to tell "absent" from "empty" must
+ * stat it themselves, because those are different facts and this cannot tell them apart.
+ */
+export function readEngineEventJournal(file: string, engineInstanceId: string): WorkspaceEventV1[] {
+  return readJournal(file, engineInstanceId);
+}
+
 function readJournal(file: string, engineInstanceId: string): WorkspaceEventV1[] {
   let stat: fs.Stats;
   try { stat = fs.lstatSync(file); }

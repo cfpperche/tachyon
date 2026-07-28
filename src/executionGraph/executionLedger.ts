@@ -290,17 +290,34 @@ export function readExecutionEvents(input: { storageRoot: string; workspaceHash:
   return out;
 }
 
+/**
+ * Where a workspace's execution log lives, and the stream id its entries carry.
+ *
+ * t-c6a89e — exported because a READER has to arrive at the same two values, and a reader that
+ * recomputed them would be a second definition of where the ledger is: the day one moved, the other
+ * would silently read an empty file and the surface would call it "no telemetry".
+ */
+export function executionLedgerLocation(input: { storageRoot: string; workspaceHash: string }): {
+  filePath: string;
+  streamId: string;
+} {
+  return {
+    filePath: path.join(input.storageRoot, "events", "executions.jsonl"),
+    // Padded so a short hash still clears the journal's 8-character minimum for a stream id.
+    streamId: `execution-graph-${input.workspaceHash}`.slice(0, 128),
+  };
+}
+
 export function openExecutionLedger(input: {
   storageRoot: string;
   workspaceHash: string;
   maxBytesPerAgent?: number;
   maxAgeMs?: number;
 }): ExecutionLedger {
-  // Padded so a short hash still clears the journal's 8-character minimum for a stream id.
-  const streamId = `execution-graph-${input.workspaceHash}`.slice(0, 128);
+  const { filePath, streamId } = executionLedgerLocation(input);
   return new ExecutionLedger({
     journal: new EngineEventJournal({
-      filePath: path.join(input.storageRoot, "events", "executions.jsonl"),
+      filePath,
       engineInstanceId: streamId,
     }) as unknown as ExecutionJournalPort,
     ...(input.maxBytesPerAgent !== undefined ? { maxBytesPerAgent: input.maxBytesPerAgent } : {}),
