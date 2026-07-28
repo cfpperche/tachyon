@@ -27,7 +27,10 @@ describe("container-generated delegation behavior", () => {
       const home = harnessHome(ws, "grok-x");
       expect(res.home).toBe(home);
       expect(res.env.GROK_HOME).toBe(path.join(home, ".grok"));
-      expect(fs.lstatSync(path.join(home, ".grok", "auth.json")).isSymbolicLink()).toBe(true);
+      // t-de73e0 — the harnessed home gets its OWN copy of the credential, never a pointer at the
+      // person's: a Grok re-auth inside a redirected home was measured writing the resolved path.
+      expect(fs.lstatSync(path.join(home, ".grok", "auth.json")).isSymbolicLink()).toBe(false);
+      expect(fs.readFileSync(path.join(home, ".grok", "auth.json"), "utf8")).toBe('{"token":"REAL"}');
 
       const sessionStart = JSON.parse(fs.readFileSync(path.join(home, ".grok", "hooks", "session-start.json"), "utf8"));
       const stop = JSON.parse(fs.readFileSync(path.join(home, ".grok", "hooks", "stop.json"), "utf8"));
