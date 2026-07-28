@@ -21,6 +21,9 @@ import {
   type CockpitModel,
   type CockpitSectionId,
   type CockpitWorkspaceBundle,
+  COLLECT_EVERYTHING,
+  collectNeedsFor,
+  type CockpitCollectNeeds,
 } from "../cockpit/model.js";
 import {
   initMessage,
@@ -208,7 +211,8 @@ export interface CockpitInspector {
  */
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
-  collect: () => Promise<CockpitWorkspaceBundle[]>;
+  /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
+  collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -1010,12 +1014,17 @@ export async function openCockpit(
     const epoch = navEpoch;
     let model: CockpitModel;
     try {
-      const bundles = await deps.collect();
+      // t-af3eef — collect only what this section reads. The section is computed once, below, and
+      // reused for the needs, so there is exactly one authority for "which view is this" and the
+      // needs cannot drift from the model that gets built. Navigation to a section that reads
+      // neither classified slice no longer waits on either.
+      const section = navSection(currentRoute) ?? "overview";
+      const bundles = await deps.collect(collectNeedsFor(section));
       // t-610705 (Phase D, D3) — navSection(currentRoute) is null for pin (nav-less); "overview"
       // here is only "which background section data stays warm underneath the studio form", NOT a
       // claim that the Overview tab is active (tab highlighting is suppressed client-side instead —
       // see cockpit/App.tsx's `isNavlessStudio`).
-      model = buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview", wsHash: controlWsHash });
+      model = buildCockpitModel(bundles, { section, wsHash: controlWsHash });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -2127,7 +2136,9 @@ export async function openCockpit(
           return;
         case "copyDiagnostics": {
           try {
-            const bundles = await deps.collect();
+            // A diagnostics dump is explicitly a full picture of the world, so it pays for both
+            // classified reads on purpose — the one place where the old always-collect cost is right.
+            const bundles = await deps.collect(COLLECT_EVERYTHING);
             const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview" }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied, "ok"));
