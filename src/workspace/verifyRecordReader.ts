@@ -11,21 +11,22 @@
  * owns all of that (t-5d0e9d). It answers exactly one question: is the tree at this commit recorded
  * as verified, at or after a given moment?
  *
+ * ASYNC git, deliberately. A first cut shelled out synchronously and the wedge invariant in
+ * `cxWedgeBehavior.gen.test.ts` caught it, correctly: this runs on the workspace's 3s tick inside the
+ * extension host, which is exactly where a blocking subprocess wedges the UI. It takes the same
+ * injected `GitExec` the worktree layer already uses, so it also needs no real repository to test.
+ *
  * Fail-closed everywhere. A missing record, an unreadable one, a record whose `tree` disagrees with
  * its own filename, an unparseable timestamp, or any git failure all answer `false`. "Cannot tell" is
  * never "verified" — which matters more here than in `check`, because this answer arms an automatic
  * message to a coordinator.
  */
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import type { GitExec } from "../worktree/WorktreeManager.js";
 
 /** Must match `DIR_NAME` in `scripts/verify-record.mjs`, which owns the record layout. */
 const RECORD_DIR_NAME = "tachyon-verify";
-
-function git(args: readonly string[], cwd: string): string {
-  return execFileSync("git", args as string[], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-}
 
 export interface VerificationRecord {
   tree: string;
@@ -35,18 +36,41 @@ export interface VerificationRecord {
   summary?: string;
 }
 
-/** The record for the tree of `commitish` in `worktreePath`, or undefined. */
-export function readVerificationRecord(worktreePath: string, commitish: string): VerificationRecord | undefined {
+async function gitLine(git: GitExec, args: string[], cwd: string): Promise<string | undefined> {
   try {
-    const tree = git(["rev-parse", `${commitish}^{tree}`], worktreePath);
-    if (!/^[0-9a-f]{40}$/.test(tree)) return undefined;
-    const common = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], worktreePath);
-    const raw = fs.readFileSync(path.join(common, RECORD_DIR_NAME, `${tree}.json`), "utf8");
-    const record = JSON.parse(raw) as Partial<VerificationRecord> & { schema?: number };
+    const result = await git(args, cwd);
+    if (result.code !== 0) return undefined;
+    const value = result.stdout.trim();
+    return value.length > 0 ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The record for the tree of `commitish` in `worktreePath`, or undefined. */
+export async function readVerificationRecord(
+  worktreePath: string,
+  commitish: string,
+  git: GitExec,
+  readFile: (file: string) => string = (file) => fs.readFileSync(file, "utf8"),
+): Promise<VerificationRecord | undefined> {
+  const tree = await gitLine(git, ["rev-parse", `${commitish}^{tree}`], worktreePath);
+  if (!tree || !/^[0-9a-f]{40}$/.test(tree)) return undefined;
+  const common = await gitLine(git, ["rev-parse", "--path-format=absolute", "--git-common-dir"], worktreePath);
+  if (!common) return undefined;
+  try {
+    const record = JSON.parse(readFile(path.join(common, RECORD_DIR_NAME, `${tree}.json`))) as
+      Partial<VerificationRecord> & { schema?: number };
     // A record that does not name the tree it is filed under proves nothing about that tree.
     if (!record || record.tree !== tree || typeof record.at !== "string") return undefined;
     if (record.schema !== 1 && record.schema !== 2) return undefined;
-    return { tree, commit: record.commit ?? null, at: record.at, ...(record.command ? { command: record.command } : {}), ...(record.summary ? { summary: record.summary } : {}) };
+    return {
+      tree,
+      commit: record.commit ?? null,
+      at: record.at,
+      ...(record.command ? { command: record.command } : {}),
+      ...(record.summary ? { summary: record.summary } : {}),
+    };
   } catch {
     return undefined;
   }
@@ -59,8 +83,14 @@ export function readVerificationRecord(worktreePath: string, commitish: string):
  * later: a persistent agent's HEAD may already have been verified days ago for entirely different
  * work, and that says nothing about the task it was handed this morning.
  */
-export function isVerifiedSince(worktreePath: string, commitish: string, sinceIso: string): boolean {
-  const record = readVerificationRecord(worktreePath, commitish);
+export async function isVerifiedSince(
+  worktreePath: string,
+  commitish: string,
+  sinceIso: string,
+  git: GitExec,
+  readFile?: (file: string) => string,
+): Promise<boolean> {
+  const record = await readVerificationRecord(worktreePath, commitish, git, readFile);
   if (!record) return false;
   const at = Date.parse(record.at);
   const since = Date.parse(sinceIso);

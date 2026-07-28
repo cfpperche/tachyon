@@ -130,6 +130,7 @@ import { applyCompletionHint, CompletionHintStore } from "../attention/completio
 import { AdhocBackstopMonitor, idleNotifyThresholdMs } from "./AdhocBackstopMonitor.js";
 import { GatedCompletionMonitor, assignedCompletionFacts, type GatedCandidateRecord, type GatedCompletionFacts } from "./GatedCompletionMonitor.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
+import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { hasDoorbellRung } from "../bridge/doorbell.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
@@ -1650,8 +1651,8 @@ export class Workspace {
       },
       hasDoorbellRung: (agent, delegator, sinceIso) =>
         hasDoorbellRung(this.workspaceRoot, agent, delegator, sinceIso),
-      isVerifiedSince: async (worktreePath, headSha, sinceIso) =>
-        isVerifiedSince(worktreePath, headSha, sinceIso),
+      isVerifiedSince: (worktreePath, headSha, sinceIso) =>
+        isVerifiedSince(worktreePath, headSha, sinceIso, defaultGitExec),
       deliverNotice: (delegator, line, metadata) => this.deliverNotice(delegator, line, metadata),
       sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
       now: () => Date.now(),
