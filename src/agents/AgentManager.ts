@@ -64,7 +64,8 @@ import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
-import type { AssignedTaskRecord, SessionWorkRecord } from "./sessionWorkRecord.js";
+import type { SessionWorkRecord } from "./sessionWorkRecord.js";
+import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sealExecutionEvent, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
@@ -544,7 +545,13 @@ export interface AgentManagerOptions {
    * Unwired (tests, headless) means the board cannot be consulted at all; the restart then behaves
    * as it did before this option existed and claims nothing about assignments.
    */
-  assignedWork?: (name: string) => AssignedTaskRecord[];
+  assignedWork?: (name: string) => BoardAssignmentRow[];
+  /**
+   * t-9d250c — the status of ANY task id, for describing what the frozen spawn brief still names.
+   * Optional and fail-quiet by design: unwired, or unknown id, produces no claim about that id at
+   * all. It is only ever used to state a fact the store already holds, never to infer completion.
+   */
+  taskStatusById?: (id: string) => string | undefined;
   /** Workspace-owned resolver so production startup uses host-custodied Evolution authority. */
   resolveEvolutionSnapshot?: (principal: string) => Promise<EvolutionStartupSnapshot>;
   /**
@@ -1387,15 +1394,22 @@ export class AgentManager {
    * before the first live-pane mutation, the running agent is left exactly as it was rather than
    * replaced with a session that cannot say what it is for.
    */
-  private sessionWorkRecordFor(name: string, def: AgentDef, worktree: WorktreeRecord | undefined, cwd: string): SessionWorkRecord | undefined {
+  private sessionWorkRecordFor(
+    name: string,
+    def: AgentDef,
+    worktree: WorktreeRecord | undefined,
+    cwd: string,
+    /** t-9d250c — the frozen brief this restart is about to replay, for stale-reference reporting. */
+    replayedBrief?: string,
+  ): SessionWorkRecord | undefined {
     if (!this.opts.assignedWork) return undefined;
     // Same gate `projectGuidanceFor` uses: a launch with no channel for a startup document gets no
     // record either, and must not be refused over a board it would never have been shown.
     const agent = asAgent(def);
     if (!agent || managesOwnSession(agent.cmd) || !instructionsDeliverable(agent.cmd)) return undefined;
-    let assigned: AssignedTaskRecord[];
+    let rows: BoardAssignmentRow[];
     try {
-      assigned = this.opts.assignedWork(name);
+      rows = this.opts.assignedWork(name);
     } catch (error) {
       throw new Error(
         `refusing restart for agent '${name}': its assigned work could not be read, so a new session ` +
@@ -1403,12 +1417,27 @@ export class AgentManager {
         { cause: error },
       );
     }
+    // t-9d250c — one current task, deterministically chosen; the rest are queue. The filter lives in
+    // the selector so `active`-and-mine is one rule with one test, not a predicate repeated per caller.
+    const assignment = selectAssignedWork(rows, name);
+    // A stale-reference lookup must never cost the restart: the board read above is the fail-closed
+    // part, this is decoration, and a store that throws here would turn a describable brief into a
+    // refused restart for no safety gain.
+    let stale: ReturnType<typeof staleContractReferences> = [];
+    try {
+      if (this.opts.taskStatusById) {
+        stale = staleContractReferences(replayedBrief, assignment, this.opts.taskStatusById);
+      }
+    } catch {
+      stale = [];
+    }
     const durable = worktree ?? this.opts.ledger?.get(name)?.worktree;
     return {
       isolation: durable
         ? { kind: "worktree", path: durable.path, branch: durable.branch }
         : { kind: "shared", cwd },
-      assigned,
+      assignment,
+      ...(stale.length > 0 ? { staleContractReferences: stale } : {}),
     };
   }
 
@@ -3702,7 +3731,13 @@ export class AgentManager {
     }
     // Resolved before any cache/pane mutation: an unreadable board must refuse the restart outright
     // rather than replace the session with one that cannot state its own assignment (t-e3aaae).
-    const restartWorkRecord = this.sessionWorkRecordFor(name, def, worktree, cwd);
+    // t-9d250c — the record is built against the brief this restart will actually replay, so it can
+    // name a contract that has since been finished instead of leaving the agent to notice.
+    const replayedBrief = [
+      persistedDef?.taskBrief,
+      persistedDef?.contract ? Object.values(persistedDef.contract).filter((v) => typeof v === "string").join("\n") : undefined,
+    ].filter(Boolean).join("\n");
+    const restartWorkRecord = this.sessionWorkRecordFor(name, def, worktree, cwd, replayedBrief);
     const restartInstructions = this.effectiveInstructions(
       name,
       def,
