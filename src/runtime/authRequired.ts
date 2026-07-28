@@ -36,6 +36,13 @@ export interface RuntimeAuthProfile {
    * Recorded for the operator; Tachyon does not drive it (SDD 477 keeps recovery human-explicit).
    */
   nonInteractiveRefresh?: string;
+  /**
+   * How deep into the pane tail this runtime's signal may sit, when the default window cannot reach
+   * it. Declared per runtime and only from measurement, because the number is a property of that
+   * TUI's chrome height, not a preference: a window shorter than the chrome can never see turn
+   * output at all, and a window longer than needed keeps stale text eligible for longer.
+   */
+  paneTailLines?: number;
   /** Provenance, in the same shape the other runtime capabilities use. */
   source: "measured";
   verified: true;
@@ -95,14 +102,33 @@ export const RUNTIME_AUTH_PROFILES: Partial<Record<ResumeRuntime, RuntimeAuthPro
       + "sign-in menu (ChatGPT / Device Code / API key).",
   },
   grok: {
-    // Measured: {"type":"error","message":"Not signed in. To authenticate without a browser, run: …"}
-    signals: [/\bnot signed in\b[^\n]{0,80}\b(?:grok login|authenticate)\b/i],
+    signals: [
+      // Measured headless: {"type":"error","message":"Not signed in. To authenticate without a browser, run: …"}
+      /\bnot signed in\b[^\n]{0,80}\b(?:grok login|authenticate)\b/i,
+      // t-73ea6a — measured IN-PANE, which is the form the overlay actually sees. The provider
+      // rejects the credential mid-turn and Grok renders its message verbatim:
+      //   Retry failed: API error (status 400 Bad Request): invalid-argument: Incorrect API key
+      //   provided. You can obtain an API key from https://console.x.ai.
+      // The match is anchored on the PROVIDER's rejection, never on the `Retry failed` / `Turn
+      // failed` wrapper around it. That wrapper is generic: it carries rate limits, 403s and
+      // transport failures with equal enthusiasm, and matching it would make every failed turn look
+      // like a login problem — the exact collapse NEIGHBOURS exists to prevent.
+      /\binvalid-argument:\s*incorrect api key provided\b/i,
+    ],
+    // Measured: the failure text sits 24 non-empty lines from the bottom, because Grok's own bottom
+    // chrome (composer box, footer, block glyphs) is 12 lines tall on its own — so the shared
+    // 12-line window can never reach this runtime's turn output, which is why the state was
+    // measurable and still unconsumed. Bytes: test/fixtures/grok-composer/post-turn.pane.txt.
+    paneTailLines: 28,
     humanAction: "run `grok login --device-code`, or set XAI_API_KEY, then restart the agent explicitly",
     nonInteractiveRefresh: "grok login --device-code, or the XAI_API_KEY environment variable",
     source: "measured",
     verified: true,
-    verifiedAt: "2026-07-27",
-    notes: "grok 0.2.112. The interactive TUI renders a device-code approval screen ending in 'Waiting for approval...'.",
+    verifiedAt: "2026-07-28",
+    notes:
+      "grok 0.2.112. The interactive TUI renders a device-code approval screen ending in 'Waiting for approval...'. "
+      + "The in-pane signal was captured by t-d2a4dc against a real canonical agent and is turn-attached: it is the "
+      + "provider's answer to a turn, not chrome, so it cannot be present on an agent that never tried to work.",
   },
   pi: {
     // Measured: "No API key found for the selected model." + "Use /login to log into a provider …"
@@ -245,7 +271,10 @@ export function classifyAuthRequired(
   // Neighbours win outright: they are separate conditions with separate recoveries.
   if (NEIGHBOURS.some((pattern) => pattern.test(output))) return undefined;
   let lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (opts?.tailLines !== undefined) lines = lines.slice(-opts.tailLines);
+  // A declared per-runtime window wins over the shared default: it was measured against that TUI's
+  // chrome, and the caller's default cannot know how tall that chrome is.
+  const tailLines = profile.paneTailLines ?? opts?.tailLines;
+  if (tailLines !== undefined) lines = lines.slice(-tailLines);
   for (const trimmed of lines) {
     if (!profile.signals.some((pattern) => pattern.test(trimmed))) continue;
     return {
