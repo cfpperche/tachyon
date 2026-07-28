@@ -54,9 +54,12 @@ export interface CanonicalAgentSpec {
   selectors?: { model?: string; provider?: string; reasoningEffort?: string; serviceTier?: string };
   role?: "coder" | "reviewer" | "tester" | "orchestrator" | "custom";
   /**
-   * NOT projectable yet — `projectDefinition` refuses `prompt.soul` ("Soul, instructions and memory
-   * belong to t-a2827d"). Kept out of the spec on purpose so a caller cannot silently produce a
-   * profile the loader rejects; a soul case has no canonical expression until that slice lands.
+   * Not projectable, and t-50bbd4 established that this is permanent rather than pending: Soul,
+   * instructions and memory are formation LANES published under transaction and authority, not
+   * `prompt.*` fields, so `projectDefinition` refuses them by design. The comment used to say they
+   * "belong to t-a2827d" — a task that closed on 2026-07-22 — which read as "coming soon" and was
+   * never going to arrive by that route. Kept out of the spec so a caller cannot silently produce a
+   * profile the loader rejects.
    */
   cwd?: string;
   autostart?: boolean;

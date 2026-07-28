@@ -70,6 +70,7 @@ import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } 
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
+import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOutcome } from "./formation/lifecycleConsumer.js";
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 
@@ -474,6 +475,13 @@ export interface AgentManagerOptions {
    * success. Omitted by callers that have nowhere to surface it.
    */
   onStopAllIncomplete?: (passes: number) => void;
+  /**
+   * t-50bbd4 — the formation lane, as a narrow port. Optional: a manager without it behaves exactly
+   * as before, which is what keeps this wiring reversible.
+   */
+  formation?: FormationLifecyclePort;
+  /** t-50bbd4 — a formation lane that REFUSED. Surfaced so a refusal never reads as "no Soul". */
+  onFormationSoulRefused?: (agent: string, reason: string) => void;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
   /**
@@ -1007,9 +1015,28 @@ export class AgentManager {
   /** Resolve the current canonical identity at an explicit lifecycle boundary. */
   async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
     const def = this.agentDefinitionOf(name);
-    if (!def?.soul) return undefined;
     const principal = this.soulPrincipal(name);
-    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def));
+    const declared = def?.soul
+      ? await withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def))
+      : undefined;
+    // t-50bbd4 — the formation lane is consulted only when nothing was declared. SDD 427 shipped the
+    // lanes and SDD 429 shipped lifecycle/Studio, and this call is the seam neither wrote: without it
+    // a canonical agent's Soul could be authored, transacted and authority-checked and still never
+    // reach a spawn, because this method read `def.soul` and nothing else.
+    let formation: FormationSoulOutcome | undefined;
+    if (!declared && this.opts.formation) {
+      try {
+        formation = await this.opts.formation.resolveSoul({ agentName: name, operationId: `soul-${name}-${Date.now()}` });
+      } catch (err) {
+        // A lane that throws is a refusal, not an absence. Identity is never guessed.
+        formation = { state: "refused", reason: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    const chosen = chooseLifecycleSoul({ declared, formation });
+    // Never silent: a refused formation that read as "this agent has no Soul" is how an operator ends
+    // up believing a profile is live when it is not.
+    if (chosen.refusal) this.opts.onFormationSoulRefused?.(name, chosen.refusal);
+    return chosen.soul;
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's

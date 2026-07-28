@@ -441,7 +441,15 @@ function projectDefinition(
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
   if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.memory) {
-    errors.push("profile/projection: Soul, instructions and memory belong to t-a2827d");
+    // t-50bbd4 — this used to defer to t-a2827d, which CLOSED on 2026-07-22, so the message pointed
+    // at nobody. The structural fact is what a reader needs: these three do not project into
+    // `prompt.*` at all. They are formation LANES, published under transaction and authority
+    // (`humanLaneTransactions.ts`), and reached at spawn through the lifecycle port rather than
+    // through this projection. Naming the mechanism outlasts naming a task.
+    errors.push(
+      "profile/projection: Soul, instructions and memory are formation lanes, not projected prompt fields — "
+        + "publish them through the profile's lane authority instead",
+    );
   }
   if (definition.prompt?.evolution && !evolutionSelector) {
     errors.push("profile/projection: Evolution selector is unavailable");
