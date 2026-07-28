@@ -50,7 +50,11 @@ const GROK_INSPECTOR_CONTRACT_V1 = [
   "auth.json is an external credential symlink",
   "ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
-const GROK_INSPECTOR_CONTRACT = [
+/**
+ * The Grok contract as it shipped between t-26f508 and t-de73e0, retained VERBATIM for the same
+ * reason as v1: its sha256 is what an authority created in that window names. Never edit it.
+ */
+const GROK_INSPECTOR_CONTRACT_V2 = [
   "tachyon/grok-private-home-input-inspector/v2",
   "literal executable grok",
   "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
@@ -59,6 +63,27 @@ const GROK_INSPECTOR_CONTRACT = [
   "compat cells for cursor, claude and codex are pinned off",
   "memory is disabled in config and pinned off by GROK_MEMORY",
   "auth.json is an external credential symlink",
+  "ambient project .grok tooling and AGENTS.md must be absent",
+  "unselected ambient ~/.grok config, memory and plugins are not inherited",
+].join("\n");
+/**
+ * t-de73e0 — v2 promised "auth.json is an external credential symlink", and that promise is what
+ * destroyed the credential of the machine this was measured on: the runtime WRITES the file it is
+ * handed, and a write through a symlink lands on the person's own credential. The contract now says
+ * what the code does — a private copy, harvested back when the agent refreshes it — because an
+ * inspector contract is an attestation, and attesting to a symlink that must not exist would be
+ * attesting to the defect.
+ */
+const GROK_INSPECTOR_CONTRACT = [
+  "tachyon/grok-private-home-input-inspector/v3",
+  "literal executable grok",
+  "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "config.toml and trusted_folders.toml are rewritten before launch",
+  "config.toml carries only closed global profile-projected scalars plus typed agent-owned selectors",
+  "compat cells for cursor, claude and codex are pinned off",
+  "memory is disabled in config and pinned off by GROK_MEMORY",
+  "auth.json is a private copy of the external credential, never a pointer to it, because the runtime writes it",
+  "a refreshed private credential is harvested back to the external credential",
   "ambient project .grok tooling and AGENTS.md must be absent",
   "unselected ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
@@ -92,7 +117,7 @@ export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
 export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "grok",
   id: "tachyon.grok-private-home-inputs",
-  version: "2",
+  version: "3",
   sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
 });
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
@@ -160,12 +185,20 @@ export function profileRuntimeInspectorFor(adapter: string) {
  * next launch.
  */
 const SUPERSEDED_RUNTIME_INSPECTORS: Partial<Record<AttestedRuntime, readonly InspectorDescriptor[]>> = {
-  grok: [Object.freeze({
-    adapter: "grok",
-    id: "tachyon.grok-private-home-inputs",
-    version: "1",
-    sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V1).digest("hex"),
-  })],
+  grok: [
+    Object.freeze({
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "1",
+      sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V1).digest("hex"),
+    }),
+    Object.freeze({
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "2",
+      sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V2).digest("hex"),
+    }),
+  ],
 };
 
 export interface InspectorDescriptor {

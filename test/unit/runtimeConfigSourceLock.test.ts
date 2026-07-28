@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { sourceLockPath, withRuntimeConfigSourceLock } from "../../src/runtimeConfig/sourceLock.js";
 import { applyGrokRuntimeConfigChange } from "../../src/runtimeConfig/grokInventory.js";
 import { applyClaudeRuntimeConfigChange } from "../../src/runtimeConfig/claudeInventory.js";
@@ -140,6 +140,64 @@ describe("Runtime Config source lock", () => {
     fs.utimesSync(lock, old, old);
 
     expect(withRuntimeConfigSourceLock(file, () => "ran", DEAD)).toBe("ran");
+  });
+
+  /**
+   * Publication must never overwrite a holder. `link` fails on an existing target, which is why it
+   * is used instead of `rename` — the stamp has to become visible without replacing anybody.
+   */
+  it("never overwrites an existing holder when publishing", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+    const lock = sourceLockPath(file);
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(lock, "424242\n");
+
+    expect(() => withRuntimeConfigSourceLock(file, () => "must not run", ALIVE))
+      .toThrow(/save is in progress/);
+    expect(fs.readFileSync(lock, "utf8").trim()).toBe("424242");
+  });
+
+  /**
+   * The lock is linked into place already stamped, so no competitor can observe it empty, and the
+   * temp it was written through must not survive.
+   */
+  it("publishes an already-stamped lock and leaves no temp behind", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+
+    withRuntimeConfigSourceLock(file, () => {
+      expect(fs.readFileSync(sourceLockPath(file), "utf8").trim()).toBe(String(process.pid));
+      expect(fs.readdirSync(root).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+    });
+    expect(fs.readdirSync(root).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+  });
+
+  /**
+   * `link` needs filesystem support. Where it is missing the weaker `open(wx)` path takes over, and
+   * an untested fallback is the one that breaks in the field — so it is driven here, including the
+   * property that still matters most: it must not overwrite a holder either.
+   */
+  it("falls back to exclusive create where link is unsupported, still without overwriting a holder", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+    const lock = sourceLockPath(file);
+    const unsupported = Object.assign(new Error("no hard links here"), { code: "ENOSYS" });
+    const linkSync = vi.spyOn(fs, "linkSync").mockImplementation(() => { throw unsupported; });
+    try {
+      withRuntimeConfigSourceLock(file, () => {
+        expect(fs.readFileSync(lock, "utf8").trim()).toBe(String(process.pid));
+      });
+      expect(fs.existsSync(lock)).toBe(false);
+      expect(fs.readdirSync(root).filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+
+      fs.writeFileSync(lock, "424242\n");
+      expect(() => withRuntimeConfigSourceLock(file, () => "must not run", ALIVE))
+        .toThrow(/save is in progress/);
+      expect(fs.readFileSync(lock, "utf8").trim()).toBe("424242");
+    } finally {
+      linkSync.mockRestore();
+    }
   });
 
   it("refuses a Grok save while another holds the lock, and leaves that lock alone", () => {

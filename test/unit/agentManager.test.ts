@@ -5533,8 +5533,11 @@ describe("AgentManager — session resume (spec 209)", () => {
         expect(trust.match(/trusted\s*=\s*true/g)).toHaveLength(1);
         expect(trust).not.toContain("stale-");
       }
-      expect(fs.realpathSync(path.join(privateHome, "auth.json")))
-        .toBe(fs.realpathSync(path.join(realGrokHome, "auth.json")));
+      // t-de73e0 — the credential is a private COPY, so it is compared by CONTENT: a shared inode
+      // is exactly what let one agent's re-auth destroy the person's credential.
+      expect(fs.lstatSync(path.join(privateHome, "auth.json")).isSymbolicLink()).toBe(false);
+      expect(fs.readFileSync(path.join(privateHome, "auth.json"), "utf8"))
+        .toBe(fs.readFileSync(path.join(realGrokHome, "auth.json"), "utf8"));
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).GROK_HOME))
         .toEqual([privateHome, privateHome, privateHome]);
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).HOME))
@@ -5755,10 +5758,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(config).toContain("[compat.claude]");
       expect(config).toContain("[mcp_servers.tachyon_bridge]");
       expect(config).not.toContain("external-only");
-      // Auth stays an external symlink the projection never authors.
+      // Auth stays external to the projection, which never authors it — and since t-de73e0 it is a
+      // private copy rather than a pointer, so equality is by content.
       const privateHome = bridgeGrokHome(h.ws, "grok");
-      expect(fs.realpathSync(path.join(privateHome, "auth.json")))
-        .toBe(fs.realpathSync(path.join(realGrokHome, "auth.json")));
+      expect(fs.lstatSync(path.join(privateHome, "auth.json")).isSymbolicLink()).toBe(false);
+      expect(fs.readFileSync(path.join(privateHome, "auth.json"), "utf8"))
+        .toBe(fs.readFileSync(path.join(realGrokHome, "auth.json"), "utf8"));
       // t-ee5c05 — fork is no longer refused; it is covered by its own regression below.
     });
 
