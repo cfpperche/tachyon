@@ -50,6 +50,7 @@ import {
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs } from "../runtime/adapters/grokMemory.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -68,6 +69,7 @@ import type { SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
+import { sweepSessions } from "../tmux/sessionSweep.js";
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 
@@ -464,6 +466,14 @@ export interface AgentManagerOptions {
    * Empty/undefined = no systemd scope wrap.
    */
   getAgentMemoryMax?: () => string | undefined;
+  /**
+   * t-2d2ce7 — a Stop All that hit its sweep bound with sessions still alive.
+   *
+   * Optional, but never silent when wired: "stop everything" is the command a human reaches for to
+   * get control of the machine back, so a partial one has to say so rather than return like a
+   * success. Omitted by callers that have nowhere to surface it.
+   */
+  onStopAllIncomplete?: (passes: number) => void;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
   /**
@@ -2803,7 +2813,16 @@ export class AgentManager {
     if (binary === "grok") {
       const home = this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
       if (!home) return { cmd, env: {}, wired: false };
-      return { cmd, env: { GROK_HOME: home }, wired: true };
+      // t-c46c35 — the non-harness canonical Grok path, and the one that actually needed the pin: it
+      // deliberately skips `isolate: transcript` (t-303f2b), so it never reaches HarnessManager's
+      // materializers. `--no-memory` outranks GROK_MEMORY and config.toml, so appending it last makes
+      // the canonical answer independent of the ambient environment. Only on the wired path — an
+      // unwired command is returned untouched here, exactly as every other runtime above does.
+      return {
+        cmd: [cmd, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)].join(" "),
+        env: { GROK_HOME: home },
+        wired: true,
+      };
     }
     if (binary === "hermes") {
       const home = this.opts.materializeBridgeMcpHermes?.(name);
@@ -4731,16 +4750,38 @@ export class AgentManager {
   }
 
   /** Kills every session of this workspace — alive agents and crashed postmortem panes alike. */
+  /**
+   * Kill every agent session in this workspace, sweeping until a successful read finds none.
+   *
+   * t-2d2ce7 — this used to enumerate ONCE via `agentStates()` and kill what it saw, which had two
+   * ways to leave something alive. A session born during the sweep was never in the snapshot; and
+   * `agentStates()` falls back to the `lastAgentStates` CACHE when the tmux read is ambiguous, so a
+   * hiccup could have it killing a stale list — or nothing at all — while reporting the names it
+   * "stopped". The sweep reads `sessionStates` directly for exactly that reason: for stop-everything,
+   * a cache is the wrong answer and an unreadable state must be retried, not assumed empty.
+   */
   async killAll(): Promise<string[]> {
-    const all = [...(await this.agentStates()).keys()];
-    for (const name of all) {
-      await this.detachPaneTranscript(this.session(name));
-      await this.opts.tmux.killSession(this.session(name));
-      this.lineage.delete(name);
-      this.adhoc.delete(name);
-      this.opts.onKilled?.(name);
+    const killedAgents: string[] = [];
+    const result = await sweepSessions(this.opts.tmux, this.prefix, {
+      onKill: async (session) => {
+        const name = agentFromSession(this.opts.wsHash, session);
+        if (name === null) return;
+        await this.detachPaneTranscript(session);
+        this.lineage.delete(name);
+        this.adhoc.delete(name);
+        this.opts.onKilled?.(name);
+        killedAgents.push(name);
+      },
+    });
+    // Transcript detach happens in `onKill`, i.e. AFTER the session is killed rather than before it.
+    // That ordering is safe — detaching a pipe from a dead pane is a no-op — and it is what lets the
+    // one sweep own the kill for all three surfaces instead of each reimplementing the loop.
+    if (!result.converged) {
+      // Never silent: a sweep that hit its bound with work outstanding is not a completed Stop All,
+      // and the operator asked for one precisely because they wanted control back.
+      this.opts.onStopAllIncomplete?.(result.passes);
     }
-    return all;
+    return killedAgents;
   }
 
   /**

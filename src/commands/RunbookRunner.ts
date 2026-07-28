@@ -1,3 +1,4 @@
+import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
 
@@ -206,9 +207,8 @@ export class RunbookRunner {
   }
 
   async killAll(): Promise<void> {
-    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
-    for (const session of states.keys()) {
-      await this.opts.tmux.killSession(session);
-    }
+    // t-2d2ce7 — the measured survivor was a runbook postmortem pane: created on purpose by the
+    // preceding scenario and born after this sweep's single enumeration. Sweep until empty.
+    await sweepSessions(this.opts.tmux, this.prefix);
   }
 }

@@ -211,12 +211,55 @@ session inherits the same store rather than a copy. Fork is not a memory-isolati
   same origin intentionally share the repository key inside one home.
 - **Controls:** `--no-memory` has absolute precedence; CLI, environment and TOML
   can enable it; native commands browse/edit/stats/clear memory.
-- **Tachyon today:** probes pin `--no-memory`; ordinary canonical launches do
-  not. Their Bridge-only private `GROK_HOME` normally inherits the runtime's
-  disabled default, but an ambient `GROK_MEMORY=1` or future default change is
-  not overridden.
+- **Tachyon today:** probes pin `--no-memory`, and as of `t-c46c35` so do wired
+  canonical launches, so an ambient `GROK_MEMORY=1` or a future default change no
+  longer decides the outcome. Absence is still not behaviorally proven.
 - **Classification:** native; disable mechanism declared and already used by
-  probes, but not wired or behaviorally verified for canonical lifecycle.
+  probes, and as of `t-c46c35` WIRED for canonical launches — still not
+  behaviorally verified.
+
+#### Control change, 2026-07-28 (`t-c46c35`) {#grok-2026-07-28}
+
+Measured against Grok 0.2.112 (`grok --help`, `grok memory --help`, and the shipped user guide
+`~/.grok/docs/user-guide/13-memory.md`). No model call, and no memory store read — only shipped
+documentation and flag help.
+
+This is the one runtime in the lane where the right move was to change the product rather than to
+record a careful "not proven", because Grok exposes a control with **absolute precedence**. The
+shipped guide states the order outright:
+
+```
+1. --no-memory CLI flag (always disables)
+2. --experimental-memory CLI flag (enables)
+3. GROK_MEMORY env var: 1/true enables, 0/false disables
+4. [memory] section in config.toml
+5. Default: disabled
+```
+
+Canonical Grok was relying on **rule 5**, while rules 3 and 4 sit above it and are writable by anyone
+with an environment or a config file. Pinning rule 1 replaces "we inherit a default that happens to be
+off" with "we state it, and nothing below can outrank us".
+
+**Where the pin went, and the path that actually mattered.** The obvious targets were
+`HarnessManager.materialize` and `materializeHomeOnly`, and both got it. But the common canonical Grok
+agent is *non-harness with Bridge wiring*, which deliberately skips `isolate: transcript` (t-303f2b)
+and therefore reaches neither materializer — it is wired in `AgentManager.withRuntimeBridge`, which
+previously returned the command unchanged. Pinning only the two obvious paths would have left the
+usual case untouched while every test looked green.
+
+**Boundary, stated rather than hidden.** With the Bridge down there is no private home and no pin:
+`withRuntimeBridge` returns before the grok branch, so the launch is untouched and the session inherits
+the runtime's own disabled default — the pre-existing situation, unchanged. The pin covers the wired
+canonical path, which is the one with a private home worth protecting.
+
+**No evidence axis is promoted by this change.** Pinning a flag is a control improvement, not an
+observation of behavior, and the value of this lane is that those two never get conflated. Grok
+0.2.112's `memory` subcommand exposes only `clear` — no status or stats readout, so unlike Codex there
+is nothing non-billable that reports effective memory state, and nothing renders what reaches the
+model. The fresh/restart/resume/fork absence proof still needs an authorized session, and the case
+worth running is the hostile one: `GROK_MEMORY=1` set in the environment and the planted marker still
+not reaching the model. That is the drift the pin exists for, and proving it is what would let
+`disable` move off `declared`.
 - **Primary evidence:** installed
   `~/.grok/docs/user-guide/13-memory.md`, `grok --help`,
   `src/probe/adapters/grok.ts`, `src/harness/HarnessManager.ts`.
