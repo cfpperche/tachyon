@@ -210,8 +210,9 @@ session inherits the same store rather than a copy. Fork is not a memory-isolati
   workspace directory, session logs and SQLite index. Clones/worktrees of the
   same origin intentionally share the repository key inside one home.
 - **Controls:** the shipped guide claims `--no-memory` has absolute precedence.
-  **Measurement refuted that** (`t-0e88f3`, below): `GROK_MEMORY=1` outranks the
-  flag in headless mode. CLI, environment and TOML can enable it; native commands
+  **Measurement refuted that** (`t-0e88f3`, below): the flag's rank is
+  MODE-DEPENDENT — `GROK_MEMORY=1` outranks it headless, while the flag wins in
+  the interactive TUI. CLI, environment and TOML can enable it; native commands
   browse/edit/stats/clear memory.
 - **Tachyon today:** wired canonical launches pin `GROK_MEMORY=0` in the spawn env
   (`t-0e88f3`) — the control Tachyon owns and the runtime was observed to honor.
@@ -295,10 +296,36 @@ both worlds memory runs. The default arm shows the default really is off, so mem
 needs a positive control or it is not a result.
 
 **What was false, precisely.** Not the flag's existence and not its direction — `--no-memory` is a real
-flag that really means disable. What was false is its **rank**: the guide places it above
-`GROK_MEMORY`, and at 0.2.112 it is below. Everything `t-c46c35` built rested on that one row of that
-one table, and nothing in the change was verifiable without spending money, which is exactly why it
-shipped unverified.
+flag that really means disable. What was false is its claim to **absolute** rank. Everything
+`t-c46c35` built rested on that one row of that one table, and nothing in the change was verifiable
+without spending money, which is exactly why it shipped unverified.
+
+##### The precedence is MODE-DEPENDENT — measured 2026-07-28 (`a-c1a580`, `a-a3db98`)
+
+Both arms above ran headless. Canonical Grok agents launch the **interactive TUI**, so the experiment
+was repeated there under a new authorization — deliberately not by stretching `a-b4b050`, which covered
+`-p` and never mentioned the TUI. Three arms, `GROK_MEMORY=1` held constant, varying only the flag:
+
+| TUI arm | Launch | `MEMORY_INIT` | `MEMORY_INJECT` | Model answer | Store |
+| --- | --- | --- | --- | --- | --- |
+| A (canonical) | `GROK_MEMORY=0` + `--no-memory` | 0 | 0 | NONE | unchanged |
+| B (shipped) | `GROK_MEMORY=1` + `--no-memory` | 0 | 0 | NONE | unchanged |
+| C (control) | `GROK_MEMORY=1` + `--experimental-memory` | 1 | 2 | **the marker, in 2.5s, no tool calls** | 4.2 MB `index.sqlite` written |
+
+**Arm C was worth its own authorization.** Arms A and B are null results, and a null result with no
+positive control is not a result: their silence could equally have meant "this sandbox never enables
+memory at all". Reading them as success would have been the same unverified optimism this whole section
+exists to correct, merely pointing the other way. Arm C makes the comparison clean, because arms B and
+C differ in exactly one flag.
+
+**So the answer inverts with the launch mode:** `--no-memory` outranks `GROK_MEMORY=1` in the TUI, and
+loses to it headless. The guide's "always disables" is false as written — one counterexample refutes an
+*always* — but the flag is not inert either, which the headless arm alone could have been read to imply.
+
+**The practical consequence is the reverse of how it looks.** Canonical agents launch the TUI, so the
+flag was in fact holding for them; the exposed caller was `src/probe/adapters/grok.ts`, which runs `-p`,
+the mode where the flag loses. The lane's worst outcome was never a fleet running with memory on — it
+was a *belief* about why it wasn't.
 
 **The impact was a false guarantee, not a live defect.** In the ordinary case the default is already
 off, so canonical Grok agents were not running with memory active. What was wrong was the *claim* —
@@ -307,11 +334,13 @@ to a hostile environment. Anyone later reasoning "we are safe because we pin rul
 wrong, and preventing that belief is the entire purpose of this lane.
 
 **The fix moves the guarantee to a channel Tachyon owns.** Canonical launches now pin
-`GROK_MEMORY=0` in the spawn env (`grokMemoryEnv`, wired at all three canonical sites:
-`HarnessManager.materialize`, `HarnessManager.materializeHomeOnly`, and `AgentManager.withRuntimeBridge`
-— the last being the common non-harness Bridge-wired agent, which reaches neither materializer). The
-same measurement that refuted the flag is what recommends the variable: it was decisive enough to
-overrule the flag, so setting it uses the control the runtime honors rather than the one it documents.
+`GROK_MEMORY=0` in the spawn env (`grokMemoryEnv`, wired at all four canonical sites:
+`HarnessManager.materialize`, `HarnessManager.materializeHomeOnly`, `AgentManager.withRuntimeBridge`
+— the common non-harness Bridge-wired agent, which reaches neither materializer — and the probe
+adapter). `GROK_MEMORY=0` is the one setting that disables in BOTH modes: headless because the env var
+wins there, and in the TUI because `0` agrees with the flag rather than fighting it. Pinning both
+channels to the same answer means the launch mode no longer has to be known to predict the outcome,
+which is the property a control whose rank flips between modes cannot provide on its own.
 
 Two choices inside that fix are worth stating rather than leaving to be re-derived:
 
@@ -330,8 +359,9 @@ Two choices inside that fix are worth stating rather than leaving to be re-deriv
   value is a bounded, reproducible surface. It now pins the env var too; `ProbeRunner` spreads
   `Invocation.env` over `process.env`, which is precisely where a hostile value would arrive.
 
-The `--no-memory` flag is still emitted. It is free, it is the documented control, and measurement
-showed it to be inert rather than harmful — it simply may no longer be described as immunity.
+The `--no-memory` flag is still emitted, and now for a measured reason rather than a documented one: it
+is what actually disables memory in the TUI, the mode canonical agents launch in. What it may no longer
+be called is immunity.
 
 **Evidence vocabulary.** `disable` moved from `declared` to **`refuted`**, a value this task added to
 `MemoryEvidence`. `declared` reads as "nobody checked", which is the opposite of what happened, so a
@@ -342,9 +372,12 @@ instead, the version and date, and where the evidence lives — enforced at modu
 `assertRefutationsAreExplained`, because a verdict with no finding behind it is barely better than the
 `declared` it replaced.
 
-**The `disable` axis was NOT promoted for the new control.** The env pin is a control change, not an
-observation; conflating the two is the mistake this section documents. It stays `refuted` until a
-measurement of the *canonical env* passes with a working positive control.
+**The `disable` axis was NOT promoted, even though arm A passed.** Arm A shows the canonical TUI launch
+produces no memory against a working control, which is real — but it does not isolate the *env pin's*
+contribution, because arm B shows the flag alone already suffices in that mode. Proving the env pin
+specifically would take a headless `GROK_MEMORY=0` arm with no flag, which nobody has run. The axis
+stays `refuted`: it records the claim that was tested and failed, and promotion needs an observation of
+the new control rather than of a launch that happens to contain it.
 
 - **Primary evidence:** `t-c46c35` journal `j-b02184d17f19` (arm output, debug log, store bytes);
   approvals `a-b4b050`, `a-c1a580`, `a-a3db98`; `src/runtime/adapters/grokMemory.ts`,

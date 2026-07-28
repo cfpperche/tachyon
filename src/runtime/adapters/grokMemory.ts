@@ -22,13 +22,39 @@
  * the default really is off, so memory became active *because* `GROK_MEMORY` turned it on, and
  * `--no-memory` failed to outrank it.
  *
+ * ## The precedence is MODE-DEPENDENT, which the first measurement could not see
+ *
+ * Both arms above ran headless (`-p`). Canonical Grok agents launch the interactive TUI, so a second
+ * measurement (approval `a-c1a580`, plus `a-a3db98` for the control) repeated the experiment there —
+ * and got the OPPOSITE answer. Three TUI arms, `GROK_MEMORY=1` held constant, varying only the flag:
+ *
+ *  - `--no-memory` + `GROK_MEMORY=1` → no `MEMORY_INIT`, no `MEMORY_INJECT`, marker never reached the
+ *    model, nothing written.
+ *  - `GROK_MEMORY=0` + `--no-memory` (the canonical launch) → same: nothing.
+ *  - `--experimental-memory` + `GROK_MEMORY=1` → `MEMORY_INIT`, `MEMORY_INJECT` ×2, `MEMORY_REINDEX`;
+ *    the model returned the planted marker in 2.5s with NO tool calls, and a 4.2 MB `index.sqlite`
+ *    appeared in the store.
+ *
+ * The third arm is load-bearing and was worth its own authorization: without it, the first two arms'
+ * silence could equally have meant "this sandbox never enables memory", and reading them as a success
+ * would have been the same unverified optimism this file exists to correct — merely pointing the other
+ * way. With it, the comparison is clean, because arms two and three differ in exactly one flag.
+ *
+ * **So `--no-memory` DOES outrank `GROK_MEMORY=1` in the TUI, and does NOT headless.** The guide's
+ * "always disables" is false as written — a claim of ALWAYS is refuted by one counterexample — but the
+ * flag is not inert either. Which mode you are in decides.
+ *
+ * The practical consequence is the reverse of what it looks like: canonical AGENTS launch the TUI, so
+ * the flag was in fact holding for them, while `src/probe/adapters/grok.ts` runs `-p` — the mode where
+ * the flag loses. The most exposed caller of the false guarantee was the probe, not the agent.
+ *
  * ## What Tachyon does about it
  *
- * Precedence Tachyon cannot verify is not a control Tachyon can offer, so the guarantee moved to the
- * channel Tachyon actually owns: **the spawn environment**. `grokMemoryEnv` pins `GROK_MEMORY=0` on
- * canonical launches, and the same measurement that refuted the flag is what recommends the variable —
- * it was decisive enough to overrule the flag, so setting it uses the control the runtime honors
- * rather than the one it documents.
+ * A control whose rank depends on the launch mode is not a control Tachyon can reason about, so the
+ * guarantee moved to the channel Tachyon actually owns: **the spawn environment**. `grokMemoryEnv`
+ * pins `GROK_MEMORY=0` on canonical launches, which is the one setting that disables in BOTH modes —
+ * headless because the env var wins there, and the TUI because `0` agrees with the flag rather than
+ * fighting it. Pinning both channels to the same answer means the mode no longer has to be known.
  *
  * Why set `0` rather than remove the variable: removal returns the launch to rule 5, the bare default,
  * which is exactly the position t-c46c35 set out to improve on. It is also not expressible — the spawn
@@ -36,8 +62,9 @@
  * that can set a variable but not unset one. `0` is an assertion in a channel Tachyon controls end to
  * end; absence is an assumption about everyone else's environment.
  *
- * The flag stays pinned. It is free, it is the documented control, and the measurement showed it to be
- * inert rather than harmful — it simply may no longer be described as immunity.
+ * The flag stays pinned, and now for a measured reason rather than a documented one: it is what
+ * actually disables memory in the TUI, the mode canonical agents launch in. What it may no longer be
+ * called is immunity, because headless it loses.
  *
  * ## What this module does NOT claim
  *
@@ -76,9 +103,10 @@ export const GROK_MEMORY_DISABLED_VALUE = "0";
  * rather than from the table that has already misled once.
  */
 export const GROK_MEMORY_PRECEDENCE = [
-  "GROK_MEMORY env var: 1/true enables — MEASURED to outrank --no-memory at 0.2.112, contradicting the shipped guide",
-  "--experimental-memory CLI flag (enables) — documented, not measured against the env var",
-  "--no-memory CLI flag — documented as 'always disables'; MEASURED to be outranked by GROK_MEMORY=1",
+  "MODE DECIDES: headless (-p) ranks GROK_MEMORY above --no-memory; the interactive TUI ranks --no-memory above GROK_MEMORY. Both MEASURED at 0.2.112",
+  "GROK_MEMORY env var: 1/true enables — MEASURED to outrank --no-memory HEADLESS, contradicting the shipped guide",
+  "--no-memory CLI flag — documented as 'always disables'; MEASURED to hold in the TUI and to be outranked by GROK_MEMORY=1 headless, so 'always' is false",
+  "--experimental-memory CLI flag (enables) — MEASURED to enable in the TUI even with a private empty home; not measured against --no-memory",
   "[memory] section in config.toml — documented; Tachyon owns this file inside the private GROK_HOME",
   "default: disabled — MEASURED, on a clean environment with no flag",
 ] as const;

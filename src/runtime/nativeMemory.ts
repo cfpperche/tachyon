@@ -233,8 +233,10 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     evidence: {
       inventory: "declared",
       // t-0e88f3 — MEASURED AND FAILED, which is a different statement from "unmeasured". The shipped
-      // guide's rule 1 says `--no-memory` always disables; with GROK_MEMORY=1 also set, memory
-      // initialized, injected and wrote. See `refutations` below for the observation itself.
+      // guide's rule 1 says `--no-memory` ALWAYS disables; headless, with GROK_MEMORY=1 also set,
+      // memory initialized, injected and wrote. One counterexample refutes an "always" — even though
+      // the same flag was later measured to HOLD in the TUI, which is what makes the guide's claim
+      // wrong rather than the flag useless. See `refutations` below for both observations.
       disable: "refuted",
       enable: "declared",
       injection: "declared",
@@ -259,11 +261,11 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     refutations: [
       {
         axis: "disable",
-        claim: "shipped user guide 13-memory.md, precedence rule 1: `--no-memory` CLI flag (always disables), ranked above rule 3 `GROK_MEMORY`",
+        claim: "shipped user guide 13-memory.md, precedence rule 1: `--no-memory` CLI flag (ALWAYS disables), ranked above rule 3 `GROK_MEMORY`",
         measured:
-          "with `--no-memory` AND GROK_MEMORY=1, a marker planted in the private store reached the model verbatim; the debug log shows MEMORY_INIT (watcher_config_enabled=true), MEMORY_INJECT_SEARCH results=1 and a first-turn injection, and the store was written during the run. A default arm with a clean environment and no flag showed none of it, which is what separates 'the flag is inert' from 'the env var outranks it'",
-        at: "Grok 0.2.112, effective model grok-4.5-build, 2026-07-28",
-        evidence: "t-c46c35 journal j-b02184d17f19; t-0e88f3",
+          "HEADLESS (-p), with `--no-memory` AND GROK_MEMORY=1, a marker planted in the private store reached the model verbatim; the debug log shows MEMORY_INIT (watcher_config_enabled=true), MEMORY_INJECT_SEARCH results=1 and a first-turn injection, and the store was written during the run. A default arm with a clean environment and no flag showed none of it, which is what separates 'the flag is inert' from 'the env var outranks it'. In the interactive TUI the SAME pairing disabled memory (no MEMORY_INIT), while `--experimental-memory` + GROK_MEMORY=1 enabled it (MEMORY_INIT, MEMORY_INJECT x2, marker returned in 2.5s with no tool calls, 4.2MB index.sqlite written) — so the flag's rank depends on the launch mode, and the guide's 'always' is false as written",
+        at: "Grok 0.2.112, effective models grok-4.5-build (headless) and grok-4.5 (TUI), 2026-07-28",
+        evidence: "t-c46c35 journal j-b02184d17f19; t-0e88f3; approvals a-b4b050, a-c1a580, a-a3db98",
       },
     ],
   },

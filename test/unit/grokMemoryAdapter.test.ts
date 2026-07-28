@@ -28,22 +28,31 @@ import { nativeMemoryCapability, resolveMemoryPolicy } from "../../src/runtime/n
  */
 
 describe("the precedence, as measured rather than as documented", () => {
-  it("puts GROK_MEMORY above --no-memory, which is the finding", () => {
-    // The single most important inversion: the guide ranks the flag first, the runtime does not.
-    const envRank = GROK_MEMORY_PRECEDENCE.findIndex((rule) => rule.startsWith("GROK_MEMORY"));
-    const flagRank = GROK_MEMORY_PRECEDENCE.findIndex((rule) => rule.startsWith("--no-memory"));
-    expect(envRank).toBeGreaterThanOrEqual(0);
-    expect(flagRank).toBeGreaterThanOrEqual(0);
-    expect(envRank, "the env var outranks the flag at 0.2.112").toBeLessThan(flagRank);
+  it("leads with the mode dependence, because that is the finding", () => {
+    // Neither ordering is THE ordering: headless ranks the env var first, the TUI ranks the flag
+    // first. A reader who takes away only the first line must still take away the right thing.
+    expect(GROK_MEMORY_PRECEDENCE[0]).toContain("MODE DECIDES");
+    expect(GROK_MEMORY_PRECEDENCE[0]).toContain("headless");
+    expect(GROK_MEMORY_PRECEDENCE[0]).toContain("TUI");
+  });
+
+  it("records both directions of the inversion, not just the convenient one", () => {
+    const envRule = GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("GROK_MEMORY"))!;
+    const flagRule = GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("--no-memory"))!;
+    expect(envRule).toContain("HEADLESS");
+    // The flag rule has to carry the fact that it HOLDS somewhere, or the record over-corrects into
+    // "the flag is inert" — which the TUI arms disproved.
+    expect(flagRule).toContain("hold in the TUI");
+    expect(flagRule).toContain("outranked by GROK_MEMORY=1 headless");
+    expect(flagRule, "an 'always' claim dies to one counterexample").toContain("'always' is false");
   });
 
   it("marks each rule as MEASURED or merely documented, so the two never blur again", () => {
     const measured = GROK_MEMORY_PRECEDENCE.filter((rule) => rule.includes("MEASURED"));
-    // The env var, the flag and the default were all observed; --experimental-memory and the config
-    // section were not, and say so.
-    expect(measured).toHaveLength(3);
-    expect(GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("--experimental-memory")))
-      .toContain("not measured");
+    // Everything except the config.toml section was observed in at least one mode.
+    expect(measured).toHaveLength(5);
+    expect(GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("[memory]")))
+      .toContain("documented");
   });
 
   it("keeps the documented table verbatim, so the contradiction stays legible", () => {
@@ -56,10 +65,8 @@ describe("the precedence, as measured rather than as documented", () => {
   });
 
   it("no longer claims the flag has absolute precedence anywhere", () => {
-    const everything = [...GROK_MEMORY_PRECEDENCE].join(" ");
-    expect(everything).not.toContain("always disables\"");
     expect(GROK_MEMORY_PRECEDENCE.find((rule) => rule.startsWith("--no-memory")))
-      .toContain("MEASURED to be outranked");
+      .toContain("MEASURED to hold in the TUI and to be outranked");
   });
 });
 
@@ -119,9 +126,24 @@ describe("what the correction does to the evidence record", () => {
     const refutation = capability.refutations?.find((entry) => entry.axis === "disable");
     expect(refutation, "a refuted axis without its finding is a summary with nothing behind it").toBeDefined();
     expect(refutation!.claim).toContain("--no-memory");
+    expect(refutation!.claim, "the word that makes it refutable").toContain("ALWAYS");
     expect(refutation!.measured).toContain("MEMORY_INJECT_SEARCH");
     expect(refutation!.at).toContain("0.2.112");
     expect(refutation!.evidence).toContain("j-b02184d17f19");
+  });
+
+  it("records the TUI counter-observation too, not only the failure", () => {
+    // A refutation that reported only the headless arm would read as "the flag does nothing", and the
+    // TUI arms disproved that. Recording both is what keeps the entry honest in BOTH directions.
+    const refutation = capability.refutations!.find((entry) => entry.axis === "disable")!;
+    expect(refutation.measured).toContain("HEADLESS");
+    expect(refutation.measured).toContain("interactive TUI");
+    expect(refutation.measured, "the positive control that made the null arms readable").toContain("--experimental-memory");
+    expect(refutation.measured).toContain("depends on the launch mode");
+    // Every authorization that paid for a fact is named, so the spend is auditable against the claim.
+    expect(refutation.evidence).toContain("a-b4b050");
+    expect(refutation.evidence).toContain("a-c1a580");
+    expect(refutation.evidence).toContain("a-a3db98");
   });
 
   it("pins the exact version the evidence describes", () => {
@@ -173,6 +195,14 @@ describe("the plan states its own cost before anyone authorizes it", () => {
   it("describes the precedence line as the measured fact, not the documented one", () => {
     expect(plan.withoutModelCall[0]).toContain("MEASURED");
     expect(plan.withoutModelCall[0]).toContain("outranks");
+  });
+
+  it("keeps the disable axis pointed at the control that is still unproven", () => {
+    // Arm A passed, but it does not isolate the env pin: the flag alone already suffices in the TUI.
+    // What remains unmeasured is GROK_MEMORY=0 with NO flag, headless — and the plan must say so,
+    // or the next reader will think the question was already settled.
+    expect(plan.needsAuthorization.find((entry) => entry.axis === "disable")?.proves)
+      .toContain("hostile GROK_MEMORY=1");
   });
 
   it("makes the fresh case test the DRIFT the pin exists for", () => {
