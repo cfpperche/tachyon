@@ -83,11 +83,24 @@ export interface HumanInboxInput {
   validations: readonly ValidationViewItem[];
 }
 
+/** The product's answer when a workspace configures nothing. */
+export const DEFAULT_STALE_AFTER_HOURS = 24;
+
+/**
+ * t-e4f662 — how long a row may wait before it is MARKED stale, or `"never"`.
+ *
+ * `"never"` is a real answer, not a disabled feature: a fleet that parks approvals for days on
+ * purpose would see every row marked, and a mark that is always on has stopped being a signal. It is
+ * spelled as a word rather than as `0` because `0` reads literally as "stale after zero hours" — the
+ * OPPOSITE of off — and this loader refuses ambiguity rather than picking the friendlier reading.
+ */
+export type StaleAfter = number | "never";
+
 export interface HumanInboxOptions {
   /** ISO instant used as "now" for staleness; passed in so the projection stays pure and testable */
   now?: string;
-  /** hours after which a row is MARKED stale (display only). Default 24. */
-  staleAfterHours?: number;
+  /** hours after which a row is MARKED stale (display only), or "never". Default 24. */
+  staleAfterHours?: StaleAfter;
 }
 
 /**
@@ -119,7 +132,11 @@ function validationArtifacts(validation: ValidationViewItem): ArtifactRef[] {
  */
 export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptions = {}): HumanInboxItem[] {
   const now = options.now ?? new Date().toISOString();
-  const staleAfterHours = options.staleAfterHours ?? 24;
+  const staleAfter = options.staleAfterHours ?? DEFAULT_STALE_AFTER_HOURS;
+  // Computed once, here, so the two arms below cannot drift into different staleness rules — the kind
+  // of divergence that would make the aggregate count disagree with the rows it counts.
+  const isStale = (createdAt: string): boolean =>
+    staleAfter !== "never" && hoursBetween(createdAt, now) >= staleAfter;
   const items: HumanInboxItem[] = [];
 
   for (const approval of input.approvals) {
@@ -134,7 +151,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       createdAt: approval.createdAt,
       wsHash: input.wsHash,
       folder: input.folder,
-      stale: hoursBetween(approval.createdAt, now) >= staleAfterHours,
+      stale: isStale(approval.createdAt),
       artifacts: [],
       ...(approval.warning ? { warning: approval.warning } : {}),
       detail: { kind: "approval", approval },
@@ -152,7 +169,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       createdAt: validation.createdAt,
       wsHash: input.wsHash,
       folder: input.folder,
-      stale: hoursBetween(validation.createdAt, now) >= staleAfterHours,
+      stale: isStale(validation.createdAt),
       artifacts: validationArtifacts(validation),
       detail: { kind: "validation", validation },
     });

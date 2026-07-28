@@ -526,6 +526,17 @@ export interface TachyonConfig {
      * refusal travels to the sidebar so the fallback can explain itself.
      */
     sidebar?: { cardTemplate?: CardTemplateConfig; cardTemplateRefusal?: string[] };
+    /**
+     * t-e4f662 — how long something may wait in the Human Inbox before it is MARKED stale.
+     *
+     * Display only, as ratified: nothing here auto-approves, auto-denies or auto-closes, and an
+     * auto-denied approval is a security decision no timer should make (the approvals/validations
+     * report, § 5). ONE threshold covers both kinds in v1 — an approval blocks an agent and a
+     * validation does not, so they could plausibly differ, but nobody has asked for that and a
+     * display-only mark does not earn a doubled config surface. The scalar spelling leaves room: a
+     * later mapping can be accepted beside it without changing what a number means.
+     */
+    humanInbox?: { staleAfterHours?: import("../humanInbox/model.js").StaleAfter };
   };
 }
 
@@ -1693,6 +1704,36 @@ export function parseConfig(yamlText: string): ParseResult {
           }
         }
       }
+      // t-e4f662 — the Human Inbox's staleness threshold. Same validation SHAPE as the blocks above
+      // (unknown key refused by name, value checked, errors accumulated) and the same off-vocabulary
+      // `agentMemoryMax` already established, so a person who knows one knows the other.
+      if (raw.settings.humanInbox !== undefined) {
+        if (!isPlainObject(raw.settings.humanInbox)) {
+          errors.push("settings.humanInbox: must be a mapping with 'staleAfterHours'");
+        } else {
+          const inbox = raw.settings.humanInbox;
+          for (const key of Object.keys(inbox)) {
+            if (key !== "staleAfterHours") {
+              errors.push(`settings.humanInbox: unknown key '${key}' (allowed: staleAfterHours)`);
+            }
+          }
+          const value = inbox.staleAfterHours;
+          if (value !== undefined) {
+            if (value === false || value === null || value === "off" || value === "none" || value === "never") {
+              settings.humanInbox = { staleAfterHours: "never" };
+            } else if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+              // `0` lands here on purpose: it reads literally as "stale the moment it arrives", which
+              // is the opposite of the "off" some author would mean by it. Refused by name, with the
+              // spelling that does mean off.
+              errors.push(
+                "settings.humanInbox.staleAfterHours: must be a positive number of hours, or \"never\" to stop marking",
+              );
+            } else {
+              settings.humanInbox = { staleAfterHours: value };
+            }
+          }
+        }
+      }
       if (raw.settings.bridgeGuidance !== undefined) {
         if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
@@ -1834,7 +1875,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }
