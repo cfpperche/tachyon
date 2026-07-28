@@ -361,6 +361,12 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
+  /**
+   * t-e76acc — the same affordance for a validation that lands on a human. Symmetric with the
+   * approval hook above in EVERYTHING except authority: it carries a self-declared author (that is
+   * what a validation has), it never injects into a session, and nothing downstream redeems it.
+   */
+  onHumanValidationPending?: (ws: Workspace, validation: { id: string; title: string; author: string }) => void;
   /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
   /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
@@ -2032,6 +2038,16 @@ export class Workspace {
         onTasksChanged: () => deps.onViewsChanged("tasks"),
         onTaskNotificationEvent: (event) => this.taskNotifications.notify(event),
         onValidationsChanged: () => deps.onViewsChanged("tasks"),
+        onHumanValidationPending: (validation) => {
+          deps.onHumanValidationPending?.(this, validation);
+          // Companion side panel: the same push approvals already get, so a paired device can
+          // refresh without polling. A distinct event name — one is a capability, one is evidence.
+          try {
+            this.companionLive.pushEvent("validations.changed", { id: validation.id, author: validation.author });
+          } catch {
+            /* best-effort */
+          }
+        },
         waiters: this.waiters,
         commands: this.commandRunner,
         runbooks: this.runbookRunner,

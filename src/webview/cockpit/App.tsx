@@ -42,6 +42,9 @@ import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
+import type { HumanInboxDispatch } from "../human-inbox/App";
+import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
+import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
@@ -87,6 +90,24 @@ const ApprovalsApp = lazy(() =>
   import("../approval/App").then((m) => {
     loadSectionStylesheet("approvals");
     return { default: m.App };
+  }),
+);
+// t-e76acc — CSS co-load: the unified Human Inbox. The list and the item route share one sheet and
+// one chunk, but each lazy block requests it under its OWN key (the "studio-frame-<id>" convention:
+// one distinct key per call site, both resolving to the same href) — the item route is reachable by
+// deep link without the list ever mounting, and a shared key would fail the co-load parity check,
+// which compares the two id lists as arrays rather than as sets. `loadSectionStylesheet` is
+// idempotent per href, so the second call is free whenever both do run.
+const HumanInboxApp = lazy(() =>
+  import("../human-inbox/App").then((m) => {
+    loadSectionStylesheet("inbox");
+    return { default: m.App };
+  }),
+);
+const HumanInboxItemApp = lazy(() =>
+  import("../human-inbox/App").then((m) => {
+    loadSectionStylesheet("inbox-item");
+    return { default: m.ItemApp };
   }),
 );
 // t-610705 — CSS co-load, second surface (see the Approvals comment above for the mechanism).
@@ -311,6 +332,12 @@ export interface CockpitAppProps {
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
   approvalDispatch: ApprovalDispatch;
+  /** t-e76acc — the unified Human Inbox section and its item subroute. */
+  inboxVm?: HumanInboxViewModel;
+  inboxError?: string;
+  inboxItemVm?: HumanInboxItemViewModel;
+  inboxItemMissing?: { kind: HumanInboxKind; id: string };
+  inboxDispatch: HumanInboxDispatch;
   validationsVm?: ValidationsViewModel;
   validationsError?: string;
   validationsDispatch: ValidationsDispatch;
@@ -340,12 +367,13 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "inbox", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
   engine: { icon: "server-environment", navKey: "navEngine" },
   fleet: { icon: "organization", navKey: "navFleet" },
+  inbox: { icon: "inbox", navKey: "navInbox" },
   approvals: { icon: "pass", navKey: "navApprovals" },
   mission: { icon: "checklist", navKey: "navMission" },
   validations: { icon: "checklist", navKey: "navValidations" },
@@ -1192,7 +1220,10 @@ export function App(p: CockpitAppProps) {
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
   const isProjectHandoff = activeRoute?.kind === "project-handoff";
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff;
+  // t-e76acc — an opened inbox item is a full-bleed embedded surface like every other subroute, and
+  // (unlike Handoff) it keeps its own nav tab lit: the human is working a counted queue down.
+  const isInboxItem = activeRoute?.kind === "inbox-item";
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
   // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
   // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
   // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
@@ -1206,7 +1237,7 @@ export function App(p: CockpitAppProps) {
   // very top, and the content area gets the vertical space the tab strip would have used. Each
   // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
-  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute || isProjectHandoff;
+  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -1264,6 +1295,24 @@ export function App(p: CockpitAppProps) {
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute?.kind === "inbox-item") {
+    // t-e76acc — checked before the section branch, same as every other subroute: `model.section`
+    // reads "inbox" underneath (navSection keeps that tab lit), and this is what renders.
+    const parent = parentRoute(activeRoute);
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-inbox-item-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s.navInbox}
+        </Button>
+      );
+    }
+    body = (
+      <div class="ck-embed-host" data-testid="control-inbox-item">
+        <Suspense fallback={<SectionFallback />}>
+          <HumanInboxItemApp vm={p.inboxItemVm} missing={p.inboxItemMissing} dispatch={p.inboxDispatch} />
         </Suspense>
       </div>
     );
@@ -1417,6 +1466,19 @@ export function App(p: CockpitAppProps) {
               {o.agentsRunning}/{o.agentsTotal}
             </div>
           </div>
+          {/* t-e76acc — ONE number for everything waiting on a human, and it is clickable: a count a
+              person cannot act on is how the Approvals counter stayed wrong for so long. The
+              per-kind Approvals metric stays beside it until the unified surface has demonstrably
+              covered both flows (the ratified sequencing: cover first, de-duplicate after). */}
+          <button
+            type="button"
+            class={`ck-metric ck-metric-btn ${o.inboxPending > 0 ? "warn" : ""}`}
+            data-testid="control-overview-inbox"
+            onClick={() => p.onSetSection("inbox")}
+          >
+            <div class="label">{s.inbox}</div>
+            <div class="value">{o.inboxPending}</div>
+          </button>
           <div class={`ck-metric ${o.approvalsPending > 0 ? "warn" : ""}`}>
             <div class="label">{s.approvals}</div>
             <div class="value">{o.approvalsPending}</div>
@@ -1454,6 +1516,9 @@ export function App(p: CockpitAppProps) {
             </Button>
             <Button variant="default" onClick={() => p.onSetSection("fleet")}>
               {s.navFleet}
+            </Button>
+            <Button variant="default" onClick={() => p.onSetSection("inbox")}>
+              {s.navInbox}
             </Button>
             <Button variant="default" onClick={() => p.onSetSection("approvals")}>
               {s.navApprovals}
@@ -1563,6 +1628,14 @@ export function App(p: CockpitAppProps) {
           </div>
         )}
       </ModuleChrome>
+    );
+  } else if (section === "inbox") {
+    body = (
+      <div class="ck-embed-host" data-testid="control-inbox">
+        <Suspense fallback={<SectionFallback />}>
+          <HumanInboxApp vm={p.inboxVm} error={p.inboxError} dispatch={p.inboxDispatch} />
+        </Suspense>
+      </div>
     );
   } else if (section === "approvals") {
     body = (

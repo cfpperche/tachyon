@@ -138,6 +138,30 @@ export function routeHumanApprovalRequest(
 }
 
 /**
+ * t-e76acc — the validation-side twin of `routeHumanApprovalRequest`. Same notice, same Review
+ * affordance, and the same total absence of decision authority; it opens the Human Inbox rather than
+ * the per-kind section, because "what is waiting on me" is now one queue. It deliberately does NOT
+ * write into any agent's session: nothing is blocked on this the way an agent is blocked on an
+ * approval.
+ */
+export function routeHumanValidationPending(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  validation: { id: string; title: string; author: string },
+): void {
+  host.notify(
+    host.t("Validation {0} needs a human — '{1}' (from '{2}')", validation.id, validation.title, validation.author),
+    "info",
+    [{
+      label: host.t("Review"),
+      run: async () => {
+        await host.executeCommand("tachyon.openHumanInbox", workspaceHash);
+      },
+    }],
+  );
+}
+
+/**
  * Starts one complete operational engine for one canonical workspace.  The returned service owns the
  * Workspace, its direct public Bridge, scheduler/watchers and the private shell-control socket.  Shell
  * attachment is deliberately absent from this startup path: a shell may come and go without entering
@@ -207,6 +231,9 @@ export async function startDaemonEngineService(
       onViewsChanged: (view) => host.onViewsChanged(view),
       onApprovalRequested: (approvalWorkspace, request) => {
         routeHumanApprovalRequest(host, approvalWorkspace.wsHash, request);
+      },
+      onHumanValidationPending: (validationWorkspace, validation) => {
+        routeHumanValidationPending(host, validationWorkspace.wsHash, validation);
       },
       claudeStatusLineCapture,
       piBridgeExtensionPath: path.join(__dirname, "pi-bridge-extension.mjs"),

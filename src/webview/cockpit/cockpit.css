@@ -886,6 +886,21 @@ main.ck-main.ck-main--mission,
   color: var(--vscode-foreground);
 }
 
+/* t-e76acc — the one metric that is also a destination (Overview → Human Inbox). Same box as its
+   siblings; only the affordances differ, so a clickable count never reads as a different kind of
+   thing than the counts beside it. */
+.ck-metric-btn {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.ck-metric-btn:hover {
+  border-color: color-mix(in srgb, var(--vscode-foreground) 35%, var(--ds-border));
+}
+
 .ck-metric.warn .value {
   color: var(--ds-err);
 }

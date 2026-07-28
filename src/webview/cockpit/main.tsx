@@ -101,6 +101,20 @@ import {
   closeValidationItemAction,
   assignValidationAction,
 } from "../validations/messages";
+import type { HumanInboxDispatch } from "../human-inbox/App";
+import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
+import type { HumanInboxKind } from "../../humanInbox/model";
+import {
+  HUMAN_INBOX,
+  HUMAN_INBOX_ERROR,
+  HUMAN_INBOX_ITEM,
+  HUMAN_INBOX_ITEM_MISSING,
+  refreshInboxAction,
+  openInboxItemAction,
+  resolveInboxApprovalAction,
+  closeInboxValidationAction,
+  assignInboxValidationAction,
+} from "../human-inbox/messages";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
 import {
   RUNTIME_OPS_SNAPSHOT,
@@ -180,6 +194,10 @@ function CockpitRoot() {
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
+  const [inboxVm, setInboxVm] = useState<HumanInboxViewModel | undefined>(undefined);
+  const [inboxError, setInboxError] = useState<string | undefined>(undefined);
+  const [inboxItemVm, setInboxItemVm] = useState<HumanInboxItemViewModel | undefined>(undefined);
+  const [inboxItemMissing, setInboxItemMissing] = useState<{ kind: HumanInboxKind; id: string } | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
   const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
   const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
@@ -316,6 +334,14 @@ function CockpitRoot() {
         if (!nextTask || !prevTask || prevTask.wsHash !== nextTask.wsHash || prevTask.taskId !== nextTask.taskId) {
           setTaskVm(undefined);
         }
+        // t-e76acc — same identity-change reset task-detail and activity already do: a late item push
+        // from the row just navigated away from must never render under a DIFFERENT item's route.
+        const prevItem = activeRouteRef.current?.kind === "inbox-item" ? activeRouteRef.current : undefined;
+        const nextItem = next.activeRoute?.kind === "inbox-item" ? next.activeRoute : undefined;
+        if (!nextItem || !prevItem || prevItem.wsHash !== nextItem.wsHash || prevItem.itemKind !== nextItem.itemKind || prevItem.itemId !== nextItem.itemId) {
+          setInboxItemVm(undefined);
+          setInboxItemMissing(undefined);
+        }
         activeRouteRef.current = next.activeRoute;
         if (next.studioMountNonce !== studioMountNonceRef.current) {
           studioMountNonceRef.current = next.studioMountNonce;
@@ -385,6 +411,25 @@ function CockpitRoot() {
         setValidationsError(undefined);
       } else if (type === VALIDATION_ERROR && typeof raw.message === "string") {
         setValidationsError(raw.message);
+      } else if (type === HUMAN_INBOX && raw.vm) {
+        setInboxVm(raw.vm as HumanInboxViewModel);
+        setInboxError(undefined);
+      } else if (type === HUMAN_INBOX_ERROR && typeof raw.message === "string") {
+        setInboxError(raw.message);
+      } else if (type === HUMAN_INBOX_ITEM && raw.vm) {
+        // identity-checked against the CURRENT route, same rule as TASK/ACTIVITY above.
+        const route = activeRouteRef.current;
+        const vm = raw.vm as HumanInboxItemViewModel;
+        if (route?.kind === "inbox-item" && route.wsHash === vm.wsHash && route.itemKind === vm.item.kind && route.itemId === vm.item.id) {
+          setInboxItemVm(vm);
+          setInboxItemMissing(undefined);
+        }
+      } else if (type === HUMAN_INBOX_ITEM_MISSING && typeof raw.id === "string") {
+        const route = activeRouteRef.current;
+        if (route?.kind === "inbox-item" && route.itemKind === raw.kind && route.itemId === raw.id) {
+          setInboxItemVm(undefined);
+          setInboxItemMissing({ kind: raw.kind as HumanInboxKind, id: raw.id });
+        }
       } else if (type === RUNTIME_OPS_SNAPSHOT && raw.snapshot) {
         setRuntimeSnapshot(raw.snapshot as RuntimeOpsSnapshot);
       } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
@@ -566,6 +611,19 @@ function CockpitRoot() {
     [],
   );
 
+  // t-e76acc — every entry routes to the kind's own host path; there is no generic "resolve" here,
+  // and no shape a validation row could use to reach the approval one.
+  const inboxDispatch: HumanInboxDispatch = useMemo(
+    () => ({
+      refresh: () => post(refreshInboxAction()),
+      open: (kind: HumanInboxKind, id: string) => post(openInboxItemAction(kind, id)),
+      resolveApproval: (id: string, decision: ApprovalDecision) => post(resolveInboxApprovalAction(id, decision)),
+      closeValidation: (id, outcome, note) => post(closeInboxValidationAction(id, outcome, note)),
+      assignValidation: (id, assignee, expect) => post(assignInboxValidationAction(id, assignee, expect)),
+    }),
+    [],
+  );
+
   const pluginsDispatch: PluginsDispatch = useMemo(
     () => ({
       refresh: () => post({ type: "refresh" }),
@@ -687,6 +745,11 @@ function CockpitRoot() {
       validationsVm={validationsVm}
       validationsError={validationsError}
       validationsDispatch={validationsDispatch}
+      inboxVm={inboxVm}
+      inboxError={inboxError}
+      inboxItemVm={inboxItemVm}
+      inboxItemMissing={inboxItemMissing}
+      inboxDispatch={inboxDispatch}
       runtimeSnapshot={runtimeSnapshot}
       onRuntimeSetProviderObservation={(provider: RuntimeOpsProviderV2, enabled: boolean) =>
         post(runtimeOpsSetProviderObservationAction(provider, enabled))
@@ -732,6 +795,7 @@ function CockpitRoot() {
         if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
         if (section === "validations") post(refreshValidationsAction());
+        if (section === "inbox") post(refreshInboxAction());
       }}
       onSwitchWorkspace={(wsHash: string) => {
         // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host

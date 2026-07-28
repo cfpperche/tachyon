@@ -356,6 +356,10 @@
         "title": "%command.openApprovals%"
       },
       {
+        "command": "tachyon.openHumanInbox",
+        "title": "%command.openHumanInbox%"
+      },
+      {
         "command": "tachyon.restartTmuxServer",
         "title": "%command.restartTmuxServer%"
       },

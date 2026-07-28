@@ -40,6 +40,7 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
+import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
@@ -1322,6 +1323,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           // "0 pending" with requests waiting on disk. A read failure is deliberately NOT swallowed
           // into an empty list — Control's own error card is honest, a silent zero is not.
           approvals: pendingApprovalRows(ws.workspaceRoot),
+          // t-e76acc — Overview's unified "waiting on you" count needs the OTHER half, and it is
+          // counted with the very predicate the Inbox list filters on (`validationAwaitsHuman`), so
+          // the number and the rows cannot drift the way the approvals counter once did. A read
+          // failure leaves the field absent rather than reporting zero: absent means "not collected".
+          ...(() => {
+            try {
+              return { validationsAwaitingHuman: ws.missionControl.listValidations().filter(validationAwaitsHuman).length };
+            } catch {
+              return {};
+            }
+          })(),
           tmux,
           ...(companion ? { companion } : {}),
         });
@@ -2237,6 +2249,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       await openCockpit(makeCockpitDeps(), {
         section: "approvals",
+        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
+      });
+    }),
+    // t-e76acc — one destination for "what is waiting on me", and the target of the Review action on
+    // both the approval and the human-validation notices.
+    vscode.commands.registerCommand("tachyon.openHumanInbox", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      await openCockpit(makeCockpitDeps(), {
+        section: "inbox",
         ...(ws ? { approvalWsHash: ws.wsHash } : {}),
       });
     }),
