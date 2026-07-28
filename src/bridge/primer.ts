@@ -109,6 +109,9 @@ function beforeFinishingVerificationLines(input: PrimerInput): string[] {
   return check
     ? [
         "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
+        // t-21bcb7 — the full suite holds a machine-wide lock every agent queues behind, so it is
+        // priced per DELIVERY, not per step. Focused tests are the working loop; this is the gate.
+        "Use focused tests while implementing; run this on the tree you deliver.",
         check,
       ]
     : [];
@@ -149,7 +152,9 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
         ? [`Make canonical verifier "${input.gate.behaviorTest}" fail at BASE_SHA and pass at delivered HEAD.`]
         : []),
     ...(spawner
-      ? [`Call notify_agent(to: "${spawner}", summary: <one-line result>) — the doorbell; do not skip it.`]
+      // t-21bcb7 — a notify is best-effort pane input, not history: it points at durable detail
+      // instead of carrying it, which is also what keeps it inside the one-line cap.
+      ? [`Call notify_agent(to: "${spawner}", summary: status + commit/tree + where the detail lives) — the doorbell; do not skip it.`]
       : []),
     BEFORE_FINISHING_CLOSE,
   ];

@@ -24,6 +24,46 @@ policy and must not be imposed on projects that consume Tachyon.
   persistent engine may still be alive under it. Do not leave a pointed worktree after merge.
   See `docs/runbooks/dev-host.md` § After land.
 
+## Verification economy
+
+The gates are not negotiable; how often you pay for them is. These rules exist because a full suite on
+this repository costs minutes of a single machine-wide lock that every agent queues behind, so a
+redundant run is not free caution — it is time taken from someone else's gate.
+
+- **While implementing, run focused tests.** The full suite belongs to the tree you deliver, not to
+  each step that led there.
+- **Do not re-run a full suite for a tree that is already attested.** § Landing order settles when
+  that holds and is the authority: the evidence binds to the TREE, so a fast-forward changing no
+  content changes no evidence, while a merge produces a third tree that has none yet. Read the rule
+  there rather than carrying a second copy of it here.
+- **Do not start a full run while another legitimate holder has the lock.** Wait through the governed
+  mechanism rather than racing it; a refused start is the mechanism working.
+- **Say so when you skip a run.** "Not re-run, because the tree is byte-identical to the attested one"
+  is a report. Silence is indistinguishable from forgetting.
+
+## Reporting and handoff
+
+- **A completion notify is a doorbell, not a report.** It carries status, commit, tree, a count, and a
+  pointer to where the detail lives. Findings, evidence and reasoning go somewhere durable — the task
+  journal (`append_task_note`) or a file — because a notify is best-effort pane input, not history.
+- **Hand off before you run out, not after.** When context is closing, commit or stage what exists,
+  write a short handoff naming the exact next step, and request recovery. A precise unfinished report
+  beats a finished-sounding one; work nobody can resume was not delivered.
+- **Never report a green you did not get.** A check that could not run is not a check that passed, and
+  a scenario whose precondition was satisfied trivially proved nothing.
+
+## Post-landing hygiene
+
+- **The owner removes a change worktree and its branch only when both are clean and contained in
+  `main`.** `worktree_hygiene` already classifies this: `ready-to-remove` means clean, unoccupied and
+  with no unique commits; `needs-review` means something would be lost. Removing on `needs-review`
+  destroys work.
+- **Preserve what is not contained**: uncommitted WIP, an occupied checkout, and commits that exist
+  nowhere else. Preserve the persistent AGENT worktree unconditionally — it is an agent's working
+  home, not a per-task checkout, and an agent that did its work there has nothing to remove.
+- **A restart must not resurrect a closed task.** Finishing is a state the next launch reads, not one
+  it re-derives.
+
 ## Release boundary
 
 - **VS Code Marketplace publication is temporarily disabled.** In this repository, “generate a
