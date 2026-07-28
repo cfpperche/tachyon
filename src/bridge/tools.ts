@@ -972,6 +972,24 @@ function deliveryLeaseWaitGateFor(manager: AgentManager): DeliveryLeaseWaitGate 
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  /**
+   * SDD 480 Phase 2 — seal one execution event and hand it to the sink, never throwing.
+   *
+   * Shared by every Bridge seam so the swallow-and-continue rule is written once: a diagnostic that
+   * can fail the operation it observes is worse than no diagnostic.
+   */
+  const emitExecution = (raw: Parameters<typeof sealExecutionEvent>[0]): void => {
+    if (!deps.recordExecution) return;
+    try { deps.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
+  };
+  /**
+   * Who a Bridge tool call belongs to. An agent arm with no name is `unattributed-caller` rather than
+   * borrowing `human` or the nearest agent: paired with the `unproven` provenance beside it, it says
+   * "we recorded this and cannot tell you whose it was", which is the honest answer.
+   */
+  const executionCallerId = (): string =>
+    deps.caller?.kind === "agent" ? (deps.caller.name ?? "unattributed-caller") : "human";
+
   // ── spec 392 — managed worktree registry ──────────────────────────────────
   mcp.registerTool(
     "create_worktree",
@@ -1460,11 +1478,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       },
     },
     async ({ action, args, timeoutMs }) => {
+      // SDD 480 §3.1 — minted BEFORE the broker call, so a host action that hangs or throws still left
+      // a record that it was attempted. `carrier: "absent"` is the honest declaration: the action runs
+      // inside the VS Code host, so there is no child of ours to hand an environment to and no process
+      // that could later be proven to be this execution. Recorded anyway, labelled `unproven`.
+      const minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+      const name = hostActionName(action);
       try {
         if (!deps.runHostAction) return fail(new Error("host actions are not available on this Bridge"));
-        const result = await deps.runHostAction({ action: hostActionName(action), args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
+        emitExecution({
+          kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name },
+        });
+        const result = await deps.runHostAction({ action: name, args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
+        emitExecution({
+          kind: "exit", node: "InternalOperation", state: "completed", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name },
+        });
         return ok(JSON.stringify(result, null, 2));
       } catch (err) {
+        emitExecution({
+          kind: "fail", node: "InternalOperation", state: "failed", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name, error: String(err) },
+        });
         return fail(err);
       }
     },
@@ -4475,12 +4514,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       },
     },
     async ({ name, timeoutSec, rerun }) => {
+      // Uses the shared `emitExecution` defined once for every Bridge seam.
       let minted: ReturnType<typeof mintExecution> | undefined;
-      const emitExecution = (raw: Parameters<typeof sealExecutionEvent>[0]): void => {
-        if (!deps.recordExecution) return;
-        // A diagnostic must never fail the operation it observes.
-        try { deps.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
-      };
       try {
         if (!deps.commands) return fail(new Error("commands are not available on this Bridge"));
         const before = await deps.commands.status(name);
@@ -4493,13 +4528,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           // command runner starts its own session and this seam hands it no environment, so the
           // PROCESS cannot be proven to be this execution. The tool call is still recorded, with
           // provenance saying exactly that, instead of being dropped or guessed at.
-          minted = mintExecution({
-            // A named agent caller attributes to itself; a human caller to `human`. An agent arm with
-            // no name is neither — `unattributed-caller` says so rather than borrowing one, and the
-            // provenance below is already `unproven`, so nothing downstream can mistake it for proof.
-            agentId: deps.caller?.kind === "agent" ? (deps.caller.name ?? "unattributed-caller") : "human",
-            carrier: "absent",
-          });
+          minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
           emitExecution({
             kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
             correlation: minted.correlation, at: new Date().toISOString(),
