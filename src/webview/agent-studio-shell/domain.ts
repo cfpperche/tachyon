@@ -15,9 +15,13 @@ import {
   claudeSelectorNativeConfigPolicy,
   codexScalarNativeConfigPolicy,
   defaultCodexScalarNativeConfigPolicy,
+  defaultGrokNativeConfigPolicy,
+  grokScalarNativeConfigPolicy,
+  grokSelectorNativeConfigPolicy,
   CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION,
   CODEX_NEVER_APPROVAL_AUTHORIZATION,
   CODEX_FULL_ACCESS_AUTHORIZATION,
+  GROK_ALWAYS_APPROVE_AUTHORIZATION,
   type CodexScalarNativeConfigChoice,
   type CodexScalarNativeConfigFamily,
 } from "../../config/agentNativeConfigPolicy.js";
@@ -788,15 +792,26 @@ export function nativeConfigChoice(
   return source === "global" || source === "workspace" ? source : "exclude";
 }
 
+/**
+ * The sources this agent's runtime actually honors, in render order. Grok offers only `global`:
+ * t-26f508 measured that a project `.grok/config.toml` contributes nothing this projector reads, so
+ * offering `workspace` would let someone author a policy the runtime ignores.
+ */
+export function nativeConfigSourceChoices(fields: AgentStudioFields): readonly ("global" | "workspace")[] {
+  return canonicalAdapter(fields) === "grok" ? ["global"] : ["global", "workspace"];
+}
+
 export function setNativeConfigChoice(
   fields: AgentStudioFields,
   family: CodexScalarNativeConfigFamily,
   choice: CodexScalarNativeConfigChoice,
 ): AgentStudioFields {
   if (!fields.canonical) return fields;
+  const adapter = canonicalAdapter(fields);
   const nativeConfig = structuredClone(fields.canonical.nativeConfig);
   if (choice === "exclude") delete nativeConfig[family];
-  else nativeConfig[family] = canonicalAdapter(fields) === "claude"
+  else if (adapter === "grok") nativeConfig[family] = grokScalarNativeConfigPolicy("global");
+  else nativeConfig[family] = adapter === "claude"
     ? claudeScalarNativeConfigPolicy(choice)
     : codexScalarNativeConfigPolicy(choice);
   return {
@@ -819,6 +834,10 @@ export const setCodexNativeConfigChoice = setNativeConfigChoice;
 export const PERMISSION_AUTHORIZATION_CHOICES: Record<string, readonly string[]> = {
   claude: [CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION],
   codex: [CODEX_NEVER_APPROVAL_AUTHORIZATION, CODEX_FULL_ACCESS_AUTHORIZATION],
+  // t-26f508 — Grok's `always-approve` grants exactly what Claude's `bypassPermissions` grants, so
+  // `permissionAuthorizationCopy` reuses that copy rather than translating a second wording for the
+  // same consequence.
+  grok: [GROK_ALWAYS_APPROVE_AUTHORIZATION],
 };
 
 /** The authorizations offered for this agent — none unless its runtime declares some and the
@@ -885,6 +904,24 @@ function normalizedNativeConfig(
   adapter: string,
   runtime: AgentProfileStudioMutationV1["editable"]["runtime"],
 ): NonNullable<AgentProfileStudioMutationV1["editable"]["nativeConfig"]> {
+  if (adapter === "grok") {
+    // t-26f508 — a canonical Grok profile always records the three refusals (ambient project tooling,
+    // native memory, externally-owned auth) so they are visible in the profile, not only in the
+    // materializer. The scalar rows are then applied over that base.
+    const grok = defaultGrokNativeConfigPolicy();
+    for (const family of ["permissions", "interface", "featureFlags"] as const) {
+      if (nativeConfigChoice(fields, family) === "exclude") {
+        delete grok[family];
+        continue;
+      }
+      const authorize = family === "permissions"
+        ? (PERMISSION_AUTHORIZATION_CHOICES.grok ?? []).filter((member) => nativeConfigAuthorized(fields, member))
+        : [];
+      grok[family] = grokScalarNativeConfigPolicy("global", authorize);
+    }
+    if (runtime.model || runtime.reasoningEffort) grok.selectors = grokSelectorNativeConfigPolicy();
+    return grok;
+  }
   if (adapter !== "codex" && adapter !== "claude") return {};
   const current = fields.canonical!.nativeConfig;
   const result = Object.fromEntries(

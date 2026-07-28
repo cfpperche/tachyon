@@ -836,6 +836,65 @@ describe("loadProfileAwareConfig", () => {
     expect(result.config?.agentSources["grok-x"].mode).toBe("profile");
   });
 
+  it("t-26f508: projects the selected Grok families and refuses ambient project tooling", () => {
+    const root = temporaryRoot("tachyon-agent-profile-grok-native-");
+    const directory = path.join(root, ".tachyon", "agents", "grok-n");
+    fs.mkdirSync(directory, { recursive: true });
+    const home = path.join(root, "home");
+    fs.mkdirSync(path.join(home, ".grok"), { recursive: true });
+    fs.writeFileSync(
+      path.join(home, ".grok", "config.toml"),
+      // `[cli]` is the person's own unrelated key: it must stay opaque instead of blocking activation.
+      '[cli]\ninstaller = "internal"\n\n[ui]\nmax_thoughts_width = 120\npermission_mode = "ask"\n',
+    );
+    const scalar = {
+      source: "global",
+      treatment: "overlay",
+      refresh: "every-launch",
+      lifecycle: ["fresh", "restart", "resume"],
+    };
+    const bytes = Buffer.from(stringify({
+      schemaVersion: 1,
+      agentId: AGENT_ID,
+      runtime: { adapter: "grok", executable: "grok", model: "grok-4.5" },
+      nativeConfig: {
+        selectors: { source: "agent", treatment: "overlay", refresh: "every-launch", lifecycle: ["fresh", "restart", "resume"] },
+        permissions: scalar,
+        interface: scalar,
+      },
+    }));
+    fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
+    const record: AgentProfileAuthorityRecord = {
+      schemaVersion: 1,
+      agentName: "grok-n",
+      agentId: AGENT_ID,
+      revision: "profile-r1",
+      canonicalSha256: sha256(bytes),
+      runtimeInspector: { ...GROK_PRIVATE_HOME_INPUT_INSPECTOR },
+    };
+    const options = {
+      yamlText: "agents:\n  grok-n:\n    profile: .tachyon/agents/grok-n/agent.yml\n",
+      workspaceRoot: root,
+      authorities: new Map([["grok-n", record]]),
+      homeDir: home,
+    };
+    const result = loadProfileAwareConfig(options);
+
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents["grok-n"]).toMatchObject({ kind: "agent" });
+    expect((result.config?.agents["grok-n"] as { profileNativeConfig?: unknown }).profileNativeConfig).toMatchObject({
+      adapter: "grok",
+      toml: { "models.default": "grok-4.5", "ui.permission_mode": "ask", "ui.max_thoughts_width": 120 },
+    });
+
+    // Redirecting GROK_HOME does not stop project discovery, so an ambient `.grok` is refused.
+    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".grok", "config.toml"), "[mcp_servers.ambient]\ncommand = \"echo\"\n");
+    const blocked = loadProfileAwareConfig(options);
+    expect(blocked.config).toBeUndefined();
+    expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/config.toml");
+  });
+
   it("rejects a Grok profile when authority selects another runtime inspector", () => {
     const root = temporaryRoot("tachyon-agent-profile-grok-wrong-inspector-");
     const directory = path.join(root, ".tachyon", "agents", "grok");

@@ -14,6 +14,7 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   nativeConfigChoice,
+  nativeConfigSourceChoices,
   nativeConfigAuthorized,
   permissionAuthorizationChoices,
   permissionAuthorizationCopy,
@@ -1060,7 +1061,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </div>
 
-            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude") && (
+            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok") && (
               <section class="ash-native-config-editor" aria-labelledby="ash-runtime-selectors-title">
                 <div>
                   <div class="ash-label" id="ash-runtime-selectors-title">{profileLabels.runtimeSelectorsTitle}</div>
@@ -1087,7 +1088,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   </div>
                   <div class="ash-field">
                     <label class="ash-label" for="ash-runtime-effort">{profileLabels.runtimeReasoningEffort}</label>
-                    {canonicalRuntime === "claude" ? (
+                    {canonicalRuntime === "claude" || canonicalRuntime === "grok" ? (
                       <Select
                         id="ash-runtime-effort"
                         value={fields.canonical!.runtime.reasoningEffort ?? ""}
@@ -1103,7 +1104,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                         }) : current)}
                       >
                         <option value="">{profileLabels.runtimeDefault}</option>
-                        {["low", "medium", "high", "xhigh", "max"].map((effort) => <option value={effort}>{effort}</option>)}
+                        {/* t-26f508 — Grok's canonical levels add `none`/`minimal`; per-model menu ids
+                            are deliberately absent because they only resolve against one model. */}
+                        {(canonicalRuntime === "grok"
+                          ? ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+                          : ["low", "medium", "high", "xhigh", "max"]
+                        ).map((effort) => <option value={effort}>{effort}</option>)}
                       </Select>
                     ) : (
                       <Input
@@ -1167,7 +1173,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </section>
             )}
 
-            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude") && (
+            {canonical && (canonicalRuntime === "codex" || canonicalRuntime === "claude" || canonicalRuntime === "grok") && (
               <section class="ash-native-config-editor" aria-labelledby="ash-native-config-editor-title">
                 <div>
                   <div class="ash-label" id="ash-native-config-editor-title">{profileLabels.nativeConfigTitle}</div>
@@ -1190,8 +1196,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       ))}
                     >
                       <option value="exclude">{profileLabels.nativeConfigExclude}</option>
-                      <option value="global">{profileLabels.nativeConfigGlobal}</option>
-                      <option value="workspace">{profileLabels.nativeConfigWorkspace}</option>
+                      {/* Only the sources this runtime actually honors are offered (t-26f508). */}
+                      {nativeConfigSourceChoices(fields).map((source) => (
+                        <option value={source} key={source}>
+                          {source === "global" ? profileLabels.nativeConfigGlobal : profileLabels.nativeConfigWorkspace}
+                        </option>
+                      ))}
                     </Select>
                   </div>
                 ))}

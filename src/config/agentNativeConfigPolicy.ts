@@ -15,6 +15,15 @@ export type CodexScalarNativeConfigSource = "global" | "workspace";
 export type CodexScalarNativeConfigChoice = CodexScalarNativeConfigSource | "exclude";
 export type ClaudeScalarNativeConfigSource = "global" | "workspace";
 export type ClaudeScalarNativeConfigChoice = ClaudeScalarNativeConfigSource | "exclude";
+/**
+ * t-26f508 — Grok has ONE projectable source. Measured on 0.2.112 with `grok inspect --json`: a
+ * project `.grok/config.toml` loads as a `project` layer that contributes only `[mcp_servers]`,
+ * `[plugins]` and `[permission]`, and its `[permission]` block did not even register in the
+ * effective rule set; every family this projector owns is read from `~/.grok/config.toml` alone.
+ * Offering `workspace` here would author a policy the runtime does not honor.
+ */
+export type GrokScalarNativeConfigSource = "global";
+export type GrokScalarNativeConfigChoice = GrokScalarNativeConfigSource | "exclude";
 
 /**
  * SDD 471 — the only dangerous Claude value a profile may authorize today. `bypassPermissions`
@@ -31,12 +40,21 @@ export const CODEX_NEVER_APPROVAL_AUTHORIZATION = "neverAskForApproval";
 export const CODEX_FULL_ACCESS_AUTHORIZATION = "dangerFullAccess";
 
 /**
+ * t-26f508 — Grok's single dangerous permission capability. `[ui] permission_mode` spells it two
+ * ways (`always-approve` is the product name, `bypassPermissions` the Claude-compatible alias) and
+ * the legacy `[ui] yolo = true` switch is a third spelling of the same thing. One authorization
+ * covers all three because they grant the SAME capability: tool calls stop asking.
+ */
+export const GROK_ALWAYS_APPROVE_AUTHORIZATION = "alwaysApprove";
+
+/**
  * Which authorization members each runtime may declare, on which family. An authorization is only
  * meaningful where a projector enforces it, so a profile cannot carry another runtime's.
  */
 const PERMISSION_AUTHORIZATIONS: Record<string, ReadonlySet<string>> = {
   claude: new Set([CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION]),
   codex: new Set([CODEX_NEVER_APPROVAL_AUTHORIZATION, CODEX_FULL_ACCESS_AUTHORIZATION]),
+  grok: new Set([GROK_ALWAYS_APPROVE_AUTHORIZATION]),
 };
 
 /** Authorizations a profile declared for one family — empty unless deliberately authored. */
@@ -49,6 +67,15 @@ export function nativeConfigAuthorizations(
 
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
+/**
+ * t-26f508 — fork is deliberately absent. Grok HAS a native `--fork-session`, but the canonical
+ * private-home materializer is not on the fork path (`commitFork` treats only Pi and Claude as
+ * managed private forks), so a forked canonical Grok agent would receive an unprojected home. A
+ * lifecycle phase listed here is a claim that the projection is regenerated in that phase; listing
+ * `fork` would make that claim false. `AgentManager.commitFork` refuses the operation outright
+ * instead of shipping a silently degraded sibling.
+ */
+const GROK_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 export const CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES = [
   "permissions",
   "interface",
@@ -112,6 +139,81 @@ export function defaultClaudeScalarNativeConfigPolicy(): NonNullable<AgentProfil
   );
 }
 
+export const GROK_SCALAR_NATIVE_CONFIG_FAMILIES = [
+  "permissions",
+  "interface",
+  "featureFlags",
+] as const;
+export type GrokScalarNativeConfigFamily = (typeof GROK_SCALAR_NATIVE_CONFIG_FAMILIES)[number];
+
+export function grokScalarNativeConfigPolicy(
+  source: GrokScalarNativeConfigSource,
+  authorize: readonly string[] = [],
+): AgentNativeConfigPolicyV1 {
+  return {
+    source,
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...GROK_NATIVE_CONFIG_LIFECYCLE],
+    // Agent Studio rebuilds this policy on every save, so an authored authorization has to be
+    // carried through explicitly or it would silently reset (t-26f508, same rule as SDD 471/472).
+    ...(authorize.length > 0 ? { authorize: [...authorize] } : {}),
+  };
+}
+
+export function grokSelectorNativeConfigPolicy(): AgentNativeConfigPolicyV1 {
+  return {
+    source: "agent",
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...GROK_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
+/**
+ * What a new canonical Grok profile selects before anyone edits it: the person's own global
+ * preferences for the three scalar families, plus the three exclusions that make the private home a
+ * closed namespace. The exclusions are authored rather than implied so the profile states what it
+ * refuses to inherit — ambient project tooling, native memory — instead of leaving a reader to infer
+ * it from the materializer.
+ */
+export function defaultGrokNativeConfigPolicy(): NonNullable<AgentProfileV1["nativeConfig"]> {
+  return {
+    ...Object.fromEntries(
+      GROK_SCALAR_NATIVE_CONFIG_FAMILIES.map((family) => [family, grokScalarNativeConfigPolicy("global")]),
+    ),
+    tooling: grokExcludedNativeConfigPolicy("tooling"),
+    memory: grokExcludedNativeConfigPolicy("memory"),
+    authentication: grokExcludedNativeConfigPolicy("authentication"),
+  };
+}
+
+/**
+ * The three families a canonical Grok profile can only refuse or delegate, each in the exact shape
+ * `resolveAgentNativeConfigSupport` admits. They are policy records with a real projection behind
+ * them: `tooling` writes the `[compat.*]` cells that switch off foreign-harness discovery, `memory`
+ * writes `[memory] enabled = false` next to the measured `GROK_MEMORY=0` env pin, and
+ * `authentication` documents that `auth.json` stays a reconciled symlink the profile never authors.
+ */
+export function grokExcludedNativeConfigPolicy(
+  family: "tooling" | "memory" | "authentication",
+): AgentNativeConfigPolicyV1 {
+  if (family === "authentication") {
+    return {
+      source: "global",
+      treatment: "external",
+      refresh: "runtime-owned",
+      lifecycle: [...GROK_NATIVE_CONFIG_LIFECYCLE],
+    };
+  }
+  return {
+    source: family === "tooling" ? "workspace" : "agent",
+    treatment: "exclude",
+    refresh: "every-launch",
+    lifecycle: [...GROK_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
 export interface AgentNativeConfigSupportDecision {
   support: "supported" | "unsupported";
   reason: string;
@@ -131,7 +233,7 @@ export interface AgentNativeConfigPolicyPreview {
 }
 
 export interface ResolvedAgentNativeConfigProjection {
-  adapter: "codex" | "claude";
+  adapter: "codex" | "claude" | "grok";
   /** Source ownership is retained so lifecycle freshness can identify affected agents. */
   sources?: Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
   selectors: {
@@ -154,6 +256,13 @@ export interface ResolvedAgentNativeConfigProjection {
   };
   /** Closed Claude settings selected by family; never a raw settings file. */
   settings?: Record<string, unknown>;
+  /**
+   * Closed Grok `config.toml` values selected by family, keyed by their dotted TOML path
+   * (`ui.permission_mode`, `features.telemetry`, …). Never a raw config file: only paths this
+   * projector measured reach it, and the materializer renders it back into tables in a fixed order
+   * so two launches of the same profile produce byte-identical output.
+   */
+  toml?: Record<string, unknown>;
 }
 
 /**
@@ -177,7 +286,7 @@ export function carryNativeConfigSources<T extends object>(
 export function projectAgentNativeConfig(
   profile: Pick<AgentProfileV1, "runtime" | "nativeConfig">,
 ): ResolvedAgentNativeConfigProjection | undefined {
-  if (!profile.nativeConfig || !["codex", "claude"].includes(profile.runtime.adapter)) return undefined;
+  if (!profile.nativeConfig || !["codex", "claude", "grok"].includes(profile.runtime.adapter)) return undefined;
   if (profile.runtime.adapter === "codex" && !profile.nativeConfig.selectors) return undefined;
   const sources = Object.fromEntries(
       Object.entries(profile.nativeConfig ?? {})
@@ -185,7 +294,7 @@ export function projectAgentNativeConfig(
         .map(([family, policy]) => [family, policy.source]),
     ) as Partial<Record<AgentNativeConfigFamily, "global" | "workspace" | "agent">>;
   const projection: ResolvedAgentNativeConfigProjection = {
-    adapter: profile.runtime.adapter as "codex" | "claude",
+    adapter: profile.runtime.adapter as "codex" | "claude" | "grok",
     selectors: {
       ...(profile.runtime.model ? { model: profile.runtime.model } : {}),
       ...(profile.runtime.provider ? { provider: profile.runtime.provider } : {}),
@@ -200,6 +309,7 @@ export function projectAgentNativeConfig(
 
 const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(CODEX_NATIVE_CONFIG_LIFECYCLE);
 const CLAUDE_ALL_LIFECYCLE = new Set(CLAUDE_NATIVE_CONFIG_LIFECYCLE);
+const GROK_ALL_LIFECYCLE = new Set(GROK_NATIVE_CONFIG_LIFECYCLE);
 
 function hasExactLifecycle(actual: AgentNativeConfigPolicyV1["lifecycle"], expected: ReadonlySet<string>): boolean {
   return actual.length === expected.size && actual.every((phase) => expected.has(phase));
@@ -297,6 +407,40 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
       support: "supported",
       reason: `Codex declares filtered ${policy.source} ${family} projection for fresh, restart and resume`,
     };
+  }
+  if (adapter === "grok" && hasExactLifecycle(policy.lifecycle, GROK_ALL_LIFECYCLE)) {
+    if (
+      family === "selectors"
+      && policy.source === "agent"
+      && policy.treatment === "overlay"
+      && policy.refresh === "every-launch"
+    ) {
+      return {
+        support: "supported",
+        reason: "Grok declares typed agent selectors for fresh, restart and resume",
+      };
+    }
+    if (
+      (family === "permissions" || family === "interface" || family === "featureFlags")
+      && policy.source === "global"
+      && policy.treatment === "overlay"
+      && policy.refresh === "every-launch"
+    ) {
+      return {
+        support: "supported",
+        reason: `Grok declares filtered global ${family} projection for fresh, restart and resume`,
+      };
+    }
+    if (
+      (family === "tooling" && policy.source === "workspace" && policy.treatment === "exclude" && policy.refresh === "every-launch")
+      || (family === "memory" && policy.source === "agent" && policy.treatment === "exclude" && policy.refresh === "every-launch")
+      || (family === "authentication" && policy.source === "global" && policy.treatment === "external" && policy.refresh === "runtime-owned")
+    ) {
+      return {
+        support: "supported",
+        reason: `Grok explicitly keeps ${family} outside authored native configuration for fresh, restart and resume`,
+      };
+    }
   }
   return {
     support: "unsupported",

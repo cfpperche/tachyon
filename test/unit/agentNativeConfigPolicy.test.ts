@@ -172,11 +172,19 @@ describe("agent native configuration support admission", () => {
     ]);
 
     // A runtime that declares no authorizations at all cannot carry one.
-    expect(validateAgentNativeConfigPolicy("grok", {
+    expect(validateAgentNativeConfigPolicy("pi", {
       permissions: { ...codexPermissions, authorize: ["neverAskForApproval"] },
     })).toEqual([
       "profile/native-config-unsupported: 'authorize' is only supported on the permissions family of a"
-      + " runtime that declares authorizations, not 'grok' family 'permissions'",
+      + " runtime that declares authorizations, not 'pi' family 'permissions'",
+    ]);
+
+    // t-26f508 — Grok declares exactly one, and rejects the others by name rather than by shape.
+    expect(validateAgentNativeConfigPolicy("grok", {
+      permissions: { ...codexPermissions, authorize: ["neverAskForApproval"] },
+    })).toEqual([
+      "profile/native-config-unsupported: grok permissions authorization 'neverAskForApproval' is not a"
+      + " recognized authorization (supported: alwaysApprove)",
     ]);
   });
 });

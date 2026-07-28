@@ -1052,7 +1052,11 @@ export class Workspace {
             name,
             this.bridgeEntry() ?? {},
             cwd ?? this.workspaceRoot,
-            { exactTrust: true },
+            // t-26f508 — the same options the Bridge port below passes. `withRuntimeBridge` calls
+            // that port AFTER this materializer on every spawn, rewriting config.toml from scratch;
+            // if the two disagreed, the second write would silently erase the projection this one
+            // just made. Keeping them identical is what makes the second write a no-op.
+            { exactTrust: true, ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}) },
           );
           // Grok 0.2.112 consults `$HOME/.claude/settings.json` for permission settings even when
           // GROK_HOME is redirected. A canonical profile owns the complete forming namespace, so bind
@@ -1092,12 +1096,18 @@ export class Workspace {
       // undefined when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
       materializeBridgeMcpGrok: (name, cwd) => {
         const entry = this.bridgeEntry();
-        return entry ? this.harness.materializeBridgeMcpGrok(
+        if (!entry) return undefined;
+        const declared = asAgent(this.config?.agents[name]);
+        return this.harness.materializeBridgeMcpGrok(
           name,
           entry,
           cwd ?? this.workspaceRoot,
-          { exactTrust: asAgent(this.config?.agents[name])?.profileLifecycle !== undefined },
-        ) : undefined;
+          {
+            exactTrust: declared?.profileLifecycle !== undefined,
+            // t-26f508 — must match the canonical branch above: this port runs last on every spawn.
+            ...(declared?.profileNativeConfig ? { nativeConfig: declared.profileNativeConfig } : {}),
+          },
+        );
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
       materializeBridgeMcpHermes: (name) => {

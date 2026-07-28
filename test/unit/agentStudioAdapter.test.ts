@@ -10,9 +10,11 @@ import {
   setCodexNativeConfigChoice,
   setNativeConfigChoice,
   nativeConfigAuthorized,
+  nativeConfigSourceChoices,
   permissionAuthorizationChoices,
   setNativeConfigAuthorized,
 } from "../../src/webview/agent-studio-shell/domain.js";
+import { validateAgentNativeConfigPolicy } from "../../src/config/agentNativeConfigPolicy.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
@@ -308,7 +310,16 @@ describe("AgentStudioAdapter — save", () => {
         featureFlags: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
       });
     } else {
-      expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig).toEqual({});
+      // t-26f508 — Grok now authors its own families: global-sourced scalars on its measured
+      // fresh/restart/resume lifecycle, plus the refusals that keep the private home closed.
+      expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig).toMatchObject({
+        permissions: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
+        interface: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
+        featureFlags: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
+        tooling: { source: "workspace", treatment: "exclude" },
+        memory: { source: "agent", treatment: "exclude" },
+        authentication: { source: "global", treatment: "external" },
+      });
     }
   });
 
@@ -500,6 +511,39 @@ describe("AgentStudioAdapter — save", () => {
       const excluded = setNativeConfigChoice(authorized, "permissions", "exclude");
       expect((serializeAgentPatch(excluded, true) as AgentProfileStudioMutationV1)
         .editable.nativeConfig?.permissions).toBeUndefined();
+    });
+
+    it("t-26f508: a Grok profile offers only its own source and its own authorization", () => {
+      const snapshot = profileSnapshot();
+      snapshot.editable.runtime = { adapter: "grok", executable: "grok", model: "grok-4.5" };
+      snapshot.editable.nativeConfig = {
+        permissions: {
+          source: "global", treatment: "overlay", refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      };
+      const grok = canonicalAgentFields(snapshot);
+      // No `workspace` option: Grok's project config contributes none of these families.
+      expect(nativeConfigSourceChoices(grok)).toEqual(["global"]);
+      expect(permissionAuthorizationChoices(grok)).toEqual(["alwaysApprove"]);
+      expect(permissionAuthorizationChoices(grok)).not.toContain("bypassPermissions");
+
+      // Saving records the three refusals alongside the selected families, so the profile states
+      // what it will not inherit rather than leaving it to the materializer.
+      const authorized = setNativeConfigAuthorized(grok, "alwaysApprove", true);
+      const patch = serializeAgentPatch(authorized, true) as AgentProfileStudioMutationV1;
+      const nativeConfig = patch.editable.nativeConfig!;
+      expect(nativeConfig.permissions?.authorize).toEqual(["alwaysApprove"]);
+      expect(nativeConfig.permissions?.lifecycle).toEqual(["fresh", "restart", "resume"]);
+      expect(nativeConfig.tooling).toMatchObject({ source: "workspace", treatment: "exclude" });
+      expect(nativeConfig.memory).toMatchObject({ source: "agent", treatment: "exclude" });
+      expect(nativeConfig.authentication).toMatchObject({ source: "global", treatment: "external" });
+      expect(nativeConfig.selectors).toMatchObject({ source: "agent", treatment: "overlay" });
+      expect(validateAgentNativeConfigPolicy("grok", nativeConfig)).toEqual([]);
+
+      // A workspace choice cannot be smuggled in through the setter either.
+      const clamped = setNativeConfigChoice(grok, "interface", "workspace");
+      expect(clamped.canonical?.nativeConfig.interface?.source).toBe("global");
     });
   });
 

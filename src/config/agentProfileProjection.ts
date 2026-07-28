@@ -27,19 +27,27 @@ import {
   resolveAgentNativeConfigSupport,
   validateAgentNativeConfigPolicy,
 } from "./agentNativeConfigPolicy.js";
-import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import type {
+  AgentNativeConfigFamily,
+  ResolvedAgentNativeConfigProjection,
+} from "./agentNativeConfigPolicy.js";
 import { projectCodexScalarNativeConfig } from "./codexNativeConfigProjection.js";
 import { projectClaudeNativeConfig } from "./claudeNativeConfigProjection.js";
+import { projectGrokNativeConfig } from "./grokNativeConfigProjection.js";
 
 const INSPECTOR_CONTRACT = "tachyon/codex-empty-native-input-inspector/v1";
 const PI_INSPECTOR_CONTRACT = "tachyon/pi-private-capability-input-inspector/v1";
 const GROK_INSPECTOR_CONTRACT = [
-  "tachyon/grok-private-home-input-inspector/v1",
+  "tachyon/grok-private-home-input-inspector/v2",
   "literal executable grok",
-  "GROK_HOME is Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
   "config.toml and trusted_folders.toml are rewritten before launch",
+  "config.toml carries only closed global profile-projected scalars plus typed agent-owned selectors",
+  "compat cells for cursor, claude and codex are pinned off",
+  "memory is disabled in config and pinned off by GROK_MEMORY",
   "auth.json is an external credential symlink",
-  "ambient ~/.grok config, memory and plugins are not inherited",
+  "ambient project .grok tooling and AGENTS.md must be absent",
+  "unselected ambient ~/.grok config, memory and plugins are not inherited",
 ].join("\n");
 const CLAUDE_INSPECTOR_CONTRACT = [
   "tachyon/claude-closed-private-home-input-inspector/v5",
@@ -71,7 +79,7 @@ export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
 export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "grok",
   id: "tachyon.grok-private-home-inputs",
-  version: "1",
+  version: "2",
   sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
 });
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
@@ -304,6 +312,36 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
       const blocker = inspectEmptyFileAt(root, segments);
       if (blocker) blockers.push(blocker);
     }
+    if (blockers.length > 0) return blockers;
+  }
+  if (profile.runtime.adapter === "grok") {
+    // t-26f508 — redirecting GROK_HOME does NOT stop project discovery. Measured on 0.2.112 with
+    // `grok inspect --json`: a `.grok/config.toml` in the project loads as a `project` config layer
+    // and its `[mcp_servers]` entry reached the effective server list under a private home. The same
+    // directory carries skills, plugins, agents, hooks, workflows and LSP definitions, and `AGENTS.md`
+    // is read as project instructions. None of that is selectable by a family, so its presence is
+    // refused rather than silently inherited — the Claude arm below does the same for its own roots.
+    const ambientCandidates = [
+      "AGENTS.md",
+      ".grok/config.toml",
+      ".grok/skills",
+      ".grok/plugins",
+      ".grok/agents",
+      ".grok/hooks",
+      ".grok/workflows",
+      ".grok/lsp.json",
+      ".grok/sandbox.toml",
+    ];
+    const blockers = ambientCandidates.flatMap((relative) => {
+      try {
+        fs.lstatSync(path.join(input.workspaceRoot, ...relative.split("/")));
+        return [`profile/native-attestation: ambient Grok input must be absent: ${relative}`];
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code === "ENOENT"
+          ? []
+          : [`profile/native-attestation: cannot safely inspect ambient Grok input: ${relative}`];
+      }
+    });
     if (blockers.length > 0) return blockers;
   }
   if (profile.runtime.adapter === "claude") {
@@ -558,6 +596,24 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     }
     const scalar = projectClaudeNativeConfig(parsed.profile, sourceTexts, nativeConfigProjection);
     if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
+    nativeConfigProjection = scalar.projection;
+  }
+  if (parsed.profile.runtime.adapter === "grok" && nativeConfigProjection) {
+    // t-26f508 — one source, because `global` is the only source Grok honors for these families.
+    const selectsGlobal = ["selectors", "permissions", "interface", "featureFlags"].some((family) =>
+      parsed.profile!.nativeConfig?.[family as AgentNativeConfigFamily]?.source === "global",
+    );
+    const read = selectsGlobal
+      ? readNativeConfigTextAt(input.homeDir ?? os.homedir(), [".grok", "config.toml"])
+      : {};
+    if (read.error) return { ok: false, errors: [read.error] };
+    const scalar = projectGrokNativeConfig(
+      parsed.profile,
+      read.text !== undefined ? { global: read.text } : {},
+      nativeConfigProjection,
+    );
+    if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
+    warnings.push(...scalar.warnings);
     nativeConfigProjection = scalar.projection;
   }
   const evolutionSelector = readEvolutionSelector(input.workspaceRoot, input.agentName, parsed.profile);
