@@ -870,10 +870,13 @@ describe("AgentManager", () => {
       }
     });
 
-    it("names both assigned tasks rather than letting the agent pick one", async () => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-ambiguous-"));
+    it("names ONE current task and queues the other, rather than letting the agent pick (t-9d250c)", async () => {
+      // t-e3aaae listed every assigned task as an equal and asked the agent to choose. Measured
+      // consequence: a restarted session chose the one its FROZEN brief still named, which is the one
+      // most likely to be finished (both t-9d250c incidents). The board picks now, deterministically.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-9d250c-ambiguous-"));
       try {
-        const second = { id: "t-939a18", title: "SDD 478 M1", status: "active" };
+        const second = { id: "t-939a18", title: "SDD 478 M1", status: "active", priority: 1 };
         const { fake, manager } = harness(root, { assignedWork: () => [ASSIGNED, second] });
         await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
         const from = mark(fake);
@@ -881,9 +884,40 @@ describe("AgentManager", () => {
         await manager.restart("worker", { stop: "force", session: "new" });
 
         const brief = delivered(root, fake, from);
-        expect(brief).toContain("t-5bfb72");
+        // priority 1 outranks ASSIGNED's 2, so the more urgent one is the contract and the other queues
+        expect(brief).toContain("Your current task, read from the board at restart");
         expect(brief).toContain("t-939a18");
-        expect(brief).toContain("say which one you are taking before you start");
+        expect(brief).toContain("NOT your current task");
+        expect(brief).toContain("- t-5bfb72 — SDD 477 auth-required mid-run");
+        expect(brief).not.toContain("say which one you are taking");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("names the finished task its own frozen brief still carries (t-9d250c incident 2)", async () => {
+      // The restart replays the spawn brief verbatim. When that brief names work the board says is
+      // landed, the record now answers it in the same document instead of leaving the agent to notice.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-9d250c-stale-contract-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: (id: string) => (id === "t-067540" ? "landed" : undefined),
+        });
+        await manager.spawn("worker", {
+          cmd: "codex",
+          taskBrief: "TASK: Continue the now-ratified t-067540 / SDD 479 and prepare implementation.",
+          parent: "codex-canonico",
+        });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("- t-067540 — status landed on the board now");
+        expect(brief).toContain("Do not reopen t-067540");
+        // and the live contract is still stated as the current one
+        expect(brief).toContain("t-5bfb72");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
@@ -952,6 +986,29 @@ describe("AgentManager", () => {
         expect(fake.newSessionArgs.length).toBe(from.news);
         expect(fake.respawnArgs.length).toBe(from.respawns);
         expect(fake.sessions.has(session)).toBe(true); // the running agent was never replaced
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("a failing stale-reference lookup never costs the restart (t-9d250c)", async () => {
+      // The board read above is the fail-closed part; naming what the frozen brief still carries is
+      // decoration. A store that throws HERE must not turn a describable restart into a refused one —
+      // the agent would lose its whole session over a sentence it was never owed.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-9d250c-stale-throws-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: () => { throw new Error("EIO: task store unreadable"); },
+        });
+        await manager.spawn("worker", { cmd: "codex", taskBrief: "TASK: finish t-067540 before anything else.", parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await expect(manager.restart("worker", { stop: "force", session: "new" })).resolves.not.toThrow();
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("t-5bfb72"); // the live contract still arrives
+        expect(brief).not.toContain("Do not reopen"); // and nothing is claimed about t-067540
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
