@@ -924,6 +924,118 @@ describe("AgentManager", () => {
       }
     });
 
+    it("THE t-7f3009 INCIDENT: a SPAWN whose brief names landed work is told so, not just a restart", async () => {
+      // t-9d250c closed this for restart and only for restart: `sessionWorkRecordFor` had a single
+      // call site, in the restart path, and the spawn call site omitted the argument entirely. So the
+      // frozen t-2f6cdd contract was re-delivered through the SPAWN door five times after it landed,
+      // each time naming a worktree that no longer existed. No board was ever read.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-stale-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: (id: string) => (id === "t-2f6cdd" ? "landed" : undefined),
+        });
+        const from = mark(fake);
+
+        // The real replayed document, and NO restart anywhere in this test.
+        await manager.spawn("worker", {
+          cmd: "codex",
+          taskBrief: "TASK: Recover and finish t-2f6cdd from the existing clean change worktree; do not restart the investigation.",
+          parent: "codex-canonico",
+        });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("- t-2f6cdd — status landed on the board now");
+        expect(brief).toContain("Do not reopen t-2f6cdd");
+        // The live assignment is still stated, so the agent is not merely told what NOT to do.
+        expect(brief).toContain("t-5bfb72");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("tells a spawned session it is new — never that it was restarted", async () => {
+      // Reusing the restart record verbatim would have handed a first-launch agent "This session was
+      // restarted with a NEW conversation. The previous one is not available to you", which is false
+      // and invites it to go looking for a conversation it never had.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-framing-"));
+      try {
+        const { fake, manager } = harness(root);
+        const from = mark(fake);
+
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION SPAWN: WORK ON RECORD");
+        expect(brief).toContain("This session is NEW.");
+        expect(brief).not.toContain("SESSION RESTART: WORK ON RECORD");
+        expect(brief).not.toContain("was restarted with a NEW conversation");
+        expect(brief).toContain("read from the board at spawn");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("leaves the restart record t-9d250c landed exactly as it was", async () => {
+      // The spawn wiring must not be paid for by rewording the restart contract: same anchor, same
+      // opening sentence, same "at restart" phrasing.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-restart-unchanged-"));
+      try {
+        const { fake, manager } = harness(root);
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION RESTART: WORK ON RECORD");
+        expect(brief).toContain("This session was restarted with a NEW conversation.");
+        expect(brief).toContain("read from the board at restart");
+        expect(brief).not.toContain("SESSION SPAWN: WORK ON RECORD");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("a spawn fails closed on an unreadable board, the same as a restart", async () => {
+      // The board read is the fail-closed part: a session that cannot be told what it is working on
+      // must not reach a pane at all. Naming the launch in the message keeps it accurate.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-failclosed-"));
+      try {
+        const { manager } = harness(root, {
+          assignedWork: () => { throw new Error("task store is corrupt"); },
+        });
+
+        await expect(
+          manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" }),
+        ).rejects.toThrow(/refusing spawn for agent 'worker'/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("a failing stale-reference lookup never costs the spawn", async () => {
+      // Mirrors the restart rule: the board read is fail-closed, naming what the brief still carries
+      // is decoration, and decoration must not cost an agent its launch.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-stale-throws-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: () => { throw new Error("status store unreadable"); },
+        });
+        const from = mark(fake);
+
+        await manager.spawn("worker", { cmd: "codex", taskBrief: "TASK: finish t-2f6cdd", parent: "codex-canonico" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION SPAWN: WORK ON RECORD");
+        expect(brief).toContain("t-5bfb72");
+        expect(brief).not.toContain("on the board now");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
     it("stops calling a boilerplate-only brief a present task", async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-e3aaae-header-"));
       try {

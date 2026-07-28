@@ -32,6 +32,12 @@ export type SessionIsolation =
   | { kind: "shared"; cwd: string };
 
 export interface SessionWorkRecord {
+  /**
+   * t-7f3009 — which launch this record describes. A restart and a spawn state DIFFERENT facts: only
+   * a restart lost a conversation. Omitted means `restart`, so every pre-existing caller renders
+   * exactly what it rendered before.
+   */
+  launch?: SessionLaunchKind;
   isolation: SessionIsolation;
   /**
    * t-9d250c — ONE current task and a queue, not a list to choose from. A restarted session that is
@@ -49,9 +55,21 @@ export interface SessionWorkRecord {
   staleContractReferences?: StaleContractReference[];
 }
 
+/** Which launch handed this record to the session. */
+export type SessionLaunchKind = "spawn" | "restart";
+
 /** Fixed delimiters — same design rule as the primer: agents recognize the section, never parse prose. */
 export const SESSION_RECORD_OPEN = "── SESSION RESTART: WORK ON RECORD ──";
 export const SESSION_RECORD_CLOSE = "── END SESSION RESTART ──";
+
+/**
+ * t-7f3009 — the spawn pair. A separate anchor rather than a reworded shared one: the restart
+ * delimiters are a landed recognition contract, and a fresh spawn must not be told it was restarted.
+ * Each anchor names the launch it belongs to, so an agent still recognizes the section without
+ * parsing prose.
+ */
+export const SPAWN_RECORD_OPEN = "── SESSION SPAWN: WORK ON RECORD ──";
+export const SPAWN_RECORD_CLOSE = "── END SESSION SPAWN ──";
 
 /** Ids shown in the bounded startup-brief header before it collapses to a count. */
 export const MAX_HEADER_TASK_IDS = 3;
@@ -78,7 +96,7 @@ function taskLines(task: AssignedTaskRecord): string[] {
   return body ? [head, body] : [head];
 }
 
-function assignmentLines(assignment: AssignmentSelection): string[] {
+function assignmentLines(assignment: AssignmentSelection, launch: SessionLaunchKind): string[] {
   if (!assignment.current) {
     return [
       "Assigned work on record: none.",
@@ -87,7 +105,7 @@ function assignmentLines(assignment: AssignmentSelection): string[] {
     ];
   }
   const lines = [
-    "Your current task, read from the board at restart. This is the contract for this session;" +
+    `Your current task, read from the board at ${launch}. This is the contract for this session;` +
       " you do not need to look it up:",
     ...taskLines(assignment.current),
   ];
@@ -109,12 +127,18 @@ function assignmentLines(assignment: AssignmentSelection): string[] {
  * Phrased as record rather than instruction where it can be — the agent is told the status, and told
  * not to reopen it only when the status positively means the work is over.
  */
-function staleContractLines(references: StaleContractReference[] | undefined): string[] {
+function staleContractLines(references: StaleContractReference[] | undefined, launch: SessionLaunchKind): string[] {
   if (!references?.length) return [];
   const closed = references.filter((reference) => reference.closed);
   const lines = [
-    "The task brief earlier in this document was written when this session was FIRST spawned and is" +
-      " not re-checked against the board. It names work that is no longer yours:",
+    launch === "spawn"
+      // t-7f3009 — a spawn brief can be replayed verbatim from a previous launch, so "written when
+      // this session was FIRST spawned" would be wrong here: this IS that spawn, and the brief is
+      // still older than the board.
+      ? "The task brief earlier in this document was authored before this launch and is not re-checked" +
+        " against the board by whoever handed it to you. It names work that is no longer yours:"
+      : "The task brief earlier in this document was written when this session was FIRST spawned and is" +
+        " not re-checked against the board. It names work that is no longer yours:",
     ...references.map((reference) => `- ${reference.id} — status ${reference.status ?? "unknown"} on the board now`),
   ];
   if (closed.length > 0) {
@@ -140,14 +164,20 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
   if (facts.some(containsUnsafeFramingCharacter)) {
     throw new Error("session work record facts must not contain control characters");
   }
+  const launch: SessionLaunchKind = record.launch ?? "restart";
   return [
-    SESSION_RECORD_OPEN,
-    "This session was restarted with a NEW conversation. The previous one is not available to you," +
-      " and nothing below came from it — every line is durable record.",
+    launch === "spawn" ? SPAWN_RECORD_OPEN : SESSION_RECORD_OPEN,
+    launch === "spawn"
+      // A spawn lost no conversation, so it must not be told it did. What it shares with a restart is
+      // the part that matters: nothing below is inferred, and the board is the authority.
+      ? "This session is NEW. Nothing below came from an earlier conversation — every line is durable" +
+        " record, read from the board at the moment you were launched."
+      : "This session was restarted with a NEW conversation. The previous one is not available to you," +
+        " and nothing below came from it — every line is durable record.",
     ...isolationLines(record.isolation),
-    ...assignmentLines(record.assignment),
-    ...staleContractLines(record.staleContractReferences),
-    SESSION_RECORD_CLOSE,
+    ...assignmentLines(record.assignment, launch),
+    ...staleContractLines(record.staleContractReferences, launch),
+    launch === "spawn" ? SPAWN_RECORD_CLOSE : SESSION_RECORD_CLOSE,
   ].join("\n");
 }
 
