@@ -119,6 +119,9 @@ import {
   type StudioRoute,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
+import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { projectExecutions } from "../executionGraph/executionProjection.js";
+import { buildExecutionGraphVm, type ExecutionGraphVm } from "../cockpit/executionGraphVm.js";
 export type { CockpitStudios };
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
@@ -222,10 +225,49 @@ export interface CockpitInspector {
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
  */
+/**
+ * SDD 480 Phase 4 — fold the ledger into the section's view-model.
+ *
+ * The three non-ready outcomes are kept apart on purpose, because they are different facts and a
+ * shared blank surface would erase the distinction that matters most:
+ *  - no reader wired, or the workspace records nothing → `no-telemetry`;
+ *  - the ledger was read but could not be folded → `error`, with the reason;
+ *  - it folded to nothing → the builder's own `empty`.
+ */
+function buildExecutionGraphSectionVm(
+  deps: CockpitDeps,
+  wsHash: string | undefined,
+): ExecutionGraphVm | undefined {
+  if (!deps.executionGraph) return undefined; // client renders `no-telemetry`
+  try {
+    const { events, available } = deps.executionGraph(wsHash);
+    if (!available) {
+      return buildExecutionGraphVm({ projection: { executions: [], edges: [], agentIds: [] }, status: "no-telemetry" });
+    }
+    return buildExecutionGraphVm({ projection: projectExecutions(events) });
+  } catch (err) {
+    // The message is the only detail shown, and it is a local read failure — not user content — so
+    // there is nothing here to redact that the ledger's own write boundary has not already handled.
+    return buildExecutionGraphVm({
+      projection: { executions: [], edges: [], agentIds: [] },
+      status: "error",
+      errorDetail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
   /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
   collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
+  /**
+   * SDD 480 Phase 4 — read the execution ledger for the active workspace.
+   *
+   * Optional: a host without it leaves the section in `no-telemetry`, which is the honest answer
+   * rather than an empty diagram. Read-only by contract — the ledger is single-writer (t-d5066b) and
+   * this side must never open a journal that could compact.
+   */
+  executionGraph?: (wsHash: string | undefined) => { events: SealedExecutionEvent[]; available: boolean };
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -324,6 +366,43 @@ function strings(): CockpitStrings {
     missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
+    navExecutionGraph: t("Execution"),
+    executionGraphTitle: t("Execution graph"),
+    executionGraphHint: t("What Tachyon started, and how it knows. Read-only."),
+    egCanvasLabel: t("Execution graph diagram"),
+    egTableLabel: t("Execution graph, as a table"),
+    egLoading: t("Loading the execution ledger…"),
+    egEmpty: t("No executions match these filters."),
+    // Distinct from the empty state on purpose: "nothing matched" and "nothing is recorded here"
+    // mean opposite things, and a blank list cannot tell them apart.
+    egNoTelemetry: t("This workspace is not recording execution telemetry yet."),
+    egError: t("The execution ledger could not be read."),
+    egGroupedNote: t("Some lanes are grouped to stay readable; totals below are complete."),
+    egFilterTurn: t("Turn"),
+    egFilterState: t("State"),
+    egFilterKind: t("Type"),
+    egFilterAgent: t("Agent"),
+    egFilterAll: t("All"),
+    egColKind: t("Type"),
+    egColState: t("State"),
+    egColAgents: t("Agents"),
+    egColAttribution: t("Attribution"),
+    egColStarted: t("Started"),
+    egColDuration: t("Duration"),
+    egColExit: t("Exit"),
+    egDetailTitle: t("Execution detail"),
+    egDetailNone: t("Select an execution to see its detail."),
+    egDetailDuration: t("Duration"),
+    egDetailExit: t("Exit code"),
+    egDetailCwd: t("Working directory"),
+    egDetailWorktree: t("Worktree"),
+    egDetailTool: t("Started by tool"),
+    egDetailIdentity: t("Identity proof"),
+    egDetailTurn: t("Turn"),
+    egDetailToolCall: t("Tool call"),
+    egAttrProven: t("proven"),
+    egAttrShared: t("shared"),
+    egAttrUnproven: t("unproven"),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
@@ -1077,6 +1156,11 @@ export async function openCockpit(
         wsHash: controlWsHash,
         personalCardTemplate: personalCardTemplateState(),
       });
+      // SDD 480 Phase 4 — built only for the section that renders it. Folding the ledger on every
+      // model tick would spend the projection on ~13 sections that never look at it.
+      if (section === "execution-graph") {
+        model.executionGraph = buildExecutionGraphSectionVm(deps, controlWsHash);
+      }
     } catch (err) {
       model = buildCockpitModel(
         [

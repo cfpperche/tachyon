@@ -9,11 +9,49 @@ import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/ty
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { Validation } from "../../../src/validations/types";
 import type { Fixture } from "../routes";
+import { sealExecutionEvent, type SealedExecutionEvent } from "../../../src/executionGraph/eventSchema";
+import { projectExecutions } from "../../../src/executionGraph/executionProjection";
+import { buildExecutionGraphVm } from "../../../src/cockpit/executionGraphVm";
 
 export const strings: CockpitStrings = {
   title: "Control",
   subtitle: "Project sysadmin",
   navOverview: "Overview",
+  navExecutionGraph: "Execution",
+  executionGraphTitle: "Execution graph",
+  executionGraphHint: "What Tachyon started, and how it knows. Read-only.",
+  egCanvasLabel: "Execution graph diagram",
+  egTableLabel: "Execution graph, as a table",
+  egLoading: "Loading the execution ledger…",
+  egEmpty: "No executions match these filters.",
+  egNoTelemetry: "This workspace is not recording execution telemetry yet.",
+  egError: "The execution ledger could not be read.",
+  egGroupedNote: "Some lanes are grouped to stay readable; totals below are complete.",
+  egFilterTurn: "Turn",
+  egFilterState: "State",
+  egFilterKind: "Type",
+  egFilterAgent: "Agent",
+  egFilterAll: "All",
+  egColKind: "Type",
+  egColState: "State",
+  egColAgents: "Agents",
+  egColAttribution: "Attribution",
+  egColStarted: "Started",
+  egColDuration: "Duration",
+  egColExit: "Exit",
+  egDetailTitle: "Execution detail",
+  egDetailNone: "Select an execution to see its detail.",
+  egDetailDuration: "Duration",
+  egDetailExit: "Exit code",
+  egDetailCwd: "Working directory",
+  egDetailWorktree: "Worktree",
+  egDetailTool: "Started by tool",
+  egDetailIdentity: "Identity proof",
+  egDetailTurn: "Turn",
+  egDetailToolCall: "Tool call",
+  egAttrProven: "proven",
+  egAttrShared: "shared",
+  egAttrUnproven: "unproven",
   navEngine: "Engine",
   navFleet: "Fleet",
   navInbox: "Inbox",
@@ -631,9 +669,79 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
  */
 export const NAV_PENDING_TASK_ID = "t-4bf28a";
 
+/**
+ * SDD 480 Phase 4 — a HEAVY execution ledger, so Visual QA exercises the volume path rather than a
+ * toy graph. Deterministic ids and timestamps, so a screenshot diff means a real change.
+ */
+function executionGraphEvents(count: number): SealedExecutionEvent[] {
+  const base = Date.parse("2026-07-28T12:00:00.000Z");
+  const kinds = ["Process", "InternalOperation", "TmuxSession", "Turn", "SystemdUnit"] as const;
+  const out: SealedExecutionEvent[] = [];
+  for (let i = 0; i < count; i++) {
+    const node = kinds[i % kinds.length]!;
+    const agent = `agent-${i % 3}`;
+    const id = `exec-${String(i).padStart(5, "0")}`;
+    out.push(sealExecutionEvent({
+      kind: "spawn", node, state: "running",
+      // A mix of proven and unproven, because the surface must show the difference rather than a
+      // uniformly confident wall of green.
+      provenance: i % 4 === 0 ? "unproven" : "measured",
+      correlation: { agentId: agent, executionId: id, ...(i % 5 === 0 ? { turnId: `turn-${i % 7}` } : {}) },
+      at: new Date(base + i * 1000).toISOString(),
+      detail: { seam: "fixture", cwd: "/repo", worktree: "/wt/feature" },
+    }));
+    if (i % 3 === 0) {
+      out.push(sealExecutionEvent({
+        kind: "exit", node, state: i % 6 === 0 ? "failed" : "completed", provenance: "measured",
+        correlation: { agentId: agent, executionId: id },
+        at: new Date(base + i * 1000 + 30_000).toISOString(),
+        detail: { exitCode: i % 6 === 0 ? 137 : 0 },
+      }));
+    }
+  }
+  // One genuinely SHARED daemon: the case the whole spec was written for, present in every shot.
+  for (const agent of ["agent-0", "agent-1", "agent-2"]) {
+    out.push(sealExecutionEvent({
+      kind: "attach", node: "SystemdUnit", state: "shared", provenance: "measured",
+      correlation: { agentId: agent, executionId: "exec-shared-daemon" },
+      at: new Date(base).toISOString(),
+      detail: { unit: "tachyon-engine.service" },
+    }));
+  }
+  return out;
+}
+
+const executionGraphVm = buildExecutionGraphVm({ projection: projectExecutions(executionGraphEvents(600)) });
+
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
+  // SDD 480 Phase 4 — the four surfaces Visual QA has to see: heavy/grouped, and each explicit state.
+  "execution-graph": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: executionGraphVm },
+  },
+  "execution-graph-empty": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
+      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]) }),
+    },
+  },
+  "execution-graph-no-telemetry": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
+      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "no-telemetry" }),
+    },
+  },
+  "execution-graph-error": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
+      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "error", errorDetail: "execution ledger is unreadable" }),
+    },
+  },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
   // t-610705 (Phase C.1) — previews the task-detail subroute: buildCockpitModel only knows sections,
