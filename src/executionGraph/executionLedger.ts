@@ -20,6 +20,8 @@
  * its own, instead of leaving an agent that ran once at noon holding its share all day.
  */
 
+import path from "node:path";
+import { EngineEventJournal } from "../engine-service/eventJournal.js";
 import { isExclusivelyOwned, type ExecutionEdgeKind, type ExecutionNodeKind, type ExecutionProvenance, type ExecutionState, type SealedExecutionEvent } from "./eventSchema.js";
 
 /** The event `kind` every execution event is stored under in the shared engine journal. */
@@ -239,4 +241,35 @@ export class ExecutionLedger {
     const live = list.filter((entry) => entry.atMs >= cutoff);
     if (live.length !== list.length) this.perAgent.set(agentId, live);
   }
+}
+
+/**
+ * Open the production execution ledger for one workspace.
+ *
+ * Deliberately NOT the engine's own per-instance journal. That one lives at
+ * `events/<instanceId>.jsonl` with a fresh uuid per start, so reusing it would throw the graph away on
+ * every restart — the exact opposite of the criterion that a restarted Control rebuilds the same
+ * graph. This opens a SEPARATE `EngineEventJournal` on a STABLE, workspace-scoped stream, which keeps
+ * every guarantee the spec wanted from that primitive (append-only, `schemaVersion`, 0600, contiguous
+ * sequence) while surviving the restart it has to survive.
+ *
+ * The stream id is derived, not random, for the same reason: an id that changed per start would make
+ * the journal reject its own history as foreign on the very next boot.
+ */
+export function openExecutionLedger(input: {
+  storageRoot: string;
+  workspaceHash: string;
+  maxBytesPerAgent?: number;
+  maxAgeMs?: number;
+}): ExecutionLedger {
+  // Padded so a short hash still clears the journal's 8-character minimum for a stream id.
+  const streamId = `execution-graph-${input.workspaceHash}`.slice(0, 128);
+  return new ExecutionLedger({
+    journal: new EngineEventJournal({
+      filePath: path.join(input.storageRoot, "events", "executions.jsonl"),
+      engineInstanceId: streamId,
+    }) as unknown as ExecutionJournalPort,
+    ...(input.maxBytesPerAgent !== undefined ? { maxBytesPerAgent: input.maxBytesPerAgent } : {}),
+    ...(input.maxAgeMs !== undefined ? { maxAgeMs: input.maxAgeMs } : {}),
+  });
 }
