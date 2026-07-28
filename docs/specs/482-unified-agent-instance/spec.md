@@ -72,7 +72,11 @@ _Observable outcomes. If every box can be ticked, the spec is delivered._
   - **Given** an approved proposal
   - **When** the host commits it
   - **Then** profile + authority + roster land through the same canonical transaction Agent Studio
-    uses, and any failure leaves no partial state
+    uses — the journaled phase machine `intent → staged → profile-published → authority-published →
+    locator-written → activated → committed`, with `compensating`/`degraded` and crash recovery on
+    re-read (measured in `notes.md`) — and any failure leaves no partial state
+  - **And** phase 4 adds no second write path to authority: it arrives at that entry point with an
+    approved payload, it does not re-implement the commit
 - [ ] **Scenario: saving is not starting**
   - **Given** a committed Saved Agent
   - **Then** nothing is running: launch is a separate action under its own policy

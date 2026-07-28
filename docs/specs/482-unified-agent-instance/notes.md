@@ -83,6 +83,36 @@ declared capability list. The proposal's "must not infer agent kind from command
 or presence in tachyon.yml" is therefore already true for the command axis and needs holding, not
 inventing.
 
+### The canonical transaction the creation door must reuse — verified, not assumed
+
+The SDD's hardest requirement is `t-5e1113`'s "commit atômico de profile + authority + roster …
+falha compensa/rollback sem estado parcial". That was asserted before it was measured; it is now
+measured, and the machinery is stronger than the assertion.
+
+`commitAgentProfileLifecycle` (`src/config/agentProfileLifecycle.ts`) is a journaled phase machine,
+not a sequence of writes:
+
+```
+intent → staged → profile-published → authority-published → locator-written → activated → committed
+                                   ↘ compensating → (clean rollback) | degraded
+```
+
+- every phase transition is written to an on-disk journal in a transaction directory (`transition(txDir, …)`);
+- `compensate()` (`:506`) restores each durable artifact and the comment at `:539` states the bar —
+  "every durable artifact is restored by this point, so the rollback has already succeeded";
+- an interrupted transaction is finished on re-read: `if (reread.phase !== "committed") await compensate(…)` (`:636`),
+  which is what makes a crash mid-commit recoverable rather than a partial world;
+- the authority is re-signed over the PROFILE, not over the staged artifact (`:44`) — so a swapped
+  artifact cannot inherit a signature;
+- `degraded` exists as a distinct terminal state, so "we could not even roll back" is nameable rather
+  than silently indistinguishable from success.
+
+**Consequence: phase 4 must not invent a transaction.** The atomicity, the compensation and the
+crash-recovery the creation door needs already exist and are already journaled; the door's job is to
+arrive at this entry point with a human-approved, digest-bound payload. Any second write path to
+authority would be strictly worse than what is already here, and would be the exact duplication this
+SDD exists to reduce.
+
 ## What this measurement changes about the proposal
 
 1. The migration's first four steps ("create one internal spawn/start port", "adapt Temporary to it",

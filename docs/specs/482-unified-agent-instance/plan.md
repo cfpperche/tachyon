@@ -29,9 +29,11 @@ is the natural place to stop if the human wants less.
 - **Two fields, not one enum.** `identity` (Profile-backed or not) and `lifetime` (restartable or
   collected) vary independently — a Profile-backed agent may still be meant to be collected. One enum
   would re-create the overloaded boolean with more values.
-- **The creation door reuses the Studio transaction rather than adding one.** Same schemas,
-  projections, policies and boundary. A second write path to authority is exactly the class of thing
-  this SDD is trying to reduce.
+- **The creation door reuses the Studio transaction rather than adding one.** Verified rather than
+  assumed: that transaction is a journaled phase machine with compensation and crash recovery on
+  re-read (`notes.md`), so the door's hardest requirement is already satisfied by existing machinery.
+  A second write path to authority would be strictly worse and is exactly the class of thing this SDD
+  is trying to reduce.
 - **Proposal is data, approval is a host action.** The agent's output is inert and digest-bound, so
   every control is preventive rather than forensic.
 - **Phase 4 is severable.** If the human declines the creation door, phases 1–3 still deliver the
