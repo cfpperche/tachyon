@@ -33,6 +33,33 @@ settings:
 
 That is a complete, valid template. `version` is required.
 
+### …or just for you
+
+The same template also has a personal home: **VS Code settings**, under `tachyon.sidebar.cardTemplate`.
+It belongs to one person on one machine — it does not travel with the repo, and no agent-authored
+checkout can carry it.
+
+```json
+{
+  "tachyon.sidebar.cardTemplate": {
+    "version": 1,
+    "meta": ["harness", "branch"]
+  }
+}
+```
+
+**Yours wins**, and only where it speaks: a region you do not mention keeps whatever THAT project's
+`tachyon.yml` chose, so the three layers compose — Tachyon's default, then the project, then you. To
+discard a project's layout entirely, write all three regions; that is what "replace" would have meant,
+without a switch to declare it.
+
+Same shape, same validator, same refusals — the only difference is the key path in the message. If
+yours is refused, the cards fall back to **the project's** template (not to the default), and the
+sidebar says so with its own banner, because the project's template did nothing wrong.
+
+Control → Settings → "Agent card layout" tells you which home is in effect right now, and can emit
+either form: the YAML for `tachyon.yml`, or the JSON for your settings.
+
 ## The three regions
 
 | Region | What sits there | Components |
@@ -148,8 +175,7 @@ something you review and commit. Per-runtime overrides are still written by hand
 ## Not available yet
 
 `options:` (e.g. `model: { maxChars: 24 }`) is named in the design but no component honors one, so the
-key is **refused by name** rather than accepted and ignored — tracked as `t-045d44`. The live preview
-arrives in phase 4, and a personal (per-machine) override in phase 5.
+key is **refused by name** rather than accepted and ignored — tracked as `t-045d44`.
 
 ## Recipes
 
@@ -162,6 +188,14 @@ settings:
       version: 1
       meta: [branch, verify, attention]
 ```
+
+**Just me, everywhere — one badge, on every project I open** (VS Code settings, not the repo):
+
+```json
+{ "tachyon.sidebar.cardTemplate": { "version": 1, "meta": ["harness"] } }
+```
+
+Each project's header and footer stay whatever that project chose; only the badges are yours.
 
 **A dense fleet — the name and what it is doing, nothing else.**
 

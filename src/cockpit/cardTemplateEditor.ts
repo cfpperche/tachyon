@@ -169,3 +169,27 @@ export function toYaml(state: CardEditorState): string {
   if (!changed) lines.push("      # every region matches the default card — nothing to override yet");
   return `${lines.join("\n")}\n`;
 }
+
+/**
+ * SDD 479 phase 5 — the same template for the PERSONAL home, which is JSON in VS Code settings.
+ *
+ * The block emits for whichever home the person picked rather than making them hand-translate YAML
+ * into settings.json — a translation step is where a working template becomes a refused one, and the
+ * refusal would name a key they never typed.
+ *
+ * Same "only what differs" rule as `toYaml`, and for a sharper reason here: silence in a personal
+ * override inherits the PROJECT's region (phase 5), so emitting a region that merely matches the
+ * default would silently overrule a project template the author never looked at.
+ */
+export function toSettingsJson(state: CardEditorState): string {
+  const template = templateFrom(state);
+  const body: Record<string, unknown> = { version: CARD_TEMPLATE_VERSION };
+  for (const region of CARD_REGIONS) {
+    const ids = template[region];
+    const isDefault =
+      ids.length === DEFAULT_CARD_TEMPLATE[region].length &&
+      ids.every((id, index) => id === DEFAULT_CARD_TEMPLATE[region][index]);
+    if (!isDefault) body[region] = [...ids];
+  }
+  return `${JSON.stringify({ "tachyon.sidebar.cardTemplate": body }, null, 2)}\n`;
+}

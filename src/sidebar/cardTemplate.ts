@@ -200,13 +200,33 @@ export function resolveCardTemplate(
   row: Pick<AgentVM, "kind" | "runtime">,
   configured?: CardTemplateConfig,
 ): CardTemplate {
-  if (!configured) return DEFAULT_CARD_TEMPLATE;
-  if (!isAgentRow(row)) return DEFAULT_CARD_TEMPLATE;
+  return resolveCardTemplateFor(row, configured).template;
+}
+
+/**
+ * SDD 479 phase 5 — the same lookup, answering both questions at once: which template this row
+ * renders through, and which home wrote it.
+ *
+ * ONE function rather than a `resolveCardTemplate` beside a `resolveCardTemplateSource`, because two
+ * functions walking the same precedence chain can drift — and a UI that names the wrong home is worse
+ * than one that says nothing, since the human would then "fix" the file that was never in effect.
+ */
+export function resolveCardTemplateFor(
+  row: Pick<AgentVM, "kind" | "runtime">,
+  configured?: CardTemplateConfig,
+): { template: CardTemplate; source: CardTemplateSource } {
+  if (!configured) return { template: DEFAULT_CARD_TEMPLATE, source: "default" };
+  // The ratified V1 boundary lives here, not in the callers: a terminal row takes the product default
+  // whatever anyone configured, in either home.
+  if (!isAgentRow(row)) return { template: DEFAULT_CARD_TEMPLATE, source: "default" };
   // SDD 479 phase 3 — a runtime override wins for the rows that report that runtime; every other row
-  // takes the project's template. The fallback is explicit BECAUSE it is a lookup miss and nothing
-  // else: there is no partial merge here, since overrides were resolved whole at parse time.
+  // takes the base. The fallback is explicit BECAUSE it is a lookup miss and nothing else: there is
+  // no partial merge here, since overrides were resolved whole at parse time.
   const override = row.runtime ? configured.runtimes?.[row.runtime] : undefined;
-  return override ?? configured.base;
+  if (override && row.runtime) {
+    return { template: override, source: configured.sources?.runtimes?.[row.runtime] ?? configured.sources?.base ?? "project" };
+  }
+  return { template: configured.base, source: configured.sources?.base ?? "project" };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────────────────────────
@@ -238,16 +258,39 @@ export type CardTemplateInheritance = "default" | "replace";
 const INHERITANCE_VALUES: readonly CardTemplateInheritance[] = ["default", "replace"];
 
 /**
- * A project's full card configuration: the template every agent row uses, plus any per-runtime
- * override. Overrides are resolved to COMPLETE templates at parse time, so the renderer does a lookup
- * and never a merge — the wire carries no inheritance to re-interpret, and the strict schema validates
- * concrete templates.
+ * SDD 479 phase 5 — where a template in effect came from. Ratified fork 1: the project default lives
+ * in `tachyon.yml` and travels with the repo; an optional personal override lives in VS Code settings
+ * and WINS. This enum exists so the UI can SAY which one a row is using — the fork's own wording made
+ * that sentence part of the feature, and the reason is concrete: a personal override quietly
+ * contradicting the project's template is otherwise indistinguishable from a broken project template.
+ */
+export type CardTemplateSource = "default" | "project" | "personal";
+
+/** Which home produced each resolved template. Parallel to the templates themselves, key for key. */
+export interface CardTemplateSources {
+  readonly base: CardTemplateSource;
+  readonly runtimes?: Readonly<Record<string, CardTemplateSource>>;
+}
+
+/**
+ * A full card configuration: the template every agent row uses, plus any per-runtime override.
+ * Overrides are resolved to COMPLETE templates at parse time, so the renderer does a lookup and never
+ * a merge — the wire carries no inheritance to re-interpret, and the strict schema validates concrete
+ * templates.
  */
 export interface CardTemplateConfig {
-  /** the project's template — the product default when nothing was written */
+  /** the template in effect — the product default when nothing was written */
   readonly base: CardTemplate;
   /** resolved per-runtime templates, keyed by the runtime name a row reports */
   readonly runtimes?: Readonly<Record<string, CardTemplate>>;
+  /**
+   * SDD 479 phase 5 — provenance for the statement the settings surface owes the human. Optional
+   * because every phase-2/3 producer predates it and the engine wire never carries it: the personal
+   * layer is a SHELL concern (one person, one machine — the channel `sortPrefs` already uses), so it
+   * is attached where the two layers actually meet. Absent means "nobody claimed a source", and the
+   * UI says nothing rather than guessing.
+   */
+  readonly sources?: CardTemplateSources;
 }
 
 export interface CardTemplateParseResult {
@@ -327,12 +370,23 @@ function parseRegions(
  * partially-applied layout is the one outcome the spec forbids outright. Errors accumulate rather than
  * throw, so a person fixing their file sees every problem at once instead of one per save.
  *
- * A region a template does not mention takes the DEFAULT for that region. An explicitly empty list
- * (`meta: []`) means "hide them all" and is honored — critical re-admission still applies. The
- * asymmetry is deliberate: silence should not delete the actions row from someone who only wanted to
- * reorder badges, but a person who writes `[]` has said what they mean.
+ * A region a template does not mention takes `base` for that region — the product default for the
+ * project's own template, and the PROJECT's template for a personal override (phase 5), so the three
+ * layers compose product → project → person. An explicitly empty list (`meta: []`) means "hide them
+ * all" and is honored — critical re-admission still applies. The asymmetry is deliberate: silence
+ * should not delete the actions row from someone who only wanted to reorder badges, but a person who
+ * writes `[]` has said what they mean.
+ *
+ * `base` is what makes the personal layer need no `extends` switch of its own: silence inherits, and
+ * a person who genuinely wants to discard the project's layout writes all three regions — which IS
+ * "replace", spelled out. Phase 3's runtime overrides still declare theirs, because there the two
+ * readings are both useful and the ratified fork said the product must not guess.
  */
-export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.cardTemplate"): CardTemplateParseResult {
+export function parseCardTemplate(
+  raw: unknown,
+  keyPath = "settings.sidebar.cardTemplate",
+  base: CardTemplate = DEFAULT_CARD_TEMPLATE,
+): CardTemplateParseResult {
   const errors: string[] = [];
   if (!isMapping(raw)) {
     return { errors: [`${keyPath}: must be a mapping with 'version' and any of ${CARD_REGIONS.join(", ")}`] };
@@ -355,20 +409,71 @@ export function parseCardTemplate(raw: unknown, keyPath = "settings.sidebar.card
   }
 
   const regions = parseRegions(raw, keyPath, errors);
-  const base: CardTemplate = {
+  const parsed: CardTemplate = {
     version: CARD_TEMPLATE_VERSION,
-    header: regions.header ?? DEFAULT_CARD_TEMPLATE.header,
-    meta: regions.meta ?? DEFAULT_CARD_TEMPLATE.meta,
-    footer: regions.footer ?? DEFAULT_CARD_TEMPLATE.footer,
+    header: regions.header ?? base.header,
+    meta: regions.meta ?? base.meta,
+    footer: regions.footer ?? base.footer,
   };
 
-  const runtimes = parseRuntimeOverrides(raw.runtimes, `${keyPath}.runtimes`, base, errors);
+  const runtimes = parseRuntimeOverrides(raw.runtimes, `${keyPath}.runtimes`, parsed, errors);
 
   if (errors.length > 0) return { errors };
   return {
-    config: { base, ...(runtimes && Object.keys(runtimes).length > 0 ? { runtimes } : {}) },
+    config: { base: parsed, ...(runtimes && Object.keys(runtimes).length > 0 ? { runtimes } : {}) },
     errors: [],
   };
+}
+
+/**
+ * SDD 479 phase 5 — the two homes meeting, with precedence recorded rather than implied.
+ *
+ * Ratified fork 1: **personal wins**. What "wins" means is settled at PARSE time, not here — the
+ * personal document was validated against the project's template as its base, so a region it does not
+ * mention already carries the project's choice. By the time both arrive, each side is a complete
+ * template and this is a lookup table, not a merge with rules of its own.
+ *
+ * Per-runtime keys merge key by key rather than wholesale: someone who overrides `claude` personally
+ * has said nothing about the project's `codex` override, and dropping it would be the product
+ * inventing an opinion the person never expressed.
+ */
+export function mergeCardTemplateConfigs(
+  project: CardTemplateConfig | undefined,
+  personal: CardTemplateConfig | undefined,
+): CardTemplateConfig | undefined {
+  if (!personal) {
+    if (!project) return undefined;
+    return { ...project, sources: { base: "project", ...(project.runtimes ? { runtimes: mapSources(project.runtimes, "project") } : {}) } };
+  }
+  const runtimes = { ...(project?.runtimes ?? {}), ...(personal.runtimes ?? {}) };
+  const runtimeSources: Record<string, CardTemplateSource> = {
+    ...mapSources(project?.runtimes ?? {}, "project"),
+    ...mapSources(personal.runtimes ?? {}, "personal"),
+  };
+  return {
+    base: personal.base,
+    ...(Object.keys(runtimes).length > 0 ? { runtimes } : {}),
+    sources: {
+      base: "personal",
+      ...(Object.keys(runtimeSources).length > 0 ? { runtimes: runtimeSources } : {}),
+    },
+  };
+}
+
+function mapSources(runtimes: Readonly<Record<string, CardTemplate>>, source: CardTemplateSource): Record<string, CardTemplateSource> {
+  return Object.fromEntries(Object.keys(runtimes).map((runtime) => [runtime, source]));
+}
+
+/** The sentence the UI shows. Kept beside the resolution it describes so the two cannot drift apart. */
+export function describeCardTemplateSource(source: CardTemplateSource): string {
+  switch (source) {
+    case "personal":
+      return "your VS Code settings (personal override — wins over the project)";
+    case "project":
+      return "this project's tachyon.yml";
+    default:
+      return "Tachyon's default card";
+  }
 }
 
 /**
