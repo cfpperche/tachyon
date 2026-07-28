@@ -173,8 +173,20 @@
      anything), plus a visible darker outline so it doesn't collapse into `needs` at a glance. */
   .sdot.throttled { background: var(--ds-warn); border: 1px solid color-mix(in srgb, var(--ds-warn) 65%, black); }
   .sdot.idle { background: var(--idle); }
-  /* t-a39c7d — done(unseen): calm ok ring (finished, eyes not yet on pane) */
-  .sdot.done { background: var(--ds-ok); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-ok) 50%, transparent); opacity: 0.9; }
+  /* t-a39c7d — done(unseen): finished a turn, nobody has looked yet.
+     t-0d689f — this used to be a FILLED ok dot with a 1px translucent ring, which at 7px is the same
+     silhouette as `.running`. Measured: agents the Bridge reported as `attention: idle` (idle+unseen
+     → `done`) rendered green exactly like the working ones, so the human could not tell "producing
+     output" from "finished, unread". Now it is a dot with a detached outer ring — a different SHAPE,
+     not a different shade of the same green — so the two never collapse, including for anyone who
+     cannot separate them by colour. The gap is painted in the sidebar background so the ring reads
+     as detached rather than as a thicker dot. */
+  .sdot.done {
+    background: var(--ds-ok);
+    box-shadow:
+      0 0 0 1.5px var(--vscode-sideBar-background, var(--vscode-editor-background, transparent)),
+      0 0 0 3px var(--ds-ok);
+  }
   .sdot.stopping { background: var(--ds-muted); box-shadow: 0 0 4px var(--ds-muted); }
   .sdot.stop-failed { background: var(--ds-err); box-shadow: 0 0 4px color-mix(in srgb, var(--ds-err) 60%, transparent); }
   .sdot.stopped { background: transparent; border: 1px solid var(--idle); }
@@ -207,6 +219,13 @@
     row-gap: 5px;
   }
   .row-meta:empty { display: none; }
+
+  /* t-b164b2 — a badge may never be wider than the card. A branch like
+     `tachyon/change/<a-very-long-slug>` used to push its chip past the row and out of the sidebar
+     (measured at 320px: 116px of overflow, test/browser/cardPreviewShadow.test.ts). Truncation is the
+     COMPONENT's job, not the template's — SDD 479 spec.md § narrow sidebar — and the full value is
+     already in the badge's tooltip, so nothing is lost by clipping the text. */
+  .row-meta > .ds-badge { max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* Nested rows skip the disclosure gutter (App.tsx `!nested`); name starts after sdot+gap only.
      Use a matching pad so badges/focus align under the child name the same way parents do. */
   .row.child .row-meta {
@@ -367,6 +386,17 @@
   }
   .config-error-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .config-error-actions .ds-btn { font-size: 11px; padding: 3px 8px; }
+
+  /* SDD 479 — a refused card template. Same shape as the config banner, WARN tone: the config is
+     valid and the fleet is live; only the layout fell back to the default. */
+  .card-template-banner {
+    border-color: color-mix(in srgb, var(--ds-warn, #cca700) 55%, transparent);
+    background: color-mix(in srgb, var(--ds-warn, #cca700) 12%, var(--vscode-sideBar-background, transparent));
+  }
+  .card-template-banner .config-error-title { color: var(--ds-warn, #cca700); }
+  /* SDD 479 phase 5 — a banner action must never run past its own border at the sidebar's narrowest;
+     the label ellipsizes instead, with the full text still in the title attribute. */
+  .config-error-actions .ds-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
   /* spec 415 — owned Attention Stack: six visible FIFO cards, no toast companion. */

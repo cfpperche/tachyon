@@ -49,7 +49,7 @@ import {
 } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
-import { composeAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
+import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { appendDoorbellEvent } from "./doorbell.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
@@ -85,6 +85,8 @@ import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliat
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { admitAdhocAgentCommand, SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
+import { sealExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { mintExecution } from "../executionGraph/executionIdentity.js";
 import { modelFacingScreenshotResult } from "../companion/screenshotPersist.js";
 import { envelopeFromTabResult } from "../companion/tabEnvelope.js";
 import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafety.js";
@@ -352,8 +354,22 @@ export interface BridgeDeps {
   onTaskNotificationEvent?: (event: TaskNotificationEvent) => void;
   /** Fired after any validation mutation — wired to Mission Control refresh. */
   onValidationsChanged?: () => void;
+  /**
+   * t-e76acc — fired when work lands on a HUMAN: a validation created with `executor: "human"`, or
+   * one handed to a human by an update. The measured asymmetry this closes (report § 1.1) is that an
+   * approval notifies its human and a validation never did — so the same notice/badge treatment
+   * applies here, and DELIBERATELY not the injection semantics: resolving an approval writes into the
+   * requester's tmux session because an agent is blocked on it, while a validation is evidence
+   * waiting to be read and nothing is blocked on it.
+   */
+  onHumanValidationPending?: (validation: { id: string; title: string; author: string }) => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
+  /**
+   * SDD 480 Phase 2 — sink for execution-graph events. Optional: a Bridge without it behaves exactly
+   * as before, which is what keeps this wiring reversible seam by seam.
+   */
+  recordExecution?: (event: SealedExecutionEvent) => void;
   /** One-shot command runner — enables run_command/list_commands. */
   commands?: CommandRunner;
   /** Step-by-step runbook runner — enables run_runbook. */
@@ -956,6 +972,24 @@ function deliveryLeaseWaitGateFor(manager: AgentManager): DeliveryLeaseWaitGate 
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  /**
+   * SDD 480 Phase 2 — seal one execution event and hand it to the sink, never throwing.
+   *
+   * Shared by every Bridge seam so the swallow-and-continue rule is written once: a diagnostic that
+   * can fail the operation it observes is worse than no diagnostic.
+   */
+  const emitExecution = (raw: Parameters<typeof sealExecutionEvent>[0]): void => {
+    if (!deps.recordExecution) return;
+    try { deps.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
+  };
+  /**
+   * Who a Bridge tool call belongs to. An agent arm with no name is `unattributed-caller` rather than
+   * borrowing `human` or the nearest agent: paired with the `unproven` provenance beside it, it says
+   * "we recorded this and cannot tell you whose it was", which is the honest answer.
+   */
+  const executionCallerId = (): string =>
+    deps.caller?.kind === "agent" ? (deps.caller.name ?? "unattributed-caller") : "human";
+
   // ── spec 392 — managed worktree registry ──────────────────────────────────
   mcp.registerTool(
     "create_worktree",
@@ -1444,11 +1478,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       },
     },
     async ({ action, args, timeoutMs }) => {
+      // SDD 480 §3.1 — minted BEFORE the broker call, so a host action that hangs or throws still left
+      // a record that it was attempted. `carrier: "absent"` is the honest declaration: the action runs
+      // inside the VS Code host, so there is no child of ours to hand an environment to and no process
+      // that could later be proven to be this execution. Recorded anyway, labelled `unproven`.
+      const minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+      const name = hostActionName(action);
       try {
         if (!deps.runHostAction) return fail(new Error("host actions are not available on this Bridge"));
-        const result = await deps.runHostAction({ action: hostActionName(action), args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
+        emitExecution({
+          kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name },
+        });
+        const result = await deps.runHostAction({ action: name, args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
+        emitExecution({
+          kind: "exit", node: "InternalOperation", state: "completed", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name },
+        });
         return ok(JSON.stringify(result, null, 2));
       } catch (err) {
+        emitExecution({
+          kind: "fail", node: "InternalOperation", state: "failed", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: "run_host_action", action: name, error: String(err) },
+        });
         return fail(err);
       }
     },
@@ -3468,14 +3523,23 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "actively being typed into by a human.",
       inputSchema: {
         to: AGENT_NAME.describe("the recipient agent's name"),
-        summary: z.string().min(1).max(4000).describe("one-line completion/status message — sanitized to a single printable line and capped at 500 chars"),
+        summary: z.string().min(1).max(4000).describe(
+          "one-line completion/status message, at most 500 chars after sanitizing. OVER THAT IT IS REFUSED, "
+            + "never truncated: write the detail where it survives (append_task_note / attach_evidence) and send a "
+            + "short summary instead. A completion should carry task id, state, commit/tree or blocker, and `pointer`.",
+        ),
+        pointer: z.string().min(1).max(200).optional().describe(
+          "durable record holding the full detail — a task id (t-abc123), an artifact ref or a path. Appended to the "
+            + "delivered line and stored with the notice, so the recipient can open it from Attention/Activity "
+            + "instead of reading your pane.",
+        ),
         agent: AGENT_NAME.describe(
           "YOUR agent name — self-declared, NOT verified by the Bridge (auth is one shared token; the Bridge cannot tell callers apart). " +
             "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
         ),
       },
     },
-    async ({ to, summary, agent }) => {
+    async ({ to, summary, agent, pointer }) => {
       try {
         // spec 351 — resolved caller wins for the sender identity (closes t-d7b3a9's "a reviewer
         // self-naming 'codex'" damage: the "From" line is now the AUTHENTICATED sender, not self-declared).
@@ -3521,10 +3585,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
+        // t-b15872 — refuse rather than truncate. The doorbell above is already witnessed, so a
+        // sender that rewrites and retries is not penalised for having been too verbose once.
+        const tooLong = agentSummaryRefusal(summary);
+        if (tooLong) return fail(new Error(tooLong));
         // t-9552f3 — after a witnessed, non-empty completion doorbell: latch sender so attention/backstop
         // stop treating a finished turn with an open pane as active "working" work.
         deps.markCompletionHint?.(agent);
-        const line = composeAgentNotice(agent, to, summary);
+        const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
           ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
           : await deliverNoticeFallback(deps, session, line);
@@ -4062,8 +4130,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ title, type, executor, priority, assignee, instructions, source_refs, agent }) => {
       try {
-        const validation = await deps.validations.create({ title, author: agent ?? "human", type, executor, priority, assignee, instructions, source_refs });
+        const author = agent ?? "human";
+        const validation = await deps.validations.create({ title, author, type, executor, priority, assignee, instructions, source_refs });
         deps.onValidationsChanged?.();
+        if (validation.executor === "human") {
+          deps.onHumanValidationPending?.({ id: validation.id, title: validation.title, author });
+        }
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {
         return fail(err);
@@ -4113,8 +4185,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (changedFields.length === 0) {
           throw new Error("update_validation requires at least one field");
         }
+        // read BEFORE the write, so the signal fires on the transition rather than on every patch of
+        // an already-human validation (a re-titled one must not re-notify).
+        let wasHuman: boolean | undefined;
+        try {
+          wasHuman = deps.validations.get(id).executor === "human";
+        } catch {
+          /* the update below reports the real failure */
+        }
         const validation = await deps.validations.update(id, { ...patch, actor: validationActor(deps) });
         deps.onValidationsChanged?.();
+        if (validation.executor === "human" && wasHuman === false) {
+          const actor = validationActor(deps);
+          deps.onHumanValidationPending?.({
+            id: validation.id,
+            title: validation.title,
+            // who handed it over, in the same self-declared terms the record itself uses
+            author: actor.kind === "agent" && actor.name ? actor.name : "human",
+          });
+        }
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {
         return fail(err);
@@ -4425,6 +4514,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       },
     },
     async ({ name, timeoutSec, rerun }) => {
+      // Uses the shared `emitExecution` defined once for every Bridge seam.
+      let minted: ReturnType<typeof mintExecution> | undefined;
       try {
         if (!deps.commands) return fail(new Error("commands are not available on this Bridge"));
         const before = await deps.commands.status(name);
@@ -4432,6 +4523,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (before.state === "running") {
           // already in flight — just wait on it
         } else if (before.state === "idle" || rerun) {
+          // SDD 480 — the ToolCall to execution link. Minted BEFORE the run, so the record exists even
+          // if the command dies instantly. `carrier: "absent"` is the honest declaration here: the
+          // command runner starts its own session and this seam hands it no environment, so the
+          // PROCESS cannot be proven to be this execution. The tool call is still recorded, with
+          // provenance saying exactly that, instead of being dropped or guessed at.
+          minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+          emitExecution({
+            kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+            correlation: minted.correlation, at: new Date().toISOString(),
+            detail: { tool: "run_command", command: name },
+          });
           await deps.commands.run(name);
         } else {
           // finished result available and no rerun requested — report it
@@ -4444,6 +4546,14 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return ok(JSON.stringify({ name, running: true, note: "still running — call again to keep waiting" }));
         }
         const tail = await deps.commands.tail(name);
+        if (minted) {
+          emitExecution({
+            kind: "exit", node: "InternalOperation",
+            state: result.exitCode === 0 ? "completed" : "failed",
+            provenance: minted.provenance, correlation: minted.correlation, at: new Date().toISOString(),
+            detail: { tool: "run_command", command: name, exitCode: result.exitCode, durationMs: result.waitedMs },
+          });
+        }
         return ok(
           JSON.stringify({
             name,

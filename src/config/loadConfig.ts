@@ -20,6 +20,7 @@ import {
   behaviorStubPathTemplateError,
   type BehaviorVerificationSettings,
 } from "./behaviorVerification.js";
+import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
@@ -513,6 +514,18 @@ export interface TachyonConfig {
      * Default false = loopback-only (browser Companion). MCP still requires agent tokens.
      */
     companion?: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean };
+    /**
+     * SDD 479 — the sidebar agent card's layout, owned by the project (it travels with the repo).
+     *
+     * A malformed template is refused WHOLE and recorded in `cardTemplateRefusal` rather than pushed
+     * onto `errors`, and that difference is deliberate: in this loader ANY error refuses the whole
+     * file (`if (errors.length > 0) return { errors, warnings }`), which drops the workspace to
+     * ledger/last-known-good and makes spawning read-only. Bricking a workspace over a cosmetic layout
+     * typo is a worse failure than the one being prevented — and the ratified acceptance criterion
+     * says the SIDEBAR renders the default template, which presumes a config that still loads. The
+     * refusal travels to the sidebar so the fallback can explain itself.
+     */
+    sidebar?: { cardTemplate?: CardTemplateConfig; cardTemplateRefusal?: string[] };
   };
 }
 
@@ -1653,6 +1666,33 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.companion = out;
         }
       }
+      // SDD 479 phase 2 — the project's agent-card layout. Same SHAPE of validation as `companion`
+      // above (unknown key refused by name, block dropped whole, errors accumulated); a DIFFERENT
+      // severity, for the reason recorded on `settings.sidebar` in the type above.
+      if (raw.settings.sidebar !== undefined) {
+        if (!isPlainObject(raw.settings.sidebar)) {
+          errors.push("settings.sidebar: must be a mapping with 'cardTemplate'");
+        } else {
+          const sb = raw.settings.sidebar;
+          for (const key of Object.keys(sb)) {
+            // `options:` is NOT accepted yet: per-component options are named in the ratified schema
+            // but no component implements one, and accepting a key we cannot honor would be a promise
+            // the card does not keep. Refused by name, with where it went.
+            if (key !== "cardTemplate") errors.push(`settings.sidebar: unknown key '${key}' (allowed: cardTemplate)`);
+          }
+          if (sb.cardTemplate !== undefined) {
+            const parsed = parseCardTemplate(sb.cardTemplate);
+            if (parsed.config) {
+              settings.sidebar = { cardTemplate: parsed.config };
+            } else {
+              // Refused whole: the sidebar renders the DEFAULT card and says why, rather than showing
+              // a layout half-built from the lines that happened to parse.
+              settings.sidebar = { cardTemplateRefusal: parsed.errors };
+              for (const error of parsed.errors) warnings.push(`${error} — the sidebar is using the default card layout`);
+            }
+          }
+        }
+      }
       if (raw.settings.bridgeGuidance !== undefined) {
         if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
@@ -1794,7 +1834,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

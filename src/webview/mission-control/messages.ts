@@ -13,7 +13,6 @@ export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 export interface MissionControlVM {
   folder: string;
   wsHash: string;
-  workspaces: MissionControlWorkspaceOption[];
   /** Optional for compatibility with persisted/dev fixtures created before liveness became degradable. */
   agentLiveness?: { status: "available" | "unavailable" };
   snapshot: BoardSnapshot;
@@ -60,7 +59,6 @@ export type MissionControlAction =
   | { type: "closeValidation"; id: string; outcome: ValidationOutcome; result_note: string }
   | { type: "openTask"; id: string }
   | { type: "copyTaskId"; id: string }
-  | { type: "switchWorkspace"; wsHash: string }
   /** spec 339 — opens Task Studio; omit `id` for a new task, pass it to edit an existing one. Replaces the
    *  board's former inline quick-add (createTask/CreateForm) as every create path now opens the Studio. */
   | { type: "openTaskStudio"; id?: string };
@@ -77,5 +75,4 @@ export const reorderLaneAction = (status: TaskStatus, priority: TaskPriority | u
 export const closeValidationAction = (id: string, outcome: ValidationOutcome, result_note: string): MissionControlAction => ({ type: "closeValidation", id, outcome, result_note });
 export const openTaskAction = (id: string): MissionControlAction => ({ type: "openTask", id });
 export const copyTaskIdAction = (id: string): MissionControlAction => ({ type: "copyTaskId", id });
-export const switchWorkspaceAction = (wsHash: string): MissionControlAction => ({ type: "switchWorkspace", wsHash });
 export const openTaskStudioAction = (id?: string): MissionControlAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });

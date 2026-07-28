@@ -21,6 +21,7 @@ import {
   claudeAlreadyRegistered,
   TOKEN_ENV_REF_CLAUDE,
 } from "../../src/registration/adapters.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const URL_ = "http://127.0.0.1:43210/mcp";
 
@@ -68,7 +69,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
       getConfig: () => undefined,
       getMaxAgents: () => 8,
     });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-auth-"));
+    const root = makeTempDir("tachyon-auth-");
     return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
   }
 
@@ -133,7 +134,7 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
       getConfig: () => undefined,
       getMaxAgents: () => 8,
     });
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-caller-auth-"));
+    const root = makeTempDir("tachyon-caller-auth-");
     return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
   }
 

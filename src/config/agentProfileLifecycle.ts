@@ -34,6 +34,21 @@ const BACKUP = "backup-agent.yml";
 const ARTIFACTS = "artifacts";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
 const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md"]);
+/**
+ * `t-d185e1` — profile-local documents an EDIT may publish.
+ *
+ * Deliberately its own set, and deliberately tiny. Enabling Evolution on an already-declared canonical
+ * agent needs a companion file (`evolution-selector.json`) written in the SAME transaction as the
+ * patch that pins it: the projection only grants `selfEvolution` when the pinned sha256 matches the
+ * bytes on disk, so publishing them separately would leave a window where the profile references a
+ * digest nothing satisfies — and the authority is re-signed over the profile, not over the artifact.
+ *
+ * Keeping create's set separate stops an edit from re-publishing `SOUL.md` behind the soul
+ * transaction's back, which owns that document under a different contract.
+ */
+const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json"]);
+const ARTIFACT_NAMES_FOR = { create: CREATE_ARTIFACT_NAMES, edit: EDIT_ARTIFACT_NAMES } as const;
+const ALL_ARTIFACT_NAMES = new Set([...CREATE_ARTIFACT_NAMES, ...EDIT_ARTIFACT_NAMES]);
 const CREATE_ARTIFACT_MAX_BYTES = 64 * 1024;
 
 export type AgentProfileLifecycleOperation = "create" | "edit" | "set-enabled";
@@ -98,8 +113,12 @@ export interface CommitAgentProfileLifecycleInput {
   enabled?: boolean;
   createProfile?: Omit<AgentProfileV1, "schemaVersion" | "agentId">;
   createProfileLocalReferences?: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">>;
-  /** V1 bundle import only: bounded profile-local authored files published with create. */
-  createArtifacts?: Array<{ path: string; text: string; sha256: string }>;
+  /**
+   * Bounded profile-local authored files published in this transaction. `create` carries the V1
+   * bundle's documents; `edit` carries only the Evolution selector (`t-d185e1`). Never on
+   * `set-enabled`, which changes a flag and no bytes.
+   */
+  artifacts?: Array<{ path: string; text: string; sha256: string }>;
   authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
@@ -245,7 +264,7 @@ function readJournal(txDir: string): AgentProfileLifecycleJournal {
     || !value.targetAuthority || typeof value.createdAt !== "string"
     || (value.targetArtifacts !== undefined && (!Array.isArray(value.targetArtifacts)
       || value.targetArtifacts.some((artifact) => !artifact || typeof artifact.path !== "string"
-        || !CREATE_ARTIFACT_NAMES.has(artifact.path)
+        || !ALL_ARTIFACT_NAMES.has(artifact.path)
         || typeof artifact.sha256 !== "string" || !DIGEST_RE.test(artifact.sha256))))) {
     throw new Error("invalid lifecycle journal schema");
   }
@@ -253,13 +272,16 @@ function readJournal(txDir: string): AgentProfileLifecycleJournal {
 }
 
 function validateCreateArtifacts(input: CommitAgentProfileLifecycleInput): Array<{ path: string; text: string; sha256: string }> {
-  if (input.createArtifacts === undefined) return [];
-  if (input.operation !== "create") throw new Error("createArtifacts are allowed only for profile creation");
-  if (input.createArtifacts.length > CREATE_ARTIFACT_NAMES.size) throw new Error("too many lifecycle create artifacts");
+  if (input.artifacts === undefined) return [];
+  const allowed = input.operation === "create" || input.operation === "edit"
+    ? ARTIFACT_NAMES_FOR[input.operation]
+    : undefined;
+  if (!allowed) throw new Error("lifecycle artifacts are allowed only for profile creation or edit");
+  if (input.artifacts.length > allowed.size) throw new Error("too many lifecycle artifacts");
   const seen = new Set<string>();
-  return input.createArtifacts.map((artifact) => {
+  return input.artifacts.map((artifact) => {
     const pathError = agentProfileRelativePathError(artifact.path);
-    if (pathError || !CREATE_ARTIFACT_NAMES.has(artifact.path)) {
+    if (pathError || !allowed.has(artifact.path)) {
       throw new Error(`invalid lifecycle create artifact '${artifact.path}': ${pathError ?? "unsupported portable document name"}`);
     }
     if (seen.has(artifact.path.toLowerCase())) throw new Error(`duplicate lifecycle create artifact '${artifact.path}'`);
@@ -484,6 +506,10 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
         removeCanonicalProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
       }
       else {
+        // t-d185e1 — an EDIT can publish an artifact too, and it is new by construction (`writeNew`
+        // refuses an existing path). Restoring only the profile would strand it: the rolled-back
+        // profile no longer pins it, so nothing would ever verify or remove those bytes again.
+        removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
         const backup = readPrivateFile(path.join(txDir, BACKUP));
         if (digest(backup) !== journal.priorProfileSha256) throw new Error("profile backup digest mismatch");
         replaceCanonicalProfileExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256, backup.toString("utf8"));

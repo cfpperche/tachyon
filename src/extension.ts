@@ -29,7 +29,7 @@ import {
   type CockpitDeps,
 } from "./webview/Cockpit.js";
 import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
-import type { CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
@@ -41,6 +41,7 @@ import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
+import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
@@ -925,6 +926,9 @@ function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { 
   throw new Error("schedule proposal is incomplete");
 }
 
+/** t-af3eef — control-flow marker for "this view did not ask for that slice". Never surfaced. */
+const SKIP_SLICE = Symbol("tachyon.collect.skip");
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   initializeVsCodeNotifications();
   const folders = vscode.workspace.workspaceFolders ?? [];
@@ -1141,7 +1145,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
-    collect: async (): Promise<CockpitWorkspaceBundle[]> => {
+    // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
+    // not needed is not queried and its field is ABSENT, so a caller can tell "not collected" from
+    // "none exist". Navigation used to pay for every slice regardless of the route.
+    collect: async (needs: CockpitCollectNeeds = COLLECT_EVERYTHING): Promise<CockpitWorkspaceBundle[]> => {
       const bundles: CockpitWorkspaceBundle[] = [];
       for (const ws of workspaces()) {
         let identity: CockpitWorkspaceBundle["control"]["identity"] = null;
@@ -1241,9 +1248,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
         // unreachable → an EMPTY list plus a note, never unverified raw-disk rows (maintainer-
         // ratified: untrusted data is not better than no data). The raw reader is deleted.
-        let worktreeRows: CockpitWorkspaceBundle["worktrees"] = [];
+        let worktreeRows: CockpitWorkspaceBundle["worktrees"];
         let worktreesUnavailable: string | undefined;
         try {
+          if (!needs.worktrees) throw SKIP_SLICE;
+          worktreeRows = [];
           const classified = await extensionQuery(ws, { action: "worktrees.classified" });
           const rows = (classified as { worktrees?: unknown[] })?.worktrees;
           if (!Array.isArray(rows)) throw new Error("engine returned no worktrees payload");
@@ -1260,19 +1269,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               folder: ws.folderName,
               wsHash: ws.wsHash,
               tachyonCreatedBranch: e.tachyonCreatedBranch === true,
-              classification: e.classification as CockpitWorkspaceBundle["worktrees"][number]["classification"],
+              classification: e.classification as NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["classification"],
             };
           });
         } catch (err) {
-          worktreesUnavailable = err instanceof Error ? err.message : String(err);
+          // t-af3eef — a SKIPPED slice is not a FAILED one. Leaving both the rows and the
+          // `unavailable` reason absent is the whole point: the view can then say "not collected"
+          // instead of either an empty list or an error it never hit.
+          if (err !== SKIP_SLICE) worktreesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
         // t-43c6fa — the classified engine read is the ONE source for the Deliveries tab, exactly as
         // spec 444 did for Worktrees. Engine unreachable → an EMPTY list plus a note, never
         // unverified raw-disk rows. `readGitDeliveriesFromDisk` is deleted.
-        let deliveryRows: CockpitWorkspaceBundle["deliveries"] = [];
+        let deliveryRows: CockpitWorkspaceBundle["deliveries"];
         let deliveriesUnavailable: string | undefined;
         try {
+          if (!needs.deliveries) throw SKIP_SLICE;
+          deliveryRows = [];
           const classified = await extensionQuery(ws, { action: "deliveries.classified" });
           const rows = (classified as { deliveries?: unknown[] })?.deliveries;
           if (!Array.isArray(rows)) throw new Error("engine returned no deliveries payload");
@@ -1295,7 +1309,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
           });
         } catch (err) {
-          deliveriesUnavailable = err instanceof Error ? err.message : String(err);
+          if (err !== SKIP_SLICE) deliveriesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
         bundles.push({
@@ -1323,6 +1337,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           // "0 pending" with requests waiting on disk. A read failure is deliberately NOT swallowed
           // into an empty list — Control's own error card is honest, a silent zero is not.
           approvals: pendingApprovalRows(ws.workspaceRoot),
+          // SDD 479 phase 5 — which card-template home this folder itself wrote, for Control's
+          // "in effect" statement. Read from the SAME loaded config the sidebar projects from, so the
+          // statement and the cards cannot disagree about what the project asked for.
+          cardTemplate: {
+            configured: !!ws.config?.settings?.sidebar?.cardTemplate,
+            refused: (ws.config?.settings?.sidebar?.cardTemplateRefusal?.length ?? 0) > 0,
+          },
+          // t-e76acc — Overview's unified "waiting on you" count needs the OTHER half, and it is
+          // counted with the very predicate the Inbox list filters on (`validationAwaitsHuman`), so
+          // the number and the rows cannot drift the way the approvals counter once did. A read
+          // failure leaves the field absent rather than reporting zero: absent means "not collected".
+          ...(() => {
+            try {
+              return { validationsAwaitingHuman: ws.missionControl.listValidations().filter(validationAwaitsHuman).length };
+            } catch {
+              return {};
+            }
+          })(),
           tmux,
           ...(companion ? { companion } : {}),
         });
@@ -1910,7 +1942,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     panel.dispose();
     if (isCockpitSingletonClaimed()) return;
     if (!state?.wsHash) return;
-    void openCockpit(makeCockpitDeps(), { section: "handoff", wsHash: state.wsHash });
+    // t-ace77f — the legacy panel's workspace is exactly the locator the detail route needs.
+    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(state.wsHash) });
   });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
@@ -2239,6 +2272,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = hash ? byHash(hash) : await pickWorkspace();
       await openCockpit(makeCockpitDeps(), {
         section: "approvals",
+        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
+      });
+    }),
+    // t-e76acc — one destination for "what is waiting on me", and the target of the Review action on
+    // both the approval and the human-validation notices.
+    vscode.commands.registerCommand("tachyon.openHumanInbox", async (hash?: string) => {
+      const ws = hash ? byHash(hash) : await pickWorkspace();
+      await openCockpit(makeCockpitDeps(), {
+        section: "inbox",
         ...(ws ? { approvalWsHash: ws.wsHash } : {}),
       });
     }),
@@ -2652,9 +2694,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
-      // t-610705 (Phase C.3) — Handoff lives in Control (cockpit section); no second peer panel.
+      // t-610705 (Phase C.3) — Handoff lives in Control; no second peer panel.
+      // t-ace77f — and inside Control it is a DETAIL ROUTE, not a tab: this command (the sidebar's
+      // `handoff · N` bar and the palette) is the entry point, and the document's breadcrumb leaves
+      // to Overview. Without a resolvable workspace there is no document to open — the picker
+      // already warned, so opening Control on Overview is the honest landing.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), { section: "handoff", ...(ws ? { wsHash: ws.wsHash } : {}) });
+      await openCockpit(makeCockpitDeps(), ws
+        ? { route: cockpitRoutes.projectHandoff(ws.wsHash) }
+        : { section: "overview" });
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.

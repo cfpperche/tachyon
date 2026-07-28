@@ -1,9 +1,9 @@
-import { lstat, mkdtemp, mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { lstat, mkdir, readFile, symlink, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { agentSoulPath, importSoulProfile, readCanonicalSoulBytes, resolveSoul, resolveSoulWithRetry, soulLaunchReservationsDir, SoulError, SOUL_MAX_BYTES } from "../../src/agents/soul.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const fsFault = vi.hoisted(() => ({ manifestCode: undefined as string | undefined, manifestError: undefined as unknown }));
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -21,7 +21,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
 });
 
 async function profile(body: Buffer | string, state: "active" | "retained" = "active") {
-  const root = await mkdtemp(path.join(tmpdir(), "tachyon-soul-"));
+  const root = makeTempDir("tachyon-soul-");
   const dir = path.join(root, ".tachyon", "agents", "Ada");
   await mkdir(dir, { recursive: true });
   await writeFile(path.join(dir, "SOUL.md"), body);
@@ -105,8 +105,8 @@ describe("strict soul profile resolver", () => {
   });
 
   it("imports an exact private canonical copy and forgets the source", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-import-root-"));
-    const sourceRoot = await mkdtemp(path.join(tmpdir(), "tachyon-import-source-"));
+    const root = makeTempDir("tachyon-import-root-");
+    const sourceRoot = makeTempDir("tachyon-import-source-");
     const source = path.join(sourceRoot, "identity.md");
     const bytes = Buffer.from("One\r\nTwo\n");
     await writeFile(source, bytes);
@@ -124,8 +124,8 @@ describe("strict soul profile resolver", () => {
   });
 
   it("publishes concurrently without clobbering the winning complete profile", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-import-race-root-"));
-    const sourceRoot = await mkdtemp(path.join(tmpdir(), "tachyon-import-race-source-"));
+    const root = makeTempDir("tachyon-import-race-root-");
+    const sourceRoot = makeTempDir("tachyon-import-race-source-");
     const sources = [path.join(sourceRoot, "one.md"), path.join(sourceRoot, "two.md")];
     const bodies = [Buffer.from("First complete identity\n"), Buffer.from("Second complete identity\n")];
     await Promise.all(sources.map((source, i) => writeFile(source, bodies[i])));
@@ -140,7 +140,7 @@ describe("strict soul profile resolver", () => {
   });
 
   it("serializes import with an active metadata-only lifecycle reservation", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-import-reserved-root-"));
+    const root = makeTempDir("tachyon-import-reserved-root-");
     const source = path.join(root, "identity.md");
     await writeFile(source, "Reserved identity");
     const reservations = soulLaunchReservationsDir(root);
@@ -183,8 +183,8 @@ describe("strict soul profile resolver", () => {
   });
 
   it("refuses a symlinked canonical parent before creating an out-of-workspace profile", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-import-parent-root-"));
-    const outside = await mkdtemp(path.join(tmpdir(), "tachyon-import-parent-outside-"));
+    const root = makeTempDir("tachyon-import-parent-root-");
+    const outside = makeTempDir("tachyon-import-parent-outside-");
     const source = path.join(root, "identity.md");
     await writeFile(source, "identity");
     await mkdir(path.join(root, ".tachyon"));
@@ -201,7 +201,7 @@ describe("strict soul profile resolver", () => {
     await symlink(outsideFile, agentSoulPath(finalRoot, "Ada"));
     await expect(readCanonicalSoulBytes(finalRoot, "Ada")).rejects.toMatchObject({ code: "soul/final-symlink" });
 
-    const parentRoot = await mkdtemp(path.join(tmpdir(), "tachyon-soul-read-parent-"));
+    const parentRoot = makeTempDir("tachyon-soul-read-parent-");
     const outside = await profile("outside");
     await mkdir(path.join(parentRoot, ".tachyon"), { recursive: true });
     await symlink(path.join(outside, ".tachyon", "agents"), path.join(parentRoot, ".tachyon", "agents"));

@@ -238,6 +238,11 @@ export const SOUL_ERROR_CODES = [
   "soul/profile-adoption-required", "soul/runtime-unsupported", "soul/io-error",
   "soul/profile-transaction-degraded", "soul/profile-collision", "soul/digest-mismatch",
   "soul/profile-enabled",
+  // t-e81ec5 — the agent is a canonical profile pointer, which cannot carry an inline `soul:` key.
+  // Its own code because it is a STRUCTURAL refusal, not an I/O failure: retrying, fixing permissions
+  // or repairing bytes cannot make it succeed, and the operator needs to be told that rather than
+  // handed `soul/io-error` from deep inside the config writer.
+  "soul/canonical-profile-unsupported",
 ] as const;
 
 export type SoulErrorCode = typeof SOUL_ERROR_CODES[number];

@@ -12,10 +12,13 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import {
   formatCompanionPairClipboard,
   navigateReturnAction,
+  openPersonalCardTemplateAction,
+  openProjectHandoffAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
 } from "./messages";
+import { CardTemplateBlock } from "./CardTemplateBlock";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import {
@@ -40,6 +43,9 @@ import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
+import type { HumanInboxDispatch } from "../human-inbox/App";
+import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
+import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
@@ -85,6 +91,24 @@ const ApprovalsApp = lazy(() =>
   import("../approval/App").then((m) => {
     loadSectionStylesheet("approvals");
     return { default: m.App };
+  }),
+);
+// t-e76acc — CSS co-load: the unified Human Inbox. The list and the item route share one sheet and
+// one chunk, but each lazy block requests it under its OWN key (the "studio-frame-<id>" convention:
+// one distinct key per call site, both resolving to the same href) — the item route is reachable by
+// deep link without the list ever mounting, and a shared key would fail the co-load parity check,
+// which compares the two id lists as arrays rather than as sets. `loadSectionStylesheet` is
+// idempotent per href, so the second call is free whenever both do run.
+const HumanInboxApp = lazy(() =>
+  import("../human-inbox/App").then((m) => {
+    loadSectionStylesheet("inbox");
+    return { default: m.App };
+  }),
+);
+const HumanInboxItemApp = lazy(() =>
+  import("../human-inbox/App").then((m) => {
+    loadSectionStylesheet("inbox-item");
+    return { default: m.ItemApp };
   }),
 );
 // t-610705 — CSS co-load, second surface (see the Approvals comment above for the mechanism).
@@ -276,6 +300,13 @@ export interface CockpitAppProps {
   companionPairOffer?: CompanionPairOffer;
   /** Low-level post for Engine log actions (clear/journal/copy). */
   onPost: (action: CockpitAction) => void;
+  /**
+   * t-ac79a7 — the navigation the host has committed but not finished loading, if any. See the
+   * state's doc comment in cockpit/main.tsx for why it has phases rather than being a boolean.
+   */
+  navPending?: { routeKey: string; phase: "pending" | "slow" | "stalled" };
+  /** t-ac79a7 — retry from the stalled banner. */
+  onRetryNavigation?: () => void;
   /** Embedded Mission Control board (same Preact App as the standalone panel). */
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
@@ -302,6 +333,12 @@ export interface CockpitAppProps {
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
   approvalDispatch: ApprovalDispatch;
+  /** t-e76acc — the unified Human Inbox section and its item subroute. */
+  inboxVm?: HumanInboxViewModel;
+  inboxError?: string;
+  inboxItemVm?: HumanInboxItemViewModel;
+  inboxItemMissing?: { kind: HumanInboxKind; id: string };
+  inboxDispatch: HumanInboxDispatch;
   validationsVm?: ValidationsViewModel;
   validationsError?: string;
   validationsDispatch: ValidationsDispatch;
@@ -331,16 +368,16 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "handoff", "approvals", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "inbox", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
   engine: { icon: "server-environment", navKey: "navEngine" },
   fleet: { icon: "organization", navKey: "navFleet" },
+  inbox: { icon: "inbox", navKey: "navInbox" },
   approvals: { icon: "pass", navKey: "navApprovals" },
   mission: { icon: "checklist", navKey: "navMission" },
   validations: { icon: "checklist", navKey: "navValidations" },
-  handoff: { icon: "book", navKey: "navHandoff" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   runtime: { icon: "graph", navKey: "navRuntime" },
@@ -1181,7 +1218,13 @@ export function App(p: CockpitAppProps) {
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute;
+  // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
+  // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
+  const isProjectHandoff = activeRoute?.kind === "project-handoff";
+  // t-e76acc — an opened inbox item is a full-bleed embedded surface like every other subroute, and
+  // (unlike Handoff) it keeps its own nav tab lit: the human is working a counted queue down.
+  const isInboxItem = activeRoute?.kind === "inbox-item";
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
   // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
   // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
   // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
@@ -1189,13 +1232,13 @@ export function App(p: CockpitAppProps) {
   // through `model.section` itself (design-dueto probe-43bca1cc minor finding: coercing null to
   // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
   // from "Overview is genuinely active").
-  const isNavlessStudio = !!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin";
+  const isNavlessStudio = (!!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin") || isProjectHandoff;
   // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
   // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
   // very top, and the content area gets the vertical space the tab strip would have used. Each
   // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
-  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute;
+  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -1253,6 +1296,42 @@ export function App(p: CockpitAppProps) {
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute?.kind === "inbox-item") {
+    // t-e76acc — checked before the section branch, same as every other subroute: `model.section`
+    // reads "inbox" underneath (navSection keeps that tab lit), and this is what renders.
+    const parent = parentRoute(activeRoute);
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-inbox-item-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s.navInbox}
+        </Button>
+      );
+    }
+    body = (
+      <div class="ck-embed-host" data-testid="control-inbox-item">
+        <Suspense fallback={<SectionFallback />}>
+          <HumanInboxItemApp vm={p.inboxItemVm} missing={p.inboxItemMissing} dispatch={p.inboxDispatch} />
+        </Suspense>
+      </div>
+    );
+  } else if (activeRoute?.kind === "project-handoff") {
+    // t-ace77f — checked before the section branch, same as every other subroute: `model.section`
+    // reads "overview" underneath (the nav-less fallback), but the document is what renders.
+    const parent = parentRoute(activeRoute);
+    if (parent && parent.kind === "section") {
+      breadcrumb = (
+        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
+          {s[TAB_META[parent.section].navKey]}
+        </Button>
+      );
+    }
+    body = (
+      <div class="ck-embed-host" data-testid="control-handoff">
+        <Suspense fallback={<SectionFallback />}>
+          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
         </Suspense>
       </div>
     );
@@ -1339,6 +1418,23 @@ export function App(p: CockpitAppProps) {
           hint={s.overviewHint}
           actions={
             <div class="ck-overview-actions">
+              {/* t-46eb4f — THE global workspace scope, and the only one in Control. It lives here,
+                  in Overview, and is always visible: with a single root it still answers "which root
+                  am I looking at", which the header's old >1-workspace condition never did. Every
+                  other screen consumes the resulting scope; none offers its own copy of it. */}
+              <KitSelect
+                aria-label="Control workspace"
+                data-testid="control-workspace-select"
+                class="ck-workspace-select"
+                value={m.selectedWsHash ?? ALL_WORKSPACES}
+                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
+                options={[
+                  // "All workspaces" is only a real choice when there is more than one: with a lone
+                  // root it and that root select the same data, so offering both is noise.
+                  ...(m.workspaces.length > 1 ? [{ value: ALL_WORKSPACES, label: s.allWorkspaces }] : []),
+                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
+                ]}
+              />
               <label class="ck-auto" title={s.auto}>
                 <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
                 {s.auto}
@@ -1371,6 +1467,19 @@ export function App(p: CockpitAppProps) {
               {o.agentsRunning}/{o.agentsTotal}
             </div>
           </div>
+          {/* t-e76acc — ONE number for everything waiting on a human, and it is clickable: a count a
+              person cannot act on is how the Approvals counter stayed wrong for so long. The
+              per-kind Approvals metric stays beside it until the unified surface has demonstrably
+              covered both flows (the ratified sequencing: cover first, de-duplicate after). */}
+          <button
+            type="button"
+            class={`ck-metric ck-metric-btn ${o.inboxPending > 0 ? "warn" : ""}`}
+            data-testid="control-overview-inbox"
+            onClick={() => p.onSetSection("inbox")}
+          >
+            <div class="label">{s.inbox}</div>
+            <div class="value">{o.inboxPending}</div>
+          </button>
           <div class={`ck-metric ${o.approvalsPending > 0 ? "warn" : ""}`}>
             <div class="label">{s.approvals}</div>
             <div class="value">{o.approvalsPending}</div>
@@ -1409,6 +1518,9 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("fleet")}>
               {s.navFleet}
             </Button>
+            <Button variant="default" onClick={() => p.onSetSection("inbox")}>
+              {s.navInbox}
+            </Button>
             <Button variant="default" onClick={() => p.onSetSection("approvals")}>
               {s.navApprovals}
             </Button>
@@ -1418,7 +1530,7 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("validations")}>
               {s.navValidations}
             </Button>
-            <Button variant="default" onClick={() => p.onSetSection("handoff")}>
+            <Button variant="default" data-testid="control-overview-open-handoff" onClick={() => p.onPost(openProjectHandoffAction())}>
               {s.navHandoff}
             </Button>
             <Button variant="default" onClick={() => p.onSetSection("runtime")}>
@@ -1518,6 +1630,14 @@ export function App(p: CockpitAppProps) {
         )}
       </ModuleChrome>
     );
+  } else if (section === "inbox") {
+    body = (
+      <div class="ck-embed-host" data-testid="control-inbox">
+        <Suspense fallback={<SectionFallback />}>
+          <HumanInboxApp vm={p.inboxVm} error={p.inboxError} dispatch={p.inboxDispatch} />
+        </Suspense>
+      </div>
+    );
   } else if (section === "approvals") {
     body = (
       <div class="ck-embed-host" data-testid="control-approvals">
@@ -1532,7 +1652,19 @@ export function App(p: CockpitAppProps) {
     body = (
       <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
         <Suspense fallback={<SectionFallback />}>
-          <MissionControlApp vm={p.missionVm} lastError={p.missionError} dispatch={p.missionDispatch} />
+          <MissionControlApp
+            vm={p.missionVm}
+            lastError={p.missionError}
+            dispatch={p.missionDispatch}
+            // t-ac79a7 — the routeKey is the host's own identifier; the board only needs the task id
+            // out of it. Parsed here rather than shipping a second field, so there is one authority
+            // on what a pending navigation is.
+            pendingTaskId={
+              p.navPending?.routeKey.startsWith("task-detail:")
+                ? p.navPending.routeKey.split(":")[2]
+                : undefined
+            }
+          />
         </Suspense>
       </div>
     );
@@ -1541,14 +1673,6 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-validations-host">
         <Suspense fallback={<SectionFallback />}>
           <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
-        </Suspense>
-      </div>
-    );
-  } else if (section === "handoff") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-handoff">
-        <Suspense fallback={<SectionFallback />}>
-          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
         </Suspense>
       </div>
     );
@@ -1698,6 +1822,16 @@ export function App(p: CockpitAppProps) {
             </Button>
           </div>
 
+          {/* SDD 479 phase 4 — compose a card layout and watch the REAL card update (ratified fork 5). */}
+          <CardTemplateBlock
+            s={s}
+            onOpenConfig={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
+            // SDD 479 phase 5 — the personal home is a settings KEY, so its button opens the settings
+            // editor filtered to that key rather than a file.
+            onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
+            inEffect={m.cardTemplate}
+          />
+
           <div class="ck-settings-block" data-testid="control-settings-companion">
             <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
             <p class="ck-settings-block-hint">{s.companionHint}</p>
@@ -1817,8 +1951,27 @@ export function App(p: CockpitAppProps) {
     );
   }
 
+  // t-ac79a7 — the bar and aria-busy go up the instant the host commits the navigation, because
+  // "immediate acknowledgement that the click was accepted" is the actual requirement and the
+  // measured wait is seconds, not frames. The NAV_SLOW_MS grace deliberately gates only the SPOKEN
+  // announcement: a screen reader should not narrate every fast route change, but a sighted user
+  // should never wonder whether their click registered. Read once here so the consumers below
+  // (bar, aria-busy, live region, banner) cannot drift apart.
+  const navBusy = !!p.navPending;
+  const navStalled = p.navPending?.phase === "stalled";
+  const navAnnounce = p.navPending?.phase === "slow" || navStalled;
   return (
     <div class="ck-root">
+      {/* t-ac79a7 — immediate, layout-stable evidence that a navigation is in flight. The bar is
+          position:absolute over the header's bottom edge so showing/hiding it never reflows the
+          content underneath — the requirement is feedback WITHOUT a jump. */}
+      {navBusy && !navStalled ? <div class="ck-nav-progress" data-testid="control-nav-progress" aria-hidden="true" /> : null}
+      {/* Announced politely and owned by no control, so a screen reader hears the navigation without
+          focus moving off whatever the user actuated. Rendered always (not just while busy) because a
+          live region has to exist BEFORE its text changes for the change to be announced. */}
+      <div class="ck-sr-only" role="status" aria-live="polite" data-testid="control-nav-status">
+        {navAnnounce ? (navStalled ? s.navStalled : s.navLoading) : ""}
+      </div>
       {/* t-fullpage-proto — a subroute (task-detail, a Fleet subroute, or any studio) replaces the
           whole section tab strip with ONE minimal "← Back" row; the content area gets the vertical
           space the tabs would have used. `breadcrumb` is null for a genuine deep-link edge case
@@ -1853,29 +2006,39 @@ export function App(p: CockpitAppProps) {
                 );
               })}
             </div>
-            {/* t-d16a39 — ONE shell-level workspace scope for every section. Hidden for the common
-                single-workspace case (nothing to choose). Radix Select rejects an empty-string item
-                value, so the UI uses the ALL_WORKSPACES sentinel and translates to "" on dispatch
-                (the wire/host side keeps "" = All). */}
-            {m && m.workspaces.length > 1 ? (
-              <KitSelect
-                aria-label="Control workspace"
-                data-testid="control-workspace-select"
-                class="ck-workspace-select"
-                value={m.selectedWsHash ?? ALL_WORKSPACES}
-                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
-                options={[
-                  { value: ALL_WORKSPACES, label: "All workspaces" },
-                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
-                ]}
-              />
-            ) : null}
+            {/* t-46eb4f — the shell-level scope selector moved into Overview (and stopped hiding
+                itself on a single root). The nav strip chooses a SCREEN; the root is chosen once,
+                in one place, and every screen reads it. */}
           </div>
         </header>
       )}
 
-      <main class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}>
-        {body}
+      <main
+        class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}
+        aria-busy={navBusy ? "true" : undefined}
+      >
+        {/* t-ac79a7 — the stalled end state. Replaces the progress bar rather than joining it: past
+            NAV_STALL_MS the UI has no evidence anything is still progressing, so it stops implying
+            it and offers a way out instead. */}
+        {navStalled ? (
+          <div class="ck-nav-stalled" role="alert" data-testid="control-nav-stalled">
+            <span class="codicon codicon-warning" aria-hidden="true" />
+            <span>{s.navStalled}</span>
+            {p.onRetryNavigation ? (
+              <Button variant="default" icon="refresh" onClick={p.onRetryNavigation}>
+                {s.navRetry}
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {/* t-ac79a7 — keyed on the active route so Preact remounts this wrapper when the route
+            actually changes, which is what replays the enter animation. Keying on the route (not on
+            a render counter) is what makes the transition fire ONCE per navigation, on content that
+            is already loaded — a poll re-render of the same route keeps the same key and does not
+            re-animate. `ck-route-content` is a no-op under prefers-reduced-motion (see cockpit.css). */}
+        <div class="ck-route-content" key={activeRoute ? routeKey(activeRoute) : `section:${section}`}>
+          {body}
+        </div>
         {m && !isEmbed ? (
           <div class="ck-checked">
             {s.checkedAt}: {m.checkedAt}

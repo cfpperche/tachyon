@@ -356,6 +356,10 @@
         "title": "%command.openApprovals%"
       },
       {
+        "command": "tachyon.openHumanInbox",
+        "title": "%command.openHumanInbox%"
+      },
+      {
         "command": "tachyon.restartTmuxServer",
         "title": "%command.restartTmuxServer%"
       },
@@ -823,6 +827,47 @@
           "type": "boolean",
           "default": true,
           "description": "%config.agentPane.enabled%"
+        },
+        "tachyon.sidebar.cardTemplate": {
+          "type": "object",
+          "default": {},
+          "scope": "application",
+          "markdownDescription": "%config.sidebar.cardTemplate%",
+          "properties": {
+            "version": {
+              "type": "number",
+              "enum": [
+                1
+              ],
+              "description": "%config.sidebar.cardTemplate.version%"
+            },
+            "header": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "%config.sidebar.cardTemplate.region%"
+            },
+            "meta": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "%config.sidebar.cardTemplate.region%"
+            },
+            "footer": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "%config.sidebar.cardTemplate.region%"
+            },
+            "runtimes": {
+              "type": "object",
+              "description": "%config.sidebar.cardTemplate.runtimes%"
+            }
+          },
+          "additionalProperties": false
         }
       }
     },

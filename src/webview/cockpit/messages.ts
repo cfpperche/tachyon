@@ -10,6 +10,8 @@ export interface CockpitStrings {
   navOverview: string;
   navEngine: string;
   navFleet: string;
+  /** t-e76acc — the unified Human Inbox tab (approvals + validations, one navigation). */
+  navInbox: string;
   navApprovals: string;
   navMission: string;
   navValidations: string;
@@ -45,8 +47,6 @@ export interface CockpitStrings {
   missionHint: string;
   validationsTitle: string;
   validationsHint: string;
-  handoffTitle: string;
-  handoffHint: string;
   worktreesTitle: string;
   worktreesHint: string;
   deliveriesTitle: string;
@@ -109,6 +109,8 @@ export interface CockpitStrings {
   errors: string;
   bridges: string;
   approvals: string;
+  /** t-e76acc — Overview's single "waiting on a human" metric label. */
+  inbox: string;
   worktrees: string;
   deliveries: string;
   attached: string;
@@ -129,6 +131,10 @@ export interface CockpitStrings {
   running: string;
   stopped: string;
   checkedAt: string;
+  /** t-ac79a7 — navigation feedback: progress label, stalled banner, and its retry. */
+  navLoading: string;
+  navStalled: string;
+  navRetry: string;
   open: string;
   noneListed: string;
   kind: string;
@@ -163,6 +169,29 @@ export interface CockpitStrings {
   settingsOpenTachyon: string;
   settingsOpenConfig: string;
   settingsDoctor: string;
+  /** SDD 479 phase 4 — the Control → Settings card-template block. */
+  cardTemplateTitle: string;
+  cardTemplateHint: string;
+  cardTemplateBody: string;
+  cardTemplateYamlHint: string;
+  cardTemplateCopy: string;
+  cardTemplateReset: string;
+  cardTemplateCriticalNote: string;
+  cardTemplateInlineNote: string;
+  /** SDD 479 phase 5 — the "which home is in effect" statement and the personal home's controls. */
+  cardTemplateInEffect: string;
+  cardTemplatePersonalActive: string;
+  cardTemplatePersonalRefused: string;
+  cardTemplatePersonalNone: string;
+  cardTemplateProjectNone: string;
+  cardTemplateProjectConfigured: string;
+  cardTemplateProjectRefused: string;
+  cardTemplateHomeLabel: string;
+  cardTemplateHomeProject: string;
+  cardTemplateHomePersonal: string;
+  cardTemplateCopyJson: string;
+  cardTemplateJsonHint: string;
+  cardTemplateOpenSettings: string;
   companionTitle: string;
   companionHint: string;
   companionBody: string;
@@ -174,6 +203,8 @@ export interface CockpitStrings {
   companionAllowedHostsSave: string;
   companionPaired: string;
   companionNotPaired: string;
+  /** t-46eb4f — label of the ONE global scope option that means 'every attached root'. */
+  allWorkspaces: string;
   companionPickWorkspace: string;
   companionBaseUrl: string;
   /** SDD 414 — Control pair-code affordance (command palette still works). */
@@ -241,6 +272,7 @@ export type CockpitAction =
   | { type: "refresh" }
   | { type: "copyDiagnostics" }
   | { type: "openSettings" }
+  | { type: "openPersonalCardTemplate" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId }
   /** t-d16a39 — shell-level workspace scope; "" selects "All workspaces". */
@@ -287,6 +319,9 @@ export type CockpitAction =
    *  delayed click from pin A processed after a fast navigation to pin B would otherwise navigate to
    *  B's returnRoute instead of being silently dropped). See Cockpit.ts's "navigateReturn" case. */
   | { type: "navigateReturn"; routeKey: string }
+  /** t-ace77f — Overview's Handoff entry: the host resolves the workspace and navigates to the
+   *  `project-handoff` route. No section to switch to any more — the tab is gone. */
+  | { type: "openProjectHandoff" }
   /** spec 444 — remove a classified-safe checkout by registry id. The engine re-validates
    *  fail-closed (occupancy, dirty, ownership) on every call; a stale UI verdict is refused, never
    *  forced through. `deleteBranch` is explicit per-click consent, honored only for
@@ -332,7 +367,24 @@ export type CockpitHostMessage =
    *  state; see `studioNavCheckpointAck` above. */
   | { type: "studioNavCheckpoint"; txnId: string }
   /** t-610705 (Phase D, D0) — "Stay" (or a rejected Save) — the client unfreezes, nothing lost. */
-  | { type: "studioNavAbort"; txnId: string };
+  | { type: "studioNavAbort"; txnId: string }
+  /**
+   * t-ac79a7 — the navigation-feedback bracket. `routePending` is posted SYNCHRONOUSLY from
+   * `navigate()` (Cockpit.ts), the single commit point every navigation intent funnels through, so
+   * it reaches the client before the host does any awaited work. That matters because the model
+   * push behind it waits on `deps.collect()` — a serial per-workspace sweep of engine round-trips
+   * (see t-af3eef) — which is why a Board click used to leave the screen untouched for seconds and
+   * then swap abruptly: the client learned nothing until that finished.
+   *
+   * `routeReady` closes the bracket from the end of `sendSectionModule()`, the one place that
+   * finishes loading the active route's module. One emit each — every route kind gets the
+   * pending/ready pair with no per-route duplication.
+   *
+   * `routeKey` identifies WHICH navigation, so a stale ready (a superseded route finishing after a
+   * newer one started) can be ignored rather than clearing the wrong pending state.
+   */
+  | { type: "routePending"; routeKey: string }
+  | { type: "routeReady"; routeKey: string };
 
 export const readyMessage = (): CockpitAction => ({ type: READY });
 export const refreshAction = (): CockpitAction => ({ type: "refresh" });
@@ -341,6 +393,14 @@ export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" }
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
+/**
+ * SDD 479 phase 5 — open the settings editor filtered to the personal card-template key. A distinct
+ * action from `openConfigFile`: one home is a file in the repo, the other a key in VS Code settings,
+ * and the block's button must land on the one the person actually picked.
+ */
+export const openPersonalCardTemplateAction = (): CockpitAction => ({ type: "openPersonalCardTemplate" });
+
+export const openProjectHandoffAction = (): CockpitAction => ({ type: "openProjectHandoff" });
 export const switchControlWorkspaceAction = (wsHash: string): CockpitAction => ({ type: "switchControlWorkspace", wsHash });
 export const fleetStartAction = (name: string, wsHash?: string): CockpitAction => ({
   type: "fleetStart",
@@ -430,6 +490,21 @@ export const toastMessage = (
   tone,
   ...(context ? { context } : {}),
 });
+/**
+ * t-ac79a7 — the two thresholds a pending navigation escalates through, shared so the behavioural
+ * tests assert against the same numbers the UI uses instead of re-declaring them.
+ *
+ * NAV_SLOW_MS: how long a navigation may take before the SHELL shows a progress bar. The actuated
+ * element acknowledges the click at 0ms regardless; this only keeps a fast navigation from flashing
+ * chrome on and off.
+ * NAV_STALL_MS: the bound past which the UI stops claiming progress it cannot observe and offers a
+ * retry instead. Without it a host that never answers leaves a spinner running forever.
+ */
+export const NAV_SLOW_MS = 300;
+export const NAV_STALL_MS = 15_000;
+
+export const routePendingMessage = (routeKey: string): CockpitHostMessage => ({ type: "routePending", routeKey });
+export const routeReadyMessage = (routeKey: string): CockpitHostMessage => ({ type: "routeReady", routeKey });
 export const studioNavCheckpointMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavCheckpoint", txnId });
 export const studioNavAbortMessage = (txnId: string): CockpitHostMessage => ({ type: "studioNavAbort", txnId });
 export const companionPairOfferMessage = (offer: CompanionPairOffer): CockpitHostMessage => ({

@@ -3,30 +3,19 @@
 #
 # After F5: Agents tab should show filter chips under AGENTS.
 # Spawn/stop a few to exercise counts, or leave declared rows idle/stopped as they settle.
-agents:
-  live-a:
-    cmd: bash
-    kind: agent
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# SDD 478 M7 — the rows here were `cmd: bash` with `kind: agent` forced on, which is exactly the
+# process-pretending-to-be-an-agent shape this SDD removes. Create the agent rows the chips need in
+# Agent Studio; the terminals below give the roster its non-agent half.
+terminals:
+  live-shell:
+    cmd: sh
     autostart: true
-  live-b:
-    cmd: bash
-    kind: agent
-    autostart: true
-  needs-gate:
-    cmd: bash
-    kind: agent
-    autostart: false
-  stopped-a:
-    cmd: bash
-    kind: agent
-    autostart: false
-  stopped-b:
-    cmd: bash
-    kind: agent
-    autostart: false
-  cemetery:
-    cmd: bash
-    kind: agent
+  stopped-shell:
+    cmd: sh
     autostart: false
 
 commands:

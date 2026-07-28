@@ -12,7 +12,11 @@ import { describe, expect, it } from "vitest";
 describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
   it("cockpit/App.tsx: the tab strip is swapped for the hoisted breadcrumb when a subroute is active", () => {
     const src = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    expect(src).toContain("const isSubroute = activeRoute?.kind === \"task-detail\" || isFleetSubroute || isStudioSubroute;");
+    // t-ace77f — Project Handoff joined the subroute set when it stopped being a tab.
+    // t-e76acc — so did the Human Inbox item route, which is a subroute WITH a nav tab (the Inbox
+    // tab stays lit while an item is open) — the two properties are independent, and this list is
+    // the "render fullpage chrome" one.
+    expect(src).toContain("const isSubroute = activeRoute?.kind === \"task-detail\" || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;");
     expect(src).toContain("let breadcrumb: ComponentChildren = null;");
     expect(src).toMatch(/isSubroute && breadcrumb \? \(\s*<header class="ck-top ck-top--fullpage">/);
     expect(src).toContain('<div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>');
@@ -32,6 +36,12 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     // studios: backLink no longer threaded into studioMountProps.
     expect(src).not.toMatch(/studioMountProps = \{[^}]*backLink/);
     expect(src).toContain('breadcrumb = activeRoute.studio === "pin" ? (');
+
+    // t-ace77f — Project Handoff renders the same hoisted breadcrumb, back to Overview.
+    expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb"/);
+
+    // t-e76acc — an opened inbox item goes back to the aggregated list, not to a per-kind tab.
+    expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-inbox-item-breadcrumb"/);
   });
 
   it("task-detail.css: the now-unreachable .td-breadcrumb rule was removed, not left dead", () => {

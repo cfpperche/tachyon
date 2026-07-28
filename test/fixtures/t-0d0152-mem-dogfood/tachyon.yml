@@ -1,16 +1,19 @@
 # Dogfood fixture t-0d0152 — agent MemoryMax scope wrap
 # Keep cmd simple: no nested bash -lc, no $$ (tmux/shell eat it).
+# SDD 478 M7 — agents are NOT written here by hand. Each `agents:` entry is a pointer to a
+# canonical profile under .tachyon/agents/<name>/agent.yml, and the authority that attests it is
+# custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
+# the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
+# Create one grok agent named `grok`, autostart off, to exercise the AGENT memory scope.
 settings:
   maxAgents: 4
   agentMemoryMax: 256M
 
-agents:
+terminals:
+  # SDD 478 M7 — `memtest` was a shell wearing an agent's clothes. It is a process, so it is a
+  # terminal; the memory scope it exercises is the same one either way.
   memtest:
     # outer systemd-run wrap adds another sh -c; keep this one layer of shell only
     cmd: sh -c "echo memtest-started; exec sleep 3600"
     autostart: false
     attention: false
-  grok:
-    cmd: grok
-    autostart: false
-    attention: true

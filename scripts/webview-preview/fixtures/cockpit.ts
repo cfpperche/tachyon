@@ -16,6 +16,7 @@ export const strings: CockpitStrings = {
   navOverview: "Overview",
   navEngine: "Engine",
   navFleet: "Fleet",
+  navInbox: "Inbox",
   navApprovals: "Approvals",
   navMission: "Board",
   navValidations: "Validations",
@@ -47,8 +48,6 @@ export const strings: CockpitStrings = {
   missionHint: "Work queue — tasks and lanes. Agents live in the sidebar Fleet.",
   validationsTitle: "Validations",
   validationsHint: "Validation queue — close dogfoods and checks (not on the Board).",
-  handoffTitle: "Project Handoff",
-  handoffHint: "Shared, curated project state — the doc a fresh agent reads first (embedded).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
   deliveriesTitle: "Deliveries",
@@ -111,6 +110,7 @@ export const strings: CockpitStrings = {
   errors: "Errors",
   bridges: "Bridges",
   approvals: "Approvals",
+  inbox: "Waiting on you",
   worktrees: "Worktrees",
   deliveries: "Deliveries",
   attached: "attached",
@@ -131,6 +131,9 @@ export const strings: CockpitStrings = {
   running: "running",
   stopped: "stopped",
   checkedAt: "Checked",
+  navLoading: "Loading…",
+  navStalled: "This is taking longer than expected.",
+  navRetry: "Retry",
   open: "Open",
   noneListed: "Nothing listed for this workspace yet.",
   kind: "Kind",
@@ -164,6 +167,27 @@ export const strings: CockpitStrings = {
   settingsOpenTachyon: "Open Tachyon settings",
   settingsOpenConfig: "Open tachyon.yml",
   settingsDoctor: "Run Doctor",
+  cardTemplateTitle: "Agent card layout",
+  cardTemplateHint: "Choose which elements an agent card shows, and in what order.",
+  cardTemplateBody: "Compose a layout here, watch the real card update, then paste the YAML into tachyon.yml.",
+  cardTemplateYamlHint: "Paste this under your workspace's tachyon.yml.",
+  cardTemplateCopy: "Copy YAML",
+  cardTemplateReset: "Reset to default",
+  cardTemplateCriticalNote: "shown anyway when a row is in this state",
+  cardTemplateInlineNote: "renders inside another element",
+  cardTemplateInEffect: "In effect right now:",
+  cardTemplatePersonalActive: "your personal override in VS Code settings — it wins over every project template below",
+  cardTemplatePersonalRefused: "your personal override was REFUSED and ignored; the cards fall back to each project's template",
+  cardTemplatePersonalNone: "no personal override — each project's own template decides",
+  cardTemplateProjectNone: "uses Tachyon's default card",
+  cardTemplateProjectConfigured: "has its own template in tachyon.yml",
+  cardTemplateProjectRefused: "its tachyon.yml template was refused; showing the default card",
+  cardTemplateHomeLabel: "Write this layout to:",
+  cardTemplateHomeProject: "This project (tachyon.yml)",
+  cardTemplateHomePersonal: "Just me (VS Code settings)",
+  cardTemplateCopyJson: "Copy JSON",
+  cardTemplateJsonHint: "Paste this into your VS Code settings.json. It applies to every project you open, and wins over their templates; regions you did not change keep whatever each project chose.",
+  cardTemplateOpenSettings: "Open settings",
   companionTitle: "Companion",
   companionHint: "Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*).",
   companionBody:
@@ -177,7 +201,8 @@ export const strings: CockpitStrings = {
   companionAllowedHostsSave: "Save allowed hosts",
   companionPaired: "Paired",
   companionNotPaired: "Not paired",
-  companionPickWorkspace: "Select a single workspace in the header to manage Companion settings.",
+  allWorkspaces: "All workspaces",
+  companionPickWorkspace: "Select a single workspace in Overview to manage Companion settings.",
   companionBaseUrl: "Engine Base URL",
   companionShowPairCode: "Show pair code",
   companionCopyBaseUrl: "Copy URL",
@@ -598,6 +623,14 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
   ],
 };
 
+/**
+ * t-ac79a7 — the task the nav-feedback fixture is "opening". Deliberately a card that really exists
+ * in the board fixture, so the preview shows the acknowledgement on the clicked card (`.card.opening`)
+ * rather than a pending state floating over a board that contains no such task. Exported so the route
+ * registry builds its routeKey from the same constant instead of a literal that could drift.
+ */
+export const NAV_PENDING_TASK_ID = "t-4bf28a";
+
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
@@ -608,6 +641,25 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "task-detail": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-4f2c91") },
+  },
+  /**
+   * t-ac79a7 — the navigation-feedback state, sequenced the way the LIVE host sequences it.
+   *
+   * The model here is the Board with NO activeRoute, because that is what the client is still
+   * holding while a Board click is in flight: `routePending` is posted synchronously from
+   * navigate(), and the task-detail model does not arrive until `deps.collect()` finishes seconds
+   * later (t-af3eef). So the honest picture of "waiting" is the ORIGIN screen plus the progress
+   * bar — not the destination's own loading state, which only appears once the model has landed.
+   *
+   * The route registry pushes the pending envelope for this fixture and deliberately never the
+   * matching `routeReady`, so the surface stays in the bracket for as long as a screenshot needs.
+   * The client escalates on its own timers, so "slow" (after NAV_SLOW_MS) and "stalled" (after
+   * NAV_STALL_MS) are the real client's states photographed at different ages rather than two
+   * hand-built approximations that could drift from it.
+   */
+  "nav-pending": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }),
   },
   // t-610705 (Phase C.2) — Fleet subroutes: same activeRoute-attached-after-buildCockpitModel
   // pattern as task-detail above. nav section for both is "fleet".
@@ -718,9 +770,16 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
-  // t-610705 (Phase C.3) — Handoff folds into a section (no activeRoute, unlike task-detail/Fleet
-  // subroutes above): same simple section-only pattern as validations/approvals.
-  handoff: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "handoff", nowIso: now }) },
+  // t-ace77f — Handoff is a DETAIL ROUTE, not a section: the model still carries a background
+  // section (nav-less routes fall back to overview at every call site) and `activeRoute` is what
+  // actually renders, same shape as the task-detail/Fleet-subroute fixtures above.
+  handoff: {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+      activeRoute: cockpitRoutes.projectHandoff("b349073a"),
+    },
+  },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
   tmux: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "tmux", nowIso: now }) },
@@ -737,5 +796,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "multi-workspace-scoped": {
     provenance: "synthetic-edge",
     vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
+  },
+  // t-46eb4f — Overview with more than one root attached: the ONE global scope selector, offering
+  // "All workspaces" plus each root. The single-root case is the `default` fixture, where the same
+  // selector is still rendered (it just has one option) — it no longer hides itself.
+  "multi-workspace-overview": {
+    provenance: "synthetic-edge",
+    vm: buildCockpitModel([...bundles, goldenBundle], { section: "overview", nowIso: now }),
   },
 };

@@ -24,13 +24,23 @@ export class OpencodeStorageReader {
   ) {}
 
   poll(storageRoot: string, sessionId: string): number {
-    const session = readSession(storageRoot, sessionId);
+    const store = resolveOpencodeStore(storageRoot);
+    if (!store) {
+      // t-4a4d30 — the old failure mode was silence: no store, no session, `return 0`, and an agent
+      // whose Activity simply stayed empty forever. Say it once per root instead.
+      warnOnce(storageRoot);
+      return 0;
+    }
+    const session = store.kind === "sqlite" ? readSqliteSession(store.dbPath, sessionId) : readSession(store.storageRoot, sessionId);
     if (!session) return 0;
     const root = this.state.opencode ??= { sessions: {} };
     const st = root.sessions[sessionId] ??= { seenParts: {} };
     st.seenParts ??= {};
     let appended = 0;
-    for (const turn of readTurns(storageRoot, sessionId)) {
+    const turns = store.kind === "sqlite"
+      ? readSqliteTurns(store.dbPath, sessionId)
+      : readTurns(store.storageRoot, sessionId);
+    for (const turn of turns) {
       const unseenParts = turn.parts.filter((part) => part.id && !st.seenParts[part.id]);
       if (unseenParts.length === 0) continue;
       const recordId = `${turn.message.id ?? "message"}:${unseenParts.map((p) => p.id).join(",")}`;
@@ -46,6 +56,116 @@ export class OpencodeStorageReader {
       for (const part of unseenParts) if (part.id) st.seenParts[part.id] = true;
     }
     return appended;
+  }
+}
+
+/**
+ * t-4a4d30 — OpenCode migrated its store from a JSON tree (`storage/session|message|part/**`) to
+ * SQLite (`opencode.db`) somewhere before 1.18.5. A home created since then has no `storage/` at
+ * all, and a home that predates it keeps one FROZEN beside the live database — measured on the
+ * operator's home: newest file under `storage/` 2026-06-10, `opencode.db` written the same day this
+ * was found. So the database wins wherever both exist: reading the tree there is reading history.
+ */
+export type OpencodeStore =
+  | { kind: "sqlite"; dbPath: string }
+  | { kind: "json"; storageRoot: string };
+
+/**
+ * `root` is whatever the session ledger recorded — the opencode data home, or the legacy
+ * `<home>/storage` dir. Probe both, prefer the database, and fall back to the tree only when there
+ * is no database to read.
+ */
+export function resolveOpencodeStore(root: string): OpencodeStore | undefined {
+  for (const dbPath of [path.join(root, OPENCODE_DB_FILE), path.join(path.dirname(root), OPENCODE_DB_FILE)]) {
+    if (isFile(dbPath)) return { kind: "sqlite", dbPath };
+  }
+  if (isDir(path.join(root, "session"))) return { kind: "json", storageRoot: root };
+  return undefined;
+}
+
+export const OPENCODE_DB_FILE = "opencode.db";
+
+const warned = new Set<string>();
+
+function warnOnce(root: string): void {
+  if (warned.has(root)) return;
+  warned.add(root);
+  console.warn(
+    `[tachyon] OpenCode activity: no readable store under '${root}' — expected '${OPENCODE_DB_FILE}' ` +
+    "(opencode ≥ the SQLite migration, measured on 1.18.5) or a legacy 'session/' JSON tree beside it. " +
+    "Activity for this agent stays empty until one of them exists.",
+  );
+}
+
+function isFile(p: string): boolean {
+  try { return fs.statSync(p).isFile(); } catch { return false; }
+}
+
+function isDir(p: string): boolean {
+  try { return fs.statSync(p).isDirectory(); } catch { return false; }
+}
+
+/** Read-only handle; every failure degrades to "no rows" exactly like the JSON reader's try/catch. */
+function withDb<T>(dbPath: string, fn: (db: import("node:sqlite").DatabaseSync) => T, fallback: T): T {
+  let db: import("node:sqlite").DatabaseSync | undefined;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require("node:sqlite") as typeof import("node:sqlite");
+    db = new DatabaseSync(dbPath, { readOnly: true });
+    return fn(db);
+  } catch {
+    return fallback;
+  } finally {
+    try { db?.close(); } catch { /* already closed */ }
+  }
+}
+
+function readSqliteSession(dbPath: string, sessionId: string): unknown | undefined {
+  return withDb(dbPath, (db) => db.prepare("SELECT id FROM session WHERE id = ? LIMIT 1").get(sessionId), undefined);
+}
+
+/**
+ * The database keeps identity in COLUMNS and the rest of the record in a JSON `data` blob — the same
+ * blob the JSON tree used to store as a file, minus the ids. Merging the columns back on top gives
+ * the normalizer exactly the record shape it already consumes, so one normalizer serves both stores.
+ */
+function readSqliteTurns(dbPath: string, sessionId: string): OpencodeTurnRecord[] {
+  return withDb(dbPath, (db) => {
+    const messages = (db.prepare(
+      "SELECT id, session_id, time_created, data FROM message WHERE session_id = ? ORDER BY time_created ASC, id ASC",
+    ).all(sessionId) as unknown as SqliteMessageRow[]).flatMap((row) => {
+      const rec = parseData<OpencodeMessageRecord>(row.data);
+      return rec ? [{ ...rec, id: String(row.id), sessionID: String(row.session_id) }] : [];
+    });
+
+    const partsByMessage = new Map<string, OpencodePartRecord[]>();
+    for (const row of db.prepare(
+      "SELECT id, message_id, session_id, time_created, data FROM part WHERE session_id = ? ORDER BY time_created ASC, id ASC",
+    ).all(sessionId) as unknown as SqlitePartRow[]) {
+      const rec = parseData<OpencodePartRecord>(row.data);
+      if (!rec) continue;
+      const messageId = String(row.message_id);
+      const arr = partsByMessage.get(messageId) ?? [];
+      arr.push({ ...rec, id: String(row.id), messageID: messageId, sessionID: String(row.session_id) });
+      partsByMessage.set(messageId, arr);
+    }
+
+    return messages
+      .map((message) => ({ message, parts: partsByMessage.get(message.id ?? "") ?? [], sourcePath: dbPath }))
+      .filter((turn) => turn.parts.length > 0);
+  }, []);
+}
+
+interface SqliteMessageRow { id: unknown; session_id: unknown; time_created: unknown; data: unknown }
+interface SqlitePartRow extends SqliteMessageRow { message_id: unknown }
+
+function parseData<T>(data: unknown): T | undefined {
+  if (typeof data !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(data) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as T) : undefined;
+  } catch {
+    return undefined;
   }
 }
 

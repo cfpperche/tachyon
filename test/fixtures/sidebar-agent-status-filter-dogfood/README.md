@@ -2,6 +2,15 @@
 
 Isolated workspace for **Tachyon: Dev Host** F5 validation of the Agents status-filter dropdown.
 
+> **Create the agents first (SDD 478).** This fixture declares no agents. An `agents:` entry is a
+> pointer to a canonical profile, and the authority that attests it is custodied by the host (VS Code
+> secret storage), so no checked-in fixture can ship one. After arming the Dev Host, create the rows
+> below with **Tachyon: Agent Studio**, then continue.
+
+> The chips need a mixed roster, so create a few agents (any attested runtime) and leave some
+> stopped. The fixture's `terminals:` supply the non-agent half. The old rows were `bash` with
+> `kind: agent` forced on — a process cannot be an agent, so that shape is gone.
+
 ## Setup (agent)
 
 From monorepo root after the feature branch is built in the worktree:

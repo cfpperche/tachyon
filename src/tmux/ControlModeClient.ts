@@ -9,6 +9,8 @@ import {
   type TmuxExecOptions,
   type TmuxExecutor,
 } from "./TmuxService.js";
+import { sealExecutionEvent, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { mintExecution } from "../executionGraph/executionIdentity.js";
 
 /**
  * The F20 engine: ONE persistent `tmux -C` client replaces the
@@ -113,8 +115,13 @@ export interface ControlModeOptions {
   onSessionsChanged?: () => void;
   /** up=false fires once per outage (single non-spammy warning upstream) */
   onStateChange?: (up: boolean) => void;
+  /**
+   * SDD 480 Phase 2 — sink for execution-graph events. Optional: a client without it behaves exactly
+   * as before, which is what keeps this wiring reversible seam by seam.
+   */
+  recordExecution?: (event: SealedExecutionEvent) => void;
   /** test seams */
-  spawnClient?: (socket: string, anchor: string) => ChildProcessWithoutNullStreams;
+  spawnClient?: (socket: string, anchor: string, env?: Record<string, string>) => ChildProcessWithoutNullStreams;
   fallbackExec?: TmuxExecutor;
   backoffMs?: number[];
 }
@@ -147,6 +154,16 @@ export class ControlModeClient {
     this.fallback = opts.fallbackExec ?? defaultExecutor;
   }
 
+  /**
+   * SDD 480 Phase 2 — seal one execution event and hand it to the sink, never throwing.
+   *
+   * The transport must not fail to connect because the graph could not describe the connection.
+   */
+  private emitExecution(raw: RawExecutionEvent): void {
+    if (!this.opts.recordExecution) return;
+    try { this.opts.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
+  }
+
   get anchorSession(): string {
     return `tachyon-ctl-${this.opts.wsHash}`;
   }
@@ -162,6 +179,10 @@ export class ControlModeClient {
       if (this.disposed) return;
       // Anchor (and the server) must exist before a client can attach. Idempotent:
       // "duplicate session" just means a previous window left it for us.
+      // SDD 480 §4.2 — that idempotence is exactly the `shared` case: whether we CREATED the anchor or
+      // merely found one someone else left is the difference between a resource we own and one we are
+      // joining, and it is knowable here and nowhere later.
+      let anchorPreexisted = false;
       try {
         await this.fallback([
           "-L", this.socket,
@@ -169,20 +190,51 @@ export class ControlModeClient {
         ]);
       } catch (err) {
         if (!(err instanceof Error && /duplicate session/.test(err.message))) throw err;
+        anchorPreexisted = true;
       }
+      // The anchor gets its own identity because the client process ATTACHES to it: an edge needs two
+      // ends. It is `absent`/`unproven` by construction — the anchor runs `tail -f /dev/null` started
+      // through tmux with no environment of ours, so no later observation can prove it is this one.
+      const anchor = mintExecution({ agentId: "host", carrier: "absent" });
+      this.emitExecution({
+        kind: anchorPreexisted ? "attach" : "spawn",
+        node: "TmuxSession",
+        // A pre-existing anchor is `shared`, not `running`: other windows may already be attached, and
+        // recording it as ours would assert an ownership we cannot support.
+        state: anchorPreexisted ? "shared" : "running",
+        provenance: anchor.provenance,
+        correlation: anchor.correlation,
+        at: new Date().toISOString(),
+        detail: { seam: "ControlModeClient.start", anchor: this.anchorSession, socket: this.socket },
+      });
       if (this.disposed) {
         await this.cleanupAnchorUnlocked();
         return;
       }
 
+      // The client PROCESS is ours — we spawn it and control its env — so unlike the anchor it really
+      // can carry the id. An injected `spawnClient` is a test seam that builds its own child, so it is
+      // declared `absent`: claiming `carried` for an env we did not set is the guess this spec forbids.
+      const client = mintExecution({
+        agentId: "host",
+        carrier: this.opts.spawnClient ? "absent" : "carried",
+      });
       const spawnClient =
         this.opts.spawnClient ??
-        ((socket: string, anchor: string) =>
+        ((socket: string, anchor: string, env?: Record<string, string>) =>
           spawn("tmux", isolatedArgs(["-L", socket, "-C", "attach-session", "-t", `=${anchor}`]), {
             stdio: ["pipe", "pipe", "pipe"],
-            env: { ...process.env, ...utf8LocaleEnv() },
+            env: { ...process.env, ...utf8LocaleEnv(), ...env },
           }));
-      const proc = spawnClient(this.socket, this.anchorSession);
+      const proc = spawnClient(this.socket, this.anchorSession, client.env);
+      this.emitExecution({
+        kind: "attach", node: "Process", state: "running", provenance: client.provenance,
+        correlation: client.correlation, at: new Date().toISOString(),
+        // `attached`, not `spawned`: the process is new but the thing it joins is not, and the graph
+        // has to say which of the two it is describing.
+        edge: { kind: "attached", toExecutionId: anchor.executionId },
+        detail: { seam: "ControlModeClient.start", anchor: this.anchorSession, socket: this.socket },
+      });
       this.proc = proc;
       if (this.disposed) {
         this.proc = undefined;

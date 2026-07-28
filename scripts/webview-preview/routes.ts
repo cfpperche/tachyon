@@ -35,6 +35,7 @@ import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import {
   cockpitFixtures,
+  NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
   strings as cockpitStrings,
   validationsFixtureVm,
@@ -114,6 +115,7 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/plugins.tailwind.css",
       "/dist/webview/plugins.css",
       "/dist/webview/approval.css",
+      "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
@@ -143,6 +145,17 @@ export const ROUTES: Record<string, Route> = {
     makeMessage: (vm) => {
       const model = vm as { section?: string };
       const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];
+      // t-ac79a7 — the nav-feedback fixture: push the SAME `routePending` envelope the live host
+      // posts from navigate(), and deliberately never the matching `routeReady`, so the surface
+      // stays in the pending bracket for as long as the screenshot needs. The client's own timers
+      // then produce "slow" and "stalled" — the states are the real client's, not the harness's.
+      // Identified by reference against the fixture entry itself: this fixture's model is an
+      // ordinary Board (that IS the state being depicted — the origin screen, still on screen while
+      // the destination loads), so there is no marker inside it to key off, and inventing one would
+      // have meant a fixture that no longer looks like what the client really holds.
+      if (vm === cockpitFixtures["nav-pending"]?.vm) {
+        msgs.push({ type: "routePending", routeKey: `task-detail:b349073a:${NAV_PENDING_TASK_ID}` });
+      }
       // Push the same host envelopes the live Control panel uses for embedded tabs.
       if (model.section === "mission") {
         const board = missionControlFixtures.default?.vm;
@@ -172,9 +185,6 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "plugins") {
         const plugins = pluginsFixtures.default?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
-      } else if (model.section === "handoff") {
-        const handoff = handoffFixtures.default?.vm;
-        if (handoff) msgs.push(handoffMessage(handoff));
       }
       // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail
       // and the Fleet subroutes below all nav to a section with no embed push of its own for THEM,
@@ -186,6 +196,11 @@ export const ROUTES: Record<string, Route> = {
       } else if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
         const feed = activityFixtures.default?.vm;
         if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
+      } else if (activeRoute?.kind === "project-handoff") {
+        // t-ace77f — Handoff moved from a section push to a detail route, exactly like task-detail
+        // above: same fixture VM, same envelope, now keyed off the route instead of the tab.
+        const handoff = handoffFixtures.default?.vm;
+        if (handoff) msgs.push(handoffMessage(handoff));
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));

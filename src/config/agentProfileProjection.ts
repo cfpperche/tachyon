@@ -357,6 +357,12 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
 
 const CAPABILITY_REFERENCE_KINDS = new Set(["skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
 
+/**
+ * `t-d185e1` — the selector's profile-local path, shared with the writer so the two cannot drift.
+ * The reader below refuses any reference pointing anywhere else.
+ */
+export const EVOLUTION_SELECTOR_PATH = "evolution-selector.json";
+
 function readEvolutionSelector(
   workspaceRoot: string,
   agentName: string,
@@ -366,7 +372,7 @@ function readEvolutionSelector(
   if (!id) return undefined;
   const reference = profile.references?.find((candidate) => candidate.id === id);
   if (!reference || reference.kind !== "evolution" || reference.scope !== "profile"
-    || reference.owner !== profile.agentId || reference.path !== "evolution-selector.json"
+    || reference.owner !== profile.agentId || reference.path !== EVOLUTION_SELECTOR_PATH
     || reference.mode !== "pinned" || !reference.sha256) {
     return ["profile/evolution-selector: canonical Evolution selector reference is invalid"];
   }

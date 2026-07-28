@@ -84,7 +84,6 @@ export class MissionAgentLists {
 
 export async function buildMissionVm(
   ws: WorkspaceMissionControlTarget,
-  all: WorkspaceMissionControlTarget[],
   lists: MissionAgentLists,
   onTrailingRetry: () => void,
 ): Promise<MissionControlVM> {
@@ -97,7 +96,9 @@ export async function buildMissionVm(
   return {
     folder: ws.folderName,
     wsHash: ws.wsHash,
-    workspaces: all.map((w) => ({ hash: w.wsHash, folder: w.folderName })),
+    // t-46eb4f — no list of workspaces travels to the Board any more: it had exactly one consumer,
+    // the workspace dropdown that mirrored the global scope, and shipping the options for a control
+    // that must not exist is how that control comes back.
     agentLiveness: status,
     snapshot: await ws.boardSnapshot(liveAdhoc),
   };

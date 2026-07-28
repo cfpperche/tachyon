@@ -87,12 +87,43 @@ export interface CockpitWorkspaceProbesRoute {
  * this union — a route that can return to ANOTHER studio route has no defined semantics anywhere in
  * this file (parentRoute/navSection would need to recurse into a second studio's own policy).
  */
+/**
+ * t-ace77f — one workspace's Project Handoff document. It used to be a nav TAB, which put a
+ * single per-workspace document beside twelve dashboards and gave the human a tab to close their
+ * way out of; it is a detail route now, entered from the sidebar's `handoff · N` bar and leaving by
+ * breadcrumb to Overview. `wsHash` is the entity's immutable locator, same rule as every other
+ * entity route here: switching the shell's workspace scope does not re-target an open document.
+ */
+export interface CockpitProjectHandoffRoute {
+  readonly kind: "project-handoff";
+  readonly wsHash: string;
+}
+
+/**
+ * t-e76acc — one Human Inbox item, opened: a subroute of the Inbox section.
+ *
+ * Keyed by `itemKind` AND `itemId`, never the id alone. Approvals and validations are independent
+ * stores with independent id spaces, and a route that named only an id would have to GUESS which
+ * store to read — the exact "a validation could be reached through an approval path" ambiguity the
+ * ratified design refuses to introduce anywhere else. `wsHash` is the entity's immutable locator,
+ * same rule as every other entity route in this file: switching Control's workspace scope while an
+ * item is open must not swap the decision out from under the person deciding it.
+ */
+export interface CockpitInboxItemRoute {
+  readonly kind: "inbox-item";
+  readonly wsHash: string;
+  readonly itemKind: "approval" | "validation";
+  readonly itemId: string;
+}
+
 export type CockpitNonStudioRoute =
   | CockpitSectionRoute
   | CockpitTaskDetailRoute
   | CockpitAgentActivityRoute
   | CockpitAgentProbesRoute
-  | CockpitWorkspaceProbesRoute;
+  | CockpitWorkspaceProbesRoute
+  | CockpitProjectHandoffRoute
+  | CockpitInboxItemRoute;
 
 /**
  * t-610705 (SDD 410 Phase D, D0) — a fresh (unsaved) entity being drafted for one of the
@@ -199,6 +230,10 @@ export function routeKey(route: CockpitRoute): string {
       return `agent-probes:${route.wsHash}:${route.agent}`;
     case "workspace-probes":
       return `workspace-probes:${route.wsHash}`;
+    case "project-handoff":
+      return `project-handoff:${route.wsHash}`;
+    case "inbox-item":
+      return `inbox-item:${route.wsHash}:${route.itemKind}:${route.itemId}`;
     case "studio-new":
       return `studio-new:${route.studio}:${route.wsHash}`;
     case "studio-edit":
@@ -219,6 +254,14 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
     case "agent-probes":
     case "workspace-probes":
       return { kind: "section", section: "fleet" };
+    case "inbox-item":
+      // t-e76acc — back to the aggregated list, which is the whole point of the surface: a human
+      // works the inbox down, item by item, without being returned to a per-kind tab each time.
+      return { kind: "section", section: "inbox" };
+    case "project-handoff":
+      // t-ace77f — Overview, not a Handoff tab: there is no Handoff tab any more, and Overview is
+      // where the document's own quick-nav entry lives. Back must never land on a tab that is gone.
+      return { kind: "section", section: "overview" };
     case "studio-new":
       // t-610705 (Phase D, D3) — pin is nav-less: its close-target is its OWN captured
       // `returnRoute`, never `studioParentSection`'s static table. Falls back to Overview only when
@@ -264,6 +307,15 @@ export function navSection(route: CockpitRoute): CockpitSectionId | null {
     case "agent-probes":
     case "workspace-probes":
       return "fleet";
+    case "inbox-item":
+      // the Inbox tab stays lit while one of its items is open — unlike Handoff, this subroute HAS a
+      // home tab, and it is the one whose count the human is working down.
+      return "inbox";
+    case "project-handoff":
+      // t-ace77f — nav-less, the same tri-state pin uses: no tab reads as active, and callers that
+      // need a concrete section for BACKGROUND data fall back to "overview" at their own call site.
+      // Answering "overview" here instead would light the Overview tab up as if it were open.
+      return null;
     case "studio-new":
     case "studio-edit":
       return route.studio === "pin" ? null : studioParentSection(route.studio);
@@ -310,6 +362,16 @@ export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
       // a cheap local disk read (ProbeStore), same cost class as Mission/Approvals/Validations —
       // polls like any other section; the fan-out (refreshCockpitProbes) covers the gap between ticks.
       return "poll";
+    case "inbox-item":
+      // t-e76acc — a decision surface, not a dashboard: a 3s refetch under a half-typed result note
+      // (or mid-read of a verbatim approval payload) is only downside. Acting on the item re-pushes
+      // it through the same fan-out the Approvals/Validations sections already use.
+      return "none";
+    case "project-handoff":
+      // t-ace77f — unchanged from when this was a section: the same 3s tick keeps the `Needs
+      // distill` count and the document honest while the human reads. Becoming a route was a
+      // navigation decision, not a refresh one.
+      return "poll";
     case "studio-new":
     case "studio-edit":
       // t-610705 (Phase D, D0) — a form, not a dashboard: a timer-driven refetch would either
@@ -334,6 +396,10 @@ export function formatRoute(route: CockpitRoute): string {
       return `${route.agent} probes`;
     case "workspace-probes":
       return "probes";
+    case "project-handoff":
+      return "project handoff";
+    case "inbox-item":
+      return `inbox ${route.itemKind} ${route.itemId}`;
     case "studio-new":
       return `${route.studio} new`;
     case "studio-edit":
@@ -349,6 +415,13 @@ export const routes = {
   agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
+  projectHandoff: (wsHash: string): CockpitProjectHandoffRoute => ({ kind: "project-handoff", wsHash }),
+  inboxItem: (wsHash: string, itemKind: "approval" | "validation", itemId: string): CockpitInboxItemRoute => ({
+    kind: "inbox-item",
+    wsHash,
+    itemKind,
+    itemId,
+  }),
   // t-610705 (Phase D, D3) — `returnRoute` defaults to `null` for every caller (every D0-D2 call
   // site is unaffected). Real callers never pass it explicitly even for pin: Cockpit.ts's
   // `navigate()` captures the real value automatically at the moment a pin route commits (design-
@@ -408,10 +481,19 @@ function decodeNonStudioRoute(raw: unknown): CockpitNonStudioRoute | null {
     if (typeof obj.agent !== "string" || !obj.agent) return null;
     return { kind: obj.kind, wsHash: obj.wsHash, agent: obj.agent };
   }
-  if (obj.kind === "workspace-probes") {
+  if (obj.kind === "inbox-item") {
+    if (keys.length !== 4 || !keys.includes("wsHash") || !keys.includes("itemKind") || !keys.includes("itemId")) return null;
+    if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
+    // the closed kind set, checked here rather than trusted: this decoder is the trust boundary for
+    // persisted panel state and every webview message, and an unrecognized kind has no store to read.
+    if (obj.itemKind !== "approval" && obj.itemKind !== "validation") return null;
+    if (typeof obj.itemId !== "string" || !obj.itemId) return null;
+    return { kind: "inbox-item", wsHash: obj.wsHash, itemKind: obj.itemKind, itemId: obj.itemId };
+  }
+  if (obj.kind === "workspace-probes" || obj.kind === "project-handoff") {
     if (keys.length !== 2 || !keys.includes("wsHash")) return null;
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
-    return { kind: "workspace-probes", wsHash: obj.wsHash };
+    return { kind: obj.kind, wsHash: obj.wsHash };
   }
   return null;
 }
@@ -505,8 +587,27 @@ export function decodePanelState(raw: unknown): { route: CockpitRoute; wsHash?: 
   if (obj.schemaVersion === 2) {
     const decoded = decodeRoute((obj as CockpitPanelStateV2).route);
     if (decoded) return { route: decoded, wsHash };
+    const migrated = migrateRetiredHandoffSection((obj as CockpitPanelStateV2).route, wsHash);
+    if (migrated) return { route: migrated, wsHash };
   }
   // v1 (or a malformed/unversioned record): decode the bare section, defaulting to overview.
-  const section = resolveCockpitSection((obj as CockpitPanelStateV1).section);
+  const v1 = (obj as CockpitPanelStateV1).section;
+  const migratedV1 = migrateRetiredHandoffSection({ kind: "section", section: v1 }, wsHash);
+  if (migratedV1) return { route: migratedV1, wsHash };
+  const section = resolveCockpitSection(v1);
   return { route: { kind: "section", section }, wsHash };
+}
+
+/**
+ * t-ace77f — a window reloaded on the retired Handoff TAB must reopen the document it was showing,
+ * not silently drop to Overview. `section: "handoff"` stopped decoding the moment it left
+ * `CockpitSectionId`, so this is the one place that still recognizes it — and only when the record
+ * also carries the workspace the route now needs as its locator. Without one there is nothing to
+ * open, and the caller's Overview fallback is the honest answer.
+ */
+function migrateRetiredHandoffSection(raw: unknown, wsHash: string | undefined): CockpitProjectHandoffRoute | null {
+  if (!wsHash) return null;
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  return obj.kind === "section" && obj.section === "handoff" ? { kind: "project-handoff", wsHash } : null;
 }

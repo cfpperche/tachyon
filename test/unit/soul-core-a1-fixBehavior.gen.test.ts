@@ -1,10 +1,10 @@
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { importSoulProfile, resolveSoul, SoulError } from "../../src/agents/soul.js";
 import { openingPromptCapability } from "../../src/agents/openingPromptCapability.js";
 import { composeCommand, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   it("agent soul profile foundation closure", async () => {
@@ -18,8 +18,8 @@ describe("container-generated delegation behavior", () => {
     expect(instructionsDeliverable("env -u TOKEN codex")).toBe(true);
     expect(composeCommand({ cmd: "env -u TOKEN codex", instructions: "exact" })).toBe("env -u TOKEN codex 'exact'");
 
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-soul-closure-"));
-    const imports = await mkdtemp(path.join(tmpdir(), "tachyon-soul-source-"));
+    const root = makeTempDir("tachyon-soul-closure-");
+    const imports = makeTempDir("tachyon-soul-source-");
     const source = path.join(imports, "SOUL.md");
     await writeFile(source, "exact\r\nbytes\n");
     const imported = await importSoulProfile(root, "Ada", source);
@@ -33,7 +33,7 @@ describe("container-generated delegation behavior", () => {
     const manifest = JSON.parse(await readFile(path.join(root, ".tachyon", "agents", "Ada", "profile.json"), "utf8")) as Record<string, unknown>;
     expect(Object.keys(manifest).sort()).toEqual(["owner", "profileId", "schemaVersion", "state"]);
 
-    const badRoot = await mkdtemp(path.join(tmpdir(), "tachyon-soul-bad-manifest-"));
+    const badRoot = makeTempDir("tachyon-soul-bad-manifest-");
     const profile = path.join(badRoot, ".tachyon", "agents", "Ada");
     await mkdir(profile, { recursive: true });
     await writeFile(path.join(profile, "SOUL.md"), "identity");

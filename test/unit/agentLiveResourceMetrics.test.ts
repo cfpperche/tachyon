@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
+import { DEFAULT_CARD_TEMPLATE } from "../../src/sidebar/cardTemplate.js";
 
 const appTsx = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
 const css = readFileSync(path.join(__dirname, "../../src/webview/sidebar/sidebar.css"), "utf8");
@@ -41,13 +42,13 @@ describe("spec 386 — agent live resource metrics", () => {
     expect(css).not.toMatch(/\.metrics-toggle\b/);
   });
 
-  it("branch badge still first in AgentBadges", () => {
-    const start = appTsx.indexOf("function AgentBadges");
-    const end = appTsx.indexOf("function fmtCpu", start);
-    const body = appTsx.slice(start, end > 0 ? end : start + 800);
-    const branchPos = body.indexOf("<BranchBadge");
-    const attnPos = body.indexOf("a.attention");
-    expect(branchPos).toBeGreaterThan(-1);
-    expect(branchPos).toBeLessThan(attnPos);
+  it("branch badge still first in the meta region", () => {
+    // SDD 479 phase 1 — the meta order is the default template's array now (see sidebarCardCatalog.test.ts);
+    // the metrics pill's own position is likewise a header-region fact, not a source-position one.
+    const meta = DEFAULT_CARD_TEMPLATE.meta;
+    expect(meta.indexOf("branch")).toBeGreaterThan(-1);
+    expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("attention"));
+    expect(DEFAULT_CARD_TEMPLATE.header).toContain("metrics-pill");
+    expect(DEFAULT_CARD_TEMPLATE.footer).toContain("metrics-lanes");
   });
 });

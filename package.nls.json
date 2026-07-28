@@ -68,6 +68,7 @@
   "command.doctor": "Tachyon: Doctor",
   "command.openConfig": "Tachyon: Open Config",
   "command.openApprovals": "Tachyon: Open Human Approvals",
+  "command.openHumanInbox": "Tachyon: Open Human Inbox",
   "command.restartTmuxServer": "Tachyon: Restart tmux Server (recover wedged)",
   "command.restartBridge": "Tachyon: Restart Bridge",
   "command.openSettings": "Tachyon: Settings",
@@ -105,5 +106,9 @@
   "view.pluginSurfaces": "Plugin Surfaces",
   "command.openAgentPane": "Tachyon: Open Agent Pane",
   "command.openAgentPaneItem": "Open Agent Pane",
-  "config.agentPane.enabled": "Enable the first-party agent pane (layer 2, webview+xterm). VS Code integrated terminal remains the default open path."
+  "config.agentPane.enabled": "Enable the first-party agent pane (layer 2, webview+xterm). VS Code integrated terminal remains the default open path.",
+  "config.sidebar.cardTemplate": "Your personal agent-card layout. Optional, and it WINS over the project's `settings.sidebar.cardTemplate` in `tachyon.yml` — a region you do not list keeps whatever that project chose. Same versioned shape and the same validation: an invalid template is refused whole, the sidebar falls back to the project's card, and the sidebar says so.",
+  "config.sidebar.cardTemplate.version": "Template schema version. Required; this Tachyon understands version 1.",
+  "config.sidebar.cardTemplate.region": "Component ids for this region, in the order they should render. Omit the region to keep the project's; an empty list hides everything in it (a failure state is still re-admitted for the row it affects).",
+  "config.sidebar.cardTemplate.runtimes": "Optional per-runtime overrides, keyed by runtime name. Each states `extends: default` or `extends: replace`, same as in tachyon.yml."
 }

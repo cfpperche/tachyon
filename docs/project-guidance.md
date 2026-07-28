@@ -12,14 +12,17 @@ policy and must not be imposed on projects that consume Tachyon.
   reused or prepared worktrees may already have dependencies.
 - Do not assume built `dist/` artifacts exist. Use the verification commands declared by this
   repository; the full verification path builds the artifacts it needs.
-- Dev Host F5 (`Tachyon: Dev Host`) always reads the **monorepo window** pointer at
-  `${workspaceFolder}/.tachyon/dev-host` (`active` → `slots/<owner>/`). Multi-slot: agents arm with
-  `npm run dogfood:dev-host -- point … --owner "$TACHYON_AGENT_NAME"`. `point|point-status|point-clear`
-  auto-redirect to the primary checkout when invoked from a linked git worktree; still pass
-  `--worktree` for the feature checkout and verify with `point-status` before asking the human to F5.
-- **After land / after dogfood:** `point-clear --owner <you>` → `point-status --all` → remove the
-  feature worktree. Do not leave a pointed worktree after merge; do not `point-clear --all` unless
-  intentionally resetting every slot. See `docs/runbooks/dev-host.md` § After land.
+- Dev Host F5 (`Tachyon: Dev Host`) reads the dev-host of **the checkout you run it in** —
+  `<checkout>/.tachyon/dev-host/`. Every checkout has exactly one, so two agents in two worktrees
+  cannot collide: `cd` to YOUR worktree, arm it with `npm run dogfood:dev-host -- point --fixture
+  <slug>`, verify with `point-status`, then ask the human to open VS Code THERE and press F5.
+  `--worktree` is optional and only arms a different checkout. Spec 448 removed slots, the `active`
+  pointer and the flags that selected them (`--owner`, `--slot`, `--activate`, `--no-activate`,
+  `--require-owner`, `--all`); each now fails immediately naming its replacement.
+- **After land / after dogfood:** `point-clear` → `point-status` (confirm it is gone) → remove the
+  feature worktree, in that order: if the path disappears first, the pointer reports broken and a
+  persistent engine may still be alive under it. Do not leave a pointed worktree after merge.
+  See `docs/runbooks/dev-host.md` § After land.
 
 ## Release boundary
 

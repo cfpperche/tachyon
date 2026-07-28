@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, parseConfig, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -85,6 +85,10 @@ import {
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
+import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
+
+/** t-d185e1 — the reference id the selector is pinned under; local to this writer. */
+const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -357,6 +361,12 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
+  /**
+   * t-e76acc — the same affordance for a validation that lands on a human. Symmetric with the
+   * approval hook above in EVERYTHING except authority: it carries a self-declared author (that is
+   * what a validation has), it never injects into a session, and nothing downstream redeems it.
+   */
+  onHumanValidationPending?: (ws: Workspace, validation: { id: string; title: string; author: string }) => void;
   /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
   /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
@@ -381,8 +391,6 @@ export interface WorkspaceSeams {
   terminals?: TerminalPresentation;
   /** test-only native-profile inspection home; production inspects the real runtime home. */
   agentProfileHomeDir?: string;
-  /** Test fixture compatibility only; production never accepts inline agent definitions. */
-  allowLegacyAgentFixtures?: boolean;
 }
 
 /** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
@@ -624,7 +632,6 @@ export class Workspace {
   /** Host-custodied profile heads selected before any profile-backed config can load. */
   private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
   private readonly agentProfileHomeDir: string | undefined;
-  private readonly allowLegacyAgentFixtures: boolean;
   private agentProfileAuthorityTail: Promise<void> = Promise.resolve();
   /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
   private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
@@ -671,7 +678,6 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
-    this.allowLegacyAgentFixtures = seams.allowLegacyAgentFixtures === true;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
@@ -728,10 +734,7 @@ export class Workspace {
       try {
         const earlyText = fs.readFileSync(earlyFile, "utf8");
         const canonicalSyntax = parseProfileAwareConfigSyntax(earlyText);
-        earlyConfig = this.allowLegacyAgentFixtures
-          && canonicalSyntax.errors.some((error) => error.includes("inline agent definitions are no longer supported"))
-          ? parseConfig(earlyText).config
-          : canonicalSyntax.config;
+        earlyConfig = canonicalSyntax.config;
       } catch {
         // Preserve the historical default-on auth behavior when the file cannot be read.
       }
@@ -2035,6 +2038,16 @@ export class Workspace {
         onTasksChanged: () => deps.onViewsChanged("tasks"),
         onTaskNotificationEvent: (event) => this.taskNotifications.notify(event),
         onValidationsChanged: () => deps.onViewsChanged("tasks"),
+        onHumanValidationPending: (validation) => {
+          deps.onHumanValidationPending?.(this, validation);
+          // Companion side panel: the same push approvals already get, so a paired device can
+          // refresh without polling. A distinct event name — one is a capability, one is evidence.
+          try {
+            this.companionLive.pushEvent("validations.changed", { id: validation.id, author: validation.author });
+          } catch {
+            /* best-effort */
+          }
+        },
         waiters: this.waiters,
         commands: this.commandRunner,
         runbooks: this.runbookRunner,
@@ -2386,15 +2399,14 @@ export class Workspace {
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
           //
           // SDD 478 M9 — the manager no longer infers which arm an ad-hoc command lands on, so this
-          // door states it. A pipeline node genuinely accepts both by design, and unlike `spawn_agent`
-          // it is a DECLARED config surface with no place yet to write the kind down: the suggestion is
-          // therefore made here, visibly, instead of hiding inside the manager where every door shared
-          // it. Migrating this door to a declared `kind:` is its own task (t-c003e1), not M9's.
+          // door states it. t-c003e1 finished the migration: the kind is DECLARED by the node's own
+          // `done` contract (loadPipeline's `nodeKindFromDone`) and validated there, so nothing here
+          // reads the command text to decide what it is spawning.
           await this.manager.spawn(name, {
             cmd: def.cmd,
             // Paired with `cmd`: the manager reads the kind only on the ad-hoc path, and a node
             // reaching here without a cmd already resolved as a declared entry, exactly as before.
-            kind: def.cmd ? suggestKindForCommand(def.cmd) : undefined,
+            kind: def.kind,
             env,
             pipeline: { runId, nodeId },
             reveal: false,
@@ -2992,7 +3004,7 @@ export class Workspace {
   /** spec 235 — headless test entry: inject a fake-exec tmux + no-op engine + `startBridge:false` to drive
    *  the Workspace with no Electron / real tmux / bound port. */
   static async createForTest(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams): Promise<Workspace> {
-    return Workspace._create(workspaceRoot, deps, { ...seams, allowLegacyAgentFixtures: true });
+    return Workspace._create(workspaceRoot, deps, seams);
   }
 
   private static async _create(workspaceRoot: string, deps: WorkspaceDeps, seams: WorkspaceSeams = {}): Promise<Workspace> {
@@ -4983,10 +4995,6 @@ export class Workspace {
       authorities: this.agentProfileAuthorities,
       homeDir: this.agentProfileHomeDir,
     });
-    if (this.allowLegacyAgentFixtures
-      && parsed.errors.some((error) => error.includes("inline agent definitions are no longer supported"))) {
-      return parseConfig(yamlText);
-    }
     return parsed;
   }
 
@@ -5066,6 +5074,64 @@ export class Workspace {
     this.rebuildWatches();
     this.refreshAgentsViews();
     return result;
+  }
+
+  /**
+   * `t-d185e1` — turn on Agent Evolution for a DECLARED canonical agent.
+   *
+   * The projection grants `selfEvolution` only when the profile pins an `evolution-selector.json`
+   * whose bytes name a `profileId`, and `AgentManager.evolutionForFreshSession` refuses the spawn
+   * when that id disagrees with the Evolution store's active profile. Nothing wrote that selector, so
+   * once `agents:` narrowed to canonical pointers there was no product path to Evolution at all — the
+   * capability was projectable and unreachable.
+   *
+   * Order is forced by who mints the id: the store does, never the author. So the store's profile is
+   * ensured FIRST and its id is what gets pinned; an agent cannot mint its own Evolution profile on a
+   * first session that the selector must already describe.
+   *
+   * Everything lands in ONE lifecycle transaction — the selector bytes as an artifact, the pin and
+   * `prompt.evolution` as the patch — because the pin carries the artifact's sha256 and the authority
+   * is re-signed over the profile alone. Publishing them separately would leave a window where the
+   * profile pins a digest nothing on disk satisfies, which is precisely the fail-closed state the
+   * projection is built to refuse.
+   */
+  async enableAgentSelfEvolution(agentName: string): Promise<AgentProfileLifecycleCommitResult> {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    const existing = snapshot.profile.references ?? [];
+    if (snapshot.profile.prompt?.evolution) {
+      throw new Error(`agent '${agentName}' already selects an Evolution profile`);
+    }
+    if (existing.some((reference) => reference.path === EVOLUTION_SELECTOR_PATH)) {
+      throw new Error(`agent '${agentName}' already carries an Evolution selector reference`);
+    }
+    // The store mints the id; this is the only source of truth for what the selector may name.
+    const profile = await this.evolutionStore.ensureProfile(agentName);
+    const selector = `${JSON.stringify({ profileId: profile.profileId, schemaVersion: 1 })}\n`;
+    return this.commitAgentProfileLifecycle({
+      agentName,
+      operation: "edit",
+      expectedRevision: snapshot.revision,
+      patch: {
+        prompt: { ...(snapshot.profile.prompt ?? {}), evolution: EVOLUTION_SELECTOR_REFERENCE_ID },
+        references: [
+          ...existing,
+          {
+            id: EVOLUTION_SELECTOR_REFERENCE_ID,
+            kind: "evolution",
+            scope: "profile",
+            owner: snapshot.agentId,
+            path: EVOLUTION_SELECTOR_PATH,
+            mode: "pinned",
+            sha256: createHash("sha256").update(selector).digest("hex"),
+          },
+        ],
+      },
+      artifacts: [{
+        path: EVOLUTION_SELECTOR_PATH,
+        text: selector,
+        sha256: createHash("sha256").update(selector).digest("hex"),
+      }],
+    });
   }
 
   private async assertAgentStoppedForProfileMutation(agentName: string): Promise<void> {
@@ -5809,7 +5875,34 @@ export class Workspace {
     return reconcileProfileTransactions(this.workspaceRoot, this.makeSoulProfileAccess());
   }
 
+  /**
+   * `t-e81ec5` — refuse a soul mutation the declaration shape can never accept, and say so.
+   *
+   * `createSoulProfile` works by adding an inline `soul:` key to the declared agent. Every declared
+   * agent is now a canonical profile pointer, and a pointer cannot coexist with inline fields, so the
+   * whole transaction used to run and then fail deep in the config writer as `soul/io-error` — a code
+   * that says "the disk misbehaved" for something no retry can fix. Agent Studio still shows the
+   * button, so this was a live surface that always failed and explained nothing.
+   *
+   * The refusal is early and structural. It does not remove the capability: it names why this path is
+   * closed and where soul actually lives, which is the same rule SDD 478 M6 made contractual for every
+   * other door — a refusal must name the fix.
+   */
+  private assertSoulMutable(agentName: string): void {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" }>;
+    }) | undefined)?.agentSources;
+    if (sources?.[agentName]?.mode !== "profile") return;
+    throw new SoulError(
+      "soul/canonical-profile-unsupported",
+      `agent '${agentName}' is a canonical profile pointer, which cannot carry an inline 'soul:' key. `
+      + "Soul for a canonical agent belongs to the formation lane (SDD 427), which is not yet wired to "
+      + "the spawn path — see t-e50d4f (survey: t-50bbd4). This operation would have failed while writing the config.",
+    );
+  }
+
   async createSoulProfile(agentName: string): Promise<ProfileMutationResult> {
+    this.assertSoulMutable(agentName);
     return createSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
   }
 

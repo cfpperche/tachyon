@@ -4,6 +4,7 @@ import { openCockpit, type CockpitMissionBoard, type CockpitHandoff } from "../.
 import type { WorkspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
 import type { HandoffProjectionV1 } from "../../src/runtime-api/handoffProjection.js";
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
+import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
 
 /**
  * t-610705 (SDD 410 Phase C.3) — Handoff ROUTING coverage for Control → Handoff section. Unlike
@@ -59,12 +60,13 @@ function depsFor(handoff: CockpitHandoff, hooks: Partial<CockpitMissionBoard> = 
 const handoffMessages = () => __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "handoff") as Array<{ vm: { folder: string; exists: boolean; body: string } }>;
 
 async function openHandoff(deps: ReturnType<typeof depsFor>): Promise<void> {
-  await openCockpit(deps, { section: "handoff" });
+  // t-ace77f — the sidebar's entry point opens the document as a detail route, not a tab.
+  await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1") });
   __createdPanels[0].webview.__receive({ type: "ready" });
   await flush();
 }
 
-describe("Control → Handoff routing", () => {
+describe("Control → Project Handoff route (t-ace77f)", () => {
   it("opening the handoff section posts the loaded snapshot", async () => {
     const ws = handoffTarget({ loadHandoff: async () => fakeSnapshot({ body: "## Hello\n", pendingCount: 2 }) });
     const deps = depsFor({ getWorkspaces: () => [ws] });
@@ -78,7 +80,7 @@ describe("Control → Handoff routing", () => {
 
   it("no attached workspace leaves the section open but empty (no throw, no post)", async () => {
     const deps = depsFor({ getWorkspaces: () => [] });
-    await expect(openCockpit(deps, { section: "handoff" })).resolves.not.toThrow();
+    await expect(openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1") })).resolves.not.toThrow();
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     expect(handoffMessages()).toHaveLength(0);
@@ -120,6 +122,34 @@ describe("Control → Handoff routing", () => {
     await flush();
 
     expect(captured).toEqual({ mode: "existing", agent: "codex", instructions: "concise" });
+  });
+
+  it("Overview's Handoff entry navigates to the document route (t-ace77f)", async () => {
+    const ws = handoffTarget({ loadHandoff: async () => fakeSnapshot({ body: "# doc\n" }) });
+    const deps = depsFor({ getWorkspaces: () => [ws] });
+    // Control opens on a plain section — no Handoff tab exists to click any more.
+    await openCockpit(deps, { section: "overview" });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+    expect(handoffMessages()).toHaveLength(0);
+
+    __createdPanels[0].webview.__receive({ type: "openProjectHandoff" });
+    await flush();
+
+    expect(handoffMessages().at(-1)?.vm.body).toBe("# doc\n");
+  });
+
+  it("keeps the document on the workspace its route names, not Control's current scope (t-ace77f)", async () => {
+    const scoped = handoffTarget({ wsHash: "ws-1", folderName: "scoped" });
+    const routed = handoffTarget({ wsHash: "ws-2", folderName: "routed" });
+    const deps = depsFor({ getWorkspaces: () => [scoped, routed] });
+
+    await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-2") });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    // `scoped` is what a bare fallback resolve would pick (first attached); the route's own locator wins.
+    expect(handoffMessages().at(-1)?.vm.folder).toBe("routed");
   });
 
   it("leaving the section — a refresh no longer posts", async () => {

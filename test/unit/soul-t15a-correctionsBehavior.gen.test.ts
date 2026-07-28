@@ -1,6 +1,5 @@
 import fs from "node:fs";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -26,10 +25,11 @@ import {
 } from "../../src/webview/agent-studio-shell/domain.js";
 import { createSoulMessage, soulProfileStatusMessage } from "../../src/webview/agent-studio-shell/messages.js";
 import { decodeStudioMessage } from "../../src/webview/shared/studio/protocol.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   it("spec 377 T15A transaction recovery and Studio trust closure", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "tachyon-t15a-corrections-"));
+    const root = makeTempDir("tachyon-t15a-corrections-");
     const configPath = path.join(root, "tachyon.yml");
     await writeFile(configPath, "agents:\n  Ada:\n    cmd: codex\n");
     const access: ProfileTxConfigAccess = {

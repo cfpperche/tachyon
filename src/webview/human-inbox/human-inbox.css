@@ -1,0 +1,365 @@
+/* Human Inbox (t-e76acc) — Control page shell + kit buttons only. NO bare button{} (t-e1bd89).
+ *
+ * Every width here is fluid and every media object is capped at 100%: the detail route renders
+ * evidence a human did not choose the dimensions of (a 3000px screenshot, a wide prototype), and a
+ * page that scrolls sideways in a narrow Control panel is the failure this sheet exists to prevent.
+ */
+
+.hi-root {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
+  min-height: 100%;
+  color: var(--ds-fg);
+  background: var(--vscode-editor-background);
+  font-family: var(--tachyon-font-mono, inherit);
+  font-size: var(--ds-body);
+}
+
+/* ── counts ─────────────────────────────────────────────────────────────────────────────────── */
+
+.hi-root .hi-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-2) var(--ds-3);
+  margin-bottom: var(--ds-3);
+  font-size: var(--ds-small);
+  color: var(--ds-muted);
+}
+
+.hi-root .hi-count.strong {
+  color: var(--ds-fg);
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.hi-root .hi-count.warn {
+  color: var(--ds-warn);
+}
+
+/* ── list ───────────────────────────────────────────────────────────────────────────────────── */
+
+.hi-root .hi-list {
+  display: grid;
+  gap: var(--ds-2);
+}
+
+.hi-root .hi-row {
+  display: grid;
+  gap: var(--ds-1);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  padding: var(--ds-2) var(--ds-3);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+  color: var(--ds-fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.hi-root .hi-row:hover {
+  border-color: color-mix(in srgb, var(--ds-fg) 35%, var(--ds-border));
+}
+
+.hi-root .hi-row.warned {
+  border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent);
+}
+
+.hi-root .hi-row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-2);
+  min-width: 0;
+}
+
+.hi-root .hi-title {
+  flex: 1 1 12ch;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.hi-root .hi-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-1) var(--ds-3);
+  font-size: var(--ds-small);
+  color: var(--ds-muted);
+  min-width: 0;
+}
+
+.hi-root .hi-id,
+.hi-root .hi-requester {
+  font-family: var(--ds-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.hi-root .hi-trust {
+  margin-left: var(--ds-1);
+  opacity: 0.8;
+}
+
+.hi-root .hi-artifacts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ds-1);
+}
+
+.hi-root .hi-row-warning {
+  color: var(--ds-warn);
+  font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+.hi-root .hi-error {
+  display: flex;
+  gap: var(--ds-2);
+  align-items: flex-start;
+  margin: 0 0 var(--ds-3);
+  padding: var(--ds-2) var(--ds-3);
+  border: var(--ds-border-width) solid color-mix(in srgb, var(--ds-warn) 55%, transparent);
+  border-radius: var(--ds-radius);
+  color: var(--ds-warn);
+  background: color-mix(in srgb, var(--ds-warn) 10%, transparent);
+  font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+/* ── detail ─────────────────────────────────────────────────────────────────────────────────── */
+
+.hi-root.hi-detail {
+  display: grid;
+  gap: var(--ds-3);
+  align-content: start;
+}
+
+.hi-root .hi-detail-meta,
+.hi-root .hi-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-2);
+  font-size: var(--ds-small);
+  color: var(--ds-muted);
+}
+
+.hi-root .hi-payload {
+  display: grid;
+  gap: var(--ds-3);
+}
+
+.hi-root .hi-field-label {
+  margin: 0 0 var(--ds-1);
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+  font-weight: var(--tachyon-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tachyon-tracking-label);
+}
+
+.hi-root .hi-field pre {
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--ds-2) var(--ds-3);
+  min-height: 34px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+  font-family: var(--ds-mono);
+  font-size: var(--ds-small);
+  color: var(--ds-fg);
+}
+
+.hi-root .hi-decision,
+.hi-root .hi-close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-2);
+}
+
+.hi-root .hi-close {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.hi-root .hi-assign {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-2);
+  font-size: var(--ds-small);
+  color: var(--ds-muted);
+}
+
+.hi-root .hi-assign input {
+  min-width: 0;
+  flex: 1 1 12ch;
+  box-sizing: border-box;
+  padding: var(--ds-1) var(--ds-2);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  color: var(--ds-fg);
+  font: inherit;
+}
+
+.hi-root .hi-rounds ol {
+  margin: 0;
+  padding-left: var(--ds-4);
+  font-size: var(--ds-small);
+}
+
+/* ── evidence ───────────────────────────────────────────────────────────────────────────────── */
+
+.hi-root .hi-evidence {
+  display: grid;
+  gap: var(--ds-2);
+  min-width: 0;
+}
+
+.hi-root .hi-evidence-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ds-2) var(--ds-3);
+}
+
+.hi-root .hi-evidence-head h3 {
+  margin: 0;
+  font-size: var(--ds-body);
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.hi-root .hi-dim {
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+}
+
+.hi-root .hi-picker {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-2);
+  min-width: 0;
+}
+
+/* the strip scrolls INSIDE itself — the page never does */
+.hi-root .hi-picker-strip {
+  display: flex;
+  gap: var(--ds-1);
+  overflow-x: auto;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding-bottom: 2px;
+}
+
+.hi-root .hi-chip {
+  flex: 0 0 auto;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: var(--ds-1) var(--ds-2);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+  color: var(--ds-muted);
+  font: inherit;
+  font-size: var(--ds-small);
+  cursor: pointer;
+}
+
+.hi-root .hi-chip.active {
+  color: var(--ds-fg);
+  border-color: color-mix(in srgb, var(--ds-fg) 45%, var(--ds-border));
+}
+
+.hi-root .hi-chip.gone {
+  text-decoration: line-through;
+  opacity: 0.75;
+}
+
+.hi-root .hi-stage {
+  margin: 0;
+  display: grid;
+  gap: var(--ds-2);
+  min-width: 0;
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-2);
+  background: var(--ds-card);
+}
+
+/* the one rule that keeps an oversized screenshot from widening the whole panel */
+.hi-root .hi-stage-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--ds-radius);
+}
+
+.hi-root .hi-stage-proto {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.hi-root .hi-stage-proto iframe {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 0;
+  border-radius: var(--ds-radius);
+  background: #fff;
+}
+
+.hi-root .hi-stage-watermark {
+  position: absolute;
+  right: var(--ds-2);
+  bottom: var(--ds-2);
+  padding: 0 var(--ds-1);
+  border-radius: var(--ds-radius);
+  background: color-mix(in srgb, var(--ds-warn) 25%, transparent);
+  color: var(--ds-warn);
+  font-size: var(--ds-small);
+  letter-spacing: var(--tachyon-tracking-label);
+}
+
+.hi-root .hi-stage-plain,
+.hi-root .hi-stage-missing {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-2);
+  min-width: 0;
+  font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+.hi-root .hi-stage-plain code {
+  font-family: var(--ds-mono);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.hi-root .hi-stage-missing {
+  color: var(--ds-warn);
+}
+
+.hi-root .hi-stage-caption {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ds-small);
+}

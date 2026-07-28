@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { admitAdhocAgentCommand } from "../agents/adhocAdmission.js";
 
 /**
  * spec 230 — pure loader + validator for a one-shot agent pipeline (`.tachyon/pipelines/<name>.yml`).
@@ -17,6 +18,24 @@ export type GateKind = (typeof GATE_KINDS)[number];
 /** done kinds that detect completion by process exit — a declared (interactive) agent can't use these. */
 const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit", "exit_then_verify"]);
 
+/**
+ * SDD 478 (`t-c003e1`) — what an inline `cmd:` node BECOMES, declared rather than guessed.
+ *
+ * M9 moved kind out of the manager and into each door; the pipeline door had nowhere to read one, so
+ * it asked `suggestKindForCommand(def.cmd)` — the boundary's own inference rule, in the last place
+ * that still created an entity with no human in the loop.
+ *
+ * It turns out the node already declares it. `done:` is the completion contract, and the two arms are
+ * exactly the two entities: a signal-based node is handed the task brief and the `complete_node`
+ * protocol and must report back through the Bridge — that is an Agent — while an exit-based node runs
+ * its command and is judged by the exit code — that is a Terminal. Reading the kind off `done` keeps
+ * every existing pipeline valid, adds no key that could disagree with the contract beside it, and
+ * makes the answer come from the author instead of from the spelling of the command.
+ */
+export function nodeKindFromDone(done: DoneKind): "agent" | "terminal" {
+  return EXIT_DONE.has(done) ? "terminal" : "agent";
+}
+
 export interface NodeDef {
   /** references an agent declared in tachyon.yml (mutually exclusive with cmd) */
   agent?: string;
@@ -28,6 +47,12 @@ export interface NodeDef {
    * work). Required for `cmd:` nodes, persona-less agents, and any `input: none` node (work-source rule).
    */
   task?: string;
+  /**
+   * `t-c003e1` — what an inline `cmd:` node is spawned AS, materialized from the declared `done`
+   * contract (see `nodeKindFromDone`). Absent for an `agent:` node, whose kind is the declared
+   * agent's own; the spawn door reads this instead of inferring from the command text.
+   */
+  kind?: "agent" | "terminal";
   /** upstream node ids this node waits on (default []) */
   needs: string[];
   /** how completion is detected (see the done-contract) */
@@ -166,6 +191,21 @@ function parseNode(
   // (sh / codex exec / claude -p), OR `signal`/`signal_then_verify` for an EPHEMERAL interactive LLM
   // agent (e.g. `cmd: codex` with the workspace's default config — it gets the task + complete_node
   // protocol + nonce, signals when done, then is dismissed). spec 230.
+  //
+  // `t-c003e1` — and because that choice IS the node's kind, a signal-based inline node faces the same
+  // admission the ad-hoc door applies: Tachyon must be able to name the runtime it would operate.
+  // Refused here, at load, where the author can see which line to change — not at spawn, three states
+  // into a run.
+  if (hasCmd && typeof done === "string" && !EXIT_DONE.has(done as DoneKind)) {
+    const admission = admitAdhocAgentCommand(raw.cmd as string);
+    if (!admission.ok) {
+      errors.push(
+        `nodes.${id}.cmd: '${(raw.cmd as string).trim()}' cannot run as an agent node — ${admission.reason}`
+        + ` In a pipeline, the Terminal form of a node is \`done: exit\` or \`done: exit_then_verify\`,`
+        + ` which runs the command as-is and judges it by its exit code; \`agent: <name>\` runs a declared agent instead.`,
+      );
+    }
+  }
 
   if (raw.gate !== undefined && !(GATE_KINDS as readonly string[]).includes(raw.gate as string)) {
     errors.push(`nodes.${id}.gate: must be one of ${GATE_KINDS.join(" | ")}`);
@@ -182,7 +222,7 @@ function parseNode(
 
   if (errors.length > 0) return null; // a node with any error isn't materialized
   return {
-    ...(hasAgent ? { agent: raw.agent as string } : { cmd: raw.cmd as string }),
+    ...(hasAgent ? { agent: raw.agent as string } : { cmd: raw.cmd as string, kind: nodeKindFromDone(done as DoneKind) }),
     ...(hasTask ? { task: (raw.task as string).trim() } : {}),
     needs,
     done: done as DoneKind,
