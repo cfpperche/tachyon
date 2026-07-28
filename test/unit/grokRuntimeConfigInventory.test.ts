@@ -119,6 +119,56 @@ describe("Grok runtime configuration inventory", () => {
     expect(serialized).not.toContain("events_api_key");
   });
 
+  /**
+   * The opacity list is a convenience, not the security boundary — a secret that sits at a depth or
+   * in a section nobody predicted must still not escape. The actual invariant is stricter and does
+   * not depend on the list at all: a VALUE reaches the snapshot only for a measured key. Everything
+   * else contributes a key NAME and nothing more. This pins that invariant with secret-shaped values
+   * planted at every shape the list could miss.
+   */
+  it("never serializes a value for any key outside the measured set, at any depth", () => {
+    const root = tempRoot();
+    const home = path.join(root, "grok-home");
+    write(path.join(home, "config.toml"), [
+      'top_level_secret = "LEAK-ROOT"',
+      "",
+      "[models]",
+      'default = "grok-4.5"',
+      'api_key = "LEAK-DEPTH-2"',            // depth 2 under a partly-owned table
+      "",
+      '[models."proxy"]',
+      'env_key = "LEAK-DEPTH-3"',
+      "",
+      '[models."proxy".nested]',
+      'deeper = "LEAK-DEPTH-4"',
+      "",
+      "[section_nobody_predicted]",
+      'token = "LEAK-UNKNOWN-TABLE"',
+      "",
+      "[section_nobody_predicted.deeper]",
+      'password = "LEAK-UNKNOWN-NESTED"',
+      "",
+    ].join("\n"));
+
+    const snapshot = inspectGrokRuntimeConfig({ workspaceRoot: root, grokHome: home, agents: {} });
+    const serialized = JSON.stringify(snapshot);
+    for (const secret of ["LEAK-ROOT", "LEAK-DEPTH-2", "LEAK-DEPTH-3", "LEAK-DEPTH-4", "LEAK-UNKNOWN-TABLE", "LEAK-UNKNOWN-NESTED"]) {
+      expect(serialized).not.toContain(secret);
+    }
+    // The measured key keeps its value — that is the whole point of the editor.
+    const global = snapshot.documents.find((document) => document.id === GROK_GLOBAL_CONFIG_DOCUMENT)!;
+    expect(global.knownSettings.find((setting) => setting.key === "models.default")?.editValue).toBe("grok-4.5");
+    // Unowned keys contribute names only, and every value-bearing field is accounted for.
+    expect(global.unknownKeys).toEqual([
+      "models.api_key",
+      "section_nobody_predicted.deeper.password",
+      "section_nobody_predicted.token",
+      "top_level_secret",
+    ]);
+    expect(global.knownSettings.filter((setting) => setting.value !== undefined).map((setting) => setting.key))
+      .toEqual(["models.default"]);
+  });
+
   it("offers no scalar editor in workspace scope, because Grok reads only [mcp_servers] there", () => {
     const root = tempRoot();
     write(path.join(root, ".grok", "config.toml"), [
