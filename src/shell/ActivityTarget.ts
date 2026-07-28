@@ -29,7 +29,9 @@ export function legacyActivityTarget(source: LegacyActivitySource): WorkspaceAct
     folderName: source.folderName,
     activityAttention: (agent) => source.attentionOf(agent)?.state,
     activityContext: (agent) => projectActivityContext(source, agent),
-    sendAgentInput: (agent, text, submit) => sendManagedAgentInput(source, agent, text, submit),
+    // SDD 480 — the minted turnId is discarded here on purpose: this adapter's contract is
+    // `Promise<void>`. The turn is still recorded at the seam that minted it.
+    sendAgentInput: async (agent, text, submit) => { await sendManagedAgentInput(source, agent, text, submit); },
   };
 }
 

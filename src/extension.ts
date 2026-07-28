@@ -1421,6 +1421,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCockpitApprovals();
       },
     },
+    // t-e4f662 — the Human Inbox's staleness threshold, from the SAME loaded config the rest of the
+    // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
+    humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
     validations: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
       onValidationsChanged: () => {

@@ -4,8 +4,11 @@ import type { ProbeFixtureEngineResult, StopFixtureBridgeResult, StopFixtureEngi
 
 export interface DevHostPaths {
   root: string;
+  base: string;
   extension: string;
   workspace: string;
+  /** t-f0efc5 — the multi-root entry point VS Code opens; written only for a multi-root pointer. */
+  workspaceFile: string;
   meta: string;
   userData: string;
   extensions: string;
@@ -31,6 +34,10 @@ export interface DevHostFixtureNewOptions {
 }
 
 export interface DevHostMeta {
+  /** t-f0efc5 — see DevHostStatus; `workspaceFolders` lists the mirrored roots for multi-root. */
+  workspaceMode?: "single-root" | "multi-root";
+  workspaceArg?: string;
+  workspaceFolders?: string[] | null;
   schemaVersion: number;
   kind: "dev-host";
   worktree: string;
@@ -51,6 +58,9 @@ export interface DevHostMeta {
 }
 
 export interface DevHostStatus {
+  /** t-f0efc5 — which shape is armed, and the exact path that opens it. */
+  workspaceMode?: "single-root" | "multi-root";
+  workspaceArg?: string;
   armed: boolean;
   reason?: string;
   meta?: DevHostMeta;
@@ -101,6 +111,25 @@ export function assertWorkspaceNotRepoRoot(workspaceAbs: string, repoRootAbs: st
 export function assertWorktreeLooksValid(worktreeAbs: string): string;
 export function assertWorkspaceDir(workspaceAbs: string): string;
 export function materializeWorkspaceMirror(mirrorDir: string, fixtureAbs: string): string;
+
+/** t-f0efc5 — a fixture is multi-root when it carries exactly one `.code-workspace` naming its folders. */
+export interface DevHostMultiRootFixture {
+  /** absolute path to the fixture's own workspace file */
+  file: string;
+  /** folder paths it declares, relative to the fixture and validated to exist inside it */
+  folders: string[];
+  /** the workspace file's basename */
+  name: string;
+}
+export function detectMultiRootFixture(fixtureAbs: string): DevHostMultiRootFixture | null;
+export function materializeMultiRootMirror(
+  mirrorDir: string,
+  workspaceFilePath: string,
+  fixtureAbs: string,
+  detected?: DevHostMultiRootFixture | null,
+): string;
+/** t-f0efc5 — what this pointer says to OPEN (mirror dir, or the `.code-workspace`); null when unknown. */
+export function readPointerWorkspaceArg(slotRootAbs: string): string | null;
 export function ensureNodeModules(
   worktreeAbs: string,
   repoRootAbs: string,

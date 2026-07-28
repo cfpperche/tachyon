@@ -8,7 +8,14 @@
  * second source of truth that can disagree with them (see `humanInbox/model.ts` for the counter that
  * once did exactly that).
  */
-import { buildHumanInbox, humanInboxCounts, type HumanInboxCounts, type HumanInboxItem, type HumanInboxKind } from "../../humanInbox/model.js";
+import {
+  buildHumanInbox,
+  humanInboxCounts,
+  type HumanInboxCounts,
+  type HumanInboxItem,
+  type HumanInboxKind,
+  type StaleAfter,
+} from "../../humanInbox/model.js";
 import {
   projectInboxArtifacts,
   summarizeInboxArtifacts,
@@ -45,10 +52,20 @@ export function buildHumanInboxViewModel(input: {
   approvals: readonly ApprovalViewItem[];
   validations: readonly ValidationViewItem[];
   now?: string;
+  /**
+   * t-e4f662 — the workspace's configured staleness threshold, or absent for the product default.
+   * It arrives per CALL rather than being read here: this module is the projection layer and owns no
+   * config reader, and the threshold belongs to the workspace whose rows are being projected — which
+   * in a multi-root window is not "the one workspace".
+   */
+  staleAfterHours?: StaleAfter;
 }): HumanInboxViewModel {
   const items = buildHumanInbox(
     { wsHash: input.wsHash, folder: input.folder, approvals: input.approvals, validations: input.validations },
-    input.now ? { now: input.now } : {},
+    {
+      ...(input.now ? { now: input.now } : {}),
+      ...(input.staleAfterHours === undefined ? {} : { staleAfterHours: input.staleAfterHours }),
+    },
   );
   return { folder: input.folder, wsHash: input.wsHash, items, counts: humanInboxCounts(items) };
 }

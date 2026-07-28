@@ -159,6 +159,43 @@ describe("Control → Human Inbox section", () => {
     expect(calls.closed).toHaveLength(0);
   });
 
+  it("uses the workspace's CONFIGURED threshold, not the product default (t-e4f662)", async () => {
+    // The bug this closes was silent: the projection always took the parameter and nothing ever
+    // passed one, so every workspace got 24h no matter what its tachyon.yml said. A resolver that
+    // came unwired would look exactly like a project that configured nothing — hence a host test.
+    const root = workspace();
+    pendingApproval(root, "a-000001", LONG_AGO); // 72h old
+    const { deps } = depsFor(root, []);
+    await openInbox({ ...deps, humanInboxStaleAfter: () => 96 });
+
+    const vm = posted("humanInbox").at(-1)?.vm as { items?: Array<{ stale?: boolean }>; counts?: { stale: number } } | undefined;
+    expect(vm?.items?.[0]?.stale).toBe(false);
+    expect(vm?.counts?.stale).toBe(0);
+  });
+
+  it("stops marking entirely on 'never', without hiding the row (t-e4f662)", async () => {
+    const root = workspace();
+    pendingApproval(root, "a-000001", LONG_AGO);
+    const { deps } = depsFor(root, []);
+    await openInbox({ ...deps, humanInboxStaleAfter: () => "never" });
+
+    const vm = posted("humanInbox").at(-1)?.vm as { items?: Array<{ stale?: boolean }>; counts?: { stale: number; total: number } } | undefined;
+    expect(vm?.counts?.stale).toBe(0);
+    expect(vm?.counts?.total).toBe(1); // silencing a mark is not hiding work
+  });
+
+  it("asks the resolver for THIS workspace, so two roots can answer differently", async () => {
+    const root = workspace();
+    pendingApproval(root, "a-000001", LONG_AGO);
+    const { deps } = depsFor(root, []);
+    const asked: string[] = [];
+    await openInbox({ ...deps, humanInboxStaleAfter: (wsHash: string) => { asked.push(wsHash); return undefined; } });
+
+    expect(asked).toContain("ws-1");
+    // undefined from the resolver falls through to the product default, which still marks 72h
+    expect((posted("humanInbox").at(-1)?.vm as { counts?: { stale: number } } | undefined)?.counts?.stale).toBe(1);
+  });
+
   it("with no attached workspace it says so instead of rendering an empty inbox", async () => {
     const bare = makeFakeCockpitDeps({ getWorkspaces: () => [], openTaskStudio: () => {}, onTasksChanged: () => {} });
     await openInbox(bare);
