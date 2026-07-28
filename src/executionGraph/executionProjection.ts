@@ -104,6 +104,56 @@ export interface ExecutionProjection {
 /** States that end an execution's life. A later one of these supersedes `orphaned`. */
 const TERMINAL: ReadonlySet<ExecutionState> = new Set(["completed", "failed", "killed"]);
 
+/** What one execution contributes to the side panel's detail rows. */
+export interface ExecutionDetailEntry {
+  cwd?: string;
+  worktree?: string;
+  tool?: string;
+}
+
+/**
+ * t-441b0f — the ONLY `detail` keys the panel reads.
+ *
+ * An event's `detail` is a `Record<string, string>` that the write boundary already redacted and
+ * capped, so reading it here is reading sanitized output — not reopening a raw payload, which no
+ * longer exists at this point by construction. Naming the three keys explicitly keeps it that way: a
+ * seam that starts recording something new cannot reach the panel by accident, only by being added
+ * here on purpose.
+ */
+const PANEL_DETAIL_KEYS = ["cwd", "worktree", "tool"] as const;
+
+/**
+ * Index the panel's detail keys by execution id.
+ *
+ * FIRST writer wins, deliberately. These three answer "where did this execution begin" — `cwd` and
+ * `worktree` come from the spawn seam, `tool` from the Bridge seam that opened the call — so a later
+ * event restating a key must not move the answer. Taking the last would let an `exit` recorded by a
+ * different seam silently redefine where the work ran.
+ *
+ * An execution contributes an entry only when it actually carries one of these keys, and a blank
+ * string is treated as absent: "" is not a working directory, and a present-but-empty row would read
+ * as a fact when it is the absence of one. Absent stays absent, all the way to the panel.
+ */
+export function indexExecutionDetail(
+  events: readonly SealedExecutionEvent[],
+): ReadonlyMap<string, ExecutionDetailEntry> {
+  const byId = new Map<string, ExecutionDetailEntry>();
+  for (const event of events) {
+    for (const key of PANEL_DETAIL_KEYS) {
+      const value = event.detail[key];
+      if (!value) continue;
+      const id = event.correlation.executionId;
+      let entry = byId.get(id);
+      if (!entry) {
+        entry = {};
+        byId.set(id, entry);
+      }
+      if (entry[key] === undefined) entry[key] = value;
+    }
+  }
+  return byId;
+}
+
 /**
  * Fold sealed events into the projection.
  *

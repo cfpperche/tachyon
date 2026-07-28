@@ -120,7 +120,7 @@ import {
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
-import { projectExecutions } from "../executionGraph/executionProjection.js";
+import { indexExecutionDetail, projectExecutions } from "../executionGraph/executionProjection.js";
 import { buildExecutionGraphVm, type ExecutionGraphVm } from "../cockpit/executionGraphVm.js";
 export type { CockpitStudios };
 
@@ -234,7 +234,10 @@ export interface CockpitInspector {
  *  - the ledger was read but could not be folded → `error`, with the reason;
  *  - it folded to nothing → the builder's own `empty`.
  */
-function buildExecutionGraphSectionVm(
+// Exported so the wiring itself is testable. The defect this closes was invisible to every test of
+// the two halves — the builder took a `detailFor` and the ledger carried the keys, and both passed
+// while the host handed over `undefined`. A test of a hand-assembled call would have passed too.
+export function buildExecutionGraphSectionVm(
   deps: CockpitDeps,
   wsHash: string | undefined,
 ): ExecutionGraphVm | undefined {
@@ -244,7 +247,14 @@ function buildExecutionGraphSectionVm(
     if (!available) {
       return buildExecutionGraphVm({ projection: { executions: [], edges: [], agentIds: [] }, status: "no-telemetry" });
     }
-    return buildExecutionGraphVm({ projection: projectExecutions(events) });
+    // t-441b0f — the ledger already carries `cwd`/`worktree`/`tool`; the panel just had no way to
+    // reach them, so all three rendered as absent. Index them from the SAME events the projection
+    // folds, so the detail panel and the graph can never describe different runs.
+    const detail = indexExecutionDetail(events);
+    return buildExecutionGraphVm({
+      projection: projectExecutions(events),
+      detailFor: (executionId) => detail.get(executionId),
+    });
   } catch (err) {
     // The message is the only detail shown, and it is a local read failure — not user content — so
     // there is nothing here to redact that the ledger's own write boundary has not already handled.
