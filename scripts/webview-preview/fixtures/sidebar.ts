@@ -83,6 +83,26 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
 
   // t-fde5b6 — the scroll proof: far more attention than the panel's max-height can show. The panel
   // must stay the same height and scroll internally, never grow or push the rest of the sidebar.
+  // t-0d689f — every state a human can see, side by side. The reported defect was `done` reading as
+  // `running`; a fixture that never shows `done` cannot prove the fix, so this one shows all nine.
+  "agent-states": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      notices: [],
+      agents: [
+        { kind: "agent" as const, name: "producing", model: "Opus 5", status: "running" as const, attention: "working" },
+        { kind: "agent" as const, name: "finished-unread", model: "Opus 5", status: "done" as const },
+        { kind: "agent" as const, name: "finished-seen", model: "Opus 5", status: "idle" as const },
+        { kind: "agent" as const, name: "asking", model: "Sonnet 5", status: "needs" as const, attention: "needs input" },
+        { kind: "agent" as const, name: "rate-limited", model: "Sonnet 5", status: "throttled" as const },
+        { kind: "agent" as const, name: "winding-down", model: "Haiku", status: "stopping" as const },
+        { kind: "agent" as const, name: "wont-stop", model: "Haiku", status: "stop-failed" as const },
+        { kind: "agent" as const, name: "not-running", model: "Haiku", status: "stopped" as const },
+        { kind: "agent" as const, name: "died", model: "Haiku", status: "crashed" as const, sub: "exited (1)" },
+      ],
+    },
+  },
   "attention-burst": {
     provenance: "synthetic-edge",
     vm: {
