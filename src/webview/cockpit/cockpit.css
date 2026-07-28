@@ -1802,7 +1802,7 @@ main.ck-main.ck-main--mission,
 /* The diagram scrolls inside its own box. The PAGE must never scroll sideways
    because a graph got wide. */
 .ck-eg-canvas-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--vscode-panel-border); border-radius: 6px; padding: 8px; }
-.ck-eg-canvas { display: block; min-width: 320px; height: auto; }
+.ck-eg-canvas { display: block; }
 
 .ck-eg-node rect { fill: var(--vscode-editorWidget-background); stroke: var(--vscode-panel-border); stroke-width: 1; }
 .ck-eg-node.is-selected rect { stroke: var(--vscode-focusBorder); stroke-width: 2; }

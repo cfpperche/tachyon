@@ -54,6 +54,11 @@ function Diagram({ s, vm, selected, onSelect }: {
       <svg
         class="ck-eg-canvas"
         viewBox={`-8 -8 ${vm.width + 16} ${vm.height + 16}`}
+        // Rendered at TRUE size and scrolled, never scaled to fit. A wide graph fitted into the
+        // container collapses to an unreadable strip — the nodes shrink with the aspect ratio and the
+        // diagram stops being a diagram. The wrapper owns the horizontal scroll instead.
+        width={vm.width + 16}
+        height={vm.height + 16}
         // The diagram is decorative FOR A SCREEN READER — the table below carries the same content in
         // a form that actually reads. Announcing both would make a keyboard user hear everything twice.
         role="img"
@@ -78,9 +83,11 @@ function Diagram({ s, vm, selected, onSelect }: {
             <text x="10" y="17" class="ck-eg-node-label">{node.label}</text>
             <text x="10" y="31" class="ck-eg-node-sub">
               {node.state}
-              {node.shared ? " · shared" : ""}
-              {node.unproven ? " · unproven" : ""}
-              {node.orphaned ? " · orphaned" : ""}
+              {/* Only ADD a badge the state does not already say. "shared · shared" is noise that
+                  costs the reader attention and buys nothing. */}
+              {node.shared && node.state !== "shared" ? " · shared" : ""}
+              {node.unproven && node.state !== "unproven" ? " · unproven" : ""}
+              {node.orphaned && node.state !== "orphaned" ? " · orphaned" : ""}
               {node.groupSize > 1 ? ` · ×${node.groupSize}` : ""}
             </text>
           </g>
