@@ -21,6 +21,7 @@ describe("cockpit runtime config fixture (t-80d367)", () => {
     expect(messages[2]?.snapshot?.runtimes.map((runtime) => runtime.runtime)).toEqual([
       "codex",
       "claude",
+      "grok",
     ]);
     expect(messages[2]?.snapshot?.runtimes.every((runtime) => runtime.documents.length > 0)).toBe(true);
   });

@@ -3421,13 +3421,27 @@ export class Workspace {
   }
 
   /** Mark only live canonical agents whose native projection selects this runtime source. */
-  async markRuntimeConfigPending(runtime: "codex" | "claude", scope: "global" | "workspace", revision: string): Promise<string[]> {
+  async markRuntimeConfigPending(runtime: "codex" | "claude" | "grok", scope: "global" | "workspace", revision: string): Promise<string[]> {
     const live = await this.manager.list();
     const affected: string[] = [];
     for (const agent of live) {
       if (!agent.running || agent.kind !== "agent") continue;
       const def = asAgent(this.config?.agents[agent.name]);
-      if (def?.profileNativeConfig?.adapter !== runtime) continue;
+      if (!def) continue;
+      // SDD 481 — Grok's WORKSPACE source is not a profile projection and cannot be one: Grok
+      // discovers `.grok/config.toml` from the working directory, so it reaches a live agent even
+      // under a private GROK_HOME (measured on 0.2.112, and re-confirmed by t-26f508's own
+      // `[mcp_servers.ambient]` measurement). Any live grok agent is therefore affected, profile or
+      // not. Grok's GLOBAL source deliberately falls through to the projection rule below: since
+      // t-26f508 a canonical Grok profile projects measured families from `~/.grok/config.toml`,
+      // which is exactly what that rule already asks about.
+      if (runtime === "grok" && scope === "workspace") {
+        if (binaryOf(def.cmd) !== "grok") continue;
+        this.runtimeConfigPending.set(agent.name, { scope, revision });
+        affected.push(agent.name);
+        continue;
+      }
+      if (def.profileNativeConfig?.adapter !== runtime) continue;
       const selected = Object.values(def.profileNativeConfig.sources ?? {}).includes(scope);
       if (!selected) continue;
       this.runtimeConfigPending.set(agent.name, { scope, revision });

@@ -241,7 +241,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   }).strict(),
   z.object({
     action: z.literal("runtime-config.mark-pending"),
-    runtime: z.enum(["codex", "claude"]).optional(),
+    runtime: z.enum(["codex", "claude", "grok"]).optional(),
     scope: z.enum(["global", "workspace"]),
     revision: z.string().regex(/^[0-9a-f]{64}$/),
   }).strict(),

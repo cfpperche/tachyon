@@ -970,6 +970,7 @@
     "dogfood:probe-provenance-parity": "vite-node --script scripts/dogfood/probe-provenance-parity.ts",
     "dogfood:probe-codex-model-proof": "vite-node --script scripts/dogfood/probe-codex-model-proof.ts",
     "dogfood:probes-model-column": "vite-node --script scripts/dogfood/probes-model-column.ts",
+    "dogfood:grok-runtime-config": "vite-node --script scripts/dogfood/grok-runtime-config.ts",
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",

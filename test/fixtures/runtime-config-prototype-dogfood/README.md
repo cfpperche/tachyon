@@ -18,6 +18,19 @@ Claude adds three independently versioned documents:
   `prefersReducedMotion` shadowed by `settings.local.json`.
 - **Workspace MCP** exposes only the server name from `.mcp.json`; command payloads stay hidden.
 
+Grok (SDD 481) adds three more, and is the runtime whose documents do **not** share one blast radius:
+
+- **Global config** is the Dev Host-private `.runtime-config-global-home/.grok/config.toml`. It shows
+  the measured scalars (including numeric ones), `ui.permission_mode` as **read-only** with a stated
+  reason, and states that Tachyon-managed Grok agents do not inherit it.
+- **Workspace config** (`.grok/config.toml`) offers **no** scalar editor: Grok reads only
+  `[mcp_servers]` in project scope, and the fixture's inert `[models]` section is listed as ignored.
+- **Folder trust** (`.runtime-config-global-home/.grok/trusted_folders.toml`) deliberately does not
+  trust this workspace, so it must read "Not decided" and offer nothing to save.
+
+Every Grok fixture value that would be a payload is spelled `fixture-never-render-…`, so a leak into
+the DOM is a visible test failure rather than a judgement call.
+
 ## Slice B walkthrough
 
 1. In **Workspace**, change `Approval policy`, save, then open the source file: only that line changes.

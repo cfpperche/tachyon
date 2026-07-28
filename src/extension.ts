@@ -63,6 +63,12 @@ import { runtimeOpsFleetView } from "./shell/RuntimeOpsTarget.js";
 import { inspectCodexRuntimeConfig } from "./runtimeConfig/codexInventory.js";
 import { applyCodexNativeConfigChange, type CodexEditableSettingKey } from "./config/codexNativeConfigProjection.js";
 import { applyClaudeRuntimeConfigChange, inspectClaudeRuntimeConfig } from "./runtimeConfig/claudeInventory.js";
+import {
+  applyGrokRuntimeConfigChange,
+  grokConfigHome,
+  grokDocumentScope,
+  inspectGrokRuntimeConfig,
+} from "./runtimeConfig/grokInventory.js";
 import type {
   AgentItem,
   PinItem,
@@ -1478,6 +1484,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             runtimes: [
               inspectCodexRuntimeConfig(common),
               inspectClaudeRuntimeConfig(common),
+              inspectGrokRuntimeConfig({
+                ...common,
+                grokHome: grokConfigHome({ homeDir: common.homeDir, env: process.env, profileHome: !!common.homeDir }),
+              }),
             ],
           };
         } catch (error) {
@@ -1505,6 +1515,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             changes: changes.map((change) => change.kind === "setting"
               ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
                 : change),
+          });
+          revision = applied.revision;
+        } else if (runtime === "grok") {
+          scope = grokDocumentScope(documentId);
+          const applied = applyGrokRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            grokHome: grokConfigHome({ homeDir: home.homeDir, env: process.env, profileHome: !!home.homeDir }),
+            documentId,
+            expectedRevision,
+            changes,
           });
           revision = applied.revision;
         } else {

@@ -8,6 +8,7 @@ import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoade
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
+  GROK_PRIVATE_HOME_INPUT_INSPECTOR,
 } from "../../src/config/agentProfileProjection.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import { Workspace } from "../../src/workspace/Workspace.js";
@@ -214,5 +215,86 @@ describe("native config source ownership (t-59a11b)", () => {
     expect(ws.runtimeConfigPendingAgents()).toEqual(["claude"]);
     // A scope the profile does not select must stay untouched.
     expect(await ws.markRuntimeConfigPending("claude", "workspace", "rev-2")).toEqual([]);
+  });
+
+  /**
+   * SDD 481 — Grok's WORKSPACE source is not a projection and cannot be one: Grok discovers
+   * `.grok/config.toml` from the working directory, so it reaches a live agent even under a private
+   * GROK_HOME. This agent is declared by `cmd` with no profile, so the GLOBAL source still cannot
+   * reach it — t-26f508 gave canonical Grok PROFILES a global projection, and having none is
+   * exactly what makes this the honest negative case.
+   */
+  it("marks a profile-less Grok agent pending for the workspace source only", async () => {
+    const root = temporaryRoot("tachyon-grok-pending-");
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  grokkie:\n    cmd: grok\n");
+
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new HeadlessHost(temporaryRoot("tachyon-grok-pending-storage-")), onViewsChanged: () => {} },
+      { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },
+    );
+    workspaces.push(ws);
+
+    const internals = ws as unknown as {
+      config?: { agents: Record<string, unknown> };
+      manager: { list: () => Promise<Array<{ name: string; running: boolean; kind: string }>> };
+    };
+    internals.config = {
+      agents: {
+        grokkie: { cmd: "grok", kind: "agent" },
+        clyde: { cmd: "claude", kind: "agent" },
+      },
+    } as never;
+    internals.manager.list = async () => [
+      { name: "grokkie", running: true, kind: "agent" },
+      { name: "clyde", running: true, kind: "agent" },
+    ];
+
+    expect(await ws.markRuntimeConfigPending("grok", "global", "rev-1")).toEqual([]);
+    expect(ws.runtimeConfigPendingAgents()).toEqual([]);
+    expect(await ws.markRuntimeConfigPending("grok", "workspace", "rev-2")).toEqual(["grokkie"]);
+    expect(ws.runtimeConfigPendingAgents()).toEqual(["grokkie"]);
+  });
+
+  /**
+   * The other half of the same rule, and the one t-26f508 created while SDD 481 was in flight: a
+   * canonical Grok profile DOES project measured families from `~/.grok/config.toml`, so the global
+   * document reaches it exactly like Claude's and Codex's do. Before t-26f508 this case could not
+   * exist, which is why the adapter's earlier "global reaches nobody" rule was true and is not now.
+   */
+  it("marks a canonical Grok agent pending for the global source it projects", async () => {
+    const root = temporaryRoot("tachyon-grok-profile-pending-");
+    const homeDir = temporaryRoot("tachyon-grok-profile-home-");
+    fs.mkdirSync(path.join(homeDir, ".grok"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".grok", "config.toml"), "[ui]\nmax_thoughts_width = 120\n");
+    const scalar = { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle: ["fresh", "restart", "resume"] };
+    const bytes = writeProfile(root, "grokkie", {
+      runtime: { adapter: "grok", executable: "grok" },
+      nativeConfig: { interface: scalar },
+    });
+    fs.writeFileSync(
+      path.join(root, "tachyon.yml"),
+      "agents:\n  grokkie:\n    profile: .tachyon/agents/grokkie/agent.yml\n",
+    );
+
+    const ws = await Workspace.createForTest(
+      root,
+      { host: new HeadlessHost(temporaryRoot("tachyon-grok-profile-storage-")), onViewsChanged: () => {} },
+      { tmux: new TmuxService(async () => ({ stdout: "", stderr: "" })), startBridge: false },
+    );
+    workspaces.push(ws);
+
+    const internals = ws as unknown as {
+      config?: { agents: Record<string, unknown> };
+      manager: { list: () => Promise<Array<{ name: string; running: boolean; kind: string }>> };
+    };
+    const loaded = load(root, "grokkie", authority("grokkie", bytes, GROK_PRIVATE_HOME_INPUT_INSPECTOR), homeDir);
+    expect(loaded.errors).toEqual([]);
+    expect(asAgent(loaded.config?.agents.grokkie)?.profileNativeConfig?.sources).toEqual({ interface: "global" });
+    internals.config = loaded.config as never;
+    internals.manager.list = async () => [{ name: "grokkie", running: true, kind: "agent" }];
+
+    expect(await ws.markRuntimeConfigPending("grok", "global", "rev-1")).toEqual(["grokkie"]);
+    expect(ws.runtimeConfigPendingAgents()).toEqual(["grokkie"]);
   });
 });
