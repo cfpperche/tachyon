@@ -191,6 +191,7 @@ describe("canonical Agent Studio projection", () => {
         treatment: "overlay",
         refresh: "every-launch",
         lifecycle: ["fresh", "resume"],
+        authorize: ["neverAskForApproval", "dangerFullAccess"],
       },
     };
     const projected = projectAgentProfileStudioSnapshot(current);
@@ -205,6 +206,7 @@ describe("canonical Agent Studio projection", () => {
       support: "unsupported",
       reason: "runtime adapter 'codex' has not declared native configuration support for 'permissions'",
     }]);
+    expect(projected.provenance.nativeConfig?.[0]).not.toHaveProperty("authorize");
 
     const edited = mutation(current.revision);
     edited.editable.nativeConfig = projected.editable.nativeConfig;
