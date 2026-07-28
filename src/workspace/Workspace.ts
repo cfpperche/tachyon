@@ -123,7 +123,7 @@ import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
-import { AdhocBackstopMonitor } from "./AdhocBackstopMonitor.js";
+import { AdhocBackstopMonitor, idleNotifyThresholdMs } from "./AdhocBackstopMonitor.js";
 import { GatedCompletionMonitor, type GatedCandidateRecord } from "./GatedCompletionMonitor.js";
 import { hasDoorbellRung } from "../bridge/doorbell.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
@@ -1604,14 +1604,20 @@ export class Workspace {
       },
     );
 
-    this.adhocBackstop = new AdhocBackstopMonitor({
-      listEntries: () => this.manager.list(),
-      attentionOf: (agent) => this.attentionOf(agent),
-      now: () => Date.now(),
-      deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
-      sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
-      completionHinted: (agent) => this.completionHints.has(agent),
-    });
+    this.adhocBackstop = new AdhocBackstopMonitor(
+      {
+        listEntries: () => this.manager.list(),
+        attentionOf: (agent) => this.attentionOf(agent),
+        now: () => Date.now(),
+        deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
+        sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+        completionHinted: (agent) => this.completionHints.has(agent),
+      },
+      // t-585d5c — resolved per tick from the LIVE config, never captured here. `this.config` is
+      // replaced on reload, so an edit reaches the next tick without recreating the workspace or its
+      // agents, and without a second timer that would have to be kept in step with this one.
+      () => idleNotifyThresholdMs(this.config?.settings.agentNotifications?.idleAfterMinutes),
+    );
 
     this.gatedCompletion = new GatedCompletionMonitor({
       listGatedFacts: () => this.listGatedCompletionFacts(),

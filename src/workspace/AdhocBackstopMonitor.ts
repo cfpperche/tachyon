@@ -3,6 +3,24 @@ import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 
 export const DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
 
+/**
+ * t-585d5c — the ONE place the configured value becomes a window in milliseconds.
+ *
+ * Lives beside the monitor that consumes it rather than in the config loader, so the unit conversion
+ * and the code that compares against it cannot drift apart. Three inputs, three meanings:
+ *   - `undefined` — nothing configured, so the shipped default stands (this is what keeps an
+ *     unconfigured workspace behaving exactly as before);
+ *   - `"never"` — switched off, expressed as `null` so the monitor has nothing to compare against;
+ *   - a number — minutes, as written by a human, converted once here.
+ *
+ * Validation already happened at the config edge; a value that got here is one the loader accepted.
+ */
+export function idleNotifyThresholdMs(configured: number | "never" | undefined): number | null {
+  if (configured === undefined) return DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS;
+  if (configured === "never") return null;
+  return Math.round(configured * 60_000);
+}
+
 export interface AdhocBackstopDeps {
   listEntries(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
@@ -18,16 +36,37 @@ type BackstopReason = "idle" | "working";
 export class AdhocBackstopMonitor {
   private readonly nudgedEpisode = new Map<string, string>();
 
+  /**
+   * t-585d5c — the threshold may be a FUNCTION, resolved per tick instead of captured here.
+   *
+   * This monitor is constructed once, in the `Workspace` constructor. A number frozen at that moment
+   * could only change by rebuilding the workspace — which means recreating agents, exactly what a
+   * configurable threshold must not require. A resolver reads the live config on each pass, so an
+   * edit takes effect on the next tick: no restart, and no second timer racing this one.
+   *
+   * `"never"` reaches this layer as `null`. The off-vocabulary is spoken at the config edge; here it
+   * only has to mean "no threshold", which `tick` reads as "nudge about nothing".
+   */
   constructor(
     private readonly deps: AdhocBackstopDeps,
-    private readonly thresholdMs = DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS,
+    private readonly threshold: number | null | (() => number | null) = DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS,
   ) {}
+
+  /** The window in force for THIS pass, or null when the nudge is switched off. */
+  private resolveThresholdMs(): number | null {
+    return typeof this.threshold === "function" ? this.threshold() : this.threshold;
+  }
 
   reset(agent: string): void {
     this.nudgedEpisode.delete(agent);
   }
 
   async tick(): Promise<void> {
+    const thresholdMs = this.resolveThresholdMs();
+    // Off means off for the WHOLE pass, decided before any work: nothing is listed, nothing is
+    // classified, and no episode is marked as nudged — so switching back on later behaves like the
+    // agent had simply been quiet, not like its nudge was already spent.
+    if (thresholdMs === null) return;
     const now = this.deps.now();
     const entries = await this.deps.listEntries();
     const byName = new Map(entries.map((entry) => [entry.name, entry]));
@@ -57,8 +96,8 @@ export class AdhocBackstopMonitor {
 
       const stableSince = attention.outputStableSince ?? attention.contentSince ?? attention.since;
       const stableMs = now - stableSince;
-      if (stableMs < this.thresholdMs) continue;
-      if (effectiveState === "working" && stableMs < Math.max(this.thresholdMs, MAX_WORKING_STALL_MS)) continue;
+      if (stableMs < thresholdMs) continue;
+      if (effectiveState === "working" && stableMs < Math.max(thresholdMs, MAX_WORKING_STALL_MS)) continue;
       // After notify, skip the long working-stall path entirely — session may stay open for postmortem.
       if (completionHinted && attention.state === "working") {
         // only the idle message path (or silence) — already remapped to idle above

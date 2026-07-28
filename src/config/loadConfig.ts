@@ -537,8 +537,36 @@ export interface TachyonConfig {
      * later mapping can be accepted beside it without changing what a number means.
      */
     humanInbox?: { staleAfterHours?: import("../humanInbox/model.js").StaleAfter };
+    /**
+     * t-585d5c — how long a parented agent may sit idle before Tachyon nudges its parent.
+     *
+     * MINUTES, because that is the unit the report speaks in ("10 minutes is too slow for a release
+     * cut"). The monitor's own unit is milliseconds; the conversion happens once, at this edge.
+     *
+     * `"never"` turns the nudge off. Spelled as a word rather than `0` for the reason the sibling
+     * `staleAfterHours` already records: `0` reads literally as "nudge immediately", the opposite of
+     * the off an author would mean by it, so `0` is refused and pointed at this spelling.
+     */
+    agentNotifications?: { idleAfterMinutes?: IdleNotifyAfter };
   };
 }
+
+/**
+ * t-585d5c — minutes of idleness before the parent is nudged, or `"never"` to stop nudging.
+ *
+ * Deliberately the same shape as `StaleAfter`: one off-vocabulary across the product means someone
+ * who has configured either of these already knows how to turn the other off.
+ */
+export type IdleNotifyAfter = number | "never";
+
+/**
+ * Widest idle window accepted, in minutes (7 days).
+ *
+ * A bound exists because an unbounded number is indistinguishable from a typo: `6000` for `60`
+ * silently means the nudge never arrives, which looks like a broken feature rather than a mistyped
+ * setting. Past this, `"never"` is what the author actually means, and the refusal says so.
+ */
+export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
 
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
 export function parseEvery(value: string): number | null {
@@ -1734,6 +1762,41 @@ export function parseConfig(yamlText: string): ParseResult {
           }
         }
       }
+      // t-585d5c — the idle-nudge threshold. Same validation SHAPE as `humanInbox` directly above
+      // (unknown key refused by name, value checked, errors accumulated) and the same off-vocabulary,
+      // so the two read as one idea rather than two conventions.
+      if (raw.settings.agentNotifications !== undefined) {
+        if (!isPlainObject(raw.settings.agentNotifications)) {
+          errors.push("settings.agentNotifications: must be a mapping with 'idleAfterMinutes'");
+        } else {
+          const notifications = raw.settings.agentNotifications;
+          for (const key of Object.keys(notifications)) {
+            if (key !== "idleAfterMinutes") {
+              errors.push(`settings.agentNotifications: unknown key '${key}' (allowed: idleAfterMinutes)`);
+            }
+          }
+          const value = notifications.idleAfterMinutes;
+          if (value !== undefined) {
+            if (value === false || value === null || value === "off" || value === "none" || value === "never") {
+              settings.agentNotifications = { idleAfterMinutes: "never" };
+            } else if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+              // `0`, negatives and NaN land here together: none of them names a waiting period, and
+              // `0` in particular would mean "nudge instantly", which is not the off it looks like.
+              errors.push(
+                "settings.agentNotifications.idleAfterMinutes: must be a positive number of minutes, or \"never\" to stop notifying",
+              );
+            } else if (value > MAX_IDLE_NOTIFY_MINUTES) {
+              // Refused rather than clamped: a clamp would leave the file asking for one thing while
+              // the product does another, with nothing on screen to say which won.
+              errors.push(
+                `settings.agentNotifications.idleAfterMinutes: ${value} is longer than the ${MAX_IDLE_NOTIFY_MINUTES}-minute maximum — use "never" to stop notifying`,
+              );
+            } else {
+              settings.agentNotifications = { idleAfterMinutes: value };
+            }
+          }
+        }
+      }
       if (raw.settings.bridgeGuidance !== undefined) {
         if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
@@ -1875,7 +1938,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }
