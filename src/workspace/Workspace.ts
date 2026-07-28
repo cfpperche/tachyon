@@ -92,6 +92,9 @@ const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
+import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
+import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
@@ -642,6 +645,30 @@ export class Workspace {
   private callerRegistry: CallerIdentityRegistry | undefined;
   /** SecretStorage key, domain-separated from caller digests for durable authority seals. */
   private authorityIntegrityKey: Buffer | undefined;
+  /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
+  private formationLifecycle: FormationLifecyclePort | undefined;
+
+  /**
+   * t-50bbd4 — the canonical `agentId` for a declared agent, or undefined when it is not a profile
+   * agent. Read from the profile on disk rather than cached: the lane validates the profile bytes
+   * against the vector anyway, so a stale id here would only ever produce a refusal, never a wrong
+   * Soul — and reading is the cheap way to stay correct across a rename or an external edit.
+   */
+  private canonicalAgentIdOf(agentName: string): string | undefined {
+    const source = readCanonicalAgentProfile(this.workspaceRoot, agentName);
+    if (!source) return undefined;
+    try {
+      const entry = readCanonicalAgentProfileEntry(source, "agent.yml");
+      if (!entry) return undefined;
+      const id = /^agentId:\s*["']?([A-Za-z0-9][\w.:-]{0,127})["']?\s*$/m.exec(entry.bytes.toString("utf8"))?.[1];
+      return id;
+    } catch {
+      // A profile we cannot read is not a profile we will render from.
+      return undefined;
+    } finally {
+      closeCanonicalAgentProfile(source);
+    }
+  }
   /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
   private authorityHeads = new Map<string, AuthorityHead>();
   /** Host-custodied profile heads selected before any profile-backed config can load. */
@@ -910,6 +937,15 @@ export class Workspace {
       workspaceRoot,
       // SDD 480 — the seam that genuinely carries the id into the child's environment.
       ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
+      // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
+      // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
+      // instead of capturing an undefined that would never fill in.
+      formation: { resolveSoul: (input) => this.formationLifecycle
+        ? this.formationLifecycle.resolveSoul(input)
+        : Promise.resolve({ state: "absent" as const }) },
+      onFormationSoulRefused: (agent, reason) => {
+        this.host.notify(this.t("agent '{0}': profile Soul was not applied — {1}", agent, reason), "warn");
+      },
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
@@ -3052,6 +3088,28 @@ export class Workspace {
       const hmacKey = await loadOrCreateHmacKey(deps.host);
       const authorityHeads = parseAuthorityHeads(await deps.host.getSecret(ws.authorityHeadsSecretKey()));
       ws.authorityIntegrityKey = hmacKey;
+      // t-50bbd4 — the formation lane finally gets its host. The suppression key is DERIVED from this
+      // same machine-local key (domain-separated), so there is no new vault, no new key and no new
+      // file; rotation follows the host key. Built here because this is where the key exists and
+      // nowhere earlier — and if the key never arrives, the port is simply absent (fail-closed),
+      // which the lifecycle reads as "no formation" rather than as a weaker rendering path.
+      ws.formationLifecycle = createFormationLifecycleHost({
+        hostKey: hmacKey,
+        hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
+        workspaceId: ws.wsHash,
+        workspaceRoot,
+        agentIdOf: (agentName) => ws.canonicalAgentIdOf(agentName),
+        runtimeAdapterOf: (agentName) => {
+          const def = ws.config?.agents?.[agentName];
+          return def ? adapterFor(asAgent(def)?.cmd ?? "")?.runtime : undefined;
+        },
+        // Suppression is confirmed per runtime by the adapter that actually disables native delivery.
+        // Nothing is measured for any adapter yet, so this is `false` everywhere and the lane refuses
+        // out loud instead of attesting a suppression that never happened. Each runtime turns true
+        // only once its native-lane disablement is measured — the same bar parity.md holds elsewhere.
+        nativeSuppressionConfirmed: () => false,
+        runtimeTrustClassOf: (adapter) => adapter,
+      });
       ws.authorityHeads = authorityHeads;
       ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
     } catch (err) {
