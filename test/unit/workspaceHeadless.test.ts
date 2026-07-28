@@ -3071,3 +3071,134 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     ws.dispose();
   });
 });
+
+describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
+  const OWNER = "codexCanonico";
+  const TEAM = ["claudeBuilder", "claudeReviewer", "claudeRuntime"];
+
+  async function ownedFleet(extra: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }> = []) {
+    return makeWorkspace(() => {}, {
+      canonical: [{ name: OWNER }, ...TEAM.map((name) => ({ name })), ...extra],
+    });
+  }
+
+  const profileText = (ws: Workspace, name: string) =>
+    fs.readFileSync(path.join(ws.workspaceRoot, ".tachyon", "agents", name, "agent.yml"), "utf8");
+
+  const setSubagents = async (ws: Workspace, subagents: string[]) => {
+    const before = await ws.inspectAgentProfileStudio(OWNER);
+    return ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "set-subagents",
+      agentName: OWNER,
+      expectedRevision: before.revision,
+      subagents,
+    });
+  };
+
+  it("links the whole team in one transaction, touching no other profile and no YAML", async () => {
+    const { ws } = await ownedFleet();
+    const yamlBefore = fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8");
+    const teamBefore = TEAM.map((name) => profileText(ws, name));
+    expect(ws.config?.declaredOwner).toEqual({});
+
+    const result = await setSubagents(ws, TEAM);
+
+    expect(result.kind).toBe("snapshot");
+    // The whole point: the sidebar's `declaredOwner` now carries the tree, derived from config.
+    expect(ws.config?.declaredOwner).toEqual(Object.fromEntries(TEAM.map((name) => [name, OWNER])));
+    expect(asAgent(ws.config?.agents[OWNER])?.subagents).toEqual(TEAM);
+    expect(parseYaml(profileText(ws, OWNER)).ownership).toEqual({ subagents: TEAM });
+    // Nothing outside the owner's own profile was written — not the children, not tachyon.yml.
+    expect(TEAM.map((name) => profileText(ws, name))).toEqual(teamBefore);
+    expect(fs.readFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "utf8")).toBe(yamlBefore);
+    ws.dispose();
+  });
+
+  it("declares ownership while the owner is running — ownership has no runtime lifecycle role", async () => {
+    const { ws } = await ownedFleet();
+    await ws.manager.spawn(OWNER);
+    expect(await ws.manager.runningAgents()).toContain(OWNER);
+
+    await setSubagents(ws, TEAM);
+
+    expect(ws.config?.declaredOwner).toEqual(Object.fromEntries(TEAM.map((name) => [name, OWNER])));
+    // Runtime lineage is still the actual spawner; the declaration never seeds it (spec 352). The
+    // roster carries BOTH facts separately, which is what the sidebar groups on.
+    await ws.manager.spawn(TEAM[0]!);
+    expect(ws.manager.parentOf(TEAM[0]!)).toBeUndefined();
+    const row = (await ws.manager.list()).find((entry) => entry.name === TEAM[0]!);
+    expect(row).toMatchObject({ declaredOwner: OWNER, parent: undefined });
+    ws.dispose();
+  });
+
+  it("preserves CAS: a revision from before the declaration is refused, and the new one works", async () => {
+    const { ws } = await ownedFleet();
+    const stale = (await ws.inspectAgentProfileStudio(OWNER)).revision;
+    await setSubagents(ws, [TEAM[0]!]);
+    const fresh = (await ws.inspectAgentProfileStudio(OWNER)).revision;
+    expect(fresh).not.toBe(stale);
+
+    await expect(ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "set-subagents",
+      agentName: OWNER,
+      expectedRevision: stale,
+      subagents: TEAM,
+    })).rejects.toThrow("revision conflict");
+    expect(asAgent(ws.config?.agents[OWNER])?.subagents).toEqual([TEAM[0]]);
+
+    await setSubagents(ws, TEAM);
+    expect(asAgent(ws.config?.agents[OWNER])?.subagents).toEqual(TEAM);
+    ws.dispose();
+  });
+
+  it("removes the declaration with an empty list and drops the derived ownership", async () => {
+    const { ws } = await ownedFleet();
+    await setSubagents(ws, TEAM);
+    await setSubagents(ws, []);
+
+    expect(ws.config?.declaredOwner).toEqual({});
+    expect(asAgent(ws.config?.agents[OWNER])?.subagents).toBeUndefined();
+    expect(parseYaml(profileText(ws, OWNER)).ownership).toBeUndefined();
+    ws.dispose();
+  });
+
+  it("refuses a contract violation before the transaction starts, leaving the profile byte-identical", async () => {
+    const { ws } = await ownedFleet();
+    await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "set-subagents",
+      agentName: TEAM[0]!,
+      expectedRevision: (await ws.inspectAgentProfileStudio(TEAM[0]!)).revision,
+      subagents: [TEAM[1]!],
+    });
+    const ownerBefore = profileText(ws, OWNER);
+
+    // TEAM[1] already has an owner; TEAM[0] now owns something, so it may not be owned either.
+    await expect(setSubagents(ws, [TEAM[1]!])).rejects.toThrow(`already declared as a subagent of '${TEAM[0]}'`);
+    await expect(setSubagents(ws, [TEAM[0]!])).rejects.toThrow("declares its own subagents");
+    await expect(setSubagents(ws, [OWNER])).rejects.toThrow("cannot reference itself");
+    await expect(setSubagents(ws, ["ghost"])).rejects.toThrow("is not declared in agents/terminals");
+
+    expect(profileText(ws, OWNER)).toBe(ownerBefore);
+    expect(ws.config?.declaredOwner).toEqual({ [TEAM[1]!]: TEAM[0]! });
+    ws.dispose();
+  });
+
+  it("offers the Agent Form only the targets the transaction would accept", async () => {
+    const { ws } = await ownedFleet();
+    expect(await ws.agentOwnershipView(OWNER)).toEqual({ subagents: [], candidates: TEAM });
+
+    await setSubagents(ws, [TEAM[0]!]);
+    // A declared child stays a candidate FOR ITS OWN OWNER, so the form can render it checked and
+    // let it be unchecked; it disappears from every other agent's candidate list instead.
+    expect(await ws.agentOwnershipView(OWNER)).toEqual({ subagents: [TEAM[0]], candidates: TEAM });
+    // An owned agent may own nothing, so the form shows why instead of an empty picker.
+    expect(await ws.agentOwnershipView(TEAM[0]!)).toEqual({ subagents: [], candidates: [], ownedBy: OWNER });
+    // An unowned peer may still declare — but never the child this owner took, and never the owner
+    // itself, which now declares subagents of its own.
+    expect(await ws.agentOwnershipView(TEAM[1]!)).toEqual({ subagents: [], candidates: [TEAM[2]] });
+    ws.dispose();
+  });
+});

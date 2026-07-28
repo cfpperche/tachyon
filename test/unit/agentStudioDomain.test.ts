@@ -32,6 +32,7 @@ function ws(overrides: Partial<WorkspaceAgentStudioTarget> = {}): WorkspaceAgent
   return {
     wsHash: "ws1",
     workspaceRoot: "/ws/root",
+    agentOwnershipView: async () => ({ subagents: [], candidates: [] }),
     ...overrides,
   } as unknown as WorkspaceAgentStudioTarget;
 }
@@ -259,6 +260,51 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     handleAgentStudioDomainMessage(target, ctx, envelope({ type: "approveEvolutionCandidate" as const, agent: "Ada", candidateId: candidate.id, expectedActiveVersion: 2 }));
     await flush();
     expect(findType(ctx.posted, "evolutionError").at(-1)).toMatchObject({ code: "evolution/promotion-conflict", conflict: true });
+  });
+
+  it("routes a declared-subagents edit and answers with both the new revision and the roster view (t-4c113c)", async () => {
+    const mutations: unknown[] = [];
+    const views: string[] = [];
+    const target = ws({
+      commitAgentProfileStudioLifecycle: async (mutation) => {
+        mutations.push(mutation);
+        return { schemaVersion: 1, kind: "snapshot", snapshot: profileSnapshot("Ada", "c".repeat(64)) };
+      },
+      agentOwnershipView: async (agent: string) => {
+        views.push(agent);
+        return { subagents: ["Bea"], candidates: ["Bea", "Cleo"] };
+      },
+    });
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "setCanonicalProfileSubagents" as const,
+      agent: "Ada",
+      expectedRevision: "a".repeat(64),
+      subagents: ["Bea"],
+    }));
+    await flush();
+
+    expect(mutations).toEqual([expect.objectContaining({ operation: "set-subagents", agentName: "Ada", subagents: ["Bea"] })]);
+    // The snapshot carries the NEXT CAS revision; the ownership message carries what the form draws.
+    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1)).toMatchObject({
+      action: "set-subagents", snapshot: { revision: "c".repeat(64) },
+    });
+    expect(findType(ctx.posted, "canonicalProfileOwnership").at(-1)).toMatchObject({
+      agent: "Ada", ownership: { subagents: ["Bea"] },
+    });
+    expect(views).toEqual(["Ada"]);
+
+    // Cross-agent tampering is refused by the same binding guard as every other profile action.
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "setCanonicalProfileSubagents" as const,
+      agent: "Bea",
+      expectedRevision: "a".repeat(64),
+      subagents: ["Ada"],
+    }));
+    await flush();
+    expect(mutations).toHaveLength(1);
+    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({ agent: "Ada" });
   });
 
   it("dispatches revisioned lifecycle actions and refreshes a redacted snapshot after a stale conflict", async () => {

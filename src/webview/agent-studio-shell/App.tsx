@@ -47,6 +47,7 @@ import {
   setCanonicalProfileEnabledMessage,
   renameCanonicalProfileMessage,
   forgetCanonicalProfileMessage,
+  setCanonicalProfileSubagentsMessage,
   exportCanonicalProfileBundleMessage,
   cloneCanonicalProfileBundleMessage,
   importCanonicalProfileBundleMessage,
@@ -65,6 +66,7 @@ import type {
   AgentStudioPatch,
   SoulProfileStatusMessage,
 } from "./types";
+import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -230,6 +232,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [forgetConfirmOpen, setForgetConfirmOpen] = useState(false);
   const [forgetValue, setForgetValue] = useState("");
   const [profileRetired, setProfileRetired] = useState(false);
+  const [ownership, setOwnership] = useState<AgentOwnershipViewV1 | undefined>(undefined);
+  const [ownershipDraft, setOwnershipDraft] = useState<string[] | undefined>(undefined);
   const [bundleAction, setBundleAction] = useState<"clone" | "import" | undefined>();
   const [bundleDestination, setBundleDestination] = useState("");
   const [bundleImportBase64, setBundleImportBase64] = useState<string | undefined>();
@@ -285,6 +289,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setForgetConfirmOpen(false);
     setForgetValue("");
     setProfileRetired(false);
+    setOwnership(undefined);
+    setOwnershipDraft(undefined);
     setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
@@ -339,6 +345,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setForgetConfirmOpen(false);
       setForgetValue("");
       setProfileRetired(false);
+      setOwnership(d.entity.ownership);
+      setOwnershipDraft(d.entity.ownership ? [...d.entity.ownership.subagents] : undefined);
       setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
       setReady(true);
       if (d.entity.name) {
@@ -461,8 +469,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
         kind: "success",
         text: renamed
           ? `Renamed to ${d.snapshot.agentName}. Reopen the agent from the sidebar to continue editing.`
-          : d.action === "refresh" ? "Latest profile loaded." : d.snapshot.enabled ? "Agent enabled." : "Agent disabled.",
+          : d.action === "refresh" ? "Latest profile loaded."
+            : d.action === "set-subagents" ? "Declared subagents saved."
+              : d.snapshot.enabled ? "Agent enabled." : "Agent disabled.",
       });
+    } else if (d.type === "canonicalProfileOwnership") {
+      if (entityRef.current?.name !== d.agent) return;
+      setOwnership(d.ownership);
+      setOwnershipDraft([...d.ownership.subagents]);
     } else if (d.type === "canonicalProfileForgotten") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(undefined);
@@ -653,6 +667,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       : rejectEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest));
   };
   const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired;
+  // Declared + still-declarable, so a checked row can always be UNCHECKED even after the target
+  // stopped qualifying as a candidate (it stops qualifying precisely BECAUSE this agent owns it).
+  const ownershipRows = [...new Set([...(ownership?.subagents ?? []), ...(ownership?.candidates ?? [])])].sort();
+  const ownershipDirty = ownership !== undefined && ownershipDraft !== undefined
+    && (ownershipDraft.length !== ownership.subagents.length
+      || [...ownershipDraft].sort().join("\0") !== [...ownership.subagents].sort().join("\0"));
   const runCanonicalLifecycle = (label: string, message: object) => {
     if (canonicalLifecycleDisabled) return;
     setHostError(undefined);
@@ -734,6 +754,54 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     {canonicalSnapshot.readiness.limitations.length > 0 && (
                       <ul>{canonicalSnapshot.readiness.limitations.map((limitation) => <li key={limitation}>{canonicalReadinessLimitationLabel(limitation)}</li>)}</ul>
                     )}
+                  </div>
+                )}
+                {canonicalSnapshot && ownership && (
+                  <div class="ash-ownership" aria-labelledby="ash-ownership-title">
+                    <div class="ash-label" id="ash-ownership-title">{profileLabels.ownershipTitle}</div>
+                    <div class="hint">{profileLabels.ownershipHelp}</div>
+                    {ownership.ownedBy !== undefined
+                      ? <div class="ash-soul-status">{profileLabels.ownershipOwnedBy.replace("{0}", ownership.ownedBy)}</div>
+                      : ownershipRows.length === 0
+                        ? <div class="ash-soul-status">{profileLabels.ownershipNoCandidates}</div>
+                        : (
+                          <>
+                            <ul class="ash-ownership-list">
+                              {ownershipRows.map((child) => {
+                                const checked = (ownershipDraft ?? []).includes(child);
+                                return (
+                                  <li key={child}>
+                                    <label>
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        disabled={canonicalLifecycleDisabled}
+                                        onChange={() => setOwnershipDraft((draft) => {
+                                          const next = new Set(draft ?? []);
+                                          if (next.has(child)) next.delete(child);
+                                          else next.add(child);
+                                          return [...next].sort();
+                                        })}
+                                      />
+                                      <span>{child}</span>
+                                    </label>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                            {ownership.subagents.length === 0 && <div class="hint">{profileLabels.ownershipNone}</div>}
+                            <div class="ash-soul-replace-confirm-actions">
+                              <Button
+                                variant="primary"
+                                disabled={canonicalLifecycleDisabled || !ownershipDirty}
+                                onClick={() => runCanonicalLifecycle(
+                                  "Saving declared subagents",
+                                  setCanonicalProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])]),
+                                )}
+                              >{profileLabels.ownershipApply}</Button>
+                            </div>
+                          </>
+                        )}
                   </div>
                 )}
                 {dirty && <div class="ash-soul-status">{profileLabels.saveFirst}</div>}

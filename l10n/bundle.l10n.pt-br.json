@@ -631,5 +631,11 @@
   "Back to default": "Voltar ao padrão",
   "Idle notifications back to the default": "Notificações de ociosidade de volta ao padrão",
   "Idle notifications turned off": "Notificações de ociosidade desligadas",
-  "Idle notifications after {0} min": "Notificações de ociosidade após {0} min"
+  "Idle notifications after {0} min": "Notificações de ociosidade após {0} min",
+  "Declared subagents": "Subagentes declarados",
+  "Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything.": "A propriedade declarada agrupa estes agentes sob este na barra lateral. Ela não muda quem realmente os inicia, e não inicia nada.",
+  "This agent declares no subagents.": "Este agente não declara subagentes.",
+  "This agent is already declared as a subagent of {0}, so it cannot own others.": "Este agente já está declarado como subagente de {0}, portanto não pode ser dono de outros.",
+  "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.": "Nenhum outro agente está disponível para declarar. Um candidato precisa ser um agente que ninguém mais possui e que não declara subagentes próprios.",
+  "Save declared subagents": "Salvar subagentes declarados"
 }

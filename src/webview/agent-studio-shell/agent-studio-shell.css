@@ -68,6 +68,10 @@
 .ash-soul-delete-confirm ul { margin: 0; padding-left: var(--ds-5); }
 .ash-soul-delete-confirm code { overflow-wrap: anywhere; }
 .ash-soul-delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
+/* t-4c113c — declared subagents picker inside the Agent lifecycle section. */
+.ash-ownership { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-ownership-list { display: grid; gap: var(--ds-1); margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow-y: auto; }
+.ash-ownership-list label { display: flex; align-items: center; gap: var(--ds-2); }
 .ash-soul-replace-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--vscode-focusBorder); border-radius: var(--ds-radius); background: var(--ds-card); }
 .ash-soul-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
 .ash-soul-replace-confirm code { overflow-wrap: anywhere; }
