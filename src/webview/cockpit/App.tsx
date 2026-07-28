@@ -1568,10 +1568,7 @@ export function App(p: CockpitAppProps) {
               {o.agentsRunning}/{o.agentsTotal}
             </div>
           </div>
-          {/* t-e76acc — ONE number for everything waiting on a human, and it is clickable: a count a
-              person cannot act on is how the Approvals counter stayed wrong for so long. The
-              per-kind Approvals metric stays beside it until the unified surface has demonstrably
-              covered both flows (the ratified sequencing: cover first, de-duplicate after). */}
+          {/* t-e76acc / t-bce1ad — ONE actionable number for everything waiting on a human. */}
           <button
             type="button"
             class={`ck-metric ck-metric-btn ${o.inboxPending > 0 ? "warn" : ""}`}
@@ -1581,10 +1578,6 @@ export function App(p: CockpitAppProps) {
             <div class="label">{s.inbox}</div>
             <div class="value">{o.inboxPending}</div>
           </button>
-          <div class={`ck-metric ${o.approvalsPending > 0 ? "warn" : ""}`}>
-            <div class="label">{s.approvals}</div>
-            <div class="value">{o.approvalsPending}</div>
-          </div>
           <div class="ck-metric">
             <div class="label">{s.worktrees}</div>
             <div class="value">{o.worktreesActive}</div>
@@ -1622,14 +1615,8 @@ export function App(p: CockpitAppProps) {
             <Button variant="default" onClick={() => p.onSetSection("inbox")}>
               {s.navInbox}
             </Button>
-            <Button variant="default" onClick={() => p.onSetSection("approvals")}>
-              {s.navApprovals}
-            </Button>
             <Button variant="default" onClick={() => p.onSetSection("mission")}>
               {s.navMission}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("validations")}>
-              {s.navValidations}
             </Button>
             <Button variant="default" data-testid="control-overview-open-handoff" onClick={() => p.onPost(openProjectHandoffAction())}>
               {s.navHandoff}

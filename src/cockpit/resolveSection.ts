@@ -2,9 +2,9 @@
  * spec 410 — pure section id resolution for cockpit nav + serializer restore.
  * Unknown / retired ids fall back to overview (asserted in unit tests).
  */
-import { COCKPIT_SECTION_ORDER, type CockpitSectionId } from "./model.js";
+import { COCKPIT_SECTION_IDS, type CockpitSectionId } from "./model.js";
 
-const SECTION_SET = new Set<string>(COCKPIT_SECTION_ORDER);
+const SECTION_SET = new Set<string>(COCKPIT_SECTION_IDS);
 
 /** Resolve a raw section from panel state, deep-link, or message. */
 export function resolveCockpitSection(raw: unknown, fallback: CockpitSectionId = "overview"): CockpitSectionId {
