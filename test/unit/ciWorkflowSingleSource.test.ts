@@ -58,6 +58,8 @@ describe("CI workflow delegates verification to verify:full (t-dcd8eb)", () => {
   it("verify:full owns the gates CI used to run itself", () => {
     // The list is not decoration: if a gate is dropped from STATIC_GATES, this fails and the drop has
     // to be a deliberate, reviewed decision rather than a silent narrowing of what a push is checked for.
-    expect([...STATIC_GATES].sort()).toEqual(["check:engine-boundary", "typecheck"]);
+    // The same holds for ADDING one — t-62cc44 added `check:source-diffable`, and updating this line is
+    // how that addition gets reviewed rather than arriving on its own.
+    expect([...STATIC_GATES].sort()).toEqual(["check:engine-boundary", "check:source-diffable", "typecheck"]);
   });
 });
