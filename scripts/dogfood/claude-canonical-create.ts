@@ -9,6 +9,10 @@
  * Asserts the product outcome: creation converges (activation succeeds, pointer + authority land)
  * while unselected global keys stay opaque and a selected-family invalid value still fails closed.
  *
+ * t-af504e — `statusLine` moved OUT of that opaque set: it belongs to the Interface family now, so
+ * the private home preserves the person's status line instead of blanking it. The rest of the
+ * 0.56.109 key list is unchanged and still has to stay opaque.
+ *
  * Run: npm run dogfood:claude-canonical-create
  */
 import crypto from "node:crypto";
@@ -175,11 +179,15 @@ console.log(`   ambient global keys: ${Object.keys(AMBIENT_GLOBAL_SETTINGS).join
       { authority: run.authority.records.get(AGENT)?.revision },
     ));
     checks.push(report(
-      "only allowlisted keys projected; ambient keys stayed opaque",
+      "only allowlisted keys projected (incl. statusLine); ambient keys stayed opaque",
       JSON.stringify(lastProjection) === JSON.stringify({
         adapter: "claude",
         selectors: {},
-        settings: { theme: "dark", alwaysThinkingEnabled: true },
+        settings: {
+          theme: "dark",
+          statusLine: AMBIENT_GLOBAL_SETTINGS.statusLine,
+          alwaysThinkingEnabled: true,
+        },
       }),
       lastProjection,
     ));

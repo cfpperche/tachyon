@@ -26,6 +26,13 @@ const FAMILY_KEYS: Record<ClaudeScalarFamily, readonly string[]> = {
     "spinnerTipsEnabled",
     "showTurnDuration",
     "terminalProgressBarEnabled",
+    // t-af504e — the private home replaces the person's `~/.claude/settings.json` wholesale
+    // (`CLAUDE_CONFIG_DIR` + `--setting-sources user`), so a status line that is not projected is a
+    // status line the canonical agent loses. Codex already projects `tui.status_line` under the same
+    // Interface family; leaving this one out made two agents with identical authored policy behave
+    // differently. The value carries a command rather than a scalar, so `statusLineRejection` holds
+    // it to the exact shape the capture transport can wrap.
+    "statusLine",
   ],
   featureFlags: ["alwaysThinkingEnabled"],
 };
@@ -105,9 +112,60 @@ function permissionsRejection(value: unknown, authorized: ReadonlySet<string>): 
   return undefined;
 }
 
+const STATUS_LINE_FIELDS = ["type", "command", "padding"] as const;
+/**
+ * Bounds copied from `ClaudeStatusLineCaptureTransport`'s own parser rather than imported, so the
+ * config layer keeps no dependency on runtime observability. They must stay equal: a value this
+ * projector accepts but that parser refuses makes `resolveEffectiveStatusLine` fail closed, and the
+ * agent silently loses BOTH its status line and rate-limit capture instead of being told why.
+ */
+const MAX_STATUS_LINE_COMMAND_BYTES = 4 * 1024;
+const MAX_STATUS_LINE_PADDING = 10;
+
+/**
+ * Locate the exact offending subkey inside a status line, on the `permissionsRejection` model: this
+ * value reaches a private home from the person's own global settings, so a refusal has to say which
+ * of three subkeys is at fault instead of failing the whole agent with "unsupported value".
+ */
+function statusLineRejection(value: unknown): ValueRejection | undefined {
+  if (!isRecord(value)) return { path: "statusLine", reason: `must be an object, got ${describe(value)}` };
+  for (const key of Object.keys(value)) {
+    if (!(STATUS_LINE_FIELDS as readonly string[]).includes(key)) {
+      return {
+        path: `statusLine.${key}`,
+        reason: `is not a projectable status line field (supported: ${STATUS_LINE_FIELDS.join(", ")})`,
+      };
+    }
+  }
+  if (value.type !== "command") {
+    return { path: "statusLine.type", reason: `must be 'command', got ${describe(value.type)}` };
+  }
+  if (typeof value.command !== "string" || value.command.length === 0) {
+    return { path: "statusLine.command", reason: `must be a non-empty string, got ${describe(value.command)}` };
+  }
+  if (value.command.includes("\0") || Buffer.byteLength(value.command) > MAX_STATUS_LINE_COMMAND_BYTES) {
+    return {
+      path: "statusLine.command",
+      reason: `must be free of NUL bytes and at most ${MAX_STATUS_LINE_COMMAND_BYTES} bytes`,
+    };
+  }
+  if (value.padding !== undefined) {
+    if (!Number.isSafeInteger(value.padding)
+      || (value.padding as number) < 0
+      || (value.padding as number) > MAX_STATUS_LINE_PADDING) {
+      return {
+        path: "statusLine.padding",
+        reason: `must be an integer between 0 and ${MAX_STATUS_LINE_PADDING}, got ${describe(value.padding)}`,
+      };
+    }
+  }
+  return undefined;
+}
+
 /** Why `key` cannot be projected, or undefined when it can. */
 function valueRejection(key: string, value: unknown, authorized: ReadonlySet<string>): ValueRejection | undefined {
   if (key === "permissions") return permissionsRejection(value, authorized);
+  if (key === "statusLine") return statusLineRejection(value);
   if (key === "theme") {
     return typeof value === "string" ? undefined : { path: key, reason: `must be a string, got ${describe(value)}` };
   }
@@ -172,7 +230,7 @@ export function projectClaudeNativeConfig(
     const selectedKeys = new Set(selected.flatMap((family) => FAMILY_KEYS[family]));
     // Workspace settings are project-owned, so an unselected key there is ambient tooling the
     // profile must refuse rather than silently drop. The global file is the person's own Claude
-    // config and legitimately carries unrelated keys ($schema, statusLine, tui, ...); those stay
+    // config and legitimately carries unrelated keys ($schema, tui, switchModelsOnFlag, ...); those stay
     // opaque and unauthored instead of blocking activation. Mirrors the Codex projector, which
     // enforces this allowlist for 'workspace' only.
     if (source === "workspace") {

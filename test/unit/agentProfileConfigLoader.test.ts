@@ -337,6 +337,10 @@ describe("loadProfileAwareConfig", () => {
     fs.writeFileSync(path.join(root, ".claude", "settings.json"), JSON.stringify({
       permissions: { allow: ["Read"], deny: ["Bash(rm:*)"] },
       prefersReducedMotion: true,
+      // t-af504e — a selected Interface family projects the status line from EITHER source, the
+      // same posture the Codex projector takes with `tui.status_line`. Selecting `workspace` is
+      // what authorizes project-owned config to supply it; it is never picked up unselected.
+      statusLine: { type: "command", command: "workspace-status" },
       alwaysThinkingEnabled: false,
     }));
     fs.writeFileSync(path.join(root, ".claude", "settings.local.json"), JSON.stringify({
@@ -363,6 +367,7 @@ describe("loadProfileAwareConfig", () => {
       settings: {
         permissions: { allow: ["Read"], deny: ["Bash(rm:*)"] },
         prefersReducedMotion: true,
+        statusLine: { type: "command", command: "workspace-status" },
         alwaysThinkingEnabled: false,
       },
     });
@@ -460,11 +465,95 @@ describe("loadProfileAwareConfig", () => {
     }), { homeDir });
 
     expect(result.errors).toEqual([]);
+    // `statusLine` belongs to the selected Interface family (t-af504e), so it is projected here;
+    // the rest of the personal file stays opaque and unauthored instead of blocking activation.
     expect(asAgent(result.config?.agents.codex)?.profileNativeConfig).toEqual({
       adapter: "claude",
       selectors: {},
-      settings: { theme: "dark", alwaysThinkingEnabled: true },
+      settings: {
+        theme: "dark",
+        statusLine: { type: "command", command: "personal-status" },
+        alwaysThinkingEnabled: true,
+      },
     });
+  });
+
+  it("t-af504e: projects the global status line so a private home does not silently drop it", () => {
+    const root = temporaryRoot("tachyon-agent-profile-claude-statusline-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-claude-statusline-home-");
+    fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+    fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({
+      statusLine: { type: "command", command: "bash ~/.claude/statusline-command.sh", padding: 1 },
+      theme: "dark",
+    }));
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const bytes = writeProfile(root, {
+      runtime: { adapter: "claude", executable: "claude" },
+      nativeConfig: {
+        interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+      },
+    });
+
+    const result = load(root, authority(bytes, {
+      runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+    }), { homeDir });
+
+    expect(result.errors).toEqual([]);
+    // Optional `padding` survives: the capture transport carries it through to the wrapper setting.
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig?.settings).toEqual({
+      theme: "dark",
+      statusLine: { type: "command", command: "bash ~/.claude/statusline-command.sh", padding: 1 },
+    });
+  });
+
+  it("t-af504e: names the offending status line subkey instead of failing the whole agent", () => {
+    const lifecycle = ["fresh", "restart", "resume", "fork"];
+    const cases: Array<[string, unknown, string]> = [
+      ["not-an-object", "bash x", "Claude global key 'statusLine' must be an object, got 'bash x'"],
+      [
+        "unknown-subkey",
+        { type: "command", command: "x", theme: "dark" },
+        "Claude global key 'statusLine.theme' is not a projectable status line field"
+          + " (supported: type, command, padding)",
+      ],
+      [
+        "wrong-type",
+        { type: "static", command: "x" },
+        "Claude global key 'statusLine.type' must be 'command', got 'static'",
+      ],
+      [
+        "empty-command",
+        { type: "command", command: "" },
+        "Claude global key 'statusLine.command' must be a non-empty string, got ''",
+      ],
+      [
+        "bad-padding",
+        { type: "command", command: "x", padding: 99 },
+        "Claude global key 'statusLine.padding' must be an integer between 0 and 10, got 99",
+      ],
+    ];
+
+    for (const [label, statusLine, expected] of cases) {
+      const root = temporaryRoot(`tachyon-agent-profile-claude-statusline-${label}-`);
+      const homeDir = temporaryRoot(`tachyon-agent-profile-claude-statusline-${label}-home-`);
+      fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+      fs.writeFileSync(path.join(homeDir, ".claude", "settings.json"), JSON.stringify({ statusLine }));
+      const bytes = writeProfile(root, {
+        runtime: { adapter: "claude", executable: "claude" },
+        nativeConfig: {
+          interface: { source: "global", treatment: "overlay", refresh: "every-launch", lifecycle },
+        },
+      });
+
+      const result = load(root, authority(bytes, {
+        runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
+      }), { homeDir });
+
+      expect(result.config, label).toBeUndefined();
+      // Every refusal names the subkey and the way out, exactly like the permissions path (t-111190).
+      expect(result.errors.join("\n"), label).toContain(expected);
+      expect(result.errors.join("\n"), label).toContain("set the Interface family to Exclude");
+    }
   });
 
   it("still rejects an invalid value on a selected Claude global family", () => {
