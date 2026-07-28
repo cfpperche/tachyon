@@ -352,6 +352,15 @@ export interface BridgeDeps {
   onTaskNotificationEvent?: (event: TaskNotificationEvent) => void;
   /** Fired after any validation mutation — wired to Mission Control refresh. */
   onValidationsChanged?: () => void;
+  /**
+   * t-e76acc — fired when work lands on a HUMAN: a validation created with `executor: "human"`, or
+   * one handed to a human by an update. The measured asymmetry this closes (report § 1.1) is that an
+   * approval notifies its human and a validation never did — so the same notice/badge treatment
+   * applies here, and DELIBERATELY not the injection semantics: resolving an approval writes into the
+   * requester's tmux session because an agent is blocked on it, while a validation is evidence
+   * waiting to be read and nothing is blocked on it.
+   */
+  onHumanValidationPending?: (validation: { id: string; title: string; author: string }) => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
   /** One-shot command runner — enables run_command/list_commands. */
@@ -4075,8 +4084,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ title, type, executor, priority, assignee, instructions, source_refs, agent }) => {
       try {
-        const validation = await deps.validations.create({ title, author: agent ?? "human", type, executor, priority, assignee, instructions, source_refs });
+        const author = agent ?? "human";
+        const validation = await deps.validations.create({ title, author, type, executor, priority, assignee, instructions, source_refs });
         deps.onValidationsChanged?.();
+        if (validation.executor === "human") {
+          deps.onHumanValidationPending?.({ id: validation.id, title: validation.title, author });
+        }
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {
         return fail(err);
@@ -4126,8 +4139,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (changedFields.length === 0) {
           throw new Error("update_validation requires at least one field");
         }
+        // read BEFORE the write, so the signal fires on the transition rather than on every patch of
+        // an already-human validation (a re-titled one must not re-notify).
+        let wasHuman: boolean | undefined;
+        try {
+          wasHuman = deps.validations.get(id).executor === "human";
+        } catch {
+          /* the update below reports the real failure */
+        }
         const validation = await deps.validations.update(id, { ...patch, actor: validationActor(deps) });
         deps.onValidationsChanged?.();
+        if (validation.executor === "human" && wasHuman === false) {
+          const actor = validationActor(deps);
+          deps.onHumanValidationPending?.({
+            id: validation.id,
+            title: validation.title,
+            // who handed it over, in the same self-declared terms the record itself uses
+            author: actor.kind === "agent" && actor.name ? actor.name : "human",
+          });
+        }
         return ok(JSON.stringify(validation, null, 2));
       } catch (err) {
         return fail(err);
