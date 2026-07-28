@@ -50,9 +50,13 @@ import {
   type PortableAgentProfileBytes,
 } from "../config/agentProfileBundle.js";
 import {
+  agentOwnershipView,
   createProfileFromStudioMutation,
+  ownershipPatchFromStudioMutation,
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
+  type AgentOwnershipRosterV1,
+  type AgentOwnershipViewV1,
   type AgentProfileStudioLifecycleMutationV1,
   type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
@@ -5218,15 +5222,64 @@ export class Workspace {
       await this.renameAgent(mutation.agentName, mutation.newName, mutation.expectedRevision);
       return { schemaVersion: 1, kind: "snapshot", snapshot: await this.inspectAgentProfileStudio(mutation.newName) };
     }
+    if (mutation.operation === "set-subagents") {
+      const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+      const patch = ownershipPatchFromStudioMutation(mutation, current, this.agentOwnershipRoster());
+      // Ownership is the one canonical field with NO runtime lifecycle role (spec 352): it derives
+      // `declaredOwner` for the roster/sidebar and never seeds spawn lineage, so the running owner's
+      // session cannot diverge from it. Requiring a stop here would mean an agent could never declare
+      // its own team while it works, which is the case t-4c113c exists to serve.
+      const result = await this.runAgentProfileLifecycleCommit({
+        agentName: mutation.agentName,
+        operation: "edit",
+        expectedRevision: mutation.expectedRevision,
+        patch,
+      });
+      return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
+    }
     if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
     const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
     return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
+  }
+
+  /**
+   * t-4c113c — roster facts for declared-ownership validation and for the Agent Form's picker.
+   *
+   * Read from the LOADED config rather than from the canonical profile files: `agents.<n>.subagents`
+   * is what the projection publishes and what `declaredOwner` (and therefore the sidebar) is built
+   * from, so validating against anything else would let Studio accept a declaration the roster then
+   * rejects. Terminals are kept, with their kind, because targeting one is its own named refusal.
+   */
+  agentOwnershipRoster(): AgentOwnershipRosterV1 {
+    return Object.entries(this.config?.agents ?? {}).map(([name, entry]) => {
+      const agent = asAgent(entry);
+      return {
+        name,
+        kind: agent ? "agent" as const : "terminal" as const,
+        subagents: [...(agent?.subagents ?? [])],
+      };
+    });
+  }
+
+  async agentOwnershipView(agentName: string): Promise<AgentOwnershipViewV1> {
+    return agentOwnershipView(agentName, this.agentOwnershipRoster());
   }
 
   async commitAgentProfileLifecycle(
     input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
   ): Promise<AgentProfileLifecycleCommitResult> {
     await this.assertAgentStoppedForProfileMutation(input.agentName);
+    return this.runAgentProfileLifecycleCommit(input);
+  }
+
+  /**
+   * The transaction itself, without the stopped-agent precondition. Only a mutation that provably
+   * cannot diverge from a live session may call this directly — today that is `set-subagents`
+   * (see `commitAgentProfileStudioLifecycle`). Everything else goes through the public method.
+   */
+  private async runAgentProfileLifecycleCommit(
+    input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
+  ): Promise<AgentProfileLifecycleCommitResult> {
     const result = await commitCanonicalAgentProfileLifecycle({
       ...input,
       workspaceRoot: this.workspaceRoot,

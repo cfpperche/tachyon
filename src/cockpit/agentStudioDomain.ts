@@ -31,6 +31,7 @@ import {
   evolutionSummaryMessage,
   canonicalProfileErrorMessage,
   canonicalProfileForgottenMessage,
+  canonicalProfileOwnershipMessage,
   canonicalProfileSnapshotMessage,
   canonicalProfileBundleCreatedMessage,
   canonicalProfileBundleErrorMessage,
@@ -97,6 +98,16 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
+  if (m.type === "setCanonicalProfileSubagents") {
+    void runCanonicalProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "set-subagents",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      subagents: [...m.subagents],
+    });
+    return;
+  }
   if (m.type === "forgetCanonicalProfile") {
     void runCanonicalProfileAction(ws, ctx, {
       schemaVersion: 1,
@@ -148,9 +159,20 @@ function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown
 async function refreshCanonicalProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
   try {
     ctx.post(canonicalProfileSnapshotMessage("refresh", await ws.inspectAgentProfileStudio(agent)));
+    await postOwnership(ws, ctx, agent);
   } catch (error) {
     postCanonicalProfileError(ctx, agent, error);
   }
+}
+
+/**
+ * t-4c113c — declared ownership travels beside the snapshot rather than inside it. The snapshot is
+ * an engine↔shell payload with an exact protocol version, and widening it would make a current
+ * engine undecodable to the previous shell (the 0.56.110 D1 failure); this message never leaves the
+ * extension↔webview pair, which always ships as one bundle.
+ */
+async function postOwnership(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
+  ctx.post(canonicalProfileOwnershipMessage(agent, await ws.agentOwnershipView(agent)));
 }
 
 async function runCanonicalProfileAction(
@@ -165,6 +187,7 @@ async function runCanonicalProfileAction(
       return;
     }
     ctx.post(canonicalProfileSnapshotMessage(mutation.operation === "forget" ? "refresh" : mutation.operation, result.snapshot));
+    if (mutation.operation === "set-subagents") await postOwnership(ws, ctx, mutation.agentName);
   } catch (error) {
     postCanonicalProfileError(ctx, mutation.agentName, error);
     if (isRevisionConflict(error)) await refreshCanonicalProfile(ws, ctx, mutation.agentName);

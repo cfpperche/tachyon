@@ -195,5 +195,11 @@
   "Back to default": "Back to default",
   "Idle notifications back to the default": "Idle notifications back to the default",
   "Idle notifications turned off": "Idle notifications turned off",
-  "Idle notifications after {0} min": "Idle notifications after {0} min"
+  "Idle notifications after {0} min": "Idle notifications after {0} min",
+  "Declared subagents": "Declared subagents",
+  "Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything.": "Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything.",
+  "This agent declares no subagents.": "This agent declares no subagents.",
+  "This agent is already declared as a subagent of {0}, so it cannot own others.": "This agent is already declared as a subagent of {0}, so it cannot own others.",
+  "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.": "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.",
+  "Save declared subagents": "Save declared subagents"
 }

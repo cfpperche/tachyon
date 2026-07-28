@@ -96,6 +96,8 @@ export async function executeExtensionQuery(
       return json(workspace.legacyDeliveryRetirement.preview());
     case "agent-profile.studio-inspect":
       return json(await workspace.inspectAgentProfileStudio(query.agent));
+    case "agent-profile.studio-ownership":
+      return json(await workspace.agentOwnershipView(query.agent));
     case "agent-profile.studio-bundle-export": {
       const exported = await workspace.exportAgentProfileStudioBundle(query.agent, query.expectedRevision);
       return json({

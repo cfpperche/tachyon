@@ -70,7 +70,10 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
     if (def.profileLifecycle || def.profilePointer) {
       try {
         const profile = await this.ws.inspectAgentProfileStudio(entityId);
-        return { status: "ok", entity: { name: entityId, storage: "canonical", profile, fields: canonicalAgentFields(profile), ...reference } };
+        // t-4c113c — declared ownership is roster-derived, not part of the profile snapshot; the form
+        // needs both at mount so the picker can open without a second round trip.
+        const ownership = await this.ws.agentOwnershipView(entityId);
+        return { status: "ok", entity: { name: entityId, storage: "canonical", profile, ownership, fields: canonicalAgentFields(profile), ...reference } };
       } catch (error) {
         return { status: "error", error: error instanceof Error ? error.message : String(error) };
       }

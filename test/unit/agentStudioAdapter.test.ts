@@ -87,6 +87,7 @@ function fakeWorkspace(opts: {
       return opts.submitResult;
     },
     inspectAgentProfileStudio: async () => opts.inspectResult ?? profileSnapshot(),
+    agentOwnershipView: async () => ({ subagents: [], candidates: [] }),
     commitAgentProfileStudio: opts.commit ?? (async (mutation: AgentProfileStudioMutationV1) => profileSnapshot(mutation.agentName)),
   } as unknown as WorkspaceAgentStudioTarget;
   return { ws, submits };

@@ -5,11 +5,12 @@ import type {
   EvolutionStudioSummary,
 } from "../../evolution/studioProjection.js";
 import type {
+  AgentOwnershipViewV1,
   AgentProfileStudioMutationV1,
   AgentProfileStudioSnapshotV1,
 } from "../../config/agentProfileStudio.js";
-import { isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
-import { agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
+import { AGENT_OWNERSHIP_MAX_SUBAGENTS, isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
+import { agentOwnershipViewSchemaV1, agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
 import {
   claudeScalarNativeConfigPolicy,
   claudeSelectorNativeConfigPolicy,
@@ -74,6 +75,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "setCanonicalProfileEnabled",
   "renameCanonicalProfile",
   "forgetCanonicalProfile",
+  "setCanonicalProfileSubagents",
   "exportCanonicalProfileBundle",
   "cloneCanonicalProfileBundle",
   "importCanonicalProfileBundle",
@@ -90,6 +92,7 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "evolutionError",
   "canonicalProfileSnapshot",
   "canonicalProfileForgotten",
+  "canonicalProfileOwnership",
   "canonicalProfileError",
   "canonicalProfileBundleExport",
   "canonicalProfileBundleCreated",
@@ -155,7 +158,9 @@ export type AgentStudioLifecycleActionMessage =
   | { type: "refreshCanonicalProfile"; agent: string }
   | { type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
   | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
-  | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string };
+  | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string }
+  /** t-4c113c — the owner's full declared-subagents list; an empty list clears the declaration. */
+  | { type: "setCanonicalProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] };
 
 export type AgentStudioBundleActionMessage =
   | { type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }
@@ -227,6 +232,15 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       && typeof value.confirmation === "string" && AGENT_NAME_RE.test(value.confirmation)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       ? { type: "forgetCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, confirmation: value.confirmation }
+      : undefined;
+  }
+  if (value.type === "setCanonicalProfileSubagents") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "subagents"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && Array.isArray(value.subagents) && value.subagents.length <= AGENT_OWNERSHIP_MAX_SUBAGENTS
+      && value.subagents.every((child) => typeof child === "string" && AGENT_NAME_RE.test(child))
+      ? { type: "setCanonicalProfileSubagents", agent: value.agent, expectedRevision: value.expectedRevision, subagents: [...value.subagents as string[]] }
       : undefined;
   }
   if (value.type === "refreshEvolution") {
@@ -387,7 +401,7 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   const value = raw as Record<string, unknown>;
   if (value.type === "canonicalProfileSnapshot") {
     return exactKeys(value, ["type", "action", "snapshot"])
-      && ["refresh", "set-enabled", "rename"].includes(String(value.action))
+      && ["refresh", "set-enabled", "rename", "set-subagents"].includes(String(value.action))
       && isAgentProfileStudioSnapshotV1(value.snapshot);
   }
   if (value.type === "canonicalProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
@@ -397,6 +411,11 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
       && typeof value.message === "string" && value.message.length <= 2_000 && typeof value.conflict === "boolean";
+  }
+  if (value.type === "canonicalProfileOwnership") {
+    return exactKeys(value, ["type", "agent", "ownership"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && agentOwnershipViewSchemaV1.safeParse(value.ownership).success;
   }
   if (value.type === "canonicalProfileForgotten") {
     return exactKeys(value, ["type", "agent", "agentId"])
@@ -458,6 +477,8 @@ export interface AgentStudioEntity {
   storage?: "legacy" | "canonical";
   /** Present only for canonical storage; redacted and never accepted as a save payload. */
   profile?: AgentProfileStudioSnapshotV1;
+  /** t-4c113c — declared ownership for this agent, host-composed alongside the canonical snapshot. */
+  ownership?: AgentOwnershipViewV1;
   chips: QuickAddChip[];
   flagMap: Record<string, string[]>;
   defaultCwd: string;
@@ -492,6 +513,12 @@ export interface AgentProfileLabels {
   retryRefresh: string;
   rename: string;
   forget: string;
+  ownershipTitle: string;
+  ownershipHelp: string;
+  ownershipNone: string;
+  ownershipOwnedBy: string;
+  ownershipNoCandidates: string;
+  ownershipApply: string;
   export: string;
   clone: string;
   import: string;
@@ -650,6 +677,12 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     enabled: t("Enabled"), disabled: t("Disabled"), closed: t("Closed"), degraded: t("Degraded"), conflict: t("Conflict"),
     enableAgent: t("Enable agent"), disableAgent: t("Disable agent"), refresh: t("Refresh"), retryRefresh: t("Refresh and retry"),
     rename: t("Rename…"), forget: t("Forget…"), export: t("Export"), clone: t("Clone…"), import: t("Import…"),
+    ownershipTitle: t("Declared subagents"),
+    ownershipHelp: t("Declared ownership groups these agents under this one in the sidebar. It does not change who actually spawns them, and it does not start anything."),
+    ownershipNone: t("This agent declares no subagents."),
+    ownershipOwnedBy: t("This agent is already declared as a subagent of {0}, so it cannot own others."),
+    ownershipNoCandidates: t("No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own."),
+    ownershipApply: t("Save declared subagents"),
     saveFirst: t("Save or discard form changes before a lifecycle action."),
     newAgentSetupHelp: t("Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling."),
     provenanceTitle: t("Profile sources and authority"),
