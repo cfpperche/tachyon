@@ -68,14 +68,25 @@ export function nativeConfigAuthorizations(
 const CODEX_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 const CLAUDE_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
 /**
- * t-26f508 — fork is deliberately absent. Grok HAS a native `--fork-session`, but the canonical
- * private-home materializer is not on the fork path (`commitFork` treats only Pi and Claude as
- * managed private forks), so a forked canonical Grok agent would receive an unprojected home. A
- * lifecycle phase listed here is a claim that the projection is regenerated in that phase; listing
- * `fork` would make that claim false. `AgentManager.commitFork` refuses the operation outright
- * instead of shipping a silently degraded sibling.
+ * t-ee5c05 — `fork` was absent under t-26f508 and is now claimed, because the thing it claims is now
+ * true: `commitFork` materializes the canonical Grok private home, seeds the source session directory
+ * into it, and co-binds `HOME` under exact trust.
  */
-const GROK_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
+const GROK_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume", "fork"] as const;
+
+/**
+ * The lifecycle a canonical Grok profile authored under t-26f508 carries, still admitted.
+ *
+ * Adding `fork` to the current tuple would otherwise refuse every profile written in between — and a
+ * refused profile is not a refused agent: `loadProfileAwareConfig` returns errors for the WHOLE
+ * config, so it would stop the entire roster from loading, with no in-product repair. That is the
+ * exact upgrade hazard the inspector supersession lane was added for, and it applies here for the
+ * same reason. Accepting it is safe in the direction that matters: a three-phase policy CLAIMS LESS
+ * than the runtime now does, so an agent authored under it gets a projection on fork that its profile
+ * never promised, never the reverse. Agent Studio writes the four-phase tuple, so the legacy shape
+ * disappears as profiles are re-saved rather than being migrated by a special pass.
+ */
+const GROK_LEGACY_NATIVE_CONFIG_LIFECYCLE = ["fresh", "restart", "resume"] as const;
 export const CLAUDE_SCALAR_NATIVE_CONFIG_FAMILIES = [
   "permissions",
   "interface",
@@ -310,6 +321,12 @@ export function projectAgentNativeConfig(
 const CODEX_AGENT_SELECTOR_LIFECYCLE = new Set(CODEX_NATIVE_CONFIG_LIFECYCLE);
 const CLAUDE_ALL_LIFECYCLE = new Set(CLAUDE_NATIVE_CONFIG_LIFECYCLE);
 const GROK_ALL_LIFECYCLE = new Set(GROK_NATIVE_CONFIG_LIFECYCLE);
+const GROK_LEGACY_LIFECYCLE = new Set(GROK_LEGACY_NATIVE_CONFIG_LIFECYCLE);
+
+/** Either the current Grok lifecycle tuple or the still-admitted t-26f508 one. */
+function hasGrokLifecycle(actual: AgentNativeConfigPolicyV1["lifecycle"]): boolean {
+  return hasExactLifecycle(actual, GROK_ALL_LIFECYCLE) || hasExactLifecycle(actual, GROK_LEGACY_LIFECYCLE);
+}
 
 function hasExactLifecycle(actual: AgentNativeConfigPolicyV1["lifecycle"], expected: ReadonlySet<string>): boolean {
   return actual.length === expected.size && actual.every((phase) => expected.has(phase));
@@ -408,7 +425,7 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
       reason: `Codex declares filtered ${policy.source} ${family} projection for fresh, restart and resume`,
     };
   }
-  if (adapter === "grok" && hasExactLifecycle(policy.lifecycle, GROK_ALL_LIFECYCLE)) {
+  if (adapter === "grok" && hasGrokLifecycle(policy.lifecycle)) {
     if (
       family === "selectors"
       && policy.source === "agent"
@@ -417,7 +434,7 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
     ) {
       return {
         support: "supported",
-        reason: "Grok declares typed agent selectors for fresh, restart and resume",
+        reason: "Grok declares typed agent selectors for fresh, restart, resume and fork",
       };
     }
     if (
@@ -428,7 +445,7 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
     ) {
       return {
         support: "supported",
-        reason: `Grok declares filtered global ${family} projection for fresh, restart and resume`,
+        reason: `Grok declares filtered global ${family} projection for fresh, restart, resume and fork`,
       };
     }
     if (
@@ -438,7 +455,7 @@ export const resolveAgentNativeConfigSupport: AgentNativeConfigSupportResolver =
     ) {
       return {
         support: "supported",
-        reason: `Grok explicitly keeps ${family} outside authored native configuration for fresh, restart and resume`,
+        reason: `Grok explicitly keeps ${family} outside authored native configuration for fresh, restart, resume and fork`,
       };
     }
   }

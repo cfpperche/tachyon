@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "@iarna/toml";
 import {
   defaultGrokNativeConfigPolicy,
+  grokExcludedNativeConfigPolicy,
   grokScalarNativeConfigPolicy,
   grokSelectorNativeConfigPolicy,
   resolveAgentNativeConfigSupport,
@@ -66,13 +67,31 @@ describe("Grok native configuration admission", () => {
     }
   });
 
-  it("declares fresh/restart/resume and refuses a fork claim", () => {
+  it("t-ee5c05: declares fork, and still admits the t-26f508 three-phase tuple", () => {
+    expect(grokSelectorNativeConfigPolicy().lifecycle).toEqual(["fresh", "restart", "resume", "fork"]);
     expect(resolveAgentNativeConfigSupport("grok", "selectors", grokSelectorNativeConfigPolicy()).support)
       .toBe("supported");
-    expect(resolveAgentNativeConfigSupport("grok", "selectors", {
-      ...grokSelectorNativeConfigPolicy(),
-      lifecycle: ["fresh", "restart", "resume", "fork"],
-    }).support).toBe("unsupported");
+
+    // A profile authored before fork was covered must keep loading. It is not merely that agent at
+    // stake: an unsupported family fails the WHOLE config, so refusing the legacy tuple would stop the
+    // entire roster. Safe because the older tuple CLAIMS LESS than the runtime now does.
+    for (const family of ["selectors", "permissions", "interface", "featureFlags", "tooling", "memory", "authentication"] as const) {
+      const current = family === "selectors"
+        ? grokSelectorNativeConfigPolicy()
+        : family === "permissions" || family === "interface" || family === "featureFlags"
+          ? grokScalarNativeConfigPolicy("global")
+          : grokExcludedNativeConfigPolicy(family);
+      expect(resolveAgentNativeConfigSupport("grok", family, current).support).toBe("supported");
+      expect(resolveAgentNativeConfigSupport("grok", family, {
+        ...current,
+        lifecycle: ["fresh", "restart", "resume"],
+      }).support, `legacy ${family} tuple`).toBe("supported");
+      // A tuple that is neither shape is still refused — this is compatibility, not "any lifecycle".
+      expect(resolveAgentNativeConfigSupport("grok", family, {
+        ...current,
+        lifecycle: ["fresh", "fork"],
+      }).support).toBe("unsupported");
+    }
   });
 
   it("admits the default profile policy whole, including the three refusals", () => {
