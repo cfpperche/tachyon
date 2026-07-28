@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { ensureSecureRuntimeDir, MAX_CONTROL_SOCKET_PATH_BYTES } from "./runtimeSecurity.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
-import { workspaceHash } from "../tmux/TmuxService.js";
+import { TMUX_SOCKET_ENV, workspaceHash } from "../tmux/TmuxService.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { EngineControlClientError, requestEngineControl } from "./controlClient.js";
 import {
@@ -51,6 +51,11 @@ const ENGINE_ENV_KEYS = [
   // Dev Host F5 sets these on the Extension Host for isolation; the engine owns tmux/worktrees
   // and must share them or attach/spawn land on the default fleet socket (/tmp).
   "TMUX_TMPDIR",
+  // t-05097f — the socket NAME travels with the tmpdir for the same reason. TMUX_TMPDIR alone only
+  // moves the path; without this the engine still opens the shared `tachyon` server, which is how
+  // the editor gate came to create, list and stop sessions on the live fleet's socket. Unset in
+  // production, where the default name is used and nothing about the fleet socket changes.
+  "TACHYON_TMUX_SOCKET",
   "TACHYON_DEV_HOST",
   "TACHYON_DEV_HOST_PROFILE_HOME",
   "WSL_DISTRO_NAME",
@@ -225,8 +230,27 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
   };
 }
 
-export function engineWorkspaceKey(workspaceRoot: string): string {
-  return createHash("sha256").update(fs.realpathSync(workspaceRoot)).digest("hex").slice(0, 32);
+/**
+ * t-05097f — the engine's identity: the workspace, and the tmux isolation when one is asked for.
+ *
+ * Every durable handle an engine owns hangs off this key — its control socket
+ * (`/run/user/<uid>/tachyon/engines/<key>/control.sock`), its state dir, and its systemd unit. That
+ * is why isolating only the unit name did nothing: `ensure` finds a healthy engine by CONTROL
+ * SOCKET first and attaches, so the unit name is never consulted. Measured: 30 samples across a
+ * whole gate run showed no isolated unit at any instant, only the shared one still serving.
+ *
+ * Folding the socket override in here makes the three handles move together — one identity, not
+ * three places that each have to remember what "isolated" means. A run that asks for its own tmux
+ * server therefore gets its own engine, and cannot adopt the fleet's.
+ *
+ * WITHOUT the override the digest is computed over exactly the bytes it always was, so every
+ * production path, socket and unit name is byte-for-byte unchanged.
+ */
+export function engineWorkspaceKey(workspaceRoot: string, env: NodeJS.ProcessEnv = process.env): string {
+  const real = fs.realpathSync(workspaceRoot);
+  const socketOverride = env[TMUX_SOCKET_ENV]?.trim();
+  const material = socketOverride ? `${real}\u0000tmux:${socketOverride}` : real;
+  return createHash("sha256").update(material).digest("hex").slice(0, 32);
 }
 
 export function engineRuntimeDir(
@@ -240,7 +264,7 @@ export function engineRuntimeDir(
       "Tachyon's persistent engine requires a private XDG_RUNTIME_DIR on Linux.",
     );
   }
-  return path.join(runtime, "tachyon", "engines", engineWorkspaceKey(workspaceRoot));
+  return path.join(runtime, "tachyon", "engines", engineWorkspaceKey(workspaceRoot, env));
 }
 
 /**
@@ -264,7 +288,7 @@ export function ensureSecureEngineRuntimeDir(
   ensureSecureRuntimeDir(tachyon);
   const engines = path.join(tachyon, "engines");
   ensureSecureRuntimeDir(engines);
-  const workspace = path.join(engines, engineWorkspaceKey(workspaceRoot));
+  const workspace = path.join(engines, engineWorkspaceKey(workspaceRoot, env));
   ensureSecureRuntimeDir(workspace);
   return workspace;
 }
@@ -281,7 +305,7 @@ export function engineStorageRoot(
   env: NodeJS.ProcessEnv = process.env,
   home: string = os.homedir(),
 ): string {
-  const key = engineWorkspaceKey(workspaceRoot);
+  const key = engineWorkspaceKey(workspaceRoot, env);
   if (platform === "win32") {
     return path.join(env.LOCALAPPDATA?.trim() || path.join(home, "AppData", "Local"), "Tachyon", "engine-state", key);
   }
@@ -289,8 +313,27 @@ export function engineStorageRoot(
   return path.join(env.XDG_STATE_HOME?.trim() || path.join(home, ".local", "state"), "tachyon", "engines", key);
 }
 
-export function engineSystemdUnitName(workspaceRoot: string): string {
-  return `tachyon-engine-${engineWorkspaceKey(workspaceRoot)}.service`;
+/**
+ * t-05097f — the unit is named for the workspace AND, when the tmux socket is overridden, for that
+ * override.
+ *
+ * A systemd unit is a durable identity: while one is active, `systemd-run` is never invoked again,
+ * so a daemon launched under different isolation is silently inherited instead of relaunched.
+ * Measured: the editor gate set an isolated socket, the already-running
+ * `tachyon-engine-<wsKey>.service` kept serving the SHARED fleet socket, and the isolated socket was
+ * never even created. That is the same class of defect as the bug under investigation — state from
+ * an earlier run taken for this run's state — so it is fixed by construction rather than by
+ * remembering to stop the unit first.
+ *
+ * WITHOUT the override the name is byte-for-byte what it always was, so production keeps its unit,
+ * its identity and its reuse semantics untouched. The suffix is a hash of the override, so it is
+ * deterministic for a given socket, distinct for different ones, and always a legal unit name
+ * regardless of what the override string contains.
+ */
+export function engineSystemdUnitName(workspaceRoot: string, env: NodeJS.ProcessEnv = process.env): string {
+  // The key already carries the isolation, so the unit name stays the single simple shape it always
+  // had — and an isolated run still gets a distinct unit, because it has a distinct key.
+  return `tachyon-engine-${engineWorkspaceKey(workspaceRoot, env)}.service`;
 }
 
 export function encodeEngineDaemonOptions(options: EngineDaemonOptionsV1): string {

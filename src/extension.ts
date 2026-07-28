@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { engineSystemdUnitName } from "./engine-service/engineSupervisor.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -1622,7 +1623,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openEngineJournal: (wsHash) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
-      const unit = `tachyon-engine-${ws.wsHash}.service`;
+      // t-05097f — one authority for the unit name. Rebuilding it from the hash here would open the
+      // journal of a DIFFERENT unit whenever the engine runs under tmux-socket isolation.
+      const unit = engineSystemdUnitName(ws.workspaceRoot);
       const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
       term.show();
       // follow journal for this workspace engine unit

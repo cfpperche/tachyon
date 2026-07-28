@@ -3,6 +3,14 @@ const { execFileSync } = require("node:child_process");
 const vscode = require("vscode");
 
 /**
+ * t-05097f — the gate talks to the tmux server the EXTENSION is using, not the shared default.
+ * `.vscode-test.mjs` gives each run a unique `TACHYON_TMUX_SOCKET`; hardcoding `-L tachyon` here
+ * pointed these helpers at the fleet's server instead, which is how a "Stop All" scenario came to
+ * list real running agents and how sessions leaked between runs.
+ */
+const TMUX_SOCKET = process.env.TACHYON_TMUX_SOCKET || "tachyon";
+
+/**
  * Multi-root host (spec 204 / F9): the window opens multi.code-workspace with
  * TWO folders (alpha, beta), each carrying its own tachyon.yml. One Workspace
  * per folder: distinct wsHash namespaces, distinct Bridges, isolated agents.
@@ -10,7 +18,7 @@ const vscode = require("vscode");
 
 function tachyonSessions() {
   try {
-    return execFileSync("tmux", ["-L", "tachyon", "list-sessions", "-F", "#{session_name}"], {
+    return execFileSync("tmux", ["-L", TMUX_SOCKET, "list-sessions", "-F", "#{session_name}"], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     })
@@ -48,10 +56,10 @@ describe("Tachyon multi-root (spec 204)", () => {
     await vscode.commands.executeCommand("tachyon.stopAll");
     for (const session of tachyonSessions()) {
       if (alpha && session.includes(alpha.hash)) {
-        try { execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=${session}`], { stdio: "pipe" }); } catch { /* gone */ }
+        try { execFileSync("tmux", ["-L", TMUX_SOCKET, "kill-session", "-t", `=${session}`], { stdio: "pipe" }); } catch { /* gone */ }
       }
       if (beta && session.includes(beta.hash)) {
-        try { execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=${session}`], { stdio: "pipe" }); } catch { /* gone */ }
+        try { execFileSync("tmux", ["-L", TMUX_SOCKET, "kill-session", "-t", `=${session}`], { stdio: "pipe" }); } catch { /* gone */ }
       }
     }
   });
@@ -96,7 +104,7 @@ describe("Tachyon multi-root (spec 204)", () => {
 
     // kill beta's agent only
     const sessions = tachyonSessions();
-    execFileSync("tmux", ["-L", "tachyon", "kill-session", "-t", `=tachyon-${beta.hash}-beta-agent`], { stdio: "pipe" });
+    execFileSync("tmux", ["-L", TMUX_SOCKET, "kill-session", "-t", `=tachyon-${beta.hash}-beta-agent`], { stdio: "pipe" });
     await sleep(500);
     assert.ok(tachyonSessions().includes(`tachyon-${alpha.hash}-alpha-agent`), "alpha must survive beta's kill");
     assert.ok(sessions.includes(`tachyon-${beta.hash}-beta-agent`), "sanity: beta was running before the kill");
