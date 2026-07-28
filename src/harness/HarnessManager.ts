@@ -25,6 +25,7 @@ import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs } from "../runtime/adapters/grokMemory.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
@@ -1835,7 +1836,14 @@ export class HarnessManager {
         silentPersistence: lifecycle?.silentPersistence ?? true,
       });
       this.materializeSkills(agent, def, home);
-      return { home, env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv }, args };
+      // t-c46c35 — pin the disabled memory policy as argv. `--no-memory` has absolute precedence over
+      // GROK_MEMORY and config.toml, so this is what makes canonical Grok independent of an ambient env
+      // var or a future default flip, rather than inheriting a default that merely happens to be off.
+      return {
+        home,
+        env: { [h.configHomeEnv]: this.grokHome(home), ...secretEnv },
+        args: [...args, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)],
+      };
     }
     if (adapter.runtime === "hermes") {
       // HERMES_HOME is the harness home itself (config.yaml + auth + skills under the same root).
@@ -2106,7 +2114,14 @@ export class HarnessManager {
       if (options.inheritNativeConfig === false) fs.rmSync(path.join(home, "config.toml"), { force: true });
       else this.seedCodexHomeOnlyConfig(home);
     }
-    if (adapter.runtime === "grok") return { home, env: { [h.configHomeEnv]: this.grokHome(home) }, args: [] };
+    // t-c46c35 — `isolate: transcript` is still a canonical launch, so it carries the same memory pin.
+    if (adapter.runtime === "grok") {
+      return {
+        home,
+        env: { [h.configHomeEnv]: this.grokHome(home) },
+        args: grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY),
+      };
+    }
     if (adapter.runtime === "hermes") return { home, env: { [h.configHomeEnv]: home }, args: [] };
     if (h.xdg) {
       // spec t-e2ebe3 — mirror materialize()'s xdg branch: point all three XDG vars at the subdirs

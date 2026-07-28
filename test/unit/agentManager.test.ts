@@ -5021,7 +5021,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       },
     });
 
-    it("grok (non-harness): spawn injects GROK_HOME=<private home> env (no argv change)", async () => {
+    it("grok (non-harness): spawn injects GROK_HOME=<private home> env and pins --no-memory", async () => {
       const calls: string[] = [];
       const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
       await manager.spawn("grok");
@@ -5029,9 +5029,26 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toMatch(/^grok -s /);
       expect(cmds.at(-1)).not.toContain("mcp_servers");
       expect(cmds.at(-1)).not.toContain("--mcp-config");
+      // t-c46c35 — this test used to assert "no argv change". There is one now, and it is the point:
+      // `--no-memory` outranks GROK_MEMORY and config.toml, so canonical Grok no longer depends on the
+      // runtime's default merely happening to be disabled.
+      expect(cmds.at(-1)).toContain("--no-memory");
       const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
       expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok"]);
       expect(calls).toEqual(["grok"]);
+    });
+
+    it("grok: with the Bridge down there is no private home AND no memory pin", async () => {
+      // t-c46c35 — the honest boundary of this change. With no Bridge URL, withRuntimeBridge returns
+      // before the grok branch, so the launch is untouched: no GROK_HOME, and no --no-memory either.
+      // Tachyon is isolating nothing here, so the session inherits the runtime's own disabled default —
+      // the pre-existing situation, unchanged. The pin covers the wired canonical path, which is the
+      // path that has a private home worth protecting.
+      const { manager, cmds } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        materializeBridgeMcpGrok: () => undefined,
+      });
+      await manager.spawn("grok");
+      expect(cmds.at(-1)).not.toContain("--no-memory");
     });
 
     it("grok (non-harness): resume re-injects GROK_HOME", async () => {

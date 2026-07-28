@@ -50,6 +50,7 @@ import {
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs } from "../runtime/adapters/grokMemory.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -2803,7 +2804,16 @@ export class AgentManager {
     if (binary === "grok") {
       const home = this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
       if (!home) return { cmd, env: {}, wired: false };
-      return { cmd, env: { GROK_HOME: home }, wired: true };
+      // t-c46c35 — the non-harness canonical Grok path, and the one that actually needed the pin: it
+      // deliberately skips `isolate: transcript` (t-303f2b), so it never reaches HarnessManager's
+      // materializers. `--no-memory` outranks GROK_MEMORY and config.toml, so appending it last makes
+      // the canonical answer independent of the ambient environment. Only on the wired path — an
+      // unwired command is returned untouched here, exactly as every other runtime above does.
+      return {
+        cmd: [cmd, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)].join(" "),
+        env: { GROK_HOME: home },
+        wired: true,
+      };
     }
     if (binary === "hermes") {
       const home = this.opts.materializeBridgeMcpHermes?.(name);

@@ -1082,6 +1082,17 @@ describe("HarnessManager materialize (fs)", () => {
     expect(warnings).toHaveLength(0);
   });
 
+  it("t-c46c35: a grok isolate:transcript home pins --no-memory", () => {
+    // The disabled canonical policy expressed as argv. `--no-memory` outranks GROK_MEMORY and
+    // config.toml, so this is what stops an ambient env var re-enabling memory on a private home.
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-pin");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const res = mgr.materializeHomeOnly("solo", adapterForRuntime("grok")!);
+    expect(res.args).toEqual(["--no-memory"]);
+  });
+
   it("t-843576: materializeBridgeMcpGrok writes private GROK_HOME with tachyon_bridge + auth symlink", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok");
     fs.mkdirSync(realGrokHome, { recursive: true });
