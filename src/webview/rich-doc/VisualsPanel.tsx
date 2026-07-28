@@ -81,23 +81,23 @@ export function VisualsPanel({
 }) {
   return (
     <aside class="rd-visuals">
-      <button class="drop" type="button" onClick={onImport}>
+      <button class="rd-drop" type="button" onClick={onImport}>
         <Icon name="cloud-upload" />
         <span>Paste, drop, import, or annotate screenshots</span>
       </button>
-      <div class="att-head">Visuals · {attachments.length}</div>
+      <div class="rd-att-head">Visuals · {attachments.length}</div>
       {attachments.length === 0 ? <div class="ds-dim">No screenshots or sketches attached.</div> : attachments.map((a) => (
-        <div class="att" key={a.id}>
-          <div class="att-thumb">
-            {attachmentPreview(a) ? <img src={attachmentPreview(a)} alt="" class={a.kind === "excalidraw" ? "att-sketch-preview" : undefined} /> : <span class="missing"><Icon name="warning" /></span>}
+        <div class="rd-att" key={a.id}>
+          <div class="rd-att-thumb">
+            {attachmentPreview(a) ? <img src={attachmentPreview(a)} alt="" class={a.kind === "excalidraw" ? "rd-att-sketch-preview" : undefined} /> : <span class="rd-missing"><Icon name="warning" /></span>}
             {a.kind === "excalidraw" && a.source === "annotate-image" && (
-              <span class="att-annotated-badge" title="Annotated"><Icon name="edit" /></span>
+              <span class="rd-att-annotated-badge" title="Annotated"><Icon name="edit" /></span>
             )}
           </div>
           <div>
-            <div class="att-name">{a.name}</div>
+            <div class="rd-att-name">{a.name}</div>
             <div class="ds-dim">{attachmentSizeLabel(a)}</div>
-            <div class="att-actions">
+            <div class="rd-att-actions">
               {a.kind === "image" && <button type="button" onClick={() => onAnnotate(a)}>Annotate</button>}
               {a.kind === "excalidraw" && <button type="button" onClick={() => onEditSketch(a)}>Edit</button>}
             </div>
@@ -185,14 +185,14 @@ export function SketchModal({
   };
 
   return (
-    <div class="sketch-modal">
-      <div class="sketch-bar">
+    <div class="rd-sketch-modal">
+      <div class="rd-sketch-bar">
         <strong>{request.name}</strong>
         <Button onClick={onCancel}>Cancel</Button>
         <Button variant="primary" icon="save" disabled={!ready || !!loadError} onClick={() => void save()}>Save sketch</Button>
       </div>
-      <div class="sketch-host">
-        {loadError && <div class="sketch-fail">{loadError}</div>}
+      <div class="rd-sketch-host">
+        {loadError && <div class="rd-sketch-fail">{loadError}</div>}
         <div ref={host} />
       </div>
     </div>

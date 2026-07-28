@@ -303,7 +303,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
     return (
       <>
         {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
-        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Pin Studio...</div></div>
+        <div class="ds-degrade rd-degrade"><span class="codicon codicon-loading" /><div>Loading Pin Studio...</div></div>
       </>
     );
   }
@@ -452,8 +452,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         regions={{
           fields: (
             <>
-              <div class="eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.pinId!)}</div>
-              <input class="title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
+              <div class="rd-eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.pinId!)}</div>
+              <input class="rd-title" value={title} onInput={(e) => setTitle((e.currentTarget as HTMLInputElement).value)} placeholder="Pin title" aria-label="Pin title" />
               <div class="tag-editor" aria-label="Pin tags">
                 {tags.map((tag) => (
                   // A bespoke interactive remove-tag control (the whole pill removes on click) — not the kit's
@@ -476,7 +476,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
             <>
               <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
               {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
-              <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
+              <div class="rd-editor-shell" onDragOver={(e) => e.preventDefault()}>
                 <div ref={mount} />
               </div>
             </>
@@ -492,7 +492,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         }}
       />
       {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
-      {error && <div class="err" role="alert">{error}</div>}
+      {error && <div class="rd-err" role="alert">{error}</div>}
     </>
   );
 }

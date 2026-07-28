@@ -39,7 +39,7 @@ function renderBlock(node: TiptapJSON, key: number): ComponentChildren {
       return <hr key={key} />;
     case "image": {
       const src = typeof node.attrs?.src === "string" ? node.attrs.src : undefined;
-      return src ? <img key={key} src={src} alt="" /> : <div key={key} class="missing" />;
+      return src ? <img key={key} src={src} alt="" /> : <div key={key} class="rd-missing" />;
     }
     case "tachyonSketch": {
       const src = typeof node.attrs?.previewSrc === "string" ? node.attrs.previewSrc : undefined;
