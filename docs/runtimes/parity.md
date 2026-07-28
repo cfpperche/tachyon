@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-28 (canonical Grok native-config projection — `t-26f508`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-28 (canonical Grok Attention measurement + final parity audit — `t-aafa10`; verdict **limited**, see the Grok section)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 `src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`
 
@@ -293,7 +293,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Brief | positional `[PROMPT]` after options | `INSTRUCTION_ARG.grok = (q) => q` via `composeCommand` / `effectiveCmd` (after `injectResumeId` → `grok -s <uuid> '<brief>'`) | **✓** 2026-07-09 unit `config.test.ts` + code (was ✗ until Cap 1 fix) |
 | Bridge | `GROK_HOME` + `[mcp_servers.tachyon_bridge]` (`headers` + `${VAR}`) | non-harness: `materializeBridgeMcpGrok`; harness: `buildGrokHarnessConfig` | **✓** 2026-07-09 dogfood (t-843576) — `grok mcp list`; native tools after stop/resume |
 | Model preflight | `grok models` (bounded catalog command; CLI refuses unlisted ids) | `GrokLaunchPreflight` — pinned models resolve `supported`/`unsupported`, unreadable catalog stays `unverifiable` | **✓** 2026-07-26 measured on 0.2.112 + real-CLI dogfood (`t-85c586`) |
-| Attention | global pane patterns **plus** the first measured per-runtime overlay (`manifests/grok.json`) | native tool-authorization modal detected as `needs-input` (`t-4e6ba5`); still no composer profile; not in `RateLimitRuntime` | **~** overall, but tool-auth prompts **✓** 2026-07-26 measured on grok 0.2.112 + real-pane check |
+| Attention | global pane patterns **plus** the first measured per-runtime overlay (`manifests/grok.json`) | native tool-authorization modal detected as `needs-input` (`t-4e6ba5`); composer profile now **measured** (`t-aafa10`) — empty / human draft / post-turn / draft-after-turn pinned by byte fixtures; not in `RateLimitRuntime` | **~** overall — tool-auth prompts **✓** 2026-07-26; composer **✓** 2026-07-28 on 0.2.112; **mid-turn render and rate-limit remain unmeasured** |
 | Resume | `-r` / `-c` | adapter `resumeCommand` (`mintsId`) | **✓** 2026-07-09 live stop/resume |
 | Fork | `-r <id> --fork-session` | `forkCommand` for legacy/ad-hoc Grok; a CANONICAL profile is refused at `planFork`/`commitFork` — `managedPrivateFork` covers only Pi and Claude, so the fork's fresh `bridge-mcp/<fork>.grok` would hold neither the projection nor the source transcript | adapter 2026-07-09; canonical refusal **✓** `t-26f508` unit |
 | Native config parity | `~/.grok/config.toml` `[models]`/`[ui]`/`[features]`/`[permission]`, `[compat.*]`, `[memory]` | closed per-family global projection into the private `config.toml` (`projectGrokNativeConfig` → `renderGrokCanonicalConfig`), typed agent-owned `[models]` selectors, `always-approve`/`yolo` gated behind an explicit per-agent authorization, and an unconditional isolation block (`[memory] enabled = false` + every `[compat.*]` cell false) | **✓** `t-26f508`, 2026-07-28 — projector/renderer/lifecycle units, plus live `grok inspect --json` on 0.2.112: a private home with the Bridge-only config reported an ambient `.claude/skills/*` as `compatibilityStatus: "enabled"` and 0/13 compat cells off; the same home with the projected config reported that skill `"disabled"`, 13/13 cells off, and `tachyon_bridge` still present |
@@ -301,7 +301,7 @@ Detail dump: [`docs/runtimes/opencode.md`](./opencode.md) (narrative may still s
 | Stop | C-c, C-c | `runtimeProfile.grok` measured | t-bae032 / 2026-07-08 |
 | Activity | `sessions/<encodeURIComponent(cwd)>/<id>/chat_history.jsonl` | `grokNormalizer` + `transcriptPath` + file-tail in `ActivityLogWriter` (sessionId from parent dir) | **✓** 2026-07-12 unit `grokNormalizer.test.ts` + `logWriter` Grok rotation (t-9874be) |
 | Permission inject | `--permission-mode`, `--always-approve` (measured on CLI); `[ui] permission_mode` and `[permission]` allow/ask/deny in config | canonical profiles regenerate an explicitly selected, validated global permission block in the private `config.toml`; `always-approve`/`bypassPermissions`/`yolo = true` are omitted with a named warning unless THIS agent's profile authorizes them (`nativeConfig.permissions.authorize: [alwaysApprove]`) — inheriting them from the person's global config is never sufficient. The legacy argv path is unchanged: `alwaysApproveFlag` still has zero readers and Tachyon never infers `--always-approve` | **~** config projection **✓** `t-26f508` (value enums from the shipped 0.2.112 guide plus the measured `--permission-mode` enum); argv injection still **✗** |
-| Profile | `label: "Grok"` + isolated home + stop | `runtimeProfile.grok`; canonical launches bind both `GROK_HOME` and `HOME` to the private home | private transcript/config namespace ✓; composer/attention remains `~` |
+| Profile | `label: "Grok"` + isolated home + stop | `runtimeProfile.grok`; canonical launches bind both `GROK_HOME` and `HOME` to the private home | private transcript/config namespace ✓; composer now `measured`/`verified` (`t-aafa10`), attention overall still `~` |
 | Headless probe | `grok -p --output-format json` (+ `--json-schema` for archetypes) | `src/probe/adapters/grok.ts` + `ProbeService` + `probe_agent` enum | **✓** t-7426de unit + binary-gated `--version` smoke |
 | Runtime Config | `$GROK_HOME/config.toml` (user layer), `<repo>/.grok/config.toml` and `<cwd>/.grok/config.toml` (project layers, `[mcp_servers]` only), `trusted_folders.toml` | `src/runtimeConfig/grokInventory.ts` — measured scalars, native MCP `enabled` toggle, read-only authority keys and trust, per-document CAS | **✓** 2026-07-28 measured on 0.2.112; `npm run dogfood:grok-runtime-config` 15/15 round-trips through `grok inspect --json` (SDD 481 / `t-ce83a2`) |
 
@@ -317,7 +317,48 @@ uniform blast radius.
 **Grok auth / rematerialize (t-2b0a08, 2026-07-09):** private home must keep `auth.json` as a **symlink** to the real `~/.grok/auth.json`. Interactive login under redirected `GROK_HOME` can replace that symlink with a **regular file** (fresh tokens only in the private home). On every reload/rebind, `materializeBridgeMcpGrok` used to `unlink` then re-symlink to the **stale** real auth → re-login wall. Fix: **`promoteNewerPrivateAuth`** — if private `auth.json` is a regular file newer than the real target, copy it to real (mode 600) **before** unlink/relink. Canonical truth remains `~/.grok/auth.json`. **✓** unit `test/unit/harness.test.ts` (t-2b0a08).  
 **Grok auth / in-session harvest (t-6c8437, 2026-07-24):** OIDC refresh mid-session leaves a **regular** private `auth.json` while the agent is still running. Harvest used to run only on **stop/kill/materialize**, so a long-lived Grok pane could keep `~/.grok/auth.json` expired (and revoke the host refresh) while the private file held the only live key → sibling agents and Dev Host dogfood hit the browser login wall. Fix: rank credentials by **non-expired `expires_at` first**, then `create_time`, then mtime; **`maybeHarvestGrokAuthFromWorkspace`** (throttled) on agent-list refresh when any private home has a regular `auth.json`. **✓** unit `test/unit/harness.test.ts` (t-6c8437).  
 **Claude auth / global relogin does not reach private homes (t-9598cc, 2026-07-27):** the lesson below was written for Grok and never applied to Claude, which has the **same** mechanism — Claude Code rewrites `.credentials.json` by create+rename under `CLAUDE_CONFIG_DIR`, replacing Tachyon’s symlink with a **regular file** on every OAuth refresh. Claude had no harvest, no workspace reconcile and no pre-launch credential assertion: `materializeHome` called `promoteNewerPrivateAuth` only for Hermes and `reconcile…` only for Grok, and returned before the `t-303f2b` readable-auth checks. Three consequences, all measured on 2026-07-27: a detached private snapshot **outlived a global `/login`** indefinitely (`.tachyon/harness/claude-opus5/.credentials.json` was a regular file whose contents differed from the authority’s while sibling homes were symlinks); `ensureAuthSymlink` would have **destroyed** a fresher private refresh rather than harvesting it; and the failure surfaced only as `runtime_auth_rejected` at launch readiness, after a pane, a worktree and a home already existed — the “compensation was incomplete” tail. Separately, **`authCredentialRank` could not read a Claude credential at all**: it parsed only ISO `expires_at` / `create_time`, while Claude states epoch-ms `expiresAt` / `refreshTokenExpiresAt`, so every Claude credential ranked as “no expiry stated” = permanently valid, ranked by mtime alone. Fix: teach the rank both encodings and the refresh window; **`reconcileWorkspaceClaudeAuth`** (harvest → promote → re-symlink **every** eligible home) on materialize and on a throttled agent-list tick; **`claudeCredentialState`** grading projection (`linked`/`detached`/`absent`/`foreign`) and health (`valid`/`refreshable`/`expired`/`unreadable`) as separate axes; **`assertUsableClaudeAuth`** refusing a genuinely dead session at the harness boundary with a named recovery. Account isolation is explicit: a home whose `.claude.json` names a different `oauthAccount` — or whose credential links to another authority — is neither harvested from nor relinked. **✓** unit `test/unit/harness.test.ts` (t-9598cc).  
+**Grok auth / DESTRUCTIVE re-auth through the symlink (`t-de73e0`, 2026-07-28, OPEN P0):** the two notes
+above cover a redirected login leaving a *regular file* in the private home, which `promoteNewerPrivateAuth`
+harvests. `t-aafa10` hit a worse, undocumented variant: after driving `grok 0.2.112` with a redirected
+`GROK_HOME` whose `auth.json` was the usual symlink, the **real `~/.grok/auth.json` was gone** and every
+private home on the machine was left with a dangling link — no recoverable copy anywhere. The exact syscall
+sequence is NOT established (the probe also killed a device-code flow mid-way), so this is recorded as a
+measured OUTCOME with an unproven mechanism, and `t-de73e0` says so. What it costs is not in doubt: every
+canonical private home symlinks the one real credential, so any path where the runtime writes or removes that
+file takes out the human's login and every Grok agent at once. `assertReadableGrokAuth` does not cover it — it
+proves the file parses when the home is seeded and says nothing about a later rewrite. **Until this is
+resolved, treat a canonical Grok agent as able to destroy the host credential.**
+
 **Parity lesson:** measuring only “symlink exists on first materialize” / “Bridge MCP tools list” is **not** enough for harness auth. A first-class private home also requires **auth survives rematerialize after in-home login** (or an explicit `~` with a task) **and** **in-session refresh is harvested without waiting for stop** — and, per t-9598cc, that the reconcile reaches **every** private home rather than only the one being materialized, that a **global** re-login propagates outward, and that the credential-freshness parser actually understands **that runtime's** expiry encoding. A runtime marked ✓ for “harness / private home” is not thereby ✓ for auth refresh; they are separate rows now.
+
+
+#### Grok canonical verdict (`t-aafa10`, 2026-07-28)
+
+**LIMITED — not ready.** Closing only what was provable, and naming the rest rather than rounding it up.
+
+*Closed by measurement on grok 0.2.112:* composer region shape (`source: "measured"`, byte fixtures in
+`test/fixtures/grok-composer/`, regression in `test/unit/grokComposerMeasured.test.ts`) across empty, human
+draft, post-turn and draft-after-turn; the post-turn composer is empty, so no `ansiEmptyContentStyle` is
+warranted; and Grok's transcript echo of a submitted prompt cannot be mistaken for a draft, because the box is
+bottom-pinned and `findComposerRegion` scans upward. Native config projection, Runtime Config, permission
+posture, fork refusal and memory were each verified during review of `t-26f508` / `t-ce83a2` and are recorded
+in the rows above.
+
+*Named gaps that keep the verdict at limited:*
+
+1. **`t-de73e0` (P0, blocking):** canonical Grok can destroy the host credential — see the auth note above.
+2. **Mid-turn Attention unmeasured.** Producing a working/streaming pane needs a live model call, and the
+   measurement ran without a usable credential. `attention-composer-unverified` is retained for exactly this.
+3. **Rate limit: no signal, by measurement not by omission.** Grok is absent from `RateLimitRuntime` and
+   nothing in 0.2.112 was observed to expose a rate-limit state. This stays an explicit limitation; inventing
+   a heuristic from message text is what the parity rules forbid.
+4. **Auth-error state IS measurable and is not yet wired.** Measured on 0.2.112: a failed turn renders
+   `Retry failed: API error (status …)` and `Turn failed in …s: Internal error: {…}` in-pane, and headless
+   emits `{"type":"error","message":"Not signed in…"}`. Neither is consumed by the Attention overlay yet.
+5. **`permission-policy-partial` retained.** `t-26f508` shipped the projection; no live turn exercised an
+   authorization prompt end to end, so the posture stays declared rather than proven.
+
+*Not pursued, deliberately:* nothing cosmetic was upgraded to make the matrix look even.
 
 #### Pi
 

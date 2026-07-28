@@ -368,9 +368,18 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
-      source: "assumed",
-      verified: false,
-      notes: "t-f45313: conservative Claude/Codex-shaped composer guard for Grok dogfood pane-injection safety; exact prompt shape still needs runtime measurement.",
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-28",
+      notes:
+        "t-aafa10 measured grok 0.2.112 in a real tmux pane: the composer is a bottom-pinned box rendering"
+        + " `│ ❯ `, so the t-f45313 guess turned out to be right and is now pinned by byte fixtures"
+        + " (test/unit/grokComposerMeasured.test.ts). Empty, human draft, post-turn and draft-after-turn all"
+        + " classify correctly, and the composer is empty after a turn — no suggestion text, which is why"
+        + " ansiEmptyContentStyle stays undeclared. Grok DOES echo the submitted prompt into its transcript"
+        + " with the same glyph, but the box is pinned to the bottom and findComposerRegion scans upward, so"
+        + " the echo can never win. NOT measured: the mid-turn render, which needs a live model call —"
+        + " attention-composer-unverified is retained for exactly that gap.",
     },
     gracefulStop: GROK_GRACEFUL_STOP,
     canonicalLimitations: ["permission-policy-partial", "attention-composer-unverified"],
