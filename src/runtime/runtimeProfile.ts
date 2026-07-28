@@ -21,6 +21,28 @@ export interface TranscriptIsolationContext {
   parented?: boolean;
 }
 
+/**
+ * t-30ff0d — a MEASURED, content-only proof that work is still in flight while the pane sits still.
+ *
+ * `AttentionMonitor` decides idle from two things: the pane stopped changing, and CPU is quiet.
+ * Both are true of an agent that has handed work to a background shell, an MCP server or a monitor
+ * and is waiting on it — the pane freezes and the process blocks on I/O rather than burning CPU. The
+ * sidebar then says idle while the agent is demonstrably mid-flight, which is the reproduction this
+ * exists to close.
+ *
+ * Deliberately NOT the other two candidates: CPU utilization is what `t-285503` flapped on, and
+ * process existence says nothing about whether the agent is doing anything. This asks the pane, and
+ * only inside `tailLines` from the bottom — the same history that proves work is running scrolls up
+ * and stays quotable forever, so a whole-pane match would pin an agent to "working" for the rest of
+ * its life.
+ */
+export interface ActivitySignalProfile extends RuntimeProfileSection {
+  /** How far from the pane bottom the signal is expected. Keeps stale transcript history out. */
+  tailLines: number;
+  /** Line shape that means the runtime still owes this turn work it has not finished. */
+  runningLine: RegExp;
+}
+
 export interface ComposerRegionProfile extends RuntimeProfileSection {
   /** How far from the pane bottom Tachyon should look for the runtime input composer. */
   tailLines: number;
@@ -89,6 +111,8 @@ export interface RuntimeProfile {
   isolation: IsolationProfile;
   permission?: RuntimePermissionProfile;
   composer?: ComposerRegionProfile;
+  /** t-30ff0d — content proof of in-flight work when the pane is static. */
+  activity?: ActivitySignalProfile;
   gracefulStop?: GracefulStopProfile;
   /** Honest canonical-runtime constraints surfaced before lifecycle actions. */
   canonicalLimitations?: CanonicalRuntimeLimitation[];
@@ -224,6 +248,29 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "(\\x1b[39m❯\\u00a0integre em main e verifique o tree — the incident's own text, typed). Same rule Codex already " +
         "uses. The separator after '❯' is U+00A0 in BOTH cases, so it discriminates nothing; the dim styling is the only " +
         "signal, and without an escaped capture the detector stays conservative and still refuses.",
+    },
+    activity: {
+      tailLines: 3,
+      // Measured on Claude Code 2.1.220 (2026-07-28, t-30ff0d) with a real background shell in
+      // flight. The mode line is the bottom-most non-empty line and gains a shell counter while work
+      // is outstanding: `⏵⏵ accept edits on · 1 shell · ← for agents`; once the work finishes it
+      // reverts to `⏵⏵ accept edits on (shift+tab to cycle) · ← for agents`.
+      //
+      // The transcript ALSO says `✻ Sautéed for 5s · 1 shell still running`, and that line is the
+      // tempting one — but it freezes at its last elapsed value and scrolls up, so it is present in
+      // the after-final pane too. Matching it without a bottom bound would hold an agent at
+      // "working" forever. Fixtures for both states: test/fixtures/claude-activity/.
+      runningLine: /·\s*\d+\s+shells?\s*·/,
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-07-28",
+      notes:
+        "t-30ff0d: a background shell leaves the pane byte-identical for seconds while the process"
+        + " blocks on I/O, so both of AttentionMonitor's idle inputs (no content change, quiet CPU)"
+        + " read as idle while the agent is demonstrably mid-flight. This is the pane's own statement"
+        + " that it still owes the turn work. NOT measured: an MCP/tool call with no shell — the"
+        + " reproduction that prompted this was a background shell, and the streaming spinner ticks"
+        + " (so content change already covers it).",
     },
     gracefulStop: {
       steps: [
