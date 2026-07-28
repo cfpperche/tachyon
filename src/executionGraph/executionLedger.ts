@@ -194,7 +194,7 @@ export class ExecutionLedger {
         });
       }
       if (event.edge) {
-        const key = `${id} ${event.edge.toExecutionId} ${event.edge.kind}`;
+        const key = `${id}\u0000${event.edge.toExecutionId}\u0000${event.edge.kind}`;
         if (!seenEdge.has(key)) {
           seenEdge.add(key);
           edges.push({ from: id, to: event.edge.toExecutionId, kind: event.edge.kind });
