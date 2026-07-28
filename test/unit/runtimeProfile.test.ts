@@ -132,7 +132,9 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       source: "measured",
       verified: false,
     });
-    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "assumed", verified: false });
+    // t-aafa10 — no longer a guess: measured against grok 0.2.112 in a real pane, with the byte
+    // fixtures and state-by-state assertions living in grokComposerMeasured.test.ts.
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true, verifiedAt: "2026-07-28" });
     expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
