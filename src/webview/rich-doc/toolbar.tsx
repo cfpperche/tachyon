@@ -11,7 +11,7 @@ export interface EditorToolbarProps {
 /** The pin/task studio formatting toolbar (bold/italic/code/lists/checklist/quote/sketch/slash) — entity-neutral. */
 export function EditorToolbar({ run, onOpenSketch, onToggleSlash }: EditorToolbarProps) {
   return (
-    <div class="toolbar" aria-label="Formatting">
+    <div class="rd-toolbar" aria-label="Formatting">
       <button title="Bold" onClick={() => run((e) => e.chain().focus().toggleBold().run())}><strong>B</strong></button>
       <button title="Italic" onClick={() => run((e) => e.chain().focus().toggleItalic().run())}><em>I</em></button>
       <button title="Code" onClick={() => run((e) => e.chain().focus().toggleCode().run())}><Icon name="code" /></button>
@@ -33,7 +33,7 @@ export interface SlashMenuProps {
 /** open when EditorToolbarProps.slashOpen is true. */
 export function SlashMenu({ run, onOpenSketch }: SlashMenuProps) {
   return (
-    <div class="slash">
+    <div class="rd-slash">
       <button onClick={() => run((e) => e.chain().focus().setParagraph().run())}><Icon name="text-size" /> Paragraph</button>
       <button onClick={() => run((e) => e.chain().focus().toggleHeading({ level: 2 }).run())}><Icon name="symbol-string" /> Heading</button>
       <button onClick={() => run((e) => e.chain().focus().toggleBulletList().run())}><Icon name="list-unordered" /> Bulleted list</button>

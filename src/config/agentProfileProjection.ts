@@ -106,7 +106,7 @@ export interface ProjectAgentProfileInput {
 }
 
 export type ProjectAgentProfileResult =
-  | { ok: true; definition: AgentEntry; resolved: ResolvedAgentProfile }
+  | { ok: true; definition: AgentEntry; resolved: ResolvedAgentProfile; warnings: string[] }
   | { ok: false; errors: string[] };
 
 function closeQuietly(fd: number): void {
@@ -441,7 +441,15 @@ function projectDefinition(
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
   if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.memory) {
-    errors.push("profile/projection: Soul, instructions and memory belong to t-a2827d");
+    // t-50bbd4 — this used to defer to t-a2827d, which CLOSED on 2026-07-22, so the message pointed
+    // at nobody. The structural fact is what a reader needs: these three do not project into
+    // `prompt.*` at all. They are formation LANES, published under transaction and authority
+    // (`humanLaneTransactions.ts`), and reached at spawn through the lifecycle port rather than
+    // through this projection. Naming the mechanism outlasts naming a task.
+    errors.push(
+      "profile/projection: Soul, instructions and memory are formation lanes, not projected prompt fields — "
+        + "publish them through the profile's lane authority instead",
+    );
   }
   if (definition.prompt?.evolution && !evolutionSelector) {
     errors.push("profile/projection: Evolution selector is unavailable");
@@ -509,6 +517,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
   let nativeConfigProjection = projectAgentNativeConfig(parsed.profile);
+  const warnings: string[] = [];
   if (parsed.profile.runtime.adapter === "codex") {
     const selectedSources = new Set(
       Object.values(parsed.profile.nativeConfig ?? {})
@@ -529,6 +538,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
       nativeConfigProjection ?? { adapter: "codex", selectors: {} },
     );
     if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
+    warnings.push(...scalar.warnings);
     if (parsed.profile.nativeConfig && Object.keys(parsed.profile.nativeConfig).length > 0) {
       nativeConfigProjection = scalar.projection;
     }
@@ -563,5 +573,5 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
   const definition = projectDefinition(resolved.value, evolutionSelector, nativeConfigProjection);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
-  return { ok: true, definition, resolved: resolved.value };
+  return { ok: true, definition, resolved: resolved.value, warnings };
 }

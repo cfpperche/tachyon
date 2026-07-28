@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { FAILURE_LIMITS, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
+import { FAILURE_LIMITS, STATIC_GATES, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
 
 const repoRoot = process.cwd();
 const runner = path.join(repoRoot, "scripts/verify-full.mjs");
@@ -34,12 +34,13 @@ afterEach(cleanupCreatedPaths);
 function workspace(buildSource = "", vitestSource?: string, gates: Record<string, string> = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-full-quiet-test-"));
   createdPaths.add(root);
+  // t-62cc44 — DERIVED from STATIC_GATES rather than listing the gate names again. The hand-written
+  // version declared exactly two scripts, so adding a third gate made every test here fail with npm's
+  // "missing script" exit 1 — a fixture drifting from the list it stands in for, which is the same
+  // failure mode the gate list itself is designed to avoid.
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({
     name: "verify-full-fixture",
-    scripts: {
-      "check:engine-boundary": gates["check:engine-boundary"] ?? "node -e 0",
-      typecheck: gates.typecheck ?? "node -e 0",
-    },
+    scripts: Object.fromEntries((STATIC_GATES as string[]).map((gate) => [gate, gates[gate] ?? "node -e 0"])),
   }));
   fs.mkdirSync(path.join(root, "node_modules/vitest"), { recursive: true });
   fs.writeFileSync(path.join(root, "esbuild.mjs"), buildSource || "console.log('PASSED BUILD NOISE')\n");

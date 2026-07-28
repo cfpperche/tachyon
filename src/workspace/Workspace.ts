@@ -2,7 +2,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
-import { TmuxService, workspaceHash, SESSION_PREFIX } from "../tmux/TmuxService.js";
+import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
 import {
@@ -92,7 +92,12 @@ const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
+import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
+import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { resolveParentLocation } from "../worktree/parentLocation.js";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -226,6 +231,7 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
+import { composerProfileFor } from "../runtime/composerRegion.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
@@ -642,6 +648,30 @@ export class Workspace {
   private callerRegistry: CallerIdentityRegistry | undefined;
   /** SecretStorage key, domain-separated from caller digests for durable authority seals. */
   private authorityIntegrityKey: Buffer | undefined;
+  /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
+  private formationLifecycle: FormationLifecyclePort | undefined;
+
+  /**
+   * t-50bbd4 — the canonical `agentId` for a declared agent, or undefined when it is not a profile
+   * agent. Read from the profile on disk rather than cached: the lane validates the profile bytes
+   * against the vector anyway, so a stale id here would only ever produce a refusal, never a wrong
+   * Soul — and reading is the cheap way to stay correct across a rename or an external edit.
+   */
+  private canonicalAgentIdOf(agentName: string): string | undefined {
+    const source = readCanonicalAgentProfile(this.workspaceRoot, agentName);
+    if (!source) return undefined;
+    try {
+      const entry = readCanonicalAgentProfileEntry(source, "agent.yml");
+      if (!entry) return undefined;
+      const id = /^agentId:\s*["']?([A-Za-z0-9][\w.:-]{0,127})["']?\s*$/m.exec(entry.bytes.toString("utf8"))?.[1];
+      return id;
+    } catch {
+      // A profile we cannot read is not a profile we will render from.
+      return undefined;
+    } finally {
+      closeCanonicalAgentProfile(source);
+    }
+  }
   /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
   private authorityHeads = new Map<string, AuthorityHead>();
   /** Host-custodied profile heads selected before any profile-backed config can load. */
@@ -804,6 +834,11 @@ export class Workspace {
         // Best-effort refresh signal (agents view re-syncs worktree reveal on host).
         try { this.host.onViewsChanged("agents"); } catch { /* host optional during early boot */ }
       },
+      // t-e74631 — read through a thunk for the same reason `occupancy` above does: AgentManager is
+      // constructed AFTER this service, and lineage is session-local memory that keeps growing as
+      // agents spawn. A snapshot taken here would be empty forever, and "empty" reads as "no
+      // ancestors" — the one answer that must never be guessed in an authorization decision.
+      lineage: { parentOf: (name: string) => this.manager.parentOf(name) },
     });
     // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
     this.deliveryProjection = new DeliveryProjectionService({
@@ -910,6 +945,15 @@ export class Workspace {
       workspaceRoot,
       // SDD 480 — the seam that genuinely carries the id into the child's environment.
       ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
+      // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
+      // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
+      // instead of capturing an undefined that would never fill in.
+      formation: { resolveSoul: (input) => this.formationLifecycle
+        ? this.formationLifecycle.resolveSoul(input)
+        : Promise.resolve({ state: "absent" as const }) },
+      onFormationSoulRefused: (agent, reason) => {
+        this.host.notify(this.t("agent '{0}': profile Soul was not applied — {1}", agent, reason), "warn");
+      },
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
       defaultClaudeConfigHome,
@@ -1250,10 +1294,18 @@ export class Workspace {
           {
             manager: this.worktrees,
             settings: this.config?.settings ?? {},
-            parentCwd: (p) => {
-              const r = this.ledger.get(p);
-              return r?.worktree?.path ?? r?.cwd;
-            },
+            // t-c9da28 — every authority that might still know where the parent runs, in descending
+            // order. The ladder itself lives in `resolveParentLocation` so it is testable; this only
+            // says which objects answer each rung.
+            resolveParent: (p) => resolveParentLocation({
+              ledgerRow: () => {
+                const r = this.ledger.get(p);
+                return r ? { ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.worktree?.path ? { worktreePath: r.worktree.path } : {}) } : undefined;
+              },
+              managedWorktreePath: () => this.managedWorktrees.list({ kind: "agent" }).find((e) => e.agent === p)?.path,
+              isDeclaredAgent: () => !!this.config?.agents?.[p],
+              isLiveAgent: async () => (await this.manager.agentStates()).has(p),
+            }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
@@ -3052,6 +3104,28 @@ export class Workspace {
       const hmacKey = await loadOrCreateHmacKey(deps.host);
       const authorityHeads = parseAuthorityHeads(await deps.host.getSecret(ws.authorityHeadsSecretKey()));
       ws.authorityIntegrityKey = hmacKey;
+      // t-50bbd4 — the formation lane finally gets its host. The suppression key is DERIVED from this
+      // same machine-local key (domain-separated), so there is no new vault, no new key and no new
+      // file; rotation follows the host key. Built here because this is where the key exists and
+      // nowhere earlier — and if the key never arrives, the port is simply absent (fail-closed),
+      // which the lifecycle reads as "no formation" rather than as a weaker rendering path.
+      ws.formationLifecycle = createFormationLifecycleHost({
+        hostKey: hmacKey,
+        hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
+        workspaceId: ws.wsHash,
+        workspaceRoot,
+        agentIdOf: (agentName) => ws.canonicalAgentIdOf(agentName),
+        runtimeAdapterOf: (agentName) => {
+          const def = ws.config?.agents?.[agentName];
+          return def ? adapterFor(asAgent(def)?.cmd ?? "")?.runtime : undefined;
+        },
+        // Suppression is confirmed per runtime by the adapter that actually disables native delivery.
+        // Nothing is measured for any adapter yet, so this is `false` everywhere and the lane refuses
+        // out loud instead of attesting a suppression that never happened. Each runtime turns true
+        // only once its native-lane disablement is measured — the same bar parity.md holds elsewhere.
+        nativeSuppressionConfirmed: () => false,
+        runtimeTrustClassOf: (adapter) => adapter,
+      });
       ws.authorityHeads = authorityHeads;
       ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
     } catch (err) {
@@ -3375,19 +3449,17 @@ export class Workspace {
         id,
         decision,
         resolvedBy: "companion",
-        currentSessionOwner: async (session) =>
-          (await this.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
-        inject: async (session, text) => {
-          await this.tmux.sendSubmittedLine(session, text);
-          return { receipt: `tmux:${session}` };
-        },
-        completePin: (pinId) => {
-          try {
-            this.pinStore.setDone(pinId, true);
-          } catch {
-            /* best-effort */
-          }
-        },
+        ...approvalResolutionPorts({
+          listEntries: () => this.manager.list(),
+          // t-8d190f — the submit receipt is deliberately NOT consumed here. Approval resolution owns
+          // its own best-effort policy for both channels (t-a77fe6 / t-7a306a); folding a new failure
+          // mode into it belongs to that contract, not this one.
+          sendSubmittedLine: async (session, text) => { await this.tmux.sendSubmittedLine(session, text); },
+        }),
+        // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
+        // and now reports the failure instead of discarding it; catching here first would put this
+        // channel back to silence while the other one speaks.
+        completePin: (pinId) => this.pinStore.setDone(pinId, true),
       });
       this.afterApprovalResolved(result.request.id);
       return {
@@ -3395,6 +3467,7 @@ export class Workspace {
         id: result.request.id,
         status: decision,
         ...(result.injectError ? { injectError: result.injectError } : {}),
+        ...(result.pinError ? { pinError: result.pinError } : {}),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -3857,6 +3930,38 @@ export class Workspace {
   }
 
   /**
+   * t-e74631 — remove change worktrees whose work has already landed, at startup.
+   *
+   * The residue this clears is structural, not accidental: hygiene used to depend on the creating
+   * agent waking up and remembering, and an agent that finished its task never wakes again. So 19
+   * accumulated, 14 of them clean and already contained in the trunk. The workspace is nobody's
+   * descendant, so it can do this for every entry regardless of who created it.
+   *
+   * Runs detached and after `rehydrateFromLedger`, for two different reasons: it probes git per
+   * entry, which must never sit in front of activation; and lineage has to be rebuilt before any
+   * authority question is asked of it. Nothing here can delete work — `reconcileHygiene` re-proves
+   * clean, unoccupied and contained per entry, so the worst case is that it removes nothing.
+   */
+  private sweepWorktreeHygiene(): void {
+    void this.managedWorktrees
+      // The host acting on its own registry is the workspace authority — the same principal the
+      // Worktrees tab already uses for `worktree.remove-managed`.
+      .reconcileHygiene({ actor: { kind: "human" }, deleteBranch: true })
+      .then((report) => {
+        if (report.removed.length === 0) return;
+        // Only the removals are announced. Refusals at startup are the NORMAL state — every worktree
+        // with work still in it is a refusal — so surfacing them here would train people to ignore
+        // the notification. `reconcile_worktree_hygiene` reports them in full when someone asks.
+        this.host.notify(
+          this.t("worktree hygiene: removed {0} landed change worktree(s)", report.removed.length),
+          "info",
+        );
+        this.refreshAgentsViews();
+      })
+      .catch(() => { /* best-effort: never let cleanup cost an activation */ });
+  }
+
+  /**
    * t-8310ca — drop continuity brief/state (+ matching activity logs) for agent names that are not
    * declared, not live in tmux, and not in the session ledger. Complements forgetAgent when dismiss
    * never ran. Best-effort; never blocks activation.
@@ -4123,7 +4228,13 @@ export class Workspace {
     if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata);
     }
-    await this.submitNoticeLine(agent, line);
+    const receipt = await this.submitNoticeLine(agent, line);
+    // t-8d190f — a typed-but-unsubmitted line used to report "notified". The doorbell must stay
+    // actionable instead: the caller learns the text is staged and can decide, rather than believing
+    // a delivery that never started a turn.
+    if (receipt.status === "submit-unconfirmed") {
+      return { status: "submit-unconfirmed", submitReason: receipt.reason };
+    }
     return { status: "notified" };
   }
 
@@ -4176,13 +4287,18 @@ export class Workspace {
     return { sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
   }
 
-  private async submitNoticeLine(agent: string, line: string): Promise<void> {
+  private async submitNoticeLine(agent: string, line: string): Promise<SubmitReceipt> {
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session))) {
       this.noticeQueue.clear(agent);
       throw new Error(`agent '${agent}' is not running`);
     }
-    await this.tmux.sendSubmittedLine(session, line);
+    // t-8d190f — hand the runtime's measured composer profile down so the submit can be CONFIRMED
+    // (the text left the editor) instead of assumed. Undeclared runtimes resolve to undefined and
+    // keep the older, weaker check, reported as unconfirmed rather than as success.
+    return this.tmux.sendSubmittedLine(session, line, {
+      composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
+    });
   }
 
   /** Automatic handoff reminders are hook-only. If the runtime cannot receive hooks, Tachyon stays quiet. */
@@ -5681,6 +5797,7 @@ export class Workspace {
     await this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
+    this.sweepWorktreeHygiene(); // t-e74631: change worktrees already landed, left behind by finished agents
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
     // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.

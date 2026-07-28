@@ -20,6 +20,7 @@
  * its own, instead of leaving an agent that ran once at noon holding its share all day.
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import { EngineEventJournal } from "../engine-service/eventJournal.js";
 import { isExclusivelyOwned, type ExecutionEdgeKind, type ExecutionNodeKind, type ExecutionProvenance, type ExecutionState, type SealedExecutionEvent } from "./eventSchema.js";
@@ -256,17 +257,67 @@ export class ExecutionLedger {
  * The stream id is derived, not random, for the same reason: an id that changed per start would make
  * the journal reject its own history as foreign on the very next boot.
  */
+/**
+ * Read the execution events for one workspace WITHOUT opening a journal.
+ *
+ * t-d5066b established that `EngineEventJournal` is single-writer by construction. Its constructor
+ * also COMPACTS — it can rewrite the file when the tail exceeds `maxEvents` — so a reader that
+ * instantiated one just to look would be a second writer, and two writers corrupt the sequence
+ * irrecoverably. A reader therefore parses the file directly and never holds a journal at all.
+ *
+ * FAIL-CLOSED AND LOSSLESS-OR-NOTHING is deliberately NOT the rule here: a truncated final line is
+ * normal for an append-only log being written concurrently, so the last partial record is skipped
+ * while everything before it is returned. A record that parses but is not an execution event is
+ * skipped too. What is never done is throwing away the whole history because its tail was mid-write.
+ */
+export function readExecutionEvents(input: { storageRoot: string; workspaceHash: string }): SealedExecutionEvent[] {
+  const filePath = path.join(input.storageRoot, "events", "executions.jsonl");
+  let raw: string;
+  try { raw = fs.readFileSync(filePath, "utf8"); }
+  catch { return []; } // absent ledger is "no telemetry", not an error — the caller says which.
+  const out: SealedExecutionEvent[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { kind?: string; payload?: unknown };
+      if (entry.kind !== EXECUTION_EVENT_KIND || !entry.payload) continue;
+      out.push(entry.payload as SealedExecutionEvent);
+    } catch {
+      // A half-written trailing line is expected on a live log; earlier records stay valid.
+      continue;
+    }
+  }
+  return out;
+}
+
+/**
+ * Where a workspace's execution log lives, and the stream id its entries carry.
+ *
+ * t-c6a89e — exported because a READER has to arrive at the same two values, and a reader that
+ * recomputed them would be a second definition of where the ledger is: the day one moved, the other
+ * would silently read an empty file and the surface would call it "no telemetry".
+ */
+export function executionLedgerLocation(input: { storageRoot: string; workspaceHash: string }): {
+  filePath: string;
+  streamId: string;
+} {
+  return {
+    filePath: path.join(input.storageRoot, "events", "executions.jsonl"),
+    // Padded so a short hash still clears the journal's 8-character minimum for a stream id.
+    streamId: `execution-graph-${input.workspaceHash}`.slice(0, 128),
+  };
+}
+
 export function openExecutionLedger(input: {
   storageRoot: string;
   workspaceHash: string;
   maxBytesPerAgent?: number;
   maxAgeMs?: number;
 }): ExecutionLedger {
-  // Padded so a short hash still clears the journal's 8-character minimum for a stream id.
-  const streamId = `execution-graph-${input.workspaceHash}`.slice(0, 128);
+  const { filePath, streamId } = executionLedgerLocation(input);
   return new ExecutionLedger({
     journal: new EngineEventJournal({
-      filePath: path.join(input.storageRoot, "events", "executions.jsonl"),
+      filePath,
       engineInstanceId: streamId,
     }) as unknown as ExecutionJournalPort,
     ...(input.maxBytesPerAgent !== undefined ? { maxBytesPerAgent: input.maxBytesPerAgent } : {}),

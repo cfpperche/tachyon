@@ -16,15 +16,6 @@
 .td-root { max-width: 82ch; margin: 0; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); min-width: 0; }
 .td-root, .td-root * { min-width: 0; }
 
-/* t-5564b4 — defend this route from a leaked global. `rich-doc.css` carries a bare
-   `.err { position: fixed; ... }`, and `.ds-badge.err` matches it, so a missing-dep badge was yanked
-   out of the Dependencies list and pinned to the bottom of the window. That sheet is lazily
-   co-loaded into Control and never unloaded — its own header documents the same defect class for
-   bare ELEMENT selectors (t-e085bc/t-ca31c2); a bare CLASS is the next rung. The real fix is to
-   namespace it there and is filed separately (t-61189b); this only stops the route the report is
-   about from being wrong while that happens. */
-.td-root .ds-badge.err { position: static; inset: auto; box-shadow: none; }
-
 /* Identity under the title: an id and a status are metadata, not part of the heading. */
 .td-identity { display: flex; align-items: center; gap: var(--ds-2); flex-wrap: wrap; margin: calc(var(--ds-2) * -1) 0 var(--ds-3); }
 

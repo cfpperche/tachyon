@@ -51,6 +51,23 @@ function fillUntilRefused(ledger: ExecutionLedger, agentId: string, cap = 500): 
   throw new Error(`budget never refused ${agentId} after ${cap} events — the per-agent bound is not holding`);
 }
 
+/**
+ * t-2622eb — the instant every fixture in this file happens at, and it is NOW on purpose.
+ *
+ * It used to be the literal `"2026-07-27T12:00:00.000Z"`, written twice: here, and again as the
+ * starting value of the aging test's injected clock. Cases that inject a clock stayed consistent with
+ * it. Cases that do NOT inject one compare it against real `Date.now()` and `DEFAULT_MAX_AGE_MS`
+ * (24h), so the fixture aged out on its own exactly 24h after that literal: main went red at
+ * 2026-07-28T12:00Z with nobody having touched a line, and the 09:54Z verify-record was honest — it
+ * was simply taken before the bomb armed.
+ *
+ * Deriving from `Date.now()` removes the absolute date instead of moving it forward. Every property
+ * here is relative — accounting survives a restart, a budget bounds a noisy agent, aging frees budget
+ * without rewriting history — and not one of them was ever about a calendar date.
+ */
+const FIXTURE_NOW = Date.now();
+const FIXTURE_AT = new Date(FIXTURE_NOW).toISOString();
+
 function event(over: Partial<Parameters<typeof sealExecutionEvent>[0]> = {}): SealedExecutionEvent {
   return sealExecutionEvent({
     kind: "spawn",
@@ -58,7 +75,7 @@ function event(over: Partial<Parameters<typeof sealExecutionEvent>[0]> = {}): Se
     state: "running",
     provenance: "measured",
     correlation: { agentId: "ada", executionId: "exec-1" },
-    at: "2026-07-27T12:00:00.000Z",
+    at: FIXTURE_AT,
     ...over,
   });
 }
@@ -142,7 +159,9 @@ describe("SDD 480 §7.2 — bytes per agent first, age second", () => {
   });
 
   it("frees an agent's budget as its events age out, without deleting them from the log", () => {
-    let clock = Date.parse("2026-07-27T12:00:00.000Z");
+    // Starts at the same instant the fixtures are stamped with, which is what makes them "fresh" to
+    // this ledger — the coupling is now to ONE value instead of the same date literal written twice.
+    let clock = FIXTURE_NOW;
     const journal = fakeJournal();
     const ledger = new ExecutionLedger({ journal, maxBytesPerAgent: 400, maxAgeMs: 60_000, now: () => clock });
 
@@ -153,7 +172,12 @@ describe("SDD 480 §7.2 — bytes per agent first, age second", () => {
 
     clock += 120_000; // everything recorded above is now older than maxAgeMs
     expect(ledger.bytesFor("ada")).toBe(0);
-    expect(ledger.record(event({ correlation: { agentId: "ada", executionId: "exec-after-age" }, at: "2026-07-27T12:02:00.000Z" }))).toBe(true);
+    expect(ledger.record(event({
+      correlation: { agentId: "ada", executionId: "exec-after-age" },
+      // Stamped AT the advanced clock: the point is that a fresh event still records once the old
+      // ones aged out, so its own age has to be measured from where the clock now is.
+      at: new Date(FIXTURE_NOW + 120_000).toISOString(),
+    }))).toBe(true);
     // Age frees the BUDGET; it does not rewrite history. The old events are still in the log.
     expect(ledger.readAll().length).toBe(stored + 1);
   });

@@ -252,6 +252,34 @@ describe("loadProfileAwareConfig", () => {
     expect(JSON.stringify(asAgent(result.config?.agents.codex)?.profileNativeConfig)).not.toContain("memories");
   });
 
+  it("keeps an existing agent loadable while omitting newly gated dangerous global values", () => {
+    const root = temporaryRoot("tachyon-agent-profile-codex-upgrade-");
+    const homeDir = temporaryRoot("tachyon-agent-profile-codex-upgrade-global-");
+    fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+    fs.writeFileSync(
+      path.join(homeDir, ".codex", "config.toml"),
+      'approval_policy = "never"\nsandbox_mode = "danger-full-access"\n',
+    );
+    const bytes = writeProfile(root, {
+      nativeConfig: {
+        permissions: {
+          source: "global",
+          treatment: "overlay",
+          refresh: "every-launch",
+          lifecycle: ["fresh", "restart", "resume"],
+        },
+      },
+    });
+
+    const result = load(root, authority(bytes), { homeDir });
+
+    expect(result.errors).toEqual([]);
+    expect(result.config).toBeDefined();
+    expect(asAgent(result.config?.agents.codex)?.profileNativeConfig?.permissions).toEqual({});
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.join("\n")).toContain("authorize it for this agent");
+  });
+
   it("fails closed when selected workspace config contains an ambient unapproved key", () => {
     const root = temporaryRoot("tachyon-agent-profile-codex-workspace-scalars-");
     fs.mkdirSync(path.join(root, ".codex"), { recursive: true });

@@ -420,7 +420,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
     return (
       <>
         {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
-        <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Task Studio...</div></div>
+        <div class="ds-degrade rd-degrade"><span class="codicon codicon-loading" /><div>Loading Task Studio...</div></div>
       </>
     );
   }
@@ -574,8 +574,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
         regions={{
           fields: (
             <>
-              <div class="eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.taskId)}</div>
-              <input class="title" value={title} onInput={(e) => { setTitle((e.currentTarget as HTMLInputElement).value); markDirty("title"); }} placeholder="Task title" aria-label="Task title" />
+              <div class="rd-eyebrow">{isNew ? adapter.newLabel() : adapter.editLabel(entity.taskId)}</div>
+              <input class="rd-title" value={title} onInput={(e) => { setTitle((e.currentTarget as HTMLInputElement).value); markDirty("title"); }} placeholder="Task title" aria-label="Task title" />
 
               <KitFieldRow class="ts-fields">
                 <div class="ts-field">
@@ -673,7 +673,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
             <>
               <EditorToolbar run={run} onOpenSketch={openBlankSketch} onToggleSlash={() => setSlashOpen((v) => !v)} />
               {slashOpen && <SlashMenu run={run} onOpenSketch={openBlankSketch} />}
-              <div class="editor-shell" onDragOver={(e) => e.preventDefault()}>
+              <div class="rd-editor-shell" onDragOver={(e) => e.preventDefault()}>
                 <div ref={mount} />
               </div>
             </>
@@ -687,7 +687,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
         }}
       />
       {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
-      {error && <div class="err" role="alert">{error}</div>}
+      {error && <div class="rd-err" role="alert">{error}</div>}
     </>
   );
 }

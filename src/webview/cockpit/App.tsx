@@ -19,6 +19,7 @@ import {
   type CompanionPairOffer,
 } from "./messages";
 import { CardTemplateBlock } from "./CardTemplateBlock";
+import { ExecutionGraphSection } from "./ExecutionGraphSection";
 import { EngineLogPanel } from "./EngineLogPanel";
 import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import {
@@ -380,6 +381,7 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   validations: { icon: "checklist", navKey: "navValidations" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
   deliveries: { icon: "git-commit", navKey: "navDeliveries" },
+  "execution-graph": { icon: "type-hierarchy", navKey: "navExecutionGraph" },
   runtime: { icon: "graph", navKey: "navRuntime" },
   "runtime-config": { icon: "settings", navKey: "navRuntimeConfig" },
   tmux: { icon: "terminal-tmux", navKey: "navTmux" },
@@ -1212,6 +1214,15 @@ export function App(p: CockpitAppProps) {
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
   const section = m?.section ?? "overview";
+  // SDD 480 Phase 4 — selection and filters are CLIENT state. They are a way of looking, not a fact
+  // about the workspace, so they never round-trip to the host and never touch the ledger.
+  const [egSelected, setEgSelected] = useState<string | undefined>(undefined);
+  const [egFilters, setEgFilters] = useState<{ turnId?: string; state?: string; kind?: string; agentId?: string }>({});
+  // Derived, not stored: keeping the detail in state as well as the selection is how the two drift
+  // and the panel ends up describing a node that is no longer on screen.
+  // Looked up from the VM the host already sent, not rebuilt from a projection the client does not
+  // have. Derived rather than stored, so selection and detail cannot drift apart.
+  const egDetail = egSelected ? m?.executionGraph?.details[egSelected] : undefined;
   const activeRoute = m?.activeRoute;
   // t-610705 (Phase C.2) — Fleet subroutes want the SAME full-bleed/no-checkedAt-footer treatment
   // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
@@ -1686,6 +1697,22 @@ export function App(p: CockpitAppProps) {
           onRevealPath={p.onRevealPath}
           onCopyText={p.onCopyText}
           onPost={p.onPost}
+        />
+      </ModuleChrome>
+    );
+  } else if (section === "execution-graph") {
+    body = (
+      <ModuleChrome title={s.executionGraphTitle} hint={s.executionGraphHint}>
+        <ExecutionGraphSection
+          s={s}
+          // A host that serves no ledger yields `no-telemetry`, not an empty diagram: "nothing is
+          // recorded here" and "nothing ran" are different answers and only one of them is true.
+          vm={m.executionGraph ?? { status: "no-telemetry", nodes: [], edges: [], rows: [], width: 0, height: 0, available: { turnIds: [], states: [], kinds: [], agentIds: [] }, matched: 0, grouped: false, details: {} }}
+          detail={egDetail}
+          selected={egSelected}
+          filters={egFilters}
+          onSelect={setEgSelected}
+          onFilter={setEgFilters}
         />
       </ModuleChrome>
     );

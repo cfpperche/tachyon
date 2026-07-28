@@ -1,5 +1,7 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
-import { actionsFor, primaryActions, moreActions, type ActionId } from "../../src/sidebar/actions";
+import { actionsFor, primaryActions, moreActions, ACTION_META, type ActionId } from "../../src/sidebar/actions";
 import type { AgentVM } from "../../src/sidebar/types";
 
 const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", kind: "agent", ...o });
@@ -149,15 +151,43 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
   });
   it("management actions always present", () => {
-    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "rename", "remove"]));
+    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "remove"]));
   });
   it("ad-hoc agent rows omit declared-only edit actions", () => {
     const actions = actionsFor(A({ status: "running", adhoc: true }));
-    expect(actions).toEqual(expect.arrayContaining(["promote", "rename", "remove"]));
+    expect(actions).toEqual(expect.arrayContaining(["promote", "remove"]));
     expect(actions).not.toContain("edit");
     expect(actions).not.toContain("editYaml");
     expect(actions).not.toContain("clone");
-    expect(moreActions(A({ status: "running", adhoc: true }))).toEqual(expect.arrayContaining(["promote", "rename", "remove"]));
+    expect(moreActions(A({ status: "running", adhoc: true }))).toEqual(expect.arrayContaining(["promote", "remove"]));
+  });
+
+  /**
+   * `t-4662e9` — renaming an agent belongs to the Agent Form, and to nothing on this surface.
+   *
+   * The sidebar's Rename invoked `config.agent.rename`, which rewrites the `tachyon.yml` entry, while
+   * the Agent Form runs the canonical profile lifecycle — authority re-signing, digest, retiring the
+   * old name. One word, two different operations. The ad-hoc row made it plainer: the action was
+   * pushed unconditionally, so it offered to rename a declared entity that does not exist.
+   *
+   * What is asserted is an ABSENCE, which is the kind of fix that regresses silently. Checking every
+   * row shape is what makes a future `out.push("rename")` fail here instead of in someone's hands.
+   */
+  it("offers no rename on any row shape — that operation is the Agent Form's", () => {
+    const shapes = [
+      A({ status: "running" }),
+      A({ status: "running", adhoc: true }),
+      A({ status: "stopped" }),
+      A({ status: "stopping" }),
+      A({ status: "crashed" }),
+      A({ status: "running", kind: "terminal" }),
+      A({ status: "running", worktree: "feature/x" }),
+    ];
+    for (const shape of shapes) {
+      expect(actionsFor(shape)).not.toContain("rename" as ActionId);
+      expect(moreActions(shape)).not.toContain("rename" as ActionId);
+      expect(primaryActions(shape)).not.toContain("rename" as ActionId);
+    }
   });
   it("removal is a single action for declared and ad-hoc agents", () => {
     for (const a of [
@@ -205,5 +235,51 @@ describe("sidebar action matrix (spec 237)", () => {
     // the inline bar is identical whether or not the runtime supports fork
     const plain = A({ status: "running", kind: "agent" });
     expect(primaryActions(forkable)).toEqual(primaryActions(plain));
+  });
+});
+
+/**
+ * `t-4662e9` — the surface is gone all the way down, not just hidden from the row.
+ *
+ * Removing the action alone would leave `tachyon.renameAgentItem` contributed in package.json with no
+ * caller. That is the exact shape this task exists to delete: the command was ALREADY unreachable
+ * from the palette (`when: false`), so the sidebar was its only entrance, and a contributed command
+ * nobody can invoke is the second inconsistent surface wearing a different hat.
+ */
+describe("t-4662e9 — rename is not reachable from the sidebar surface at any layer", () => {
+  const repoRoot = process.cwd();
+  const read = (file: string) => fs.readFileSync(path.join(repoRoot, file), "utf8");
+
+  it("declares no rename action and no label for one", () => {
+    expect(Object.keys(ACTION_META)).not.toContain("rename");
+    // The label mattered as much as the action: it is what the menu rendered.
+    expect(JSON.stringify(ACTION_META)).not.toContain("Rename");
+  });
+
+  it("contributes no rename command, palette entry, or localized title", () => {
+    const manifest = JSON.parse(read("package.json")) as {
+      contributes: { commands: { command: string }[]; menus: Record<string, { command: string }[]> };
+    };
+    expect(manifest.contributes.commands.map((c) => c.command)).not.toContain("tachyon.renameAgentItem");
+    for (const [menu, items] of Object.entries(manifest.contributes.menus)) {
+      expect(items.map((i) => i.command), `${menu} still lists it`).not.toContain("tachyon.renameAgentItem");
+    }
+    // A stale %command.renameAgentItem% key would survive silently in both locales.
+    for (const nls of ["package.nls.json", "package.nls.pt-br.json"]) {
+      expect(Object.keys(JSON.parse(read(nls)) as Record<string, string>), nls).not.toContain("command.renameAgentItem");
+    }
+  });
+
+  it("registers no handler and leaves the sidebar command map without a rename entry", () => {
+    expect(read("src/extension.ts")).not.toContain('registerCommand("tachyon.renameAgentItem"');
+    expect(read("src/webview/SidebarPrototype.ts")).not.toContain("tachyon.renameAgentItem");
+  });
+
+  it("keeps the runtime-api operation, which is a separate contract with its own service", () => {
+    // Deliberately NOT removed: `config.agent.rename` is a declared EXTENSION_COMMAND_ACTIONS entry
+    // served by extensionOperationService, reachable by API clients that never had a sidebar.
+    // Asserting it stays keeps a later cleanup from mistaking this task for permission to drop it.
+    expect(read("src/runtime-api/extensionOperations.ts")).toContain("config.agent.rename");
+    expect(read("src/engine-service/extensionOperationService.ts")).toContain("config.agent.rename");
   });
 });

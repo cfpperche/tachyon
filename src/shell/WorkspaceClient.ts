@@ -9,6 +9,7 @@ import {
   type StagedEngineRuntime,
 } from "../engine-service/engineBundleStore.js";
 import type { EngineReleaseChannel } from "../engine-service/protocol.js";
+import { classifyEngineCurrency, type EngineCurrency } from "../engine-service/engineCurrency.js";
 import {
   ensureDaemonEngine,
   type EnsureDaemonEngineOptions,
@@ -66,6 +67,8 @@ export interface WorkspaceClient {
   readonly workspaceRoot: string;
   readonly workspaceHash: string;
   readonly identity: EngineServiceIdentityV1;
+  /** t-f54b62 — is the daemon serving this workspace the bundle the extension would launch? */
+  readonly engineCurrency: EngineCurrency;
   readonly snapshot: WorkspaceSnapshotEnvelopeV1;
   readonly presentation: WorkspacePresentationSnapshotV1;
   readonly bridgeUrl: string;
@@ -231,6 +234,22 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
 
   get identity(): EngineServiceIdentityV1 {
     return cloneJson(this.currentIdentity);
+  }
+
+  /**
+   * t-f54b62 — is the daemon we attached to the bundle this extension would launch?
+   *
+   * Both halves were already here and the answer was thrown away: the daemon reports its `bundleId`
+   * and `startedAt`, and `ensureOptions.bundle` is the bundle we asked for. The supervisor even
+   * classified them and returned `disposition: "reused-compatible"`, which no caller ever read. An
+   * engine older than the installed build serves fine and simply lacks whatever landed after it
+   * started — indistinguishable from "nothing to show" on every empty surface until something says so.
+   */
+  get engineCurrency(): EngineCurrency {
+    return classifyEngineCurrency({
+      running: this.currentIdentity,
+      expectedBundleId: this.ensureOptions.bundle?.bundleId,
+    });
   }
 
   /** t-cd3626 — recent daemon console lines from the engine process ring (best-effort). */

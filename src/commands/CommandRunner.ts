@@ -1,3 +1,4 @@
+import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import type { TachyonConfig, CommandDef } from "../config/loadConfig.js";
 
@@ -156,9 +157,9 @@ export class CommandRunner {
 
   /** Kills every command session of this workspace (Stop All). */
   async killAll(): Promise<void> {
-    const states = (await this.opts.tmux.sessionStates(this.prefix)) ?? new Map();
-    for (const session of states.keys()) {
-      await this.opts.tmux.killSession(session);
-    }
+    // t-2d2ce7 — sweep until empty. The old `?? new Map()` turned an AMBIGUOUS read into "nothing to
+    // kill", so a tmux hiccup silently made Stop All a no-op here; and a single pass could not catch
+    // a session born while it ran.
+    await sweepSessions(this.opts.tmux, this.prefix);
   }
 }

@@ -122,8 +122,13 @@ export interface SendPromptRequest {
 export type SendPromptResponse =
   | {
       ok: true;
-      /** Immediate submit vs queued until idle (deliverNotice). */
-      status: "notified" | "queued";
+      /**
+       * Immediate submit vs queued until idle (deliverNotice).
+       * t-8d190f — `submit-unconfirmed` is additive: the prompt was typed into the agent's composer
+       * but Tachyon never observed it leave, so it may be staged unsent. Reporting `notified` for
+       * that case is what this task fixes; a companion that does not know the value shows it verbatim.
+       */
+      status: "notified" | "queued" | "submit-unconfirmed";
       agent: string;
       dropped?: number;
       queued?: number;
@@ -158,7 +163,7 @@ export type CompanionListApprovalsResponse =
   | { ok: false; code: "unpaired" | "expired" | "unknown"; message: string };
 
 export type CompanionResolveApprovalResponse =
-  | { ok: true; id: string; status: "approved" | "denied"; injectError?: string }
+  | { ok: true; id: string; status: "approved" | "denied"; injectError?: string; pinError?: string }
   | {
       ok: false;
       code: "unpaired" | "expired" | "not_found" | "not_pending" | "unknown";

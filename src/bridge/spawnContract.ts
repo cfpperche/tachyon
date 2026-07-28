@@ -259,3 +259,16 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
   const withGuidance = parent ? `${withJournal}\n\n${notifyParentGuidance(parent)}\n\n${noInteractivePromptGuidance(parent)}` : withJournal;
   return `${identityLine(name)}\n\n${withGuidance}`;
 }
+
+/**
+ * t-6fe04b — one wording for one rule, refused twice.
+ *
+ * A refusal that only says what NOT to do gets worked around. In the incident behind t-e787dc the
+ * caller met this rule, was told to "omit cwd or spawn without parent", and instead wrote an
+ * absolute path into the child's BRIEFING — outside every guardrail the refusal existed to protect.
+ * So the message names the governed alternative, and the Bridge and the AgentManager say the same
+ * sentence: two refusals disagreeing about the way out would be worse than one.
+ */
+export const PARENT_CWD_REFUSAL =
+  "spawn_agent cannot combine parent with cwd: a parented child inherits its parent's working directory. "
+  + "To run in an existing managed worktree, use delivery_join. To choose the directory yourself, spawn without parent.";

@@ -257,6 +257,19 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: #c8c8c8;
   }
+  /* t-045d44 — `options.focus.lines`. The custom property is set on `.row-focus` ONLY when a template
+     asked for it, so an unconfigured card never matches this rule and keeps the single-line ellipsis
+     above byte for byte. Multi-line needs `white-space: normal` alongside the clamp: the rule it
+     overrides sets `nowrap`, and without undoing that the text cannot wrap and the clamp has nothing
+     to act on. `align-items: baseline` on the parent keeps the arrow/source aligned to the FIRST line. */
+  .row-focus[style*="--card-focus-lines"] .focus-text {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: var(--card-focus-lines);
+    line-clamp: var(--card-focus-lines);
+    text-overflow: clip;
+  }
   .msub {
     flex: 1 0 100%;
     color: var(--ds-muted);

@@ -170,6 +170,40 @@
     ]
   },
   {
+    "view": "sidebar",
+    "fixture": "card-template-options",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=card-template-options",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
+    ]
+  },
+  {
+    "view": "sidebar",
+    "fixture": "card-template-options-default",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=card-template-options-default",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet"
+    ]
+  },
+  {
     "view": "cockpit",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",
@@ -194,6 +228,111 @@
     "view": "cockpit",
     "fixture": "engine",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=engine",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-real",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-real",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-empty",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-empty",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-no-telemetry",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-no-telemetry",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "execution-graph-error",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-error",
     "frame": {
       "w": 1100,
       "h": 720

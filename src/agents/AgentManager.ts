@@ -50,6 +50,7 @@ import {
   type RuntimeLaunchPreflightPort,
 } from "../runtime/launchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
@@ -64,12 +65,15 @@ import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
-import type { SessionWorkRecord } from "./sessionWorkRecord.js";
+import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
+import { sweepSessions } from "../tmux/sessionSweep.js";
+import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOutcome } from "./formation/lifecycleConsumer.js";
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
+import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -464,6 +468,21 @@ export interface AgentManagerOptions {
    * Empty/undefined = no systemd scope wrap.
    */
   getAgentMemoryMax?: () => string | undefined;
+  /**
+   * t-2d2ce7 — a Stop All that hit its sweep bound with sessions still alive.
+   *
+   * Optional, but never silent when wired: "stop everything" is the command a human reaches for to
+   * get control of the machine back, so a partial one has to say so rather than return like a
+   * success. Omitted by callers that have nowhere to surface it.
+   */
+  onStopAllIncomplete?: (passes: number) => void;
+  /**
+   * t-50bbd4 — the formation lane, as a narrow port. Optional: a manager without it behaves exactly
+   * as before, which is what keeps this wiring reversible.
+   */
+  formation?: FormationLifecyclePort;
+  /** t-50bbd4 — a formation lane that REFUSED. Surfaced so a refusal never reads as "no Soul". */
+  onFormationSoulRefused?: (agent: string, reason: string) => void;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
   /**
@@ -997,9 +1016,28 @@ export class AgentManager {
   /** Resolve the current canonical identity at an explicit lifecycle boundary. */
   async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
     const def = this.agentDefinitionOf(name);
-    if (!def?.soul) return undefined;
     const principal = this.soulPrincipal(name);
-    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def));
+    const declared = def?.soul
+      ? await withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def))
+      : undefined;
+    // t-50bbd4 — the formation lane is consulted only when nothing was declared. SDD 427 shipped the
+    // lanes and SDD 429 shipped lifecycle/Studio, and this call is the seam neither wrote: without it
+    // a canonical agent's Soul could be authored, transacted and authority-checked and still never
+    // reach a spawn, because this method read `def.soul` and nothing else.
+    let formation: FormationSoulOutcome | undefined;
+    if (!declared && this.opts.formation) {
+      try {
+        formation = await this.opts.formation.resolveSoul({ agentName: name, operationId: `soul-${name}-${Date.now()}` });
+      } catch (err) {
+        // A lane that throws is a refusal, not an absence. Identity is never guessed.
+        formation = { state: "refused", reason: err instanceof Error ? err.message : String(err) };
+      }
+    }
+    const chosen = chooseLifecycleSoul({ declared, formation });
+    // Never silent: a refused formation that read as "this agent has no Soul" is how an operator ends
+    // up believing a profile is live when it is not.
+    if (chosen.refusal) this.opts.onFormationSoulRefused?.(name, chosen.refusal);
+    return chosen.soul;
   }
 
   /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
@@ -1451,8 +1489,13 @@ export class AgentManager {
     def: AgentDef,
     worktree: WorktreeRecord | undefined,
     cwd: string,
-    /** t-9d250c — the frozen brief this restart is about to replay, for stale-reference reporting. */
+    /** t-9d250c — the frozen brief this launch is about to replay, for stale-reference reporting. */
     replayedBrief?: string,
+    /**
+     * t-7f3009 — which launch is asking. A spawn needs this record for the SAME reason a restart does:
+     * the brief it carries can be frozen from an earlier launch and name work the board has closed.
+     */
+    launch: SessionLaunchKind = "restart",
   ): SessionWorkRecord | undefined {
     if (!this.opts.assignedWork) return undefined;
     // Same gate `projectGuidanceFor` uses: a launch with no channel for a startup document gets no
@@ -1464,7 +1507,7 @@ export class AgentManager {
       rows = this.opts.assignedWork(name);
     } catch (error) {
       throw new Error(
-        `refusing restart for agent '${name}': its assigned work could not be read, so a new session ` +
+        `refusing ${launch} for agent '${name}': its assigned work could not be read, so a new session ` +
         "cannot be told what it is working on; fix the task store and retry",
         { cause: error },
       );
@@ -1485,6 +1528,7 @@ export class AgentManager {
     }
     const durable = worktree ?? this.opts.ledger?.get(name)?.worktree;
     return {
+      launch,
       isolation: durable
         ? { kind: "worktree", path: durable.path, branch: durable.branch }
         : { kind: "shared", cwd },
@@ -2178,9 +2222,11 @@ export class AgentManager {
         throw new Error(`spawn_agent cwd is not an existing directory: ${requested}`);
       }
       if (parent) {
-        throw new Error(
-          `spawn_agent cwd is not used for parented ad-hoc children (they inherit the parent's cwd); omit cwd or spawn without parent`,
-        );
+        // t-6fe04b — the Bridge refuses this pair earlier, but only when the caller states `parent`
+        // explicitly: an omitted parent resolves to the caller itself further down that path, so this
+        // is the guard that catches every case. Defence in depth, same sentence, so a caller who
+        // reaches either one is pointed at the same way out.
+        throw new Error(PARENT_CWD_REFUSAL);
       }
       if (worktree) {
         if (path.resolve(worktree.path) !== path.resolve(requested)) {
@@ -2211,6 +2257,24 @@ export class AgentManager {
     let preparedRuntimeHarness: MaterializedHarness | null | undefined;
     let createdRuntimeHome = false;
     const preparedLaunch = await (async () => {
+    // t-7f3009 — the spawn brief is NOT self-checking. `taskBrief` here can be a document frozen at an
+    // earlier launch (the incident: the same t-2f6cdd contract replayed five times after it landed,
+    // naming a worktree that no longer existed). t-9d250c built the board cross-check but wired it only
+    // into restart, so the other door stayed open. Same record, same selector, same stale-reference
+    // reporting — the difference is only which launch it describes.
+    const spawnWorkRecord = this.sessionWorkRecordFor(
+      name,
+      def,
+      worktree,
+      cwd,
+      [
+        taskBrief,
+        opts?.contract
+          ? Object.values(opts.contract).filter((value) => typeof value === "string").join("\n")
+          : undefined,
+      ].filter(Boolean).join("\n"),
+      "spawn",
+    );
     // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
     const effectiveInstructions = this.effectiveInstructions(
       name,
@@ -2222,6 +2286,7 @@ export class AgentManager {
       resolvedSoul,
       resolvedEvolution,
       projectGuidance,
+      spawnWorkRecord,
     );
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
@@ -2803,7 +2868,17 @@ export class AgentManager {
     if (binary === "grok") {
       const home = this.opts.materializeBridgeMcpGrok?.(name, cwd ?? this.opts.workspaceRoot);
       if (!home) return { cmd, env: {}, wired: false };
-      return { cmd, env: { GROK_HOME: home }, wired: true };
+      // t-c46c35 — the non-harness canonical Grok path, and the one that actually needed the pin: it
+      // deliberately skips `isolate: transcript` (t-303f2b), so it never reaches HarnessManager's
+      // materializers. t-0e88f3 corrected WHICH pin carries the guarantee: `--no-memory` was measured
+      // NOT to outrank GROK_MEMORY=1, so the env pin is the control and the flag is kept only as a
+      // documented no-op. Still only on the wired path — an unwired command is returned untouched here,
+      // exactly as every other runtime above does, and inherits the runtime's own default.
+      return {
+        cmd: [cmd, ...grokMemoryArgs(GROK_CANONICAL_MEMORY_POLICY)].join(" "),
+        env: { GROK_HOME: home, ...grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY) },
+        wired: true,
+      };
     }
     if (binary === "hermes") {
       const home = this.opts.materializeBridgeMcpHermes?.(name);
@@ -4731,16 +4806,38 @@ export class AgentManager {
   }
 
   /** Kills every session of this workspace — alive agents and crashed postmortem panes alike. */
+  /**
+   * Kill every agent session in this workspace, sweeping until a successful read finds none.
+   *
+   * t-2d2ce7 — this used to enumerate ONCE via `agentStates()` and kill what it saw, which had two
+   * ways to leave something alive. A session born during the sweep was never in the snapshot; and
+   * `agentStates()` falls back to the `lastAgentStates` CACHE when the tmux read is ambiguous, so a
+   * hiccup could have it killing a stale list — or nothing at all — while reporting the names it
+   * "stopped". The sweep reads `sessionStates` directly for exactly that reason: for stop-everything,
+   * a cache is the wrong answer and an unreadable state must be retried, not assumed empty.
+   */
   async killAll(): Promise<string[]> {
-    const all = [...(await this.agentStates()).keys()];
-    for (const name of all) {
-      await this.detachPaneTranscript(this.session(name));
-      await this.opts.tmux.killSession(this.session(name));
-      this.lineage.delete(name);
-      this.adhoc.delete(name);
-      this.opts.onKilled?.(name);
+    const killedAgents: string[] = [];
+    const result = await sweepSessions(this.opts.tmux, this.prefix, {
+      onKill: async (session) => {
+        const name = agentFromSession(this.opts.wsHash, session);
+        if (name === null) return;
+        await this.detachPaneTranscript(session);
+        this.lineage.delete(name);
+        this.adhoc.delete(name);
+        this.opts.onKilled?.(name);
+        killedAgents.push(name);
+      },
+    });
+    // Transcript detach happens in `onKill`, i.e. AFTER the session is killed rather than before it.
+    // That ordering is safe — detaching a pipe from a dead pane is a no-op — and it is what lets the
+    // one sweep own the kill for all three surfaces instead of each reimplementing the loop.
+    if (!result.converged) {
+      // Never silent: a sweep that hit its bound with work outstanding is not a completed Stop All,
+      // and the operator asked for one precisely because they wanted control back.
+      this.opts.onStopAllIncomplete?.(result.passes);
     }
-    return all;
+    return killedAgents;
   }
 
   /**

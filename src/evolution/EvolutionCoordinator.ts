@@ -6,7 +6,8 @@ import type { EvolutionReview } from "./domain.js";
 import type { EvolutionStore } from "./EvolutionStore.js";
 
 export interface EvolutionNoticeResult {
-  status: "notified" | "queued";
+  /** t-8d190f — `submit-unconfirmed`: typed into the composer, never observed to leave it. */
+  status: "notified" | "queued" | "submit-unconfirmed";
 }
 
 export interface EvolutionCoordinatorDeps {
@@ -97,6 +98,12 @@ export class EvolutionCoordinator {
       this.emitReviewChanged(created.review);
       try {
         const delivery = await this.deps.deliverNotice(agent, composeEvolutionReviewNotice(created.review));
+        // t-8d190f — an unconfirmed submit is not a delivery. Route it through the existing failure
+        // path rather than persisting a third value into the stored review: the notice may be sitting
+        // staged in the agent's composer, so recording it as delivered would lose the review.
+        if (delivery.status === "submit-unconfirmed") {
+          throw new Error("submission to the agent's composer was not confirmed (receipt: submit-unconfirmed)");
+        }
         const review = await this.deps.store.markReviewDelivery(agent, created.review.id, delivery.status);
         this.emitReviewChanged(review);
       } catch (error) {

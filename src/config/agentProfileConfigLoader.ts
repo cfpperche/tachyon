@@ -79,6 +79,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
 
   const doc = parseDocument(input.yamlText, { uniqueKeys: true });
   const errors: string[] = [];
+  const profileWarnings: string[] = [];
   const profileSources: Record<string, AgentConfigSource> = {};
   const projected = new Map<string, AgentEntry>();
 
@@ -108,6 +109,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       continue;
     }
     projected.set(agentName, result.definition);
+    profileWarnings.push(...result.warnings.map((warning) => `agents.${agentName}.profile: ${warning}`));
     profileSources[agentName] = {
       mode: "profile",
       source: pointer.path,
@@ -136,10 +138,10 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
 
   const parsed = parseConfig(String(doc));
   if (!parsed.config) return { errors: parsed.errors, warnings: parsed.warnings };
-  const warnings = parsed.warnings.filter((warning) => {
+  const warnings = [...profileWarnings, ...parsed.warnings.filter((warning) => {
     const profileName = [...projected.keys()].find((name) => warning.startsWith(`agents.${name}: isolate: transcript is deprecated`));
     return profileName === undefined;
-  });
+  })];
   for (const [agentName, definition] of projected) {
     // A canonical profile projects an Agent, and the re-parse carries its stored `kind: agent`
     // through — so this narrowing always succeeds. If it ever did not, the internal projections

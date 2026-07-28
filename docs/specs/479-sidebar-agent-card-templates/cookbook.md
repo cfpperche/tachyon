@@ -172,10 +172,36 @@ checkbox and up/down arrows. As you change it:
 The block does not write your config: copy the YAML into `tachyon.yml` yourself, so the file stays
 something you review and commit. Per-runtime overrides are still written by hand.
 
+## Per-component options
+
+Two components take an option. Both live under `options:` inside the template, beside the regions:
+
+```yaml
+settings:
+  sidebar:
+    cardTemplate:
+      version: 1
+      options:
+        model: { maxChars: 24 }   # 4–200 — shorten a long model label
+        focus: { lines: 3 }       # 1–5   — how many lines the focus text may wrap to
+```
+
+A shortened model label keeps its full value in its tooltip, and only gets a tooltip when something
+was actually hidden — so a tooltip means "there is more here", not merely "this is a model".
+
+Everything else is refused by name, the same way an unknown component id is: an option on a component
+that has none (`branch: { maxChars: 4 }`), an unknown option (`maxChar`), a value of the wrong type or
+outside its range, and an option for a component your template does not render — that last would
+otherwise sit in your file doing nothing. A value outside the range is **refused, not clamped**: a
+clamp would leave the file saying one thing and the card doing another, with nothing to tell you which
+one won.
+
+Silence inherits, exactly like the regions do. A personal override that only reorders badges keeps the
+project's `maxChars` rather than quietly restoring full-length labels.
+
 ## Not available yet
 
-`options:` (e.g. `model: { maxChars: 24 }`) is named in the design but no component honors one, so the
-key is **refused by name** rather than accepted and ignored — tracked as `t-045d44`.
+Nothing from the ratified schema sketch is outstanding — `options:` landed in `t-045d44`.
 
 ## Recipes
 

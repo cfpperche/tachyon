@@ -171,12 +171,71 @@ mean observed, including when the observation is nearly enough.
   app-server exposes experimental `memory/reset`.
 - **Tachyon today:** canonical Codex gets a distinct private `CODEX_HOME`.
   Memory keys from ambient config are deliberately excluded and no memory flag
-  is emitted, so the measured default remains off. No behavioral assertion
-  prevents version/default drift.
+  is emitted, so the measured default remains off. Version drift is guarded as of
+  `t-c46aad` — see the measurement below.
 - **Lifecycle:** same home retains state across fresh/restart/resume; native fork
   is unavailable.
 - **Classification:** native; disabled by measured default, but Tachyon control
   remains `declared`, not verified.
+
+#### Behavioral measurement, 2026-07-28 (`t-c46aad`) {#codex-2026-07-28}
+
+Run against Codex CLI 0.145.0 with `CODEX_HOME` pointed at a temporary directory. No model call was
+made and no real `~/.codex` was read.
+
+**Codex reports its own effective memory state, for free.** `codex features list` prints one row per
+feature with stage and effective value, and at 0.145.0 it reads:
+
+```
+memories                             stable             false
+```
+
+Stable, and off. Three things follow at zero spend:
+
+1. **The measured default is a fact with a version attached** rather than a claim inherited from a
+   README — which is what the drift risk here actually needs.
+2. **Both control paths move it, observably.** `codex --enable memories features list` flips the row
+   to `true`, and so does `[features] memories = true` written into the private
+   `CODEX_HOME/config.toml`. So Tachyon's control is checkable end to end without a turn: materialize
+   the canonical config into a private home, ask Codex, read the answer back.
+3. **`CODEX_HOME` is the boundary.** With it pointed at a temp dir, Codex resolved config from there
+   and created its state (`config.toml`, `skills/`, `shell_snapshots/`, `installation_id`) there
+   rather than in the real home.
+
+**The near-miss.** `codex debug prompt-input` renders the model-visible prompt list as JSON with no
+model call — apparently the injection oracle Claude Code never had. It is not. With a synthetic memory
+planted in `<CODEX_HOME>/memories/`, the render was **byte-identical** with the feature off and on,
+while `features list` proved the flag had genuinely flipped underneath. `prompt-input` renders the
+static session context and is blind to memory.
+
+That cuts both ways: the measurement that fails to prove injection also fails to disprove it. Memory
+injection runs as an async pipeline on eligible threads, so `disable`, `enable`, `injection` and
+`mutation` still need a live session, exactly as for Claude. They stay `declared`, canonical policy
+stays `disabled`, and `runtime-managed` stays blocked.
+
+What genuinely improves is `control.detect`, promoted `config` → `runtime-status`: Claude needed a
+billable turn to say anything about memory state, Codex answers for free. That is a control
+capability, recorded where it belongs instead of laundered into an evidence axis it cannot support.
+
+**Drift guard.** This section previously ended "No behavioral assertion prevents version/default
+drift." That was too strong, and the correction matters more than the addition:
+`test/unit/agentProfileConfigLoader.test.ts` already asserted that an ambient **global** config
+setting `memories = true` does not reach the projection. What was genuinely missing, and is now
+covered by `test/unit/codexMemoryAdapter.test.ts`:
+
+- **Version drift** — the real gap. `resolveMemoryPolicy` refuses to answer for any build other than
+  0.145.0, so a release that flips the default cannot inherit this measurement's green.
+- **The Control-editable surface** — `CODEX_EDITABLE_SETTING_KEYS` is a different door from the
+  profile loader, and nothing asserted a memory key stays out of it.
+- **The workspace source** — workspace keys run through the `selectedWorkspaceKeys` branch, which
+  reports rather than silently ignores; the existing coverage was global-sourced only. The projection
+  names `features.memories` as outside the allowlist while still projecting the legitimate sibling key
+  beside it, so the guard means exclusion rather than breakage.
+
+**Fork.** `codex fork` DOES exist at 0.145.0, so the lifecycle field invites the opposite conclusion
+from a reading of `--help`. It forks a conversation, and memory is `CODEX_HOME`-global, so a forked
+session inherits the same store rather than a copy. Fork is not a memory-isolation boundary;
+`unavailable` stays correct, and `CODEX_FORK_NOTE` records why.
 - **Primary evidence:** [Codex memories pipeline](https://github.com/openai/codex/blob/main/codex-rs/core/src/memories/README.md),
   [Codex config schema](https://github.com/openai/codex/blob/main/codex-rs/core/config.schema.json),
   [app-server memory reset](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md),
@@ -192,17 +251,180 @@ mean observed, including when the observation is nearly enough.
 - **Storage/scope:** `$GROK_HOME/memory/MEMORY.md` plus a repository-identity
   workspace directory, session logs and SQLite index. Clones/worktrees of the
   same origin intentionally share the repository key inside one home.
-- **Controls:** `--no-memory` has absolute precedence; CLI, environment and TOML
-  can enable it; native commands browse/edit/stats/clear memory.
-- **Tachyon today:** probes pin `--no-memory`; ordinary canonical launches do
-  not. Their Bridge-only private `GROK_HOME` normally inherits the runtime's
-  disabled default, but an ambient `GROK_MEMORY=1` or future default change is
-  not overridden.
-- **Classification:** native; disable mechanism declared and already used by
-  probes, but not wired or behaviorally verified for canonical lifecycle.
+- **Controls:** the shipped guide claims `--no-memory` has absolute precedence.
+  **Measurement refuted that** (`t-0e88f3`, below): the flag's rank is
+  MODE-DEPENDENT — `GROK_MEMORY=1` outranks it headless, while the flag wins in
+  the interactive TUI. CLI, environment and TOML can enable it; native commands
+  browse/edit/stats/clear memory.
+- **Tachyon today:** wired canonical launches pin `GROK_MEMORY=0` in the spawn env
+  (`t-0e88f3`) — the control Tachyon owns and the runtime was observed to honor.
+  `--no-memory` is still emitted, as a documented no-op rather than a guarantee.
+  Absence is not behaviorally proven.
+- **Classification:** native; disable mechanism **refuted** as documented and
+  re-implemented through the environment — not behaviorally verified in the new
+  form.
+
+#### Control change, 2026-07-28 (`t-c46c35`) {#grok-2026-07-28}
+
+> **SUPERSEDED — the central claim of this section is false.** Everything below reasons from the
+> shipped guide's precedence table, and a behavioral measurement the same day
+> ([§ Refutation](#grok-2026-07-28-refuted)) contradicted it: `--no-memory` does **not** outrank
+> `GROK_MEMORY=1` at 0.2.112. The section is kept unedited because the reasoning is the artifact — it
+> is a worked example of a conclusion that was careful, well-sourced, internally consistent and wrong,
+> and deleting it would remove the only evidence of how that happens. Read it as a record of what was
+> believed, not as a description of the product.
+
+Measured against Grok 0.2.112 (`grok --help`, `grok memory --help`, and the shipped user guide
+`~/.grok/docs/user-guide/13-memory.md`). No model call, and no memory store read — only shipped
+documentation and flag help.
+
+This is the one runtime in the lane where the right move was to change the product rather than to
+record a careful "not proven", because Grok exposes a control with **absolute precedence**. The
+shipped guide states the order outright:
+
+```
+1. --no-memory CLI flag (always disables)
+2. --experimental-memory CLI flag (enables)
+3. GROK_MEMORY env var: 1/true enables, 0/false disables
+4. [memory] section in config.toml
+5. Default: disabled
+```
+
+Canonical Grok was relying on **rule 5**, while rules 3 and 4 sit above it and are writable by anyone
+with an environment or a config file. Pinning rule 1 replaces "we inherit a default that happens to be
+off" with "we state it, and nothing below can outrank us".
+
+**Where the pin went, and the path that actually mattered.** The obvious targets were
+`HarnessManager.materialize` and `materializeHomeOnly`, and both got it. But the common canonical Grok
+agent is *non-harness with Bridge wiring*, which deliberately skips `isolate: transcript` (t-303f2b)
+and therefore reaches neither materializer — it is wired in `AgentManager.withRuntimeBridge`, which
+previously returned the command unchanged. Pinning only the two obvious paths would have left the
+usual case untouched while every test looked green.
+
+**Boundary, stated rather than hidden.** With the Bridge down there is no private home and no pin:
+`withRuntimeBridge` returns before the grok branch, so the launch is untouched and the session inherits
+the runtime's own disabled default — the pre-existing situation, unchanged. The pin covers the wired
+canonical path, which is the one with a private home worth protecting.
+
+**No evidence axis is promoted by this change.** Pinning a flag is a control improvement, not an
+observation of behavior, and the value of this lane is that those two never get conflated. Grok
+0.2.112's `memory` subcommand exposes only `clear` — no status or stats readout, so unlike Codex there
+is nothing non-billable that reports effective memory state, and nothing renders what reaches the
+model. The fresh/restart/resume/fork absence proof still needs an authorized session, and the case
+worth running is the hostile one: `GROK_MEMORY=1` set in the environment and the planted marker still
+not reaching the model. That is the drift the pin exists for, and proving it is what would let
+`disable` move off `declared`.
 - **Primary evidence:** installed
   `~/.grok/docs/user-guide/13-memory.md`, `grok --help`,
   `src/probe/adapters/grok.ts`, `src/harness/HarnessManager.ts`.
+
+#### Refutation and re-implementation, 2026-07-28 (`t-0e88f3`) {#grok-2026-07-28-refuted}
+
+Measured under human approval `a-b4b050`, Grok 0.2.112, effective model `grok-4.5-build`, in a private
+`GROK_HOME` projected by the product's own `materializeBridgeMcpGrok`. **This is the first behavioral
+measurement in the lane, and it refuted the thing the previous section had just shipped.**
+
+**Two arms, one planted synthetic marker.**
+
+| Arm | Launch | Result |
+| --- | --- | --- |
+| hostile | `--no-memory` **and** `GROK_MEMORY=1` | model answered with the **exact marker**; `MEMORY_INIT` (`watcher_config_enabled=true`), `MEMORY_INJECT_SEARCH results=1`, first-turn injection; store **written** during the run (`memory/repo-946b4ffe/index.sqlite`, 77,824 bytes) |
+| default | clean env, no flag | no `MEMORY_INIT`, no `MEMORY_INJECT`, marker never reached the model, nothing written |
+
+**The second arm is what makes this a finding rather than a puzzle,** and it cost two cents. Reading
+the hostile arm alone cannot distinguish "the flag is inert" from "the env var outranks the flag" — in
+both worlds memory runs. The default arm shows the default really is off, so memory became active
+*because* `GROK_MEMORY` turned it on, which pins the failure on precedence specifically. A null result
+needs a positive control or it is not a result.
+
+**What was false, precisely.** Not the flag's existence and not its direction — `--no-memory` is a real
+flag that really means disable. What was false is its claim to **absolute** rank. Everything
+`t-c46c35` built rested on that one row of that one table, and nothing in the change was verifiable
+without spending money, which is exactly why it shipped unverified.
+
+##### The precedence is MODE-DEPENDENT — measured 2026-07-28 (`a-c1a580`, `a-a3db98`)
+
+Both arms above ran headless. Canonical Grok agents launch the **interactive TUI**, so the experiment
+was repeated there under a new authorization — deliberately not by stretching `a-b4b050`, which covered
+`-p` and never mentioned the TUI. Three arms, `GROK_MEMORY=1` held constant, varying only the flag:
+
+| TUI arm | Launch | `MEMORY_INIT` | `MEMORY_INJECT` | Model answer | Store |
+| --- | --- | --- | --- | --- | --- |
+| A (canonical) | `GROK_MEMORY=0` + `--no-memory` | 0 | 0 | NONE | unchanged |
+| B (shipped) | `GROK_MEMORY=1` + `--no-memory` | 0 | 0 | NONE | unchanged |
+| C (control) | `GROK_MEMORY=1` + `--experimental-memory` | 1 | 2 | **the marker, in 2.5s, no tool calls** | 4.2 MB `index.sqlite` written |
+
+**Arm C was worth its own authorization.** Arms A and B are null results, and a null result with no
+positive control is not a result: their silence could equally have meant "this sandbox never enables
+memory at all". Reading them as success would have been the same unverified optimism this whole section
+exists to correct, merely pointing the other way. Arm C makes the comparison clean, because arms B and
+C differ in exactly one flag.
+
+**So the answer inverts with the launch mode:** `--no-memory` outranks `GROK_MEMORY=1` in the TUI, and
+loses to it headless. The guide's "always disables" is false as written — one counterexample refutes an
+*always* — but the flag is not inert either, which the headless arm alone could have been read to imply.
+
+**The practical consequence is the reverse of how it looks.** Canonical agents launch the TUI, so the
+flag was in fact holding for them; the exposed caller was `src/probe/adapters/grok.ts`, which runs `-p`,
+the mode where the flag loses. The lane's worst outcome was never a fleet running with memory on — it
+was a *belief* about why it wasn't.
+
+**The impact was a false guarantee, not a live defect.** In the ordinary case the default is already
+off, so canonical Grok agents were not running with memory active. What was wrong was the *claim* —
+the module header, `GROK_MEMORY_PRECEDENCE`, the commit message and this document all asserted immunity
+to a hostile environment. Anyone later reasoning "we are safe because we pin rule 1" would have been
+wrong, and preventing that belief is the entire purpose of this lane.
+
+**The fix moves the guarantee to a channel Tachyon owns.** Canonical launches now pin
+`GROK_MEMORY=0` in the spawn env (`grokMemoryEnv`, wired at all four canonical sites:
+`HarnessManager.materialize`, `HarnessManager.materializeHomeOnly`, `AgentManager.withRuntimeBridge`
+— the common non-harness Bridge-wired agent, which reaches neither materializer — and the probe
+adapter). `GROK_MEMORY=0` is the one setting that disables in BOTH modes: headless because the env var
+wins there, and in the TUI because `0` agrees with the flag rather than fighting it. Pinning both
+channels to the same answer means the launch mode no longer has to be known to predict the outcome,
+which is the property a control whose rank flips between modes cannot provide on its own.
+
+Two choices inside that fix are worth stating rather than leaving to be re-derived:
+
+- **`0`, not removal.** Removing the variable returns the launch to rule 5, the bare default — the very
+  position `t-c46c35` set out to improve on. It is also not expressible: the spawn env is a
+  `Record<string, string>` delivered through `tmux new-session -e`, a channel that can set a variable
+  but not unset one. `0` is an assertion in a channel Tachyon controls end to end; absence is an
+  assumption about everyone else's environment.
+- **The pin outranks the secret map.** In `materialize` the memory env is spread *after* `secretEnv`, so
+  a user-configured `GROK_MEMORY` secret cannot re-enable memory on the canonical path. That ordering
+  is pinned by test, because getting it backwards would reintroduce the hostile environment through
+  Tachyon's own hands.
+- **The probe adapter was the most exposed caller, not the least.** `src/probe/adapters/grok.ts` pinned
+  `--no-memory` and ran `-p` — and headless is the exact mode the refutation was measured in. A probe
+  inheriting a hostile environment would have had memory injecting into a measurement whose entire
+  value is a bounded, reproducible surface. It now pins the env var too; `ProbeRunner` spreads
+  `Invocation.env` over `process.env`, which is precisely where a hostile value would arrive.
+
+The `--no-memory` flag is still emitted, and now for a measured reason rather than a documented one: it
+is what actually disables memory in the TUI, the mode canonical agents launch in. What it may no longer
+be called is immunity.
+
+**Evidence vocabulary.** `disable` moved from `declared` to **`refuted`**, a value this task added to
+`MemoryEvidence`. `declared` reads as "nobody checked", which is the opposite of what happened, so a
+vocabulary without "tested and failed" downgrades its worst finding into an unmade one exactly when it
+matters most. `refuted` is behavioral in the same sense `verified` is: neither may be authored from
+documentation. A `refuted` axis must carry a `refutations` entry naming the claim, what was measured
+instead, the version and date, and where the evidence lives — enforced at module load by
+`assertRefutationsAreExplained`, because a verdict with no finding behind it is barely better than the
+`declared` it replaced.
+
+**The `disable` axis was NOT promoted, even though arm A passed.** Arm A shows the canonical TUI launch
+produces no memory against a working control, which is real — but it does not isolate the *env pin's*
+contribution, because arm B shows the flag alone already suffices in that mode. Proving the env pin
+specifically would take a headless `GROK_MEMORY=0` arm with no flag, which nobody has run. The axis
+stays `refuted`: it records the claim that was tested and failed, and promotion needs an observation of
+the new control rather than of a launch that happens to contain it.
+
+- **Primary evidence:** `t-c46c35` journal `j-b02184d17f19` (arm output, debug log, store bytes);
+  approvals `a-b4b050`, `a-c1a580`, `a-a3db98`; `src/runtime/adapters/grokMemory.ts`,
+  `src/runtime/nativeMemory.ts`, `test/unit/grokMemoryAdapter.test.ts`,
+  `test/unit/runtimeNativeMemory.test.ts`.
 
 ### OpenCode 1.18.4
 

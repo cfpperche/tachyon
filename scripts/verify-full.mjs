@@ -25,7 +25,15 @@ export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH |
  * workflow delegates to this command instead of re-listing these steps: two hand-maintained lists is
  * how they came to disagree in the first place.
  */
-export const STATIC_GATES = ["check:engine-boundary", "typecheck"];
+/**
+ * t-62cc44 — `check:source-diffable` goes FIRST: it is the cheapest of the three (a byte scan, no
+ * compile) and the failure it catches used to be the most expensive to find. As a vitest test it
+ * could only fail after the build, so three raw NUL separators — two people, one shared idiom of a
+ * template literal joining ids for a `Set` key — each cost a whole run plus a lock wait. Moving it
+ * ahead of the compile IS the change; the rule itself is unchanged and still lives in one place,
+ * `scripts/check-source-diffable.mjs`, which the test imports rather than restates.
+ */
+export const STATIC_GATES = ["check:source-diffable", "check:engine-boundary", "typecheck"];
 
 export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
   try {

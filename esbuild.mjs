@@ -58,7 +58,7 @@ function writeEngineManifest() {
     schemaVersion: 1,
     channel: engineReleaseChannel,
     engineVersion: packageVersion,
-    protocol: { min: 3, max: 3 },
+    protocol: { min: 4, max: 4 },
     entrypoint: "engine-daemon.cjs",
     files: [
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },

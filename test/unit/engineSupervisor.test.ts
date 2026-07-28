@@ -318,12 +318,14 @@ describe("persistent engine supervisor", () => {
     expect(starts).toBe(2);
     expect(stops).toBe(1);
     const olderShell = await ensureDaemonEngine(baseOptions);
-    expect(olderShell).toMatchObject({ identity: first.identity, disposition: "reused-compatible" });
-    expect(starts).toBe(2);
-    expect(stops).toBe(1);
+    expect(olderShell).toMatchObject({ disposition: "upgraded" });
+    expect(olderShell.identity.bundleId).toBe(fixture.bundle.bundleId);
+    expect(olderShell.identity.instanceId).not.toBe(first.identity.instanceId);
+    expect(starts).toBe(3);
+    expect(stops).toBe(2);
     const audit = fs.readFileSync(path.join(fixture.storage, "supervisor", "transitions.jsonl"), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(audit.map((row) => row.phase)).toEqual(["prepared", "committed"]);
+    expect(audit.map((row) => row.phase)).toEqual(["prepared", "committed", "prepared", "committed"]);
     expect(audit[0]).toMatchObject({
       from: { instanceId: original.identity.instanceId, bundleId: fixture.bundle.bundleId },
       to: { bundleId: newer.bundleId, engineVersion: "0.58.0" },
@@ -331,6 +333,16 @@ describe("persistent engine supervisor", () => {
     expect(audit[1]).toMatchObject({
       from: { instanceId: original.identity.instanceId },
       to: { instanceId: first.identity.instanceId, bundleId: newer.bundleId },
+    });
+    expect(audit[2]).toMatchObject({
+      phase: "prepared",
+      from: { instanceId: first.identity.instanceId, bundleId: newer.bundleId },
+      to: { bundleId: fixture.bundle.bundleId },
+    });
+    expect(audit[3]).toMatchObject({
+      phase: "committed",
+      from: { instanceId: first.identity.instanceId },
+      to: { instanceId: olderShell.identity.instanceId, bundleId: fixture.bundle.bundleId },
     });
   }, 25_000);
 

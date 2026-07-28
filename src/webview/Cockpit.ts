@@ -119,6 +119,10 @@ import {
   type StudioRoute,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
+import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { indexExecutionDetail, projectExecutions } from "../executionGraph/executionProjection.js";
+import { engineCurrencyNote, type EngineCurrency } from "../engine-service/engineCurrency.js";
+import { buildExecutionGraphVm, type ExecutionGraphVm } from "../cockpit/executionGraphVm.js";
 export type { CockpitStudios };
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
@@ -222,10 +226,76 @@ export interface CockpitInspector {
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
  */
+/**
+ * SDD 480 Phase 4 — fold the ledger into the section's view-model.
+ *
+ * The three non-ready outcomes are kept apart on purpose, because they are different facts and a
+ * shared blank surface would erase the distinction that matters most:
+ *  - no reader wired, or the workspace records nothing → `no-telemetry`;
+ *  - the ledger was read but could not be folded → `error`, with the reason;
+ *  - it folded to nothing → the builder's own `empty`.
+ */
+// Exported so the wiring itself is testable. The defect this closes was invisible to every test of
+// the two halves — the builder took a `detailFor` and the ledger carried the keys, and both passed
+// while the host handed over `undefined`. A test of a hand-assembled call would have passed too.
+export function buildExecutionGraphSectionVm(
+  deps: CockpitDeps,
+  wsHash: string | undefined,
+): ExecutionGraphVm | undefined {
+  if (!deps.executionGraph) return undefined; // client renders `no-telemetry`
+  try {
+    const { events, available, currency } = deps.executionGraph(wsHash);
+    if (!available) {
+      // t-f54b62 — `no-telemetry` means two different things: this workspace records nothing, or the
+      // daemon serving it predates the build that would record. Say which, when the host knows —
+      // `engineCurrencyNote` yields undefined unless it actually compared and found a stale engine.
+      const statusNote = currency ? engineCurrencyNote(currency) : undefined;
+      return buildExecutionGraphVm({
+        projection: { executions: [], edges: [], agentIds: [] },
+        status: "no-telemetry",
+        ...(statusNote ? { statusNote } : {}),
+      });
+    }
+    // t-441b0f — the ledger already carries `cwd`/`worktree`/`tool`; the panel just had no way to
+    // reach them, so all three rendered as absent. Index them from the SAME events the projection
+    // folds, so the detail panel and the graph can never describe different runs.
+    const detail = indexExecutionDetail(events);
+    return buildExecutionGraphVm({
+      projection: projectExecutions(events),
+      detailFor: (executionId) => detail.get(executionId),
+    });
+  } catch (err) {
+    // The message is the only detail shown, and it is a local read failure — not user content — so
+    // there is nothing here to redact that the ledger's own write boundary has not already handled.
+    return buildExecutionGraphVm({
+      projection: { executions: [], edges: [], agentIds: [] },
+      status: "error",
+      errorDetail: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
   /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
   collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
+  /**
+   * SDD 480 Phase 4 — read the execution ledger for the active workspace.
+   *
+   * Optional: a host without it leaves the section in `no-telemetry`, which is the honest answer
+   * rather than an empty diagram. Read-only by contract — the ledger is single-writer (t-d5066b) and
+   * this side must never open a journal that could compact.
+   */
+  executionGraph?: (wsHash: string | undefined) => {
+    events: SealedExecutionEvent[];
+    available: boolean;
+    /**
+     * t-f54b62 — is the daemon serving this workspace the installed build? Only the host can answer,
+     * and it may not be able to: omitted rather than guessed. An empty section explained by a wrong
+     * verdict sends a reader to restart production for no reason.
+     */
+    currency?: EngineCurrency;
+  };
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -324,6 +394,43 @@ function strings(): CockpitStrings {
     missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
+    navExecutionGraph: t("Execution"),
+    executionGraphTitle: t("Execution graph"),
+    executionGraphHint: t("What Tachyon started, and how it knows. Read-only."),
+    egCanvasLabel: t("Execution graph diagram"),
+    egTableLabel: t("Execution graph, as a table"),
+    egLoading: t("Loading the execution ledger…"),
+    egEmpty: t("No executions match these filters."),
+    // Distinct from the empty state on purpose: "nothing matched" and "nothing is recorded here"
+    // mean opposite things, and a blank list cannot tell them apart.
+    egNoTelemetry: t("This workspace is not recording execution telemetry yet."),
+    egError: t("The execution ledger could not be read."),
+    egGroupedNote: t("Some lanes are grouped to stay readable; totals below are complete."),
+    egFilterTurn: t("Turn"),
+    egFilterState: t("State"),
+    egFilterKind: t("Type"),
+    egFilterAgent: t("Agent"),
+    egFilterAll: t("All"),
+    egColKind: t("Type"),
+    egColState: t("State"),
+    egColAgents: t("Agents"),
+    egColAttribution: t("Attribution"),
+    egColStarted: t("Started"),
+    egColDuration: t("Duration"),
+    egColExit: t("Exit"),
+    egDetailTitle: t("Execution detail"),
+    egDetailNone: t("Select an execution to see its detail."),
+    egDetailDuration: t("Duration"),
+    egDetailExit: t("Exit code"),
+    egDetailCwd: t("Working directory"),
+    egDetailWorktree: t("Worktree"),
+    egDetailTool: t("Started by tool"),
+    egDetailIdentity: t("Identity proof"),
+    egDetailTurn: t("Turn"),
+    egDetailToolCall: t("Tool call"),
+    egAttrProven: t("proven"),
+    egAttrShared: t("shared"),
+    egAttrUnproven: t("unproven"),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
     deliveriesTitle: t("Deliveries"),
@@ -1077,6 +1184,11 @@ export async function openCockpit(
         wsHash: controlWsHash,
         personalCardTemplate: personalCardTemplateState(),
       });
+      // SDD 480 Phase 4 — built only for the section that renders it. Folding the ledger on every
+      // model tick would spend the projection on ~13 sections that never look at it.
+      if (section === "execution-graph") {
+        model.executionGraph = buildExecutionGraphSectionVm(deps, controlWsHash);
+      }
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -1297,10 +1409,11 @@ export async function openCockpit(
   };
 
   const handleHandoffAction = async (m: Partial<HandoffAction>): Promise<boolean> => {
-    // "ready"/"refresh" are NOT handled here — they're the same wire strings as the shell's own
-    // handshake/poll (case READY/"refresh" in the main switch below), which already calls
-    // sendSectionModule() → sendHandoff() for the active section. Only Handoff's OWN action types
-    // need a dedicated handler.
+    // "refresh" is NOT handled here — it is the same wire string as the shell's own poll
+    // (`case "refresh"` in the main switch below), which already calls sendSectionModule() →
+    // sendHandoff() for the active section. Only Handoff's OWN action types need a dedicated
+    // handler. ("ready" used to need the same warning; t-6ced6f answers it above this chain, so it
+    // can no longer arrive here at all.)
     if (!m?.type || currentRoute.kind !== "project-handoff") return false;
     const routeWsHash = currentRoute.wsHash;
     if (m.type === "openFile") {
@@ -1504,12 +1617,13 @@ export async function openCockpit(
     // t-2f6cdd — `requestSnapshot` is THIS route's action and is answered here. READY is NOT: it is
     // the Control SHELL's one-and-only handshake, and this handler runs first in the dispatch chain,
     // so consuming it here meant a panel whose FIRST route is task-detail — precisely what the
-    // Attention card's "Open" creates — never reached `case READY:`, the only place that posts
-    // `initMessage(s)`. The client's `strings` stayed undefined, and cockpit/App.tsx's `if (!s)`
-    // rendered `<div class="ds-empty" />`: an entirely blank Control, with the detail's own render
-    // states (loading / never-found / tombstone) all unreachable because the shell never mounted the
-    // route at all. Falling through costs nothing — `case READY:` runs sendSectionModule(), which
-    // already dispatches a task-detail route to sendTaskDetail().
+    // Attention card's "Open" creates — never got `initMessage(s)`. The client's `strings` stayed
+    // undefined, and cockpit/App.tsx's `if (!s)` rendered `<div class="ds-empty" />`: an entirely
+    // blank Control, with the detail's own render states (loading / never-found / tombstone) all
+    // unreachable because the shell never mounted the route at all.
+    //
+    // t-6ced6f closed the class: READY is answered above this chain, so no handler here is offered
+    // it. This comment stays as the record of why — the shape of the mistake is easy to repeat.
     if (m.type === "requestSnapshot") {
       await sendTaskDetail();
       return true;
@@ -2079,6 +2193,46 @@ export async function openCockpit(
       if (panel !== live || !msg || typeof msg !== "object" || typeof msg.type !== "string") return;
       const type = msg.type;
 
+      /**
+       * t-6ced6f — READY is answered HERE, above the per-route chain, and never reaches it.
+       *
+       * READY is the SHELL's handshake (spec 278), not any route's action: it is the only source of
+       * the `init` that carries `strings`, and without it cockpit/App.tsx renders
+       * `if (!s) return <div class="ds-empty" />` — an entirely blank Control tab. It used to be
+       * answered at the BOTTOM of this listener, behind nine handlers that each get to `return true`
+       * and end dispatch, so any one of them could consume the panel's one handshake and leave the
+       * shell unmounted.
+       *
+       * Three did, through three different doors: t-3990c3 (`handleValidationsAction` swallowed EVERY
+       * message when no workspace had validations), `handleHandoffAction` (carries a comment warning
+       * that it must not), and t-2f6cdd (`handleTaskDetailAction` answered READY deliberately, so a
+       * panel opened straight onto task-detail — what the Attention card's "Open" creates — never
+       * initialized). Each was fixed alone; nothing stopped a fourth.
+       *
+       * Hoisting it makes the whole class unreachable instead of forbidden by convention: no route
+       * handler can swallow a message it is never offered. `cockpitReadyHandshake.test.ts` asserts
+       * this for every route kind the Control can open.
+       *
+       * The `studioProtocolVersion` guard is NOT incidental, and "no handler has a legitimate reason
+       * to see READY" is too strong a claim without it. The studio protocol reuses this exact wire
+       * string for its OWN per-mount handshake — `envelope({ type: "ready", routeKey, mountNonce })`
+       * — which `dispatchStudioMessage` must receive to bind the mount and post the `load`. Matching
+       * on `type` alone starved every studio of it, committing this very bug in the other direction
+       * (cockpitStudio.test.ts caught it, 7 failures). The SHELL's ready is the BARE one; an
+       * enveloped ready is the studio's and falls through to its dispatcher below.
+       */
+      if (type === READY && msg.studioProtocolVersion === undefined) {
+        live.webview.postMessage(initMessage(s));
+        await sendModel();
+        await sendSectionModule();
+        // t-610705 (Phase C.2) — a (re)loaded cockpit webview's client-side image cache is empty;
+        // ensureActivityBinding() above is a no-op when the binding already exists (the shared 3s
+        // poll must never touch it — see route.ts's refreshPolicy doc), so THIS is the one place
+        // that explicitly recovers a still-live feed's images after a reload.
+        if (currentRoute.kind === "agent-activity") activityBinding?.feed.replayImages();
+        return;
+      }
+
       // t-610705 (Phase C.1) — MUST run before handleMissionAction: TaskDetailAction's "openTask"
       // is the same {type,id} shape as MissionControlAction's, and would otherwise be misrouted to
       // the Board's handler (wrong workspace resolution — task-detail pins its own wsHash, not the
@@ -2124,16 +2278,8 @@ export async function openCockpit(
         case "studioNavCheckpointAck":
           if (typeof c.txnId === "string") handleStudioNavCheckpointAck(c);
           return;
-        case READY:
-          live.webview.postMessage(initMessage(s));
-          await sendModel();
-          await sendSectionModule();
-          // t-610705 (Phase C.2) — a (re)loaded cockpit webview's client-side image cache is empty;
-          // ensureActivityBinding() above is a no-op when the binding already exists (the shared 3s
-          // poll must never touch it — see route.ts's refreshPolicy doc), so THIS is the one place
-          // that explicitly recovers a still-live feed's images after a reload.
-          if (currentRoute.kind === "agent-activity") activityBinding?.feed.replayImages();
-          return;
+        // t-6ced6f — no `case READY:` here. It is answered at the TOP of this listener, before the
+        // per-route chain, and returns there; a second site would be a second thing to keep in sync.
         case "refresh":
           await sendModel();
           await sendSectionModule();

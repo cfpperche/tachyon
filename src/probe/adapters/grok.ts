@@ -18,6 +18,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProbeResult, TerminationReason } from "../taxonomy.js";
 import type { CapabilityReport, Invocation, ProbeSpec, RawOutcome, StatelessCaptureAdapter } from "./types.js";
+import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryEnv } from "../../runtime/adapters/grokMemory.js";
 
 const execFileP = promisify(execFile);
 const ADAPTER_VERSION = "1";
@@ -198,7 +199,11 @@ export function createGrokAdapter(deps: GrokAdapterDeps = {}): StatelessCaptureA
       const schema = jsonSchemaForArchetype(spec.archetype);
       if (schema) args.push("--json-schema", schema);
       if (spec.model) args.push("--model", spec.model);
-      return { cmd: "grok", args, cwd: spec.cwd };
+      // t-0e88f3 — the probe is the MOST exposed caller of the refuted flag, not the least: it runs
+      // headless, and headless is the exact mode in which `--no-memory` was measured to lose to an
+      // ambient GROK_MEMORY=1. A probe inheriting a hostile environment would run with memory
+      // injecting into a measurement whose entire value is a bounded, reproducible surface.
+      return { cmd: "grok", args, cwd: spec.cwd, env: grokMemoryEnv(GROK_CANONICAL_MEMORY_POLICY) };
     },
 
     interpret(raw: RawOutcome): ProbeResult {

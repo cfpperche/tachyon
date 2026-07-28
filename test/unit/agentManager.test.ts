@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
+import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -918,6 +919,118 @@ describe("AgentManager", () => {
         expect(brief).toContain("Do not reopen t-067540");
         // and the live contract is still stated as the current one
         expect(brief).toContain("t-5bfb72");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("THE t-7f3009 INCIDENT: a SPAWN whose brief names landed work is told so, not just a restart", async () => {
+      // t-9d250c closed this for restart and only for restart: `sessionWorkRecordFor` had a single
+      // call site, in the restart path, and the spawn call site omitted the argument entirely. So the
+      // frozen t-2f6cdd contract was re-delivered through the SPAWN door five times after it landed,
+      // each time naming a worktree that no longer existed. No board was ever read.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-stale-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: (id: string) => (id === "t-2f6cdd" ? "landed" : undefined),
+        });
+        const from = mark(fake);
+
+        // The real replayed document, and NO restart anywhere in this test.
+        await manager.spawn("worker", {
+          cmd: "codex",
+          taskBrief: "TASK: Recover and finish t-2f6cdd from the existing clean change worktree; do not restart the investigation.",
+          parent: "codex-canonico",
+        });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("- t-2f6cdd — status landed on the board now");
+        expect(brief).toContain("Do not reopen t-2f6cdd");
+        // The live assignment is still stated, so the agent is not merely told what NOT to do.
+        expect(brief).toContain("t-5bfb72");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("tells a spawned session it is new — never that it was restarted", async () => {
+      // Reusing the restart record verbatim would have handed a first-launch agent "This session was
+      // restarted with a NEW conversation. The previous one is not available to you", which is false
+      // and invites it to go looking for a conversation it never had.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-framing-"));
+      try {
+        const { fake, manager } = harness(root);
+        const from = mark(fake);
+
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION SPAWN: WORK ON RECORD");
+        expect(brief).toContain("This session is NEW.");
+        expect(brief).not.toContain("SESSION RESTART: WORK ON RECORD");
+        expect(brief).not.toContain("was restarted with a NEW conversation");
+        expect(brief).toContain("read from the board at spawn");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("leaves the restart record t-9d250c landed exactly as it was", async () => {
+      // The spawn wiring must not be paid for by rewording the restart contract: same anchor, same
+      // opening sentence, same "at restart" phrasing.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-restart-unchanged-"));
+      try {
+        const { fake, manager } = harness(root);
+        await manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" });
+        const from = mark(fake);
+
+        await manager.restart("worker", { stop: "force", session: "new" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION RESTART: WORK ON RECORD");
+        expect(brief).toContain("This session was restarted with a NEW conversation.");
+        expect(brief).toContain("read from the board at restart");
+        expect(brief).not.toContain("SESSION SPAWN: WORK ON RECORD");
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("a spawn fails closed on an unreadable board, the same as a restart", async () => {
+      // The board read is the fail-closed part: a session that cannot be told what it is working on
+      // must not reach a pane at all. Naming the launch in the message keeps it accurate.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-failclosed-"));
+      try {
+        const { manager } = harness(root, {
+          assignedWork: () => { throw new Error("task store is corrupt"); },
+        });
+
+        await expect(
+          manager.spawn("worker", { cmd: "codex", taskBrief: BOILERPLATE_BRIEF, parent: "codex-canonico" }),
+        ).rejects.toThrow(/refusing spawn for agent 'worker'/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+      }
+    });
+
+    it("a failing stale-reference lookup never costs the spawn", async () => {
+      // Mirrors the restart rule: the board read is fail-closed, naming what the brief still carries
+      // is decoration, and decoration must not cost an agent its launch.
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7f3009-spawn-stale-throws-"));
+      try {
+        const { fake, manager } = harness(root, {
+          assignedWork: () => [ASSIGNED],
+          taskStatusById: () => { throw new Error("status store unreadable"); },
+        });
+        const from = mark(fake);
+
+        await manager.spawn("worker", { cmd: "codex", taskBrief: "TASK: finish t-2f6cdd", parent: "codex-canonico" });
+
+        const brief = delivered(root, fake, from);
+        expect(brief).toContain("SESSION SPAWN: WORK ON RECORD");
+        expect(brief).toContain("t-5bfb72");
+        expect(brief).not.toContain("on the board now");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
@@ -5021,7 +5134,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       },
     });
 
-    it("grok (non-harness): spawn injects GROK_HOME=<private home> env (no argv change)", async () => {
+    it("grok (non-harness): spawn injects GROK_HOME=<private home> env and pins --no-memory", async () => {
       const calls: string[] = [];
       const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", GROK_BRIDGE(calls));
       await manager.spawn("grok");
@@ -5029,9 +5142,35 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toMatch(/^grok -s /);
       expect(cmds.at(-1)).not.toContain("mcp_servers");
       expect(cmds.at(-1)).not.toContain("--mcp-config");
-      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
-      expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok"]);
+      // t-c46c35 — this test used to assert "no argv change". There is one now.
+      expect(cmds.at(-1)).toContain("--no-memory");
+      // t-0e88f3 — and the argv is no longer what carries the guarantee. `--no-memory` was MEASURED
+      // not to outrank GROK_MEMORY=1, so the env pin below is the control; the flag rides along as a
+      // documented no-op. This is the launch site that matters most: the non-harness Bridge-wired path
+      // is the common canonical Grok agent, and it reaches neither HarnessManager materializer.
+      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME=") || a.startsWith("GROK_MEMORY="));
+      expect(envPairs).toEqual([
+        "GROK_HOME=/ws/.tachyon/bridge-mcp/grok.grok",
+        "GROK_MEMORY=0",
+      ]);
       expect(calls).toEqual(["grok"]);
+    });
+
+    it("grok: with the Bridge down there is no private home AND no memory pin", async () => {
+      // t-c46c35 — the honest boundary of this change. With no Bridge URL, withRuntimeBridge returns
+      // before the grok branch, so the launch is untouched: no GROK_HOME, and no --no-memory either.
+      // Tachyon is isolating nothing here, so the session inherits the runtime's own disabled default —
+      // the pre-existing situation, unchanged. The pin covers the wired canonical path, which is the
+      // path that has a private home worth protecting.
+      const { manager, cmds, newSessionArgs } = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        materializeBridgeMcpGrok: () => undefined,
+      });
+      await manager.spawn("grok");
+      expect(cmds.at(-1)).not.toContain("--no-memory");
+      // t-0e88f3 — the env pin observes the same boundary as the argv pin. Injecting GROK_MEMORY=0
+      // into a launch Tachyon is otherwise not isolating would claim a guarantee over a session whose
+      // config home, and therefore whose memory store, belongs to the user.
+      expect(newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_MEMORY="))).toEqual([]);
     });
 
     it("grok (non-harness): resume re-injects GROK_HOME", async () => {
@@ -5365,7 +5504,28 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       expect(materialized).toHaveLength(3);
       expect(new Set(materialized.map(({ config }) => config)).size).toBe(1);
-      expect(new Set(materialized.map(({ trust }) => trust)).size).toBe(1);
+      /**
+       * t-6907aa — compared with `decided_at` normalized, because that field is a WALL-CLOCK stamp
+       * and the three materializations happen at three separate moments.
+       *
+       * `seedGrokTrustedFolders` preserves a prior `decided_at` when one exists for the same folder,
+       * but this test deliberately overwrites the file with a DIFFERENT folder key before each
+       * relaunch (`/stale-restart`, `/stale-resume`), so the workspace root has no prior entry to
+       * carry forward and every pass falls back to `Math.floor(Date.now() / 1000)`. Three reads of
+       * the clock agree only while they land inside the same second — which they do when this file
+       * runs alone, and stop doing under `verify:full`'s parallel load. Byte equality was therefore
+       * asserting the scheduler, not the product: it failed a landing gate on a CSS-only change.
+       *
+       * The property the test is named for — regeneration is EXACT and history-independent — is
+       * unchanged and still asserted below: same folder set, `trusted = true` exactly once, no stale
+       * entry. The three now agree on all of that, and differ only where time legitimately does.
+       */
+      const withoutDecidedAt = (trust: string): string =>
+        trust.replace(/^([ \t]*decided_at[ \t]*=[ \t]*)\d+$/gm, "$1<stamp>");
+      expect(new Set(materialized.map(({ trust }) => withoutDecidedAt(trust))).size).toBe(1);
+      // The stamp must still be present and numeric in every pass. Normalizing a field away is how a
+      // relaxed assertion rots into a vacuous one — this keeps the field itself under test.
+      for (const { trust } of materialized) expect(trust).toMatch(/^[ \t]*decided_at[ \t]*=[ \t]*\d+$/m);
       for (const { config, trust } of materialized) {
         expect(config).toContain("[mcp_servers.tachyon_bridge]");
         expect(config).not.toContain("mcp_servers.stale");
@@ -6277,7 +6437,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     fs.mkdirSync(other, { recursive: true });
     await expect(
       manager.spawn("kid", { cmd: "opencode", parent: "boss", cwd: other }),
-    ).rejects.toThrow(/cwd is not used for parented ad-hoc|inherit the parent's cwd/i);
+    ).rejects.toThrow(PARENT_CWD_REFUSAL);
   });
 
   it("t-f660d8: missing spawn cwd fails closed", async () => {
@@ -6522,7 +6682,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const REC = { path: worktreePath, branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
     await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path }))
-      .rejects.toThrow(/cwd is not used for parented ad-hoc children/);
+      .rejects.toThrow(PARENT_CWD_REFUSAL);
     expect(newSessionArgs).toHaveLength(0);
   });
 

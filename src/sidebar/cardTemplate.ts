@@ -134,11 +134,64 @@ export const CRITICAL_CARD_COMPONENTS: readonly CardComponentId[] = CARD_COMPONE
   (id) => CARD_CATALOG[id].critical === true,
 );
 
+/**
+ * `t-045d44` (SDD 479) — the closed per-component option set.
+ *
+ * Declared as data for the same reason `CARD_CATALOG` is: the validator, the error messages and the
+ * settings surface all read ONE table, so a new option cannot be accepted by the parser while the
+ * card ignores it — which is the promise phase 2 refused to make when it rejected `options` by name.
+ *
+ * Bounds are part of the contract, not defensive trimming. `maxChars: 0` would erase the label it is
+ * meant to shorten, and an unbounded `lines` turns a compact row into a page; both are refusals with
+ * a reason rather than a silently clamped value, because a clamp hides that the file says something
+ * the product will not do.
+ */
+export interface CardOptionSpec {
+  readonly kind: "integer";
+  readonly min: number;
+  readonly max: number;
+  readonly describes: string;
+}
+
+export const CARD_OPTION_CATALOG = {
+  model: {
+    maxChars: {
+      kind: "integer",
+      min: 4,
+      max: 200,
+      describes: "Truncate the model label to at most this many characters (full value stays in the tooltip)",
+    },
+  },
+  focus: {
+    lines: {
+      kind: "integer",
+      min: 1,
+      max: 5,
+      describes: "How many lines the focus text may wrap to before it is clipped",
+    },
+  },
+} as const satisfies Readonly<Partial<Record<CardComponentId, Readonly<Record<string, CardOptionSpec>>>>>;
+
+/** Components that accept an option at all. Anything else under `options:` is refused by name. */
+export type CardOptionComponentId = keyof typeof CARD_OPTION_CATALOG;
+
+export interface CardTemplateOptions {
+  readonly model?: { readonly maxChars: number };
+  readonly focus?: { readonly lines: number };
+}
+
 export interface CardTemplate {
   readonly version: number;
   readonly header: readonly CardComponentId[];
   readonly meta: readonly CardComponentId[];
   readonly footer: readonly CardComponentId[];
+  /**
+   * Absent means every component renders as it always has. Omitted from `DEFAULT_CARD_TEMPLATE` on
+   * purpose: the phase-1 equality proof asserts an unconfigured workspace is byte-identical to the
+   * pre-template card, and a default option value would be a behavior change wearing a default's
+   * clothes.
+   */
+  readonly options?: CardTemplateOptions;
 }
 
 /**
@@ -234,7 +287,7 @@ export function resolveCardTemplateFor(
  * ──────────────────────────────────────────────────────────────────────────────────────────────*/
 
 /** Top-level keys a written template may carry. Anything else is refused BY NAME. */
-const TEMPLATE_KEYS = ["version", ...CARD_REGIONS, "runtimes"] as const;
+const TEMPLATE_KEYS = ["version", ...CARD_REGIONS, "runtimes", "options"] as const;
 
 /** Keys a per-runtime override may carry. `extends` is REQUIRED — see `CardTemplateInheritance`. */
 const OVERRIDE_KEYS = ["extends", ...CARD_REGIONS] as const;
@@ -362,6 +415,73 @@ function parseRegions(
 }
 
 /**
+ * `t-045d44` — validate `options:`, fail-closed and by name.
+ *
+ * `effective` is the template the regions resolved to, NOT the keys the document happened to write:
+ * a region left silent inherits `base`, so `model` can be present without appearing in this file.
+ * Validating against the written keys would refuse a perfectly good template.
+ *
+ * An option for a component the template does NOT render is refused, following the precedent
+ * `parseRegions` already set for an inline member with no host: a line that cannot do anything is
+ * more likely a mistake than an intention, and saying so beats shipping silence.
+ */
+function parseOptions(
+  raw: unknown,
+  keyPath: string,
+  effective: readonly CardComponentId[],
+  errors: string[],
+): CardTemplateOptions | undefined {
+  if (raw === undefined) return undefined;
+  if (!isMapping(raw)) {
+    errors.push(`${keyPath}: must be a mapping of component id to its options (allowed: ${Object.keys(CARD_OPTION_CATALOG).join(", ")})`);
+    return undefined;
+  }
+
+  const out: Record<string, Record<string, number>> = {};
+  for (const [component, value] of Object.entries(raw)) {
+    const specs = (CARD_OPTION_CATALOG as Readonly<Record<string, Readonly<Record<string, CardOptionSpec>>>>)[component];
+    if (!specs) {
+      const known = isCardComponentId(component)
+        ? `'${component}' takes no options — these do: ${Object.keys(CARD_OPTION_CATALOG).join(", ")}`
+        : `unknown component '${component}' — these take options: ${Object.keys(CARD_OPTION_CATALOG).join(", ")}`;
+      errors.push(`${keyPath}: ${known}`);
+      continue;
+    }
+    if (!effective.includes(component as CardComponentId)) {
+      errors.push(`${keyPath}.${component}: this template does not render '${component}', so its options would do nothing`);
+      continue;
+    }
+    if (!isMapping(value)) {
+      errors.push(`${keyPath}.${component}: must be a mapping of option to value (allowed: ${Object.keys(specs).join(", ")})`);
+      continue;
+    }
+    const resolved: Record<string, number> = {};
+    for (const [option, given] of Object.entries(value)) {
+      const spec = specs[option];
+      if (!spec) {
+        errors.push(`${keyPath}.${component}: unknown option '${option}' (allowed: ${Object.keys(specs).join(", ")})`);
+        continue;
+      }
+      if (typeof given !== "number" || !Number.isInteger(given)) {
+        errors.push(
+          `${keyPath}.${component}.${option}: must be a whole number, not ${Array.isArray(given) ? "a list" : given === null ? "null" : typeof given}`,
+        );
+        continue;
+      }
+      if (given < spec.min || given > spec.max) {
+        // Refused rather than clamped: a clamp would hide that the file asks for something the card
+        // will not do, and the person would keep believing the written value is in effect.
+        errors.push(`${keyPath}.${component}.${option}: ${given} is outside ${spec.min}–${spec.max}`);
+        continue;
+      }
+      resolved[option] = given;
+    }
+    if (Object.keys(resolved).length > 0) out[component] = resolved;
+  }
+  return Object.keys(out).length > 0 ? (out as CardTemplateOptions) : undefined;
+}
+
+/**
  * Validate a written card template. Pure and framework-agnostic so that **one** validator serves every
  * home the template can have — `tachyon.yml` today, VS Code settings in phase 5. Two validators that
  * can disagree about the same document is the failure this avoids.
@@ -409,11 +529,21 @@ export function parseCardTemplate(
   }
 
   const regions = parseRegions(raw, keyPath, errors);
-  const parsed: CardTemplate = {
-    version: CARD_TEMPLATE_VERSION,
+  const resolvedRegions = {
     header: regions.header ?? base.header,
     meta: regions.meta ?? base.meta,
     footer: regions.footer ?? base.footer,
+  };
+  // t-045d44 — a silent `options:` inherits `base`'s, the same rule the regions above follow, so a
+  // personal override that only reorders badges keeps the project's truncation instead of quietly
+  // restoring full-length labels.
+  const options = raw.options === undefined
+    ? base.options
+    : parseOptions(raw.options, `${keyPath}.options`, [...resolvedRegions.header, ...resolvedRegions.meta, ...resolvedRegions.footer], errors);
+  const parsed: CardTemplate = {
+    version: CARD_TEMPLATE_VERSION,
+    ...resolvedRegions,
+    ...(options ? { options } : {}),
   };
 
   const runtimes = parseRuntimeOverrides(raw.runtimes, `${keyPath}.runtimes`, parsed, errors);

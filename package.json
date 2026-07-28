@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "A local, multi-runtime Agentic Development Environment powered by a persistent orchestration engine, with a VS Code shell, native terminals and an MCP control plane.",
-  "version": "0.56.109",
+  "version": "0.56.112",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
   "sponsor": {
@@ -159,10 +159,6 @@
       {
         "command": "tachyon.editAgentItem",
         "title": "%command.editAgentItem%"
-      },
-      {
-        "command": "tachyon.renameAgentItem",
-        "title": "%command.renameAgentItem%"
       },
       {
         "command": "tachyon.deleteAgentItem",
@@ -630,10 +626,6 @@
           "when": "false"
         },
         {
-          "command": "tachyon.renameAgentItem",
-          "when": "false"
-        },
-        {
           "command": "tachyon.deleteAgentItem",
           "when": "false"
         },
@@ -957,6 +949,7 @@
     "preview:webview:catalog": "vite-node --script scripts/webview-preview/generate-routes.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
+    "check:source-diffable": "node scripts/check-source-diffable.mjs",
     "plugin:validate": "node dist/plugin-validate.cjs",
     "check:runtime-observability-reference": "node scripts/runtime-observability-reference.mjs",
     "activity:preview": "node scripts/activity-preview.mjs",
@@ -980,6 +973,7 @@
     "dogfood:native-config-sources": "vite-node --script scripts/dogfood/native-config-sources.ts",
     "dogfood:persistent-engine": "node scripts/dogfood/persistent-engine.mjs",
     "dogfood:restart-modes": "vitest run test/integration/restartModesDogfood.test.ts",
+    "dogfood:execution-graph": "vite-node --script scripts/dogfood/execution-graph.ts",
     "dogfood:dev-host": "bash scripts/dev-host/cli.sh",
     "dogfood:runtime-launch-preflight": "node scripts/dev-host/lane.mjs run --owner sdd-370-headless --target worktree -- npm exec vitest run test/unit/codexCatalogStream.test.ts test/unit/runtimeLaunchPreflight.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts test/unit/engineSupervisor.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/bridge.test.ts",
     "dogfood:runtime-observability": "vite-node --script scripts/runtime-observability-dogfood.ts",

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
+import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
@@ -32,6 +33,7 @@ import {
 } from "./waitForOutput.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
+import { composerProfileFor } from "../runtime/composerRegion.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import type { ProposalStore } from "../schedule/ProposalStore.js";
 import { asAgent, parseEvery, parseAt, type ScheduleDef } from "../config/loadConfig.js";
@@ -103,7 +105,19 @@ import { appendMutationLog, evaluateMutationSafety } from "../companion/tabSafet
 import type { EvolutionCandidateInputTarget, EvolutionStore } from "../evolution/EvolutionStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
-export type NoticeDeliveryResult = { status: "notified" | "queued"; dropped?: number; queued?: number };
+/**
+ * t-8d190f — `submit-unconfirmed` is a THIRD outcome, distinct from both. The line was typed and Enter
+ * was pressed, but Tachyon never observed it leave the composer, so it may be sitting staged in the
+ * recipient's editor. It is not `notified` (nothing is proven delivered) and not `queued` (nothing is
+ * held for a later flush); reporting either would be the bug this task fixes.
+ */
+export type NoticeDeliveryResult = {
+  status: "notified" | "queued" | "submit-unconfirmed";
+  dropped?: number;
+  queued?: number;
+  /** Why confirmation failed, propagated from the tmux submit receipt. */
+  submitReason?: string;
+};
 export type NoticeSourceMetadata = { sourceChild?: string; sourceIncarnation?: number };
 
 export interface BridgeDeps {
@@ -595,6 +609,8 @@ export async function executeWait(
 const AGENT_NAME = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "agent name must start with a letter and use [a-zA-Z0-9_-]");
+
+
 const TASK_ID = z.string().regex(/^t-[0-9a-f]{6}$/, "task id must be t-<6hex>");
 const TASK_STATUS = z.enum(["inbox", "triaged", "active", "landed", "done", "dropped"]);
 const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
@@ -878,9 +894,16 @@ async function postmortemTailFor(
   return undefined;
 }
 
-async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string): Promise<NoticeDeliveryResult> {
+async function deliverNoticeFallback(deps: BridgeDeps, session: string, line: string, agent?: string): Promise<NoticeDeliveryResult> {
   if (typeof deps.tmux.sendSubmittedLine === "function") {
-    await deps.tmux.sendSubmittedLine(session, line);
+    // t-8d190f — confirm rather than assume. Without a Workspace this is the path notify_agent takes,
+    // so it is exactly where an unsubmitted line used to be reported as delivered.
+    const receipt = await deps.tmux.sendSubmittedLine(session, line, {
+      composer: composerProfileFor(agent ? deps.manager.defOf(agent)?.cmd : undefined),
+    });
+    if (receipt.status === "submit-unconfirmed") {
+      return { status: "submit-unconfirmed", submitReason: receipt.reason };
+    }
   } else {
     await deps.tmux.sendKeys(session, line, true);
   }
@@ -1254,13 +1277,59 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const actor = resolveDeclaredActor(deps, undefined);
         if (!actor.ok) return fail(new Error(actor.message));
         const principal = deps.caller ?? { kind: "legacy" as const };
+        const callerActor = { kind: principal.kind, name: actor.name };
         const result = await deps.managedWorktrees.remove(idOrPath, {
           deleteBranch,
           confirmDirty,
-          actor: { kind: principal.kind, name: actor.name },
+          actor: callerActor,
         });
-        if (!result.removed) return fail(new Error(result.error ?? "remove refused"));
-        return ok(JSON.stringify(result, null, 2));
+        if (result.removed) return ok(JSON.stringify(result, null, 2));
+        // t-e74631 — the owner-only rule above can force past dirtiness, which is why it stays
+        // owner-only. A delegating parent refused there is not out of options: retry through the
+        // classification-gated path, which grants lineage authority precisely BECAUSE it proves
+        // clean/unoccupied/contained at execution time and cannot force anything. Only the
+        // authority verdict is retried — a worktree refused for dirtiness is refused again, by the
+        // same classifier, with the same reason.
+        if (!confirmDirty) {
+          const viaHygiene = await deps.managedWorktrees.removeClassified(idOrPath, { deleteBranch, actor: callerActor });
+          if (viaHygiene.removed) return ok(JSON.stringify(viaHygiene, null, 2));
+          return fail(new Error(viaHygiene.error ?? result.error ?? "remove refused"));
+        }
+        return fail(new Error(result.error ?? "remove refused"));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "reconcile_worktree_hygiene",
+    {
+      description:
+        "t-e74631 — sweep CHANGE worktrees and remove the ones that are provably safe, without " +
+        "waiting for the agent that created each to wake up. Authority is hierarchical: the owner, " +
+        "its registered lineage ancestors, and the host human may all ask. Authority never bypasses " +
+        "the material locks — every removal still re-proves clean, unoccupied, and contained in base " +
+        "or trunk at execution time, and only a Tachyon-created branch is deleted. Agent worktrees " +
+        "are never swept: an agent's working home is not residue. Refusals are always reported with " +
+        "a reason rather than skipped silently. Use dry_run first to see what would go.",
+      inputSchema: {
+        dry_run: z.boolean().optional().default(false).describe("report what would be removed, touching nothing"),
+        delete_branch: z.boolean().optional().default(true).describe("also delete the branch when Tachyon created it"),
+      },
+    },
+    async ({ dry_run, delete_branch }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const report = await deps.managedWorktrees.reconcileHygiene({
+          actor: { kind: principal.kind, name: actor.name },
+          deleteBranch: delete_branch,
+          dryRun: dry_run,
+        });
+        return ok(JSON.stringify(report, null, 2));
       } catch (err) {
         return fail(err);
       }
@@ -1622,7 +1691,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .boolean()
           .optional()
           .describe(
-            "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
+            // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
+            // ad-hoc AI agent. "Ignored" and "refused" are different promises to a caller, and only
+            // one of them was true.
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for an ad-hoc AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
           ),
         gate: z
           .object({
@@ -1663,6 +1735,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent, worktree, gate, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        // t-6fe04b — refuse the incompatible pair at the ENTRY, before a delegation contract is
+        // composed and before lineage is resolved.
+        //
+        // It has to read the caller's LITERAL `parent`, which is why it sits above the resolution
+        // below: an omitted parent becomes the caller itself a few lines down, and after that every
+        // spawn looks parented. So this catches only the explicit pair — the manager-level guard
+        // stays as the complete one, and this is the earlier, friendlier half of the same refusal.
+        //
+        // The message names `delivery_join` deliberately. The old one said only what NOT to do, and
+        // in the incident behind t-e787dc the caller answered a refusal that pointed nowhere by
+        // putting an absolute path in the child's BRIEFING — the least governed outcome available.
+        if (parent && cwd) {
+          return fail(new Error(PARENT_CWD_REFUSAL));
+        }
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
         const parentActor = resolveDeclaredActor(deps, parent);
@@ -3569,7 +3655,18 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(new Error(`recipient '${name}' has a non-empty composer draft — refused-composer: use notify_agent or wait for the composer to clear`));
         }
         if (typeof deps.tmux.sendSubmittedLine === "function") {
-          await deps.tmux.sendSubmittedLine(session, text);
+          const receipt = await deps.tmux.sendSubmittedLine(session, text, {
+            composer: composerProfileFor(deps.manager.defOf(name)?.cmd),
+          });
+          // t-8d190f — the text is in the recipient's composer but Tachyon never saw it leave. Say so
+          // and name the way out, instead of returning a `submitted` receipt the pane contradicts.
+          if (receipt.status === "submit-unconfirmed") {
+            return ok(
+              `input typed into '${name}' but submission was NOT confirmed after ${receipt.attempts} Enter attempt(s) ` +
+                `(receipt: submit-unconfirmed; reason: ${receipt.reason}) — the text may be staged in the composer ` +
+                `unsent; check with read_output and re-send if it is still there`,
+            );
+          }
         } else {
           await deps.tmux.sendKeys(session, text, true);
         }
@@ -3671,8 +3768,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
           ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
-          : await deliverNoticeFallback(deps, session, line);
+          : await deliverNoticeFallback(deps, session, line, to);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
+        // t-8d190f — never report a delivery that was not observed. The doorbell stays actionable:
+        // the sender is told the line is staged unsent and how to check, rather than being told it
+        // landed and finding out later that the recipient never took a turn.
+        if (result.status === "submit-unconfirmed") {
+          return ok(
+            `typed '${to}' but submission was NOT confirmed (receipt: submit-unconfirmed; reason: ${result.submitReason ?? "unknown"})${suffix}` +
+              ` — the notice may be staged in their composer unsent; verify with read_output('${to}') and re-send if it is still there`,
+          );
+        }
         return ok(result.status === "queued" ? `queued '${to}' for idle delivery${suffix}` : `notified '${to}'${suffix}`);
       } catch (err) {
         return fail(err);

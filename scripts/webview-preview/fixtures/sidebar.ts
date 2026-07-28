@@ -22,6 +22,28 @@ const base: Omit<FleetVM, "agents"> = {
   pins: [],
 };
 
+/**
+ * `t-045d44` — rows shaped so the two options are VISIBLE: a model label longer than the budget, and
+ * focus text longer than one line. Shared by the configured fixture and its unconfigured control so
+ * the only difference between the two previews is the template itself.
+ */
+const OPTION_ROWS: FleetVM["agents"] = [
+  {
+    name: "truncated-model", status: "running", kind: "agent",
+    model: "claude-opus-4-5-20251101-preview", modelSource: "observed",
+    focus: {
+      source: "task", taskId: "t-045d44",
+      text: "per-component card template options, wrapped across the three lines this template allows so that the clamp is actually visible in the preview",
+      full: "per-component card template options, wrapped across the three lines this template allows so that the clamp is actually visible in the preview",
+    },
+  },
+  {
+    name: "short-model", status: "running", kind: "agent",
+    model: "gpt-5", modelSource: "declared",
+    focus: { source: "brief", text: "fits on one line", full: "fits on one line" },
+  },
+];
+
 export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
   // the richest canonical state — the real SAMPLE the production bundle ships.
   default: { provenance: "sample-derived", vm: SAMPLE },
@@ -161,5 +183,38 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
         actionsLive: index !== 1,
       })),
     } as FleetVM,
+  },
+
+  /**
+   * `t-045d44` (SDD 479) — the two per-component options, each paired with a row that shows what it
+   * did. `maxChars` is invisible unless a model label exceeds the budget, and `lines` is invisible
+   * unless the focus text needs more than one; the second row carries content that fits, so the
+   * fixture shows the DIFFERENCE rather than one styled card.
+   */
+  "card-template-options": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      cardTemplate: {
+        base: {
+          version: 1,
+          header: ["status-dot", "name", "model", "model-provenance", "metrics-pill"],
+          meta: ["branch", "attention", "auth-required", "verify", "harness"],
+          footer: ["focus", "metrics-lanes", "actions"],
+          options: { model: { maxChars: 12 }, focus: { lines: 3 } },
+        },
+      },
+      agents: OPTION_ROWS,
+    } as FleetVM,
+  },
+
+  /**
+   * The control group: the SAME rows with no template at all. Without it there is nothing to compare
+   * against — every row in the fixture above shares one template, so none of them shows what a
+   * workspace that configured nothing gets, which is the claim the whole phase rests on.
+   */
+  "card-template-options-default": {
+    provenance: "synthetic-edge",
+    vm: { ...base, agents: OPTION_ROWS } as FleetVM,
   },
 };

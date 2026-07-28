@@ -78,6 +78,13 @@ describe("preview route table", () => {
       "deliveries",
       "empty",
       "engine",
+      // SDD 480 Phase 4 — the heavy/grouped surface plus each explicit state, which is what the
+      // headless Visual QA at 760/1000/1400 drives.
+      "execution-graph",
+      "execution-graph-empty",
+      "execution-graph-error",
+      "execution-graph-no-telemetry",
+      "execution-graph-real",
       "fleet",
       "handoff",
       "mission",

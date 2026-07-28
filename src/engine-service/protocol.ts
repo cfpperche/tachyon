@@ -94,7 +94,10 @@ import {
 export { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
 
 export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
-export const ENGINE_SHELL_PROTOCOL = 3 as const;
+// 0.56.110 added required fields to WorkspaceProbeViewRowV1. That is a wire-format break:
+// a 0.56.109 shell cannot decode the new response, and a current shell cannot decode the old one.
+// Keep this version exact rather than pretending the two shapes overlap.
+export const ENGINE_SHELL_PROTOCOL = 4 as const;
 export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {
