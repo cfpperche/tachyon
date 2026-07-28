@@ -4,7 +4,7 @@ import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { decideHeavyGate } from "./host-resources.mjs";
-import { recordVerification } from "./verify-record.mjs";
+import { recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
@@ -167,7 +167,40 @@ function readTail(file, maxBytes = 16 * 1024) {
   } catch { return Promise.resolve(""); }
 }
 
+/**
+ * t-5d0e9d — may this run stand on a green already filed for the identical tree?
+ *
+ * Consulted BEFORE the lock on purpose, and that ordering is most of the value. The redundant runs
+ * this removes are exactly the ones that CONTEND: an agent verifies, the coordinator fast-forwards
+ * and verifies the identical tree, then the pre-push gate verifies it a third time. Taking the lock
+ * only to discover the answer was already on file would still serialize all three behind each other.
+ *
+ * It also reaches all three callers without touching the pre-push hook, which ships from a pinned
+ * external plugin and is integrity-checked: that gate resolves `npm run verify:full`, so making the
+ * COMMAND cheap is what makes the gate cheap.
+ */
+export function decideReuse({ env = process.env, now = () => Date.now() } = {}) {
+  const { fingerprint } = verifierFingerprint({ command: "verify:full", gates: STATIC_GATES });
+  const maxAgeMs = Number(env.TACHYON_VERIFY_MAX_AGE_MS);
+  return reuseDecision({
+    tree: verifiableTree(),
+    fingerprint,
+    force: env.TACHYON_VERIFY_FORCE === "1",
+    now,
+    ...(Number.isFinite(maxAgeMs) && maxAgeMs > 0 ? { maxAgeMs } : {}),
+  });
+}
+
 export async function main() {
+  // t-5d0e9d — an identical tree that already passed, in this environment, recently, does not need to
+  // pass again. Every other case runs the suite: the decision is fail-closed and never consults a
+  // commit sha, a commit message, or an agent's claim about what it ran.
+  const reuse = decideReuse();
+  if (reuse.reuse) {
+    process.stdout.write(`verify:full reused: ${reuse.reason}\n`);
+    process.stdout.write(`  ${reuse.record.summary ?? "no summary recorded"} — set TACHYON_VERIFY_FORCE=1 to run it anyway\n`);
+    return 0;
+  }
   let lock;
   try {
     lock = acquireVerifyFullLock();
@@ -240,6 +273,9 @@ export async function main() {
     const count = summarizeReport(report);
     const filed = recordVerification({
       command: "verify:full",
+      // t-5d0e9d — file WHICH verifier and environment produced this green, so a later run can tell
+      // whether the record still applies to it instead of assuming it does.
+      fingerprint: verifierFingerprint({ command: "verify:full", gates: STATIC_GATES }).fingerprint,
       summary: `${count.files} files, ${count.passed} passed`,
     });
     process.stdout.write(
