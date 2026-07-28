@@ -3447,15 +3447,10 @@ export class Workspace {
           listEntries: () => this.manager.list(),
           sendSubmittedLine: (session, text) => this.tmux.sendSubmittedLine(session, text),
         }),
-        // Left as it was: this path swallows a failing pin completion. See t-a77fe6 — the editor path
-        // does NOT, and settling that would change behaviour on one of them.
-        completePin: (pinId) => {
-          try {
-            this.pinStore.setDone(pinId, true);
-          } catch {
-            /* best-effort */
-          }
-        },
+        // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
+        // and now reports the failure instead of discarding it; catching here first would put this
+        // channel back to silence while the other one speaks.
+        completePin: (pinId) => this.pinStore.setDone(pinId, true),
       });
       this.afterApprovalResolved(result.request.id);
       return {
@@ -3463,6 +3458,7 @@ export class Workspace {
         id: result.request.id,
         status: decision,
         ...(result.injectError ? { injectError: result.injectError } : {}),
+        ...(result.pinError ? { pinError: result.pinError } : {}),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

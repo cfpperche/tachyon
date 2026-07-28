@@ -350,7 +350,14 @@ export async function resolveApproval(input: {
   currentSessionOwner?: (session: string) => string | undefined | Promise<string | undefined>;
   /** Optional hook the host calls to complete the pin created at request time. */
   completePin?: (pinId: string, decision: ApprovalDecision) => void;
-}): Promise<{ request: ApprovalRequest; injectedText: string; receipt?: string; injectError?: string }> {
+}): Promise<{
+  request: ApprovalRequest;
+  injectedText: string;
+  receipt?: string;
+  injectError?: string;
+  /** t-7a306a — the pin could not be completed. The approval still resolved; this must not vanish. */
+  pinError?: string;
+}> {
   const request = readApprovalRequest(input.workspaceRoot, input.id);
   if (request.status === "resolved") {
     throw new Error(`approval request '${input.id}' is already resolved (${request.resolution?.decision})`);
@@ -393,14 +400,32 @@ export async function resolveApproval(input: {
     at: resolvedAt,
     ...(input.resolvedBy ? { by: input.resolvedBy } : {}),
   });
+  let pinError: string | undefined;
   if (updated.pinId && input.completePin) {
     try {
       input.completePin(updated.pinId, input.decision);
-    } catch {
-      // best-effort — the request is already resolved; a pin-completion failure must not undo that.
+    } catch (err) {
+      // t-7a306a — best-effort, and no longer silent.
+      //
+      // The decision is already recorded, so failing here would tell a human their approval did not
+      // go through and invite them to retry something already done. Swallowing it whole was the other
+      // half of the same mistake: the pin they were looking at stays open and nothing says why. This
+      // is the shape `injectError` above already uses — the operation succeeded, and its secondary
+      // failure travels with the result instead of disappearing.
+      //
+      // It cannot join the resolution `note`: that record was written before this ran, and rewriting
+      // it to append a later failure would make the durable record disagree with what was persisted
+      // at decision time.
+      pinError = err instanceof Error ? err.message : String(err);
     }
   }
-  return { request: updated, injectedText, ...(receipt ? { receipt } : {}), ...(injectError ? { injectError } : {}) };
+  return {
+    request: updated,
+    injectedText,
+    ...(receipt ? { receipt } : {}),
+    ...(injectError ? { injectError } : {}),
+    ...(pinError ? { pinError } : {}),
+  };
 }
 
 /**
