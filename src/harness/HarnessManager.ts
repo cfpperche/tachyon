@@ -299,11 +299,19 @@ export function authRankBetter(a: AuthCredentialRank, b: AuthCredentialRank): bo
  * True when any workspace private Grok home has replaced the auth symlink with a regular file
  * (OIDC refresh in-session). Cheap signal to run harvest without waiting for stop/kill (t-6c8437).
  */
-export function privateGrokAuthNeedsHarvest(workspaceRoot: string): boolean {
+export function privateGrokAuthNeedsHarvest(workspaceRoot: string, realGrokHome?: string): boolean {
+  // t-de73e0 — private credentials are COPIES now, so "is a regular file" is true of every home and
+  // would ask for a harvest on every tick. What actually needs harvesting is a private credential
+  // that outranks the shared one, which is the same question `promoteNewerPrivateAuth` answers.
+  const realAuth = realGrokHome ? path.join(realGrokHome, "auth.json") : undefined;
+  const realRank = realAuth && fs.existsSync(realAuth) ? authCredentialRank(realAuth) : WORST_AUTH_RANK;
   for (const home of listWorkspaceGrokPrivateHomes(workspaceRoot)) {
+    const privateAuth = path.join(home, "auth.json");
     try {
-      const st = fs.lstatSync(path.join(home, "auth.json"));
-      if (st.isFile() && !st.isSymbolicLink()) return true;
+      const st = fs.lstatSync(privateAuth);
+      if (!st.isFile() || st.isSymbolicLink()) continue;
+      if (!isReadableJsonObjectFile(privateAuth)) continue;
+      if (authRankBetter(authCredentialRank(privateAuth), realRank)) return true;
     } catch {
       /* missing — skip */
     }
@@ -345,6 +353,47 @@ export function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): 
   fs.copyFileSync(privateAuth, realAuth);
   fs.chmodSync(realAuth, 0o600);
   return true;
+}
+
+/**
+ * t-de73e0 — seed a private credential as a COPY, never as a pointer at the person's own file.
+ *
+ * The symlink model assumed the runtime only READS the credential it is given. Measured false on
+ * grok 0.2.112, and measured by destroying the real credential of this machine: a Grok that decides
+ * it must re-authenticate inside a redirected home operates on the RESOLVED path — `auth.json.lock`
+ * appeared next to the real `~/.grok/auth.json`, and the real file did not survive. One agent
+ * needing a re-login therefore destroyed the person's credential and, with it, every other agent's,
+ * because every private home pointed at that one file.
+ *
+ * A copy makes the destructive case unreachable rather than unlikely: whatever the runtime does to
+ * the private file — rewrite, truncate, unlink, replace under a lock — it is doing it to a file that
+ * belongs to that agent. The shared credential is reached only by Tachyon's own harvest, which
+ * promotes a FRESHER private credential back (`promoteNewerPrivateAuth`), so an in-session refresh
+ * still converges instead of being stranded.
+ *
+ * The private copy is never overwritten by a staler real one: that would throw away a token the agent
+ * just refreshed, which is the failure t-2b0a08 and t-6c8437 exist to prevent.
+ */
+export function ensureAuthCopy(privatePath: string, realAuth: string): void {
+  fs.mkdirSync(path.dirname(privatePath), { recursive: true });
+  let privateStat: fs.Stats | undefined;
+  try {
+    privateStat = fs.lstatSync(privatePath);
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+  }
+  // A regular private credential that is at least as good as the real one is the agent's own, and
+  // fresher or equal — leave it alone.
+  if (privateStat?.isFile() && !privateStat.isSymbolicLink() && isReadableJsonObjectFile(privatePath)) {
+    if (!authRankBetter(authCredentialRank(realAuth), authCredentialRank(privatePath))) return;
+  }
+  if (privateStat) {
+    // Includes the legacy symlink this function replaces. Unlink FIRST: copying onto a symlink would
+    // write through it, which is the entire defect.
+    fs.unlinkSync(privatePath);
+  }
+  fs.copyFileSync(realAuth, privatePath);
+  fs.chmodSync(privatePath, 0o600);
 }
 
 /** Force `linkPath` to be a symlink to `target` (absolute). Replaces a regular file or broken link. */
@@ -453,7 +502,7 @@ export function reconcileWorkspaceGrokAuth(workspaceRoot: string, realGrokHome: 
     } catch {
       continue;
     }
-    ensureAuthSymlink(privateAuth, realAuth);
+    ensureAuthCopy(privateAuth, realAuth);
     relinked += 1;
   }
   return { promoted, relinked };
@@ -2112,7 +2161,11 @@ export class HarnessManager {
               : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
-      ensureAuthSymlink(authLink, authTarget);
+      // t-de73e0 — Grok is measured to WRITE the credential it is handed, so it gets a copy of its
+      // own. The other runtimes keep the symlink they were measured with; the same exposure is
+      // plausible for them and is filed separately rather than changed blind here.
+      if (adapter.runtime === "grok") ensureAuthCopy(authLink, authTarget);
+      else ensureAuthSymlink(authLink, authTarget);
     }
 
     // t-9598cc — parity with grok/hermes (t-303f2b): prove the projected credential can actually
@@ -2799,7 +2852,7 @@ export class HarnessManager {
     // Only throttle forward in time (tests may inject small clocks; materialize stamps wall-clock).
     const elapsed = nowMs - this.lastGrokHarvestMs;
     if (elapsed >= 0 && elapsed < HarnessManager.GROK_HARVEST_MIN_INTERVAL_MS) return null;
-    if (!privateGrokAuthNeedsHarvest(this.workspaceRoot)) return null;
+    if (!privateGrokAuthNeedsHarvest(this.workspaceRoot, this.realGrokHome)) return null;
     return this.reconcileGrokAuthFromWorkspace();
   }
 
@@ -2848,10 +2901,12 @@ export class HarnessManager {
         `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
       );
     }
-    // Ensure *this* home is linked even if it was just created (reconcile skips missing auth paths).
-    ensureAuthSymlink(authLink, authTarget);
+    // Ensure *this* home has its own copy even if it was just created (reconcile skips missing paths).
+    // t-de73e0 — a COPY, never a pointer: a Grok that re-authenticates here must not be able to reach
+    // the person's credential.
+    ensureAuthCopy(authLink, authTarget);
     // t-303f2b — never hand the agent a GROK_HOME that looks seeded but cannot read credentials
-    // (dangling/unreadable symlink → interactive "Approve in your browser" instead of a hard spawn error).
+    // (unreadable credential → interactive "Approve in your browser" instead of a hard spawn error).
     assertReadableGrokAuth(agent, home, authTarget);
 
     const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";

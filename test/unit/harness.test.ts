@@ -1121,7 +1121,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(res.env.GROK_MEMORY, "the memory pin outranks anything in the secret map").toBe("0");
   });
 
-  it("t-843576: materializeBridgeMcpGrok writes private GROK_HOME with tachyon_bridge + auth symlink", () => {
+  it("t-843576: materializeBridgeMcpGrok writes private GROK_HOME with tachyon_bridge + auth copy", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok");
     fs.mkdirSync(realGrokHome, { recursive: true });
     fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
@@ -1134,8 +1134,10 @@ describe("HarnessManager materialize (fs)", () => {
     };
     const home = mgr.materializeBridgeMcpGrok("solo", bridge);
     expect(home).toBe(bridgeGrokHome(ws, "solo"));
-    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(path.join(home, "auth.json"))).toBe(path.join(realGrokHome, "auth.json"));
+    // t-de73e0 — a private COPY, never a pointer at the person's credential.
+    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(path.join(home, "auth.json"), "utf8")).toBe('{"token":"GROK"}');
+    expect(fs.statSync(path.join(home, "auth.json")).mode & 0o777).toBe(0o600);
     const toml = fs.readFileSync(path.join(home, "config.toml"), "utf8");
     expect(toml).toContain("[mcp_servers.tachyon_bridge]");
     expect(toml).toContain('url = "http://127.0.0.1:9/mcp"');
@@ -1181,7 +1183,8 @@ describe("HarnessManager materialize (fs)", () => {
     // must survive the rewrite — a projection that cost the agent its auth is not parity.
     mgr.materializeBridgeMcpGrok("canonical", bridge, ws, { exactTrust: true, nativeConfig });
     expect(fs.readFileSync(path.join(home, "config.toml"), "utf8")).toBe(first);
-    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(false);
+    expect(fs.existsSync(path.join(home, "auth.json"))).toBe(true);
     expect(fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8")).toMatch(/trusted\s*=\s*true/);
 
     // Stale projected state is REPLACED, not merged: dropping a family must remove its key.
@@ -1255,9 +1258,8 @@ describe("HarnessManager materialize (fs)", () => {
 
     const home = mgr.materializeBridgeMcpGrok("solo", bridge);
     const privateAuth = path.join(home, "auth.json");
-    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
 
-    fs.unlinkSync(privateAuth);
     fs.writeFileSync(privateAuth, '{"token":"FRESH"}');
     const oldTime = new Date("2026-01-01T00:00:00.000Z");
     const newTime = new Date("2026-01-01T00:00:10.000Z");
@@ -1268,11 +1270,12 @@ describe("HarnessManager materialize (fs)", () => {
 
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"FRESH"}');
     expect(fs.statSync(realAuth).mode & 0o777).toBe(0o600);
-    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
+    // The refreshed private credential is harvested back and kept — not reverted to a stale copy.
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"FRESH"}');
   });
 
-  it("t-2b0a08: materializeBridgeMcpGrok leaves the normal auth symlink path intact on rematerialize", () => {
+  it("t-2b0a08: materializeBridgeMcpGrok keeps the private auth copy converged on rematerialize", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-symlink");
     fs.mkdirSync(realGrokHome, { recursive: true });
     const realAuth = path.join(realGrokHome, "auth.json");
@@ -1288,8 +1291,8 @@ describe("HarnessManager materialize (fs)", () => {
     mgr.materializeBridgeMcpGrok("solo", bridge);
 
     const privateAuth = path.join(home, "auth.json");
-    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"GROK"}');
   });
 
@@ -1332,7 +1335,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(result.promoted).toBe(true);
     const real = JSON.parse(fs.readFileSync(realAuth, "utf8")) as { "https://auth.x.ai::x": { key: string } };
     expect(real["https://auth.x.ai::x"].key).toBe("FRESH_KEY");
-    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
   });
 
   it("t-6c8437: maybeHarvestGrokAuthFromWorkspace promotes when private auth is a regular file", () => {
@@ -1420,10 +1423,11 @@ describe("HarnessManager materialize (fs)", () => {
 
     const real = JSON.parse(fs.readFileSync(realAuth, "utf8")) as { "https://auth.x.ai::scope": { key: string } };
     expect(real["https://auth.x.ai::scope"].key).toBe("KEY_B_NEWEST");
-    expect(fs.lstatSync(authA).isSymbolicLink()).toBe(true);
-    expect(fs.lstatSync(authB).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(authA)).toBe(realAuth);
-    expect(fs.readlinkSync(authB)).toBe(realAuth);
+    // t-de73e0 — converged by VALUE: same credential in every home, no pointer at the shared file.
+    expect(fs.lstatSync(authA).isSymbolicLink()).toBe(false);
+    expect(fs.lstatSync(authB).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(authA, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
+    expect(fs.readFileSync(authB, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
     // Both agents now read the same promoted credential.
     expect(fs.readFileSync(authA, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
     expect(fs.readFileSync(authB, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
@@ -1475,8 +1479,67 @@ describe("HarnessManager materialize (fs)", () => {
     });
     expect(home).toBe(bridgeGrokHome(ws, "solo"));
     expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
-    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(privateAuth)).toBe(realAuth);
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"PRIVATE_ONLY"}');
+  });
+
+  /**
+   * t-de73e0 — the incident, encoded. A Grok that re-authenticates inside a redirected home writes
+   * the credential it was given; with a symlink that write landed on the person's own file and the
+   * real `~/.grok/auth.json` did not survive. This drives the three shapes that write can take and
+   * asserts the shared credential is untouched by all of them.
+   */
+  it("t-de73e0: whatever the runtime does to the private credential cannot reach the real one", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-isolation");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(realAuth, '{"token":"HUMAN_CREDENTIAL"}');
+    fs.chmodSync(realAuth, 0o600);
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: {} };
+
+    const home = mgr.materializeBridgeMcpGrok("solo", bridge);
+    const privateAuth = path.join(home, "auth.json");
+
+    // 1. Rewrite in place — the shape that destroys through a symlink.
+    fs.writeFileSync(privateAuth, '{"token":"RUNTIME_REWROTE_IT"}');
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
+
+    // 2. Truncate to nothing — a cleared credential after a failed refresh.
+    fs.truncateSync(privateAuth, 0);
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
+
+    // 3. Unlink — what actually happened on the machine this was measured on.
+    fs.unlinkSync(privateAuth);
+    expect(fs.existsSync(realAuth)).toBe(true);
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
+
+    // And the next launch re-seeds the agent from the surviving shared credential.
+    mgr.materializeBridgeMcpGrok("solo", bridge);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+  });
+
+  it("t-de73e0: a legacy symlinked private home is converted to a copy on the next launch", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-legacy-link");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    const realAuth = path.join(realGrokHome, "auth.json");
+    fs.writeFileSync(realAuth, '{"token":"HUMAN_CREDENTIAL"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: {} };
+
+    // A home seeded by an older build: auth.json is a pointer at the person's credential.
+    const home = bridgeGrokHome(ws, "legacy");
+    fs.mkdirSync(home, { recursive: true });
+    fs.symlinkSync(realAuth, path.join(home, "auth.json"));
+
+    mgr.materializeBridgeMcpGrok("legacy", bridge);
+
+    const privateAuth = path.join(home, "auth.json");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    // Converting must not have written through the link it replaced.
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe('{"token":"HUMAN_CREDENTIAL"}');
   });
 
   it("setHermesMcpServer merges tachyon_bridge into config.yaml without secrets", () => {
