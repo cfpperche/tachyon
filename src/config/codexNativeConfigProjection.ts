@@ -24,6 +24,7 @@ export interface CodexNativeConfigSourceTexts {
 export interface CodexNativeConfigProjectionResult {
   projection: ResolvedAgentNativeConfigProjection;
   errors: string[];
+  warnings: string[];
 }
 
 const FAMILY_KEYS: Record<ScalarFamily, readonly string[]> = {
@@ -320,6 +321,7 @@ function permissionValue(
   measured: readonly string[],
   authorized: ReadonlySet<string>,
   errors: string[],
+  warnings: string[],
 ): string | undefined {
   const value = typedValue("permissions", source, parsed, field, "string", errors);
   if (value === undefined) return undefined;
@@ -333,9 +335,12 @@ function permissionValue(
   }
   const dangerous = CODEX_DANGEROUS_VALUES[field];
   if (dangerous && dangerous.value === text && !authorized.has(dangerous.authorization)) {
-    errors.push(
+    // Existing canonical agents inherited these values before SDD 472. On upgrade, keep the agent
+    // loadable but omit the unauthorized capability from its private projection. The runtime stays
+    // fail-closed and the human gets an actionable path to opt in deliberately.
+    warnings.push(
       `profile/native-config-value: Codex ${source} key '${field}' value '${text}' means`
-      + ` ${dangerous.consequence}, so it is refused unless this agent explicitly authorizes it`
+      + ` ${dangerous.consequence}; it was omitted because this agent does not explicitly authorize it`
       + `; authorize it for this agent, set the Permissions family to Exclude,`
       + ` or change the ${source} value`,
     );
@@ -374,6 +379,7 @@ export function projectCodexScalarNativeConfig(
   // structuredClone drops the non-enumerable ownership metadata, so carry it across (t-59a11b).
   const projection = carryNativeConfigSources(structuredClone(base), base);
   const errors: string[] = [];
+  const warnings: string[] = [];
   // Read from the PROFILE, never from the config file: the global file supplies a value, only this
   // agent's own authorization makes a dangerous one projectable (SDD 472).
   const authorized = nativeConfigAuthorizations(profile.nativeConfig, "permissions");
@@ -395,10 +401,10 @@ export function projectCodexScalarNativeConfig(
     }
     if (family === "permissions") {
       const approvalPolicy = permissionValue(
-        policy.source, parsed, "approval_policy", CODEX_APPROVAL_POLICIES, authorized, errors,
+        policy.source, parsed, "approval_policy", CODEX_APPROVAL_POLICIES, authorized, errors, warnings,
       );
       const sandboxMode = permissionValue(
-        policy.source, parsed, "sandbox_mode", CODEX_SANDBOX_MODES, authorized, errors,
+        policy.source, parsed, "sandbox_mode", CODEX_SANDBOX_MODES, authorized, errors, warnings,
       );
       projection.permissions = {
         ...(approvalPolicy !== undefined ? { approvalPolicy } : {}),
@@ -429,5 +435,5 @@ export function projectCodexScalarNativeConfig(
       }
     }
   }
-  return { projection, errors };
+  return { projection, errors, warnings };
 }

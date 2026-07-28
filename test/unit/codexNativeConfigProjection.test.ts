@@ -90,15 +90,16 @@ describe("Codex scalar native configuration projection", () => {
     it.each([
       ["approval_policy", "never", "the agent never asks before running a command"],
       ["sandbox_mode", "danger-full-access", "the agent runs without a sandbox"],
-    ])("refuses an unauthorized %s = %s", (key, value, consequence) => {
+    ])("omits an unauthorized %s = %s without invalidating the profile", (key, value, consequence) => {
       const result = projectCodexScalarNativeConfig(profile("global"), {
         global: `${key} = "${value}"\n`,
       }, { adapter: "codex", selectors: {} });
 
-      expect(result.errors.join("\n")).toContain(
+      expect(result.errors).toEqual([]);
+      expect(result.warnings.join("\n")).toContain(
         `Codex global key '${key}' value '${value}' means ${consequence}`,
       );
-      expect(result.errors.join("\n")).toContain("authorize it for this agent");
+      expect(result.warnings.join("\n")).toContain("authorize it for this agent");
       expect(result.projection.permissions).toEqual({});
     });
 
@@ -110,6 +111,7 @@ describe("Codex scalar native configuration projection", () => {
       );
 
       expect(result.errors).toEqual([]);
+      expect(result.warnings).toEqual([]);
       expect(result.projection.permissions).toEqual({
         approvalPolicy: "never",
         sandboxMode: "danger-full-access",
@@ -124,7 +126,8 @@ describe("Codex scalar native configuration projection", () => {
         { adapter: "codex", selectors: {} },
       );
 
-      expect(result.errors.join("\n")).toContain("key 'approval_policy' value 'never'");
+      expect(result.errors).toEqual([]);
+      expect(result.warnings.join("\n")).toContain("key 'approval_policy' value 'never'");
       expect(result.projection.permissions).toEqual({ sandboxMode: "danger-full-access" });
     });
 
