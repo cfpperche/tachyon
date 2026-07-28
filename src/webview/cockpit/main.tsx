@@ -6,6 +6,8 @@ import { App } from "./App";
 import {
   INIT,
   MODEL,
+  NAV_SLOW_MS,
+  NAV_STALL_MS,
   readyMessage,
   refreshAction,
   copyDiagnosticsAction,
@@ -211,6 +213,22 @@ function CockpitRoot() {
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
    *  with an identical shape (e.g. two "load" pushes for the same blank new-entity form). */
   const [studioIncoming, setStudioIncoming] = useState<{ seq: number; message: unknown } | undefined>(undefined);
+  /**
+   * t-ac79a7 — which navigation the host has committed but not finished loading, and how long that
+   * has been true. The host brackets every navigation with routePending/routeReady (see Cockpit.ts's
+   * `navigate()` and `sendSectionModule()`); this is the client half.
+   *
+   * Three phases rather than a bare boolean, because "show a spinner the instant a click lands" and
+   * "never flash a spinner on a navigation that was instant" are both requirements:
+   *  - "pending" lands at 0ms and drives ONLY the actuated element's own pressed/busy styling, which
+   *    is the immediate acknowledgement the click needs and costs nothing if the route resolves in
+   *    one frame;
+   *  - "slow" adds the shell-level progress bar + aria-busy + the polite announcement, after a grace
+   *    window, so a fast navigation never flashes chrome at the user;
+   *  - "stalled" is the bounded end state — a visible, recoverable banner instead of a spinner that
+   *    spins forever when the host never answers (dead engine, stale locator).
+   */
+  const [navPending, setNavPending] = useState<{ routeKey: string; phase: "pending" | "slow" | "stalled" } | undefined>(undefined);
   const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
@@ -263,7 +281,23 @@ function CockpitRoot() {
       if (!raw || typeof raw.type !== "string") return;
       const type = raw.type;
 
-      if (type === INIT && raw.strings) setStrings(raw.strings as CockpitStrings);
+      if (type === "routePending" && typeof raw.routeKey === "string") {
+        // Unconditional: a NEW navigation always supersedes an in-flight one (clicking a second
+        // Board card while the first is still loading must track the second, not be swallowed as a
+        // duplicate). Same-key re-entry simply re-arms the same pending state, which is why a double
+        // click on ONE card is a no-op instead of a second spinner — dedupe falls out of keying by
+        // route identity rather than needing a separate click guard that could block real navigation.
+        const routeKey = raw.routeKey;
+        setNavPending((prev) => (prev?.routeKey === routeKey ? prev : { routeKey, phase: "pending" }));
+      }
+      else if (type === "routeReady" && typeof raw.routeKey === "string") {
+        // Only the pending route's OWN ready clears it. A superseded route finishing late must not
+        // clear the newer navigation's pending state (the host already drops most of those via its
+        // epoch guard; matching here means the client doesn't depend on that alone).
+        const routeKey = raw.routeKey;
+        setNavPending((prev) => (prev && prev.routeKey !== routeKey ? prev : undefined));
+      }
+      else if (type === INIT && raw.strings) setStrings(raw.strings as CockpitStrings);
       else if (type === MODEL && raw.model) {
         const next = raw.model as CockpitModel;
         const paired = next.companion?.paired === true;
@@ -477,6 +511,33 @@ function CockpitRoot() {
     };
   }, [auto, strings]);
 
+  /**
+   * t-ac79a7 — escalate a pending navigation through its two thresholds. Keyed on the routeKey, so a
+   * navigation that supersedes another restarts the clock rather than inheriting the old one's age.
+   *
+   * NAV_SLOW_MS is a grace window, not a delay: the actuated element is already showing "pending" at
+   * 0ms, and this only decides when the SHELL escalates to a progress bar. Below it, a navigation
+   * that resolves quickly never flashes chrome.
+   * NAV_STALL_MS is the bound that makes "never an infinite spinner" true rather than intended — when
+   * it fires the UI switches to a recoverable banner with a retry, not more spinning.
+   */
+  useEffect(() => {
+    if (!navPending || navPending.phase === "stalled") return;
+    const key = navPending.routeKey;
+    const toSlow = window.setTimeout(
+      () => setNavPending((p) => (p?.routeKey === key && p.phase === "pending" ? { ...p, phase: "slow" } : p)),
+      NAV_SLOW_MS,
+    );
+    const toStalled = window.setTimeout(
+      () => setNavPending((p) => (p?.routeKey === key && p.phase !== "stalled" ? { ...p, phase: "stalled" } : p)),
+      NAV_STALL_MS,
+    );
+    return () => {
+      clearTimeout(toSlow);
+      clearTimeout(toStalled);
+    };
+  }, [navPending?.routeKey, navPending?.phase]);
+
   const missionDispatch: MissionControlDispatch = useMemo(
     () => ({
       updateTask: (id: string, patch: TaskUpdateInput) => post(updateTaskAction(id, patch)),
@@ -627,6 +688,15 @@ function CockpitRoot() {
     <App
       model={model}
       strings={strings}
+      navPending={navPending}
+      // t-ac79a7 — the stalled banner's escape hatch. Reuses the existing `refresh` action rather
+      // than inventing a retry message: refresh re-runs sendModel + sendSectionModule for the
+      // current route, which is exactly a retry, and its completion posts the routeReady that
+      // clears this state.
+      onRetryNavigation={() => {
+        setNavPending((p) => (p ? { ...p, phase: "slow" } : p));
+        post(refreshAction());
+      }}
       auto={auto}
       onToggleAuto={setAuto}
       onRefresh={() => post(refreshAction())}

@@ -86,6 +86,9 @@ describe("preview route table", () => {
       // "All workspaces" option (the single-root case is `default`, where it still renders).
       "multi-workspace-overview",
       "multi-workspace-scoped",
+      // t-ac79a7 — the navigation-pending state: the Board still on screen while the task-detail
+      // route it just committed is loading (the fixture pushes routePending, never routeReady).
+      "nav-pending",
       "plugins",
       "runtime",
       "runtime-config",

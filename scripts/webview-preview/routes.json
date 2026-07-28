@@ -276,6 +276,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "nav-pending",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=nav-pending",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "agent-activity",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=agent-activity",
     "frame": {

@@ -35,6 +35,7 @@ import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import {
   cockpitFixtures,
+  NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
   strings as cockpitStrings,
   validationsFixtureVm,
@@ -144,6 +145,17 @@ export const ROUTES: Record<string, Route> = {
     makeMessage: (vm) => {
       const model = vm as { section?: string };
       const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];
+      // t-ac79a7 — the nav-feedback fixture: push the SAME `routePending` envelope the live host
+      // posts from navigate(), and deliberately never the matching `routeReady`, so the surface
+      // stays in the pending bracket for as long as the screenshot needs. The client's own timers
+      // then produce "slow" and "stalled" — the states are the real client's, not the harness's.
+      // Identified by reference against the fixture entry itself: this fixture's model is an
+      // ordinary Board (that IS the state being depicted — the origin screen, still on screen while
+      // the destination loads), so there is no marker inside it to key off, and inventing one would
+      // have meant a fixture that no longer looks like what the client really holds.
+      if (vm === cockpitFixtures["nav-pending"]?.vm) {
+        msgs.push({ type: "routePending", routeKey: `task-detail:b349073a:${NAV_PENDING_TASK_ID}` });
+      }
       // Push the same host envelopes the live Control panel uses for embedded tabs.
       if (model.section === "mission") {
         const board = missionControlFixtures.default?.vm;

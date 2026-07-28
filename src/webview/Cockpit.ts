@@ -25,6 +25,8 @@ import {
 import {
   initMessage,
   modelMessage,
+  routePendingMessage,
+  routeReadyMessage,
   toastMessage,
   type CockpitAction,
   type CockpitStrings,
@@ -386,6 +388,9 @@ function strings(): CockpitStrings {
     running: t("running"),
     stopped: t("stopped"),
     checkedAt: t("Checked"),
+    navLoading: t("Loading…"),
+    navStalled: t("This is taking longer than expected."),
+    navRetry: t("Retry"),
     open: t("Open"),
     noneListed: t("Nothing listed for this workspace yet."),
     kind: t("Kind"),
@@ -589,6 +594,13 @@ function navigate(route: CockpitRoute): void {
   currentRoute = captureReturnRoute(route);
   if (!isStudioRoute(currentRoute)) lastCommittedNonStudioRoute = currentRoute;
   navEpoch += 1;
+  // t-ac79a7 — announce the committed destination BEFORE any awaited loading. This is the one
+  // commit point every navigation intent reaches (requestNavigate's pass-through, the studio
+  // transaction's commit closure, onCancelled/onSaved, setSection), so emitting here gives every
+  // route kind the pending half of the bracket without a per-route call site to keep in sync.
+  // Synchronous by construction: the model push behind it waits on deps.collect(), and the whole
+  // point is that the client must not have to wait for that to know the click was accepted.
+  panel?.webview.postMessage(routePendingMessage(routeKey(currentRoute)));
 }
 
 /**
@@ -1706,6 +1718,12 @@ export async function openCockpit(
   };
 
   const sendSectionModule = async () => {
+    // t-ac79a7 — the ready half of the navigation bracket. Captured here (not after the awaits)
+    // because `currentRoute` can be superseded while a module loads; the client matches this key
+    // against its pending one and ignores a stale ready instead of clearing a newer navigation's
+    // pending state.
+    const readyEpoch = navEpoch;
+    const readyKey = routeKey(currentRoute);
     bindPluginsIfNeeded();
     if (isSection(currentRoute, "mission")) await sendMission();
     else if (isSection(currentRoute, "validations")) await sendValidations();
@@ -1726,6 +1744,9 @@ export async function openCockpit(
       // "ready" (studio-envelope) handshake matches this binding's routeKey+mountNonce (round-2 F3).
       ensureStudioBinding(currentRoute, makeStudioAdapterFactory(deps.studios));
     }
+    // t-ac79a7 — same liveness guard every send*() above uses: a module that finished loading for a
+    // route the user already navigated away from must not report itself ready.
+    if (panel === live && navEpoch === readyEpoch) live.webview.postMessage(routeReadyMessage(readyKey));
   };
 
   pushMissionBoard = () => { void sendMission(); };
