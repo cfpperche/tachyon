@@ -763,13 +763,16 @@ function classifyRunningBundle(
     );
   }
   if (comparison === 0 && desiredChannel === "dev") return "upgrade";
-  if (comparison !== undefined && comparison > 0) return "upgrade";
+  // Persistent engines outlive the extension that launched them. A version change in either
+  // direction must therefore replace the daemon with the installed bundle. Reusing a newer engine
+  // after an extension rollback leaves old client code talking to new server bytes and makes the
+  // rollback ineffective. The existing identity-checked stop/launch transaction is equally valid
+  // for upgrades and downgrades.
+  if (comparison !== undefined && comparison !== 0) return "upgrade";
   if (compatible) return "compatible";
   throw new EngineSupervisorError(
     "INCOMPATIBLE_ENGINE",
-    comparison !== undefined && comparison < 0
-      ? "a newer incompatible Tachyon engine is already running; an older extension cannot downgrade it"
-      : "the running Tachyon engine is not protocol-compatible with this extension version",
+    "the running Tachyon engine is not protocol-compatible with this extension version",
   );
 }
 

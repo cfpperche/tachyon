@@ -312,7 +312,10 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       projection: { ...snapshot.provenance.projection },
       nativeConfig: previewAgentNativeConfigPolicy(profile.runtime.adapter, profile.nativeConfig).map((entry) => ({
         family: entry.family,
-        ...entry.policy,
+        source: entry.policy.source,
+        treatment: entry.policy.treatment,
+        refresh: entry.policy.refresh,
+        lifecycle: entry.policy.lifecycle,
         support: entry.support,
         reason: entry.reason,
       })),

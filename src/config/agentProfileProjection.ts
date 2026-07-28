@@ -106,7 +106,7 @@ export interface ProjectAgentProfileInput {
 }
 
 export type ProjectAgentProfileResult =
-  | { ok: true; definition: AgentEntry; resolved: ResolvedAgentProfile }
+  | { ok: true; definition: AgentEntry; resolved: ResolvedAgentProfile; warnings: string[] }
   | { ok: false; errors: string[] };
 
 function closeQuietly(fd: number): void {
@@ -517,6 +517,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
   let nativeConfigProjection = projectAgentNativeConfig(parsed.profile);
+  const warnings: string[] = [];
   if (parsed.profile.runtime.adapter === "codex") {
     const selectedSources = new Set(
       Object.values(parsed.profile.nativeConfig ?? {})
@@ -537,6 +538,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
       nativeConfigProjection ?? { adapter: "codex", selectors: {} },
     );
     if (scalar.errors.length > 0) return { ok: false, errors: scalar.errors };
+    warnings.push(...scalar.warnings);
     if (parsed.profile.nativeConfig && Object.keys(parsed.profile.nativeConfig).length > 0) {
       nativeConfigProjection = scalar.projection;
     }
@@ -571,5 +573,5 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
   const definition = projectDefinition(resolved.value, evolutionSelector, nativeConfigProjection);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
-  return { ok: true, definition, resolved: resolved.value };
+  return { ok: true, definition, resolved: resolved.value, warnings };
 }
