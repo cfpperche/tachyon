@@ -24,14 +24,32 @@ export interface GatedCandidateRecord {
   sentAtMs?: number;
 }
 
+/**
+ * t-5e9bf8 — what makes a HEAD count as a delivery, which is not the same question for both kinds of
+ * agent this monitor now serves.
+ *
+ * `beyond-base` is the gated-delegation rule: a gated child is created at the contract base and is
+ * torn down after, so ANY commit past that base is its work and nothing else's.
+ *
+ * `verified-since` is the assigned-agent rule. A persistent canonical agent's worktree is its home
+ * across many tasks, so it sits past its spawn base essentially always — `beyond-base` there would
+ * fire on ordinary idle, which is precisely the false positive this feature must not produce. The
+ * stronger fact is that the tree at HEAD has a verification record written AFTER the task was
+ * assigned: that is evidence of a finished, gated deliverable rather than evidence of activity.
+ */
+export type CompletionEvidence = "beyond-base" | "verified-since";
+
 export interface GatedCompletionFacts {
   agent: string;
+  /** the party to notify: the gated delegator, or the assigned agent's owner/coordinator. */
   delegator: string;
   deliveryId: string;
   worktreePath: string;
   baseSha: string;
-  /** ISO — doorbell "since" (delivery/spawn createdAt) */
+  /** ISO — doorbell "since" (delivery/spawn createdAt, or the task assignment moment) */
   sinceIso: string;
+  /** Defaults to the original gated rule so existing facts keep their exact behavior. */
+  evidence?: CompletionEvidence;
 }
 
 export interface GatedCompletionDeps {
@@ -39,6 +57,11 @@ export interface GatedCompletionDeps {
   listEntries(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   headState(worktreePath: string): Promise<{ headRef: string; dirty: boolean } | null>;
+  /**
+   * t-5e9bf8 — whether the tree at `headSha` carries a verification recorded at or after `sinceIso`.
+   * Fail-closed: anything unreadable, absent or older answers false, so "cannot tell" never arms.
+   */
+  isVerifiedSince?(worktreePath: string, headSha: string, sinceIso: string): Promise<boolean>;
   hasDoorbellRung(agent: string, delegator: string, sinceIso: string): boolean;
   deliverNotice(delegator: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
   sourceNoticeMetadata?(agent: string): { sourceChild?: string; sourceIncarnation?: number };
@@ -62,10 +85,20 @@ export function hostFallbackLine(input: {
   headSha: string;
   baseSha: string;
   ageMs: number;
+  evidence?: CompletionEvidence;
 }): string {
   const head = input.headSha.slice(0, 12);
   const base = input.baseSha.slice(0, 12);
   const ageMin = Math.max(1, Math.round(input.ageMs / 60_000));
+  // t-5e9bf8 — the line has to name the fact that armed it, because the reader's next move differs:
+  // a gated delivery is inspected through verify_task, an assigned task through its own journal.
+  // Saying "gated child" about an assigned agent would send them to the wrong place.
+  if (input.evidence === "verified-since") {
+    return (
+      `[tachyon] host-fallback/unverified: assigned agent '${input.agent}' idle/clean with a VERIFIED ` +
+      `HEAD ${head}, ${input.deliveryId}, ~${ageMin}m, no notify_agent — read its task journal; not an accept`
+    );
+  }
   return (
     `[tachyon] host-fallback/unverified: gated child '${input.agent}' idle/clean, ` +
     `delivery ${input.deliveryId}, HEAD ${head} (base ${base}), ~${ageMin}m, no notify_agent — ` +
@@ -85,6 +118,56 @@ export function isArmableAttention(
   if (attention.composerOccupied) return false;
   // attentionOf may already remap post-notify working→idle (t-9552f3)
   return attention.state === "idle";
+}
+
+/** The narrow slice of a board task this selection needs. */
+export interface AssignedTaskFact {
+  id: string;
+  status: string;
+  assignee?: string;
+  /** the assignment moment — a verification older than this belongs to earlier work. */
+  updatedAt: string;
+}
+
+export interface AssignedCompletionInput {
+  entries: readonly Pick<ManagedEntryInfo, "name" | "kind" | "delegator" | "declaredOwner" | "parent">[];
+  /** names present in `agents:` — declared only, so an ad-hoc sibling can never arm. */
+  declared: ReadonlySet<string>;
+  tasks: readonly AssignedTaskFact[];
+  /** worktree path and spawn base for an agent, from the ledger. */
+  locate(agent: string): { worktreePath?: string; baseSha?: string } | undefined;
+}
+
+/**
+ * t-5e9bf8 — facts for declared canonical agents that have a coordinator and an active assigned task.
+ *
+ * Pure on purpose: every clause here is a NON-trigger the feature promises, and a predicate that
+ * decides when a coordinator gets messaged automatically should be checkable without standing up a
+ * Workspace. A gated row (one carrying `delegator`) is skipped because the delegation arm already
+ * owns it — the two sources must never both emit for the same agent.
+ */
+export function assignedCompletionFacts(input: AssignedCompletionInput): GatedCompletionFacts[] {
+  const out: GatedCompletionFacts[] = [];
+  for (const entry of input.entries) {
+    if (entry.kind !== "agent" || entry.delegator) continue;
+    if (!input.declared.has(entry.name)) continue;
+    const owner = entry.declaredOwner ?? entry.parent;
+    if (!owner || owner === entry.name) continue;
+    const located = input.locate(entry.name);
+    if (!located?.worktreePath) continue;
+    const task = input.tasks.find((t) => t.status === "active" && t.assignee === entry.name);
+    if (!task) continue;
+    out.push({
+      agent: entry.name,
+      delegator: owner,
+      deliveryId: `task:${task.id}`,
+      worktreePath: located.worktreePath,
+      baseSha: located.baseSha ?? "",
+      sinceIso: task.updatedAt,
+      evidence: "verified-since",
+    });
+  }
+  return out;
 }
 
 export class GatedCompletionMonitor {
@@ -122,7 +205,14 @@ export class GatedCompletionMonitor {
 
       const head = await this.deps.headState(fact.worktreePath);
       if (!head || head.dirty || !head.headRef) continue;
-      if (head.headRef === fact.baseSha) continue;
+      if ((fact.evidence ?? "beyond-base") === "verified-since") {
+        // No resolver wired is not "verified" — an assigned agent must never arm on a weaker fact
+        // than the one its rule names.
+        const verified = await this.deps
+          .isVerifiedSince?.(fact.worktreePath, head.headRef, fact.sinceIso)
+          .catch(() => false);
+        if (!verified) continue;
+      } else if (head.headRef === fact.baseSha) continue;
 
       const key = candidateKey({
         deliveryId: fact.deliveryId,
@@ -160,6 +250,7 @@ export class GatedCompletionMonitor {
         headSha: existing.headSha,
         baseSha: existing.baseSha,
         ageMs: now - existing.armedAtMs,
+        ...(fact.evidence ? { evidence: fact.evidence } : {}),
       });
       await this.deps
         .deliverNotice(fact.delegator, line, this.deps.sourceNoticeMetadata?.(fact.agent))

@@ -87,7 +87,7 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
-import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type ManagedEntryInfo, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 
@@ -128,7 +128,8 @@ import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMon
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { AdhocBackstopMonitor, idleNotifyThresholdMs } from "./AdhocBackstopMonitor.js";
-import { GatedCompletionMonitor, type GatedCandidateRecord } from "./GatedCompletionMonitor.js";
+import { GatedCompletionMonitor, assignedCompletionFacts, type GatedCandidateRecord, type GatedCompletionFacts } from "./GatedCompletionMonitor.js";
+import { isVerifiedSince } from "./verifyRecordReader.js";
 import { hasDoorbellRung } from "../bridge/doorbell.js";
 import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
@@ -1649,6 +1650,8 @@ export class Workspace {
       },
       hasDoorbellRung: (agent, delegator, sinceIso) =>
         hasDoorbellRung(this.workspaceRoot, agent, delegator, sinceIso),
+      isVerifiedSince: async (worktreePath, headSha, sinceIso) =>
+        isVerifiedSince(worktreePath, headSha, sinceIso),
       deliverNotice: (delegator, line, metadata) => this.deliverNotice(delegator, line, metadata),
       sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
       now: () => Date.now(),
@@ -5718,7 +5721,38 @@ export class Workspace {
         sinceIso,
       });
     }
+    out.push(...this.listAssignedCompletionFacts(entries));
     return out;
+  }
+
+  /**
+   * t-5e9bf8 — the SECOND fact source: a declared canonical agent with a coordinator and an active
+   * assigned task. These agents carry no `delegator`, so `listGatedCompletionFacts` above never saw
+   * them, and the reproduction in t-d2a4dc was a coordinator learning about a finished task only
+   * through human inspection.
+   *
+   * Deliberately NOT a second queue: these facts join the same monitor, the same grace window, the
+   * same candidate file and the same doorbell suppression. What differs is only the evidence rule
+   * they declare — `verified-since` instead of `beyond-base`, because a persistent agent's worktree
+   * sits past its spawn base permanently and `beyond-base` there would fire on ordinary idle.
+   */
+  private listAssignedCompletionFacts(entries: readonly ManagedEntryInfo[]): GatedCompletionFacts[] {
+    let tasks: ReturnType<TaskStore["listRaw"]>;
+    try {
+      tasks = this.taskStore.listRaw();
+    } catch {
+      return []; // no board readable → no facts, never a guess
+    }
+    return assignedCompletionFacts({
+      entries,
+      declared: new Set(Object.keys(this.config?.agents ?? {})),
+      tasks,
+      locate: (agent) => {
+        const rec = this.ledger.get(agent);
+        const worktreePath = rec?.worktree?.path ?? rec?.cwd;
+        return worktreePath ? { worktreePath, baseSha: rec?.worktree?.baseRef } : undefined;
+      },
+    });
   }
 
   private gatedCompletionStatePath(): string {

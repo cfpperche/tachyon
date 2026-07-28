@@ -4,6 +4,7 @@ import {
   candidateKey,
   hostFallbackLine,
   isArmableAttention,
+  assignedCompletionFacts,
   type GatedCandidateRecord,
   type GatedCompletionFacts,
 } from "../../src/workspace/GatedCompletionMonitor.js";
@@ -44,6 +45,7 @@ function harness(opts: {
   head?: { headRef: string; dirty: boolean } | null;
   doorbell?: boolean;
   graceMs?: number;
+  verifiedSince?: boolean;
 }) {
   let now = 1_000_000;
   let store: Record<string, GatedCandidateRecord> = {};
@@ -68,6 +70,7 @@ function harness(opts: {
       attentionOf: (a) => attention[a],
       headState: async () => opts.head ?? { headRef: "newnewnewnew", dirty: false },
       hasDoorbellRung: () => doorbell,
+      isVerifiedSince: async () => opts.verifiedSince ?? false,
       deliverNotice: async (to, line) => {
         delivered.push({ to, line });
       },
@@ -174,5 +177,190 @@ describe("GatedCompletionMonitor (t-875700)", () => {
 
   it("candidateKey is stable", () => {
     expect(candidateKey({ deliveryId: "d", agent: "a", headSha: "h", delegator: "p" })).toBe("d|a|h|p");
+  });
+});
+
+describe("assigned canonical agent fallback (t-5e9bf8)", () => {
+  const assigned = (over: Partial<GatedCompletionFacts> = {}): GatedCompletionFacts[] => [{
+    agent: "worker",
+    delegator: "boss",
+    deliveryId: "task:t-abc123",
+    worktreePath: "/wt/worker",
+    baseSha: "basebasebase",
+    sinceIso: "2026-07-01T00:00:00.000Z",
+    evidence: "verified-since",
+    ...over,
+  }];
+
+  it("a VERIFIED head arms and, after the grace window, sends exactly one owner notice", async () => {
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: true });
+    await h.monitor.tick();
+    expect(h.delivered).toEqual([]);
+    expect(Object.values(h.store)[0]).toMatchObject({ status: "armed", deliveryId: "task:t-abc123" });
+
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toHaveLength(1);
+    expect(h.delivered[0]!.to).toBe("boss");
+    expect(h.delivered[0]!.line).toContain("host-fallback/unverified");
+    expect(h.delivered[0]!.line).toContain("assigned agent 'worker'");
+    expect(h.delivered[0]!.line).toContain("task:t-abc123");
+    expect(h.delivered[0]!.line).toContain("not an accept");
+    // Dedup: further ticks on the same task+HEAD never send twice.
+    h.setNow(1_000_000 + GRACE * 10);
+    await h.monitor.tick();
+    expect(h.delivered).toHaveLength(1);
+  });
+
+  it("an UNVERIFIED head never arms — ordinary idle past the spawn base is not a delivery", async () => {
+    // This is the whole reason the assigned rule is not `beyond-base`: a persistent agent's HEAD is
+    // past its base essentially always, so without the verification fact this would fire on idle.
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: false });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toEqual([]);
+    expect(h.store).toEqual({});
+  });
+
+  it("no verification resolver wired is not 'verified'", async () => {
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: undefined });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toEqual([]);
+  });
+
+  it("a dirty worktree never arms, however verified the commit is", async () => {
+    const h = harness({
+      facts: assigned(), attention: { worker: att("idle") },
+      verifiedSince: true, head: { headRef: "newnewnewnew", dirty: true },
+    });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toEqual([]);
+  });
+
+  it("working / needs-input never arm", async () => {
+    for (const state of ["working", "needs-input"] as const) {
+      const h = harness({ facts: assigned(), attention: { worker: att(state) }, verifiedSince: true });
+      await h.monitor.tick();
+      h.setNow(1_000_000 + GRACE + 1);
+      await h.monitor.tick();
+      expect(h.delivered, `${state} must not fire`).toEqual([]);
+    }
+  });
+
+  it("a manual doorbell suppresses the armed candidate instead of sending", async () => {
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: true });
+    await h.monitor.tick();
+    expect(Object.values(h.store)[0]).toMatchObject({ status: "armed" });
+    h.setDoorbell(true);
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toEqual([]);
+    expect(Object.values(h.store)[0]).toMatchObject({ status: "suppressed" });
+  });
+
+  it("survives a reload: a sent candidate stays sent when the store is re-read", async () => {
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: true });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toHaveLength(1);
+    const persisted = h.store;
+
+    // A fresh monitor loading the SAME persisted candidates must not re-notify.
+    const reloaded = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: true });
+    Object.assign(reloaded.store, persisted);
+    reloaded.setNow(1_000_000 + GRACE * 20);
+    await reloaded.monitor.tick();
+    expect(Object.values(persisted)[0]).toMatchObject({ status: "sent" });
+  });
+
+  it("a NEW verified head after the first notice arms its own candidate", async () => {
+    const h = harness({ facts: assigned(), attention: { worker: att("idle") }, verifiedSince: true });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toHaveLength(1);
+    // The key carries the head sha, so a later delivery on the same task is a distinct candidate.
+    expect(Object.keys(h.store)[0]).toContain("newnewnewnew");
+  });
+
+  it("gated facts keep the beyond-base rule and their own wording", async () => {
+    const h = harness({ attention: { worker: att("idle") }, verifiedSince: false });
+    await h.monitor.tick();
+    h.setNow(1_000_000 + GRACE + 1);
+    await h.monitor.tick();
+    expect(h.delivered).toHaveLength(1);
+    expect(h.delivered[0]!.line).toContain("gated child 'worker'");
+  });
+
+  it("hostFallbackLine names the fact that armed it", () => {
+    const base = { agent: "w", deliveryId: "task:t-1", headSha: "a".repeat(40), baseSha: "b".repeat(40), ageMs: 60_000 };
+    expect(hostFallbackLine({ ...base, evidence: "verified-since" })).toContain("assigned agent");
+    expect(hostFallbackLine({ ...base, evidence: "verified-since" })).toContain("VERIFIED");
+    expect(hostFallbackLine(base)).toContain("gated child");
+  });
+});
+
+
+describe("assignedCompletionFacts selection (t-5e9bf8)", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    name: "worker", kind: "agent" as const, declaredOwner: "boss", ...over,
+  });
+  const task = (over: Record<string, unknown> = {}) => ({
+    id: "t-abc123", status: "active", assignee: "worker", updatedAt: "2026-07-01T00:00:00.000Z", ...over,
+  });
+  const select = (over: Record<string, unknown> = {}) => assignedCompletionFacts({
+    entries: [row()],
+    declared: new Set(["worker"]),
+    tasks: [task()],
+    locate: () => ({ worktreePath: "/wt/worker", baseSha: "base" }),
+    ...over,
+  });
+
+  it("emits one verified-since fact for a declared agent with an owner and an active task", () => {
+    expect(select()).toEqual([{
+      agent: "worker",
+      delegator: "boss",
+      deliveryId: "task:t-abc123",
+      worktreePath: "/wt/worker",
+      baseSha: "base",
+      sinceIso: "2026-07-01T00:00:00.000Z",
+      evidence: "verified-since",
+    }]);
+  });
+
+  it("falls back to the spawn parent when no owner is declared in config", () => {
+    const facts = select({ entries: [row({ declaredOwner: undefined, parent: "boss" })] });
+    expect(facts).toHaveLength(1);
+    expect(facts[0]!.delegator).toBe("boss");
+  });
+
+  it("does not emit without an owner, and never names the agent as its own coordinator", () => {
+    expect(select({ entries: [row({ declaredOwner: undefined, parent: undefined })] })).toEqual([]);
+    expect(select({ entries: [row({ declaredOwner: "worker" })] })).toEqual([]);
+  });
+
+  it("does not emit for an ad-hoc agent, a terminal, or a gated row", () => {
+    expect(select({ declared: new Set<string>() }), "ad-hoc").toEqual([]);
+    expect(select({ entries: [row({ kind: "terminal" })] }), "terminal").toEqual([]);
+    // The delegation arm already owns gated rows; both sources emitting would double-notify.
+    expect(select({ entries: [row({ delegator: "boss" })] }), "gated").toEqual([]);
+  });
+
+  it("does not emit without an ACTIVE task assigned to that agent", () => {
+    expect(select({ tasks: [] }), "no task").toEqual([]);
+    expect(select({ tasks: [task({ status: "triaged" })] }), "not active").toEqual([]);
+    expect(select({ tasks: [task({ assignee: "someone-else" })] }), "another assignee").toEqual([]);
+    expect(select({ tasks: [task({ assignee: undefined })] }), "unassigned").toEqual([]);
+  });
+
+  it("does not emit when the agent has no locatable worktree", () => {
+    expect(select({ locate: () => undefined })).toEqual([]);
+    expect(select({ locate: () => ({ baseSha: "base" }) })).toEqual([]);
   });
 });
