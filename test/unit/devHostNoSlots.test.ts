@@ -68,9 +68,15 @@ describe("dev-host has no slots and no active pointer (spec 448)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("the committed launch.json has exactly one Dev Host entry", () => {
+  it("the committed launch.json has one Dev Host entry per WORKSPACE SHAPE, and no others", () => {
+    // Spec 448 removed per-slot/per-owner launch entries: `launch.json` is tracked and must never be
+    // multiplied per agent. t-f0efc5 added a second entry that does NOT reintroduce that — it is per
+    // workspace SHAPE (folder vs `.code-workspace`), which VS Code distinguishes by the extension of
+    // the path it is given, so one static argument genuinely cannot serve both. The list stays closed
+    // and exact: a third entry, or anything named after a slot/owner/agent, still fails here.
     const raw = fs.readFileSync(path.join(repoRoot, ".vscode", "launch.json"), "utf8").replace(/^\s*\/\/.*$/gm, "");
     const names = (JSON.parse(raw).configurations as Array<{ name: string }>).map((c) => c.name);
-    expect(names.filter((n) => n.startsWith("Tachyon: Dev Host"))).toEqual(["Tachyon: Dev Host"]);
+    expect(names.filter((n) => n.startsWith("Tachyon: Dev Host")))
+      .toEqual(["Tachyon: Dev Host", "Tachyon: Dev Host (multi-root)"]);
   });
 });
