@@ -26,6 +26,7 @@ import {
   copyTextAction,
   openConfigFileAction,
   setCompanionTabToolsAction,
+  setIdleAfterMinutesAction,
   setCompanionAllowedHostsAction,
   unpairCompanionDeviceAction,
   issueCompanionPairCodeAction,
@@ -716,6 +717,7 @@ function CockpitRoot() {
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}
       onSetCompanionTabTools={(wsHash, enabled) => post(setCompanionTabToolsAction(wsHash, enabled))}
+      onSetIdleAfterMinutes={(wsHash, minutes) => post(setIdleAfterMinutesAction(wsHash, minutes))}
       onSetCompanionAllowedHosts={(wsHash, hosts) => post(setCompanionAllowedHostsAction(wsHash, hosts))}
       onUnpairCompanionDevice={(wsHash, deviceId) => post(unpairCompanionDeviceAction(wsHash, deviceId))}
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}

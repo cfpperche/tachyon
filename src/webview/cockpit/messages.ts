@@ -234,6 +234,15 @@ export interface CockpitStrings {
   companionTabToolsHelp: string;
   companionAllowedHosts: string;
   companionAllowedHostsHelp: string;
+  // t-585d5c — Control -> Settings, idle-notification window.
+  idleNotifyTitle: string;
+  idleNotifyHelp: string;
+  idleNotifyUnit: string;
+  idleNotifyUsingDefault: string;
+  idleNotifyOff: string;
+  idleNotifyOffLabel: string;
+  idleNotifySave: string;
+  idleNotifyReset: string;
   companionAllowedHostsPlaceholder: string;
   companionAllowedHostsSave: string;
   companionPaired: string;
@@ -333,6 +342,9 @@ export type CockpitAction =
   | { type: "engineLogJournal"; wsHash: string }
   /** SDD 414 — patch settings.companion.tabTools for one workspace. */
   | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean }
+  // t-585d5c — `minutes` absent means "reset to the product default", which REMOVES the key rather
+  // than writing the default number; `"never"` is the explicit off.
+  | { type: "setIdleAfterMinutes"; wsHash: string; minutes?: number | "never" }
   /** SDD 420 — patch settings.companion.allowedHosts for one workspace. */
   | { type: "setCompanionAllowedHosts"; wsHash: string; hosts: string[] }
   /** SDD 414/422 — host unpair; deviceId clears one row, omit clears all. */
@@ -485,6 +497,12 @@ export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
 });
 export const engineLogClearAction = (wsHash: string): CockpitAction => ({ type: "engineLogClear", wsHash });
 export const engineLogJournalAction = (wsHash: string): CockpitAction => ({ type: "engineLogJournal", wsHash });
+export const setIdleAfterMinutesAction = (wsHash: string, minutes?: number | "never"): CockpitAction => ({
+  type: "setIdleAfterMinutes",
+  wsHash,
+  ...(minutes === undefined ? {} : { minutes }),
+});
+
 export const setCompanionTabToolsAction = (wsHash: string, enabled: boolean): CockpitAction => ({
   type: "setCompanionTabTools",
   wsHash,

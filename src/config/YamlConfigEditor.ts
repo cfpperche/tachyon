@@ -291,6 +291,31 @@ export function setCompanionAllowedHosts(text: string | undefined, hosts: string
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * t-585d5c — write `settings.agentNotifications.idleAfterMinutes` from Control → Settings.
+ *
+ * `undefined` REMOVES the key instead of writing the default number, so a workspace reset to the
+ * default is indistinguishable from one that never configured it. That is what lets the UI honestly
+ * say "using the default" rather than show a number nobody chose.
+ *
+ * Validation is deliberately NOT repeated here: the runtime-api operation that reaches this is the
+ * gate, and a second rule at this layer is how two validators come to disagree.
+ */
+export function setIdleAfterMinutes(text: string | undefined, minutes: number | "never" | undefined): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — notification settings need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  if (minutes === undefined) {
+    if (doc.hasIn(["settings", "agentNotifications", "idleAfterMinutes"])) {
+      doc.deleteIn(["settings", "agentNotifications", "idleAfterMinutes"]);
+    }
+  } else {
+    doc.setIn(["settings", "agentNotifications", "idleAfterMinutes"], minutes);
+  }
+  return { text: String(doc), warnings: [] };
+}
+
 /** 0-based line of a schedule's entry. */
 export function scheduleEntryLine(text: string, name: string): number | undefined {
   return entryLineIn(text, "schedules", name);

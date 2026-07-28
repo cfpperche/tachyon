@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ScheduleDef } from "../config/loadConfig.js";
+import { MAX_IDLE_NOTIFY_MINUTES, type ScheduleDef } from "../config/loadConfig.js";
 import { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "./stagedPayload.js";
 import { agentProfileStudioLifecycleMutationSchemaV1, agentProfileStudioMutationSchemaV1 } from "../config/agentProfileStudio.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
@@ -43,7 +43,7 @@ export const EXTENSION_QUERY_ACTIONS = [
 export const EXTENSION_COMMAND_ACTIONS = [
   "pipeline.seed", "agent.spawn", "pin.create", "command.run", "command.tick", "runbook.run", "proposal.create",
   "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.clone",
-  "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
+  "config.notifications.idleAfterMinutes", "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
   "config.companion.tabTools",
   "config.companion.allowedHosts",
   "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "agent.verify", "agent.reanchor",
@@ -149,6 +149,18 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("config.companion.allowedHosts"),
     hosts: z.array(z.string().max(253)).max(64),
+  }).strict(),
+  /**
+   * t-585d5c — the idle-notification window, written from Control → Settings.
+   *
+   * The bound is repeated here rather than left to the config loader because this is a SEPARATE
+   * entrance: an API client reaches this without passing through `parseConfig`, so a permissive
+   * schema would let a caller write a file the loader then refuses — a setting that saves and never
+   * applies. Absent `minutes` means "reset to the product default", which is what removes the key.
+   */
+  z.object({
+    action: z.literal("config.notifications.idleAfterMinutes"),
+    minutes: z.union([z.number().positive().max(MAX_IDLE_NOTIFY_MINUTES), z.literal("never")]).optional(),
   }).strict(),
   z.object({ action: z.literal("agent.fork"), agent: name }).strict(),
   /** t-7551f9 — spawn destination with focused handoff; new session, not native resume. */

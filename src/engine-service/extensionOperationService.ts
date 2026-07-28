@@ -20,6 +20,7 @@ import {
   deleteRunbook,
   setCompanionTabTools,
   setCompanionAllowedHosts,
+  setIdleAfterMinutes,
 } from "../config/YamlConfigEditor.js";
 import { isResumable } from "../resume/SessionLedger.js";
 import { PromptStore } from "../prompts/PromptStore.js";
@@ -422,6 +423,14 @@ export async function executeExtensionCommand(
       // SDD 420 — optional host allowlist for user_browser_* (Control Settings).
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => setCompanionAllowedHosts(text, command.hosts),
+        () => onViewsChanged("agents"),
+      ));
+    case "config.notifications.idleAfterMinutes":
+      // t-585d5c — Control → Settings writes the idle-notification window. Same `onViewsChanged`
+      // signal as the companion writers above; the monitor itself needs none, because it re-reads
+      // the live config on its next tick instead of holding a copy of this value.
+      return configMutation(workspace, () => workspace.mutateConfig(
+        (text) => setIdleAfterMinutes(text, command.minutes),
         () => onViewsChanged("agents"),
       ));
     case "agent.fork":

@@ -47,6 +47,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     clearEngineLog: async () => {},
     openEngineJournal: () => {},
     setCompanionTabTools: async () => {},
+    setIdleAfterMinutes: async () => {},
     setCompanionAllowedHosts: async () => {},
     unpairCompanionDevice: async () => {},
     issueCompanionPairCode: async () => ({ ok: false as const, reason: "bridge_down" }),

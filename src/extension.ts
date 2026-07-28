@@ -1345,6 +1345,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             configured: !!ws.config?.settings?.sidebar?.cardTemplate,
             refused: (ws.config?.settings?.sidebar?.cardTemplateRefusal?.length ?? 0) > 0,
           },
+          // t-585d5c — the idle-notification window this folder wrote, read from the SAME loaded
+          // config the monitor resolves against, so Settings cannot show a number the engine is not
+          // using. Absent stays absent: it means "never configured", not "set to the default".
+          ...(ws.config?.settings?.agentNotifications?.idleAfterMinutes === undefined
+            ? {}
+            : { idleAfterMinutes: ws.config.settings.agentNotifications.idleAfterMinutes }),
           // t-e76acc — Overview's unified "waiting on you" count needs the OTHER half, and it is
           // counted with the very predicate the Inbox list filters on (`validationAwaitsHuman`), so
           // the number and the rows cannot drift the way the approvals counter once did. A read
@@ -1640,6 +1646,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       term.show();
       // follow journal for this workspace engine unit
       term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
+    },
+    // t-585d5c — Control -> Settings writes the idle-notification window through the same governed
+    // operation an API client would use, so there is one validated entrance and not a UI-only path.
+    setIdleAfterMinutes: async (wsHash, minutes) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await extensionInvoke(ws, {
+        action: "config.notifications.idleAfterMinutes",
+        ...(minutes === undefined ? {} : { minutes }),
+      });
     },
     setCompanionTabTools: async (wsHash, enabled) => {
       const ws = byHash(wsHash);

@@ -12,6 +12,13 @@ import {
   type ControlInspectorModel,
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
+import { DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS } from "../workspace/AdhocBackstopMonitor.js";
+
+/**
+ * t-585d5c — the product default in the unit Settings speaks. DERIVED from the monitor's constant,
+ * so the number the UI shows cannot drift from the number the monitor applies.
+ */
+export const DEFAULT_IDLE_NOTIFY_MINUTES = DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS / 60_000;
 
 /**
  * Order = importance / frequency of use for a project sysadmin.
@@ -233,6 +240,14 @@ export interface CockpitWorkspaceBundle {
   cardTemplate?: { configured: boolean; refused: boolean };
   tmux?: { state: string; version?: string };
   companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
+  /**
+   * t-585d5c — this folder's `settings.agentNotifications.idleAfterMinutes`, exactly as written.
+   *
+   * Undefined means the folder configured NOTHING, which is not the same as the default having been
+   * written down. Settings says "using the default" in words rather than showing a number the human
+   * never chose, so a later reader can tell a deliberate 10 from an untouched setting.
+   */
+  idleAfterMinutes?: number | "never";
 }
 
 export interface CockpitModel {
@@ -316,6 +331,12 @@ export interface CockpitModel {
   companion?: CockpitCompanionSettings;
   /** True when multiple workspaces are in scope and none is selected for Companion settings. */
   companionNeedsWorkspacePick?: boolean;
+  /**
+   * t-585d5c — the idle-notification threshold for the scoped workspace (Control -> Settings).
+   * Scoped exactly like `companion`: the setting is per folder, so with several roots in view there
+   * is no single value to show and none to write back.
+   */
+  idleNotify?: { wsHash: string; folderName: string; configured?: number | "never"; defaultMinutes: number };
   /** SDD 479 phase 5 — see CockpitCardTemplateState. */
   cardTemplate?: CockpitCardTemplateState;
 }
@@ -398,6 +419,17 @@ export function buildCockpitModel(
     companionNeedsWorkspacePick = true;
   }
 
+  // t-585d5c — same single-workspace scoping, same reason as companion above.
+  const idleBundle = scoped.length === 1 ? scoped[0]! : undefined;
+  const idleNotify = idleBundle
+    ? {
+        wsHash: idleBundle.control.wsHash,
+        folderName: idleBundle.control.folderName,
+        ...(idleBundle.idleAfterMinutes === undefined ? {} : { configured: idleBundle.idleAfterMinutes }),
+        defaultMinutes: DEFAULT_IDLE_NOTIFY_MINUTES,
+      }
+    : undefined;
+
   // SDD 479 phase 5 — the two homes side by side, so the block can say which one the cards use.
   const cardTemplate: CockpitCardTemplateState = {
     personal: opts?.personalCardTemplate?.state ?? "none",
@@ -443,6 +475,7 @@ export function buildCockpitModel(
     tmux,
     ...(companion ? { companion } : {}),
     ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
+    ...(idleNotify ? { idleNotify } : {}),
     cardTemplate,
   };
 }

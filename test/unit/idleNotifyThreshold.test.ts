@@ -163,3 +163,57 @@ describe("t-585d5c — the config surface, fail-closed", () => {
       .toContain("settings.agentNotifications: must be a mapping");
   });
 });
+
+describe("t-585d5c — writing it from Control → Settings", () => {
+  it("writes minutes, writes `never`, and REMOVES the key on reset", async () => {
+    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const base = "agents:\n  a:\n    cmd: claude\n";
+
+    expect(setIdleAfterMinutes(base, 3).text).toContain("idleAfterMinutes: 3");
+    expect(setIdleAfterMinutes(base, "never").text).toContain("idleAfterMinutes: never");
+
+    // Reset must DELETE rather than write the default number: a workspace back on the default has to
+    // be indistinguishable from one that never configured it, or Settings cannot honestly say which.
+    const written = setIdleAfterMinutes(base, 42).text;
+    expect(written).toContain("idleAfterMinutes: 42");
+    expect(setIdleAfterMinutes(written, undefined).text).not.toContain("idleAfterMinutes");
+  });
+
+  it("keeps the rest of the file intact, comments included", async () => {
+    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const withComment = "# keep me\nagents:\n  a:\n    cmd: claude\nsettings:\n  maxAgents: 4\n";
+    const out = setIdleAfterMinutes(withComment, 7).text;
+    expect(out).toContain("# keep me");
+    expect(out).toContain("maxAgents: 4");
+  });
+
+  it("refuses to write into a workspace with no tachyon.yml yet", async () => {
+    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    expect(() => setIdleAfterMinutes(undefined, 5)).toThrow(/create an agent first/);
+  });
+
+  it("bounds the runtime-api operation too, since it is a separate entrance", async () => {
+    const { extensionCommandSchema } = await import("../../src/runtime-api/extensionOperations.js");
+    const parse = (minutes: unknown) =>
+      extensionCommandSchema.safeParse({ action: "config.notifications.idleAfterMinutes", minutes });
+
+    expect(parse(5).success).toBe(true);
+    expect(parse("never").success).toBe(true);
+    expect(parse(undefined).success).toBe(true); // reset to default
+    // An API client never passes through parseConfig, so a permissive schema here would let the UI
+    // save a file the loader then refuses — a setting that saves and never applies.
+    expect(parse(0).success).toBe(false);
+    expect(parse(-1).success).toBe(false);
+    expect(parse(MAX_IDLE_NOTIFY_MINUTES + 1).success).toBe(false);
+    expect(parse("off").success).toBe(false);
+  });
+
+  it("round-trips through the loader, so what Settings writes is what the engine reads", async () => {
+    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const written = setIdleAfterMinutes("agents:\n  a:\n    cmd: claude\n", 4).text;
+    const reloaded = parseConfig(written);
+    expect(reloaded.errors).toEqual([]);
+    expect(reloaded.config?.settings.agentNotifications?.idleAfterMinutes).toBe(4);
+    expect(idleNotifyThresholdMs(reloaded.config?.settings.agentNotifications?.idleAfterMinutes)).toBe(240_000);
+  });
+});

@@ -332,6 +332,8 @@ export interface CockpitDeps {
   openEngineJournal: (wsHash: string) => void;
   /** SDD 414 — settings.companion.tabTools for one workspace engine. */
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
+  /** t-585d5c — write the idle-notification window; `undefined` resets to the product default. */
+  setIdleAfterMinutes: (wsHash: string, minutes?: number | "never") => Promise<void>;
   /** SDD 420 — settings.companion.allowedHosts for one workspace engine. */
   setCompanionAllowedHosts: (wsHash: string, hosts: string[]) => Promise<void>;
   /** SDD 414/422 — host-authoritative unpair; deviceId clears one row, omit clears all. */
@@ -587,6 +589,18 @@ function strings(): CockpitStrings {
       "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
     ),
     companionAllowedHostsPlaceholder: t("example.com\n*.herokuapp.com"),
+    // t-585d5c — the unit and the bounds are IN the strings, because a bare number field is where a
+    // person guesses seconds and gets minutes.
+    idleNotifyTitle: t("Idle agent notifications"),
+    idleNotifyHelp: t(
+      "How long a child agent may sit idle before Tachyon notifies its parent. 1-10080 minutes (7 days). Writes settings.agentNotifications.idleAfterMinutes in tachyon.yml and applies on the next check — no restart.",
+    ),
+    idleNotifyUnit: t("minutes"),
+    idleNotifyUsingDefault: t("Using the default ({0} min) — nothing written in tachyon.yml"),
+    idleNotifyOff: t("Notifications are off for this workspace"),
+    idleNotifyOffLabel: t("Turn notifications off"),
+    idleNotifySave: t("Save"),
+    idleNotifyReset: t("Back to default"),
     companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
@@ -2566,6 +2580,28 @@ export async function openCockpit(
           if (typeof c.wsHash === "string" && c.wsHash) {
             try {
               deps.openEngineJournal(c.wsHash);
+            } catch (err) {
+              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
+            }
+          }
+          return;
+        case "setIdleAfterMinutes":
+          // t-585d5c — the value was already validated by the runtime-api schema this calls into, so
+          // the only check here is the shape the wire could malform.
+          if (typeof c.wsHash === "string" && c.wsHash) {
+            try {
+              await deps.setIdleAfterMinutes(c.wsHash, c.minutes);
+              await sendModel();
+              live.webview.postMessage(
+                toastMessage(
+                  c.minutes === undefined
+                    ? vscode.l10n.t("Idle notifications back to the default")
+                    : c.minutes === "never"
+                      ? vscode.l10n.t("Idle notifications turned off")
+                      : vscode.l10n.t("Idle notifications after {0} min", String(c.minutes)),
+                  "ok",
+                ),
+              );
             } catch (err) {
               live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
             }

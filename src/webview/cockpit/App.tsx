@@ -293,6 +293,8 @@ export interface CockpitAppProps {
   onSetCompanionTabTools: (wsHash: string, enabled: boolean) => void;
   /** SDD 420 — settings.companion.allowedHosts for the scoped workspace. */
   onSetCompanionAllowedHosts: (wsHash: string, hosts: string[]) => void;
+  /** t-585d5c — `undefined` minutes resets to the product default (removes the key). */
+  onSetIdleAfterMinutes: (wsHash: string, minutes?: number | "never") => void;
   /** SDD 414/422 — host unpair; deviceId clears one row, omit clears all. */
   onUnpairCompanionDevice: (wsHash: string, deviceId?: string) => void;
   /** SDD 414 — mint pair code (result arrives as companionPairOffer prop). */
@@ -432,6 +434,94 @@ export function parseAllowedHostsDraft(raw: string): string[] {
         .filter((h) => h.length > 0),
     ),
   ];
+}
+
+/**
+ * `t-585d5c` — the idle-notification window, in Control -> Settings.
+ *
+ * Three states rather than a number box: a value, the product default (nothing written), and off.
+ * They are distinct on purpose — showing "10" for an unconfigured workspace would make a default
+ * indistinguishable from a deliberate choice, and it is the difference a later reader needs.
+ *
+ * The field REFUSES a bad value locally rather than posting it: the runtime-api schema is still the
+ * gate, but a save that silently does nothing is the worst version of this. The bounds shown are the
+ * bounds enforced, both derived from the same setting.
+ */
+function IdleNotifyField({
+  s,
+  idle,
+  onSave,
+}: {
+  s: CockpitStrings;
+  idle: NonNullable<CockpitModel["idleNotify"]>;
+  onSave: (wsHash: string, minutes?: number | "never") => void;
+}) {
+  const off = idle.configured === "never";
+  const serverValue = typeof idle.configured === "number" ? String(idle.configured) : "";
+  const [draft, setDraft] = useState(serverValue);
+  useEffect(() => {
+    setDraft(serverValue);
+  }, [idle.wsHash, serverValue]);
+
+  const parsed = Number(draft.trim());
+  const valid = draft.trim().length > 0 && Number.isFinite(parsed) && parsed > 0 && parsed <= 10080;
+  const dirty = draft.trim() !== serverValue;
+
+  return (
+    <div class="ck-settings-block" data-testid="control-settings-idle-notify">
+      <h3 class="ck-settings-block-title">{s.idleNotifyTitle}</h3>
+      <p class="ck-settings-block-hint">{s.idleNotifyHelp}</p>
+      {idle.configured === undefined ? (
+        <p class="ck-settings-block-body dim" data-testid="idle-notify-default">
+          {s.idleNotifyUsingDefault.replace("{0}", String(idle.defaultMinutes))}
+        </p>
+      ) : null}
+      {off ? <p class="ck-settings-block-body dim" data-testid="idle-notify-off">{s.idleNotifyOff}</p> : null}
+      <div class="ck-settings-hosts-actions">
+        <input
+          type="number"
+          min={1}
+          max={10080}
+          class="ck-settings-hosts-input"
+          data-testid="idle-notify-input"
+          value={draft}
+          disabled={off}
+          placeholder={String(idle.defaultMinutes)}
+          onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
+        />
+        <span class="ck-settings-toggle-help">{s.idleNotifyUnit}</span>
+        <Button
+          variant="default"
+          disabled={off || !valid || !dirty}
+          data-testid="idle-notify-save"
+          onClick={() => onSave(idle.wsHash, parsed)}
+        >
+          {s.idleNotifySave}
+        </Button>
+        <Button
+          variant="default"
+          disabled={idle.configured === undefined}
+          data-testid="idle-notify-reset"
+          onClick={() => onSave(idle.wsHash, undefined)}
+        >
+          {s.idleNotifyReset}
+        </Button>
+      </div>
+      <label class="ck-settings-toggle">
+        <input
+          type="checkbox"
+          checked={off}
+          data-testid="idle-notify-off-toggle"
+          onChange={(e) =>
+            onSave(idle.wsHash, (e.target as HTMLInputElement).checked ? "never" : idle.defaultMinutes)
+          }
+        />
+        <span>
+          <strong>{s.idleNotifyOffLabel}</strong>
+        </span>
+      </label>
+    </div>
+  );
 }
 
 function CompanionAllowedHostsField({
@@ -1858,6 +1948,8 @@ export function App(p: CockpitAppProps) {
             onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
             inEffect={m.cardTemplate}
           />
+
+          {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}
 
           <div class="ck-settings-block" data-testid="control-settings-companion">
             <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
