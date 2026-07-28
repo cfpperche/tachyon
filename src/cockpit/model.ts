@@ -55,9 +55,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "engine",
   "fleet",
   "inbox",
-  "approvals",
   "mission",
-  "validations",
   "worktrees",
   "deliveries",
   "execution-graph",
@@ -66,6 +64,16 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "tmux",
   "plugins",
   "settings",
+];
+
+/**
+ * All accepted section routes. Approvals and Validations remain valid compatibility/deep-link
+ * targets, but the Human Inbox is their only top-level navigation entry.
+ */
+export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
+  ...COCKPIT_SECTION_ORDER,
+  "approvals",
+  "validations",
 ];
 
 export interface CockpitAgentRow {
@@ -443,7 +451,7 @@ export function buildCockpitModel(
 
   return {
     checkedAt: control.checkedAt,
-    section: opts?.section && COCKPIT_SECTION_ORDER.includes(opts.section) ? opts.section : "overview",
+    section: opts?.section && COCKPIT_SECTION_IDS.includes(opts.section) ? opts.section : "overview",
     workspaces,
     ...(selected ? { selectedWsHash: selected } : {}),
     control,
