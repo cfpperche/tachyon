@@ -82,7 +82,6 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" |
   edit: "tachyon.editAgentStudioItem",
   editYaml: "tachyon.editAgentItem",
   clone: "tachyon.cloneAgentItem",
-  rename: "tachyon.renameAgentItem",
   remove: "tachyon.deleteAgentItem",
 };
 

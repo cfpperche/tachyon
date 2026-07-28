@@ -25,7 +25,6 @@
   "command.editPinItem": "Edit Pin",
   "command.cloneAgentItem": "Clone…",
   "command.editAgentItem": "Edit in tachyon.yml",
-  "command.renameAgentItem": "Rename…",
   "command.deleteAgentItem": "Remove…",
   "command.promoteAgentItem": "Save to tachyon.yml",
   "command.agentStudio": "Tachyon: Agent Studio (New Agent)",

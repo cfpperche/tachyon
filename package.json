@@ -161,10 +161,6 @@
         "title": "%command.editAgentItem%"
       },
       {
-        "command": "tachyon.renameAgentItem",
-        "title": "%command.renameAgentItem%"
-      },
-      {
         "command": "tachyon.deleteAgentItem",
         "title": "%command.deleteAgentItem%",
         "icon": "$(trash)"
@@ -627,10 +623,6 @@
         },
         {
           "command": "tachyon.editAgentItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.renameAgentItem",
           "when": "false"
         },
         {
