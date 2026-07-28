@@ -37,7 +37,30 @@ which is a Tachyon-side bound rather than a runtime-side one.
 - **`inspect` is not a validator.** `[models] default = 123` and `[models] bogus_key = 1` both pass
   silently, so a green `inspect` proves discovery, not correctness.
 
-### Impact — the finding that shaped the design
+### The correction: `t-26f508` superseded this slice's impact rule mid-flight
+
+Everything below was measured before `t-26f508` landed on `main`, and it was true then: every Grok
+agent launched with a Bridge-only private `config.toml`, so the **global** document reached none of
+them. `t-26f508` then gave canonical Grok profiles a projection over `~/.grok/config.toml`
+(`selectors`/`permissions`/`interface`/`featureFlags`, `global` as the only source), which makes the
+global document reach a canonical agent exactly as Claude's and Codex's do.
+
+That change was discovered while merging `main` before landing, and the slice was corrected rather
+than shipped with a stale claim:
+
+- the global document's `impact` sentence now says the reach depends on the agent;
+- `markRuntimeConfigPending` no longer special-cases Grok's global scope — it falls through to the
+  same projection rule Claude and Codex use, and keeps the Grok-specific branch only for the
+  workspace scope, which is not a projection and cannot be one;
+- both directions are pinned: a canonical Grok profile IS marked for the global source, a
+  profile-less agent is NOT (and is still marked for workspace).
+
+Worth noting that `t-26f508` independently re-measured the workspace half and agrees with this
+slice: an ambient project `[mcp_servers.ambient]` DID reach the effective server list under a private
+`GROK_HOME`, and project `[ui]`/`[permission]` keys were ignored. Two lanes measuring the same
+runtime a day apart and landing on the same layering is the strongest form this evidence takes.
+
+### Impact — the finding that shaped the design (as first measured, now superseded above)
 
 `HarnessManager.materializeBridgeMcpGrok` writes `$privateHome/config.toml` from scratch on every
 spawn (Bridge MCP block only) and never reads `~/.grok/config.toml`. So the global document cannot

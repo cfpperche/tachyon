@@ -703,7 +703,7 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
           unknownKeys: ["experimental.some_future_key"],
           internalStateCount: 1,
           opaqueKeys: ["hooks", "mcp_servers", "models", "telemetry"],
-          impact: "Grok agents launched by Tachyon run with a private GROK_HOME that is rewritten at every spawn, so they do not inherit this file. It applies to Grok started outside Tachyon.",
+          impact: "A canonical Grok agent projects measured families from this file into its private GROK_HOME at every launch, so it applies to those agents at their next Start, Restart or Resume. A Grok agent without that profile launches Bridge-only and does not inherit it; Grok started outside Tachyon always reads it.",
         },
         {
           id: "grok-workspace-config",
@@ -718,7 +718,7 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
           unknownKeys: ["models"],
           internalStateCount: 0,
           opaqueKeys: ["mcp_servers"],
-          impact: "Grok discovers this file from the working directory, so agents in this workspace apply it at their next launch. Only [mcp_servers] is read in project scope; other sections here are ignored by Grok.",
+          impact: "Grok discovers this file from the working directory, so it reaches agents in this workspace even under a private GROK_HOME, at their next launch. Only [mcp_servers] is read in project scope; other sections here are ignored by Grok.",
         },
         {
           id: "grok-folder-trust",

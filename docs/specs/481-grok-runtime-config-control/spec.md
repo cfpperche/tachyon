@@ -11,8 +11,9 @@ Control → Runtime Config tem adapters medidos para Codex e Claude. Grok é a s
 slice do roadmap `t-91df30` e não pode reusar nenhum dos dois contratos: seu documento
 global é TOML como o do Codex mas com esquema diferente, seu documento de workspace
 **só honra `[mcp_servers]`**, seu enable/disable de MCP é um campo nativo (não o truque de
-comentário do Codex) e — decisivo — o config global **não alcança agentes Grok gerenciados**,
-porque `materializeBridgeMcpGrok` reescreve o `GROK_HOME` privado a cada spawn.
+comentário do Codex) e — decisivo — o alcance de cada documento **é diferente por documento**: o
+workspace chega ao agente pelo cwd mesmo sob `GROK_HOME` privado, enquanto o global depende de o
+agente ter perfil canônico (ver a correção registrada em `notes.md`).
 
 Esta slice mede o Grok instalado (0.2.112) e entrega inventário e edição segura das fontes
 comprovadas, dizendo a verdade sobre a quem cada documento se aplica.
@@ -42,12 +43,17 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   - **When** o humano o desabilita
   - **Then** Tachyon grava `enabled = false` no próprio bloco (comportamento nativo medido),
     e um servidor declarado em forma não-patchável aparece read-only
-- [x] **Scenario: impacto honesto e pending por escopo**
+- [x] **Scenario: impacto honesto e pending por documento**
   - **Given** agentes Grok vivos no workspace
+  - **When** o documento de workspace é salvo
+  - **Then** os agentes Grok vivos aparecem pending até Start, Restart ou Resume, com ou sem
+    perfil, porque o Grok descobre `.grok/config.toml` pelo cwd mesmo sob home privado
+- [x] **Scenario: alcance do documento global depende do agente**
+  - **Given** um agente Grok canônico cujo perfil projeta famílias medidas (t-26f508) e um
+    agente Grok sem perfil
   - **When** o documento global é salvo
-  - **Then** nenhum agente é marcado pending (o `GROK_HOME` privado é reescrito no spawn) e
-    a UI diz que o documento vale para o Grok fora do Tachyon; ao salvar o documento de
-    workspace, os agentes Grok vivos aparecem pending até Start, Restart ou Resume
+  - **Then** o canônico é marcado pending pela mesma regra de projeção de Claude/Codex, o sem
+    perfil não é, e a UI diz isso em vez de prometer um alcance uniforme
 - [x] **Scenario: trust é leitura**
   - **Given** `trusted_folders.toml` do home Grok
   - **When** o documento de folder trust é exibido

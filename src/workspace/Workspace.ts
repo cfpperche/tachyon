@@ -1056,7 +1056,11 @@ export class Workspace {
             name,
             this.bridgeEntry() ?? {},
             cwd ?? this.workspaceRoot,
-            { exactTrust: true },
+            // t-26f508 — the same options the Bridge port below passes. `withRuntimeBridge` calls
+            // that port AFTER this materializer on every spawn, rewriting config.toml from scratch;
+            // if the two disagreed, the second write would silently erase the projection this one
+            // just made. Keeping them identical is what makes the second write a no-op.
+            { exactTrust: true, ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}) },
           );
           // Grok 0.2.112 consults `$HOME/.claude/settings.json` for permission settings even when
           // GROK_HOME is redirected. A canonical profile owns the complete forming namespace, so bind
@@ -1096,12 +1100,18 @@ export class Workspace {
       // undefined when the Bridge isn't up (self-heals on next restart). Never mutates the user's real ~/.grok.
       materializeBridgeMcpGrok: (name, cwd) => {
         const entry = this.bridgeEntry();
-        return entry ? this.harness.materializeBridgeMcpGrok(
+        if (!entry) return undefined;
+        const declared = asAgent(this.config?.agents[name]);
+        return this.harness.materializeBridgeMcpGrok(
           name,
           entry,
           cwd ?? this.workspaceRoot,
-          { exactTrust: asAgent(this.config?.agents[name])?.profileLifecycle !== undefined },
-        ) : undefined;
+          {
+            exactTrust: declared?.profileLifecycle !== undefined,
+            // t-26f508 — must match the canonical branch above: this port runs last on every spawn.
+            ...(declared?.profileNativeConfig ? { nativeConfig: declared.profileNativeConfig } : {}),
+          },
+        );
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
       materializeBridgeMcpHermes: (name) => {
@@ -3418,13 +3428,15 @@ export class Workspace {
       if (!agent.running || agent.kind !== "agent") continue;
       const def = asAgent(this.config?.agents[agent.name]);
       if (!def) continue;
-      if (runtime === "grok") {
-        // SDD 481 — Grok has no profile native-config projection. Measured on grok 0.2.112:
-        // `materializeBridgeMcpGrok` rewrites the private GROK_HOME's config.toml at every spawn, so
-        // the GLOBAL document reaches no managed agent and marking one pending would promise an
-        // effect that does not exist. The WORKSPACE document is discovered from the working
-        // directory, which every agent here shares, so it applies at the next launch.
-        if (scope !== "workspace" || binaryOf(def.cmd) !== "grok") continue;
+      // SDD 481 — Grok's WORKSPACE source is not a profile projection and cannot be one: Grok
+      // discovers `.grok/config.toml` from the working directory, so it reaches a live agent even
+      // under a private GROK_HOME (measured on 0.2.112, and re-confirmed by t-26f508's own
+      // `[mcp_servers.ambient]` measurement). Any live grok agent is therefore affected, profile or
+      // not. Grok's GLOBAL source deliberately falls through to the projection rule below: since
+      // t-26f508 a canonical Grok profile projects measured families from `~/.grok/config.toml`,
+      // which is exactly what that rule already asks about.
+      if (runtime === "grok" && scope === "workspace") {
+        if (binaryOf(def.cmd) !== "grok") continue;
         this.runtimeConfigPending.set(agent.name, { scope, revision });
         affected.push(agent.name);
         continue;

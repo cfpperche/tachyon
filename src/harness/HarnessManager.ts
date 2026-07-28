@@ -23,6 +23,7 @@ import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
+import { GROK_PROJECTED_KEY_ORDER } from "../config/grokNativeConfigProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
@@ -822,6 +823,74 @@ export function seedPrivateHomeGitIdentity(
   const file = path.join(home, ".gitconfig");
   fs.writeFileSync(file, `# Tachyon-managed (t-076a28): the agent's HOME is private, so git would\n# otherwise find no global config. Read the operator's real one live.\n[include]\n\tpath = ${real}\n`, "utf8");
   return file;
+}
+
+/**
+ * t-26f508 — the closed isolation block every canonical Grok private home carries, regardless of
+ * which optional families a profile authored.
+ *
+ * Redirecting `GROK_HOME` does not stop foreign-harness discovery: measured on 0.2.112, a project
+ * `.claude/skills/*` is still found and listed. Pinning every `[compat.*]` cell to `false` is what
+ * turns that discovery off — the same measurement shows those skills flip to
+ * `compatibilityStatus: "disabled"`. Memory is pinned here as well so the private home states the
+ * policy in configuration, next to the `GROK_MEMORY=0` env pin that `grokMemoryEnv` carries; t-0e88f3
+ * measured the env var, not this key, as the control that actually decides, so this is a declaration
+ * beside the control rather than a second control.
+ *
+ * These are unconditional for the same reason Claude forces `autoMemoryEnabled: false`: they are the
+ * canonical posture, not a preference, and no measured opt-in exists. A profile's `tooling`/`memory`
+ * families record the refusal so a reader sees it in the profile instead of inferring it from here.
+ */
+const GROK_CANONICAL_ISOLATION_TOML = [
+  "[memory]",
+  "enabled = false",
+  "",
+  "[compat.cursor]",
+  "skills = false",
+  "rules = false",
+  "agents = false",
+  "mcps = false",
+  "hooks = false",
+  "sessions = false",
+  "",
+  "[compat.claude]",
+  "skills = false",
+  "rules = false",
+  "agents = false",
+  "mcps = false",
+  "hooks = false",
+  "sessions = false",
+  "",
+  "[compat.codex]",
+  "sessions = false",
+].join("\n");
+
+/**
+ * Render the canonical Grok `config.toml` body: the profile-selected scalars grouped back into their
+ * tables, then the unconditional isolation block. Deterministic by construction — keys are emitted in
+ * {@link GROK_PROJECTED_KEY_ORDER}, so the same profile produces the same bytes on fresh, restart and
+ * resume, which is what makes "regenerated equivalently" checkable rather than asserted.
+ */
+export function renderGrokCanonicalConfig(
+  agent: string,
+  projection: ResolvedAgentNativeConfigProjection,
+): string {
+  if (projection.adapter !== "grok") {
+    throw new HarnessUnavailableError(agent, `native configuration targets '${projection.adapter}', not 'grok'`);
+  }
+  const values = projection.toml ?? {};
+  const tables = new Map<string, string[]>();
+  for (const key of GROK_PROJECTED_KEY_ORDER) {
+    if (!Object.prototype.hasOwnProperty.call(values, key)) continue;
+    const separator = key.lastIndexOf(".");
+    const table = key.slice(0, separator);
+    const leaf = key.slice(separator + 1);
+    const lines = tables.get(table) ?? [];
+    lines.push(`${tomlKey(leaf)} = ${tomlValue(values[key])}`);
+    tables.set(table, lines);
+  }
+  const blocks = [...tables].map(([table, lines]) => [`[${table}]`, ...lines].join("\n"));
+  return `${[...blocks, GROK_CANONICAL_ISOLATION_TOML].join("\n\n")}\n`;
 }
 
 /**
@@ -2763,7 +2832,7 @@ export class HarnessManager {
     agent: string,
     bridgeEntry: Record<string, unknown>,
     cwd?: string,
-    options: { exactTrust?: boolean } = {},
+    options: { exactTrust?: boolean; nativeConfig?: ResolvedAgentNativeConfigProjection } = {},
   ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
@@ -2790,7 +2859,9 @@ export class HarnessManager {
       bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers)
         ? (bridgeEntry.headers as Record<string, string>)
         : {};
-    let toml = "";
+    // t-26f508 — the canonical projection is rendered FIRST and the Bridge block appended after it,
+    // so `setCodexMcpServer` never has to splice a server table into the middle of a scalar table.
+    let toml = options.nativeConfig ? renderGrokCanonicalConfig(agent, options.nativeConfig) : "";
     if (url) {
       toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
     }

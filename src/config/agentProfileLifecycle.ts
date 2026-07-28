@@ -23,7 +23,7 @@ import {
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
-import { profileRuntimeInspectorFor } from "./agentProfileProjection.js";
+import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
 const CANONICALIZATION_VERSION = 1 as const;
@@ -455,13 +455,20 @@ function targetProfile(input: CommitAgentProfileLifecycleInput, current?: AgentP
 function authorityFor(agentName: string, profile: AgentProfileV1, sha256: string, prior: AgentProfileAuthorityRecord | undefined, txid: string): AgentProfileAuthorityRecord {
   const inspector = profileRuntimeInspectorFor(profile.runtime.adapter);
   if (!prior && !inspector) throw new Error(`unsupported profile runtime adapter '${profile.runtime.adapter}'`);
+  // t-26f508 (review) — preserving the prior inspector is what keeps an edit from silently
+  // re-attesting to a contract the human never saw, and it is also why a bump used to be a one-way
+  // door. Adoption is scoped to exactly that door: a prior descriptor listed as SUPERSEDED (strictly
+  // stricter successor, same id) is replaced by the current one, so a profile created under the old
+  // contract re-attests on its next lifecycle transaction instead of naming a stale inspector
+  // forever. Anything else still carries `prior` through untouched.
+  const adopt = prior && inspector && isSupersededRuntimeInspector(profile.runtime.adapter, prior.runtimeInspector);
   return {
     schemaVersion: 1,
     agentName,
     agentId: profile.agentId,
     revision: `lifecycle-${txid}`,
     canonicalSha256: sha256,
-    runtimeInspector: prior ? { ...prior.runtimeInspector } : { ...inspector! },
+    runtimeInspector: prior && !adopt ? { ...prior.runtimeInspector } : { ...inspector! },
     ...(prior?.capabilityGrants ? { capabilityGrants: prior.capabilityGrants.map((grant) => ({ ...grant })) } : {}),
   };
 }

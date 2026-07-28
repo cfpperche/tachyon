@@ -244,12 +244,23 @@ function emptyBody(parseError?: string) {
   };
 }
 
+/**
+ * t-26f508 changed this answer while SDD 481 was in flight, and the correction is the point. Before
+ * it, every Grok agent launched with a Bridge-only private `config.toml`, so this file reached none
+ * of them. Now a canonical Grok profile projects measured families FROM this file into the private
+ * home at every launch — `grok` is the only source those families have. So the reach of this
+ * document depends on the agent: a canonical Grok profile inherits it, a Bridge-only one still does
+ * not, and the person's own `grok` always did.
+ */
 const GLOBAL_IMPACT =
-  "Grok agents launched by Tachyon run with a private GROK_HOME that is rewritten at every spawn, so"
-  + " they do not inherit this file. It applies to Grok started outside Tachyon.";
+  "A canonical Grok agent projects measured families from this file into its private GROK_HOME at"
+  + " every launch, so it applies to those agents at their next Start, Restart or Resume. A Grok agent"
+  + " without that profile launches Bridge-only and does not inherit it; Grok started outside Tachyon"
+  + " always reads it.";
 const WORKSPACE_IMPACT =
-  "Grok discovers this file from the working directory, so agents in this workspace apply it at their"
-  + " next launch. Only [mcp_servers] is read in project scope; other sections here are ignored by Grok.";
+  "Grok discovers this file from the working directory, so it reaches agents in this workspace even"
+  + " under a private GROK_HOME, at their next launch. Only [mcp_servers] is read in project scope;"
+  + " other sections here are ignored by Grok.";
 const TRUST_IMPACT =
   "Folder trust decides whether Grok runs this workspace's .grok/hooks/. Tachyon-managed agents are"
   + " pre-trusted in their own private home, so this file governs Grok started outside Tachyon.";

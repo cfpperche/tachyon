@@ -5698,6 +5698,71 @@ describe("AgentManager — session resume (spec 209)", () => {
       await expect(h.manager.planFork("codex")).rejects.toThrow("has no native session fork");
     });
 
+    it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {
+      const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
+      const realGrokHome = path.join(h.ws, "real-grok");
+      fs.mkdirSync(realGrokHome, { recursive: true });
+      fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"access_token":"external-only"}\n');
+
+      const nativeConfig: ResolvedAgentNativeConfigProjection = {
+        adapter: "grok",
+        selectors: {},
+        toml: { "models.default": "grok-4.5", "ui.permission_mode": "ask", "features.telemetry": false },
+      };
+      const harness = new HarnessManager(
+        h.ws,
+        path.join(h.ws, "real-claude"),
+        {},
+        path.join(h.ws, "real-claude", ".claude.json"),
+        undefined,
+        undefined,
+        undefined,
+        realGrokHome,
+      );
+      asAgent(h.manager.defOf("grok"))!.profileLifecycle = {
+        enabled: true, agentId: "22222222-2222-4222-8222-222222222222", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      asAgent(h.manager.defOf("grok"))!.profileNativeConfig = nativeConfig;
+      const materialized: string[] = [];
+      // Mirrors Workspace's canonical Grok branch: the same real writer on every lifecycle path.
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) => {
+        const home = harness.materializeBridgeMcpGrok(
+          name,
+          { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } },
+          cwd,
+          { exactTrust: true, ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}) },
+        );
+        materialized.push(fs.readFileSync(path.join(home, "config.toml"), "utf8"));
+        return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
+      };
+
+      await h.manager.spawn("grok");
+      await h.manager.restart("grok", { stop: "force", session: "new" });
+      await h.manager.resume("grok", {
+        def: { cmd: "grok", kind: "agent" },
+        resume: { runtime: "grok", sessionId: "22222222-2222-4222-8222-222222222222" },
+        cwd: h.ws,
+        declared: true,
+        updatedAt: "now",
+      });
+
+      expect(materialized).toHaveLength(3);
+      expect(new Set(materialized).size, "one projection, regenerated identically").toBe(1);
+      const config = materialized[0]!;
+      expect(config).toContain('default = "grok-4.5"');
+      expect(config).toContain('permission_mode = "ask"');
+      expect(config).toContain("telemetry = false");
+      expect(config).toContain("[compat.claude]");
+      expect(config).toContain("[mcp_servers.tachyon_bridge]");
+      expect(config).not.toContain("external-only");
+      // Auth stays an external symlink the projection never authors.
+      const privateHome = bridgeGrokHome(h.ws, "grok");
+      expect(fs.realpathSync(path.join(privateHome, "auth.json")))
+        .toBe(fs.realpathSync(path.join(realGrokHome, "auth.json")));
+      // Fork would carry neither the projection nor the transcript, so it is refused, not degraded.
+      await expect(h.manager.planFork("grok")).rejects.toThrow(/no measured private-home fork/);
+    });
+
     it("t-554634: codex without Tachyon hook materialization does not get bypass", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
         materializeCodexSessionStartHookConfig: () => undefined,

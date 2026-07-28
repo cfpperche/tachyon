@@ -181,6 +181,62 @@ describe("agent profile lifecycle kernel", () => {
     expect(config.read()).toContain("profile: .tachyon/agents/grok/agent.yml");
   });
 
+  it("t-26f508 review: an edit adopts the current inspector only when the prior one is superseded", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "grok",
+      operation: "create",
+      createProfile: { runtime: { adapter: "grok", executable: "grok" } },
+      authority,
+      config,
+    });
+
+    // Rewrite the record as it would look for a profile created under the shipped v1 contract.
+    const v1Sha = crypto.createHash("sha256").update([
+      "tachyon/grok-private-home-input-inspector/v1",
+      "literal executable grok",
+      "GROK_HOME is Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+      "config.toml and trusted_folders.toml are rewritten before launch",
+      "auth.json is an external credential symlink",
+      "ambient ~/.grok config, memory and plugins are not inherited",
+    ].join("\n")).digest("hex");
+    const stale = authority.records.get("grok")!;
+    authority.records.set("grok", {
+      ...stale,
+      runtimeInspector: { adapter: "grok", id: "tachyon.grok-private-home-inputs", version: "1", sha256: v1Sha },
+    });
+
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "grok",
+      operation: "set-enabled",
+      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority, config })).revision,
+      enabled: true,
+      authority,
+      config,
+    });
+    // Re-attestation happens at the lifecycle boundary, so the stale descriptor does not persist.
+    expect(authority.records.get("grok")?.runtimeInspector).toEqual(GROK_PRIVATE_HOME_INPUT_INSPECTOR);
+
+    // A descriptor that is NOT a listed supersession is still carried through untouched — adoption
+    // is scoped to the one-way door a bump created, not a general "newest wins".
+    const foreign = { adapter: "grok", id: "tachyon.grok-private-home-inputs", version: "9", sha256: "c".repeat(64) };
+    authority.records.set("grok", { ...authority.records.get("grok")!, runtimeInspector: foreign });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "grok",
+      operation: "set-enabled",
+      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority, config })).revision,
+      enabled: false,
+      authority,
+      config,
+    });
+    expect(authority.records.get("grok")?.runtimeInspector).toEqual(foreign);
+  });
+
   it("creates a canonical profile, authority and exact pointer as one inspectable tuple", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

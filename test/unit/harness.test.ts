@@ -1153,6 +1153,47 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
+  it("t-26f508: a canonical Grok home keeps the projection, Bridge, trust and auth across every launch", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-native");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = {
+      type: "http",
+      url: "http://127.0.0.1:9/mcp",
+      headers: { Authorization: "Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}" },
+    };
+    const nativeConfig = {
+      adapter: "grok" as const,
+      selectors: {},
+      toml: { "models.default": "grok-4.5", "ui.permission_mode": "ask", "features.telemetry": false },
+    };
+    const home = mgr.materializeBridgeMcpGrok("canonical", bridge, ws, { exactTrust: true, nativeConfig });
+    const first = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    // The projection, the isolation pins and the Bridge coexist in one file.
+    expect(first).toContain('default = "grok-4.5"');
+    expect(first).toContain('permission_mode = "ask"');
+    expect(first).toContain("[compat.claude]");
+    expect(first).toContain("enabled = false");
+    expect(first).toContain("[mcp_servers.tachyon_bridge]");
+
+    // Restart/resume rewrite the same home. The bytes must be identical, and the external credential
+    // must survive the rewrite — a projection that cost the agent its auth is not parity.
+    mgr.materializeBridgeMcpGrok("canonical", bridge, ws, { exactTrust: true, nativeConfig });
+    expect(fs.readFileSync(path.join(home, "config.toml"), "utf8")).toBe(first);
+    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
+    expect(fs.readFileSync(path.join(home, "trusted_folders.toml"), "utf8")).toMatch(/trusted\s*=\s*true/);
+
+    // Stale projected state is REPLACED, not merged: dropping a family must remove its key.
+    mgr.materializeBridgeMcpGrok("canonical", bridge, ws, {
+      exactTrust: true,
+      nativeConfig: { adapter: "grok", selectors: {}, toml: { "models.default": "grok-4.5" } },
+    });
+    const narrowed = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+    expect(narrowed).not.toContain("permission_mode");
+    expect(narrowed).toContain("[mcp_servers.tachyon_bridge]");
+  });
+
   it("seeds Grok folder-trust for workspace + spawn cwd and preserves prior trusted entries", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-trust");
     fs.mkdirSync(realGrokHome, { recursive: true });

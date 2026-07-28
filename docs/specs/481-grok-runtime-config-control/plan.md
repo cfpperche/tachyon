@@ -19,9 +19,12 @@ _Drafted from `spec.md` on 2026-07-28. The approach, not the steps (those go in 
 
 _Each decision + why this option over the alternatives considered._
 
-- **Documento global não marca pending** — medido: `materializeBridgeMcpGrok` sobrescreve
-  `$privateHome/config.toml` a cada spawn e nunca lê `~/.grok/config.toml`. Marcar pending
-  ali seria prometer um efeito que não existe. Rejeitado: copiar a regra de Claude/Codex.
+- **Alcance é por documento, não por runtime** — o workspace chega ao agente pelo cwd mesmo
+  sob `GROK_HOME` privado; o global depende de o agente ter perfil canônico. A primeira
+  versão desta decisão dizia "o global não marca ninguém", medido quando todo agente Grok
+  subia Bridge-only; `t-26f508` landou no meio da slice e passou a projetar famílias de
+  `~/.grok/config.toml`, então a regra foi corrigida no merge em vez de deixada em drift.
+  Rejeitado: manter uma frase medida que o produto já tinha superado.
 - **Workspace não expõe escalar** — o README versionado 0.2.112 e o layering medido dizem
   que só `[mcp_servers]` é lido em escopo de projeto. Oferecer `models.default` ali seria
   um editor que grava e não faz efeito. Rejeitado: expor com aviso.

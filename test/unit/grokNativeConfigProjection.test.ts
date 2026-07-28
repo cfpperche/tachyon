@@ -1,0 +1,232 @@
+import { describe, expect, it } from "vitest";
+import { parse } from "@iarna/toml";
+import {
+  defaultGrokNativeConfigPolicy,
+  grokScalarNativeConfigPolicy,
+  grokSelectorNativeConfigPolicy,
+  resolveAgentNativeConfigSupport,
+  validateAgentNativeConfigPolicy,
+  GROK_ALWAYS_APPROVE_AUTHORIZATION,
+  type ResolvedAgentNativeConfigProjection,
+} from "../../src/config/agentNativeConfigPolicy.js";
+import { projectGrokNativeConfig } from "../../src/config/grokNativeConfigProjection.js";
+import { renderGrokCanonicalConfig } from "../../src/harness/HarnessManager.js";
+import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+
+const base: ResolvedAgentNativeConfigProjection = { adapter: "grok", selectors: {} };
+
+function profile(
+  nativeConfig: AgentProfileV1["nativeConfig"],
+  runtime: Partial<AgentProfileV1["runtime"]> = {},
+): Pick<AgentProfileV1, "runtime" | "nativeConfig"> {
+  return {
+    runtime: { adapter: "grok", executable: "grok", ...runtime },
+    nativeConfig,
+  };
+}
+
+/** A realistic `~/.grok/config.toml`: selected keys next to keys this projector must ignore. */
+const GLOBAL_CONFIG = `
+[cli]
+installer = "internal"
+
+[marketplace]
+official_marketplace_auto_installed = true
+
+[[marketplace.sources]]
+name = "xAI Official"
+git = "https://github.com/xai-org/plugin-marketplace.git"
+
+[ui]
+max_thoughts_width = 120
+compact_mode = false
+permission_mode = "ask"
+
+[models]
+default = "grok-4.5"
+
+[features]
+telemetry = false
+
+[permission]
+deny = ["Bash(rm -rf *)"]
+`;
+
+describe("Grok native configuration admission", () => {
+  it("declares global-only sources for the scalar families", () => {
+    for (const family of ["permissions", "interface", "featureFlags"] as const) {
+      expect(resolveAgentNativeConfigSupport("grok", family, grokScalarNativeConfigPolicy("global")).support)
+        .toBe("supported");
+      // Grok's project `.grok/config.toml` contributes none of these keys, so a workspace policy
+      // would be a claim the runtime never honors.
+      expect(resolveAgentNativeConfigSupport("grok", family, {
+        ...grokScalarNativeConfigPolicy("global"),
+        source: "workspace",
+      }).support).toBe("unsupported");
+    }
+  });
+
+  it("declares fresh/restart/resume and refuses a fork claim", () => {
+    expect(resolveAgentNativeConfigSupport("grok", "selectors", grokSelectorNativeConfigPolicy()).support)
+      .toBe("supported");
+    expect(resolveAgentNativeConfigSupport("grok", "selectors", {
+      ...grokSelectorNativeConfigPolicy(),
+      lifecycle: ["fresh", "restart", "resume", "fork"],
+    }).support).toBe("unsupported");
+  });
+
+  it("admits the default profile policy whole, including the three refusals", () => {
+    const nativeConfig = defaultGrokNativeConfigPolicy();
+    expect(validateAgentNativeConfigPolicy("grok", nativeConfig)).toEqual([]);
+    expect(Object.keys(nativeConfig).sort())
+      .toEqual(["authentication", "featureFlags", "interface", "memory", "permissions", "tooling"]);
+  });
+
+  it("keeps another runtime's authorization off a Grok profile", () => {
+    const nativeConfig = {
+      ...defaultGrokNativeConfigPolicy(),
+      permissions: grokScalarNativeConfigPolicy("global", ["dangerFullAccess"]),
+    };
+    expect(validateAgentNativeConfigPolicy("grok", nativeConfig).join("\n"))
+      .toContain("is not a recognized authorization");
+  });
+});
+
+describe("Grok native configuration projection", () => {
+  it("projects only the selected families and leaves unrelated global keys opaque", () => {
+    const result = projectGrokNativeConfig(
+      profile({
+        interface: grokScalarNativeConfigPolicy("global"),
+        featureFlags: grokScalarNativeConfigPolicy("global"),
+      }),
+      { global: GLOBAL_CONFIG },
+      base,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.projection.toml).toEqual({
+      "ui.max_thoughts_width": 120,
+      "ui.compact_mode": false,
+      "features.telemetry": false,
+    });
+  });
+
+  it("omits an unauthorized always-approve instead of refusing the agent", () => {
+    const result = projectGrokNativeConfig(
+      profile({ permissions: grokScalarNativeConfigPolicy("global") }),
+      { global: '[ui]\npermission_mode = "always-approve"\nyolo = true\n' },
+      base,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings.join("\n")).toContain("does not explicitly authorize it");
+    expect(result.projection.toml).toBeUndefined();
+  });
+
+  it("projects always-approve only when this agent authorizes it", () => {
+    const result = projectGrokNativeConfig(
+      profile({
+        permissions: grokScalarNativeConfigPolicy("global", [GROK_ALWAYS_APPROVE_AUTHORIZATION]),
+      }),
+      { global: '[ui]\npermission_mode = "always-approve"\nyolo = true\n' },
+      base,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([]);
+    expect(result.projection.toml).toEqual({ "ui.permission_mode": "always-approve", "ui.yolo": true });
+  });
+
+  it("names the offending key and the way out when a value is unmeasured", () => {
+    const result = projectGrokNativeConfig(
+      profile({ interface: grokScalarNativeConfigPolicy("global") }),
+      { global: '[ui]\nscreen_mode = "kiosk"\n' },
+      base,
+    );
+    expect(result.errors).toEqual([
+      "profile/native-config-value: Grok global key 'ui.screen_mode' value 'kiosk' is not projectable"
+      + " (supported: fullscreen, minimal); set the Interface family to Exclude or change the global value",
+    ]);
+  });
+
+  it("writes agent-owned selectors from the profile and refuses unmeasured ones", () => {
+    const ok = projectGrokNativeConfig(
+      profile({ selectors: grokSelectorNativeConfigPolicy() }, { model: "grok-4.5", reasoningEffort: "high" }),
+      {},
+      base,
+    );
+    expect(ok.errors).toEqual([]);
+    expect(ok.projection.toml).toEqual({ "models.default": "grok-4.5", "models.default_reasoning_effort": "high" });
+
+    const bad = projectGrokNativeConfig(
+      profile({ selectors: grokSelectorNativeConfigPolicy() }, { reasoningEffort: "deep", provider: "acme" }),
+      {},
+      base,
+    );
+    expect(bad.errors).toHaveLength(2);
+    expect(bad.errors.join("\n")).toContain("Grok provider has no measured canonical materialization");
+    expect(bad.errors.join("\n")).toContain("reasoningEffort 'deep' is unsupported");
+  });
+
+  it("refuses an unreadable global source rather than projecting a partial one", () => {
+    const result = projectGrokNativeConfig(
+      profile({ interface: grokScalarNativeConfigPolicy("global") }),
+      { global: "[ui" },
+      base,
+    );
+    expect(result.errors.join("\n")).toContain("Grok global config is invalid TOML");
+    expect(result.projection.toml).toBeUndefined();
+  });
+});
+
+describe("Grok canonical private config rendering", () => {
+  const projected = projectGrokNativeConfig(
+    profile(
+      {
+        selectors: grokSelectorNativeConfigPolicy(),
+        permissions: grokScalarNativeConfigPolicy("global"),
+        interface: grokScalarNativeConfigPolicy("global"),
+        featureFlags: grokScalarNativeConfigPolicy("global"),
+      },
+      { model: "grok-4.5", reasoningEffort: "high" },
+    ),
+    { global: GLOBAL_CONFIG },
+    base,
+  ).projection;
+
+  it("renders valid TOML with each dotted key back under its own table", () => {
+    const rendered = renderGrokCanonicalConfig("grok-agent", projected);
+    const parsed = parse(rendered) as Record<string, Record<string, unknown>>;
+    expect(parsed.models).toEqual({ default: "grok-4.5", default_reasoning_effort: "high" });
+    expect(parsed.ui).toEqual({ permission_mode: "ask", max_thoughts_width: 120, compact_mode: false });
+    expect(parsed.permission).toEqual({ deny: ["Bash(rm -rf *)"] });
+    expect(parsed.features).toEqual({ telemetry: false });
+  });
+
+  it("always pins memory off and every foreign-harness compat cell off", () => {
+    // Measured on grok 0.2.112: without these cells a project `.claude/skills/*` is discovered and
+    // active; with them it reports compatibilityStatus "disabled".
+    const parsed = parse(renderGrokCanonicalConfig("grok-agent", projected)) as Record<string, Record<string, unknown>>;
+    expect(parsed.memory).toEqual({ enabled: false });
+    expect(parsed.compat).toEqual({
+      cursor: { skills: false, rules: false, agents: false, mcps: false, hooks: false, sessions: false },
+      claude: { skills: false, rules: false, agents: false, mcps: false, hooks: false, sessions: false },
+      codex: { sessions: false },
+    });
+  });
+
+  it("keeps the isolation block even when no family is selected", () => {
+    const parsed = parse(renderGrokCanonicalConfig("grok-agent", base)) as Record<string, Record<string, unknown>>;
+    expect(parsed.memory).toEqual({ enabled: false });
+    expect(parsed.compat.claude).toMatchObject({ skills: false });
+  });
+
+  it("is byte-identical across launches, which is what 'regenerated equivalently' means", () => {
+    expect(renderGrokCanonicalConfig("grok-agent", projected))
+      .toBe(renderGrokCanonicalConfig("grok-agent", projected));
+  });
+
+  it("refuses another runtime's projection", () => {
+    expect(() => renderGrokCanonicalConfig("grok-agent", { adapter: "claude", selectors: {} }))
+      .toThrow(/targets 'claude', not 'grok'/);
+  });
+});

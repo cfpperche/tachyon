@@ -4491,6 +4491,26 @@ export class AgentManager {
   }
 
   /**
+   * t-26f508 — Grok's native `--fork-session` works, but `managedPrivateFork` in `commitFork` covers
+   * only Pi and Claude, so a canonical Grok fork would get an unprojected private home AND no
+   * transcript seeded into it: the destination `GROK_HOME` is a fresh `bridge-mcp/<fork>.grok`, where
+   * the source session does not exist, so `--resume <id> --fork-session` would find nothing.
+   *
+   * Refusing is the honest reading of a lifecycle contract that lists fresh, restart and resume and
+   * not fork. Checked at PLAN time as well as at commit, so the confirm modal is never offered for an
+   * operation that cannot succeed.
+   */
+  private assertForkableProfile(source: string, runtime: ResumeRuntime): void {
+    const definition = this.agentDefinitionOf(source);
+    if (runtime === "grok" && (definition?.profileLifecycle || definition?.profileNativeConfig)) {
+      throw new ForkUnavailableError(
+        source,
+        "a canonical Grok profile has no measured private-home fork — its projection and transcript would not follow the fork",
+      );
+    }
+  }
+
+  /**
    * spec 225 — resolve everything needed to fork `name` into a sibling, WITHOUT any side effect
    * (no worktree create, no spawn), so the UI can confirm the fork name + base + dirty warning first.
    * Fail-closed via resolveForkSource. NOTE: commitFork RE-resolves at spawn time, so the id/cwd here
@@ -4498,6 +4518,7 @@ export class AgentManager {
    */
   async planFork(name: string): Promise<ForkPlan> {
     const src = await this.resolveForkSource(name);
+    this.assertForkableProfile(name, src.runtime);
     const forkName = this.uniqueForkName(name, await this.allKnownNames());
     const dirty = src.sourceWorktree
       ? this.opts.worktreeDirty
@@ -4535,6 +4556,9 @@ export class AgentManager {
     const src = await this.resolveForkSource(source);
     const { adapter } = src;
     if (!adapter.forkCommand) throw new ForkUnavailableError(source, `'${src.runtime}' has no native session fork`);
+    // Re-asserted here, not only at plan time: the plan may be stale, and this is the gate that runs
+    // before any worktree, token or session side effect.
+    this.assertForkableProfile(source, src.runtime);
     // Catch account/catalog drift before creating a fork checkout. A second probe below runs only
     // when the prospective cwd differs, covering project-scoped runtime configuration as well.
     await this.assertLaunchPreflight(plan.forkName, src.baseCmd, src.env, true, src.sourceCwd);
