@@ -942,7 +942,13 @@ export function assertPointerSessionIdle(pointerRoot) {
  * (2026-07-24). A silent no-op would be worse than a hard stop here: the caller would believe it had
  * armed a scoped dev-host and then be pointed at a different directory than the one that launches.
  */
-const RETIRED_FLAGS = Object.freeze({
+/**
+ * Flags spec 448 removed, with the sentence each refusal carries. Exported so a guard can DERIVE the
+ * set instead of restating it (t-3e5072): the transported project guidance must never instruct one of
+ * these again, and a seventh retirement should extend that guard by being added here — not by
+ * somebody remembering to update a second list.
+ */
+export const RETIRED_FLAGS = Object.freeze({
   "--owner": "the dev-host now belongs to the checkout you run in — cd to your worktree and drop --owner",
   "--slot": "slots were removed; each checkout has exactly one dev-host — cd to your worktree and drop --slot",
   "--activate": "there is no `active` pointer to select any more — the checkout you run in is the target",
