@@ -65,7 +65,7 @@ import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
-import type { SessionWorkRecord } from "./sessionWorkRecord.js";
+import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
@@ -1489,8 +1489,13 @@ export class AgentManager {
     def: AgentDef,
     worktree: WorktreeRecord | undefined,
     cwd: string,
-    /** t-9d250c — the frozen brief this restart is about to replay, for stale-reference reporting. */
+    /** t-9d250c — the frozen brief this launch is about to replay, for stale-reference reporting. */
     replayedBrief?: string,
+    /**
+     * t-7f3009 — which launch is asking. A spawn needs this record for the SAME reason a restart does:
+     * the brief it carries can be frozen from an earlier launch and name work the board has closed.
+     */
+    launch: SessionLaunchKind = "restart",
   ): SessionWorkRecord | undefined {
     if (!this.opts.assignedWork) return undefined;
     // Same gate `projectGuidanceFor` uses: a launch with no channel for a startup document gets no
@@ -1502,7 +1507,7 @@ export class AgentManager {
       rows = this.opts.assignedWork(name);
     } catch (error) {
       throw new Error(
-        `refusing restart for agent '${name}': its assigned work could not be read, so a new session ` +
+        `refusing ${launch} for agent '${name}': its assigned work could not be read, so a new session ` +
         "cannot be told what it is working on; fix the task store and retry",
         { cause: error },
       );
@@ -1523,6 +1528,7 @@ export class AgentManager {
     }
     const durable = worktree ?? this.opts.ledger?.get(name)?.worktree;
     return {
+      launch,
       isolation: durable
         ? { kind: "worktree", path: durable.path, branch: durable.branch }
         : { kind: "shared", cwd },
@@ -2251,6 +2257,24 @@ export class AgentManager {
     let preparedRuntimeHarness: MaterializedHarness | null | undefined;
     let createdRuntimeHome = false;
     const preparedLaunch = await (async () => {
+    // t-7f3009 — the spawn brief is NOT self-checking. `taskBrief` here can be a document frozen at an
+    // earlier launch (the incident: the same t-2f6cdd contract replayed five times after it landed,
+    // naming a worktree that no longer existed). t-9d250c built the board cross-check but wired it only
+    // into restart, so the other door stayed open. Same record, same selector, same stale-reference
+    // reporting — the difference is only which launch it describes.
+    const spawnWorkRecord = this.sessionWorkRecordFor(
+      name,
+      def,
+      worktree,
+      cwd,
+      [
+        taskBrief,
+        opts?.contract
+          ? Object.values(opts.contract).filter((value) => typeof value === "string").join("\n")
+          : undefined,
+      ].filter(Boolean).join("\n"),
+      "spawn",
+    );
     // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
     const effectiveInstructions = this.effectiveInstructions(
       name,
@@ -2262,6 +2286,7 @@ export class AgentManager {
       resolvedSoul,
       resolvedEvolution,
       projectGuidance,
+      spawnWorkRecord,
     );
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
