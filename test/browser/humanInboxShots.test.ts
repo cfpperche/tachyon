@@ -45,11 +45,22 @@ const WIDE_PNG =
     `<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="600"><rect width="2400" height="600" fill="#264f78"/><text x="60" y="330" font-size="120" fill="#fff">2400px wide evidence</text></svg>`,
   ).toString("base64");
 
+/**
+ * Ages are RELATIVE, and that is what makes these artifacts durable.
+ *
+ * The card renders "how long has this waited" against the real clock, so fixed fixture dates make
+ * every regeneration differ from the last — the first re-run after landing changed 14 of 17 PNGs by
+ * exactly one hour. A screenshot set that churns hourly cannot answer "did the UI change?", which is
+ * the only question it exists to answer. Anchoring the fixtures to `now` pins the rendered text
+ * ("40h", "3d") instead of the timestamp behind it.
+ */
+const hoursAgo = (h: number): string => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+
 const approval = (id: string, over: Partial<ApprovalViewItem> = {}): ApprovalViewItem => ({
   id,
   requester: "codex-canonico",
   session: "tachyon-ws-codex",
-  createdAt: "2026-07-26T08:00:00.000Z",
+  createdAt: hoursAgo(40),
   payload: {
     reason: "reconcile_base needs a human before it rewrites the delivery's base",
     proposedAction: "git-delivery reconcile_base d-4f1a2b onto main@2577d527",
@@ -70,19 +81,15 @@ const validation = (id: string, over: Partial<ValidationViewItem> = {}): Validat
   instructions: "Open Control → Inbox, work one approval and one validation, and attach what you saw.",
   sourceRefs: [],
   rounds: [],
-  createdAt: "2026-07-27T09:00:00.000Z",
-  updatedAt: "2026-07-27T09:00:00.000Z",
+  createdAt: hoursAgo(15),
+  updatedAt: hoursAgo(15),
   ...over,
 });
 
 const vmOf = (approvals: ApprovalViewItem[], validations: ValidationViewItem[]) =>
-  buildHumanInboxViewModel({
-    folder: "tachyon",
-    wsHash: "ws-1",
-    approvals,
-    validations,
-    now: "2026-07-27T12:00:00.000Z",
-  });
+  // no explicit `now`: staleness is judged by the same real clock the age labels read, so a row can
+  // never render "3d" without the stale mark that ought to accompany it.
+  buildHumanInboxViewModel({ folder: "tachyon", wsHash: "ws-1", approvals, validations });
 
 /**
  * The codicon @font-face points at a RELATIVE url, which resolves to nothing under `setContent` — so
@@ -174,7 +181,7 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
 
   it("shoots the aggregated LIST — both kinds, one count", async () => {
     const vm = vmOf(
-      [approval("a-4f1a2b"), approval("a-77c301", { createdAt: "2026-07-25T08:00:00.000Z", requester: "claude-opus5-2" })],
+      [approval("a-4f1a2b"), approval("a-77c301", { createdAt: hoursAgo(72), requester: "claude-opus5-2" })],
       [validation("v-91ab04"), validation("v-33ef12", { title: "Confirm the narrow sidebar still reads at 220px", priority: 2 })],
     );
     const html = renderStatic(App({ vm, dispatch: noopDispatch }));
