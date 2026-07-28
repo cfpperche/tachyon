@@ -160,6 +160,29 @@ describe("t-6ced6f — a bare `ready` returns `init` on every Control route kind
     expect(failures, "these routes opened a Control tab that would render ds-empty").toEqual([]);
   });
 
+  it("claims only the BARE ready — an enveloped one belongs to the studio", async () => {
+    /**
+     * The other half of the boundary, and the one that bites back. The studio protocol reuses the
+     * same wire string for its per-mount handshake, `envelope({ type: "ready", routeKey, mountNonce })`.
+     * Hoisting on `type` alone therefore swallowed the studios' handshake — the identical defect this
+     * task closes, aimed the other way. Writing it down here as behavior keeps the guard above from
+     * being "simplified" back into a bare type check.
+     */
+    const ws = fakeWorkspace();
+    await openCockpit(depsFor(ws), { route: { kind: "studio-new", studio: "command", wsHash: ws.wsHash } as CockpitRoute });
+    const panel = __createdPanels[0];
+    panel.webview.__receive({ type: "ready" }); // the shell's own — earns init
+    await flush();
+    const before = panel.webview.posted.length;
+
+    // A studio-scoped ready must NOT be answered with another shell init; it is the studio's to bind.
+    panel.webview.__receive({ type: "ready", studioProtocolVersion: 1, routeKey: "studio-new:command:ws-1", mountNonce: "n" });
+    await flush();
+    const inits = panel.webview.posted.filter((m) => (m as { type?: string }).type === "init");
+    expect(inits, "the shell answered a studio-scoped ready as if it were its own").toHaveLength(1);
+    expect(panel.webview.posted.length).toBeGreaterThanOrEqual(before);
+  });
+
   it("answers `ready` before any per-route handler can consume it", async () => {
     // The structural property, not just its effect. A handler that returns true ends dispatch, so if
     // READY were still answered after the chain, one swallowing handler would be enough — this is
@@ -167,7 +190,9 @@ describe("t-6ced6f — a bare `ready` returns `init` on every Control route kind
     // by a later "just move it back down with a guard".
     const source = fs.readFileSync(path.join(process.cwd(), "src", "webview", "Cockpit.ts"), "utf8");
     const listener = source.indexOf("live.webview.onDidReceiveMessage");
-    const readyAnswer = source.indexOf("if (type === READY)", listener);
+    // Anchored on the condition, not the whole line: the studio carve-out below already changed this
+    // line once, and a guard that breaks when the fix is refined teaches people to delete the guard.
+    const readyAnswer = source.indexOf("type === READY", listener);
     const firstRouteHandler = source.indexOf("if (await handleTaskDetailAction(", listener);
 
     expect(listener, "the message listener moved; this guard needs updating").toBeGreaterThan(-1);

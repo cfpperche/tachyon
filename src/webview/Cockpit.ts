@@ -2184,8 +2184,16 @@ export async function openCockpit(
        * Hoisting it makes the whole class unreachable instead of forbidden by convention: no route
        * handler can swallow a message it is never offered. `cockpitReadyHandshake.test.ts` asserts
        * this for every route kind the Control can open.
+       *
+       * The `studioProtocolVersion` guard is NOT incidental, and "no handler has a legitimate reason
+       * to see READY" is too strong a claim without it. The studio protocol reuses this exact wire
+       * string for its OWN per-mount handshake — `envelope({ type: "ready", routeKey, mountNonce })`
+       * — which `dispatchStudioMessage` must receive to bind the mount and post the `load`. Matching
+       * on `type` alone starved every studio of it, committing this very bug in the other direction
+       * (cockpitStudio.test.ts caught it, 7 failures). The SHELL's ready is the BARE one; an
+       * enveloped ready is the studio's and falls through to its dispatcher below.
        */
-      if (type === READY) {
+      if (type === READY && msg.studioProtocolVersion === undefined) {
         live.webview.postMessage(initMessage(s));
         await sendModel();
         await sendSectionModule();
