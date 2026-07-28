@@ -20,7 +20,8 @@ function ev(over: Partial<Parameters<typeof sealExecutionEvent>[0]> = {}): Seale
     state: "running",
     provenance: "measured",
     correlation: { agentId: "ada", executionId: "exec-1" },
-    at: "2026-07-28T12:00:00.000Z",
+    // t-2622eb — relative, never a calendar date: the ledger ages events against the real clock.
+    at: new Date().toISOString(),
     ...over,
   });
 }

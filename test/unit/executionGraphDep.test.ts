@@ -34,7 +34,8 @@ function recordInto(storageRoot: string, workspaceHash: string, ids: string[]): 
     ledger.record(sealExecutionEvent({
       kind: "spawn", node: "Process", state: "running", provenance: "measured",
       correlation: { agentId: "ada", executionId: id },
-      at: "2026-07-28T12:00:00.000Z",
+      // t-2622eb — relative, never a calendar date: the ledger ages events against the real clock.
+      at: new Date().toISOString(),
       detail: { cwd: "/repo/checkout" },
     }));
   }
