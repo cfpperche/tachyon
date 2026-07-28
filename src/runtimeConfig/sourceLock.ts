@@ -32,6 +32,14 @@ import path from "node:path";
  * risk is pid reuse, which resolves toward refusing rather than stealing: the worst case is a
  * spurious "in progress" that a person retries, not two writers.
  *
+ * A second review pass then proved two follow-ons, both now closed here, because a comment that
+ * overstates the guarantee is the same class of defect as the one above:
+ *
+ *  - releasing by PATH would delete a lock that is no longer ours, so `release` re-reads the pid and
+ *    leaves a foreign lock alone;
+ *  - creating and stamping are two steps, not one, so a lock can be seen unstamped. Reading that as
+ *    "crashed" let a live holder be robbed mid-create; it is now decided by age.
+ *
  * This mirrors `acquireVerifyFullLock` in `scripts/verify-full.mjs` (t-6a9bc4), which already had to
  * solve exactly this in this repository.
  */
@@ -45,9 +53,20 @@ export function sourceLockPath(file: string): string {
   return `${file}.tachyon-runtime-config.lock`;
 }
 
+/**
+ * A lock whose pid cannot be read yet is NOT evidence of a crash: the create and the stamp are two
+ * steps (see `acquire`), so a holder that is mid-create looks exactly like one that died mid-create.
+ * Age is what tells them apart, and it has to, because guessing either way is a real failure — "gone"
+ * robs a live holder, "alive" is the permanent wedge. Two seconds is far longer than the microseconds
+ * between `open` and `write`, and far shorter than a human noticing a stuck save.
+ */
+const UNSTAMPED_LOCK_GRACE_MS = 2_000;
+
 function holderIsAlive(lock: string, options: RuntimeConfigSourceLockOptions): boolean {
   let raw: string;
+  let stampedAtMs: number;
   try {
+    stampedAtMs = fs.statSync(lock).mtimeMs;
     raw = fs.readFileSync(lock, "utf8");
   } catch {
     // It vanished between the failed create and this read — whoever held it is done with it.
@@ -55,9 +74,7 @@ function holderIsAlive(lock: string, options: RuntimeConfigSourceLockOptions): b
   }
   const pid = Number.parseInt(raw.trim(), 10);
   if (!Number.isInteger(pid) || pid <= 0) {
-    // An unreadable holder is treated as gone. A crash during the create+write is the only way to
-    // get here, and refusing instead would be the permanent wedge described above.
-    return false;
+    return Date.now() - stampedAtMs < UNSTAMPED_LOCK_GRACE_MS;
   }
   const alive = options.isHolderAlive ?? ((candidate: number) => {
     try {
@@ -73,9 +90,15 @@ function holderIsAlive(lock: string, options: RuntimeConfigSourceLockOptions): b
 
 function acquire(lock: string, options: RuntimeConfigSourceLockOptions, stolen = false): void {
   try {
-    // Create and stamp in ONE call: a lock that exists but has no pid yet would be indistinguishable
-    // from a crashed holder.
-    fs.writeFileSync(lock, `${process.pid}\n`, { flag: "wx", mode: 0o600 });
+    // `wx` is what excludes, and THAT is atomic: exactly one caller creates the file. Stamping the
+    // pid is a second step, so the file exists unstamped for a moment — handled by the grace period
+    // above rather than pretended away.
+    const fd = fs.openSync(lock, "wx", 0o600);
+    try {
+      fs.writeSync(fd, `${process.pid}\n`);
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     if (!stolen && !holderIsAlive(lock, options)) {
@@ -109,10 +132,26 @@ export function withRuntimeConfigSourceLock<T>(
   try {
     return body();
   } finally {
-    try {
-      fs.unlinkSync(lock);
-    } catch {
-      /* already stolen as an orphan, or removed by hand */
-    }
+    release(lock);
+  }
+}
+
+/**
+ * Release by OWNERSHIP, not by path. Unlinking whatever sits at the path would repeat the original
+ * defect one level down: if our lock was taken from us (stolen as an unstamped orphan, or cleared by
+ * hand), the file there belongs to somebody else and deleting it hands a third caller the same
+ * collision. Leaving a foreign lock alone costs nothing — its owner releases it, and the grace period
+ * above covers the case where nobody does.
+ */
+function release(lock: string): void {
+  try {
+    if (Number.parseInt(fs.readFileSync(lock, "utf8").trim(), 10) !== process.pid) return;
+  } catch {
+    return; // already gone
+  }
+  try {
+    fs.unlinkSync(lock);
+  } catch {
+    /* removed between the read and here — nothing left to release */
   }
 }

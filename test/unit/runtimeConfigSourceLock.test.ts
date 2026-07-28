@@ -59,11 +59,14 @@ describe("Runtime Config source lock", () => {
     expect(fs.existsSync(lock)).toBe(false);
   });
 
-  it("treats a lock with no readable holder as an orphan rather than a permanent block", () => {
+  it("treats a stale unreadable holder as an orphan rather than a permanent block", () => {
     const root = tempRoot();
     const file = path.join(root, "config.toml");
+    const lock = sourceLockPath(file);
     fs.mkdirSync(root, { recursive: true });
-    fs.writeFileSync(sourceLockPath(file), "");
+    fs.writeFileSync(lock, "not-a-pid");
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(lock, old, old);
 
     expect(withRuntimeConfigSourceLock(file, () => "ran")).toBe("ran");
   });
@@ -91,6 +94,52 @@ describe("Runtime Config source lock", () => {
     withRuntimeConfigSourceLock(file, () => {
       expect(Number.parseInt(fs.readFileSync(sourceLockPath(file), "utf8").trim(), 10)).toBe(process.pid);
     });
+  });
+
+  /**
+   * Second-pass review residual R1: releasing by PATH would delete whatever sits there, which is the
+   * original defect one level down. If our lock is taken from us while we work, the file belongs to
+   * somebody else and must survive our exit.
+   */
+  it("leaves a foreign lock alone when ours was taken from us mid-body", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+    const lock = sourceLockPath(file);
+
+    withRuntimeConfigSourceLock(file, () => {
+      // Somebody else now owns the path (stolen, or cleared and re-taken).
+      fs.writeFileSync(lock, "424242\n");
+    });
+
+    expect(fs.existsSync(lock)).toBe(true);
+    expect(fs.readFileSync(lock, "utf8").trim()).toBe("424242");
+  });
+
+  /**
+   * Second-pass review residual R2: `open` then `write` are two steps, so a lock can be observed
+   * before its pid is stamped. Reading that as "crashed" robs a holder that is mid-create.
+   */
+  it("does not steal a lock that is merely unstamped yet", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(sourceLockPath(file), ""); // created, not yet stamped
+
+    expect(() => withRuntimeConfigSourceLock(file, () => "must not run", DEAD))
+      .toThrow(/save is in progress/);
+  });
+
+  it("still recovers an unstamped lock once it is old enough to be a crash", () => {
+    const root = tempRoot();
+    const file = path.join(root, "config.toml");
+    const lock = sourceLockPath(file);
+    fs.mkdirSync(root, { recursive: true });
+    fs.writeFileSync(lock, "");
+    // Age it past the grace window: a create that never stamped is a create that died.
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(lock, old, old);
+
+    expect(withRuntimeConfigSourceLock(file, () => "ran", DEAD)).toBe("ran");
   });
 
   it("refuses a Grok save while another holds the lock, and leaves that lock alone", () => {

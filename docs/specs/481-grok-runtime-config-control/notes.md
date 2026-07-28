@@ -111,6 +111,23 @@ Their non-blocking note is also taken: `models.api_key` at depth 2 was classifie
 NAME appeared in `unknownKeys` (a name, never a value). Opacity under `models` is now keyed on the
 owned-key allowlist rather than depth, which is the rule that cannot drift.
 
+A second review pass on the fix returned CLEAN and proved two residuals, both closed rather than
+filed, because one of them was a comment that overstated its own guarantee — the same class of defect
+the fix existed to remove:
+
+- **R1, release was scoped by path.** The `finally` unlinked whatever sat at the path, so a lock taken
+  from us mid-body would be deleted on our way out — the original defect one level down. Release now
+  re-reads the pid and leaves a foreign lock alone.
+- **R2, "create and stamp in ONE call" was false.** `writeFileSync(..., {flag:"wx"})` is open + write,
+  so a lock can be seen unstamped, and reading that as "crashed" let a live holder be robbed
+  mid-create. `wx` still provides the exclusion (that part IS atomic); the unstamped window is now
+  decided by age — fresh means someone is mid-create, stale means the create died.
+
+They also corrected a claim of mine in the other direction: I reported 3 tests failing against the
+pre-fix release path; restoring fuller pre-fix semantics fails 7 of 8. The claim was conservative, not
+inflated, and the correction is theirs. The two residual tests above were likewise confirmed to fail
+against the previous commit before being fixed.
+
 ## Dogfood log
 
 `npm run dogfood:grok-runtime-config` — 2026-07-28, grok 0.2.112 (9bbd559437): **15/15**.
