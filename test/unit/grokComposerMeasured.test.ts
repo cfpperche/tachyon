@@ -65,6 +65,21 @@ describe("Grok composer — measured against grok 0.2.112 (t-aafa10)", () => {
     expect(occupied(lines)).toBe(false);
   });
 
+  it("stays free while a turn is actually streaming (t-d2a4dc)", () => {
+    // The gap t-aafa10 could not close: a mid-turn pane needed a live model call. Measured against a
+    // real canonical Grok agent — the composer box is still rendered and still EMPTY while the model
+    // streams, so the guard does not false-positive and block injection for the length of a turn.
+    // 20 consecutive live samples agreed; these are the bytes from the streaming one.
+    const lines = pane("mid-turn");
+    expect(findComposerRegion(lines, composer)).not.toBeNull();
+    expect(occupied(lines)).toBe(false);
+    // The streaming signal itself, so a release that drops it is visible here rather than silently
+    // costing Attention its only mid-turn evidence.
+    const flat = lines.map(stripAnsi).join("\n");
+    expect(flat).toMatch(/Waiting for response/);
+    expect(flat).toMatch(/Esc:cancel/);
+  });
+
   it("keeps the measured evidence attached to the profile", () => {
     expect(composer.source).toBe("measured");
     expect(composer.verified).toBe(true);

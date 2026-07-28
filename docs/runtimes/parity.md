@@ -340,7 +340,9 @@ to a symlink that must no longer exist.**
 
 #### Grok canonical verdict (`t-aafa10`, 2026-07-28)
 
-**LIMITED — not ready.** Closing only what was provable, and naming the rest rather than rounding it up.
+**LIMITED — not ready**, and narrower than it was. `t-d2a4dc` closed the two evidence gaps that needed a live
+credential; what remains is one runtime capability Grok does not expose and one wiring job Tachyon has not done.
+Closing only what was provable, and naming the rest rather than rounding it up.
 
 *Closed by measurement on grok 0.2.112:* composer region shape (`source: "measured"`, byte fixtures in
 `test/fixtures/grok-composer/`, regression in `test/unit/grokComposerMeasured.test.ts`) across empty, human
@@ -354,16 +356,24 @@ in the rows above.
 
 1. ~~**`t-de73e0` (P0, blocking)**~~ — **RESOLVED** in `ef071e2a` (credential copy per private home); the
    dogfood that needed a live credential runs again. Kept in the list so the verdict's history is readable.
-2. **Mid-turn Attention unmeasured.** Producing a working/streaming pane needs a live model call, and the
-   measurement ran without a usable credential. `attention-composer-unverified` is retained for exactly this.
+2. ~~**Mid-turn Attention unmeasured**~~ — **CLOSED** by `t-d2a4dc` against a real canonical agent. While the
+   model streams, the composer box is still rendered and still EMPTY (20 consecutive live samples, 0 occupied),
+   so the guard does not block injection for the length of a turn; the pane carries a distinct working signal
+   (`⠧ Waiting for response… <n>s` plus an `Esc:cancel` footer the idle pane does not have). Bytes pinned in
+   `test/fixtures/grok-composer/mid-turn.pane.txt`.
 3. **Rate limit: no signal, by measurement not by omission.** Grok is absent from `RateLimitRuntime` and
    nothing in 0.2.112 was observed to expose a rate-limit state. This stays an explicit limitation; inventing
    a heuristic from message text is what the parity rules forbid.
 4. **Auth-error state IS measurable and is not yet wired.** Measured on 0.2.112: a failed turn renders
    `Retry failed: API error (status …)` and `Turn failed in …s: Internal error: {…}` in-pane, and headless
    emits `{"type":"error","message":"Not signed in…"}`. Neither is consumed by the Attention overlay yet.
-5. **`permission-policy-partial` retained.** `t-26f508` shipped the projection; no live turn exercised an
-   authorization prompt end to end, so the posture stays declared rather than proven.
+5. ~~**`permission-policy-partial` — authorization unproven end to end**~~ — **MEASURED** by `t-d2a4dc`. A
+   canonical agent asked to mutate a path outside its workspace ASKED instead of acting: the projection
+   preserves the prompt rather than quietly widening it. The modal was classified `needs-input` 4s after
+   submission by the shipped `grok_tool_authorization` rule, an explicit `2` (never Enter — the highlighted
+   option is session state and a first prompt highlights always-approve) dismissed it, and the turn continued.
+   The enum value stays declared because the projection's other families are still unexercised, but the
+   authorization path itself is now proven, not assumed.
 
 *Not pursued, deliberately:* nothing cosmetic was upgraded to make the matrix look even.
 
