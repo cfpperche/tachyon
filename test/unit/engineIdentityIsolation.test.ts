@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 import {
   engineWorkspaceKey,
   engineSystemdUnitName,
@@ -19,7 +17,7 @@ import { TMUX_SOCKET_ENV, resolveSocketName, DEFAULT_SOCKET_NAME } from "../../s
  * where no isolated unit existed at any instant while the shared one kept serving.
  */
 describe("t-05097f engine identity carries tmux isolation", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "engine-identity-"));
+  const root = makeTempDir("engine-identity-");
 
   it("is byte-identical to today's key when no override is set", () => {
     const withoutEnv = engineWorkspaceKey(root, {});
