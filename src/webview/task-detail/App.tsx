@@ -6,6 +6,7 @@ import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, ty
 import type { TaskDetailVM } from "./messages";
 import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import { PrototypePreview } from "../shared/PrototypePreview";
+import { refDisplay } from "./refDisplay";
 
 // spec 335 — the Task Detail panel: the full task (title/body/status/priority/kind/author/assignee/deps/
 // artifact_refs/derived SDD/attention), read-only in v1 except the same priority/assignee quick controls the
@@ -111,14 +112,20 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
         class="td-chrome"
         title={t.title}
         actions={
+          // t-5564b4 — identity (id/status) and actions are different things; sharing one baseline row
+          // with a long wrapped title is what made the header read as rubble. Identity sits under the
+          // title, actions stay right-aligned and stop wrapping into the text.
           <div class="ds-actions td-head-actions">
-            <span class="ref">{t.id}</span>
-            <Badge>{t.status}</Badge>
             <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
             <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
           </div>
         }
       />
+
+      <div class="td-identity">
+        <span class="ref">{t.id}</span>
+        <Badge>{t.status}</Badge>
+      </div>
 
       <div class="td-fields">
         <div class="td-field">
@@ -132,11 +139,11 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
             </Select>
           )}
         </div>
-        <div class="td-field">
+        <div class="td-field readonly">
           <span class="ds-section">Kind</span>
           <span>{t.kind ?? <span class="ds-dim">—</span>}</span>
         </div>
-        <div class="td-field">
+        <div class="td-field readonly">
           <span class="ds-section">Author</span>
           <span>{t.author}</span>
         </div>
@@ -156,7 +163,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           )}
         </div>
         {vm.derived?.sdd && (
-          <div class="td-field">
+          <div class="td-field readonly">
             <span class="ds-section">SDD</span>
             <Badge tone={vm.derived.sdd.missing ? "err" : "info"}>{vm.derived.sdd.ref}{vm.derived.sdd.status ? ` · ${vm.derived.sdd.status}` : ""}{vm.derived.sdd.missing ? " · missing" : ""}</Badge>
           </div>
@@ -164,8 +171,19 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
       </div>
 
       {vm.attention && vm.attention.length > 0 && (
+        // t-5564b4 — an attention message is a sentence, not a label. It used to render in `.ds-badge`,
+        // which is `white-space: nowrap`, so the whole banner grew to the width of the text and pushed a
+        // horizontal scrollbar onto the page. A callout wraps, and reads like the next step it describes.
         <div class="td-attention">
-          {vm.attention.map((a) => <Badge key={a.code} tone="warn" title={a.ref}>{a.message}</Badge>)}
+          {vm.attention.map((a) => (
+            <div key={a.code} class={`td-callout${a.code === "awaiting_human" ? " awaiting" : ""}`} role="note">
+              <span class="codicon codicon-warning td-callout-icon" aria-hidden="true" />
+              <div class="td-callout-body">
+                <span class="td-callout-text">{a.message}</span>
+                {a.ref && <span class="ref td-callout-ref">{a.ref}</span>}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -181,11 +199,23 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
       )}
 
       {t.artifact_refs && t.artifact_refs.length > 0 && (
+        // t-5564b4 — refs are shas, absolute paths and URLs: variable-length content that a fixed-size
+        // label primitive cannot hold. Each row keeps the type as a short label and truncates the value
+        // in the MIDDLE, which is the only form that keeps both ends a reader identifies it by. The full
+        // string stays in `title`, so nothing is lost — only what is painted is bounded.
         <div class="td-refs">
           <span class="ds-section">Artifact refs</span>
-          <div class="td-deps-list">
-            {t.artifact_refs.map((r) => <Badge key={`${r.type}:${r.ref}`}>{r.type} · {r.ref}</Badge>)}
-          </div>
+          <ul class="td-ref-list">
+            {t.artifact_refs.map((r) => {
+              const shown = refDisplay(r.ref);
+              return (
+                <li key={`${r.type}:${r.ref}`} class="td-ref-row">
+                  <span class="td-ref-type">{r.type}</span>
+                  <span class="td-ref-value" title={shown.truncated ? shown.full : undefined}>{shown.text}</span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
 
