@@ -140,6 +140,20 @@ describe("Phase 4 — thousands of events stay readable AND honest", () => {
   });
 });
 
+describe("Phase 4 — the side-panel details are bounded", () => {
+  it("ships one detail per PLACED node, not one per matched execution", () => {
+    // The whole point of bounding it here: a thousand-event ledger must not push a thousand detail
+    // records into the webview on the off-chance one is clicked.
+    const vm = buildExecutionGraphVm({ projection: heavy(1000) });
+    expect(vm.matched).toBe(1000);
+    expect(Object.keys(vm.details).length).toBeLessThanOrEqual(GROUP_THRESHOLD + 1);
+    // And every placed non-group node can actually be opened — bounded must not mean missing.
+    for (const node of vm.nodes.filter((n) => n.groupSize === 1)) {
+      expect(vm.details[node.executionId], `no detail for placed node ${node.executionId}`).toBeDefined();
+    }
+  });
+});
+
 describe("Phase 4 — filters", () => {
   const projection = projectExecutions([
     ev({ correlation: { agentId: "ada", executionId: "exec-a", turnId: "turn-1" }, at: "2026-07-28T12:00:00.000Z" }),

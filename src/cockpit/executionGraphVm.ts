@@ -138,6 +138,14 @@ export interface ExecutionGraphVm {
   matched: number;
   /** True when grouping collapsed anything, so the UI can say so rather than silently under-report. */
   grouped: boolean;
+  /**
+   * Side-panel detail for the executions actually PLACED, keyed by id.
+   *
+   * Bounded by construction — one entry per visible node, never one per matched execution — so a
+   * thousand-event ledger does not ship a thousand detail records to the webview just in case. The
+   * client therefore needs no second query and cannot show a detail for something not on screen.
+   */
+  details: Record<string, ExecutionGraphDetailVm>;
 }
 
 /** Beyond this many nodes in one lane, the tail is grouped so the canvas stays navigable. */
@@ -222,7 +230,7 @@ export function buildExecutionGraphVm(input: {
     return {
       status,
       ...(errorDetail ? { errorDetail } : {}),
-      nodes: [], edges: [], rows: [], width: 0, height: 0, available, matched: 0, grouped: false,
+      nodes: [], edges: [], rows: [], width: 0, height: 0, available, matched: 0, grouped: false, details: {},
     };
   }
 
@@ -230,7 +238,7 @@ export function buildExecutionGraphVm(input: {
   if (matchedExecutions.length === 0) {
     // `empty` here means "the filters matched nothing", which is a different statement from
     // "this workspace records no telemetry" — the caller supplies that one, because only it knows.
-    return { status: "empty", nodes: [], edges: [], rows: [], width: 0, height: 0, available, matched: 0, grouped: false };
+    return { status: "empty", nodes: [], edges: [], rows: [], width: 0, height: 0, available, matched: 0, grouped: false, details: {} };
   }
 
   const byLane = new Map<ExecutionNodeKind, ProjectedExecution[]>();
@@ -295,11 +303,18 @@ export function buildExecutionGraphVm(input: {
     });
   }
 
+  const details: Record<string, ExecutionGraphDetailVm> = {};
+  for (const [id, node] of placed) {
+    const detail = buildExecutionDetailVm(projection, id, input.detailFor);
+    if (detail) details[node.executionId] = detail;
+  }
+
   return {
     status: "ready",
     nodes,
     edges,
     rows,
+    details,
     width: Math.max(1, widest) * COLUMN_WIDTH,
     height: Math.max(1, laneIndex) * LANE_HEIGHT,
     available,
