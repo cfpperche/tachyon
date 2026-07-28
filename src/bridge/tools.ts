@@ -990,6 +990,65 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   const executionCallerId = (): string =>
     deps.caller?.kind === "agent" ? (deps.caller.name ?? "unattributed-caller") : "human";
 
+  /**
+   * SDD 480 §7.3 — EVERY Bridge tool call becomes an `InternalOperation`.
+   *
+   * Done by wrapping registration once rather than by touching a hundred handlers. That is not only
+   * less code: a per-handler emit is a rule every future tool has to remember, and §7.3 is exactly
+   * the kind of "every" that decays the first time someone forgets. Wrapping here means a tool cannot
+   * be added without being recorded.
+   *
+   * What is recorded is the tool NAME, the outcome and the duration — never the arguments. A Bridge
+   * call's args routinely carry task bodies, handoff prose and tokens; the cheapest way to keep a
+   * secret out of the ledger is not to collect it. §7.3 asks for sanitized metadata, and the name of
+   * the operation is the metadata that makes the graph legible.
+   *
+   * `carrier: "absent"` throughout: a Bridge call is work done inside this process. There is no child
+   * to hand an environment to, so nothing here could later be proven to be this operation.
+   */
+  const instrument = (target: McpServer): McpServer => {
+    if (!deps.recordExecution) return target;
+    // The SDK's `registerTool` is generic over its input/output schemas, and the wrapper is
+    // deliberately indifferent to both — it only ever adds behaviour around the handler. Erasing the
+    // generics through one local alias keeps that single cast contained here instead of leaking a
+    // loosened signature to the hundred call sites below, which stay fully typed.
+    type Register = (name: string, schema: never, handler: (...args: never[]) => Promise<unknown>) => unknown;
+    const originalRegister = target.registerTool.bind(target) as unknown as Register;
+    const wrapped = Object.create(target) as McpServer;
+    (wrapped as unknown as { registerTool: Register }).registerTool = (name, schema, handler) =>
+      originalRegister(name, schema, async (...args: never[]) => {
+        const minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
+        const startedAt = Date.now();
+        emitExecution({
+          kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+          correlation: minted.correlation, at: new Date().toISOString(),
+          detail: { tool: name },
+        });
+        try {
+          const result = await handler(...args);
+          // An MCP tool reports failure by RETURNING `isError`, not by throwing, so a wrapper that
+          // only watched for exceptions would record every refusal as a success.
+          const failed = !!(result as { isError?: boolean } | undefined)?.isError;
+          emitExecution({
+            kind: failed ? "fail" : "exit", node: "InternalOperation",
+            state: failed ? "failed" : "completed",
+            provenance: minted.provenance, correlation: minted.correlation, at: new Date().toISOString(),
+            detail: { tool: name, durationMs: Date.now() - startedAt },
+          });
+          return result;
+        } catch (err) {
+          emitExecution({
+            kind: "fail", node: "InternalOperation", state: "failed", provenance: minted.provenance,
+            correlation: minted.correlation, at: new Date().toISOString(),
+            detail: { tool: name, durationMs: Date.now() - startedAt, error: String(err) },
+          });
+          throw err;
+        }
+      });
+    return wrapped;
+  };
+  mcp = instrument(mcp);
+
   // ── spec 392 — managed worktree registry ──────────────────────────────────
   mcp.registerTool(
     "create_worktree",
@@ -1487,20 +1546,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         if (!deps.runHostAction) return fail(new Error("host actions are not available on this Bridge"));
         emitExecution({
-          kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+          kind: "spawn", node: "Process", state: "running", provenance: minted.provenance,
           correlation: minted.correlation, at: new Date().toISOString(),
           detail: { tool: "run_host_action", action: name },
         });
         const result = await deps.runHostAction({ action: name, args, timeoutMs, caller: deps.caller ?? { kind: "legacy" } });
         emitExecution({
-          kind: "exit", node: "InternalOperation", state: "completed", provenance: minted.provenance,
+          kind: "exit", node: "Process", state: "completed", provenance: minted.provenance,
           correlation: minted.correlation, at: new Date().toISOString(),
           detail: { tool: "run_host_action", action: name },
         });
         return ok(JSON.stringify(result, null, 2));
       } catch (err) {
         emitExecution({
-          kind: "fail", node: "InternalOperation", state: "failed", provenance: minted.provenance,
+          kind: "fail", node: "Process", state: "failed", provenance: minted.provenance,
           correlation: minted.correlation, at: new Date().toISOString(),
           detail: { tool: "run_host_action", action: name, error: String(err) },
         });
@@ -4530,7 +4589,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           // provenance saying exactly that, instead of being dropped or guessed at.
           minted = mintExecution({ agentId: executionCallerId(), carrier: "absent" });
           emitExecution({
-            kind: "spawn", node: "InternalOperation", state: "running", provenance: minted.provenance,
+            kind: "spawn", node: "TmuxSession", state: "running", provenance: minted.provenance,
             correlation: minted.correlation, at: new Date().toISOString(),
             detail: { tool: "run_command", command: name },
           });
@@ -4548,7 +4607,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const tail = await deps.commands.tail(name);
         if (minted) {
           emitExecution({
-            kind: "exit", node: "InternalOperation",
+            kind: "exit", node: "TmuxSession",
             state: result.exitCode === 0 ? "completed" : "failed",
             provenance: minted.provenance, correlation: minted.correlation, at: new Date().toISOString(),
             detail: { tool: "run_command", command: name, exitCode: result.exitCode, durationMs: result.waitedMs },

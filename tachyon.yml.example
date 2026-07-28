@@ -17,6 +17,11 @@ settings:
       - docs/project-guidance.md
   # Orchestrated waves (impl + reviewers + declared fleet) need headroom above default 8.
   maxAgents: 12
+  # t-e4f662 — how long something may wait in Control -> Inbox before it is MARKED stale. Display
+  # only: nothing here approves, denies or closes anything. Default 24; `never` stops the marking for
+  # a fleet that parks work on purpose (a mark that is always on has stopped being a signal).
+  humanInbox:
+    staleAfterHours: 24
   # Coordinators allowed to record integration or prune linked GitDelivery projections.
   gitDelivery:
     prunePrincipals: [ hermes, grok, claude, codex ]

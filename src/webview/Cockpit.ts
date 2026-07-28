@@ -81,6 +81,7 @@ import {
   type HumanInboxAction,
 } from "./human-inbox/messages.js";
 import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
+import type { StaleAfter } from "../humanInbox/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import {
   validationsMessage,
@@ -154,6 +155,17 @@ export interface CockpitValidations {
   onValidationsChanged: () => void;
 }
 
+/**
+ * t-e4f662 — the Human Inbox's configured staleness threshold for ONE workspace, from that
+ * workspace's own `tachyon.yml`. Per wsHash rather than per window because it is project-owned
+ * config: in a multi-root window two folders can legitimately answer differently, and reading "the"
+ * threshold would silently pick whichever root came first.
+ *
+ * Unwired, or a workspace that configured nothing, answers undefined and the projection uses the
+ * product default — the same fail-quiet shape every other optional resolver here uses.
+ */
+export type CockpitInboxStaleAfter = (wsHash: string) => StaleAfter | undefined;
+
 /** t-610705 (Phase C.3) — Project Handoff folds into a section (no new route kind — the plan.md
  *  distinction from Fleet's subroutes: Handoff is workspace-scoped like Approvals/Validations, not
  *  an entity with its own immutable locator). WorkspaceHandoffTarget already carries everything the
@@ -226,6 +238,8 @@ export interface CockpitDeps {
   studios: CockpitStudios;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
+  /** t-e4f662 — see CockpitInboxStaleAfter. Optional: absent means the product default everywhere. */
+  humanInboxStaleAfter?: CockpitInboxStaleAfter;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
@@ -1186,6 +1200,11 @@ export async function openCockpit(
       validations: validationWs
         ? buildValidationsViewModel({ folder: approvalWs.folderName, wsHash: approvalWs.wsHash, validations: validationWs.listValidations() }).validations
         : [],
+      // t-e4f662 — this workspace's own threshold; absent falls through to the product default.
+      ...(() => {
+        const configured = deps.humanInboxStaleAfter?.(approvalWs.wsHash);
+        return configured === undefined ? {} : { staleAfterHours: configured };
+      })(),
     });
 
   const sendInbox = async () => {
