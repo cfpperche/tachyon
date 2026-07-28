@@ -126,6 +126,15 @@ export interface ExecutionGraphVm {
   status: ExecutionGraphStatus;
   /** Present when status is `error`; already sanitized upstream. */
   errorDetail?: string;
+  /**
+   * t-f54b62 — WHY this section is empty, when the host can actually say.
+   *
+   * `no-telemetry` is honest but ambiguous: it means both "this workspace records nothing" and "the
+   * daemon serving it is older than the build that would record". Only the host can tell those apart.
+   * Absent whenever it did not compare — an unearned explanation is worse than none, because this one
+   * sends a reader to restart production.
+   */
+  statusNote?: string;
   nodes: ExecutionGraphNodeVm[];
   edges: ExecutionGraphEdgeVm[];
   rows: ExecutionGraphRowVm[];
@@ -212,11 +221,13 @@ export function buildExecutionGraphVm(input: {
   filters?: ExecutionGraphFilters;
   status?: ExecutionGraphStatus;
   errorDetail?: string;
+  /** t-f54b62 — see `ExecutionGraphVm.statusNote`. Only meaningful for a non-ready status. */
+  statusNote?: string;
   /** Details the ledger recorded per execution, keyed by id. Absent stays absent. */
   detailFor?: (executionId: string) => { cwd?: string; worktree?: string; tool?: string } | undefined;
   groupThreshold?: number;
 }): ExecutionGraphVm {
-  const { projection, filters = {}, status, errorDetail } = input;
+  const { projection, filters = {}, status, errorDetail, statusNote } = input;
   const threshold = input.groupThreshold ?? GROUP_THRESHOLD;
 
   const available = {
@@ -230,6 +241,7 @@ export function buildExecutionGraphVm(input: {
     return {
       status,
       ...(errorDetail ? { errorDetail } : {}),
+      ...(statusNote ? { statusNote } : {}),
       nodes: [], edges: [], rows: [], width: 0, height: 0, available, matched: 0, grouped: false, details: {},
     };
   }

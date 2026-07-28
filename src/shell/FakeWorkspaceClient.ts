@@ -16,6 +16,7 @@ import {
   type WorkspaceSnapshotEnvelopeV1,
 } from "../engine-service/protocol.js";
 import { workspaceCommandFingerprint } from "../engine-service/commandIdentity.js";
+import type { EngineCurrency } from "../engine-service/engineCurrency.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
@@ -87,6 +88,16 @@ export class FakeWorkspaceClient implements WorkspaceClient {
 
   get identity(): EngineServiceIdentityV1 {
     return cloneJson(this.currentIdentity);
+  }
+
+  /**
+   * t-f54b62 — the fake stages no bundle, so it has nothing to compare against.
+   *
+   * `unknown` rather than `current`: this client genuinely did not compare, and a fake that claimed
+   * "up to date" would let a surface render a reassurance no real comparison ever produced.
+   */
+  get engineCurrency(): EngineCurrency {
+    return { kind: "unknown" };
   }
 
   get snapshot(): WorkspaceSnapshotEnvelopeV1 {

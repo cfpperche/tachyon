@@ -11,6 +11,7 @@ import {
   DeliveryStoreBusyError,
   DeliveryVersionConflictError,
 } from "./store.js";
+import { LEASE_DISPOSITION } from "./types.js";
 import type {
   DelegationSegmentRole,
   Delivery,
@@ -1683,13 +1684,27 @@ export class DeliveryLeaseService {
     return new DeliveryLeaseError("DELIVERY_ABANDONED", false, "Delivery is permanently abandoned", { deliveryId: delivery.id, version: delivery.version });
   }
 
+  /**
+   * t-2600f8 — the exit comes from the declared per-state disposition, not a list inlined here.
+   * The inlined `["held", "quarantined"]` covered two states while the guards feeding this refusal
+   * (`assertAcquirable` and the contention checks) refuse EVERY state that is not `free`: a caller
+   * blocked by `pending`, `draining` or `verifying` got a refusal with no way forward, and the next
+   * move out of a dead end is raw git (t-0cbcbd). Same correction t-cc6495 made in
+   * `verificationLease.occupied()`; this is the sibling service, where it reaches ~35 call sites.
+   */
   private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
+    const disposition = LEASE_DISPOSITION[delivery.lease.state];
+    const next = disposition.kind === "action"
+      ? { next: { action: disposition.action, deliveryId: delivery.id } }
+      : disposition.kind === "transitional"
+        ? { next: { retry: true, why: disposition.why } }
+        : {};
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
       deliveryId: delivery.id,
       version: delivery.version,
       state: delivery.lease.state,
       occupant: delivery.lease.holder?.executionAgent,
-      ...(["held", "quarantined"].includes(delivery.lease.state) ? { next: { action: "delivery_salvage", deliveryId: delivery.id } } : {}),
+      ...next,
     });
   }
 

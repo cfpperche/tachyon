@@ -1082,15 +1082,43 @@ describe("HarnessManager materialize (fs)", () => {
     expect(warnings).toHaveLength(0);
   });
 
-  it("t-c46c35: a grok isolate:transcript home pins --no-memory", () => {
-    // The disabled canonical policy expressed as argv. `--no-memory` outranks GROK_MEMORY and
-    // config.toml, so this is what stops an ambient env var re-enabling memory on a private home.
+  it("t-0e88f3: a grok isolate:transcript home pins GROK_MEMORY=0, not just --no-memory", () => {
+    // The flag alone was measured NOT to outrank an ambient GROK_MEMORY=1 (t-0e88f3), so the env pin
+    // is what actually stops a hostile environment re-enabling memory on a private home. The flag is
+    // still emitted — free and documented — but it is no longer the thing being relied on.
     const realGrokHome = path.join(path.dirname(ws), "real-grok-pin");
     fs.mkdirSync(realGrokHome, { recursive: true });
     fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
     const res = mgr.materializeHomeOnly("solo", adapterForRuntime("grok")!);
     expect(res.args).toEqual(["--no-memory"]);
+    expect(res.env.GROK_MEMORY).toBe("0");
+  });
+
+  it("t-0e88f3: a grok HARNESS home pins the memory env too, and a secret cannot overwrite it", () => {
+    // The ordering matters and is easy to get wrong: secretEnv is spread from user-controlled config,
+    // so a `GROK_MEMORY` secret spread AFTER the pin would silently re-enable memory on the canonical
+    // path — the exact hostile-environment case the pin exists for, arriving through Tachyon's own map.
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-harness-pin");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(
+      ws,
+      realHome,
+      { ...PROC, HOSTILE: "1" },
+      path.join(realHome, ".claude.json"),
+      undefined,
+      undefined,
+      undefined,
+      realGrokHome,
+    );
+    const res = mgr.materialize(
+      "harnessed",
+      { mcp: { servers: { s: { command: "x", env: { GROK_MEMORY: "${HOSTILE}" } } } } } as never,
+      adapterForRuntime("grok")!,
+    );
+    expect(res.args).toContain("--no-memory");
+    expect(res.env.GROK_MEMORY, "the memory pin outranks anything in the secret map").toBe("0");
   });
 
   it("t-843576: materializeBridgeMcpGrok writes private GROK_HOME with tachyon_bridge + auth symlink", () => {

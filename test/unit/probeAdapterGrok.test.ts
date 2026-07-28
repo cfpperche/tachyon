@@ -111,6 +111,10 @@ describe("grok adapter — invocation + capability (D5)", () => {
       ]),
     );
     expect(inv.cwd).toBe("/repo");
+    // t-0e88f3 — the flag above is no longer sufficient on its own. `--no-memory` was MEASURED to
+    // lose to an ambient GROK_MEMORY=1 in exactly this headless mode, so the probe pins the env var
+    // too; ProbeRunner spreads it over process.env, which is where a hostile value would arrive.
+    expect(inv.env).toEqual({ GROK_MEMORY: "0" });
   });
 
   it("workspace-write maps to acceptEdits permission-mode", () => {

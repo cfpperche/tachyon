@@ -1823,4 +1823,6 @@ main.ck-main.ck-main--mission,
 .ck-eg-detail-empty { font-size: 12px; opacity: 0.8; }
 .ck-eg-identity { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ck-eg-mono { font-family: var(--vscode-editor-font-family, monospace); font-size: 11px; }
+/* t-f54b62 — why the section is empty. Prose, not a diagnostic dump, so it reads as an explanation. */
+.ck-eg-note { margin-top: 6px; max-width: 60ch; font-size: 11px; opacity: 0.85; }
 .ck-eg-state { padding: 16px; }

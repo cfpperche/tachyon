@@ -473,7 +473,7 @@ describe("spec 444 ManagedWorktreeService.listClassified (real git)", () => {
     expect(row?.classification.pathExists).toBe(false);
   });
 
-  it("t-9f8dfc blocker fix: an unresolvable baseRef classifies needs-review, never ready-to-remove (real git, non-throwing probe)", async () => {
+  it("t-6ae9a8 supersedes t-9f8dfc for a PROVABLE case: an unresolvable baseRef is reclaimable when HEAD is in the trunk", async () => {
     const svc = service();
     const entry = await svc.createChange({ slug: "classify-bad-base", createdBy: "alice" });
     // Simulate the real-world shape: a registered baseRef that no longer resolves (deleted branch,
@@ -487,11 +487,39 @@ describe("spec 444 ManagedWorktreeService.listClassified (real git)", () => {
 
     const rows = await svc.listClassified({ kind: "change" });
     const row = rows.find((r) => r.id === entry.id);
+    // t-9f8dfc established "unresolvable baseRef ⇒ never ready-to-remove". That rule was a PROXY for
+    // "cannot prove safety", and the proxy is what t-6ae9a8 replaces: this worktree has no commits of
+    // its own at all, so its HEAD is the trunk's, and removing it cannot lose anything regardless of
+    // what its recorded base says. Refusing here would be refusing in the face of proof — and it is
+    // precisely why eight landed worktrees piled up on this host.
+    expect(row?.classification.state).toBe("ready-to-remove");
+    expect(row?.classification.containedInBase).toBe(false); // the stale base still cannot be resolved
+    expect(row?.classification.containedInTrunk).toBe(true); // but the trunk proves containment
+  });
+
+  it("t-9f8dfc's protection SURVIVES where it matters: unresolvable baseRef AND work not in the trunk", async () => {
+    // The half of t-9f8dfc that is not superseded, kept as its own case so the blocker it fixed cannot
+    // regress: with neither proof available, the classifier refuses and the gated removal refuses too.
+    const svc = service();
+    const entry = await svc.createChange({ slug: "classify-bad-base-unproven", createdBy: "alice" });
+    execFileSync("git", ["checkout", "-q", "-b", "unproven-work"], { cwd: entry.path });
+    fs.writeFileSync(path.join(entry.path, "never-landed.txt"), "not in base, not in trunk\n");
+    execFileSync("git", ["add", "-A"], { cwd: entry.path });
+    execFileSync("git", ["commit", "-q", "-m", "work in neither"], { cwd: entry.path });
+
+    const store = JSON.parse(fs.readFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), "utf8")) as {
+      entries: Array<{ id: string; baseRef: string }>;
+    };
+    for (const e of store.entries) if (e.id === entry.id) e.baseRef = "refs/heads/never-existed";
+    fs.writeFileSync(path.join(repo, ".tachyon", "managed-worktrees.json"), JSON.stringify({ schemaVersion: 1, entries: store.entries }, null, 2));
+
+    const rows = await svc.listClassified({ kind: "change" });
+    const row = rows.find((r) => r.id === entry.id);
     expect(row?.classification.state).toBe("needs-review");
     expect(row?.classification.containedInBase).toBe(false);
-    expect(row?.classification.reasons.join(" ")).toMatch(/could not be resolved/);
+    expect(row?.classification.containedInTrunk).toBe(false);
 
-    // Defense-in-depth: the classification-gated removal refuses too — and the checkout survives.
+    // Defense-in-depth, unchanged: the classification-gated removal refuses and the checkout survives.
     const refused = await svc.removeClassified(entry.id, { actor: { kind: "human" } });
     expect(refused.removed).toBe(false);
     expect(refused.error).toMatch(/not ready-to-remove/);

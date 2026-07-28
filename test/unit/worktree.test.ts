@@ -127,7 +127,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
           },
         } as unknown as WorktreeResolveDeps["manager"],
         settings: {},
-        parentCwd: () => undefined,
+        resolveParent: async () => ({ known: false }),
         runSetup: async (rec) => {
           setupRuns.push(rec);
         },
@@ -159,14 +159,54 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
     });
 
     it("sub-agent without worktree opt-in inherits the parent's cwd", async () => {
-      const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
+      const h = deps({ resolveParent: async (p: string) => (p === "boss" ? { cwd: "/wt/h/boss", known: true } : { known: false }) });
       const r = await resolveWorktreeCwd({ name: "helper", parent: "boss", isRestart: false }, h.d);
       expect(r).toEqual({ cwd: "/wt/h/boss" });
       expect(h.notices).toEqual([]);
     });
 
+    /**
+     * t-c9da28 — the two ways a parent can have no cwd are not the same failure, and both used to
+     * end at the workspace root in silence.
+     *
+     * `spawn_agent` refuses an explicit `cwd` for a parented child precisely so the caller is never
+     * misled about where it runs. One step earlier this substituted a directory nobody asked for —
+     * the root, which is where an isolated child least belongs — and said nothing at all.
+     */
+    describe("a parent with no recorded cwd", () => {
+      it("refuses when no such agent is known, instead of picking someone else's checkout", async () => {
+        const h = deps({ resolveParent: async () => ({ known: false }) });
+
+        await expect(resolveWorktreeCwd({ name: "helper", parent: "ghost", isRestart: false }, h.d))
+          .rejects.toThrow(/parent 'ghost'/);
+        // Refusal is the whole answer here: no notice, because nothing fell back.
+        expect(h.notices).toEqual([]);
+      });
+
+      it("still spawns a child of a KNOWN parent, but says where it landed and why", async () => {
+        // The case that must keep working: a coordinator whose ledger row was retired while it lives.
+        const h = deps({ resolveParent: async () => ({ known: true }) });
+
+        const r = await resolveWorktreeCwd({ name: "helper", parent: "boss", isRestart: false }, h.d);
+
+        expect(r).toBeNull(); // null → the AgentManager uses the root
+        expect(h.notices).toEqual([
+          "'helper' falling back to the workspace root — parent 'boss' has no recorded working directory",
+        ]);
+      });
+
+      it("prefers a recovered directory over falling back, when one can still be found", async () => {
+        // "Known" is not the answer when an authoritative record survives — inherit, do not fall back.
+        const h = deps({ resolveParent: async () => ({ cwd: "/wt/h/recovered", known: true }) });
+
+        expect(await resolveWorktreeCwd({ name: "helper", parent: "boss", isRestart: false }, h.d))
+          .toEqual({ cwd: "/wt/h/recovered" });
+        expect(h.notices).toEqual([]);
+      });
+    });
+
     it("parented worktree:true opts into its own isolated worktree", async () => {
-      const h = deps({ parentCwd: (p) => (p === "boss" ? "/wt/h/boss" : undefined) });
+      const h = deps({ resolveParent: async (p: string) => (p === "boss" ? { cwd: "/wt/h/boss", known: true } : { known: false }) });
       const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
       expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC, created: true });
       expect(h.notices).toEqual([]);
@@ -216,7 +256,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
         {
           manager,
           settings: settings({ worktree: { base: "/wt" } }),
-          parentCwd: () => undefined,
+          resolveParent: async () => ({ known: false }),
           priorRecord: REC,
           runSetup: async () => {},
           notify: (message) => notices.push(message),

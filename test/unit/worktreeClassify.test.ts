@@ -48,7 +48,12 @@ describe("classifyManagedWorktree", () => {
       entry(),
       deps({ pathExists: () => false, status: async () => { throw new Error("must not be called"); } }),
     );
-    expect(result).toEqual({ state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false, aheadOfBase: 0, containedInBase: false });
+    // t-6ae9a8 added the trunk signals; the point of this case is unchanged — a missing path short-
+    // circuits before any git probe, so neither containment signal can be anything but false.
+    expect(result).toEqual({
+      state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false,
+      aheadOfBase: 0, containedInBase: false, containedInTrunk: false, trunkRef: "main",
+    });
   });
 
   it("t-9f8dfc: clean, unoccupied, zero-commits-ahead classifies ready-to-remove", async () => {
@@ -83,7 +88,8 @@ describe("classifyManagedWorktree", () => {
     );
     expect(result.state).toBe("needs-review");
     expect(result.containedInBase).toBe(false);
-    expect(result.reasons).toEqual(["1 commit(s) not contained in base"]);
+    // t-6ae9a8 — the reason now names BOTH proofs, because either would have sufficed and neither held.
+    expect(result.reasons).toEqual(["1 commit(s) not contained in base or in 'main'"]);
   });
 
   it("t-9f8dfc: commits ahead that ARE fully patch-equivalent in base (cherry-picked/squashed) still classify ready-to-remove", async () => {
@@ -132,7 +138,7 @@ describe("classifyManagedWorktree", () => {
     );
     expect(result.state).toBe("needs-review");
     expect(result.containedInBase).toBe(false);
-    expect(result.reasons).toEqual(["base ref 'main' could not be resolved — ancestry unknown, treated as unsafe"]);
+    expect(result.reasons).toEqual(["base ref 'main' could not be resolved and HEAD is not in 'main' — ancestry unknown, treated as unsafe"]);
   });
 
   it("t-9f8dfc blocker fix: aheadProbeFailed plus real uncommitted changes reports both reasons", async () => {
@@ -141,9 +147,11 @@ describe("classifyManagedWorktree", () => {
       deps({ status: async () => ({ ...cleanStatus(0), aheadProbeFailed: true, unstaged: 3 }) }),
     );
     expect(result.state).toBe("needs-review");
+    // t-6ae9a8 reordered these: uncommitted work now leads, because it is the more urgent and more
+    // actionable of the two. Both are still reported, which is what this case is named for.
     expect(result.reasons).toEqual([
-      "base ref 'main' could not be resolved — ancestry unknown, treated as unsafe",
       "worktree has uncommitted changes",
+      "base ref 'main' could not be resolved and HEAD is not in 'main' — ancestry unknown, treated as unsafe",
     ]);
   });
 

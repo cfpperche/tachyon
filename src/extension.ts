@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { engineSystemdUnitName } from "./engine-service/engineSupervisor.js";
+import { makeExecutionGraphDep } from "./cockpit/executionGraphDep.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -1424,6 +1425,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-e4f662 — the Human Inbox's staleness threshold, from the SAME loaded config the rest of the
     // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
     humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
+    /**
+     * t-c6a89e — the ledger Control's Execution section reads.
+     *
+     * This dependency was declared and never supplied, so the section returned `undefined` before it
+     * could touch a ledger and rendered `no-telemetry` for every workspace, forever. The wiring lives
+     * in `makeExecutionGraphDep` so a test can drive it; an inline closure is exactly what let this
+     * go unnoticed while every test around it passed.
+     */
+    executionGraph: makeExecutionGraphDep(byHash),
     validations: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
       onValidationsChanged: () => {

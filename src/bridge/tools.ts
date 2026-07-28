@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
+import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
@@ -595,6 +596,8 @@ export async function executeWait(
 const AGENT_NAME = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "agent name must start with a letter and use [a-zA-Z0-9_-]");
+
+
 const TASK_ID = z.string().regex(/^t-[0-9a-f]{6}$/, "task id must be t-<6hex>");
 const TASK_STATUS = z.enum(["inbox", "triaged", "active", "landed", "done", "dropped"]);
 const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
@@ -1254,13 +1257,59 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const actor = resolveDeclaredActor(deps, undefined);
         if (!actor.ok) return fail(new Error(actor.message));
         const principal = deps.caller ?? { kind: "legacy" as const };
+        const callerActor = { kind: principal.kind, name: actor.name };
         const result = await deps.managedWorktrees.remove(idOrPath, {
           deleteBranch,
           confirmDirty,
-          actor: { kind: principal.kind, name: actor.name },
+          actor: callerActor,
         });
-        if (!result.removed) return fail(new Error(result.error ?? "remove refused"));
-        return ok(JSON.stringify(result, null, 2));
+        if (result.removed) return ok(JSON.stringify(result, null, 2));
+        // t-e74631 — the owner-only rule above can force past dirtiness, which is why it stays
+        // owner-only. A delegating parent refused there is not out of options: retry through the
+        // classification-gated path, which grants lineage authority precisely BECAUSE it proves
+        // clean/unoccupied/contained at execution time and cannot force anything. Only the
+        // authority verdict is retried — a worktree refused for dirtiness is refused again, by the
+        // same classifier, with the same reason.
+        if (!confirmDirty) {
+          const viaHygiene = await deps.managedWorktrees.removeClassified(idOrPath, { deleteBranch, actor: callerActor });
+          if (viaHygiene.removed) return ok(JSON.stringify(viaHygiene, null, 2));
+          return fail(new Error(viaHygiene.error ?? result.error ?? "remove refused"));
+        }
+        return fail(new Error(result.error ?? "remove refused"));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "reconcile_worktree_hygiene",
+    {
+      description:
+        "t-e74631 — sweep CHANGE worktrees and remove the ones that are provably safe, without " +
+        "waiting for the agent that created each to wake up. Authority is hierarchical: the owner, " +
+        "its registered lineage ancestors, and the host human may all ask. Authority never bypasses " +
+        "the material locks — every removal still re-proves clean, unoccupied, and contained in base " +
+        "or trunk at execution time, and only a Tachyon-created branch is deleted. Agent worktrees " +
+        "are never swept: an agent's working home is not residue. Refusals are always reported with " +
+        "a reason rather than skipped silently. Use dry_run first to see what would go.",
+      inputSchema: {
+        dry_run: z.boolean().optional().default(false).describe("report what would be removed, touching nothing"),
+        delete_branch: z.boolean().optional().default(true).describe("also delete the branch when Tachyon created it"),
+      },
+    },
+    async ({ dry_run, delete_branch }) => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        const actor = resolveDeclaredActor(deps, undefined);
+        if (!actor.ok) return fail(new Error(actor.message));
+        const principal = deps.caller ?? { kind: "legacy" as const };
+        const report = await deps.managedWorktrees.reconcileHygiene({
+          actor: { kind: principal.kind, name: actor.name },
+          deleteBranch: delete_branch,
+          dryRun: dry_run,
+        });
+        return ok(JSON.stringify(report, null, 2));
       } catch (err) {
         return fail(err);
       }
@@ -1622,7 +1671,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .boolean()
           .optional()
           .describe(
-            "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
+            // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
+            // ad-hoc AI agent. "Ignored" and "refused" are different promises to a caller, and only
+            // one of them was true.
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for an ad-hoc AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
           ),
         gate: z
           .object({
@@ -1663,6 +1715,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent, worktree, gate, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        // t-6fe04b — refuse the incompatible pair at the ENTRY, before a delegation contract is
+        // composed and before lineage is resolved.
+        //
+        // It has to read the caller's LITERAL `parent`, which is why it sits above the resolution
+        // below: an omitted parent becomes the caller itself a few lines down, and after that every
+        // spawn looks parented. So this catches only the explicit pair — the manager-level guard
+        // stays as the complete one, and this is the earlier, friendlier half of the same refusal.
+        //
+        // The message names `delivery_join` deliberately. The old one said only what NOT to do, and
+        // in the incident behind t-e787dc the caller answered a refusal that pointed nowhere by
+        // putting an absolute path in the child's BRIEFING — the least governed outcome available.
+        if (parent && cwd) {
+          return fail(new Error(PARENT_CWD_REFUSAL));
+        }
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
         const parentActor = resolveDeclaredActor(deps, parent);

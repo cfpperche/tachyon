@@ -96,6 +96,8 @@ import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { resolveParentLocation } from "../worktree/parentLocation.js";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
@@ -831,6 +833,11 @@ export class Workspace {
         // Best-effort refresh signal (agents view re-syncs worktree reveal on host).
         try { this.host.onViewsChanged("agents"); } catch { /* host optional during early boot */ }
       },
+      // t-e74631 — read through a thunk for the same reason `occupancy` above does: AgentManager is
+      // constructed AFTER this service, and lineage is session-local memory that keeps growing as
+      // agents spawn. A snapshot taken here would be empty forever, and "empty" reads as "no
+      // ancestors" — the one answer that must never be guessed in an authorization decision.
+      lineage: { parentOf: (name: string) => this.manager.parentOf(name) },
     });
     // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
     this.deliveryProjection = new DeliveryProjectionService({
@@ -1286,10 +1293,18 @@ export class Workspace {
           {
             manager: this.worktrees,
             settings: this.config?.settings ?? {},
-            parentCwd: (p) => {
-              const r = this.ledger.get(p);
-              return r?.worktree?.path ?? r?.cwd;
-            },
+            // t-c9da28 — every authority that might still know where the parent runs, in descending
+            // order. The ladder itself lives in `resolveParentLocation` so it is testable; this only
+            // says which objects answer each rung.
+            resolveParent: (p) => resolveParentLocation({
+              ledgerRow: () => {
+                const r = this.ledger.get(p);
+                return r ? { ...(r.cwd ? { cwd: r.cwd } : {}), ...(r.worktree?.path ? { worktreePath: r.worktree.path } : {}) } : undefined;
+              },
+              managedWorktreePath: () => this.managedWorktrees.list({ kind: "agent" }).find((e) => e.agent === p)?.path,
+              isDeclaredAgent: () => !!this.config?.agents?.[p],
+              isLiveAgent: async () => (await this.manager.agentStates()).has(p),
+            }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
@@ -3433,19 +3448,14 @@ export class Workspace {
         id,
         decision,
         resolvedBy: "companion",
-        currentSessionOwner: async (session) =>
-          (await this.manager.list()).find((entry) => entry.session === session && entry.running)?.name,
-        inject: async (session, text) => {
-          await this.tmux.sendSubmittedLine(session, text);
-          return { receipt: `tmux:${session}` };
-        },
-        completePin: (pinId) => {
-          try {
-            this.pinStore.setDone(pinId, true);
-          } catch {
-            /* best-effort */
-          }
-        },
+        ...approvalResolutionPorts({
+          listEntries: () => this.manager.list(),
+          sendSubmittedLine: (session, text) => this.tmux.sendSubmittedLine(session, text),
+        }),
+        // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
+        // and now reports the failure instead of discarding it; catching here first would put this
+        // channel back to silence while the other one speaks.
+        completePin: (pinId) => this.pinStore.setDone(pinId, true),
       });
       this.afterApprovalResolved(result.request.id);
       return {
@@ -3453,6 +3463,7 @@ export class Workspace {
         id: result.request.id,
         status: decision,
         ...(result.injectError ? { injectError: result.injectError } : {}),
+        ...(result.pinError ? { pinError: result.pinError } : {}),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -3912,6 +3923,38 @@ export class Workspace {
   removeContinuity(agent: string): void {
     this.continuityStore.remove(agent);
     this.continuityState.remove(agent);
+  }
+
+  /**
+   * t-e74631 — remove change worktrees whose work has already landed, at startup.
+   *
+   * The residue this clears is structural, not accidental: hygiene used to depend on the creating
+   * agent waking up and remembering, and an agent that finished its task never wakes again. So 19
+   * accumulated, 14 of them clean and already contained in the trunk. The workspace is nobody's
+   * descendant, so it can do this for every entry regardless of who created it.
+   *
+   * Runs detached and after `rehydrateFromLedger`, for two different reasons: it probes git per
+   * entry, which must never sit in front of activation; and lineage has to be rebuilt before any
+   * authority question is asked of it. Nothing here can delete work — `reconcileHygiene` re-proves
+   * clean, unoccupied and contained per entry, so the worst case is that it removes nothing.
+   */
+  private sweepWorktreeHygiene(): void {
+    void this.managedWorktrees
+      // The host acting on its own registry is the workspace authority — the same principal the
+      // Worktrees tab already uses for `worktree.remove-managed`.
+      .reconcileHygiene({ actor: { kind: "human" }, deleteBranch: true })
+      .then((report) => {
+        if (report.removed.length === 0) return;
+        // Only the removals are announced. Refusals at startup are the NORMAL state — every worktree
+        // with work still in it is a refusal — so surfacing them here would train people to ignore
+        // the notification. `reconcile_worktree_hygiene` reports them in full when someone asks.
+        this.host.notify(
+          this.t("worktree hygiene: removed {0} landed change worktree(s)", report.removed.length),
+          "info",
+        );
+        this.refreshAgentsViews();
+      })
+      .catch(() => { /* best-effort: never let cleanup cost an activation */ });
   }
 
   /**
@@ -5739,6 +5782,7 @@ export class Workspace {
     await this.gcLedger(declaredInConfig, liveSessions); // spec 239: prune stale declared rows
     this.compactSessionOwners(declaredInConfig, liveSessions); // t-123143: prune stale session-owner rows
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
+    this.sweepWorktreeHygiene(); // t-e74631: change worktrees already landed, left behind by finished agents
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
     // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
     // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.

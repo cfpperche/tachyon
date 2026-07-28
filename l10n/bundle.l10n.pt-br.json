@@ -569,6 +569,7 @@
   "verify failed: '{0}'{1}": "verify falhou: '{0}'{1}",
   "watch-restart of '{0}' failed: {1}": "watch-restart do '{0}' falhou: {1}",
   "worktree branch: {0}": "branch do worktree: {0}",
+  "worktree hygiene: removed {0} landed change worktree(s)": "higiene de worktrees: {0} worktree(s) de change já landada(s) removida(s)",
   "worktree setup complete for '{0}'": "setup do worktree concluído para '{0}'",
   "worktree setup for '{0}' failed at: {1} — {2} (agent started anyway)": "setup do worktree de '{0}' falhou em: {1} — {2} (o agente iniciou mesmo assim)",
   "you are a code reviewer; read the diff and flag correctness issues…": "você é um code reviewer; leia o diff e aponte problemas de corretude…",

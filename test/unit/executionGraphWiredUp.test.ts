@@ -110,7 +110,9 @@ describe("SDD 480 §2.3 — the production ledger survives a restart", () => {
       first.record({
         kind: "spawn", node: "Process", state: "running", provenance: "measured",
         correlation: { agentId: "ada", executionId: "exec-restart-1" },
-        at: "2026-07-27T12:00:00.000Z", detail: {},
+        // t-2622eb — NOT an absolute date: this ledger uses the real clock and the default 24h
+        // retention, so a fixed timestamp turns this test into a bomb with a 24h fuse.
+        at: new Date().toISOString(), detail: {},
       });
 
       const second = openExecutionLedger({ storageRoot, workspaceHash: "abc12345" });

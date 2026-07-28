@@ -158,7 +158,7 @@ export type CompanionListApprovalsResponse =
   | { ok: false; code: "unpaired" | "expired" | "unknown"; message: string };
 
 export type CompanionResolveApprovalResponse =
-  | { ok: true; id: string; status: "approved" | "denied"; injectError?: string }
+  | { ok: true; id: string; status: "approved" | "denied"; injectError?: string; pinError?: string }
   | {
       ok: false;
       code: "unpaired" | "expired" | "not_found" | "not_pending" | "unknown";
