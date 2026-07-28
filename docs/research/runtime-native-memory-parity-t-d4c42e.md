@@ -110,6 +110,48 @@ memory.
   and copies only the selected projection/transcript, not runtime memory.
 - **Classification:** native; disable `declared`; enable/injection behavior not
   verified by Tachyon.
+
+#### Behavioral measurement, 2026-07-28 (`t-f22211`) {#claude-2026-07-28}
+
+Run against Claude Code 2.1.220 with `CLAUDE_CONFIG_DIR` pointed at a temporary directory. No model
+call was made and no real `~/.claude` was read.
+
+**A non-billable inspection path exists, and it answers more than its name suggests.**
+`claude project purge <repo> --dry-run -y` prints:
+
+```
+Purge plan for /tmp/…/repo:
+  dir:    /tmp/…/cfg/projects/-tmp-…-repo
+           project transcripts (.jsonl) and memory/
+backups/ may still contain this project entry in old .claude.json snapshots (…); at most 5 are kept
+and they rotate out automatically
+Dry run: 1 item(s) would be deleted.
+```
+
+From it, three things are observable with no spend:
+
+1. **The store's path is bound to the private home.** With a sandbox `CLAUDE_CONFIG_DIR`, Claude
+   resolved project state under it, named the path, and created `projects/` and `backups/` there —
+   not in the real home. The project key is the absolute repo path with separators replaced
+   (`/tmp/x/repo` → `-tmp-x-repo`), measured rather than documented.
+2. **The store is enumerable without being read.** The plan names `memory/` without opening it, which
+   is the only way the inventory axis may be answered under this document's own rule.
+3. **Purge works, and discloses its own residue.** A planted synthetic marker was gone from the entire
+   sandbox after a real purge. Unprompted, the plan warns that `backups/` may still hold the project
+   entry in rotated `.claude.json` snapshots — so "purged" is not "every byte is gone", and any
+   product promise of deletion has to carry that caveat.
+
+**What could not be measured, and why it is the finding.** Disable, enable, injection and mutation all
+require observing what reaches the model, and 2.1.220 exposes no non-billable path that shows it:
+`--print` runs a real turn, `doctor` is free but silent about memory, and no dry-run/dump/simulate
+flag exists (`claude --help`, checked). Those four axes therefore stay `declared`, canonical policy
+stays `disabled`, and `runtime-managed` stays BLOCKED — the correct outcome, reached by measurement
+rather than by caution. Promoting them needs one explicitly authorized minimal turn;
+`claudeMemoryVerificationPlan()` states what such a run would cost and prove.
+
+`isolation` was deliberately NOT promoted. The store's PATH is provably bound to the private home,
+but whether a LIVE session writes only there is a different claim needing a session. `verified` has to
+mean observed, including when the observation is nearly enough.
 - **Primary evidence:** [Claude memory documentation](https://code.claude.com/docs/en/memory),
   [Claude environment variables](https://code.claude.com/docs/en/env-vars),
   `src/harness/HarnessManager.ts`,
