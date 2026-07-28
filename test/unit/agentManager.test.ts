@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
+import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -6294,7 +6295,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     fs.mkdirSync(other, { recursive: true });
     await expect(
       manager.spawn("kid", { cmd: "opencode", parent: "boss", cwd: other }),
-    ).rejects.toThrow(/cwd is not used for parented ad-hoc|inherit the parent's cwd/i);
+    ).rejects.toThrow(PARENT_CWD_REFUSAL);
   });
 
   it("t-f660d8: missing spawn cwd fails closed", async () => {
@@ -6539,7 +6540,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const REC = { path: worktreePath, branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
     await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path }))
-      .rejects.toThrow(/cwd is not used for parented ad-hoc children/);
+      .rejects.toThrow(PARENT_CWD_REFUSAL);
     expect(newSessionArgs).toHaveLength(0);
   });
 

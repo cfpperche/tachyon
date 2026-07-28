@@ -73,6 +73,7 @@ import { sweepSessions } from "../tmux/sessionSweep.js";
 import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOutcome } from "./formation/lifecycleConsumer.js";
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
+import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
  *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
@@ -2215,9 +2216,11 @@ export class AgentManager {
         throw new Error(`spawn_agent cwd is not an existing directory: ${requested}`);
       }
       if (parent) {
-        throw new Error(
-          `spawn_agent cwd is not used for parented ad-hoc children (they inherit the parent's cwd); omit cwd or spawn without parent`,
-        );
+        // t-6fe04b — the Bridge refuses this pair earlier, but only when the caller states `parent`
+        // explicitly: an omitted parent resolves to the caller itself further down that path, so this
+        // is the guard that catches every case. Defence in depth, same sentence, so a caller who
+        // reaches either one is pointed at the same way out.
+        throw new Error(PARENT_CWD_REFUSAL);
       }
       if (worktree) {
         if (path.resolve(worktree.path) !== path.resolve(requested)) {

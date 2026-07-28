@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
+import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
@@ -595,6 +596,8 @@ export async function executeWait(
 const AGENT_NAME = z
   .string()
   .regex(/^[a-zA-Z][a-zA-Z0-9_-]*$/, "agent name must start with a letter and use [a-zA-Z0-9_-]");
+
+
 const TASK_ID = z.string().regex(/^t-[0-9a-f]{6}$/, "task id must be t-<6hex>");
 const TASK_STATUS = z.enum(["inbox", "triaged", "active", "landed", "done", "dropped"]);
 const TASK_PRIORITY = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
@@ -1622,7 +1625,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .boolean()
           .optional()
           .describe(
-            "isolate this agent in its own git worktree + branch (top-level only; ignored for a sub-agent, which shares the parent's worktree). Spawn top-level to isolate.",
+            // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
+            // ad-hoc AI agent. "Ignored" and "refused" are different promises to a caller, and only
+            // one of them was true.
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for an ad-hoc AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
           ),
         gate: z
           .object({
@@ -1663,6 +1669,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent, worktree, gate, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        // t-6fe04b — refuse the incompatible pair at the ENTRY, before a delegation contract is
+        // composed and before lineage is resolved.
+        //
+        // It has to read the caller's LITERAL `parent`, which is why it sits above the resolution
+        // below: an omitted parent becomes the caller itself a few lines down, and after that every
+        // spawn looks parented. So this catches only the explicit pair — the manager-level guard
+        // stays as the complete one, and this is the earlier, friendlier half of the same refusal.
+        //
+        // The message names `delivery_join` deliberately. The old one said only what NOT to do, and
+        // in the incident behind t-e787dc the caller answered a refusal that pointed nowhere by
+        // putting an absolute path in the child's BRIEFING — the least governed outcome available.
+        if (parent && cwd) {
+          return fail(new Error(PARENT_CWD_REFUSAL));
+        }
         // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
         // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
         const parentActor = resolveDeclaredActor(deps, parent);
