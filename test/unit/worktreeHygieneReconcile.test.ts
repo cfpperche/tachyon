@@ -9,9 +9,9 @@
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../helpers/tempDir.js";
 import { HYGIENE_AUDIT_REL, ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
 import { WorktreeManager, type WorktreeOccupancy } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
@@ -22,7 +22,7 @@ function git(args: string[], cwd: string): string {
 
 /** A repo plus a service whose lineage says `worker`'s parent is `coordinator`. */
 function fixture(opts: { occupancy?: (p: string) => Promise<WorktreeOccupancy | undefined> } = {}) {
-  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-hygiene-repo-"));
+  const repo = makeTempDir("tachyon-hygiene-repo-");
   git(["init", "-b", "main"], repo);
   git(["config", "user.email", "t@t.dev"], repo);
   git(["config", "user.name", "T"], repo);
@@ -30,7 +30,7 @@ function fixture(opts: { occupancy?: (p: string) => Promise<WorktreeOccupancy | 
   git(["add", "-A"], repo);
   git(["commit", "-m", "init"], repo);
 
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-hygiene-base-"));
+  const base = makeTempDir("tachyon-hygiene-base-");
   const settings: TachyonConfig["settings"] = { worktree: { base } };
   // An UNOCCUPIED probe, not an absent one, and wired into BOTH seams the way Workspace wires them.
   // The manager fail-closes on a missing probe ("occupancy unknown"), so leaving either side out
