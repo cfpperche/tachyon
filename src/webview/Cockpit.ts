@@ -121,6 +121,7 @@ import {
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { indexExecutionDetail, projectExecutions } from "../executionGraph/executionProjection.js";
+import { engineCurrencyNote, type EngineCurrency } from "../engine-service/engineCurrency.js";
 import { buildExecutionGraphVm, type ExecutionGraphVm } from "../cockpit/executionGraphVm.js";
 export type { CockpitStudios };
 
@@ -243,9 +244,17 @@ export function buildExecutionGraphSectionVm(
 ): ExecutionGraphVm | undefined {
   if (!deps.executionGraph) return undefined; // client renders `no-telemetry`
   try {
-    const { events, available } = deps.executionGraph(wsHash);
+    const { events, available, currency } = deps.executionGraph(wsHash);
     if (!available) {
-      return buildExecutionGraphVm({ projection: { executions: [], edges: [], agentIds: [] }, status: "no-telemetry" });
+      // t-f54b62 — `no-telemetry` means two different things: this workspace records nothing, or the
+      // daemon serving it predates the build that would record. Say which, when the host knows —
+      // `engineCurrencyNote` yields undefined unless it actually compared and found a stale engine.
+      const statusNote = currency ? engineCurrencyNote(currency) : undefined;
+      return buildExecutionGraphVm({
+        projection: { executions: [], edges: [], agentIds: [] },
+        status: "no-telemetry",
+        ...(statusNote ? { statusNote } : {}),
+      });
     }
     // t-441b0f — the ledger already carries `cwd`/`worktree`/`tool`; the panel just had no way to
     // reach them, so all three rendered as absent. Index them from the SAME events the projection
@@ -277,7 +286,16 @@ export interface CockpitDeps {
    * rather than an empty diagram. Read-only by contract — the ledger is single-writer (t-d5066b) and
    * this side must never open a journal that could compact.
    */
-  executionGraph?: (wsHash: string | undefined) => { events: SealedExecutionEvent[]; available: boolean };
+  executionGraph?: (wsHash: string | undefined) => {
+    events: SealedExecutionEvent[];
+    available: boolean;
+    /**
+     * t-f54b62 — is the daemon serving this workspace the installed build? Only the host can answer,
+     * and it may not be able to: omitted rather than guessed. An empty section explained by a wrong
+     * verdict sends a reader to restart production for no reason.
+     */
+    currency?: EngineCurrency;
+  };
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;

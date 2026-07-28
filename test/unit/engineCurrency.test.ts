@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyEngineCurrency, engineCurrencyNote } from "../../src/engine-service/engineCurrency.js";
+import { buildExecutionGraphSectionVm } from "../../src/webview/Cockpit.js";
 
 /**
  * t-f54b62 — the running engine can be arbitrarily older than the installed one, and nothing said so.
@@ -68,6 +69,39 @@ describe("t-f54b62 — is the running engine the installed one", () => {
       expect(engineCurrencyNote(classifyEngineCurrency({ running, expectedBundleId: "bundle-aaa" })))
         .toBeUndefined();
       expect(engineCurrencyNote({ kind: "unknown" })).toBeUndefined();
+    });
+  });
+
+  /**
+   * The section is where the ambiguity was actually paid for: `no-telemetry` read as "nothing to
+   * show" while the real cause was a daemon older than the build. Driven through the production
+   * builder, for the same reason t-441b0f had to be — the halves passing proves nothing about the join.
+   */
+  describe("the Execution section explains an empty view when the host knows why", () => {
+    const section = (currency?: Parameters<typeof engineCurrencyNote>[0]) =>
+      buildExecutionGraphSectionVm(
+        { executionGraph: () => ({ events: [], available: false, ...(currency ? { currency } : {}) }) } as never,
+        "wshash",
+      );
+
+    it("attaches the reason when the daemon predates the installed build", () => {
+      const vm = section(classifyEngineCurrency({ running, expectedBundleId: "bundle-bbb" }));
+
+      expect(vm?.status).toBe("no-telemetry");
+      expect(vm?.statusNote).toContain("2026-07-26T16:32:34.000Z");
+    });
+
+    it("stays silent when the engine is current — the section is empty for a different reason", () => {
+      const vm = section(classifyEngineCurrency({ running, expectedBundleId: "bundle-aaa" }));
+
+      expect(vm?.status).toBe("no-telemetry");
+      expect(vm?.statusNote).toBeUndefined();
+    });
+
+    it("stays silent when the host offered no verdict at all", () => {
+      // The pre-existing behavior, deliberately unchanged: no comparison, no explanation.
+      expect(section()?.statusNote).toBeUndefined();
+      expect(section({ kind: "unknown" })?.statusNote).toBeUndefined();
     });
   });
 });

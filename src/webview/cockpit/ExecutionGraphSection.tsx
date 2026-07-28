@@ -198,6 +198,8 @@ export function ExecutionGraphSection({ s, vm, detail, selected, filters, onSele
       <div class="ck-eg-state" role={vm.status === "error" ? "alert" : "status"}>
         <p>{message}</p>
         {vm.status === "error" && vm.errorDetail && <p class="ck-eg-mono">{vm.errorDetail}</p>}
+        {/* t-f54b62 — when the host could tell WHY it is empty, the reason beats the bare status. */}
+        {vm.statusNote && <p class="ck-eg-note">{vm.statusNote}</p>}
       </div>
     );
   }
