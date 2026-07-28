@@ -162,6 +162,17 @@ export function profileRuntimeInspectorFor(adapter: string) {
  * asserted, so a v1 authority loaded under v2 gets a stricter guarantee than it authorized, never a
  * weaker one. A future contract that RELAXES a guarantee must not be listed here.
  *
+ * v2 → v3 (t-de73e0) is listed too, and it is worth naming why it does NOT read as a clean superset
+ * on one axis, so a later reviewer applying this rule mechanically reaches the same answer instead of
+ * a different one. v2 promised the credential lives in exactly ONE place (a symlink to the person's
+ * file); v3 gives every agent its own copy. That is MORE isolation against the runtime writing the
+ * credential and LESS isolation against the secret being spread — a deliberate trade, taken because
+ * the single-location promise is what allowed one agent to destroy the person's credential and every
+ * other agent's at once, while the copies are mode-0600 files inside that person's own tree. Refusing
+ * the supersession would also strand every v2 authority, which is the outage this mechanism exists to
+ * prevent. So the rule to apply is not "more files is worse" but "does the new contract concede any
+ * guarantee the authority was given?" — here it concedes none that survives the defect.
+ *
  * The attestation still carries the descriptor the AUTHORITY names, so `assertNativeAttestation`'s
  * exact match keeps holding and the record never claims a human authorized v2. `authorityFor` adopts
  * the current inspector on the next lifecycle transaction, which is where re-attestation belongs.

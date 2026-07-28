@@ -358,12 +358,23 @@ export function promoteNewerPrivateAuth(privateAuth: string, realAuth: string): 
 /**
  * t-de73e0 — seed a private credential as a COPY, never as a pointer at the person's own file.
  *
- * The symlink model assumed the runtime only READS the credential it is given. Measured false on
- * grok 0.2.112, and measured by destroying the real credential of this machine: a Grok that decides
- * it must re-authenticate inside a redirected home operates on the RESOLVED path — `auth.json.lock`
- * appeared next to the real `~/.grok/auth.json`, and the real file did not survive. One agent
- * needing a re-login therefore destroyed the person's credential and, with it, every other agent's,
- * because every private home pointed at that one file.
+ * The symlink model assumed the runtime only READS the credential it is given. That assumption is no
+ * longer safe to hold, and the honest statement of why is narrower than the incident's title.
+ *
+ * What is ESTABLISHED: this machine's real `~/.grok/auth.json` existed, redirected private homes
+ * carrying a symlink to it were in use, and afterwards the real file was gone with `auth.json.lock`
+ * left beside it — a lock the runtime writes next to the file it is about to touch, so something
+ * resolved the link and operated on the real path. Every private home pointed at that one file, so
+ * one agent's loss was everyone's, and no recoverable copy remained.
+ *
+ * What is NOT established, deliberately recorded here so nobody reads this comment as more than it
+ * is: the trigger. Four reproductions against a disposable target failed to destroy it — a headless
+ * refusal, an interrupted device-code flow, an expired credential in the documented `sign-in` shape,
+ * and `grok inspect` under the same symlink pattern. Both agents who ran probes that day have since
+ * withdrawn certainty about their own contribution. A cause outside the symlink path is not excluded.
+ *
+ * Which is exactly why the fix isolates instead of predicting. A copy does not need the trigger to be
+ * known: it removes the class in which any of them could reach the person's credential.
  *
  * A copy makes the destructive case unreachable rather than unlikely: whatever the runtime does to
  * the private file — rewrite, truncate, unlink, replace under a lock — it is doing it to a file that
