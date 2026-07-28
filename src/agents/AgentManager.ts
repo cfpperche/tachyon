@@ -68,7 +68,7 @@ import type { SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
-import { sealExecutionEvent, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
+import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 
 /** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
@@ -912,6 +912,13 @@ export class AgentManager {
   private tmuxReadAppliedSeq = 0;
   private readonly launchPreflight: RuntimeLaunchPreflightPort;
   private readonly launchReadiness: LaunchReadinessPort;
+  /**
+   * SDD 480 §3.4 gap 3 — the execution minted at spawn, kept so the eventual `exit` correlates to the
+   * SAME execution rather than to a fresh id that joins to nothing. Cleared when the exit is recorded.
+   * Deliberately in-memory only: it is a convenience for correlating, never the source of truth — the
+   * ledger is, and an exit we cannot correlate is still recorded, just `unproven`.
+   */
+  private readonly liveExecutions = new Map<string, ExecutionCorrelation>();
   /** A session becomes assignable only after a positive readiness observation. */
   private readyAgents = new Set<string>();
   /** A launched AI runtime remains provisional until the common observation policy sees a ready affordance. */
@@ -1225,10 +1232,55 @@ export class AgentManager {
       if (agent !== null) out.set(agent, state);
     }
     if (seq > this.tmuxReadAppliedSeq) {
+      // SDD 480 §3.4 gap 3 — nothing used to record an exit. Compare against the previous inventory
+      // BEFORE replacing it: the alive→dead TRANSITION is the event, and it is observable exactly here
+      // and nowhere later. Emitting on every poll instead would fill the ledger with one death repeated
+      // until the pane is dismissed.
+      //
+      // Guarded by `seq` for the same reason the cache is: a read dispatched earlier must not resolve
+      // later and re-announce a death against a newer inventory.
+      this.recordAgentExits(this.lastAgentStates, out);
       this.lastAgentStates = out;
       this.tmuxReadAppliedSeq = seq;
     }
     return out;
+  }
+
+  /**
+   * Emit an `exit` for every agent that was alive in `previous` and is dead in `next`.
+   *
+   * Correlates to the execution minted at spawn when this process still remembers it. When it does not
+   * — the engine restarted while the agent kept running — the death is STILL recorded, against the
+   * agent, with a fresh id and `unproven`. That is not an orphan: the agent is known, so the event
+   * attaches to something real. Dropping it would let a graph that never saw the exit look complete.
+   */
+  private recordAgentExits(
+    previous: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
+    next: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
+  ): void {
+    if (!this.opts.recordExecution) return;
+    for (const [agent, state] of next) {
+      const before = previous.get(agent);
+      if (!before || before.dead || !state.dead) continue;
+      const live = this.liveExecutions.get(agent);
+      const correlation = live ?? mintExecution({ agentId: agent, carrier: "absent" }).correlation;
+      this.liveExecutions.delete(agent);
+      this.emitExecution({
+        kind: "exit",
+        node: "Process",
+        // A clean exit is `completed`; anything else is `failed`. An unknown code is not assumed clean —
+        // "we did not see the code" and "the code was 0" are different facts.
+        state: state.exitCode === 0 ? "completed" : "failed",
+        provenance: live ? "measured" : "unproven",
+        correlation,
+        at: new Date().toISOString(),
+        detail: {
+          seam: "AgentManager.readAgentStates",
+          agent,
+          ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
+        },
+      });
+    }
   }
 
   async agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> {
@@ -2368,6 +2420,8 @@ export class AgentManager {
       });
       if (adapter?.runtime === "pi") await this.withPiAdmission(name, createSession);
       else await createSession();
+      // Remembered so the eventual exit joins to THIS execution instead of minting a stranger.
+      this.liveExecutions.set(name, minted.correlation);
       this.emitExecution({
         kind: "spawn", node: "Process", state: "running", provenance: minted.provenance,
         correlation: minted.correlation, at: new Date().toISOString(),
