@@ -5764,8 +5764,78 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(fs.lstatSync(path.join(privateHome, "auth.json")).isSymbolicLink()).toBe(false);
       expect(fs.readFileSync(path.join(privateHome, "auth.json"), "utf8"))
         .toBe(fs.readFileSync(path.join(realGrokHome, "auth.json"), "utf8"));
-      // Fork would carry neither the projection nor the transcript, so it is refused, not degraded.
-      await expect(h.manager.planFork("grok")).rejects.toThrow(/no measured private-home fork/);
+      // t-ee5c05 — fork is no longer refused; it is covered by its own regression below.
+    });
+
+    it("t-ee5c05: a canonical Grok fork gets its own projected home and the SOURCE session directory", async () => {
+      const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
+        fileExists: () => true,
+        newSessionId: () => UUID,
+        // Wired as Workspace wires it, so `runtimeConfigHome` resolves the SOURCE's private bridge
+        // home rather than falling through to the operator's real `~/.grok`.
+        materializeBridgeMcpGrok: (name: string) => bridgeGrokHome(h.ws, name),
+      });
+      const realGrokHome = path.join(h.ws, "real-grok-fork");
+      fs.mkdirSync(realGrokHome, { recursive: true });
+      fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"access_token":"external-only"}\n');
+      const nativeConfig: ResolvedAgentNativeConfigProjection = {
+        adapter: "grok",
+        selectors: {},
+        toml: { "models.default": "grok-4.5" },
+      };
+      const harness = new HarnessManager(
+        h.ws, path.join(h.ws, "real-claude"), {}, path.join(h.ws, "real-claude", ".claude.json"),
+        undefined, undefined, undefined, realGrokHome,
+      );
+      asAgent(h.manager.defOf("grok"))!.profileLifecycle = {
+        enabled: true, agentId: "33333333-3333-4333-8333-333333333333", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
+      };
+      asAgent(h.manager.defOf("grok"))!.profileNativeConfig = nativeConfig;
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) => {
+        const home = harness.materializeBridgeMcpGrok(
+          name,
+          { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } },
+          cwd,
+          { exactTrust: true, ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}) },
+        );
+        return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
+      };
+      await h.manager.spawn("grok");
+
+      // A Grok session is a DIRECTORY. Plant one in the source's private home, with a lock file and a
+      // subdirectory that must not travel, and the two files measured as load-bearing on 0.2.112.
+      const sourceHome = bridgeGrokHome(h.ws, "grok");
+      const sessionDir = path.dirname(adapterFor("grok")!.transcriptPath!(sourceHome, h.ws, UUID));
+      fs.mkdirSync(path.join(sessionDir, "recap_requests"), { recursive: true });
+      fs.writeFileSync(path.join(sessionDir, "chat_history.jsonl"), '{"role":"user"}\n');
+      fs.writeFileSync(path.join(sessionDir, "summary.json"), '{"summary":"source"}\n');
+      fs.writeFileSync(path.join(sessionDir, "updates.jsonl"), '{"update":1}\n');
+      fs.writeFileSync(path.join(sessionDir, "summary.json.lock"), "");
+
+      const forkName = await h.manager.commitFork(await h.manager.planFork("grok"));
+      const forkHome = bridgeGrokHome(h.ws, forkName);
+      expect(forkHome).not.toBe(sourceHome);
+
+      // The fork's own private home carries the projection and the Bridge, not an empty Bridge-only file.
+      const forkConfig = fs.readFileSync(path.join(forkHome, "config.toml"), "utf8");
+      expect(forkConfig).toContain('default = "grok-4.5"');
+      expect(forkConfig).toContain("[compat.claude]");
+      expect(forkConfig).toContain("[mcp_servers.tachyon_bridge]");
+
+      // The SOURCE session directory travelled — `summary.json` + `updates.jsonl` are what make the
+      // session resolvable, so seeding only `transcriptPath` (chat_history.jsonl) would leave the fork
+      // with a session the runtime reports as not found.
+      const forkSessionDir = path.dirname(adapterFor("grok")!.transcriptPath!(forkHome, h.ws, UUID));
+      const seeded = fs.readdirSync(forkSessionDir).sort();
+      expect(seeded).toEqual(["chat_history.jsonl", "summary.json", "updates.jsonl"]);
+      expect(fs.readFileSync(path.join(forkSessionDir, "summary.json"), "utf8")).toContain("source");
+
+      // HOME is co-bound to the fork's own home, and the fork resumes the SOURCE id.
+      const forkEnv = envFromTmuxArgs(h.startArgs.at(-1)!);
+      expect(forkEnv.GROK_HOME).toBe(forkHome);
+      expect(forkEnv.HOME).toBe(forkHome);
+      expect(h.cmds.at(-1)).toContain(`--fork-session`);
+      expect(h.cmds.at(-1)).toContain(UUID);
     });
 
     it("t-554634: codex without Tachyon hook materialization does not get bypass", async () => {

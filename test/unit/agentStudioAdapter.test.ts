@@ -314,9 +314,9 @@ describe("AgentStudioAdapter — save", () => {
       // t-26f508 — Grok now authors its own families: global-sourced scalars on its measured
       // fresh/restart/resume lifecycle, plus the refusals that keep the private home closed.
       expect((patch as AgentProfileStudioMutationV1).editable.nativeConfig).toMatchObject({
-        permissions: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
-        interface: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
-        featureFlags: { source: "global", lifecycle: ["fresh", "restart", "resume"] },
+        permissions: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+        interface: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
+        featureFlags: { source: "global", lifecycle: ["fresh", "restart", "resume", "fork"] },
         tooling: { source: "workspace", treatment: "exclude" },
         memory: { source: "agent", treatment: "exclude" },
         authentication: { source: "global", treatment: "external" },
@@ -535,7 +535,7 @@ describe("AgentStudioAdapter — save", () => {
       const patch = serializeAgentPatch(authorized, true) as AgentProfileStudioMutationV1;
       const nativeConfig = patch.editable.nativeConfig!;
       expect(nativeConfig.permissions?.authorize).toEqual(["alwaysApprove"]);
-      expect(nativeConfig.permissions?.lifecycle).toEqual(["fresh", "restart", "resume"]);
+      expect(nativeConfig.permissions?.lifecycle).toEqual(["fresh", "restart", "resume", "fork"]);
       expect(nativeConfig.tooling).toMatchObject({ source: "workspace", treatment: "exclude" });
       expect(nativeConfig.memory).toMatchObject({ source: "agent", treatment: "exclude" });
       expect(nativeConfig.authentication).toMatchObject({ source: "global", treatment: "external" });

@@ -56,6 +56,22 @@ export interface ResumeAdapter {
    */
   transcriptPath?(configHome: string, cwd: string, id: string): string;
   /**
+   * t-ee5c05 — what has to travel for a session to exist in ANOTHER namespace, which is not always the
+   * file `transcriptPath` names.
+   *
+   * Claude's transcript is one self-contained JSONL, so copying that file IS the session — the default.
+   * Grok's is not: measured on 0.2.112, a session directory seeded with only `chat_history.jsonl`
+   * reported "Session not found" to `grok export` and did not appear in `grok sessions list`, while the
+   * same directory carrying `summary.json` + `updates.jsonl` exported byte-identically to the source
+   * home (642 bytes). `chat_history.jsonl` is not even required for that — it is what Tachyon's own
+   * Activity reader tails, not what the runtime restores from.
+   *
+   * So a fork that copied `transcriptPath` alone would produce a sibling whose session the runtime
+   * cannot find. Declaring the unit keeps that runtime difference in the adapter, where the rest of the
+   * per-runtime session knowledge already lives, instead of as a special case at the fork call site.
+   */
+  transcriptUnit?: "file" | "session-directory";
+  /**
    * spec 225 — build the SPAWN command that FORKS a session: resume `sourceId`'s context into a NEW
    * session without mutating the original. Present ONLY for runtimes with a native fork primitive.
    * `sourceRef` is runtime-specific: an exact id for Claude/Grok/OpenCode, or an exact validated JSONL
@@ -291,6 +307,9 @@ const ADAPTERS: ResumeAdapter[] = [
     // (measured 2026-07-12 on bridge + real homes). `configHome` is the effective GROK_HOME
     // (bridge-mcp / harness / ~/.grok) from AgentManager.runtimeConfigHome.
     transcriptPath: (configHome, cwd, id) => grokTranscriptPath(configHome, cwd, id),
+    // t-ee5c05 — `summary.json` + `updates.jsonl` are what make the session resolvable; the file this
+    // path names is not. Seeding a fork therefore has to carry the whole session directory.
+    transcriptUnit: "session-directory",
     // t-4891dd — Grok supports a native config home override (`GROK_HOME`; default `~/.grok`) and
     // trusted global hooks under that home's `hooks/*.json`. Tachyon points GROK_HOME at the private
     // `<harness>/<agent>/.grok` dir so auth/config/hooks/sessions are isolated per harnessed agent.

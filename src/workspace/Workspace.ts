@@ -1051,7 +1051,10 @@ export class Workspace {
             inheritNativeConfig: def.profileLifecycle === undefined,
           });
         }
-        if (adapter.runtime === "grok" && def.profileLifecycle) {
+        // t-ee5c05 — `profileFork` joins the gate for the same reason it does on the Claude branch: a
+        // fork is an ad-hoc sibling that deliberately does NOT inherit `profileLifecycle` authority,
+        // so keying only on that would hand the fork an unprojected home.
+        if (adapter.runtime === "grok" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
           const home = this.harness.materializeBridgeMcpGrok(
             name,
             this.bridgeEntry() ?? {},
