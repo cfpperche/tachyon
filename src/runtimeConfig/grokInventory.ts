@@ -364,9 +364,10 @@ function trustDocument(file: string, workspaceRoot: string): RuntimeConfigDocume
       }] : []),
     ],
     mcpServers: [],
-    // Other people's trusted paths are none of this workspace's business.
+    // Other trusted paths are none of this workspace's business, and they are not
+    // runtime-managed records either — so they are neither listed nor counted.
     unknownKeys: [],
-    internalStateCount: Math.max(0, Object.keys(folders).length - (entry ? 1 : 0)),
+    internalStateCount: 0,
     readOnly: true,
     impact: TRUST_IMPACT,
   };

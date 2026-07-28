@@ -174,7 +174,7 @@ describe("Grok runtime configuration inventory", () => {
 
     expect(trust.readOnly).toBe(true);
     expect(trust.knownSettings.find((setting) => setting.key === "trusted")).toMatchObject({ value: "true", editable: false });
-    expect(trust.internalStateCount).toBe(1);
+    expect(trust.internalStateCount).toBe(0);
     expect(JSON.stringify(snapshot)).not.toContain("DO-NOT-EXPOSE-OTHER-REPO");
     expect(() => applyGrokRuntimeConfigChange({
       workspaceRoot: root,

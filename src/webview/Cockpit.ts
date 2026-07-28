@@ -482,6 +482,7 @@ function strings(): CockpitStrings {
     runtimeConfigAlwaysThinking: t("Always thinking"),
     runtimeConfigReadOnly: t("Read only"),
     runtimeConfigReadOnlyDocument: t("This source is read-only in Control."),
+    runtimeConfigHiddenRecords: t("runtime-managed records are hidden from this inventory."),
     runtimeConfigOverriddenBy: t("Overridden by"),
     runtimeConfigOpaqueSections: t("Opaque sections"),
     runtimeConfigReadError: t("Could not read this runtime configuration source"),

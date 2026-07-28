@@ -1313,7 +1313,7 @@ function RuntimeConfigInventory({
               {s.runtimeConfigViewRaw}
             </Button>
           </div>
-          {config.internalStateCount > 0 ? <div class="rcp-runtime-state">{config.internalStateCount} runtime-managed hook records are hidden from this inventory.</div> : null}
+          {config.internalStateCount > 0 ? <div class="rcp-runtime-state">{config.internalStateCount} {s.runtimeConfigHiddenRecords}</div> : null}
           {(config.opaqueKeys?.length ?? 0) > 0 ? <div class="rcp-runtime-state">{s.runtimeConfigOpaqueSections}: {config.opaqueKeys!.join(", ")}.</div> : null}
           {config.unknownKeys.length === 0 ? <div class="rcp-capability-empty">{s.none}</div> : unknownOpen ? (
             <pre>{config.unknownKeys.join("\n")}</pre>

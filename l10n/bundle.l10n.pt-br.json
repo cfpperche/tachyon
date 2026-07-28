@@ -535,6 +535,7 @@
   "runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it": "runbook '{0}' salvo — ▶ na sidebar (ou run_runbook) executa",
   "running": "executando",
   "running — stop first": "em execução — pare antes",
+  "runtime-managed records are hidden from this inventory.": "registros gerenciados pelo runtime estão ocultos deste inventário.",
   "schedule '{0}' approved — it's now active": "agendamento '{0}' aprovado — agora está ativo",
   "schedule '{0}' failed: {1}": "agendamento '{0}' falhou: {1}",
   "schedule '{0}' fired": "agendamento '{0}' disparou",

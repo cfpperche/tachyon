@@ -131,6 +131,7 @@ export interface CockpitStrings {
   runtimeConfigAlwaysThinking: string;
   runtimeConfigReadOnly: string;
   runtimeConfigReadOnlyDocument: string;
+  runtimeConfigHiddenRecords: string;
   runtimeConfigOverriddenBy: string;
   runtimeConfigOpaqueSections: string;
   runtimeConfigReadError: string;

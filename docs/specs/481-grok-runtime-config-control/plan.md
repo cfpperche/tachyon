@@ -12,7 +12,8 @@ _Drafted from `spec.md` on 2026-07-28. The approach, not the steps (those go in 
    linha, temp + rename), sem reusar o esquema TOML do Codex.
 4. Ligar serviço/extension/pending com a regra medida de impacto por escopo.
 5. Cobrir com testes de segurança, conflito, escopo, MCP nativo e regressão Codex/Claude.
-6. Dogfood no Dev Host e atualizar `docs/runtimes/parity.md`.
+6. Dogfood contra o binário instalado, cobertura de UI em Chrome headless (sem VS Code) e
+   atualizar `docs/runtimes/parity.md`.
 
 ## Key decisions
 
@@ -46,7 +47,7 @@ _Each decision + why this option over the alternatives considered._
 - `src/extension.ts` — snapshot, save e escopo por documento.
 - `src/workspace/Workspace.ts`, `src/runtime-api/extensionOperations.ts` — pending Grok.
 - `src/webview/{Cockpit.ts,cockpit/messages.ts,cockpit/App.tsx}` — labels, número, impacto.
-- `test/unit/grokRuntimeConfigInventory.test.ts`, `scripts/dev-host/scenarios/grok-runtime-config.mjs`.
+- `test/unit/grokRuntimeConfigInventory.test.ts`, `test/browser/grokRuntimeConfigView.test.ts`.
 - `docs/runtimes/parity.md`.
 
 ## Risks & unknowns
@@ -61,7 +62,8 @@ _Each decision + why this option over the alternatives considered._
 ## Visual impact
 
 Runtime Config ganha a opção Grok (logo PNG já existente), três documentos, campos
-numéricos, motivo de read-only e a frase de impacto por documento.
+numéricos, motivo de read-only e a frase de impacto por documento. Verificado em Chrome
+headless sobre o bundle publicado: agentes não abrem VS Code nem Dev Host neste projeto.
 
 ## Sources consulted
 

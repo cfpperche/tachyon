@@ -47,6 +47,24 @@ workspace, so it does apply at the next launch. `Workspace.markRuntimeConfigPend
 Grok-specific branch for exactly this, and each document carries an `impact` sentence so the UI
 states the difference rather than leaving it to be inferred.
 
+## The Dev Host is not an agent's tool (2026-07-28)
+
+Mid-slice, the human rule was made explicit: **agents do not open VS Code or an Extension
+Development Host.** A Dev Host scenario had been written and partially exercised before that; it was
+removed rather than left behind, so nothing in this slice invites an agent to launch an EDH, and no
+visual verdict is claimed from one.
+
+The UI half moved to `test/browser/grokRuntimeConfigView.test.ts`, which drives the same shipped
+`cockpit` bundle and stylesheets in headless Chrome through the webview preview server. That covers
+rendering, state and layout; it does **not** cover the extension host behind the webview, which is
+why the save path stays proven host-side (unit suite) and against the real binary (round-trip
+dogfood) rather than through the UI.
+
+One measurement survives from the removed scenario and is worth keeping: the runtime dropdown is the
+Kit (Radix) dropdown and opens on `pointerdown` **alone** — a trailing `click()` toggles it straight
+back shut, which is why the browser test dispatches `pointerdown` and nothing else. The same applies
+to any future test that drives this control.
+
 ## Dogfood log
 
 `npm run dogfood:grok-runtime-config` — 2026-07-28, grok 0.2.112 (9bbd559437): **15/15**.
