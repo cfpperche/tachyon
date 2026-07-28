@@ -389,7 +389,7 @@ async function makeWorkspace(
 it("rejects an invalid reload and retains the prior known-good config", async () => {
   // SDD 478 M7 — this used to prove the point with `soul: SOUL.md` on an inline agent. Neither half
   // of that is expressible now: `agents:` takes a profile pointer, and a canonical profile cannot
-  // carry `soul` at all (the projection defers it to t-a2827d). The guarantee under test is the
+  // carry `soul` at all (the projection refuses it: Soul is a formation lane, not a projected prompt field — t-50bbd4). The guarantee under test is the
   // reload boundary itself — a rejected edit must leave the last known-good config live — so it is
   // proven with an invalid key on the arm that does accept one.
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
