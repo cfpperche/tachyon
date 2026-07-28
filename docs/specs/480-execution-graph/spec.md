@@ -46,8 +46,50 @@ as licence to guess. This spec adopts the same discipline.
 | Engine daemon | `src/engine-service/engineSupervisor.ts` | systemd unit, control socket | `engineWorkspaceKey` → unit + socket + state dir |
 | Bridge one-shot command | `src/bridge/tools.ts` (`run_command`) | tmux session `tachyon-cmd-<hash>-<name>` | caller identity, command name |
 | Governed host action | `src/bridge/tools.ts` (`run_host_action`) | host process | `caller: CallerSnapshot` — already resolved, never a tool param |
-| Plugin / external tool | `src/plugins/externalTool.ts`, `toolPlatform.ts` | browser, desktop, screen processes | kind, pid, windowId, **`confidence`** |
 | Control-mode anchor | `src/tmux/ControlModeClient.ts` | `tachyon-ctl-<wsHash>` | wsHash, socket |
+| Turn submission | `src/agents/agentInputService.ts` | a `Turn` (§7.1) | agent, session; runtime turn id as alias only |
+
+Five seams, not six. An earlier draft of this table listed **`src/plugins/externalTool.ts` /
+`toolPlatform.ts`** as a sixth, creating "browser, desktop, screen processes". It does not, and
+§3.1.1 records why — the row was removed rather than left to promise something the graph cannot
+deliver.
+
+#### 3.1.1 Why plugin / external tool is NOT a seam (t-d5066b)
+
+Measured while wiring the other five, and recorded here because the table read plausibly enough that
+two people could believe it twice.
+
+`externalTool.ts` starts nothing. Its own header says *"no privileged exec here"*: it RESOLVES a
+trusted absolute path and shape-checks install argv, and its only `execFileSync` calls are detection
+probes (`command -v`). Its sole caller in the entire source tree is `src/externalResolverEntry.ts`,
+the entry for the standalone `_tachyon-external` shim — which runs as a separate, short-lived process
+launched by the plugin's own CLI, not inside the extension host. The browser, desktop and screen
+processes are then started by that plugin CLI, outside Tachyon entirely. Tachyon hands over a path
+and leaves. (The `user_browser_*` Bridge tools are not a back door either: they delegate to the
+companion extension and spawn nothing.)
+
+So there is no child of ours to hand an environment to, and no in-process sink for the shim to reach.
+
+**Three options were considered. The decision is (a).**
+
+- **(a) — out of scope, chosen.** Tachyon does not originate these executions, so the graph does not
+  contain them. That is a real boundary, and stating it is better than a row that implies coverage.
+- **(b) — have the shim write to the ledger directly. REJECTED, and the reason is measured, not
+  aesthetic.** The shim can derive the ledger path (`engineStorageRoot` is a pure function of the
+  workspace root), so this looks feasible — but `EngineEventJournal` is **single-writer by
+  construction**. `append` computes `seq` from its own in-memory tail, so a shim writing beside a live
+  engine daemon produces duplicate sequence numbers, and the next open throws
+  `engine event journal sequence is not contiguous`. The whole journal becomes unreadable. Option (b)
+  would corrupt the graph it was meant to extend. `test/unit/executionLedgerSingleWriter.test.ts`
+  pins that invariant so this cannot be re-attempted by accident.
+- **(c) — have plugins carry `TACHYON_EXECUTION_ID` into the processes they launch.** The only option
+  that would actually capture those processes, because only the plugin is present at the spawn. It is
+  a change to the plugin contract, not to this infrastructure, and belongs to whoever owns that
+  contract. Recorded as the path forward if these processes are ever wanted in the graph.
+
+Recording a resolution instead of the process was also considered and rejected on value: "a plugin
+asked for a path" is not an execution, and a graph padded with near-misses is harder to trust than one
+that admits its edge.
 
 ### 3.2 What already correlates
 
