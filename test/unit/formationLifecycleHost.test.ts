@@ -15,14 +15,19 @@
 import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { makeTempDir } from "../helpers/tempDir.js";
 import { createFormationLifecycleHost, deriveSuppressionKey } from "../../src/agents/formation/lifecycleHost.js";
 
 const HOST_KEY = Buffer.alloc(32, 3);
 
+/**
+ * t-25a908 — registered for removal by construction. My first version called `mkdtempSync` directly
+ * and leaked a directory per case into the shared tmpfs, which is exactly the failure that helper
+ * exists to prevent; the hygiene guard caught it in the full gate.
+ */
 function hostRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "formation-host-"));
+  return makeTempDir("formation-host-");
 }
 
 function make(over: Partial<Parameters<typeof createFormationLifecycleHost>[0]> = {}) {
