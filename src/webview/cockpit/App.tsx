@@ -12,6 +12,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import {
   formatCompanionPairClipboard,
   navigateReturnAction,
+  openPersonalCardTemplateAction,
   openProjectHandoffAction,
   type CockpitAction,
   type CockpitStrings,
@@ -1825,6 +1826,10 @@ export function App(p: CockpitAppProps) {
           <CardTemplateBlock
             s={s}
             onOpenConfig={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
+            // SDD 479 phase 5 — the personal home is a settings KEY, so its button opens the settings
+            // editor filtered to that key rather than a file.
+            onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
+            inEffect={m.cardTemplate}
           />
 
           <div class="ck-settings-block" data-testid="control-settings-companion">

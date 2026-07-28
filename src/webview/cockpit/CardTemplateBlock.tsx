@@ -23,11 +23,13 @@ import { CARD_REGIONS, type CardRegion, type CardTemplate } from "../../sidebar/
 import {
   editorStateFrom,
   moveComponent,
+  toSettingsJson,
   toYaml,
   toggleComponent,
   validate,
   type CardEditorState,
 } from "../../cockpit/cardTemplateEditor";
+import type { CockpitCardTemplateState } from "../../cockpit/model";
 import type { CockpitStrings } from "./messages";
 
 declare global {
@@ -133,15 +135,77 @@ function RegionEditor({
   );
 }
 
-export function CardTemplateBlock({ s, onOpenConfig }: { s: CockpitStrings; onOpenConfig: () => void }) {
+/**
+ * SDD 479 phase 5 — which home the cards are actually using, said out loud.
+ *
+ * Ratified fork 1 asked for exactly this sentence, and the reason is concrete: a personal override
+ * silently contradicting the project's template looks identical to a broken project template. Live
+ * state, per home, from the host — never a restatement of the precedence rule, which would be true
+ * and useless.
+ */
+export function CardTemplateInEffect({ s, state }: { s: CockpitStrings; state: CockpitCardTemplateState }) {
+  const personal = state.personal === "active"
+    ? s.cardTemplatePersonalActive
+    : state.personal === "refused"
+      ? s.cardTemplatePersonalRefused
+      : s.cardTemplatePersonalNone;
+  return (
+    <div class="ck-card-effect" data-testid="card-template-in-effect">
+      <span class="ck-card-effect-label">{s.cardTemplateInEffect}</span>
+      <p class={`ck-card-effect-personal${state.personal === "refused" ? " warn" : ""}`} data-testid="card-template-effect-personal">
+        {personal}
+      </p>
+      {/* The refusal's own words, from the shared validator — the person should not have to open the
+          sidebar to find out WHY their override was ignored. */}
+      {state.personalErrors?.length ? (
+        <ul class="ck-card-errors" data-testid="card-template-effect-errors">
+          {state.personalErrors.map((error) => <li key={error}>{error}</li>)}
+        </ul>
+      ) : null}
+      {state.projects.length > 0 ? (
+        <ul class="ck-card-effect-projects" data-testid="card-template-effect-projects">
+          {state.projects.map((project) => (
+            <li key={project.folder}>
+              <strong>{project.folder}</strong>
+              {" — "}
+              {project.refused
+                ? s.cardTemplateProjectRefused
+                : project.configured
+                  ? s.cardTemplateProjectConfigured
+                  : s.cardTemplateProjectNone}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+export function CardTemplateBlock({
+  s,
+  onOpenConfig,
+  onOpenSettings,
+  inEffect,
+}: {
+  s: CockpitStrings;
+  onOpenConfig: () => void;
+  onOpenSettings: () => void;
+  inEffect?: CockpitCardTemplateState;
+}) {
   const [state, setState] = useState<CardEditorState>(() => editorStateFrom());
+  // SDD 479 phase 5 — the composer produces ONE template; this only decides which home's syntax the
+  // block emits for it. Making it a choice (rather than emitting both, always) is what lets the hint
+  // beneath say what THAT home does — "wins over every project" is true of one and false of the other.
+  const [home, setHome] = useState<"project" | "personal">("project");
   const { template, errors } = validate(state);
   const yaml = toYaml(state);
+  const json = toSettingsJson(state);
   return (
     <div class="ck-settings-block" data-testid="control-settings-card-template">
       <h3 class="ck-settings-block-title">{s.cardTemplateTitle}</h3>
       <p class="ck-settings-block-hint">{s.cardTemplateHint}</p>
       <p class="ck-settings-block-body">{s.cardTemplateBody}</p>
+      {inEffect ? <CardTemplateInEffect s={s} state={inEffect} /> : null}
 
       <div class="ck-card-regions">
         {CARD_REGIONS.map((region) => (
@@ -159,13 +223,31 @@ export function CardTemplateBlock({ s, onOpenConfig }: { s: CockpitStrings; onOp
 
       {template && <ShadowPreview template={template} />}
 
-      <p class="ck-settings-block-hint">{s.cardTemplateYamlHint}</p>
-      <pre class="ck-card-yaml" data-testid="card-template-yaml">{yaml}</pre>
+      <div class="ck-card-home" data-testid="card-template-home">
+        <span class="ck-card-effect-label">{s.cardTemplateHomeLabel}</span>
+        <label class="ck-settings-toggle">
+          <input type="radio" name="card-template-home" checked={home === "project"} data-testid="card-template-home-project" onChange={() => setHome("project")} />
+          <span>{s.cardTemplateHomeProject}</span>
+        </label>
+        <label class="ck-settings-toggle">
+          <input type="radio" name="card-template-home" checked={home === "personal"} data-testid="card-template-home-personal" onChange={() => setHome("personal")} />
+          <span>{s.cardTemplateHomePersonal}</span>
+        </label>
+      </div>
+
+      <p class="ck-settings-block-hint">{home === "personal" ? s.cardTemplateJsonHint : s.cardTemplateYamlHint}</p>
+      <pre class="ck-card-yaml" data-testid="card-template-yaml">{home === "personal" ? json : yaml}</pre>
       <div class="ck-settings-status">
-        <Button variant="default" data-testid="card-template-copy" onClick={() => void navigator.clipboard?.writeText(yaml)}>
-          {s.cardTemplateCopy}
+        <Button
+          variant="default"
+          data-testid="card-template-copy"
+          onClick={() => void navigator.clipboard?.writeText(home === "personal" ? json : yaml)}
+        >
+          {home === "personal" ? s.cardTemplateCopyJson : s.cardTemplateCopy}
         </Button>
-        <Button variant="default" onClick={onOpenConfig}>{s.settingsOpenConfig}</Button>
+        <Button variant="default" data-testid="card-template-open-home" onClick={home === "personal" ? onOpenSettings : onOpenConfig}>
+          {home === "personal" ? s.cardTemplateOpenSettings : s.settingsOpenConfig}
+        </Button>
         <Button variant="default" onClick={() => setState(editorStateFrom())}>{s.cardTemplateReset}</Button>
       </div>
     </div>

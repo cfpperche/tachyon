@@ -112,6 +112,23 @@ export interface CockpitDeliveryRow {
   reasons?: string[];
 }
 
+/**
+ * SDD 479 phase 5 — which card-template home is in effect, for the statement the settings surface
+ * owes the human (ratified fork 1: "the settings UI says which one is in effect").
+ *
+ * Live state, not a restatement of the precedence rule: the failure this prevents is a personal
+ * override quietly contradicting the project's template, which is indistinguishable from a broken
+ * project template until something says which one the cards are actually using.
+ */
+export interface CockpitCardTemplateState {
+  /** the personal override in VS Code settings: absent, in effect, or refused and fallen back */
+  personal: "none" | "active" | "refused";
+  /** why it was refused — the same diagnostics the sidebar banner shows, from the same validator */
+  personalErrors?: string[];
+  /** one row per scoped workspace: does its own tachyon.yml write a template, and was it honored */
+  projects: Array<{ folder: string; configured: boolean; refused: boolean }>;
+}
+
 export interface CockpitApprovalRow {
   id: string;
   status?: string;
@@ -148,14 +165,53 @@ export interface CockpitCompanionSettings {
   devices: CockpitCompanionDevice[];
 }
 
+/**
+ * t-af3eef — which expensive slices a collect is being asked for.
+ *
+ * `worktrees.classified` and `deliveries.classified` are real engine work — the classified worktree
+ * read walks every managed checkout, of which this repo had 17 at the time of writing, and it grows
+ * with the fleet. Collecting them on EVERY navigation meant opening a Task Detail paid for both,
+ * across every workspace, before a single pixel could change.
+ *
+ * The needs are derived from the section being rendered, never stored, so there is one authority for
+ * "what does this view consume" and no cache to invalidate.
+ */
+export interface CockpitCollectNeeds {
+  worktrees: boolean;
+  deliveries: boolean;
+}
+
+/** Sections that actually read the classified worktree rows (or their Overview counter). */
+const SECTIONS_NEEDING_WORKTREES = new Set(["overview", "worktrees"]);
+/** Sections that actually read the classified delivery rows (or their Overview counter). */
+const SECTIONS_NEEDING_DELIVERIES = new Set(["overview", "deliveries"]);
+
+/** What a given section needs. Unknown sections get nothing expensive — they render without it. */
+export function collectNeedsFor(section: string): CockpitCollectNeeds {
+  return {
+    worktrees: SECTIONS_NEEDING_WORKTREES.has(section),
+    deliveries: SECTIONS_NEEDING_DELIVERIES.has(section),
+  };
+}
+
+/** Everything. For diagnostics dumps, which are explicitly a full picture of the world. */
+export const COLLECT_EVERYTHING: CockpitCollectNeeds = { worktrees: true, deliveries: true };
+
 export interface CockpitWorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
   agents: CockpitAgentRow[];
-  worktrees: CockpitWorktreeRow[];
+  /**
+   * t-af3eef — ABSENT means "not collected for this view", never "none exist". The distinction is the
+   * same one `worktreesUnavailable` already draws: this file's own comment on the validation slice
+   * says absent means not collected, and a silent empty list is exactly the lie that convention
+   * exists to prevent.
+   */
+  worktrees?: CockpitWorktreeRow[];
   /** spec 444 — the classified engine read failed (engine unreachable). The tab shows an honest
    *  error state for this workspace instead of unverified raw rows. */
   worktreesUnavailable?: string;
-  deliveries: CockpitDeliveryRow[];
+  /** t-af3eef — absent means "not collected for this view", never "none". See `worktrees` above. */
+  deliveries?: CockpitDeliveryRow[];
   /** t-43c6fa — same contract as `worktreesUnavailable`, for the Deliveries classified read. */
   deliveriesUnavailable?: string;
   approvals: CockpitApprovalRow[];
@@ -169,6 +225,8 @@ export interface CockpitWorkspaceBundle {
    * counter that reads zero while work waits on disk.
    */
   validationsAwaitingHuman?: number;
+  /** SDD 479 phase 5 — does THIS folder's tachyon.yml write a card template, and was it honored? */
+  cardTemplate?: { configured: boolean; refused: boolean };
   tmux?: { state: string; version?: string };
   companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
 }
@@ -228,9 +286,14 @@ export interface CockpitModel {
   };
   fleet: CockpitAgentRow[];
   worktrees: CockpitWorktreeRow[];
+  /** t-af3eef — false when this view never asked for the classified read, so an empty `worktrees`
+   *  means "not collected" rather than "none exist". The counters below are omitted in that case. */
+  worktreesCollected: boolean;
   /** spec 444 — folders whose classified worktree read failed (engine unreachable), with reasons. */
   worktreesUnavailable?: Array<{ folder: string; reason: string }>;
   deliveries: CockpitDeliveryRow[];
+  /** t-af3eef — see `worktreesCollected`. */
+  deliveriesCollected: boolean;
   /** t-43c6fa — folders whose classified delivery read failed (engine unreachable), with reasons. */
   deliveriesUnavailable?: Array<{ folder: string; reason: string }>;
   approvals: CockpitApprovalRow[];
@@ -242,11 +305,23 @@ export interface CockpitModel {
   companion?: CockpitCompanionSettings;
   /** True when multiple workspaces are in scope and none is selected for Companion settings. */
   companionNeedsWorkspacePick?: boolean;
+  /** SDD 479 phase 5 — see CockpitCardTemplateState. */
+  cardTemplate?: CockpitCardTemplateState;
 }
 
 export function buildCockpitModel(
   bundles: CockpitWorkspaceBundle[],
-  opts?: { section?: CockpitSectionId; nowIso?: string; wsHash?: string },
+  opts?: {
+    section?: CockpitSectionId;
+    nowIso?: string;
+    wsHash?: string;
+    /**
+     * SDD 479 phase 5 — the PERSONAL override's state, read from VS Code settings by the host. It
+     * arrives as an option rather than as bundle data because it belongs to one person on one
+     * machine: no workspace owns it, and no engine should ever project it.
+     */
+    personalCardTemplate?: { state: "none" | "active" | "refused"; errors?: string[] },
+  },
 ): CockpitModel {
   // t-d16a39 — the shell-level workspace scope: when a specific workspace is selected, every
   // aggregate section (overview/engine/fleet/worktrees/deliveries/tmux) narrows to that one
@@ -266,11 +341,16 @@ export function buildCockpitModel(
       name: scoped.length > 1 ? `${a.name} (${b.control.folderName})` : a.name,
     })),
   );
-  const worktrees = scoped.flatMap((b) => b.worktrees);
+  // t-af3eef — a bundle that was not asked for this slice contributes nothing, which is different
+  // from contributing an empty list: `worktreesCollected` below carries that difference forward so a
+  // view can say "not collected" instead of showing a confident zero.
+  const worktreesCollected = scoped.some((b) => b.worktrees !== undefined);
+  const worktrees = scoped.flatMap((b) => b.worktrees ?? []);
   const worktreesUnavailable = scoped.flatMap((b) =>
     b.worktreesUnavailable ? [{ folder: b.control.folderName, reason: b.worktreesUnavailable }] : [],
   );
-  const deliveries = scoped.flatMap((b) => b.deliveries);
+  const deliveriesCollected = scoped.some((b) => b.deliveries !== undefined);
+  const deliveries = scoped.flatMap((b) => b.deliveries ?? []);
   const deliveriesUnavailable = scoped.flatMap((b) =>
     b.deliveriesUnavailable ? [{ folder: b.control.folderName, reason: b.deliveriesUnavailable }] : [],
   );
@@ -307,6 +387,17 @@ export function buildCockpitModel(
     companionNeedsWorkspacePick = true;
   }
 
+  // SDD 479 phase 5 — the two homes side by side, so the block can say which one the cards use.
+  const cardTemplate: CockpitCardTemplateState = {
+    personal: opts?.personalCardTemplate?.state ?? "none",
+    ...(opts?.personalCardTemplate?.errors?.length ? { personalErrors: opts.personalCardTemplate.errors } : {}),
+    projects: scoped.map((b) => ({
+      folder: b.control.folderName,
+      configured: b.cardTemplate?.configured === true,
+      refused: b.cardTemplate?.refused === true,
+    })),
+  };
+
   return {
     checkedAt: control.checkedAt,
     section: opts?.section && COCKPIT_SECTION_ORDER.includes(opts.section) ? opts.section : "overview",
@@ -332,13 +423,16 @@ export function buildCockpitModel(
     },
     fleet,
     worktrees,
+    worktreesCollected,
     ...(worktreesUnavailable.length > 0 ? { worktreesUnavailable } : {}),
     deliveries,
+    deliveriesCollected,
     ...(deliveriesUnavailable.length > 0 ? { deliveriesUnavailable } : {}),
     approvals,
     tmux,
     ...(companion ? { companion } : {}),
     ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
+    cardTemplate,
   };
 }
 

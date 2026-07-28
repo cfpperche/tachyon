@@ -21,6 +21,9 @@ import {
   type CockpitModel,
   type CockpitSectionId,
   type CockpitWorkspaceBundle,
+  COLLECT_EVERYTHING,
+  collectNeedsFor,
+  type CockpitCollectNeeds,
 } from "../cockpit/model.js";
 import {
   initMessage,
@@ -78,6 +81,7 @@ import {
   type HumanInboxAction,
 } from "./human-inbox/messages.js";
 import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
+import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import {
   validationsMessage,
   validationErrorMessage,
@@ -208,7 +212,8 @@ export interface CockpitInspector {
  */
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
-  collect: () => Promise<CockpitWorkspaceBundle[]>;
+  /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
+  collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -434,6 +439,21 @@ function strings(): CockpitStrings {
     cardTemplateReset: t("Reset to default"),
     cardTemplateCriticalNote: t("shown anyway when a row is in this state"),
     cardTemplateInlineNote: t("renders inside another element"),
+    // SDD 479 phase 5 — ratified fork 1 made this sentence part of the feature: without it, a
+    // personal override quietly contradicting the project reads as a broken project template.
+    cardTemplateInEffect: t("In effect right now:"),
+    cardTemplatePersonalActive: t("your personal override in VS Code settings — it wins over every project template below"),
+    cardTemplatePersonalRefused: t("your personal override was REFUSED and ignored; the cards fall back to each project's template"),
+    cardTemplatePersonalNone: t("no personal override — each project's own template decides"),
+    cardTemplateProjectNone: t("uses Tachyon's default card"),
+    cardTemplateProjectConfigured: t("has its own template in tachyon.yml"),
+    cardTemplateProjectRefused: t("its tachyon.yml template was refused; showing the default card"),
+    cardTemplateHomeLabel: t("Write this layout to:"),
+    cardTemplateHomeProject: t("This project (tachyon.yml)"),
+    cardTemplateHomePersonal: t("Just me (VS Code settings)"),
+    cardTemplateCopyJson: t("Copy JSON"),
+    cardTemplateJsonHint: t("Paste this into your VS Code settings.json. It applies to every project you open, and wins over their templates; regions you did not change keep whatever each project chose."),
+    cardTemplateOpenSettings: t("Open settings"),
     companionTitle: t("Companion"),
     companionHint: t("Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*)."),
     companionBody: t(
@@ -1006,16 +1026,43 @@ export async function openCockpit(
     else navigate(target);
   }
 
+  /**
+   * SDD 479 phase 5 — read the PERSONAL override the way the sidebar reads it, so Control's statement
+   * about what is in effect cannot disagree with the cards themselves.
+   *
+   * Same key, same validator, same "an empty object is not an attempt to configure anything" rule as
+   * `SidebarPrototype.cardTemplateFor`. What differs is only the question being asked: the sidebar
+   * needs the resolved template, this needs whether one exists and whether it was honored.
+   */
+  const personalCardTemplateState = (): { state: "none" | "active" | "refused"; errors?: string[] } => {
+    const written = vscode.workspace.getConfiguration("tachyon").get<unknown>("sidebar.cardTemplate");
+    if (written === undefined || written === null) return { state: "none" };
+    if (typeof written === "object" && !Array.isArray(written) && Object.keys(written as object).length === 0) {
+      return { state: "none" };
+    }
+    const parsed = parseCardTemplate(written, "tachyon.sidebar.cardTemplate");
+    return parsed.config ? { state: "active" } : { state: "refused", errors: parsed.errors };
+  };
+
   const sendModel = async () => {
     const epoch = navEpoch;
     let model: CockpitModel;
     try {
-      const bundles = await deps.collect();
+      // t-af3eef — collect only what this section reads. The section is computed once, below, and
+      // reused for the needs, so there is exactly one authority for "which view is this" and the
+      // needs cannot drift from the model that gets built. Navigation to a section that reads
+      // neither classified slice no longer waits on either.
+      const section = navSection(currentRoute) ?? "overview";
+      const bundles = await deps.collect(collectNeedsFor(section));
       // t-610705 (Phase D, D3) — navSection(currentRoute) is null for pin (nav-less); "overview"
       // here is only "which background section data stays warm underneath the studio form", NOT a
       // claim that the Overview tab is active (tab highlighting is suppressed client-side instead —
       // see cockpit/App.tsx's `isNavlessStudio`).
-      model = buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview", wsHash: controlWsHash });
+      model = buildCockpitModel(bundles, {
+        section,
+        wsHash: controlWsHash,
+        personalCardTemplate: personalCardTemplateState(),
+      });
     } catch (err) {
       model = buildCockpitModel(
         [
@@ -2127,7 +2174,9 @@ export async function openCockpit(
           return;
         case "copyDiagnostics": {
           try {
-            const bundles = await deps.collect();
+            // A diagnostics dump is explicitly a full picture of the world, so it pays for both
+            // classified reads on purpose — the one place where the old always-collect cost is right.
+            const bundles = await deps.collect(COLLECT_EVERYTHING);
             const text = formatCockpitDiagnostics(buildCockpitModel(bundles, { section: navSection(currentRoute) ?? "overview" }));
             await vscode.env.clipboard.writeText(text);
             live.webview.postMessage(toastMessage(s.copied, "ok"));
@@ -2138,6 +2187,11 @@ export async function openCockpit(
         }
         case "openSettings":
           deps.openSettings();
+          return;
+        // SDD 479 phase 5 — the personal override's home. Filtered to the exact key so the button
+        // lands on the setting it names, not on the top of Tachyon's settings page.
+        case "openPersonalCardTemplate":
+          await vscode.commands.executeCommand("workbench.action.openSettings", "tachyon.sidebar.cardTemplate");
           return;
         case "openDoctor":
           deps.openDoctor();

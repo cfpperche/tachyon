@@ -37,7 +37,7 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
   });
 
   it("lists every catalog component, per region, with what it shows", () => {
-    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {} }));
+    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {}, onOpenSettings: () => {} }));
     for (const region of ["header", "meta", "footer"]) {
       expect(html).toContain(`card-template-region-${region}`);
     }
@@ -48,13 +48,13 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
   });
 
   it("says which components come back on their own, and which travel inside another", () => {
-    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {} }));
+    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {}, onOpenSettings: () => {} }));
     expect(html).toContain("shown anyway when a row is in this state");
     expect(html).toContain("renders inside another element");
   });
 
   it("shows the YAML to paste, and starts with nothing to override", () => {
-    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {} }));
+    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {}, onOpenSettings: () => {} }));
     expect(html).toContain("card-template-yaml");
     expect(html).toContain("settings:");
     expect(html).toContain("cardTemplate:");
@@ -62,7 +62,7 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
   });
 
   it("renders no error list while the composed template is valid", () => {
-    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {} }));
+    const html = renderStatic(CardTemplateBlock({ s: STRINGS, onOpenConfig: () => {}, onOpenSettings: () => {} }));
     expect(html).not.toContain("card-template-errors");
   });
 
@@ -76,7 +76,11 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
     // (or mutate) a running agent. Checked on its imports and props rather than on prose.
     expect(blockSource).toContain("CARD_PREVIEW_ROWS");
     expect(blockSource).not.toMatch(/import[^\n]*(FleetVM|AgentVM|sidebarFleetService)/);
-    expect(blockSource).toMatch(/export function CardTemplateBlock\(\{ s, onOpenConfig \}/);
+    // SDD 479 phase 5 — the prop list grew (`onOpenSettings`, `inEffect`) but the property this
+    // asserts did not: no FLEET input. `inEffect` is folder names and booleans reported by the host,
+    // never a row — so the block still cannot depend on, or mutate, a running agent. The import guard
+    // above is what actually enforces that; this only pins the shape it enforces it on.
+    expect(blockSource).toMatch(/export function CardTemplateBlock\(\{\s*\n\s*s,\s*\n\s*onOpenConfig,\s*\n\s*onOpenSettings,\s*\n\s*inEffect,/);
   });
 
   it("keeps sidebar.css off the Cockpit page — it is shipped for the shadow root only", () => {

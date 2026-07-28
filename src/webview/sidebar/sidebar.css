@@ -394,6 +394,9 @@
     background: color-mix(in srgb, var(--ds-warn, #cca700) 12%, var(--vscode-sideBar-background, transparent));
   }
   .card-template-banner .config-error-title { color: var(--ds-warn, #cca700); }
+  /* SDD 479 phase 5 — a banner action must never run past its own border at the sidebar's narrowest;
+     the label ellipsizes instead, with the full text still in the title attribute. */
+  .config-error-actions .ds-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
   /* spec 415 — owned Attention Stack: six visible FIFO cards, no toast companion. */

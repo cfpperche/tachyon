@@ -1667,6 +1667,23 @@ main.ck-main.ck-main--mission,
   background: var(--vscode-textCodeBlock-background, #0002); overflow-x: auto; white-space: pre;
 }
 
+/* SDD 479 phase 5 — "which home is in effect", and the home the block emits for. */
+.ck-card-effect {
+  margin: 4px 0 10px; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--vscode-panel-border, #4443);
+  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
+}
+.ck-card-effect-label {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .05em; opacity: .75;
+}
+.ck-card-effect-personal { margin: 2px 0 0; font-size: 12px; }
+.ck-card-effect-personal.warn { color: var(--ds-warn, #cca700); }
+.ck-card-effect-projects {
+  margin: 4px 0 0; padding-left: 18px; font-size: 11px; opacity: .9;
+}
+.ck-card-home { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 4px; }
+
 /* ---------------------------------------------------------------------------
    t-ac79a7 — navigation feedback.
 

@@ -55,7 +55,7 @@ export interface Dispatch {
   setCollapsedKeys?: (keys: string[]) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -123,20 +123,32 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
  * only the layout fell back to the default, so this is `role="status"`, warn-toned, and never claims
  * the file is invalid. Without it the fallback is indistinguishable from the feature not working.
  */
-export function CardTemplateRefusalBanner({ refusal }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]> }) {
+export function CardTemplateRefusalBanner({ refusal, personal = false }: { refusal: NonNullable<FleetVM["cardTemplateRefusal"]>; personal?: boolean }) {
   const d = useContext(DispatchCtx);
   const [first, ...rest] = refusal.errors;
   return (
     <div class="config-error-banner card-template-banner" role="status">
       <div class="config-error-title">
         <Icon name="warning" />
-        <strong>Card layout ignored — showing the default</strong>
+        {/* SDD 479 phase 5 — a refused PERSONAL override falls back to the project's template, which
+            may itself be a written one; saying "the default" there would name a layout the person is
+            not looking at. Each banner states the fallback its own home actually has. */}
+        <strong>{personal ? "Personal card layout ignored — using this project's" : "Card layout ignored — showing the default"}</strong>
       </div>
       <div class="config-error-summary" title={refusal.errors.join("\n")}>
         {first}{rest.length > 0 ? ` (+${rest.length} more)` : ""}
       </div>
       <div class="config-error-actions">
-        <Button variant="default" onClick={() => d.global("openConfig")}>Open {refusal.file}</Button>
+        {/* The project's home is a file this button can open; the personal one is a VS Code settings
+            key, opened by the command that surface owns.
+
+            The label is SHORT for the personal home rather than "Open <the full settings id>": at the
+            sidebar's narrowest the long id overflowed its own banner (seen in the phase-5 shots, the
+            same class of defect t-b164b2 found in a badge). The title line above already says which
+            home was ignored, so the button does not have to repeat it. */}
+        <Button variant="default" onClick={() => d.global(personal ? "openPersonalCardTemplate" : "openConfig")}>
+          {personal ? "Open settings" : `Open ${refusal.file}`}
+        </Button>
       </div>
     </div>
   );
@@ -607,6 +619,7 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
       <>
         {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
         {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
+        {fleet.personalCardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.personalCardTemplateRefusal} personal /> : null}
       </>
     );
     // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot

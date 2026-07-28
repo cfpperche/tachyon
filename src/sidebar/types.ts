@@ -229,6 +229,14 @@ export interface FleetVM {
    * is what lets the fallback explain itself instead of reading as the feature not working.
    */
   cardTemplateRefusal?: { file: string; errors: string[] };
+  /**
+   * SDD 479 phase 5 — the same, for the PERSONAL override in VS Code settings. Its own field rather
+   * than a second entry in the one above, because the two homes fail independently: a project
+   * template and a personal one can be refused in the same window, and a human fixing them needs to
+   * know which file to open. Attached by the shell (SidebarPrototype), never by the engine — this
+   * layer belongs to one person on one machine and never rides the workspace projection.
+   */
+  personalCardTemplateRefusal?: { file: string; errors: string[] };
 }
 
 export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
