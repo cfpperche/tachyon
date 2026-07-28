@@ -178,7 +178,13 @@ export const ROUTES: Record<string, Route> = {
       // so this just adds the subroute's own content on top).
       const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
       if (activeRoute?.kind === "task-detail") {
-        const detail = taskDetailFixtures.default?.vm;
+        // t-5564b4 — the route's own taskId picks the payload, so a cockpit fixture and its task
+        // fixture stay matched by data rather than by a naming convention. Without this the catalog
+        // could only preview ONE content shape, which is why the reported breakage was invisible
+        // here: the single fixture had no long refs, no attention and no long body.
+        const wanted = (activeRoute as { taskId?: string }).taskId;
+        const detail = (Object.values(taskDetailFixtures).find((candidate) => candidate.vm.id === wanted)
+          ?? taskDetailFixtures.default)?.vm;
         if (detail) msgs.push(taskMessage(detail));
       } else if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
         const feed = activityFixtures.default?.vm;

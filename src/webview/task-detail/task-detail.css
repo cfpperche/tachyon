@@ -5,10 +5,48 @@
 .codicon-loading { animation: td-spin 1.1s linear infinite; }
 @keyframes td-spin { to { transform: rotate(360deg); } }
 
-.td-root { max-width: 760px; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); }
+/* t-5564b4 — the reading column, and the one rule that keeps the page from scrolling sideways.
+   `min-width: 0` is load-bearing: without it a grid/flex child refuses to shrink below its content,
+   so ONE long unbreakable string re-opens the horizontal scrollbar for the whole page. Every
+   long-string carrier below repeats it for the same reason. */
+/* t-5564b4 — LEFT-aligned, not centred. The shell's breadcrumb sits at the left edge, so a centred
+   column detached the content from the only navigation on screen and left the wide gutter the report
+   calls "grande área vazia ao redor". A max-width still bounds the measure for reading; it just
+   starts where the header starts. */
+.td-root { max-width: 82ch; margin: 0; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); min-width: 0; }
+.td-root, .td-root * { min-width: 0; }
+
+/* t-5564b4 — defend this route from a leaked global. `rich-doc.css` carries a bare
+   `.err { position: fixed; ... }`, and `.ds-badge.err` matches it, so a missing-dep badge was yanked
+   out of the Dependencies list and pinned to the bottom of the window. That sheet is lazily
+   co-loaded into Control and never unloaded — its own header documents the same defect class for
+   bare ELEMENT selectors (t-e085bc/t-ca31c2); a bare CLASS is the next rung. The real fix is to
+   namespace it there and is filed separately (t-61189b); this only stops the route the report is
+   about from being wrong while that happens. */
+.td-root .ds-badge.err { position: static; inset: auto; box-shadow: none; }
+
+/* Identity under the title: an id and a status are metadata, not part of the heading. */
+.td-identity { display: flex; align-items: center; gap: var(--ds-2); flex-wrap: wrap; margin: calc(var(--ds-2) * -1) 0 var(--ds-3); }
+
+/* t-5564b4 — an attention message is a sentence. `.ds-badge` is nowrap, so it used to grow to the
+   width of the text; this wraps, and gives the awaiting-human case a tone the eye finds first. */
+.td-callout { display: flex; gap: var(--ds-2); align-items: flex-start; padding: var(--ds-3); border: var(--ds-border-width) solid var(--ds-border); border-left-width: 3px; border-radius: var(--ds-radius); background: var(--ds-card); }
+.td-callout.awaiting { border-left-color: var(--ds-warn); }
+.td-callout-icon { color: var(--ds-warn); flex: none; margin-top: 2px; }
+.td-callout-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.td-callout-text { overflow-wrap: anywhere; }
+.td-callout-ref { overflow-wrap: anywhere; }
+
+/* t-5564b4 — artifact refs: a short type label plus a value truncated in the middle by `refDisplay`.
+   The value is mono because it is an identifier, and `overflow-wrap` is the belt to that braces:
+   even an untruncated value can never widen the row. */
+.td-ref-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.td-ref-row { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); gap: var(--ds-2); align-items: baseline; }
+.td-ref-type { font-size: var(--ds-micro); color: var(--ds-muted); text-transform: uppercase; letter-spacing: .04em; }
+.td-ref-value { font-family: var(--ds-mono); font-size: var(--ds-small); overflow-wrap: anywhere; }
 
 .td-head { display: flex; align-items: baseline; gap: var(--ds-3); flex-wrap: wrap; margin-bottom: var(--ds-3); }
-.td-head h1 { font-size: var(--ds-title); font-weight: 600; margin: 0; }
+.td-head h1 { font-size: var(--ds-title); font-weight: 600; margin: 0; overflow-wrap: anywhere; text-wrap: balance; line-height: 1.25; }
 .ref { font-size: var(--ds-micro); color: var(--ds-muted); font-family: var(--ds-mono); }
 /* dogfood round 2 (#3) — Open in Studio / Refresh used to float at the page bottom, below the body; moved
    into the title row (the same `.ds-actions` right-alignment the Studios' own header uses) so the primary
@@ -17,7 +55,11 @@
 .td-head-actions { align-self: center; }
 
 .td-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--ds-3); margin: var(--ds-3) 0; padding: var(--ds-3); border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
-.td-field { display: flex; flex-direction: column; gap: 4px; }
+.td-field { display: flex; flex-direction: column; gap: 4px; justify-content: flex-start; }
+/* t-5564b4 — a read-only value used to sit at the same weight as an editable control, so the grid
+   read as uniformly interactive when half of it is not. The label carries the distinction. */
+.td-field.readonly .ds-section::after { content: ""; }
+.td-field.readonly > span:last-child { color: var(--ds-fg); overflow-wrap: anywhere; }
 .td-field .ds-section { margin: 0; }
 .who-btn { color: inherit; cursor: pointer; text-align: left; }
 .who-btn:hover { text-decoration: underline; }
@@ -32,7 +74,16 @@
 
 .td-body { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: var(--ds-border-width) solid var(--ds-border); }
 .td-body .ds-section { margin-bottom: var(--ds-2); }
-.td-body .md { font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.55; }
+.td-body .md { font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+/* t-5564b4 — reading rhythm: headings need air above, blocks need separation, and a code block must
+   own its overflow. A `pre` that scrolls the PAGE instead of itself is the other half of the
+   horizontal-scrollbar report. */
+.td-body .md > * + * { margin-top: var(--ds-3); }
+.td-body .md h1, .td-body .md h2, .td-body .md h3 { margin-top: var(--ds-4); margin-bottom: var(--ds-2); line-height: 1.3; }
+.td-body .md ul, .td-body .md ol { padding-left: 1.4em; display: flex; flex-direction: column; gap: 4px; }
+.td-body .md pre { overflow-x: auto; max-width: 100%; }
+.td-body .md code { overflow-wrap: anywhere; }
+.td-body .md :is(table, img) { max-width: 100%; }
 .td-journal { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: var(--ds-border-width) solid var(--ds-border); display: flex; flex-direction: column; gap: var(--ds-2); }
 .td-journal-list { display: flex; flex-direction: column; gap: var(--ds-3); }
 .td-journal-entry { border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-3); background: var(--ds-card); }

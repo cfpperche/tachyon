@@ -608,6 +608,22 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-4f2c91") },
   },
+  // t-5564b4 — the content shapes the human's report is about. Same route, different task payload:
+  // `-heavy` carries the long title, long body, awaiting-human and the sha/path/URL refs that used to
+  // escape the reading column; `-sparse` proves the empty states hold the layout alone; `-tombstone`
+  // proves the missing-task banner stays readable. The suffix selects the task-detail fixture.
+  "task-detail-heavy": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-067540") },
+  },
+  "task-detail-sparse": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-000001") },
+  },
+  "task-detail-tombstone": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-067541") },
+  },
   // t-610705 (Phase C.2) — Fleet subroutes: same activeRoute-attached-after-buildCockpitModel
   // pattern as task-detail above. nav section for both is "fleet".
   "agent-activity": {
