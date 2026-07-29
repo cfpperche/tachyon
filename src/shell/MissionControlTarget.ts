@@ -5,6 +5,7 @@ import type { TaskPriority, TaskStatus } from "../tasks/types.js";
 import { missionControlBoardSnapshot } from "../runtime-api/missionControlProjection.js";
 import type { MissionControlTaskPatchV1 } from "../runtime-api/missionControlCommands.js";
 import { EDITOR_HUMAN_ACTOR, type Validation, type ValidationCloseInput, type ValidationUpdateExpect } from "../validations/types.js";
+import { wakeValidationClosedAuthors, type ValidationCloseLiveEntry } from "../validations/validationCloseNotify.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
@@ -29,9 +30,14 @@ export interface WorkspaceMissionControlTarget extends WorkspacePresentationTarg
 
 export interface LegacyMissionControlSource extends WorkspacePresentationTarget {
   readonly config?: { agents?: Record<string, unknown> };
-  readonly manager: { list(): Promise<MissionControlAgentRow[]> };
+  readonly manager: { list(): Promise<Array<MissionControlAgentRow | ValidationCloseLiveEntry>> };
   readonly taskStore: TaskStore;
   readonly validationStore: ValidationStore;
+  /**
+   * t-c6c4ad — optional in-process inject port (full Workspace has this; thin fakes may omit).
+   * When present, a human close wakes the author the same way the engine path does.
+   */
+  readonly tmux?: { sendSubmittedLine(session: string, text: string): Promise<void> };
 }
 
 /** Compatibility adapter used only until extension activation switches to WorkspaceClient. */
@@ -41,7 +47,7 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     wsHash: source.wsHash,
     folderName: source.folderName,
     declaredAgentNames: () => Object.keys(source.config?.agents ?? {}),
-    listMissionControlAgents: () => source.manager.list(),
+    listMissionControlAgents: () => source.manager.list() as Promise<MissionControlAgentRow[]>,
     boardSnapshot: async (liveAdhocAgents) => buildBoardSnapshot({
       store: source.taskStore,
       declaredAgents: Object.keys(source.config?.agents ?? {}),
@@ -52,7 +58,21 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     updateTask: async (id, patch) => { await source.taskStore.update(id, patch); },
     reorderLane: async (status, priority, input) => { await source.taskStore.reorderLane(status, priority, input); },
     // t-98256c — the in-process shell path is the human in the editor, same as the engine command.
-    closeValidation: async (id, input) => { await source.validationStore.closeRound(id, { ...input, actor: EDITOR_HUMAN_ACTOR }); },
+    // t-c6c4ad — durable close first; best-effort author wake when the source can inject (Workspace).
+    closeValidation: async (id, input) => {
+      const closed = await source.validationStore.closeRound(id, { ...input, actor: EDITOR_HUMAN_ACTOR });
+      if (source.tmux) {
+        await wakeValidationClosedAuthors({
+          validation: closed,
+          outcome: input.outcome,
+          listEntries: async () => (await source.manager.list()) as ValidationCloseLiveEntry[],
+          inject: async (session, text) => {
+            await source.tmux!.sendSubmittedLine(session, text);
+            return { receipt: `tmux:${session}` };
+          },
+        });
+      }
+    },
     listValidations: () => source.validationStore.list(),
     assignValidation: async (id, assignee, expect) => { await source.validationStore.update(id, { actor: EDITOR_HUMAN_ACTOR, assignee, ...(expect ? { expect } : {}) }); },
   };
