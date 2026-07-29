@@ -7486,7 +7486,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(ledger.get("grok-builder")).toBeDefined();
     expect((await manager.list()).find((a) => a.name === "grok-builder")).toMatchObject({
       name: "grok-builder",
-      declared: true,
+      lifetime: "saved",
       running: false,
     });
   });
