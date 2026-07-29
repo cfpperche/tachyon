@@ -126,6 +126,8 @@ class SharedSecretHost extends FakeHost {
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
 function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
   const sessions = new Set<string>();
+  /** `${session}\0${key}` → value, mirroring tmux's per-session environment. */
+  const sessionEnv = new Map<string, string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
   const pasteBuffers = new Map<string, string>();
@@ -148,9 +150,22 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       sessions.add(name);
+      // t-fab832 — record the session environment the real tmux would keep, so `show-environment`
+      // can answer with the attestation this build mints at creation.
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] !== "-e") continue;
+        const eq = (args[i + 1] ?? "").indexOf("=");
+        if (eq > 0) sessionEnv.set(`${name}\u0000${args[i + 1]!.slice(0, eq)}`, args[i + 1]!.slice(eq + 1));
+      }
       panes.set(name, "");
       if (opts.realPaneProcesses) await replacePaneProcess(name);
       return { stdout: "", stderr: "" };
+    }
+    if (args[2] === "show-environment") {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
+      const lines = [...sessionEnv].filter(([k]) => k.startsWith(`${name}\u0000`))
+        .map(([k, v]) => `${k.slice(name.length + 1)}=${v}`);
+      return { stdout: lines.join("\n"), stderr: "" };
     }
     if (args[2] === "has-session") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
@@ -208,7 +223,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
+  return { sessions, sessionEnv, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -379,11 +394,11 @@ async function makeWorkspace(
   const bAgent = opts.bRuntime ? [writeCanonicalAgent(root, "b", { runtime: opts.bRuntime })] : [];
   fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? canonicalAgentsYaml(bAgent) + terminals, "utf8");
   const host = new SharedSecretHost(mkdir(), canonicalAgentSecrets(root, bAgent));
-  const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
+  const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
   // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
-  return { ws, host, tmux, sessions, dead, sent, panes, calls };
+  return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
 
 it("rejects an invalid reload and retains the prior known-good config", async () => {
@@ -2359,15 +2374,16 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
   });
 
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
-    const { ws, sessions } = await makeWorkspace();
+    const { ws, sessions, sessionEnv } = await makeWorkspace();
     ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "restartable" } });
-    // t-fab832 — the post-cut contract: a live agent session must carry a ledger row proving THIS
-    // build spawned it, so `live-only` gets one. The case this test used to cover — live with no row
-    // at all — is no longer a state an activated workspace can be in, because the activation gate
-    // refuses it. What the test is actually about is unchanged: compaction keeps the rows that are
-    // still referenced and drops `stale`.
-    ws.ledger.record("live-only", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "collected" } });
+    // t-fab832 — the post-cut contract: a live agent session must ATTEST that this build created it,
+    // and the proof lives on the session rather than in the ledger. This fixture adds the session
+    // directly, so it seeds the attestation the way a real `new-session` would. The case this test
+    // used to cover — a live session with no proof — is no longer a state an activated workspace can
+    // be in, because the gate refuses it. What the test is about is unchanged: compaction keeps the
+    // rows still referenced and drops `stale`.
     sessions.add(ws.manager.session("live-only"));
+    sessionEnv.set(`${ws.manager.session("live-only")}\u0000TACHYON_INSTANCE_CUT`, "agent-instance-v5");
     fs.mkdirSync(path.dirname(sessionOwnersFile(ws.workspaceRoot)), { recursive: true });
     fs.writeFileSync(sessionOwnersFile(ws.workspaceRoot), [
       JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t1" }),

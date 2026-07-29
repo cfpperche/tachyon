@@ -64,9 +64,28 @@ export interface LegacySessionEntry {
   session: string;
   name: string;
   kind: "agent" | "terminal";
+  /**
+   * The value of `TACHYON_INSTANCE_CUT` read back from the live session, or undefined when the
+   * session does not carry it (a pre-cut build never minted one) or it could not be read.
+   */
+  attestation?: string;
 }
 
 const SESSION_PREFIX = "tachyon";
+
+/**
+ * The attestation a post-cut build MINTS into every agent session it creates.
+ *
+ * It lives on the SESSION, not in the ledger, and that is the whole point: the ledger is separate
+ * state that can be compacted, rewritten or simply absent, so using it as proof means a process with
+ * no record reads as "probably fine". A token minted into the session environment at creation is
+ * carried by the process itself — the only thing that can produce it is a build that had it.
+ *
+ * It carries the protocol version so the proof is specific rather than a boolean: a session minted by
+ * a future build states its own version instead of masquerading as this one.
+ */
+export const POST_CUT_SESSION_ATTESTATION_ENV = "TACHYON_INSTANCE_CUT";
+export const POST_CUT_SESSION_ATTESTATION = "agent-instance-v5";
 
 /**
  * Does this tmux session belong to THIS workspace's Tachyon fleet?
@@ -139,21 +158,26 @@ export function inspectLegacyFleet(input: {
   //
   //    Two negative controls live in the first two conditions: a product terminal is not an agent,
   //    and a session outside `tachyon-<wsHash>-` is not ours.
-  //    FAIL-CLOSED, ratified: only a session PROVABLY spawned by this build admits. A pre-cut row
-  //    refuses, and so does a MISSING row — "we have no record of this process" is not a reason to
-  //    adopt it. The weaker reading I first shipped treated an absent row as absence of evidence; the
-  //    ratified rule treats it as absence of PROOF, which is the direction a gate must fail.
-  const provenPostCut = new Set(
-    input.ledger.filter(([, row]) => !legacyFallbackUsed(row)).map(([name]) => name),
-  );
+  //    FAIL-CLOSED on PROOF CARRIED BY THE SESSION ITSELF.
+  //
+  //    The proof is not the ledger. A ledger row is separate state — it can be compacted, rewritten,
+  //    or absent — so treating it as proof means a process with no record reads as "probably fine",
+  //    which is the direction a gate must never fail. The attestation is minted into the session
+  //    environment at creation, so the only thing that can produce it is a build that had it.
+  //
+  //    Anything else refuses: a pre-cut session (never minted one), an unreadable one, and a session
+  //    claiming some other version. There is deliberately no ledger fallback here — "even without a
+  //    ledger" is precisely the case this must still refuse.
   for (const entry of input.liveSessions) {
     if (entry.kind !== "agent") continue;
     if (!isOwnedAgentSession(entry.session, input.wsHash)) continue;
-    if (provenPostCut.has(entry.name)) continue;
+    if (entry.attestation === POST_CUT_SESSION_ATTESTATION) continue;
     offenders.push({
       kind: "live-agent-session",
       name: entry.name,
-      detail: `tmux session ${entry.session} is a live agent with no post-cut ledger row to prove this build spawned it`,
+      detail: entry.attestation === undefined
+        ? `tmux session ${entry.session} carries no post-cut attestation — it was not created by this build`
+        : `tmux session ${entry.session} attests '${entry.attestation}', not '${POST_CUT_SESSION_ATTESTATION}'`,
     });
   }
 

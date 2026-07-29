@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
+  POST_CUT_SESSION_ATTESTATION,
   describeLegacyFleetRefusal,
   inspectLegacyFleet,
   isOwnedAgentSession,
@@ -66,51 +67,50 @@ describe("legacy fleet gate — seeds (t-fab832)", () => {
   });
 
   /**
-   * SEED 3 — a LIVE tmux session this build cannot account for.
+   * SEED 3 — a LIVE tmux session without valid post-cut proof.
    *
-   * "Legacy" is doing real work in this rule. A live agent session is the NORMAL state of a running
-   * fleet, so refusing on every one would mean the product refuses to activate after any restart with
-   * agents up. What makes one legacy is that it survived a build from before the cut, and the
-   * evidence is its ledger row: a session this build spawned has a row carrying an instance policy.
+   * The proof is carried by the SESSION, not the ledger. A ledger row is separate state that can be
+   * compacted, rewritten or absent, so using it as proof lets a process with no record read as
+   * "probably fine" — the direction a gate must never fail. The attestation is minted into the
+   * session environment at creation, so only a build that had it can produce one.
    */
-  it("refuses on a live owned agent still running under a pre-cut ledger row, and admits once stopped", () => {
+  it("refuses a live owned agent session carrying no attestation, and admits once it is stopped", () => {
     const live: LegacySessionEntry = { session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" };
-    const refused = inspect({ liveSessions: [live], ledger: [["reviewer", PRE_CUT]] });
+    const refused = inspect({ liveSessions: [live] });
     expect(refused.ok).toBe(false);
-    expect(refused.offenders.some((o) => o.kind === "live-agent-session" && o.name === "reviewer")).toBe(true);
-    expect(refused.offenders.find((o) => o.kind === "live-agent-session")!.detail).toContain(`tachyon-${WS}-reviewer`);
-    // Stopping it clears the session offender; the pre-cut ROW is still its own, separate offender.
-    const stopped = inspect({ liveSessions: [], ledger: [["reviewer", PRE_CUT]] });
-    expect(stopped.offenders.map((o) => o.kind)).toEqual(["ledger-row"]);
+    expect(refused.offenders[0]).toMatchObject({ kind: "live-agent-session", name: "reviewer" });
+    expect(refused.offenders[0]!.detail).toContain("was not created by this build");
+    expect(inspect({ liveSessions: [] }).ok).toBe(true);
+  });
+
+  it("admits a live agent that carries the post-cut attestation", () => {
+    const proven: LegacySessionEntry = {
+      session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent",
+      attestation: POST_CUT_SESSION_ATTESTATION,
+    };
+    expect(inspect({ liveSessions: [proven] })).toEqual({ ok: true, offenders: [] });
   });
 
   /**
-   * The other half of seed 3, and the one that keeps the product usable: a live agent THIS build
-   * spawned is accounted for by its ledger row and must NOT block activation. Without this, the gate
-   * would refuse every ordinary restart that happened to have a fleet running — which is not a
-   * legacy check, it is an outage.
+   * NO LEDGER FALLBACK, and this is the correction that mattered. I twice tried to source this proof
+   * from the ledger — first admitting anything with a post-cut row, then admitting anything with no
+   * row at all. Both let a session in on the strength of state that is not the session. A modern
+   * ledger row does NOT excuse a session that cannot attest for itself.
    */
-  it("admits a live agent that this build can account for", () => {
+  it("refuses an unattested session even when its ledger row is modern", () => {
     const live: LegacySessionEntry = { session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" };
-    expect(inspect({ liveSessions: [live], ledger: [["reviewer", MODERN]] })).toEqual({ ok: true, offenders: [] });
-    // A pre-cut row for the same live agent is refused by BOTH rules, independently.
-    const stillLegacy = inspect({ liveSessions: [live], ledger: [["reviewer", PRE_CUT]] });
-    expect(stillLegacy.offenders.map((o) => o.kind).sort()).toEqual(["ledger-row", "live-agent-session"]);
+    const refused = inspect({ liveSessions: [live], ledger: [["reviewer", MODERN]] });
+    expect(refused.ok).toBe(false);
+    expect(refused.offenders.map((o) => o.kind)).toEqual(["live-agent-session"]);
   });
 
-  /**
-   * FAIL-CLOSED, and this is the ratified reading rather than my first one. I initially admitted a
-   * live agent with NO ledger row, reasoning that a compacted row is absence of EVIDENCE. The gate is
-   * about absence of PROOF: "we have no record of this process" is not a reason to adopt it, and a
-   * gate that admits the unprovable is not a gate. Only a session this build can prove it spawned
-   * gets through.
-   */
-  it("refuses a live agent whose ledger row is absent — no proof is not permission", () => {
-    const live: LegacySessionEntry = { session: `tachyon-${WS}-live-only`, name: "live-only", kind: "agent" };
-    const refused = inspect({ liveSessions: [live], ledger: [] });
+  it("refuses a session attesting some other version rather than trusting the shape", () => {
+    const other: LegacySessionEntry = {
+      session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent", attestation: "agent-instance-v9",
+    };
+    const refused = inspect({ liveSessions: [other] });
     expect(refused.ok).toBe(false);
-    expect(refused.offenders.map((o) => [o.kind, o.name])).toEqual([["live-agent-session", "live-only"]]);
-    expect(refused.offenders[0]!.detail).toContain("no post-cut ledger row");
+    expect(refused.offenders[0]!.detail).toContain("attests 'agent-instance-v9'");
   });
 });
 
@@ -121,6 +121,7 @@ describe("legacy fleet gate — negative controls (t-fab832)", () => {
    */
   it("never blocks on a product terminal, in the roster or running", () => {
     const terminalEntry: LegacyRosterEntry = { name: "devserver", kind: "terminal", hasProfilePointer: false };
+    // No attestation on purpose: a terminal is not an agent and must not need one.
     const terminalSession: LegacySessionEntry = { session: `tachyon-${WS}-devserver`, name: "devserver", kind: "terminal" };
     // An inline-shaped terminal is still not an offender — `hasProfilePointer: false` is normal here.
     expect(inspect({ rosterEntries: [terminalEntry], liveSessions: [terminalSession] }))
@@ -147,8 +148,8 @@ describe("legacy fleet gate — negative controls (t-fab832)", () => {
 describe("legacy fleet gate — what the operator is told (t-fab832)", () => {
   it("names every offender class present, and only those", () => {
     const result = inspect({
-      // `reviewer` is live AND pre-cut, so both the session and the row classes are present.
-      ledger: [["old-spike", PRE_CUT], ["reviewer", PRE_CUT]],
+      // `old-spike` is a pre-cut ROW; `reviewer` is an unattested live SESSION. Both classes present.
+      ledger: [["old-spike", PRE_CUT]],
       liveSessions: [{ session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" }],
     });
     expect(result.remedy).toContain("stop those agents");

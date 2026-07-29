@@ -65,7 +65,7 @@ import {
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
-import { describeLegacyFleetRefusal, inspectLegacyFleet } from "../agents/legacyFleetGate.js";
+import { POST_CUT_SESSION_ATTESTATION_ENV, describeLegacyFleetRefusal, inspectLegacyFleet } from "../agents/legacyFleetGate.js";
 import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -5962,10 +5962,17 @@ export class Workspace {
         kind: this.manager.kindOf(name),
         hasProfilePointer: profilePointers.has(name),
       })),
-      liveSessions: surviving.map((session) => {
+      liveSessions: await Promise.all(surviving.map(async (session) => {
         const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
-        return { session, name, kind: this.manager.kindOf(name) };
-      }),
+        return {
+          session,
+          name,
+          kind: this.manager.kindOf(name),
+          // Proof is read off the SESSION, not the ledger. An unreadable session yields undefined,
+          // which the gate refuses — a failed read must never admit.
+          attestation: await this.tmux.sessionEnvValue(session, POST_CUT_SESSION_ATTESTATION_ENV),
+        };
+      })),
     });
     if (!legacy.ok) {
       this.host.notify(describeLegacyFleetRefusal(legacy), "error");
