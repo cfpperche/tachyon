@@ -1,17 +1,27 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  assertWebviewChunksReachable,
-  pruneUnreachableWebviewChunks,
-  reachableWebviewChunkBasenames,
-} from "../../scripts/webview-chunk-hygiene.mjs";
 
 /**
  * t-06a542 — content-hashed cockpit chunks must not accumulate into the VSIX.
  * Fail-before: a reused dist/webview/chunks kept every historical cockpit-App-*.js hash.
+ *
+ * Import shape matches packageCleanGate.test.ts: dynamic import of the ESM .mjs helper.
  */
+
+type Hygiene = typeof import("../../scripts/webview-chunk-hygiene.mjs");
+
+let reachableWebviewChunkBasenames: Hygiene["reachableWebviewChunkBasenames"];
+let pruneUnreachableWebviewChunks: Hygiene["pruneUnreachableWebviewChunks"];
+let assertWebviewChunksReachable: Hygiene["assertWebviewChunksReachable"];
+
+beforeAll(async () => {
+  const mod = await import("../../scripts/webview-chunk-hygiene.mjs");
+  reachableWebviewChunkBasenames = mod.reachableWebviewChunkBasenames;
+  pruneUnreachableWebviewChunks = mod.pruneUnreachableWebviewChunks;
+  assertWebviewChunksReachable = mod.assertWebviewChunksReachable;
+});
 
 const roots: string[] = [];
 afterEach(() => {
