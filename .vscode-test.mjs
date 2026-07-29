@@ -63,7 +63,22 @@ const TMUX_ISOLATION_ENV = {
   TMUX_TMPDIR,
 };
 
-const GATE_ENV = { ...ENGINE_RUNTIME_ENV, ...TMUX_ISOLATION_ENV };
+/**
+ * t-abde96 — every editor-host gate run gets a disposable global-settings home.
+ *
+ * Without this, the suite would read/write the human's real `~/.tachyon/settings.json` — the
+ * exact coupling the recovery dogfood is designed to avoid. The path is under STAGING_ROOT so
+ * it dies with the run (and never touches a person's preferences).
+ */
+const GLOBAL_SETTINGS_HOME = path.join(STAGING_ROOT, "global-settings-home", GATE_RUN_ID);
+fs.rmSync(path.dirname(GLOBAL_SETTINGS_HOME), { recursive: true, force: true });
+fs.mkdirSync(GLOBAL_SETTINGS_HOME, { recursive: true, mode: 0o700 });
+
+const GLOBAL_SETTINGS_ISOLATION_ENV = {
+  TACHYON_GLOBAL_SETTINGS_HOME: GLOBAL_SETTINGS_HOME,
+};
+
+const GATE_ENV = { ...ENGINE_RUNTIME_ENV, ...TMUX_ISOLATION_ENV, ...GLOBAL_SETTINGS_ISOLATION_ENV };
 
 const SINGLE_ROOT_FIXTURE = stagedFixture("test/fixtures/sample-workspace");
 const WORKSPACE_FOLDERS = [SINGLE_ROOT_FIXTURE];
@@ -250,6 +265,21 @@ export default defineConfig([
     label: "multi-root",
     files: "test/integration-multiroot/**/*.test.js",
     workspaceFolder: "test/fixtures/multiroot/multi.code-workspace",
+    env: GATE_ENV,
+    mocha: {
+      ui: "bdd",
+      timeout: 30000,
+    },
+  },
+  {
+    /**
+     * t-abde96 — empty window (no workspace folders). Proves the global settings recovery command
+     * is registered BEFORE the early return that skips workspace boot, and that it creates/opens
+     * the isolated global file. Must not share the single-root suite's workspaceFolder.
+     */
+    label: "empty-window",
+    files: "test/integration-empty/**/*.test.js",
+    // No workspaceFolder → VS Code opens with zero folders (the recovery state under test).
     env: GATE_ENV,
     mocha: {
       ui: "bdd",

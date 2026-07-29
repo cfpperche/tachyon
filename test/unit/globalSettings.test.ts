@@ -123,6 +123,18 @@ describe("agentPane.enabled fails toward enabled", () => {
     const parsed = parseGlobalSettings({ version: 1 }, "settings.json");
     expect(parsed.settings?.agentPaneEnabled).toBe(true);
   });
+
+  /**
+   * t-abde96 — fail-before pin for the Extension Host dogfood.
+   * If this ever inherits `agentPaneEnabled` from LKG on refusal, the real EH dogfood in
+   * `test/integration/globalSettingsRecoveryDogfood.test.js` will also go red — and should.
+   */
+  it("t-abde96 fail-before: refused state must not equal LKG when LKG had the pane off", () => {
+    const lkg = { ...DEFAULT_GLOBAL_SETTINGS, agentPaneEnabled: false };
+    const refused = resolveGlobalSettings(lkg, { file: "settings.json", errors: ["invalid"] });
+    expect(refused.settings.agentPaneEnabled).not.toBe(lkg.agentPaneEnabled);
+    expect(refused.settings.agentPaneEnabled).toBe(true);
+  });
 });
 
 describe("global settings store", () => {
