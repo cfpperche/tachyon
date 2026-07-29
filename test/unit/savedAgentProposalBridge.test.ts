@@ -4,7 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { listSavedAgentProposals, readSavedAgentProposalWitness } from "../../src/agents/savedAgentProposalStore.js";
+import { listSavedAgentProposals, readSavedAgentProposalWitness, recordSavedAgentProposal } from "../../src/agents/savedAgentProposalStore.js";
+import { proposedWorktreeEnabled, REFUSED_PROPOSAL_WORKSPACE_KEYS } from "../../src/agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import { commitAgentProfileLifecycle, inspectAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
 import { proposeSavedAgentGrantPatchFromStudioMutation } from "../../src/config/agentProfileStudio.js";
@@ -267,6 +268,76 @@ describe("t-3bde32 — the grant Studio writes is the grant the Bridge door read
     const revoked = await bridge.call("propose_saved_agent", { ...PROPOSAL, name: "other" });
     expect(revoked.isError).toBe(true);
     expect(JSON.stringify(revoked.content)).toContain("capability_absent");
+  });
+});
+
+describe("t-4071e4 — isolated worktree in the proposal contract", () => {
+  it("defaults to ISOLATED, carries an explicit false, and refuses location fields by name", async () => {
+    const root = workspace();
+    profile(root, "claude-runtime", { proposeSavedAgent: true });
+    const bridge = harness(root, { kind: "agent", name: "claude-runtime" });
+
+    // Omitted → isolated. This is the asymmetry the task reported: agents born through this door
+    // used to come out LESS isolated than hand-made ones.
+    const silent = await bridge.call("propose_saved_agent", PROPOSAL);
+    expect(silent.isError).toBeFalsy();
+    expect(proposedWorktreeEnabled(listSavedAgentProposals(root)[0]!.spec)).toBe(true);
+
+    // An explicit opt-out is carried, not ignored — the human sees it and decides.
+    const off = await bridge.call("propose_saved_agent", { ...PROPOSAL, name: "shared", isolated_worktree: false });
+    expect(off.isError).toBeFalsy();
+    const shared = listSavedAgentProposals(root).find((p) => p.spec.name === "shared")!;
+    expect(proposedWorktreeEnabled(shared.spec)).toBe(false);
+    expect(shared.spec.workspace).toEqual({ worktree: false });
+
+    // The tool exposes no way to choose WHERE the checkout lands.
+    const schema = bridge.schemaOf("propose_saved_agent");
+    for (const forbidden of ["path", "branch", "base", "worktree_base"]) {
+      expect(schema, `tool schema must not offer '${forbidden}'`).not.toContain(`"${forbidden}"`);
+    }
+  });
+
+  it("refuses a location field BY NAME rather than pruning it", () => {
+    const root = workspace();
+    for (const key of REFUSED_PROPOSAL_WORKSPACE_KEYS) {
+      const admission = recordSavedAgentProposal({
+        workspaceRoot: root,
+        proposer: "claude-runtime",
+        proposerProfile: { grants: { proposeSavedAgent: true } },
+        spec: {
+          name: "importer", runtimeAdapter: "claude", rationale: "why",
+          workspace: { worktree: true, [key]: "/anywhere" } as never,
+        },
+        base: { configSha256: workspaceConfigSha256(root) },
+        nowMs: Date.now(),
+        roster: [{ name: "claude-runtime", kind: "agent", subagents: [] }],
+      });
+      expect(admission.ok, `${key} must be refused`).toBe(false);
+      if (admission.ok) throw new Error("unreachable");
+      expect(admission.code).toBe("workspace_field_refused");
+      expect(admission.reason).toContain(`'${key}'`);
+    }
+  });
+
+  it("includes the workspace policy in the DIGEST, so opting out cannot ride a trusted digest", () => {
+    const root = workspace();
+    const spec = { name: "importer", runtimeAdapter: "claude", rationale: "why" } as const;
+    const args = {
+      workspaceRoot: root,
+      proposer: "claude-runtime",
+      proposerProfile: { grants: { proposeSavedAgent: true } },
+      base: { configSha256: workspaceConfigSha256(root) },
+      nowMs: Date.now(),
+      roster: [{ name: "claude-runtime", kind: "agent" as const, subagents: [] }],
+    };
+    const isolated = recordSavedAgentProposal({ ...args, spec: { ...spec, workspace: { worktree: true } } });
+    fs.rmSync(path.join(root, ".tachyon", "saved-agent-proposals"), { recursive: true, force: true });
+    const shared = recordSavedAgentProposal({ ...args, spec: { ...spec, workspace: { worktree: false } } });
+    expect(isolated.ok && shared.ok).toBe(true);
+    if (!isolated.ok || !shared.ok) throw new Error("unreachable");
+    // Two specs that differ ONLY in isolation must not share a digest — otherwise an approval of the
+    // isolated one could be replayed to commit the shared one.
+    expect(shared.proposal.digest).not.toBe(isolated.proposal.digest);
   });
 });
 

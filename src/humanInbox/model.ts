@@ -220,6 +220,11 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
         proposal: {
           id: untrusted.id,
           proposer: "unknown",
+          // t-4071e4 — an unreadable proposal asserts NOTHING about isolation, in either direction:
+          // `false` would claim it lands in the human's checkout and `true` would claim it does not,
+          // both on the strength of a file that failed its digest check. Same reading as the
+          // `(unreadable)` name and runtime beside it.
+          worktreeEnabled: "unknown",
           proposerTrust: "bridge-resolved",
           digest: "",
           createdAt: new Date(0).toISOString(),

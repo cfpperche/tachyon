@@ -8,7 +8,7 @@ import {
   savedAgentProposalPath,
   appendSavedAgentProposalWitness,
 } from "./savedAgentProposalStore.js";
-import { savedAgentProposalIsExpired, type SavedAgentProposal } from "./savedAgentProposal.js";
+import { proposedWorktreeEnabled, savedAgentProposalIsExpired, type SavedAgentProposal } from "./savedAgentProposal.js";
 import type { AgentProfileGrants } from "../config/agentProfileGrants.js";
 
 /**
@@ -68,6 +68,13 @@ export interface SavedAgentProposalReceipt {
    * it never starts a session. Human Inbox copy uses the same phrase.
    */
   created?: "enabled; not started";
+  /**
+   * t-4071e4: which checkout the approval committed the new agent to. Present with `created`, from the
+   * same predicate the review pane showed the human, so the receipt answers "was this thing allowed
+   * into my working tree?" without reopening the profile — and answers it for a proposal file that the
+   * commit has already deleted.
+   */
+  workspace?: "isolated worktree" | "shared checkout";
   /** Present when `outcome === "failed"`. */
   reason?: string;
 }
@@ -235,6 +242,7 @@ export async function approveSavedAgentProposal(input: {
       txid: created.txid,
       owner: proposal.proposer,
       created: "enabled; not started",
+      workspace: proposedWorktreeEnabled(proposal.spec) ? "isolated worktree" : "shared checkout",
     };
     writeReceipt(input.workspaceRoot, receipt);
     // The proposal is consumed only after the receipt says so. Deleting first would lose the record of

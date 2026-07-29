@@ -94,6 +94,22 @@ durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is 
   - **Then** nothing is running: launch is a separate action under its own policy
   - **And** (`t-ca9086`) the profile is `lifecycle.enabled: true` so an explicit start is not refused
     for disablement; no session, running worktree, or task assignment exists until that start
+- [x] **Scenario: a proposed agent is isolated by default, and never aims its own isolation** (`t-4071e4`)
+  - **Given** a proposal that says nothing about its workspace
+  - **Then** it resolves to an isolated git worktree — the default for every creation door
+    (`DEFAULT_NEW_AGENT_WORKTREE_ENABLED`), because the only alternative default is "share the human's
+    checkout", and the approval path previously hardcoded exactly that
+  - **And** the proposal may declare `worktree: true|false` and NOTHING else about where it runs: a
+    `path`, `branch`, `base`, `cwd` or `worktreeBase` field is refused BY NAME
+    (`REFUSED_PROPOSAL_WORKSPACE_KEYS`), so the branch comes from the workspace template and the
+    checkout from the global worktrees root, neither of which the proposer can see or set
+  - **And** the human sees which checkout before approving — the isolated case in `affected` (where
+    statements of what will happen live) and the opt-out in `dangerous` (it is the widening)
+  - **And** the digest covers the isolation, so approving `worktree: false` cannot commit `true` or
+    the reverse, and the receipt records `isolated worktree` / `shared checkout` after the proposal
+    file is deleted
+  - **And** isolation is not a session: the default being on does not create a worktree or a branch
+    until a human starts the agent
 - [x] **Scenario: nothing is inherited implicitly**
   - **Given** a proposer with permissions, MCP, skills, hooks, memory, credentials and ownership
   - **When** its proposal is committed
