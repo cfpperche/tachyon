@@ -144,6 +144,9 @@ export function routeHumanApprovalRequest(
  * the per-kind section, because "what is waiting on me" is now one queue. It deliberately does NOT
  * write into any agent's session: nothing is blocked on this the way an agent is blocked on an
  * approval.
+ *
+ * t-1f6d02 — Review deep-links the **exact** validation's inbox-item route (not the bare inbox list).
+ * A gone/stale item still lands on the list via the existing Control handshake fallback.
  */
 export function routeHumanValidationPending(
   host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
@@ -156,7 +159,10 @@ export function routeHumanValidationPending(
     [{
       label: host.t("Review"),
       run: async () => {
-        await host.executeCommand("tachyon.openHumanInbox", workspaceHash);
+        await host.executeCommand("tachyon.openHumanInbox", workspaceHash, {
+          kind: "validation",
+          id: validation.id,
+        });
       },
     }],
   );
