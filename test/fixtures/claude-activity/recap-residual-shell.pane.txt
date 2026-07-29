@@ -1,0 +1,14 @@
+● The review's four blockers were all real. Fixed and re-verified.
+
+  Not landed. The human dogfood of Control → Settings and text-file recovery is still outstanding.
+
+✻ Crunched for 1m 3s · 1 shell still running
+
+※ recap: Goal was removing Tachyon's eleven VS Code settings into two authorities; the cut is done,
+  reviewed, fixed, and verified green. Next action is human dogfood before landing.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ land it on main
+────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5 · high | claude-reviewer | Context 37% used
+  ⏵⏵ bypass permissions on · 1 shell · ← for agents
