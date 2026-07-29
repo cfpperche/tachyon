@@ -70,11 +70,36 @@
  *
  * `enable`, `injection` and `mutation` stay `declared`. Grok 0.2.112's `memory` subcommand exposes only
  * `clear` — no status or stats readout — so nothing non-billable reports effective memory state, and
- * nothing renders what reaches the model.
+ * nothing renders what reaches the model. The t-325794 control arm incidentally SHOWS enable and
+ * injection happening, but it was not designed to characterize either (what gets injected, how large
+ * it grows, what writes back), so promoting them off that arm would be reading more into it than it
+ * measured.
  *
- * The `disable` axis is `refuted` rather than `declared`: it was measured and the shipped control
- * failed. That distinction is why `refuted` was added to the evidence vocabulary — see
- * `MemoryEvidence` in `../nativeMemory.js`.
+ * The `disable` axis is now `verified` (t-325794, approval a-9d98ec), and it took a THIRD arm to get
+ * there. t-0e88f3 measured only the FLAG, which failed, leaving the axis `refuted`; the passing
+ * canonical launch could not promote it either, because in the TUI the flag alone already suffices,
+ * so that arm cannot separate the env pin's contribution from the flag's.
+ *
+ * The isolating arm ran HEADLESS — the mode where the flag is known to lose, so anything that
+ * disables there is the env var and nothing else — with `[memory] enabled = true` planted in the
+ * private home as the enabler and no `--no-memory`:
+ *   - control (GROK_MEMORY absent): MEMORY_INIT, MEMORY_INJECT, MEMORY_INJECT_SEARCH, MEMORY_REINDEX,
+ *     the repository-identity workspace directory built, and the model returned the planted marker.
+ *   - pin (GROK_MEMORY=0, everything else identical): not one memory event in 254 debug lines, nothing
+ *     built beside the planted file, and the marker never reached the model — while the store still
+ *     held it, so the input existed and was simply never read.
+ *
+ * The enabler is a config key rather than `--experimental-memory` on purpose: headless, the flag beats
+ * the env var, so using a flag to enable would have reintroduced the exact confounder this arm exists
+ * to remove. It also matches the real threat, which is config drift.
+ *
+ * Note what could NOT be measured, because it is unmeasurable by construction: "GROK_MEMORY=0 beats a
+ * hostile GROK_MEMORY=1" is not a precedence question at all — it is one variable, and the assignment
+ * decides. The pin protects against an enabler in a DIFFERENT layer, which is what was tested.
+ *
+ * The refutation stays on record beside the promotion. The guide's claim about `--no-memory` is still
+ * false, and that record does not expire because a different control was later proven — which is why
+ * `refutations[].supersededBy` exists (see `../nativeMemory.js`).
  */
 import type { MemoryPolicyRequest, RuntimeNativeMemoryCapabilityV1 } from "../nativeMemory.js";
 import type { MemoryLifecycleOperation } from "../nativeMemory.js";

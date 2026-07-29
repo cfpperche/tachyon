@@ -18,6 +18,7 @@ import {
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
+  type AgentInstancePolicy,
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
@@ -211,6 +212,12 @@ export interface ManagedEntryInfo {
   /** graceful Stop timed out while the pane stayed alive; retry is allowed */
   stopFailed?: boolean;
   declared: boolean;
+  /**
+   * SDD 482 phase 3 — the DECLARED instance policy, absent on rows written before phase 2. Readers
+   * ask their question through `agentInstancePolicy` helpers rather than reading this directly, so
+   * the legacy path lives in one place.
+   */
+  instance?: AgentInstancePolicy;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
   dead: boolean;
   /** dead with a NON-ZERO exit — a clean exit (0) is dead but not crashed */
@@ -895,6 +902,14 @@ export class AgentManager {
    *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
   private stoppingSince = new Map<string, number>();
+  /**
+   * t-5e1113 (SDD 482, decision 5) — instances THIS process started. Decision 5 makes lineage durable
+   * "for the life of the instance", and that bound is what this set enforces: a ledger row describes
+   * some instance, and if we started the current one ourselves we already know its lineage — including
+   * that it deliberately has none. Without this, a stale row from a PREVIOUS instance of the same
+   * declared agent would re-nest a top-level agent after a rehydrate.
+   */
+  private startedHere = new Set<string>();
   private stopFailed = new Set<string>();
   private cleanExited = new Set<string>();
   /** Runtime occupancy observations keyed by the worktree's canonical realpath.
@@ -1155,7 +1170,27 @@ export class AgentManager {
    *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
    *  miss must not read as "no parent" while the ledger still has one. */
   parentOf(name: string): string | undefined {
-    return this.lineage.get(name) ?? this.opts.ledger?.get(name)?.def?.parent;
+    return this.lineage.get(name) ?? this.ledgerParentOf(name);
+  }
+
+  /**
+   * t-5e1113 (SDD 482, decision 5) — the ONE place a persisted parent is admitted, so the instance
+   * bound is applied identically everywhere instead of being re-derived per reader.
+   *
+   * Two refusals, each with a reason the readers must not have to remember:
+   *  - an instance THIS process started has already settled its lineage at spawn, including having
+   *    none, so a row describing some earlier instance must not re-nest it;
+   *  - a row naming itself as parent is a cycle, not a lineage. `withoutSelfParent` stops new ones
+   *    reaching disk; this covers rows written before it existed.
+   *
+   * The fallback itself stays (rather than trusting `lineage` alone) because `liveDescendants` is a
+   * safety guard against yanking a running child's cwd, and there failing closed means keeping the
+   * child visible.
+   */
+  private ledgerParentOf(name: string): string | undefined {
+    if (this.startedHere.has(name)) return undefined;
+    const parent = this.opts.ledger?.get(name)?.def?.parent;
+    return parent && parent !== name ? parent : undefined;
   }
 
   /** spec 363 T3 — the gated delegation's delegator (Bridge-witnessed doorbell target from T1),
@@ -1176,7 +1211,12 @@ export class AgentManager {
     // so its link lives only in the ledger — without this the guard would miss it and a
     // running child's worktree/cwd could be yanked.
     const ledgerParent = new Map<string, string>();
-    if (this.opts.ledger) for (const [c, r] of this.opts.ledger.all()) if (r.def?.parent) ledgerParent.set(c, r.def.parent);
+    if (this.opts.ledger) {
+      for (const [c] of this.opts.ledger.all()) {
+        const parent = this.ledgerParentOf(c); // same instance bound as parentOf
+        if (parent) ledgerParent.set(c, parent);
+      }
+    }
     const childrenOf = (p: string): string[] => {
       const kids = new Set<string>();
       for (const [c, par] of this.lineage.entries()) if (par === p) kids.add(c);
@@ -1207,8 +1247,13 @@ export class AgentManager {
     if (!this.opts.ledger) return;
     const declared = new Set(Object.keys(this.opts.getConfig()?.agents ?? {}));
     for (const [name, rec] of this.opts.ledger.all()) {
-      if (!rec.def || rec.declared || declared.has(name)) continue;
-      if (!this.adhoc.has(name)) {
+      if (!rec.def) continue;
+      // t-5e1113 (SDD 482, decision 5) — this used to `continue` for every config-owned row, which
+      // skipped the lineage restore below as well. Persisting a Saved agent's parent would therefore
+      // have changed nothing on its own: the row was never read back. Only the DEFINITION is config's
+      // to own; the execution lineage below is the ledger's, for Saved and Temporary alike.
+      const configOwned = rec.declared || declared.has(name);
+      if (!configOwned && !this.adhoc.has(name)) {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
           instructions: rec.def.instructions,
@@ -1226,14 +1271,18 @@ export class AgentManager {
           worktree: !!rec.worktree,
         });
       }
-      if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
+      // The instance bound: only adopt a ledger parent for an instance this process did not start.
+      // If we started it, its lineage was settled at spawn — including deliberately having none.
+      if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name) && !this.startedHere.has(name)) {
         this.lineage.set(name, rec.def.parent);
       }
       if (!this.delegators.has(name)) {
         const delegator = rec.def.delegator;
         if (delegator && delegator !== name) this.delegators.set(name, delegator);
       }
-      if (rec.lifecycle?.state === "clean-exited") this.cleanExited.add(name);
+      // Left gated on the non-config-owned rows it has always applied to: decision 5 is about
+      // lineage, and widening clean-exit rehydration is a separate question with its own consequences.
+      if (!configOwned && rec.lifecycle?.state === "clean-exited") this.cleanExited.add(name);
     }
     // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
     // is LOCKED before any later isolate/harness toggle. spec 305 follow-up: also repair rows whose persisted
@@ -1378,6 +1427,7 @@ export class AgentManager {
         ...(stopping ? { stopping: true } : {}),
         ...(stopFailed ? { stopFailed: true } : {}),
         declared: declared.includes(name),
+        ...(this.opts.ledger?.get(name)?.instance ? { instance: this.opts.ledger.get(name)!.instance } : {}),
         dead: state?.dead ?? false,
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
@@ -2047,6 +2097,47 @@ export class AgentManager {
   }
 
   /** Core spawn machinery shared by ordinary spawn and canonical Delivery execution. */
+
+  /**
+   * t-5e1113 (SDD 482, phase 1) — the ONE place a Tachyon-owned pane is created.
+   *
+   * `spawnCore` and `commitFork` each built this by hand, and fork's own comment conceded it
+   * ("Merged last for the same reason as spawnCore") — copying the reasoning rather than the code,
+   * which is how the two drift. What is shared is exactly the part that must never differ:
+   *
+   *  - the execution env is merged LAST, after agent-declared and bridge env. Everywhere else the
+   *    agent's own env wins; here it must not, because a forgeable execution id would let a pane claim
+   *    an attribution it was not given. That ordering is now impossible to get wrong in one caller and
+   *    right in the other;
+   *  - the memory scope wraps outermost;
+   *  - Pi launches under `withPiAdmission`, every other runtime directly.
+   *
+   * The execution is minted by the CALLER and passed in, deliberately: both callers need the
+   * provenance in their failure path, and their recoveries are genuinely different — an ordinary
+   * launch must never kill an ambiguous same-named pane, while a fork preserves its Git-locked
+   * checkout as recovery state. Sharing the creation without flattening those two is the point.
+   */
+  private async createOwnedSession(input: {
+    agent: string;
+    session: string;
+    /** Already wrapped by `withSessionOwnership` — ownership is the caller's to decide. */
+    ownedCmd: string;
+    cwd: string;
+    /** Build + bridge env. The minted execution env is merged after it, here, not by the caller. */
+    env: Record<string, string>;
+    minted: { env: Record<string, string> };
+    runtime?: string;
+  }): Promise<void> {
+    const create = () => this.opts.tmux.newSession({
+      name: input.session,
+      cmd: this.applyAgentMemoryScope(input.agent, input.ownedCmd),
+      cwd: input.cwd,
+      env: { ...input.env, ...input.minted.env },
+    });
+    if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
+    else await create();
+  }
+
   private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preliminaryPreflight?: boolean; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul; resolvedEvolution?: EvolutionStartupSnapshot }): Promise<CanonicalDeliverySpawnReceipt | void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
@@ -2472,20 +2563,13 @@ export class AgentManager {
     // that outlives its launcher still holds the id it was born with.
     const minted = mintExecution({ agentId: name, sessionId: session, carrier: "carried" });
     try {
-      const createSession = () => this.opts.tmux.newSession({
-        name: session,
-        // spec 236 Bridge + 243 ownership hook — apply ownership hook to the runtime-bridge cmd; the
-        // env delta is folded into env below. t-0d0152 MemoryMax scope wraps outermost when configured.
-        cmd: this.applyAgentMemoryScope(name, ownedSpawnCmd),
-        cwd,
-        // The execution env is merged LAST, after agent-declared env. Everywhere else in this build the
-        // agent's own env wins; here it must not. A forgeable execution id would let a pane claim an
-        // attribution it was not given, which is precisely the confident-wrong-parent this spec exists
-        // to prevent — the same reasoning that bars a declared agent from setting its own Bridge token.
-        env: { ...spawnBuild.env, ...spawnBridge.env, ...minted.env },
+      // spec 236 Bridge + 243 ownership hook, t-0d0152 memory scope, and the execution-env ordering
+      // all live in createOwnedSession now — shared with commitFork so they cannot drift apart.
+      await this.createOwnedSession({
+        agent: name, session, ownedCmd: ownedSpawnCmd, cwd,
+        env: { ...spawnBuild.env, ...spawnBridge.env },
+        minted, runtime: adapter?.runtime,
       });
-      if (adapter?.runtime === "pi") await this.withPiAdmission(name, createSession);
-      else await createSession();
       // Remembered so the eventual exit joins to THIS execution instead of minting a stranger.
       this.liveExecutions.set(name, minted.correlation);
       this.emitExecution({
@@ -2599,6 +2683,13 @@ export class AgentManager {
       worktree,
       cwd,
       declared: !adhoc,
+      // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `adhoc` is set by the
+      // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
+      // from the name, the tmux session or `tachyon.yml`. A declared start is a Saved instance that
+      // may be restarted; an ad-hoc start is a Temporary one collected when its work ends.
+      instance: adhoc
+        ? { identity: "temporary" as const, lifetime: "collected" as const }
+        : { identity: "saved" as const, lifetime: "restartable" as const },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
@@ -2752,6 +2843,7 @@ export class AgentManager {
       }
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
+    this.startedHere.add(name);
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, adhoc });
@@ -4631,6 +4723,12 @@ export class AgentManager {
       ...(worktree ? { worktree } : {}),
       cwd,
       declared: false,
+      // SDD 482 phase 2 — the case that justifies TWO fields rather than one enum. A fork has no
+      // durable Profile, so its identity is `temporary`; but it owns a resume block and can be
+      // resumed, so its lifetime is `restartable`. A single saved/temporary value would have to lie
+      // about one of the two, and the thing it would most likely lie about is whether the fork
+      // survives — which is the reload this phase must not break.
+      instance: { identity: "temporary" as const, lifetime: "restartable" as const },
     });
     let spawnedSession: string | undefined;
     let sessionAttempted = false;
@@ -4723,24 +4821,21 @@ export class AgentManager {
       // minted for the FORK, not inherited from the source: the two are separate executions that happen
       // to share a transcript, and giving them one id would erase exactly the distinction the graph is for.
       const forkMinted = mintExecution({ agentId: forkName, sessionId: session, carrier: "carried" });
-      const createForkSession = () => this.opts.tmux.newSession({
-        name: session,
-        cmd: this.applyAgentMemoryScope(
-          forkName,
-          this.withSessionOwnership(forkName, forkDefinition, forkBridge.cmd, {
-            declared: false,
-            cwd,
-            configHome: forkBuild.env.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
-            // A user-created fork inherits the source command's permission posture; capture must not widen it.
-            preservePermissionMode: true,
-          }),
-        ),
+      await this.createOwnedSession({
+        agent: forkName,
+        session,
+        ownedCmd: this.withSessionOwnership(forkName, forkDefinition, forkBridge.cmd, {
+          declared: false,
+          cwd,
+          configHome: forkBuild.env.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
+          // A user-created fork inherits the source command's permission posture; capture must not widen it.
+          preservePermissionMode: true,
+        }),
         cwd,
-        // Merged last for the same reason as spawnCore: identity Tachyon assigns, not env the fork declares.
-        env: { ...forkBuild.env, ...forkBridge.env, ...forkMinted.env },
+        env: { ...forkBuild.env, ...forkBridge.env },
+        minted: forkMinted,
+        runtime: src.runtime,
       });
-      if (src.runtime === "pi") await this.withPiAdmission(forkName, createForkSession);
-      else await createForkSession();
       this.emitExecution({
         kind: "spawn", node: "Process", state: "running", provenance: forkMinted.provenance,
         correlation: forkMinted.correlation, at: new Date().toISOString(),

@@ -132,6 +132,28 @@ export function sameDeliveryBinding(a: SessionDeliveryBinding, b: SessionDeliver
     && (a.executionNonce ?? undefined) === (b.executionNonce ?? undefined);
 }
 
+/**
+ * SDD 482 phase 2 (`t-5e1113`) — what an Agent Instance IS, and how long it may live. Two fields, not
+ * one enum, because they vary independently: a FORK is `temporary` (no durable Profile backs it) and
+ * `restartable` (it owns a resume block and can be resumed), which a single "saved vs temporary"
+ * value could not express without lying about one of the two.
+ *
+ * Both are DECLARED at creation by whoever performed the operation. Nothing may derive them from the
+ * command, the name, the tmux session, or presence in `tachyon.yml` — that inference is what
+ * `declared` accidentally became, and it is the defect this split exists to end.
+ *
+ * `declared` stays as what it always honestly was: which STORE owns the definition. Readers still use
+ * it; moving them onto these fields is phase 3, deliberately separate so the write side can be
+ * proven before anything depends on it.
+ */
+export type AgentInstanceIdentity = "saved" | "temporary";
+export type AgentInstanceLifetime = "restartable" | "collected";
+
+export interface AgentInstancePolicy {
+  identity: AgentInstanceIdentity;
+  lifetime: AgentInstanceLifetime;
+}
+
 export interface SessionRecord {
   /** present for every ad-hoc agent; absent for a declared agent's resume-only row. */
   def?: SessionDef;
@@ -143,6 +165,14 @@ export interface SessionRecord {
   cwd: string;
   /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
   declared: boolean;
+  /*
+   * t-5e1113 (SDD 482, ratified decision 5) — `def.parent` used to be stripped from DECLARED records
+   * on every write, so a Saved agent's runtime lineage died with the extension host while a Temporary
+   * agent's survived. That asymmetry was measured, mis-stated in the first draft of the SDD, and then
+   * resolved by the human the other way: lineage is durable for BOTH, for the life of the instance.
+   * Profile ownership (`declaredOwner`, derived from `subagents`) is a different edge and is still
+   * never derived from this one, nor this one from it.
+   */
   /** spec 364 — durable Bridge-client generation stamp for rebind after host reload. */
   bridgeClient?: BridgeClientBinding;
   /**
@@ -151,6 +181,12 @@ export interface SessionRecord {
    */
   delivery?: SessionDeliveryMarker;
   identity?: SessionIdentity;
+  /**
+   * SDD 482 phase 2 — the declared Agent Instance policy. Optional because rows written before the
+   * split have no honest value: absent means "predates the split", and inventing one from `declared`
+   * at read time would re-create the inference this replaces.
+   */
+  instance?: AgentInstancePolicy;
   /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
   evolution?: EvolutionStartupSnapshot;
   /** Explicit terminal state for an ad-hoc row that remains visible until dismiss. */
@@ -214,7 +250,7 @@ export class SessionLedger {
   /** Insert/replace one agent's record (timestamp stamped here). */
   record(name: string, rec: Omit<SessionRecord, "updatedAt"> & { updatedAt?: string }): void {
     const all = this.all();
-    all.set(name, stripDeclaredParent({ ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
     this.write(all);
   }
 
@@ -293,7 +329,7 @@ export class SessionLedger {
     const rec = all.get(name);
     if (!rec?.resume) return;
     const { resume: _drop, ...rest } = rec;
-    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rest, updatedAt: new Date().toISOString() }));
     this.write(all);
   }
 
@@ -386,7 +422,7 @@ export class SessionLedger {
       if (sameDeliveryBinding(rec.delivery, normalized)) return; // idempotent exact-bind
       throw new Error(`cannot bind Delivery for '${name}': existing binding differs`);
     }
-    all.set(name, stripDeclaredParent({
+    all.set(name, withoutSelfParent(name, {
       ...rec,
       delivery: normalized,
       updatedAt: new Date().toISOString(),
@@ -409,7 +445,7 @@ export class SessionLedger {
       throw new Error(`cannot clear Delivery for '${name}': expected binding does not match`);
     }
     const { delivery: _drop, ...rest } = rec;
-    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rest, updatedAt: new Date().toISOString() }));
     this.write(all);
   }
 
@@ -461,8 +497,9 @@ function normalize(r: unknown): SessionRecord | null {
     const identity = parseIdentity(o.identity);
     const evolution = parseEvolution(o.evolution);
     const lifecycle = parseLifecycle(o.lifecycle);
+    const instance = parseInstancePolicy(o.instance);
     if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity && !evolution) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, cwd: o.cwd, declared, updatedAt });
+    return { def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, instance, cwd: o.cwd, declared, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -481,10 +518,31 @@ function parseLifecycle(value: unknown): SessionLifecycle | undefined {
   return { state: "clean-exited", exitedAt: o.exitedAt };
 }
 
-function stripDeclaredParent<T extends SessionRecord>(rec: T): T {
-  if (!rec.declared || !rec.def?.parent) return rec;
+/**
+ * t-5e1113 — refuse a record that names itself as its own parent.
+ *
+ * This became reachable when decision 5 stopped stripping `def.parent` for declared rows. It is
+ * enforced on WRITE rather than on read, because a cycle on disk outlives whatever read guard
+ * happens to be in front of it — `AgentManager.parentOf` reads the ledger directly when the
+ * in-memory lineage map is cold, which is exactly the post-reload path this decision exists to fix.
+ */
+function withoutSelfParent<T extends SessionRecord>(name: string, rec: T): T {
+  if (rec.def?.parent !== name) return rec;
   const { parent: _parent, ...def } = rec.def;
   return { ...rec, def } as T;
+}
+
+/**
+ * SDD 482 phase 2 — parse the declared instance policy, fail-closed. An unrecognised value is dropped
+ * rather than coerced: a row that says something this build does not understand must not be read as
+ * one of the two values it happens to know.
+ */
+function parseInstancePolicy(value: unknown): AgentInstancePolicy | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const o = value as Record<string, unknown>;
+  const identity = o.identity === "saved" || o.identity === "temporary" ? o.identity : undefined;
+  const lifetime = o.lifetime === "restartable" || o.lifetime === "collected" ? o.lifetime : undefined;
+  return identity && lifetime ? { identity, lifetime } : undefined;
 }
 
 function parseDef(d: unknown): SessionDef | undefined {

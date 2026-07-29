@@ -89,8 +89,9 @@ describe("container-generated delegation behavior", () => {
       const tmux = fakeTmux();
 
       // A ledger row whose OWN `declared` flag is false (e.g. persisted back when `child` was still
-      // ad-hoc, or by any non-spawn() writer) — SessionLedger only strips `def.parent` when the
-      // record's own `declared` is true, so this parent survives on disk exactly as described.
+      // ad-hoc, or by any non-spawn() writer). Since t-5e1113 (SDD 482, decision 5) `def.parent` is
+      // persisted for declared rows too, so this row's parent survives either way — the flag is no
+      // longer what decides it.
       ledger.record("child", { def: { cmd: "claude", kind: "agent", parent: "boss" }, cwd: ws, declared: false });
 
       // Fresh AgentManager instance sharing the ledger, in-memory lineage empty — simulates the

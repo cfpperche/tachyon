@@ -419,12 +419,58 @@ produces no memory against a working control, which is real — but it does not 
 contribution, because arm B shows the flag alone already suffices in that mode. Proving the env pin
 specifically would take a headless `GROK_MEMORY=0` arm with no flag, which nobody has run. The axis
 stays `refuted`: it records the claim that was tested and failed, and promotion needs an observation of
-the new control rather than of a launch that happens to contain it.
+the new control rather than of a launch that happens to contain it. *(That arm was later run — see
+[§ The env pin measured on its own](#grok-2026-07-28-disable-verified) — and the axis is now
+`verified`. This paragraph is left as written because it states the standard that was applied.)*
 
 - **Primary evidence:** `t-c46c35` journal `j-b02184d17f19` (arm output, debug log, store bytes);
   approvals `a-b4b050`, `a-c1a580`, `a-a3db98`; `src/runtime/adapters/grokMemory.ts`,
   `src/runtime/nativeMemory.ts`, `test/unit/grokMemoryAdapter.test.ts`,
   `test/unit/runtimeNativeMemory.test.ts`.
+
+#### The env pin measured on its own, 2026-07-28 (`t-325794`) {#grok-2026-07-28-disable-verified}
+
+Measured under human approval `a-9d98ec`, Grok 0.2.112, in a disposable sandbox `GROK_HOME`/`HOME`
+with a private credential **copy** (never read; `t-de73e0` replaced the old symlink model). This is the
+arm the section above said nobody had run, and it promotes `disable` from `refuted` to `verified`.
+
+**The design had to be corrected before it was worth paying for.** `t-325794` specified the test arm as
+headless + `GROK_MEMORY=0` + no flag, with "same launch, `GROK_MEMORY` unset" as the positive control.
+But headless with a clean environment and no flag was already measured as **off by default**, so both
+arms would have been OFF, and OFF vs OFF isolates nothing — the very failure the task itself cites
+`t-0e88f3` for. A `0` can only be shown to disable if something would otherwise **enable**. Both arms
+therefore got an enabler: `[memory] enabled = true` in the sandbox `config.toml`.
+
+The enabler is a config key and not `--experimental-memory` deliberately: headless, the flag beats the
+env var, so enabling with a flag would have reintroduced the exact confounder this arm exists to
+remove. Config drift is also the real threat the pin contains, and the guide ranks env (rule 3) above
+config (rule 4) — so this measures the precedence that matters.
+
+**Two arms, identical but for one variable. No `--no-memory` in either.**
+
+| Arm | `GROK_MEMORY` | Result |
+| --- | --- | --- |
+| control | absent | `MEMORY_INIT`, `MEMORY_INJECT`, `MEMORY_INJECT_SEARCH`, `MEMORY_REINDEX`; repository-identity workspace dir `memory/proj-fddc9bc6` built; model returned the planted marker verbatim |
+| pin | `0` | **zero** memory events — not one case-insensitive mention of "memory" in 254 debug lines; nothing built beside the planted file; marker never reached the model, while the store still held it |
+
+The control arm is what makes the pin arm readable: it proves the sandbox had working memory to
+suppress, so the pin arm's silence is suppression rather than absence.
+
+**What is deliberately NOT claimed.** `enable`, `injection` and `mutation` stay `declared`: the control
+arm incidentally shows enable and injection happening, but it was not designed to characterize either
+— what gets injected, how large it grows, what writes back — and promoting them off it would read more
+into the arm than it measured. And "`GROK_MEMORY=0` beats a hostile `GROK_MEMORY=1`" remains
+unmeasurable by construction: one variable, decided by assignment, not by precedence.
+
+The `t-0e88f3` refutation **stays on record**. The guide's claim about `--no-memory` is still false, and
+that does not expire because a different control was later proven. Carrying both required a new
+`refutations[].supersededBy` field, since the registry invariant previously refused any refutation on a
+non-`refuted` axis — correctly, for the bare case it was written to catch.
+
+- **Primary evidence:** approval `a-9d98ec`; `t-325794` journal. **Raw debug logs were lost** to a
+  cleanup command that removed the sandbox before the evidence copy ran — the arm results quoted above
+  were captured in the run transcript, but the logs cannot be re-inspected without paying again, which
+  was judged not worth it.
 
 ### OpenCode 1.18.4
 

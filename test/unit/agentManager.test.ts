@@ -3815,6 +3815,78 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.kill(forkName);
   });
 
+  /**
+   * t-5e1113 (SDD 482 phase 1) — EQUIVALENCE PROOF for converging fork onto `createOwnedSession`.
+   *
+   * The source-shape test proves there is one door. This proves the door behaves identically through
+   * BOTH callers, on the property that made the duplication dangerous: the minted execution env is
+   * merged last, so an agent cannot forge its own execution identity. Fork used to re-derive that
+   * ordering from a comment ("Merged last for the same reason as spawnCore"), which is a copy of the
+   * reasoning, not of the code.
+   *
+   * The agent below declares a HOSTILE env: it sets the execution id and agent to values it chose.
+   * Both a normal spawn and a fork of it must overwrite them.
+   */
+  it("t-5e1113: spawn and fork both refuse an agent-forged execution identity", async () => {
+    const forged = { id: "FORGED-EXECUTION-ID", agent: "FORGED-AGENT" };
+    const { manager, newSessionArgs } = resumeHarness(
+      `agents:\n  claude:\n    cmd: claude\n    env:\n      TACHYON_EXECUTION_ID: ${forged.id}\n      TACHYON_EXECUTION_AGENT: ${forged.agent}\n`,
+      { resolveCurrentSession: async () => UUID, seedTranscript: () => true },
+    );
+
+    const envOf = (args: string[]): Record<string, string> => {
+      const env: Record<string, string> = {};
+      args.forEach((arg, index) => {
+        if (arg !== "-e") return;
+        const pair = args[index + 1] ?? "";
+        const at = pair.indexOf("=");
+        if (at > 0) env[pair.slice(0, at)] = pair.slice(at + 1);
+      });
+      return env;
+    };
+
+    await manager.spawn("claude");
+    const spawnEnv = envOf(newSessionArgs.at(-1)!);
+    expect(spawnEnv.TACHYON_EXECUTION_ID).toBeDefined();
+    expect(spawnEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
+    expect(spawnEnv.TACHYON_EXECUTION_AGENT).toBe("claude");
+
+    const forkName = await manager.commitFork(await manager.planFork("claude"));
+    const forkEnv = envOf(newSessionArgs.at(-1)!);
+    // The same refusal, through the other door — and a DISTINCT identity, because a fork is its own
+    // execution that happens to share a transcript.
+    expect(forkEnv.TACHYON_EXECUTION_ID).toBeDefined();
+    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
+    expect(forkEnv.TACHYON_EXECUTION_AGENT).toBe(forkName);
+    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(spawnEnv.TACHYON_EXECUTION_ID);
+
+    await manager.kill(forkName);
+  });
+
+  /**
+   * t-5e1113 (SDD 482 phase 2) — the declared policy is WRITTEN by the real paths, not just parseable.
+   * `adhoc` comes from the caller supplying a command, which is a declaration; nothing here reads the
+   * name, the tmux session or `tachyon.yml` to decide.
+   */
+  it("t-5e1113: spawn and fork write the declared instance policy", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      seedTranscript: () => true,
+    });
+
+    await manager.spawn("claude");
+    expect(ledger.get("claude")?.instance).toEqual({ identity: "saved", lifetime: "restartable" });
+
+    await manager.spawn("temp", { cmd: "claude --temp" });
+    expect(ledger.get("temp")?.instance).toEqual({ identity: "temporary", lifetime: "collected" });
+
+    // A fork is the independent-axes case: no durable Profile, but it owns a resume block.
+    const forkName = await manager.commitFork(await manager.planFork("claude"));
+    expect(ledger.get(forkName)?.instance).toEqual({ identity: "temporary", lifetime: "restartable" });
+    expect(ledger.get(forkName)?.declared).toBe(false); // storage fact, unchanged by the split
+    await manager.kill(forkName);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const settings: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -6498,6 +6570,13 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(calls.every((call) => call.cwd === h.ws && call.home === harnessHome(h.ws, "codex"))).toBe(true);
   });
 
+  /**
+   * t-5e1113 (SDD 482, decision 5) — the INTENT is unchanged and still the point of this test: a stale
+   * row must not re-nest an agent that is running top-level. What changed is the mechanism. The parent
+   * used to be erased from the row on write; now it is retained (Saved lineage is durable) and the
+   * instance bound is what refuses it — this process started `child` without a parent, so its lineage
+   * is settled and a row describing an earlier instance cannot override it.
+   */
   it("stale declared ledger parents are ignored so declared agents stay top-level", async () => {
     const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: claude\n");
     await manager.spawn("child"); // running, but spawned WITHOUT parent → no in-memory lineage link
@@ -6511,7 +6590,8 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const child = (await manager.list()).find((a) => a.name === "child");
     expect(child?.parent).toBeUndefined();
     expect(manager.parentOf("child")).toBeUndefined();
-    expect(ledger.get("child")?.def?.parent).toBeUndefined();
+    // The row KEEPS its parent now — durability is the decision; the instance bound is the refusal.
+    expect(ledger.get("child")?.def?.parent).toBe("boss");
     expect(await manager.liveDescendants("boss")).toEqual([]);
   });
 

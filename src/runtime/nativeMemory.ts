@@ -141,6 +141,18 @@ export interface RuntimeNativeMemoryCapabilityV1 {
     readonly at: string;
     /** where the evidence lives, so the verdict can be checked instead of trusted */
     readonly evidence: string;
+    /**
+     * t-325794 — the control that later carried this axis to `verified`, when a DIFFERENT one did.
+     *
+     * Only legal on an axis that is no longer `refuted`, and required there. Grok is the case that
+     * forced it: `--no-memory` was measured and failed, so the guide's claim about it is permanently
+     * false, but the axis is now carried by the `GROK_MEMORY` env pin, which was measured and held.
+     * Deleting the refutation to satisfy the axis would erase a false claim someone will read again in
+     * the shipped guide; leaving it bare would assert a contradiction the axis does not reflect. This
+     * field is what makes "the claim is still false AND the axis is verified" say something coherent
+     * rather than something sloppy.
+     */
+    readonly supersededBy?: string;
   }>;
   /**
    * An extension/plugin boundary the built-in classification does NOT cover (research § 3). A runtime
@@ -232,12 +244,22 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     defaultState: "disabled",
     evidence: {
       inventory: "declared",
-      // t-0e88f3 — MEASURED AND FAILED, which is a different statement from "unmeasured". The shipped
-      // guide's rule 1 says `--no-memory` ALWAYS disables; headless, with GROK_MEMORY=1 also set,
-      // memory initialized, injected and wrote. One counterexample refutes an "always" — even though
-      // the same flag was later measured to HOLD in the TUI, which is what makes the guide's claim
-      // wrong rather than the flag useless. See `refutations` below for both observations.
-      disable: "refuted",
+      // t-325794 — VERIFIED, and the axis is about the control Tachyon actually holds. t-0e88f3 left
+      // this at `refuted` because the only thing measured was the FLAG, which failed; the passing
+      // canonical launch could not promote it either, since in the TUI the flag alone already
+      // suffices, so that arm cannot separate the env pin's contribution from the flag's.
+      //
+      // The isolating arm ran headless — the mode where the flag is known to LOSE, so whatever
+      // disables there is the env var and nothing else — with `[memory] enabled = true` planted in
+      // the private home as the enabler, no `--no-memory`, and a synthetic marker in the store:
+      //   control (GROK_MEMORY absent): MEMORY_INIT + MEMORY_INJECT + MEMORY_INJECT_SEARCH +
+      //     MEMORY_REINDEX, the repository-identity workspace dir built, and the model returned the
+      //     planted marker verbatim.
+      //   pin (GROK_MEMORY=0): not one memory event in 254 debug lines, nothing built beside the
+      //     planted file, marker never reached the model — while the store still held it.
+      // Same launch, one variable. `refuted` stays recorded below: the guide's claim about the flag
+      // is still false, and that record does not expire because a DIFFERENT control was proven.
+      disable: "verified",
       enable: "declared",
       injection: "declared",
       mutation: "declared",
@@ -257,6 +279,7 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
       { kind: "installed-source", ref: "src/probe/adapters/grok.ts" },
       { kind: "installed-source", ref: RESEARCH },
       { kind: "behavioral-test", ref: `${RESEARCH}#grok-2026-07-28-refuted` },
+      { kind: "behavioral-test", ref: `${RESEARCH}#grok-2026-07-28-disable-verified` },
     ],
     refutations: [
       {
@@ -266,6 +289,11 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
           "HEADLESS (-p), with `--no-memory` AND GROK_MEMORY=1, a marker planted in the private store reached the model verbatim; the debug log shows MEMORY_INIT (watcher_config_enabled=true), MEMORY_INJECT_SEARCH results=1 and a first-turn injection, and the store was written during the run. A default arm with a clean environment and no flag showed none of it, which is what separates 'the flag is inert' from 'the env var outranks it'. In the interactive TUI the SAME pairing disabled memory (no MEMORY_INIT), while `--experimental-memory` + GROK_MEMORY=1 enabled it (MEMORY_INIT, MEMORY_INJECT x2, marker returned in 2.5s with no tool calls, 4.2MB index.sqlite written) — so the flag's rank depends on the launch mode, and the guide's 'always' is false as written",
         at: "Grok 0.2.112, effective models grok-4.5-build (headless) and grok-4.5 (TUI), 2026-07-28",
         evidence: "t-c46c35 journal j-b02184d17f19; t-0e88f3; approvals a-b4b050, a-c1a580, a-a3db98",
+        // t-325794 (approval a-9d98ec) — the flag's claim stays false; the axis is carried by the env
+        // pin, isolated headless where the flag is known to lose: control arm (GROK_MEMORY absent,
+        // `[memory] enabled = true` planted) initialized and injected memory and returned the planted
+        // marker; pin arm (GROK_MEMORY=0, everything else identical) produced no memory event at all.
+        supersededBy: "GROK_MEMORY=0 environment pin, verified at grok 0.2.112 (t-325794, approval a-9d98ec)",
       },
     ],
   },
@@ -358,7 +386,8 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
 };
 
 /**
- * A `refuted` axis must carry the refutation that produced it, and vice versa.
+ * A `refuted` axis must carry the refutation that produced it, and a refutation must belong to a
+ * `refuted` axis — unless it names the control that superseded it (t-325794).
  *
  * Run over the static registry at module load rather than left to a test, because the failure it
  * prevents is a verdict with no finding behind it — "we measured and it failed", with no record of
@@ -379,9 +408,18 @@ export function assertRefutationsAreExplained(
         );
       }
       if (!isRefuted && explained.has(axis)) {
-        throw new Error(
-          `${capability.adapter}: refutations names '${axis}' but evidence.${axis} is '${capability.evidence[axis]}' — a recorded contradiction the axis does not reflect`,
+        // t-325794 — a retained refutation on a non-refuted axis is legal ONLY when it names the
+        // control that superseded it. Without that, the pair is exactly what this check was written
+        // to catch: a recorded contradiction the verdict does not reflect. With it, the record says
+        // the coherent thing — that claim is still false, and a different control carries the axis.
+        const bare = (capability.refutations ?? []).filter(
+          (r) => r.axis === axis && !r.supersededBy?.trim(),
         );
+        if (bare.length > 0) {
+          throw new Error(
+            `${capability.adapter}: refutations names '${axis}' but evidence.${axis} is '${capability.evidence[axis]}' — a recorded contradiction the axis does not reflect (a retained refutation must name its supersededBy control)`,
+          );
+        }
       }
     }
   }

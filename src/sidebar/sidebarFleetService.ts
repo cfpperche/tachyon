@@ -1,3 +1,4 @@
+import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
@@ -167,6 +168,12 @@ export async function buildSidebarFleet(
     .map((agent) => {
       const definition = source.manager.defOf(agent.name);
       const live = agent.running ? source.attentionOf(agent.name) : undefined;
+      // SDD 482 phase 3 — NOT converted, and the reason matters. This asks "were full lifecycle hooks
+      // injected for this instance?", which `withSessionOwnership` decides via `ownershipOnly`. That is
+      // a THIRD axis (authority), not identity and not lifetime: a fork is `temporary` AND gets
+      // ownership-only hooks, so `!declared` and `isTemporaryInstance` agree here today — by
+      // coincidence, not by meaning. Converting it would be right for the wrong reason and would
+      // silently break the day the axes diverge. See notes.md § the third axis.
       const hookHealth = agent.declared ? source.persistenceHookHealth(agent.name) : undefined;
       const externalSummary = externalTools.summary(agent.name);
       const liveGit = liveGitOf.get(agent.name);
@@ -209,7 +216,10 @@ export async function buildSidebarFleet(
         resumable: !agent.running && resumable.has(agent.name),
         freshStart: !agent.running && resumable.has(agent.name) && resumeReadyOf.get(agent.name) === false,
         kind: "agent",
-        adhoc: !agent.declared,
+        // "Is this a Temporary Agent?" — an identity question, converted.
+        adhoc: isTemporaryInstance(agent),
+        // NOT converted: the continuity badge exists only where the continuity-pointer lifecycle hook
+        // was injected, which is the same authority axis as `persistenceHooks` above.
         continuity: agent.running && agent.declared ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
         persistenceHooks: hookHealth ? {
@@ -219,7 +229,9 @@ export async function buildSidebarFleet(
           ...(hookHealth.updatedAt !== undefined ? { updatedAt: hookHealth.updatedAt } : {}),
         } : undefined,
         externalTools: externalSummary ? { ...externalSummary, items: externalSummary.items.slice(0, 100) } : undefined,
-        canDismiss: !agent.declared && !agent.running,
+        // "May this row be dismissed?" — only a Temporary instance can be; a Saved one always exists
+        // in its store. Identity question, converted.
+        canDismiss: isTemporaryInstance(agent) && !agent.running,
         ...(configFailure ? { configInvalid: true } : {}),
       });
     });
@@ -229,11 +241,11 @@ export async function buildSidebarFleet(
     .map((agent) => {
       const view = toAgentVM(agent, {
         kind: "terminal",
-        adhoc: !agent.declared,
+        adhoc: isTemporaryInstance(agent),
         resumable: !agent.running && resumable.has(agent.name),
         ...(configFailure ? { configInvalid: true } : {}),
       });
-      if (!agent.declared && !agent.running) view.canDismiss = true;
+      if (isTemporaryInstance(agent) && !agent.running) view.canDismiss = true;
       const command = source.manager.defOf(agent.name)?.cmd;
       return command && !view.sub ? { ...view, sub: command } : view;
     });
