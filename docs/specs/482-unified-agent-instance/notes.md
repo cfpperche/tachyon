@@ -172,3 +172,33 @@ inverted, and both were used to *delete* work rather than to add it — the dire
 review is least likely to forgive and most likely to be flattered into accepting. They were caught by
 adversarial review reading the same code. The lesson recorded here for the next author: a measurement
 that conveniently shrinks the plan deserves the same scrutiny as one that grows it.
+
+
+## The third axis, found while converging readers (phase 3, 2026-07-29)
+
+Converging Fleet reader-by-reader — instead of in the batch the plan forbids — surfaced something the
+ratified model does not have a field for.
+
+Not every `declared` read is an identity or lifetime question. Two of Fleet's are asking a THIRD
+thing: **was this instance given full lifecycle hooks?** That is decided by `withSessionOwnership`'s
+`ownershipOnly`, and it is the same flag `commitFork` sets deliberately, with the comment "a canonical
+fork is still an ad-hoc sibling, so it must not inherit profileLifecycle authority".
+
+- `persistenceHooks` — shown only where the persistence hooks were injected.
+- `continuity` — the badge exists only where the continuity-pointer hook was injected.
+
+Today `!declared` and `isTemporaryInstance` agree on both, because every instance that lacks lifecycle
+hooks also happens to be temporary. **That agreement is a coincidence of the current write paths, not
+a meaning.** Converting these two would be right for the wrong reason and would break silently the
+day the axes diverge — which is exactly what the promotion path in ratified decision 2
+(Temporary → Saved) would do, since a promoted agent gains a Profile while its already-running
+instance was launched with ownership-only hooks.
+
+So they are deliberately NOT converted, and the code says why at each site rather than leaving a
+future reader to rediscover it.
+
+**This is a question for the human, not something to invent:** does the model need a third declared
+axis (call it `authority`: does this instance carry profile-backed lifecycle hooks?), or is "hooks
+were injected" a runtime fact that should be read from the session rather than declared on the
+instance? Both are defensible. Guessing would put a field in the ratified model that nobody approved,
+and the whole point of `declared` was that one word grew a second job nobody noticed.

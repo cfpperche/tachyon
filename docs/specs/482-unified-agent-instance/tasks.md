@@ -89,9 +89,12 @@ non-problem (`notes.md`)._
       A contradictory row is pinned too, so no reader may depend on the two agreeing.
 - [x] Converged: handoff distill (`isTemporaryInstance`) and handoff distill service
       (`mayRestartInstance`) — a coherent group that asks both questions.
-- [ ] Remaining readers: Fleet/sidebar (`canDismiss`, `continuity`, `adhoc` presentation), Activity,
-      Attention, Execution Graph, worktree, cleanup. Each needs its own equivalence proof; the
-      resolver they will use is landed and proven.
+- [x] Fleet/sidebar, converted per-read rather than per-file: `adhoc` (agent + terminal) and
+      `canDismiss` (both sites) are identity questions and are converted. `persistenceHooks` and
+      `continuity` are NOT — they ask a THIRD question (were lifecycle hooks injected?) that the
+      ratified model has no field for. See `notes.md` § the third axis; it needs a human decision, not
+      an invented field.
+- [ ] Remaining readers: Activity, Attention, Execution Graph, worktree, cleanup.
 - [ ] No duplicate removed yet — deletion waits until every reader is converged, per the plan.
 
 ## Phase 4 — the governed creation door (severable)
