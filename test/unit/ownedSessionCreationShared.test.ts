@@ -54,10 +54,14 @@ describe("owned session creation is shared (SDD 482 phase 1)", () => {
     expect(body).toMatch(/this\.createOwnedSession\(/);
   });
 
-  it("the minted execution env is merged last, in one place", () => {
+  it("the minted execution env and the cut attestation are merged last, in one place", () => {
     const body = methodBody("private async createOwnedSession(");
-    // Spread order is the whole invariant: caller env first, minted second.
-    expect(body).toMatch(/env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.input\.minted\.env\s*\}/);
+    // Spread order is the whole invariant: caller env FIRST, then the things a caller must not be
+    // able to forge or clear. t-fab832 added the post-cut attestation to that tail — same reason,
+    // same position, and this assertion pins the full order rather than being relaxed to fit it.
+    expect(body).toMatch(
+      /env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.input\.minted\.env,\s*\[POST_CUT_SESSION_ATTESTATION_ENV\]:\s*POST_CUT_SESSION_ATTESTATION\s*\}/,
+    );
     // And no caller may re-merge minted env itself, which would reintroduce the drift.
     expect(SOURCE).not.toMatch(/\.\.\.spawnBridge\.env,\s*\.\.\.minted\.env/);
     expect(SOURCE).not.toMatch(/\.\.\.forkBridge\.env,\s*\.\.\.forkMinted\.env/);
