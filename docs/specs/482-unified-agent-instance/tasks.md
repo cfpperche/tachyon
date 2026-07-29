@@ -11,8 +11,8 @@ started; the boxes exist so the decomposition is reviewable alongside the archit
 - [x] Produce the ratifiable architecture (`spec.md`, `plan.md`).
 - [x] Adversarial review by `claude-reviewer` — returned BLOCKER on two measured claims; both
       confirmed against the code and corrected (see `notes.md`, which keeps the errors visible).
-- [ ] Second adversarial pass on the corrected scope, including the creation-door threat model that
-      the first pass deliberately did not review.
+- [x] Second adversarial pass on the corrected scope and the creation-door threat model — no new
+      blocker; one residue of the first correction and two threat-model gaps, all three closed.
 - [ ] Present only the real decisions to the human (`spec.md` § Open questions) and ratify.
 - [ ] Decompose into verifiable slices, each in an isolated worktree/Delivery.
 
@@ -40,6 +40,8 @@ non-problem (`notes.md`)._
 ## Phase 4 — the governed creation door (severable)
 
 - [ ] Capability in the proposer's Profile; absence refuses by name.
+- [ ] A committed agent never carries the creation capability — refused at commit, tested directly.
+- [ ] Per-proposer pending ceiling; identical re-proposals collapse on digest instead of queueing.
 - [ ] Typed, immutable, digest-bound proposal; agent writes nothing durable.
 - [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,

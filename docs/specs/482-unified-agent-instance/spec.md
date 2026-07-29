@@ -100,6 +100,11 @@ durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is 
   - **When** the commit runs
   - **Then** it is refused on the CAS/expected-state check rather than applied to a world it was not
     reviewed against
+- [ ] **Scenario: an approved creation cannot create**
+  - **Given** a Saved Agent that was itself committed from an approved proposal
+  - **When** it attempts to propose another Saved Agent
+  - **Then** it is refused, because a created agent never carries the creation capability — one human
+    approval must not become a tree of creators
 - [ ] A receipt links proposer, approver, digest, transaction/operation id and outcome.
 - [ ] Revocation, expiry, cancellation, idempotent retry and post-restart behaviour are each defined
       and tested — a pending proposal that survives a restart must not become approvable by accident.
@@ -133,8 +138,22 @@ has a known way to fail open.
    configuration.
 7. **Probe is not an Agent.** No probe gains identity, task, continuity, worktree or Fleet presence.
 8. **A Temporary agent is governed, not unmanaged.** "Temporary" bounds lifetime, never oversight.
+9. **A created agent never creates.** An agent committed through the door never carries the creation
+   capability, so one human approval can never become a tree of creators. Refused at commit, not
+   filtered in the UI.
 
 ## Minimal threat model — the creation door
+
+**Baseline first, because it decides how this section should be read.** Measured 2026-07-29: no Bridge
+tool reaches canonical profile creation — `commitAgentProfileLifecycle`, `createProfileFromStudioMutation`
+and `importAgentProfileBundle` have no caller anywhere under `src/bridge/`. An agent today can start a
+Temporary agent (`spawn_agent`) and **cannot create a Saved Agent at all.**
+
+So phase 4 does not harden a badly-guarded door. It **opens a door that is currently shut**, and moves
+the state from *impossible* to *possible with human approval per creation*. Every row below is a control
+on new authority, not a repair of existing authority. A human should ratify it on those terms; if the
+answer is "the door stays shut", nothing else in this SDD is affected — which is what severability means
+here.
 
 | Threat | Failure mode | Control |
 |---|---|---|
@@ -145,7 +164,9 @@ has a known way to fail open.
 | Replay of an old approval | A revoked or expired proposal is committed later | Single-use digest, expiry, revocation, idempotent retry keyed on the digest |
 | Secret exfiltration through the review surface | Credentials rendered into the Inbox or the receipt | Diff and summary are content-free of secrets by construction, like the existing config surfaces |
 | Partial commit | An authority exists with no profile, or a roster entry with no authority | One atomic transaction; compensate on failure |
+| **Capability recursion** | One approval becomes a tree of creators: an agent created by proposal carries the propose capability and creates further agents, turning a per-creation control into a per-principal one — the alternative this design explicitly rejected | A created agent **never** carries the creation capability. It is refused at commit, not filtered in the UI, so a proposal that requests it fails rather than arriving quietly stripped. Granting it remains a human editing that profile in Studio, which is a separate, visible act |
 | Approval fatigue | Human rubber-stamps because the diff is unreadable | The Inbox shows effective configuration and dangerous permissions explicitly, not raw YAML |
+| **Proposal flooding** | A confused or looping agent fills the Inbox; no single proposal is ever approved, but the queue stops being usable — a denial of the human's attention rather than of the system | Per-proposer pending-proposal ceiling, and identical re-proposals collapse on their digest instead of queueing twice. Refusal is by name, so the loop is visible rather than silent |
 
 ## Non-goals
 
@@ -157,8 +178,12 @@ has a known way to fail open.
 
 ## Alternatives considered and discarded
 
-- **Build a new unified spawn port.** Discarded by measurement: `AgentManager.spawn` already is one.
-  Building a second "unified" port would add the duplication this task exists to remove.
+- **Build a new unified spawn port.** Still discarded, but NOT for the reason the first draft gave.
+  That draft said "`AgentManager.spawn` already is one", which adversarial review falsified — `commitFork`
+  is a second implementation. The surviving reason is different and weaker in scope: converge fork ONTO
+  the existing door rather than author a third path beside both. "Converge fork onto the existing port"
+  is not the same claim as "the port is already unique", and this line is kept explicit so a reader of
+  `spec.md` alone cannot reconstruct the premise that was withdrawn.
 - **Keep `declared: boolean` and layer policy on top.** Discarded: it is precisely the overloaded field
   that makes storage answer an identity question, and every future capability question would fork on
   it again.
