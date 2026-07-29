@@ -24,7 +24,7 @@ const WS = "b349073a";
 
 const MODERN: InstancePolicySource = {
   declared: true,
-  instance: { identity: "saved", lifetime: "restartable" },
+  instance: { lifetime: "saved", resumePolicy: "restartable" },
 };
 const PRE_CUT: InstancePolicySource = { declared: true }; // no instance policy: written before the cut
 

@@ -74,16 +74,16 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set<string>(),
       ledger: [
-        ["temp", record({ declared: false, instance: { identity: "temporary", lifetime: "collected" } })],
-        ["fork", record({ declared: false, instance: { identity: "temporary", lifetime: "restartable" } })],
+        ["temp", record({ declared: false, instance: { lifetime: "temporary", resumePolicy: "collected" } })],
+        ["fork", record({ declared: false, instance: { lifetime: "temporary", resumePolicy: "restartable" } })],
         ["legacy", record({ declared: false })],
       ],
       lkg: { agents: [{ name: "from-config", kind: "agent", cmd: "claude" }] } as never,
     });
     const by = new Map(extras.map((e) => [e.name, e]));
 
-    expect(by.get("temp")?.instance).toEqual({ identity: "temporary", lifetime: "collected" });
-    expect(by.get("fork")?.instance).toEqual({ identity: "temporary", lifetime: "restartable" });
+    expect(by.get("temp")?.instance).toEqual({ lifetime: "temporary", resumePolicy: "collected" });
+    expect(by.get("fork")?.instance).toEqual({ lifetime: "temporary", resumePolicy: "restartable" });
     expect(by.get("legacy")?.instance).toBeUndefined();     // pre-split row: nothing invented
     expect(by.get("from-config")?.instance).toBeUndefined(); // a config snapshot has no instance
 
@@ -103,7 +103,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   it("follows the policy, not the store, when the two disagree", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set<string>(),
-      ledger: [["odd", record({ declared: true, instance: { identity: "temporary", lifetime: "collected" } })]],
+      ledger: [["odd", record({ declared: true, instance: { lifetime: "temporary", resumePolicy: "collected" } })]],
       lkg: null,
     });
     expect(extras[0]?.declared).toBe(true);            // the storage fact is preserved, not rewritten

@@ -739,7 +739,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
     await ws.evolutionStore.ensureProfile("reviewer");
-    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured", instance: { identity: "saved", lifetime: "restartable" } });
+    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     const activityDir = path.join(root, ".tachyon", "activity");
     fs.mkdirSync(activityDir, { recursive: true });
     fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "owned activity\n");
@@ -1645,7 +1645,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           resume: { runtime: "claude", sessionId: "old-session" },
           cwd: root,
           declared: true,
-          instance: { identity: "saved", lifetime: "restartable" },
+          instance: { lifetime: "saved", resumePolicy: "restartable" },
           delivery: { deliveryId: unsigned.id, segmentId: "old-segment", executionNonce: "old-nonce" },
           updatedAt: "2026-07-15T12:00:00.000Z",
         },
@@ -2336,7 +2336,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("GC of a removed declared agent deletes its durable activity log with the ledger row", async () => {
     const { ws } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { identity: "saved", lifetime: "restartable" } });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     const actDir = path.join(ws.workspaceRoot, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("old")}.jsonl`);
@@ -2360,7 +2360,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
     const { ws, host } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { identity: "saved", lifetime: "restartable" } });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     await ws.evolutionStore.ensureProfile("old");
     vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
 
@@ -2375,7 +2375,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
     const { ws, sessions, sessionEnv } = await makeWorkspace();
-    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "restartable" } });
+    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { lifetime: "temporary", resumePolicy: "restartable" } });
     // t-fab832 — the post-cut contract: a live agent session must ATTEST that this build created it,
     // and the proof lives on the session rather than in the ledger. This fixture adds the session
     // directly, so it seeds the attestation the way a real `new-session` would. The case this test
@@ -2588,7 +2588,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           resume: { runtime: "claude", sessionId: "sess-ord" },
           cwd: root,
           declared: true,
-          instance: { identity: "saved", lifetime: "restartable" },
+          instance: { lifetime: "saved", resumePolicy: "restartable" },
           updatedAt: "2026-07-12T00:00:00.000Z",
         },
         offered: {
@@ -2596,7 +2596,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           resume: { runtime: "claude", sessionId: "sess-off" },
           cwd: root,
           declared: true,
-          instance: { identity: "saved", lifetime: "restartable" },
+          instance: { lifetime: "saved", resumePolicy: "restartable" },
           updatedAt: "2026-07-12T00:00:00.000Z",
         },
       },

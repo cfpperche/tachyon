@@ -146,12 +146,27 @@ export function sameDeliveryBinding(a: SessionDeliveryBinding, b: SessionDeliver
  * it; moving them onto these fields is phase 3, deliberately separate so the write side can be
  * proven before anything depends on it.
  */
-export type AgentInstanceIdentity = "saved" | "temporary";
-export type AgentInstanceLifetime = "restartable" | "collected";
+/**
+ * t-04052d — the ratified vocabulary of the Agent Instance cut.
+ *
+ * `lifetime` answers the only question about the DEFINITION: does it outlive the process? That is the
+ * question `declared` was answering by proxy, through which store the definition happened to sit in,
+ * and it is now declared data rather than an inference.
+ *
+ * `resumePolicy` is a SEPARATE axis, and keeping the two apart is mandatory rather than stylistic. A
+ * fork is `temporary` — no durable Profile behind it — AND `restartable`, because it owns a resume
+ * block. One value would have to lie about one of the two, most likely about the fork surviving,
+ * which is the reload this cut must not break.
+ *
+ * The second axis is RENAMED rather than left alone: it used to be called `lifetime`, and leaving two
+ * fields one rename apart is how a reader ends up configuring the one they did not mean.
+ */
+export type AgentInstanceLifetime = "saved" | "temporary";
+export type AgentInstanceResumePolicy = "restartable" | "collected";
 
 export interface AgentInstancePolicy {
-  identity: AgentInstanceIdentity;
   lifetime: AgentInstanceLifetime;
+  resumePolicy: AgentInstanceResumePolicy;
   /**
    * A declared CAPABILITY of this instance: were profile-backed lifecycle hooks injected at spawn?
    * Recorded, never derived from `identity`/`lifetime` — that derivation happens to hold today and
@@ -554,12 +569,15 @@ function withoutSelfParent<T extends SessionRecord>(name: string, rec: T): T {
 function parseInstancePolicy(value: unknown): AgentInstancePolicy | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const o = value as Record<string, unknown>;
-  const identity = o.identity === "saved" || o.identity === "temporary" ? o.identity : undefined;
-  const lifetime = o.lifetime === "restartable" || o.lifetime === "collected" ? o.lifetime : undefined;
-  if (!identity || !lifetime) return undefined;
+  const lifetime = o.lifetime === "saved" || o.lifetime === "temporary" ? o.lifetime : undefined;
+  const resumePolicy = o.resumePolicy === "restartable" || o.resumePolicy === "collected" ? o.resumePolicy : undefined;
+  // A PRE-CUT row carries `identity` and no `resumePolicy`, so it yields undefined here rather than
+  // being half-read. That is fail-closed, not reinterpretation: t-fab832's activation gate refuses
+  // the workspace before this parser is ever reached with one.
+  if (!lifetime || !resumePolicy) return undefined;
   return typeof o.lifecycleHooks === "boolean"
-    ? { identity, lifetime, lifecycleHooks: o.lifecycleHooks }
-    : { identity, lifetime };
+    ? { lifetime, resumePolicy, lifecycleHooks: o.lifecycleHooks }
+    : { lifetime, resumePolicy };
 }
 
 function parseDef(d: unknown): SessionDef | undefined {

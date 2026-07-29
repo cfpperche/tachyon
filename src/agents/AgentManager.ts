@@ -2696,8 +2696,8 @@ export class AgentManager {
       // (`declared: !adhoc` → `ownershipOnly`), recorded as a capability of THIS instance rather than
       // left to be re-derived from identity by every reader.
       instance: adhoc
-        ? { identity: "temporary" as const, lifetime: "collected" as const, lifecycleHooks: false }
-        : { identity: "saved" as const, lifetime: "restartable" as const, lifecycleHooks: true },
+        ? { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }
+        : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
@@ -4739,7 +4739,7 @@ export class AgentManager {
       // `lifecycleHooks: false` records what commitFork already decides above by passing
       // `declared: false` to withSessionOwnership — "a canonical fork must not inherit
       // profileLifecycle authority". Now the row says so instead of a reader guessing.
-      instance: { identity: "temporary" as const, lifetime: "restartable" as const, lifecycleHooks: false },
+      instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
     });
     let spawnedSession: string | undefined;
     let sessionAttempted = false;

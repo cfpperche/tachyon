@@ -40,7 +40,7 @@ export interface InstancePolicySource {
  * `declared` alone could never have expressed.
  */
 export function isTemporaryInstance(row: InstancePolicySource): boolean {
-  if (row.instance) return row.instance.identity === "temporary";
+  if (row.instance) return row.instance.lifetime === "temporary";
   return !row.declared;
 }
 
@@ -54,7 +54,7 @@ export function isTemporaryInstance(row: InstancePolicySource): boolean {
  * it reads as `restartable`, which is what it has always actually been.
  */
 export function mayRestartInstance(row: InstancePolicySource): boolean {
-  if (row.instance) return row.instance.lifetime === "restartable";
+  if (row.instance) return row.instance.resumePolicy === "restartable";
   return row.declared;
 }
 

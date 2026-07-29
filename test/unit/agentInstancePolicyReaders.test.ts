@@ -13,9 +13,9 @@ import {
  * must equal the `declared` answer — except where `declared` was WRONG, and there the difference has
  * to be deliberate and named. This enumerates the shapes rather than sampling them.
  */
-const SAVED = { declared: true, instance: { identity: "saved", lifetime: "restartable", lifecycleHooks: true } } as const;
-const TEMPORARY = { declared: false, instance: { identity: "temporary", lifetime: "collected", lifecycleHooks: false } } as const;
-const FORK = { declared: false, instance: { identity: "temporary", lifetime: "restartable", lifecycleHooks: false } } as const;
+const SAVED = { declared: true, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } } as const;
+const TEMPORARY = { declared: false, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } } as const;
+const FORK = { declared: false, instance: { lifetime: "temporary", resumePolicy: "restartable", lifecycleHooks: false } } as const;
 const LEGACY_DECLARED = { declared: true } as const;
 const LEGACY_ADHOC = { declared: false } as const;
 
@@ -56,7 +56,7 @@ describe("instance policy readers (SDD 482 phase 3)", () => {
   it("declared alone never decides when a policy is present", () => {
     // A row whose storage fact and declared policy disagree must follow the POLICY. This shape is not
     // written today, and that is the point: the reader must not depend on them agreeing.
-    const contradictory = { declared: true, instance: { identity: "temporary", lifetime: "collected" } } as const;
+    const contradictory = { declared: true, instance: { lifetime: "temporary", resumePolicy: "collected" } } as const;
     expect(isTemporaryInstance(contradictory)).toBe(true);
     expect(mayRestartInstance(contradictory)).toBe(false);
   });
@@ -76,7 +76,7 @@ describe("instance policy readers (SDD 482 phase 3)", () => {
     // The separable case: identity says saved, the instance still launched without the hooks.
     const promotedButRunning = {
       declared: true,
-      instance: { identity: "saved", lifetime: "restartable", lifecycleHooks: false },
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: false },
     } as const;
     expect(isTemporaryInstance(promotedButRunning)).toBe(false);
     expect(hasLifecycleHooks(promotedButRunning)).toBe(false); // derivation would have said true
@@ -86,7 +86,7 @@ describe("instance policy readers (SDD 482 phase 3)", () => {
     expect(hasLifecycleHooks(LEGACY_DECLARED)).toBe(true);
     expect(hasLifecycleHooks(LEGACY_ADHOC)).toBe(false);
     // A policy written before the capability existed also has no answer, and does not invent one.
-    const prePolicy = { declared: true, instance: { identity: "saved", lifetime: "restartable" } } as const;
+    const prePolicy = { declared: true, instance: { lifetime: "saved", resumePolicy: "restartable" } } as const;
     expect(hasLifecycleHooks(prePolicy)).toBe(true); // from `declared`, exactly as the reader did before
   });
 });
