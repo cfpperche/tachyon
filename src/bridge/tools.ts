@@ -6,7 +6,7 @@ import { AgentManager } from "../agents/AgentManager.js";
 import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import {
   cancelSavedAgentProposal,
-  listLiveSavedAgentProposals,
+  readLiveSavedAgentProposalQueue,
   recordSavedAgentProposal,
 } from "../agents/savedAgentProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
@@ -2122,15 +2122,21 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // Not scoped to the caller: the queue is shared, the ceiling is per-proposer, and an agent
         // that cannot see a neighbour's pending proposal will re-propose the same agent under a
         // different name. Nothing here is secret — it is what the human is about to be shown.
-        const live = listLiveSavedAgentProposals(deps.workspaceRoot, Date.now());
-        return ok(JSON.stringify(live.map((p) => ({
-          id: p.id,
-          proposer: p.proposer,
-          digest: p.digest,
-          createdAt: p.createdAt,
-          expiresAt: p.expiresAt,
-          spec: p.spec,
-        })), null, 2));
+        const queue = readLiveSavedAgentProposalQueue(deps.workspaceRoot, Date.now());
+        return ok(JSON.stringify({
+          proposals: queue.proposals.map((p) => ({
+            id: p.id,
+            proposer: p.proposer,
+            digest: p.digest,
+            createdAt: p.createdAt,
+            expiresAt: p.expiresAt,
+            spec: p.spec,
+          })),
+          // Reported, never hidden: a queued file that fails its digest is the one thing a reader must
+          // not mistake for "withdrawn". It also consumes ceiling, so an unexplained refusal would be
+          // worse than the noise.
+          unreadable: queue.unreadable,
+        }, null, 2));
       } catch (err) {
         return fail(err);
       }

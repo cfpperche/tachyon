@@ -150,6 +150,12 @@ export function admitSavedAgentProposal(input: {
   base: SavedAgentProposalBase;
   /** Pending proposals ALREADY held for this workspace, of every proposer. */
   pending: readonly SavedAgentProposal[];
+  /**
+   * Files in the queue that could not be trusted. They cannot be attributed to a proposer or matched
+   * by digest, so they cannot collapse — but they DO occupy the queue, and ignoring them would let a
+   * writer corrupt a pending proposal to make it invisible and get a fresh id every time.
+   */
+  untrustedPending?: number;
   nowMs: number;
   id: string;
 }): SavedAgentProposalAdmission {
@@ -193,14 +199,16 @@ export function admitSavedAgentProposal(input: {
   if (twin) return { ok: true, proposal: twin, collapsedOnto: twin.id };
 
   // 4. Per-proposer ceiling, counted AFTER collapse so a retry never consumes a slot.
+  const untrusted = input.untrustedPending ?? 0;
   const mine = live.filter((p) => p.proposer === input.proposer);
-  if (mine.length >= SAVED_AGENT_PROPOSAL_PENDING_CEILING) {
+  if (mine.length + untrusted >= SAVED_AGENT_PROPOSAL_PENDING_CEILING) {
     return {
       ok: false,
       code: "pending_ceiling",
       reason:
-        `agent '${input.proposer}' already has ${mine.length} pending Saved Agent proposals ` +
-        `(ceiling ${SAVED_AGENT_PROPOSAL_PENDING_CEILING}); resolve or cancel one before proposing another`,
+        `agent '${input.proposer}' already has ${mine.length} pending Saved Agent proposals` +
+        (untrusted > 0 ? `, and ${untrusted} queued file(s) could not be read or failed their digest check` : "") +
+        ` (ceiling ${SAVED_AGENT_PROPOSAL_PENDING_CEILING}); resolve or cancel one before proposing another`,
     };
   }
 

@@ -183,6 +183,27 @@ non-problem (`notes.md`)._
 - [x] Asserted that the door still creates nothing: config byte-identical, no profile directory, no
       authority. And no profile in this repo holds the grant, so nothing is newly permitted today.
 
+### Slice B preconditions from the adversarial review (closed here, not deferred)
+
+- [x] **Corruption stays visible.** `readSavedAgentProposalQueue` returns `{proposals, unreadable}`;
+      the empty catch is gone. A human can now tell "withdrawn or expired" from "someone edited this",
+      and the Bridge list reports the untrusted files rather than hiding them.
+- [x] **The blind-dedupe bypass is closed.** An untrusted file cannot be attributed or digest-matched,
+      so it cannot collapse — corrupting a pending proposal used to make it invisible and the same
+      request came back with a FRESH id every time. Untrusted files now COUNT against the ceiling, and
+      the refusal says why instead of looking like an unexplained limit. Witness records the ids.
+- [x] **Symlink fail-closed, proven.** `lstat` on both the proposal file and the store directory;
+      reading through a link is refused even when the linked content would pass its digest — the
+      digest cannot catch this because the content is genuine and it is the PATH that lies. Writing was
+      already safe (temp + rename replaces a link rather than writing through it) and that is now
+      asserted, including that the linked-to file outside the store is left untouched.
+- [x] Both new controls proven by disabling: exactly their own three tests failed.
+
+CORRECTION TO THE PREMISE these preconditions were filed under: they were scoped to "slice C must not
+open the door without closing both", on the understanding that slice B was unreachable. Slice B as
+DIRECTED included the Bridge tool, so the door is already reachable in `c61f2efbfc41`. That makes both
+preconditions current, not future, which is why they are closed here.
+
 ### Slice C — still to do (the part that actually creates)
 
 - [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.

@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import {
   SavedAgentProposalTamperError,
+  readLiveSavedAgentProposalQueue,
+  readSavedAgentProposalQueue,
   cancelSavedAgentProposal,
   listLiveSavedAgentProposals,
   listSavedAgentProposals,
@@ -199,5 +201,116 @@ describe("Saved Agent proposal store (SDD 482 phase 4B)", () => {
     if (!mine.ok) throw new Error("fixture");
     const mode = fs.statSync(savedAgentProposalPath(ws, mine.proposal.id)).mode & 0o777;
     expect(mode & 0o077).toBe(0);
+  });
+});
+
+/**
+ * Preconditions the human set for opening the door (`j-136a8596fd8f`), from the slice B review. Both
+ * are on an AGENT-REACHABLE path now that `propose_saved_agent` exists, so they are closed here rather
+ * than deferred to slice C.
+ */
+describe("corruption stays visible, and cannot buy a fresh id (SDD 482 phase 4B, precondition 1)", () => {
+  it("reports an untrusted file instead of dropping it silently", () => {
+    const ws = workspace();
+    const good = record(ws);
+    const bad = record(ws, { spec: spec({ name: "second" }) });
+    if (!good.ok || !bad.ok) throw new Error("fixture");
+    const onDisk = JSON.parse(fs.readFileSync(savedAgentProposalPath(ws, bad.proposal.id), "utf8")) as Record<string, unknown>;
+    fs.writeFileSync(savedAgentProposalPath(ws, bad.proposal.id), JSON.stringify({ ...onDisk, spec: { ...(onDisk.spec as object), name: "root" } }), "utf8");
+
+    const queue = readSavedAgentProposalQueue(ws);
+    expect(queue.proposals.map((p) => p.id)).toEqual([good.proposal.id]);
+    // The distinction a silent drop destroys: "withdrawn or expired" vs "someone edited this".
+    expect(queue.unreadable).toHaveLength(1);
+    expect(queue.unreadable[0]!.id).toBe(bad.proposal.id);
+    expect(queue.unreadable[0]!.reason).toContain("does not match its digest");
+  });
+
+  it("names a file whose very name is not a proposal id", () => {
+    const ws = workspace();
+    record(ws);
+    fs.writeFileSync(path.join(ws, ".tachyon", "agent-proposals", "not-an-id.json"), "{}", "utf8");
+    expect(readSavedAgentProposalQueue(ws).unreadable.map((u) => u.id)).toEqual(["not-an-id.json"]);
+  });
+
+  /**
+   * The bypass the reviewer described: corrupt a pending proposal and it becomes invisible to
+   * collapse, so the same request returns with a NEW id every time and the ceiling never bites.
+   * An untrusted file cannot be attributed or matched — so it COUNTS instead.
+   */
+  it("counts untrusted files against the ceiling, closing the fresh-id loop", () => {
+    const ws = workspace();
+    const first = record(ws);
+    if (!first.ok) throw new Error("fixture");
+    fs.writeFileSync(savedAgentProposalPath(ws, first.proposal.id), "{ not json", "utf8");
+
+    expect(record(ws, { spec: spec({ name: "second" }) }).ok).toBe(true);
+    expect(record(ws, { spec: spec({ name: "third" }) }).ok).toBe(true);
+    const refused = record(ws, { spec: spec({ name: "fourth" }) });
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.code).toBe("pending_ceiling");
+    // The refusal explains itself rather than looking like an unexplained limit.
+    expect(refused.reason).toContain("could not be read or failed their digest check");
+  });
+
+  it("records the untrusted files in the witness log, so corruption is diagnosable after the fact", () => {
+    const ws = workspace();
+    const first = record(ws);
+    if (!first.ok) throw new Error("fixture");
+    fs.writeFileSync(savedAgentProposalPath(ws, first.proposal.id), "{ not json", "utf8");
+    record(ws, { spec: spec({ name: "second" }) });
+    const unreadable = readSavedAgentProposalWitness(ws).filter((e) => e.kind === "unreadable");
+    expect(unreadable).toHaveLength(1);
+    expect((unreadable[0] as { ids: string[] }).ids).toEqual([first.proposal.id]);
+  });
+});
+
+describe("the store fails closed against symlinks (SDD 482 phase 4B, precondition 2)", () => {
+  it("refuses to read a proposal through a symlink, even when the target would pass its digest", () => {
+    const ws = workspace();
+    const real = record(ws);
+    if (!real.ok) throw new Error("fixture");
+    // A VALID proposal parked outside the store, linked in under a second id. The digest check alone
+    // would not catch this: the content is genuine — it is the path that lies.
+    const elsewhere = path.join(ws, "planted.json");
+    fs.copyFileSync(savedAgentProposalPath(ws, real.proposal.id), elsewhere);
+    fs.symlinkSync(elsewhere, savedAgentProposalPath(ws, "sp-bbbbbb"));
+
+    expect(() => readSavedAgentProposal(ws, "sp-bbbbbb")).toThrow(SavedAgentProposalTamperError);
+    const queue = readSavedAgentProposalQueue(ws);
+    expect(queue.proposals.map((p) => p.id)).toEqual([real.proposal.id]);
+    expect(queue.unreadable.map((u) => u.id)).toEqual(["sp-bbbbbb"]);
+    expect(queue.unreadable[0]!.reason).toContain("symlink");
+  });
+
+  it("refuses when the proposal DIRECTORY itself is a symlink", () => {
+    const ws = workspace();
+    const real = record(ws);
+    if (!real.ok) throw new Error("fixture");
+    const dir = path.join(ws, ".tachyon", "agent-proposals");
+    const moved = path.join(ws, "elsewhere");
+    fs.renameSync(dir, moved);
+    fs.symlinkSync(moved, dir);
+
+    expect(() => readSavedAgentProposal(ws, real.proposal.id)).toThrow(/symlink/);
+    // Listing must not report an empty queue here — "nothing pending" would be a lie.
+    const queue = readLiveSavedAgentProposalQueue(ws, NOW);
+    expect(queue.proposals).toEqual([]);
+    expect(queue.unreadable.length).toBeGreaterThan(0);
+  });
+
+  it("keeps writing safe: a symlinked target is REPLACED, never written through", () => {
+    const ws = workspace();
+    const outside = path.join(ws, "outside.json");
+    fs.writeFileSync(outside, "untouched", "utf8");
+    fs.mkdirSync(path.join(ws, ".tachyon", "agent-proposals"), { recursive: true });
+    fs.symlinkSync(outside, savedAgentProposalPath(ws, "sp-cccccc"));
+
+    const written = record(ws, { id: "sp-cccccc" });
+    expect(written.ok).toBe(true);
+    // The link is gone, replaced by a real file, and the file it pointed at is untouched.
+    expect(fs.lstatSync(savedAgentProposalPath(ws, "sp-cccccc")).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(outside, "utf8")).toBe("untouched");
   });
 });

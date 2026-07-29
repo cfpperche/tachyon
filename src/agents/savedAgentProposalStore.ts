@@ -17,12 +17,12 @@ import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
  * digest, and is invalidated when its base state diverges. Slice A made those pure decisions; this
  * makes them durable, which is where each of them can actually fail.
  *
- * ## Still no agent-reachable door
+ * ## The door reaches this file
  *
- * There is no Bridge tool here either. The rule from slice A holds and gets stricter as the machinery
- * grows: the door opens in ONE slice, complete, or it does not open. What this file adds is the
- * host's own storage — the thing a Human Inbox will read and a commit path will consume — not a way
- * for an agent to put something into it.
+ * `propose_saved_agent` writes here, so every guard below is on an agent-reachable path. Nothing here
+ * creates a profile, an authority record or a roster entry, and there is still no approval or commit
+ * path — but "unreachable" stopped being true the moment the Bridge tool landed, and a comment that
+ * said otherwise would be the most dangerous kind of stale.
  *
  * ## Why the digest is re-checked on every read
  *
@@ -40,7 +40,9 @@ export type SavedAgentProposalWitnessEvent =
   | { kind: "proposed"; id: string; proposer: string; digest: string; at: string }
   | { kind: "collapsed"; id: string; proposer: string; digest: string; at: string }
   | { kind: "cancelled"; id: string; by: string; reason: string; at: string }
-  | { kind: "refused"; proposer: string; code: string; at: string };
+  | { kind: "refused"; proposer: string; code: string; at: string }
+  /** Untrusted files seen in the queue. Recorded so corruption is diagnosable rather than merely felt. */
+  | { kind: "unreadable"; ids: string[]; at: string };
 
 export function newSavedAgentProposalId(): string {
   return `${SAVED_AGENT_PROPOSAL_ID_PREFIX}${crypto.randomBytes(3).toString("hex")}`;
@@ -92,13 +94,53 @@ export class SavedAgentProposalTamperError extends Error {
 }
 
 /**
+ * A proposal file that exists but cannot be trusted. Kept as DATA rather than swallowed, because the
+ * two consequences of hiding it are both real: a human cannot tell "withdrawn" from "someone edited
+ * this", and a proposal invisible to dedupe comes back with a fresh id instead of collapsing.
+ */
+export interface UnreadableSavedAgentProposal {
+  id: string;
+  reason: string;
+}
+
+export interface SavedAgentProposalListing {
+  proposals: SavedAgentProposal[];
+  /** Files present in the queue that could not be read or did not match their digest. */
+  unreadable: UnreadableSavedAgentProposal[];
+}
+
+/**
+ * Refuses to follow a symlink into or out of the proposal store.
+ *
+ * The store's whole posture is that a file under `.tachyon/` is only as trustworthy as its digest, and
+ * a symlink is the one shape where the path itself lies before any digest is computed. Writing is
+ * already safe by construction — temp + `rename` REPLACES a link rather than writing through it — so
+ * this closes the reading half, and closes it at the same layer as the id validation rather than in
+ * each caller.
+ */
+function assertNotSymlink(target: string, what: string): void {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(target);
+  } catch {
+    return; // absent is not a symlink; the caller's own ENOENT handling applies
+  }
+  if (stat.isSymbolicLink()) {
+    throw new SavedAgentProposalTamperError(`${what} is a symlink — refusing to read a Saved Agent proposal through one`);
+  }
+}
+
+/**
  * Loads one proposal and re-derives its digest. A record whose digest does not match its own fields is
  * REFUSED, not repaired: recomputing the digest would launder exactly the edit this check exists to
  * catch, and an approval already bound to the old digest would then apply to different content.
  */
 export function readSavedAgentProposal(workspaceRoot: string, id: string): SavedAgentProposal {
   assertId(id);
+  const dir = path.join(workspaceRoot, SAVED_AGENT_PROPOSALS_REL_DIR);
+  assertNotSymlink(dir, "the Saved Agent proposal directory");
   const file = savedAgentProposalPath(workspaceRoot, id);
+  assertNotSymlink(file, `proposal '${id}'`);
   const record = JSON.parse(fs.readFileSync(file, "utf8")) as SavedAgentProposal;
   const expected = computeSavedAgentProposalDigest({
     proposer: record.proposer,
@@ -116,30 +158,65 @@ export function readSavedAgentProposal(workspaceRoot: string, id: string): Saved
   return record;
 }
 
-/**
- * Every proposal still on disk, tampered ones EXCLUDED rather than thrown.
- *
- * The asymmetry with `readSavedAgentProposal` is deliberate. Asking for one proposal by id must fail
- * loudly, because a caller is about to act on that exact one. Listing is what the ceiling and the
- * Inbox use, and there one corrupt file must not make the whole queue unreadable — which would turn a
- * single bad write into a denial of the human's ability to see anything at all.
- */
+/** Every proposal on disk that parses and matches its digest. See `readSavedAgentProposalQueue`. */
 export function listSavedAgentProposals(workspaceRoot: string): SavedAgentProposal[] {
+  return readSavedAgentProposalQueue(workspaceRoot).proposals;
+}
+
+/**
+ * The whole queue: what parses, and what does NOT.
+ *
+ * Corrupt entries used to be swallowed by an empty catch. That was wrong in two ways the reviewer
+ * named. First, the digest mismatch is documented as "a hard refusal, never a warning" — but at the
+ * LIST level a silent drop turns it into exactly a warning-free discard, and a human cannot tell
+ * "withdrawn or expired" from "someone edited this". Second, dedupe runs over the live list, so an
+ * unreadable proposal is invisible to collapse and the same request returns with a NEW id instead of
+ * collapsing onto the old one — queue pressure on the human's attention, which is the volume gap the
+ * threat model already worried about.
+ *
+ * So they are returned, not hidden. Read-by-id still throws; listing still never throws, because one
+ * bad file must not blind the human to the rest of the queue.
+ */
+export function readSavedAgentProposalQueue(workspaceRoot: string): SavedAgentProposalListing {
   const dir = path.join(workspaceRoot, SAVED_AGENT_PROPOSALS_REL_DIR);
-  if (!fs.existsSync(dir)) return [];
-  const out: SavedAgentProposal[] = [];
-  for (const entry of fs.readdirSync(dir)) {
+  if (!fs.existsSync(dir)) return { proposals: [], unreadable: [] };
+  const proposals: SavedAgentProposal[] = [];
+  const unreadable: UnreadableSavedAgentProposal[] = [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch (error) {
+    // The directory itself being unreadable (a symlink swapped in, a permission change) is a fact the
+    // caller must see rather than an empty queue, which would read as "nothing pending".
+    return { proposals: [], unreadable: [{ id: "(directory)", reason: error instanceof Error ? error.message : String(error) }] };
+  }
+  for (const entry of entries) {
     if (!entry.endsWith(".json")) continue;
     const id = entry.slice(0, -".json".length);
-    if (!ID_RE.test(id)) continue;
-    try { out.push(readSavedAgentProposal(workspaceRoot, id)); } catch { /* tampered or unreadable: not listed */ }
+    if (!ID_RE.test(id)) {
+      unreadable.push({ id: entry, reason: "file name is not a valid proposal id" });
+      continue;
+    }
+    try {
+      proposals.push(readSavedAgentProposal(workspaceRoot, id));
+    } catch (error) {
+      unreadable.push({ id, reason: error instanceof Error ? error.message : String(error) });
+    }
   }
-  return out.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  proposals.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  unreadable.sort((a, b) => a.id.localeCompare(b.id));
+  return { proposals, unreadable };
 }
 
 /** Live = on disk and not past its expiry. Expiry is evaluated at READ time, so a restart cannot revive one. */
 export function listLiveSavedAgentProposals(workspaceRoot: string, nowMs: number): SavedAgentProposal[] {
   return listSavedAgentProposals(workspaceRoot).filter((p) => !savedAgentProposalIsExpired(p, nowMs));
+}
+
+/** Live proposals plus the untrusted files, which the ceiling still has to account for. */
+export function readLiveSavedAgentProposalQueue(workspaceRoot: string, nowMs: number): SavedAgentProposalListing {
+  const queue = readSavedAgentProposalQueue(workspaceRoot);
+  return { proposals: queue.proposals.filter((p) => !savedAgentProposalIsExpired(p, nowMs)), unreadable: queue.unreadable };
 }
 
 /**
@@ -158,16 +235,27 @@ export function recordSavedAgentProposal(input: {
   nowMs: number;
   id?: string;
 }): SavedAgentProposalAdmission {
+  const queue = readLiveSavedAgentProposalQueue(input.workspaceRoot, input.nowMs);
+  const at = new Date(input.nowMs).toISOString();
+
+  // An untrusted file still OCCUPIES the queue, so it must still count. Skipping it would hand a
+  // writer the exact bypass the reviewer described: corrupt a pending proposal and it becomes
+  // invisible to collapse, so the same request returns with a fresh id and the ceiling never bites.
+  // Failing closed here costs a proposer three slots in a workspace someone can already write to,
+  // and the refusal says why rather than looking like an unexplained limit.
+  if (queue.unreadable.length > 0) {
+    appendSavedAgentProposalWitness(input.workspaceRoot, { kind: "unreadable", ids: queue.unreadable.map((u) => u.id), at });
+  }
   const admission = admitSavedAgentProposal({
     proposer: input.proposer,
     proposerProfile: input.proposerProfile,
     spec: input.spec,
     base: input.base,
-    pending: listLiveSavedAgentProposals(input.workspaceRoot, input.nowMs),
+    pending: queue.proposals,
+    untrustedPending: queue.unreadable.length,
     nowMs: input.nowMs,
     id: input.id ?? newSavedAgentProposalId(),
   });
-  const at = new Date(input.nowMs).toISOString();
   if (!admission.ok) {
     appendSavedAgentProposalWitness(input.workspaceRoot, { kind: "refused", proposer: input.proposer, code: admission.code, at });
     return admission;
