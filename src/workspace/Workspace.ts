@@ -65,6 +65,8 @@ import {
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
+import { POST_CUT_SESSION_ATTESTATION_ENV, describeLegacyFleetRefusal, inspectLegacyFleet } from "../agents/legacyFleetGate.js";
+import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
   adoptSoulProfile,
@@ -5936,6 +5938,46 @@ export class Workspace {
     // process died (crash/reboot), then spawn the remaining pending autostarts.
     // Survivors are NOT auto-opened as tabs (hidden-tab attach renders blank).
     const surviving = await this.tmux.listSessions(`${SESSION_PREFIX}-${this.wsHash}-`);
+
+    // t-fab832 — the Agent Instance cut's activation gate, BEFORE anything reads or resumes state.
+    //
+    // Placed here on purpose: `rehydrateFromLedger` below is the first thing that would INTERPRET a
+    // pre-cut row, and this build has no rules for one. Refusing before that point is what makes
+    // "we do not reinterpret old state" true rather than aspirational.
+    //
+    // It never stops or deletes anything — it reports and names the governed action. `start()` returns
+    // without activating, so a running fleet is left exactly as it was for the operator to end.
+    //
+    // The config text is read ONCE for the pointer scan, and an unreadable config yields an empty
+    // pointer set — which makes every agent look inline and refuses. That is the fail-closed
+    // direction on purpose: refusing on a config we cannot read beats activating and guessing.
+    const profilePointers = scanAgentProfilePointers(
+      (() => { try { return fs.readFileSync(this.configPath() ?? "", "utf8"); } catch { return ""; } })(),
+    ).pointers;
+    const legacy = inspectLegacyFleet({
+      wsHash: this.wsHash,
+      ledger: [...this.ledger.all()].map(([name, row]) => [name, row] as const),
+      rosterEntries: Object.keys(this.config?.agents ?? {}).map((name) => ({
+        name,
+        kind: this.manager.kindOf(name),
+        hasProfilePointer: profilePointers.has(name),
+      })),
+      liveSessions: await Promise.all(surviving.map(async (session) => {
+        const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
+        return {
+          session,
+          name,
+          kind: this.manager.kindOf(name),
+          // Proof is read off the SESSION, not the ledger. An unreadable session yields undefined,
+          // which the gate refuses — a failed read must never admit.
+          attestation: await this.tmux.sessionEnvValue(session, POST_CUT_SESSION_ATTESTATION_ENV),
+        };
+      })),
+    });
+    if (!legacy.ok) {
+      this.host.notify(describeLegacyFleetRefusal(legacy), "error");
+      return;
+    }
 
     // Resume-on-activation (spec 209): classify ledger agents, auto-resume declared
     // autostart ones whose session is gone, stash the rest as a human-offered set.

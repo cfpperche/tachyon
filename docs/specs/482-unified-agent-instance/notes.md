@@ -412,3 +412,20 @@ measurement would invert the plan.
 The only dead thing was mine: `sweepExpiredSavedAgentProposals`, exported in phase 4B and never
 called. Wired into the record path rather than deleted, since expiry housekeeping is real — but it
 remains explicitly NOT a control, and the read-time filter test proves that independently.
+
+## Amendment — t-ca9086 (2026-07-29): approve creates ENABLED
+
+Dogfood on 0.56.116: after approving `sp-21a7eb`, `grok-builder` was born with
+`lifecycle.enabled=false`. Start was refused until a second Agent Studio visit to enable.
+
+Human decision: `Approve and create` authorizes existence **and** enablement. Start remains a
+separate action — no session, no running worktree, no task assignment at approve time.
+
+What changed in the code:
+
+- `createProfileFromStudioMutation` writes `lifecycle.enabled: true` (shared Studio create +
+  proposal path). Import/clone still write `enabled: false` — reauthorization intent, not this
+  contract.
+- Receipt gains `created: "enabled; not started"`. Human Inbox note and review `affected` declare
+  the same phrase.
+- "Saving is not starting" is now enforced by no-spawn + no-autostart, not by disablement.

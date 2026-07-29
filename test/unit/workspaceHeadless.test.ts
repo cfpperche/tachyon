@@ -126,6 +126,8 @@ class SharedSecretHost extends FakeHost {
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
 function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
   const sessions = new Set<string>();
+  /** `${session}\0${key}` → value, mirroring tmux's per-session environment. */
+  const sessionEnv = new Map<string, string>();
   const dead = new Map<string, number>();
   const sent = new Map<string, string>(); // session -> last literal send-keys text (spec 332 death-poke assertions)
   const pasteBuffers = new Map<string, string>();
@@ -148,9 +150,22 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       sessions.add(name);
+      // t-fab832 — record the session environment the real tmux would keep, so `show-environment`
+      // can answer with the attestation this build mints at creation.
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] !== "-e") continue;
+        const eq = (args[i + 1] ?? "").indexOf("=");
+        if (eq > 0) sessionEnv.set(`${name}\u0000${args[i + 1]!.slice(0, eq)}`, args[i + 1]!.slice(eq + 1));
+      }
       panes.set(name, "");
       if (opts.realPaneProcesses) await replacePaneProcess(name);
       return { stdout: "", stderr: "" };
+    }
+    if (args[2] === "show-environment") {
+      const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
+      const lines = [...sessionEnv].filter(([k]) => k.startsWith(`${name}\u0000`))
+        .map(([k, v]) => `${k.slice(name.length + 1)}=${v}`);
+      return { stdout: lines.join("\n"), stderr: "" };
     }
     if (args[2] === "has-session") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
@@ -208,7 +223,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
+  return { sessions, sessionEnv, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -379,11 +394,11 @@ async function makeWorkspace(
   const bAgent = opts.bRuntime ? [writeCanonicalAgent(root, "b", { runtime: opts.bRuntime })] : [];
   fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? canonicalAgentsYaml(bAgent) + terminals, "utf8");
   const host = new SharedSecretHost(mkdir(), canonicalAgentSecrets(root, bAgent));
-  const { tmux, sessions, dead, sent, panes, calls } = fakeTmux();
+  const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
   // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
-  return { ws, host, tmux, sessions, dead, sent, panes, calls };
+  return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
 
 it("rejects an invalid reload and retains the prior known-good config", async () => {
@@ -522,7 +537,8 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });
-    expect(created.enabled).toBe(false);
+    // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
+    expect(created.enabled).toBe(true);
     expect(created.editable.role).toBe("reviewer");
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
 
@@ -723,7 +739,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
     await ws.evolutionStore.ensureProfile("reviewer");
-    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured" });
+    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured", instance: { identity: "saved", lifetime: "restartable" } });
     const activityDir = path.join(root, ".tachyon", "activity");
     fs.mkdirSync(activityDir, { recursive: true });
     fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "owned activity\n");
@@ -1629,6 +1645,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           resume: { runtime: "claude", sessionId: "old-session" },
           cwd: root,
           declared: true,
+          instance: { identity: "saved", lifetime: "restartable" },
           delivery: { deliveryId: unsigned.id, segmentId: "old-segment", executionNonce: "old-nonce" },
           updatedAt: "2026-07-15T12:00:00.000Z",
         },
@@ -2319,7 +2336,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("GC of a removed declared agent deletes its durable activity log with the ledger row", async () => {
     const { ws } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t" });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { identity: "saved", lifetime: "restartable" } });
     const actDir = path.join(ws.workspaceRoot, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("old")}.jsonl`);
@@ -2343,7 +2360,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
     const { ws, host } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t" });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { identity: "saved", lifetime: "restartable" } });
     await ws.evolutionStore.ensureProfile("old");
     vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
 
@@ -2357,9 +2374,16 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
   });
 
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
-    const { ws, sessions } = await makeWorkspace();
-    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t" });
+    const { ws, sessions, sessionEnv } = await makeWorkspace();
+    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "restartable" } });
+    // t-fab832 — the post-cut contract: a live agent session must ATTEST that this build created it,
+    // and the proof lives on the session rather than in the ledger. This fixture adds the session
+    // directly, so it seeds the attestation the way a real `new-session` would. The case this test
+    // used to cover — a live session with no proof — is no longer a state an activated workspace can
+    // be in, because the gate refuses it. What the test is about is unchanged: compaction keeps the
+    // rows still referenced and drops `stale`.
     sessions.add(ws.manager.session("live-only"));
+    sessionEnv.set(`${ws.manager.session("live-only")}\u0000TACHYON_INSTANCE_CUT`, "agent-instance-v5");
     fs.mkdirSync(path.dirname(sessionOwnersFile(ws.workspaceRoot)), { recursive: true });
     fs.writeFileSync(sessionOwnersFile(ws.workspaceRoot), [
       JSON.stringify({ agent: "a", sessionId: "s-a", transcriptPath: "/p/a.jsonl", cwd: ws.workspaceRoot, source: "startup", ts: "t1" }),
@@ -2557,11 +2581,14 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
     fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
       sessions: {
+        // t-fab832 — post-cut contract. These rows exist to exercise resume policy, not the retired
+        // species, so they carry an instance policy rather than the activation refusal.
         ordinary: {
           def: { cmd: "claude", kind: "agent" },
           resume: { runtime: "claude", sessionId: "sess-ord" },
           cwd: root,
           declared: true,
+          instance: { identity: "saved", lifetime: "restartable" },
           updatedAt: "2026-07-12T00:00:00.000Z",
         },
         offered: {
@@ -2569,6 +2596,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           resume: { runtime: "claude", sessionId: "sess-off" },
           cwd: root,
           declared: true,
+          instance: { identity: "saved", lifetime: "restartable" },
           updatedAt: "2026-07-12T00:00:00.000Z",
         },
       },

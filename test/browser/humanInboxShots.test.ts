@@ -240,7 +240,7 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
     expect(html).not.toContain("sk-ant-DO-NOT-RENDER-THIS");
     expect(html).toContain("ANTHROPIC_API_KEY");        // the NAME is shown…
     expect(html).toContain("new canonical profile");     // …and so is what approving writes
-    expect(html).toContain("Saving does not start the agent");
+    expect(html).toContain("Created enabled; not started");
     for (const w of WIDTHS) await shoot(`item-saved-agent-proposal-${w.id}`, html, w.px);
   }, 60_000);
 

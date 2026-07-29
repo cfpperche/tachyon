@@ -63,6 +63,11 @@ export interface SavedAgentProposalReceipt {
   owner?: string;
   /** Transaction id. Both authority records carry `lifecycle-<txid>` — one transaction, one identity. */
   txid?: string;
+  /**
+   * t-ca9086: present once `outcome === "committed"`. Approval authorizes existence and enablement;
+   * it never starts a session. Human Inbox copy uses the same phrase.
+   */
+  created?: "enabled; not started";
   /** Present when `outcome === "failed"`. */
   reason?: string;
 }
@@ -131,8 +136,8 @@ export function readSavedAgentProposalReceipt(workspaceRoot: string, digest: str
  * and there is deliberately no Bridge tool for it — an approval an agent could reach is not an
  * approval.
  *
- * Saving does not START the agent. There is no spawn here and no port that could perform one; launch
- * stays a separate action with its own policy, which is what the ratified decision requires.
+ * Approval creates the agent ENABLED and does not START it. There is no spawn here and no port that
+ * could perform one; launch stays a separate action with its own policy (t-ca9086 / SDD 482 decision 9).
  */
 export async function approveSavedAgentProposal(input: {
   workspaceRoot: string;
@@ -224,7 +229,12 @@ export async function approveSavedAgentProposal(input: {
       owner: proposal.proposer,
     });
     const receipt: SavedAgentProposalReceipt = {
-      ...base, outcome: "committed", revision: created.revision, txid: created.txid, owner: proposal.proposer,
+      ...base,
+      outcome: "committed",
+      revision: created.revision,
+      txid: created.txid,
+      owner: proposal.proposer,
+      created: "enabled; not started",
     };
     writeReceipt(input.workspaceRoot, receipt);
     // The proposal is consumed only after the receipt says so. Deleting first would lose the record of

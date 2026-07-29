@@ -123,9 +123,10 @@ export function buildSavedAgentProposalReview(input: {
     hasUngrantedCapabilityRequests: requestedCapabilities.length > 0,
     dangerous,
     affected: [
-      `.tachyon/agents/${spec.name}/agent.yml (new canonical profile)`,
+      `.tachyon/agents/${spec.name}/agent.yml (new canonical profile, lifecycle.enabled=true)`,
       `.tachyon/agents/${spec.name}/authority.json (new authority record)`,
       `tachyon.yml → agents.${spec.name} (new roster pointer)`,
+      `created enabled; not started (no session, no running worktree, no task assignment)`,
     ],
     baseConfigSha256: proposal.base.configSha256,
     baseDiverged: proposal.base.configSha256 !== input.currentConfigSha256,

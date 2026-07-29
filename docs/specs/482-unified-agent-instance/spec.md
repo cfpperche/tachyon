@@ -92,6 +92,8 @@ durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is 
 - [x] **Scenario: saving is not starting**
   - **Given** a committed Saved Agent
   - **Then** nothing is running: launch is a separate action under its own policy
+  - **And** (`t-ca9086`) the profile is `lifecycle.enabled: true` so an explicit start is not refused
+    for disablement; no session, running worktree, or task assignment exists until that start
 - [x] **Scenario: nothing is inherited implicitly**
   - **Given** a proposer with permissions, MCP, skills, hooks, memory, credentials and ownership
   - **When** its proposal is committed
@@ -266,9 +268,12 @@ one changes measured behaviour, so it is called out rather than filed.
     Both authority records therefore carry `revision: lifecycle-<txid>` — ratified, not incidental:
     one transaction has one identity, and an auditor seeing two records with the same revision is
     seeing the truth. No saga, no intermediate state.
-9. **"Approve and save" writes the agent DISABLED**; starting it is a separate action with its own
-   policy. `lifecycle.enabled: false` is written by the canonical create, so this is a property of the
-   data rather than the conduct of one code path.
+9. **"Approve and create" writes the agent ENABLED; starting it is a separate action** (revised
+   2026-07-29, `t-ca9086`). Human dogfood on 0.56.116 showed the prior DISABLED contract forced a
+   second Studio visit only to enable an agent the human had just approved. Approval now authorizes
+   existence and enablement: `lifecycle.enabled: true` is written by the canonical create, while
+   autostart stays off and this path has no spawn port — so no session, running worktree, or task
+   assignment is born from approve. Receipt and Human Inbox declare `created enabled; not started`.
 7. **`declared` stays on the wire, with a compatible meaning, for this phase.** It is not removed,
    renamed, or silently reinterpreted. Phase 5 may add policy fields and migrate or retire the legacy
    one, but only with an explicit protocol bump, cross-version proof, and a compatibility window.

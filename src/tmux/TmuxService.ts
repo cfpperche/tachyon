@@ -629,6 +629,26 @@ export function parseSessionEnvironmentKeys(stdout: string): string[] {
   return keys;
 }
 
+/**
+ * Read ONE variable out of `tmux show-environment` stdout.
+ *
+ * Lines prefixed with `-` are removal markers, not values, and a variable marked removed must read as
+ * ABSENT rather than as its stale value — otherwise an unset attestation would still look present.
+ */
+export function parseSessionEnvironmentValue(stdout: string, key: string): string | undefined {
+  for (const line of stdout.split("\n")) {
+    if (!line) continue;
+    if (line.startsWith("-")) {
+      if (line.slice(1) === key) return undefined;
+      continue;
+    }
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    if (line.slice(0, eq) === key) return line.slice(eq + 1);
+  }
+  return undefined;
+}
+
 /** Options for capturePane (t-24e0f8). A bare number is still accepted as `lines`. */
 export interface CapturePaneOptions {
   /** Reach this many lines back into scrollback (`-S -N`). */
@@ -1067,6 +1087,22 @@ export class TmuxService {
   }
 
   /** Sessions on the Tachyon socket starting with `prefix`. Empty when the server isn't running. */
+  /**
+   * t-fab832 — read one variable from a live session's environment.
+   *
+   * Returns undefined when the session is gone, the variable was never set, or tmux cannot be
+   * reached. Every one of those is "no proof", and the activation gate treats them identically — an
+   * unreadable session must not admit on the strength of the read having failed.
+   */
+  async sessionEnvValue(session: string, key: string): Promise<string | undefined> {
+    try {
+      const { stdout } = await this.run(["show-environment", "-t", `=${session}`]);
+      return parseSessionEnvironmentValue(stdout, key);
+    } catch {
+      return undefined;
+    }
+  }
+
   async listSessions(prefix: string): Promise<string[]> {
     try {
       const { stdout } = await this.run(["list-sessions", "-F", "#{session_name}"]);

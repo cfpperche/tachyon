@@ -703,7 +703,8 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     proposeGrantTitle: t("Saved Agent proposals"),
     proposeGrantHelp: t(
       "Lets this agent ASK you to create a new Saved Agent. It never creates one: every proposal waits"
-      + " in the Human Inbox for your review, and an approved agent is created disabled.",
+      + " in the Human Inbox for your review. Approving creates the agent enabled; starting it stays a"
+      + " separate action.",
     ),
     proposeGrantRisk: t(
       "Grant this only to an agent you trust to spend your attention. It can propose repeatedly, and each"

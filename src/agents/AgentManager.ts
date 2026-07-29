@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { POST_CUT_SESSION_ATTESTATION, POST_CUT_SESSION_ATTESTATION_ENV } from "./legacyFleetGate.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -2132,7 +2133,11 @@ export class AgentManager {
       name: input.session,
       cmd: this.applyAgentMemoryScope(input.agent, input.ownedCmd),
       cwd: input.cwd,
-      env: { ...input.env, ...input.minted.env },
+      // t-fab832 — the post-cut attestation is minted HERE, at the one door that creates an agent
+      // session (SDD 482 phase 1 made this the only one), so every session this build starts carries
+      // proof of which build started it. Merged LAST for the same reason the minted execution env is:
+      // a caller-supplied env must not be able to forge or clear it.
+      env: { ...input.env, ...input.minted.env, [POST_CUT_SESSION_ATTESTATION_ENV]: POST_CUT_SESSION_ATTESTATION },
     });
     if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
     else await create();
