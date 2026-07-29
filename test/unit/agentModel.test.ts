@@ -43,7 +43,20 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     expect(toAgentVM(raw({ name: "a", running: true, stopping: true }))).toMatchObject({ status: "stopping", sub: "stopping..." });
   });
   it("stop failure exposes a visible sublabel", () => {
-    expect(toAgentVM(raw({ name: "a", running: true, stopFailed: true }))).toMatchObject({ status: "stop-failed", sub: "stop failed" });
+    expect(toAgentVM(raw({ name: "a", running: true, stopFailed: true }))).toMatchObject({
+      status: "stop-failed",
+      // t-b103c5 — stage + reason + next action, not opaque "stop failed"
+      sub: "await-exit: process still alive after graceful keys — Kill forced",
+    });
+    expect(toAgentVM(raw({
+      name: "a",
+      running: true,
+      stopFailed: true,
+      stopFailure: { stage: "await-exit", reason: "process still alive after graceful key sequence", nextAction: "Kill forced" },
+    }))).toMatchObject({
+      status: "stop-failed",
+      sub: "await-exit: process still alive after graceful key sequence — Kill forced",
+    });
   });
   it("clean-exit auto-cleared rows keep exited metadata but no pane", () => {
     expect(toAgentVM(raw({ name: "a", cleanExited: true }))).toMatchObject({ status: "stopped", sub: "exited (0)", exited: true, pane: false });
