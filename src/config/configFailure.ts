@@ -7,7 +7,7 @@
  */
 import type { EntryKind } from "./loadConfig.js";
 import type { ConfigLkgSnapshot } from "./configLkg.js";
-import type { SessionRecord } from "../resume/SessionLedger.js";
+import type { AgentInstancePolicy, SessionRecord } from "../resume/SessionLedger.js";
 import { isResumable } from "../resume/SessionLedger.js";
 
 /** Persistent config-error surface for the sidebar (and doctor). */
@@ -46,6 +46,13 @@ export interface DegradedRosterEntry {
   /** from ledger when present; otherwise LKG */
   source: "ledger" | "lkg";
   declared: boolean;
+  /**
+   * SDD 482 phase 3 — the declared instance policy, carried through from the ledger row so the
+   * degraded roster asks the identity question the same way the live roster does. Absent for LKG
+   * rows: the last-known-good CONFIG snapshot has no instance, and inventing one from `declared`
+   * is the inference this split exists to end.
+   */
+  instance?: AgentInstancePolicy;
   cmd?: string;
   declaredOwner?: string;
   parent?: string;
@@ -80,6 +87,7 @@ export function degradedRosterExtras(input: DegradedRosterInput): DegradedRoster
       kind,
       source: "ledger",
       declared: rec.declared,
+      ...(rec.instance ? { instance: rec.instance } : {}),
       ...(rec.def?.cmd ? { cmd: rec.def.cmd } : {}),
       ...(rec.def?.parent ? { parent: rec.def.parent } : {}),
       ...(rec.def?.delegator ? { delegator: rec.def.delegator } : {}),

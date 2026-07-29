@@ -218,3 +218,31 @@ a derivation would answer it wrong.
 Remaining from that decision, NOT implemented here: the UI affordance itself — surfacing "promoted,
 running as Temporary" and offering `Restart as Saved`. That is a new capability rather than a reader
 convergence, so it belongs in its own slice.
+
+
+## Phase 3's remaining surface is smaller than the reader list implied (2026-07-29)
+
+Sweeping the rest of `declared` for the grouped delivery, the six-name list ("Fleet, Activity,
+Attention, Execution Graph, worktree, cleanup") turned out to describe SUBSYSTEMS rather than policy
+readers. Sorted by what each read actually is:
+
+**Policy — converted.** Fleet (5 reads), the handoff pair, `spawn_agent`'s dismiss family in
+`bridge/tools.ts` (`canDismiss`, its refusal message, and the dismiss guard), and `missionVm`'s live
+Temporary filter. All ask "is this a Temporary Agent?" and all now ask it through the resolver.
+
+**Wire protocol — deliberately NOT converted.** `runtime-api/handoffProjection`, `runtime-api/workspaceProjection`,
+`runtime-api/activityProjection` and `engine-service/engineService` carry or validate `declared` as a FIELD ON THE WIRE. Changing
+those is widening the protocol, which `t-5e1113` forbids without a version bump and cross-version
+proof. They are not a reader convergence and must not be smuggled in as one — a Bridge client on an
+older build would be reading a field whose meaning silently changed.
+
+**Genuine storage questions — correctly left alone.** `declaredAgentNames()` (Task Studio, Mission
+Control) asks which agents come from `tachyon.yml` for assignment purposes; `configOwned` in
+`rehydrateFromLedger` asks who owns the definition; `ownershipOnly` in `withSessionOwnership` is the
+capability's SOURCE, not a derivation of it. Each is `declared` used for exactly what it means.
+
+**Consequence:** Attention, Execution Graph, worktree and cleanup have no policy reads of `declared`
+at all — they never asked the question. The convergence is therefore closer to done than the phase
+list suggested, and what remains is a protocol decision rather than a refactor: does the wire keep a
+`declared` field, gain a policy one behind a version bump, or stay as it is? That belongs to the human
+alongside the terminology rename, not to a slice that quietly changes a wire field.

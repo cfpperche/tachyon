@@ -1,3 +1,4 @@
+import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import type { MissionControlAgentRow, WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
 import type { MissionControlVM } from "../webview/mission-control/messages.js";
 
@@ -91,7 +92,9 @@ export async function buildMissionVm(
   const { agents, status } = await lists.bounded(ws.wsHash, () => ws.listMissionControlAgents(), onTrailingRetry);
   const liveManaged = agents.filter((a) => a.kind === "agent" && a.running);
   const liveAdhoc = liveManaged
-    .filter((a) => !a.declared && !declared.has(a.name))
+    // SDD 482 phase 3 — "which live instances are Temporary?" `declared.has(name)` stays as the
+    // second guard: it answers a different question (is this name owned by config right now?).
+    .filter((a) => isTemporaryInstance(a) && !declared.has(a.name))
     .map((a) => a.name);
   return {
     folder: ws.folderName,

@@ -97,7 +97,21 @@ non-problem (`notes.md`)._
       is `identity: saved` with `lifecycleHooks: false` while it keeps running. See `notes.md`.
 - [ ] From that same decision, a NEW slice (not a reader convergence): surface "promoted, still
       running as Temporary" and offer `Restart as Saved` as a separate action.
-- [ ] Remaining readers: Activity, Attention, Execution Graph, worktree, cleanup.
+- [x] Remaining POLICY readers converted in one grouped delivery, each with its own assertion:
+      `bridge/tools.ts` dismiss family (canDismiss, the kill_agent hint, the dismiss guard),
+      `missionVm`'s live-Temporary filter, and the DEGRADED roster's `adhoc` flag — the last needed
+      `DegradedRosterEntry` to carry the ledger's policy through, while LKG rows (a config snapshot,
+      which never had one) fall back honestly.
+- [x] Bridge-visible refusal WORDING deliberately unchanged, and pinned by a test: renaming a
+      protocol-visible string inside a slice whose claim is "behaviour unchanged" would make that
+      claim unfalsifiable from outside. The rename is phase 5's.
+- [x] Swept the rest and classified it (`notes.md`): Attention, Execution Graph, worktree and cleanup
+      have NO policy reads of `declared`. What is left is wire-protocol fields (`handoffProjection`,
+      `workspaceProjection`, `activityProjection`, `engineService`) and genuine storage questions
+      (`declaredAgentNames`, `configOwned`, `ownershipOnly`) — the former blocked by the
+      no-wire-widening rule, the latter correct as they are.
+- [ ] HUMAN DECISION, not a refactor: does the wire keep `declared`, gain a policy field behind a
+      version bump, or stay as is? Pairs naturally with the terminology rename (phase 5).
 - [ ] No duplicate removed yet — deletion waits until every reader is converged, per the plan.
 
 ## Phase 4 — the governed creation door (severable)

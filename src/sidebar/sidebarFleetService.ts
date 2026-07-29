@@ -265,7 +265,7 @@ export async function buildSidebarFleet(
       if (extra.kind === "terminal") {
         const view = toAgentVM(raw, {
           kind: "terminal",
-          adhoc: !extra.declared,
+          adhoc: isTemporaryInstance(extra),
           resumable: extra.resumable,
           configInvalid: true,
         });
@@ -274,7 +274,10 @@ export async function buildSidebarFleet(
       } else {
         agents.push(toAgentVM(raw, {
           kind: "agent",
-          adhoc: !extra.declared,
+          // SDD 482 phase 3 — the degraded roster asks the same identity question as the live one.
+          // A ledger row carries its policy here; an LKG row has none and falls back, honestly, to
+          // `declared`, which is all a config snapshot ever knew.
+          adhoc: isTemporaryInstance(extra),
           resumable: extra.resumable,
           worktree: extra.worktreeBranch,
           configInvalid: true,

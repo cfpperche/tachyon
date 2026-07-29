@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
+import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
@@ -848,7 +849,9 @@ function outputCapabilities(
   const durable = !info.running && !retained && paneTranscriptExists(deps.workspaceRoot, info.name);
   const canReadOutput = info.running || info.dead || !!retained || durable;
   const readOutputState = info.running ? "live" : info.dead || retained || durable ? "postmortem" : "unavailable";
-  const canDismiss = !info.declared && !info.running;
+  // SDD 482 phase 3 — same identity question Fleet asks: only a Temporary instance can be dismissed;
+  // a Saved one always exists in its store and must be removed there.
+  const canDismiss = isTemporaryInstance(info) && !info.running;
   return {
     canReadOutput,
     readOutputState,
@@ -1945,7 +1948,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         return ok(`agent '${name}' killed`);
       } catch (err) {
         const info = await managedEntry(deps, name);
-        if (info && !info.declared && !info.running) {
+        if (info && isTemporaryInstance(info) && !info.running) {
           return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped ad-hoc entry`));
         }
         return fail(err);
@@ -1966,7 +1969,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const info = await managedEntry(deps, name);
         if (!info) return fail(new Error(`agent '${name}' not found`));
-        if (info.declared) return fail(new Error(`agent '${name}' is declared in tachyon.yml and cannot be dismissed through the Bridge`));
+        // SDD 482 phase 3 — the QUESTION moves to the resolver; the WORDING deliberately does not.
+        // Renaming this string is the terminology phase's job and would change a Bridge-visible
+        // message on a slice whose whole claim is that behaviour is unchanged.
+        if (!isTemporaryInstance(info)) return fail(new Error(`agent '${name}' is declared in tachyon.yml and cannot be dismissed through the Bridge`));
         if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
         if (info.dead) {
           await deps.manager.kill(name);
