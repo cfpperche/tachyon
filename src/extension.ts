@@ -43,6 +43,8 @@ import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPane
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
+import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
+import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
@@ -1438,22 +1440,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
     humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
     /**
-     * SDD 482 phase 4C — `approveSavedAgentProposal` is DELIBERATELY NOT SUPPLIED HERE, and that
-     * absence is the current product state rather than an oversight.
+     * SDD 482 phase 4C — commit an approved Saved Agent proposal.
      *
-     * Consequence, stated where the wiring is rather than only in the spec: in this deployment the
-     * creation door is REVIEW-ONLY. An agent may propose, a human may read and deny, and approving
-     * refuses out loud with "This window cannot commit Saved Agent proposals". Nothing creates a
-     * profile, an authority record or a roster entry by any route.
+     * NO PROTOCOL BUMP WAS NEEDED, and finding that out changed the design. `commitAgentProfileStudio`
+     * with no `expectedRevision` already IS the canonical create, and it already crosses the
+     * engine/shell seam as `agent-profile.studio-commit`; `set-subagents` crosses it too. So this door
+     * opens on paths a human already uses, rather than on a new operation — which also means the
+     * canonical validator, not this code, is what refuses capability references at creation.
      *
-     * Why it is not wired: `WorkspaceShellHandle` proxies to a client target exposing
-     * `commitAgentProfileStudioLifecycle` (set-enabled / rename / forget / set-subagents) — there is
-     * no `create` across the engine/shell boundary. Supplying it means either an in-process provider
-     * or a NEW additive `extension.invoke` action; both are decisions for the human, and an optional
-     * dep that nobody declares is exactly how a door ends up half-open without anyone choosing it
-     * (`t-c6a89e` is the cautionary tale: a declared-but-unsupplied port left a whole section inert
-     * for every workspace, and nothing said so).
+     * TWO transactions, because the lifecycle transaction is per-agent and the second one edits the
+     * PROPOSER's profile. That window is real and is why the receipt has an `owning` state: a crash
+     * between them leaves an existing, unowned agent, and re-approving finishes it.
      */
+    approveSavedAgentProposal: async ({ workspaceRoot, proposalId, approvedDigest }) => {
+      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+      return approveSavedAgentProposal({
+        workspaceRoot,
+        proposalId,
+        approvedDigest,
+        approvedBy: "human",
+        nowMs: Date.now(),
+        ports: {
+          createSavedAgent: async ({ agentName, spec }) => {
+            const snapshot = await ws.commitAgentProfileStudio({
+              schemaVersion: 1,
+              kind: "canonical",
+              agentName,
+              editable: {
+                displayName: spec.displayName ?? "",
+                runtime: { adapter: spec.runtimeAdapter, executable: spec.executable ?? spec.runtimeAdapter },
+                role: "",
+                cwd: "",
+                // Saving does not start the agent: the canonical create writes `enabled: false`, and
+                // autostart is never requested here.
+                lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+                worktree: { enabled: false, branch: "" },
+                isolation: "",
+                // Capability references are NOT carried: the canonical create refuses them before host
+                // authorization, and the review pane tells the human that approving does not grant them.
+                capabilities: { skills: [], mcp: [], hooks: [] },
+              },
+            });
+            return { revision: snapshot.revision };
+          },
+          adoptSubagent: async ({ owner, child }) => {
+            // The owner's CURRENT declarations come from the ownership view — the same read the
+            // Studio's own picker uses — so this adds the new agent instead of replacing whatever the
+            // proposer already owns. `set-subagents` is a whole-list write; reading first is what
+            // keeps it from being a silent reset.
+            const [view, current] = await Promise.all([
+              ws.agentOwnershipView(owner),
+              ws.inspectAgentProfileStudio(owner),
+            ]);
+            const subagents = [...new Set([...view.subagents, child])];
+            await ws.commitAgentProfileStudioLifecycle({
+              schemaVersion: 1,
+              operation: "set-subagents",
+              agentName: owner,
+              expectedRevision: current.revision,
+              subagents,
+            });
+          },
+          // Re-read at commit time, which is what makes a revoked capability effective on a proposal
+          // queued before the revocation.
+          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+        },
+      });
+    },
     /**
      * t-c6a89e — the ledger Control's Execution section reads.
      *

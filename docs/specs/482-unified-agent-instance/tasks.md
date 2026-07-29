@@ -243,13 +243,18 @@ preconditions current, not future, which is why they are closed here.
       action (an old engine refuses an unknown action by name; an old client never sends it) — never a
       widened payload on an existing `.strict()` seam like the Studio snapshot, which is what broke
       0.56.110 D1.
-- [ ] HOST WIRING of the commit port. `WorkspaceShellHandle` exposes
-      `commitAgentProfileStudioLifecycle` (set-enabled / rename / forget / set-subagents) but no
-      `create`, so wiring the approve button end to end needs a NEW extension operation
-      (`savedAgentProposal.approve`) in `runtime-api/extensionOperations.ts` — a wire addition. The
-      task forbids widening the wire protocol without versioning and cross-version proof, so this is
-      a human decision rather than something to slip in. Until it is wired the Cockpit says
-      "This window cannot commit Saved Agent proposals" rather than accepting the click silently.
+- [x] HOST WIRING DONE, and no protocol bump was needed. My earlier reading — that
+      `WorkspaceShellHandle` has no `create` — was incomplete: `commitAgentProfileStudio` with no
+      `expectedRevision` IS the canonical create and already crosses the seam as
+      `agent-profile.studio-commit`; `set-subagents` crosses it too. The door opens on paths a human
+      already uses.
+- [x] Ratified 2026-07-29: proposer becomes the new agent's declared owner; v1 refuses `ownsSubagents`
+      and reparenting; approve-and-save writes DISABLED with start separate.
+- [x] TWO canonical transactions, and the window between them is declared rather than hidden: the
+      lifecycle transaction is per-agent and the second edits the PROPOSER's profile, so no single
+      commit spans both. The receipt has an `owning` state, a failure after the create says "created
+      but ownership was not recorded", and re-approving RESUMES instead of re-creating.
+
 - [x] `ownsSubagents` REVIEWED (CLEAN) and its recommendation implemented: requested ownership is now
       validated at ADMISSION against the spec 352 contract, not left to fail-closed at commit. The
       child-side rules were EXTRACTED to `assertOwnershipTargets` so the proposal path and

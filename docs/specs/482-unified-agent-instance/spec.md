@@ -206,14 +206,15 @@ commit message.
 
 | Deployment | Propose | Review / deny | Approve → create |
 | --- | --- | --- | --- |
-| VS Code extension as shipped | yes, with `grants.proposeSavedAgent` | yes | **no** — refuses out loud |
-| A host that supplies `approveSavedAgentProposal` | yes | yes | yes |
+| VS Code extension as shipped | yes, with `grants.proposeSavedAgent` | yes | yes |
 
-No profile in this repository holds `grants.proposeSavedAgent`, so today nothing can propose either.
-The commit path is complete and tested; what is absent is the injection point, and supplying it is a
-decision (in-process provider, or a new ADDITIVE `extension.invoke` action — never a widened payload
-on an existing `.strict()` seam such as the Agent Studio snapshot, which is what would break an older
-shell).
+The door is wired, and wired onto seams that already exist: `commitAgentProfileStudio` with no
+`expectedRevision` IS the canonical create and already crosses the engine/shell boundary as
+`agent-profile.studio-commit`; `set-subagents` crosses it too. No new operation and NO PROTOCOL BUMP
+were needed — an earlier reading of mine said otherwise and was incomplete.
+
+The gate that remains is the capability: no profile in this repository holds
+`grants.proposeSavedAgent`, so nothing can propose until a human grants it in Agent Studio.
 
 ## Ratified decisions (human, 2026-07-29)
 
@@ -234,6 +235,13 @@ one changes measured behaviour, so it is called out rather than filed.
    separate, explicit action, and only the NEXT instance is born Saved. (This is what removed the
    need for a declared `authority` axis: the design refuses the hybrid state rather than modelling
    it. Hooks are still a RECORDED capability, never derived from identity.)
+8. **The proposer becomes the new agent's declared owner**, and v1 REFUSES any other ownership claim:
+   a proposal may not declare subagents or reparent an existing agent. Reparenting is a roster edit
+   wearing a creation request — a different decision with a different blast radius, and one the human
+   would be approving without having been asked about it.
+9. **"Approve and save" writes the agent DISABLED**; starting it is a separate action with its own
+   policy. `lifecycle.enabled: false` is written by the canonical create, so this is a property of the
+   data rather than the conduct of one code path.
 7. **`declared` stays on the wire, with a compatible meaning, for this phase.** It is not removed,
    renamed, or silently reinterpreted. Phase 5 may add policy fields and migrate or retire the legacy
    one, but only with an explicit protocol bump, cross-version proof, and a compatibility window.

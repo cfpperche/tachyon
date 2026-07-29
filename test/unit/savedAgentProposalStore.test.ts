@@ -51,6 +51,9 @@ function record(ws: string, over: Record<string, unknown> = {}) {
     spec: spec(),
     base: BASE,
     nowMs: NOW,
+    // Every proposal now creates one ownership edge (proposer owns the new agent), so admission
+    // always consults the roster. An empty roster is a real workspace state, not a stub.
+    roster: [],
     ...over,
   });
 }

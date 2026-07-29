@@ -40,6 +40,9 @@ function admit(over: Parameters<typeof admitSavedAgentProposal>[0] extends infer
     pending: [],
     nowMs: NOW,
     id: "p-0001",
+    // Every approval creates one ownership edge (proposer owns the new agent), so admission always
+    // consults the roster. An empty roster is a real workspace state, not a stub.
+    roster: [],
     ...over,
   });
 }

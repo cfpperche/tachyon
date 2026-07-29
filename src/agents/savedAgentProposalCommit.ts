@@ -37,7 +37,13 @@ import type { AgentProfileGrants } from "../config/agentProfileGrants.js";
  */
 export const SAVED_AGENT_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_PROPOSALS_REL_DIR, "receipts");
 
-export type SavedAgentCommitOutcome = "committing" | "committed" | "failed";
+/**
+ * `owning` is a real state, not bookkeeping. The ratified model needs TWO canonical transactions —
+ * create the agent, then record the proposer as its declared owner — and the lifecycle transaction is
+ * per-agent, so no single transaction spans both. A crash between them leaves an agent that exists
+ * and is unowned, and this state is what makes that attributable and retryable instead of a mystery.
+ */
+export type SavedAgentCommitOutcome = "committing" | "owning" | "committed" | "failed";
 
 /** Ratified: proposer, approver, digest, transaction/operation id, outcome. */
 export interface SavedAgentProposalReceipt {
@@ -50,9 +56,12 @@ export interface SavedAgentProposalReceipt {
   approvedAt: string;
   outcome: SavedAgentCommitOutcome;
   operation: "create";
-  /** Present once the canonical transaction reports one. */
-  txid?: string;
+  /** Revision of the created profile, once the canonical create reports one. */
   revision?: string;
+  /** The proposer, recorded as the new agent's declared owner (ratified 2026-07-29). */
+  owner?: string;
+  /** True once the ownership edge is durable. `committed` requires it. */
+  ownershipRecorded?: boolean;
   /** Present when `outcome === "failed"`. */
   reason?: string;
 }
@@ -72,14 +81,20 @@ export type SavedAgentCommitResult =
 
 export interface SavedAgentCommitPorts {
   /**
-   * The canonical Studio transaction. Injected rather than imported so this module cannot become a
-   * second write path, and so the commit can be exercised without a live Workspace.
+   * Create the Saved Agent through the canonical Agent Studio commit — the SAME path a human uses,
+   * crossing the SAME already-versioned seam, so no protocol changes to open this door. Injected
+   * rather than imported so this module cannot become a second write path, and so the commit can be
+   * exercised without a live Workspace.
+   *
+   * The canonical create is also what enforces "a new profile cannot select capability references
+   * before host authorization"; this module does not re-implement that rule, it inherits it.
    */
-  commitProfileLifecycle(input: {
-    agentName: string;
-    operation: "create";
-    createProfile: Record<string, unknown>;
-  }): Promise<{ txid: string; revision: string }>;
+  createSavedAgent(input: { agentName: string; spec: SavedAgentProposal["spec"] }): Promise<{ revision: string }>;
+  /**
+   * Record `owner` as the declared owner of `child`, through the canonical `set-subagents` path.
+   * Separate because the lifecycle transaction is per-agent: this one edits the PROPOSER's profile.
+   */
+  adoptSubagent(input: { owner: string; child: string }): Promise<void>;
   /** Re-read at commit time; this is what makes revocation effective on a pending proposal. */
   readProposerGrants(agentName: string): AgentProfileGrants | undefined;
   /** Live config digest for the CAS check. */
@@ -109,36 +124,6 @@ export function readSavedAgentProposalReceipt(workspaceRoot: string, digest: str
   } catch {
     return undefined;
   }
-}
-
-/**
- * The profile the transaction will canonicalize.
- *
- * TWO THINGS ARE DELIBERATELY DROPPED, and both come from rules the canonical path already enforces
- * rather than from caution invented here:
- *
- *  - CAPABILITY REFERENCES (skills / MCP / hooks). `createProfileFromStudioMutation` refuses them on
- *    a create outright — "new canonical profile cannot select capability references before host
- *    authorization". A human using Agent Studio cannot grant them at creation, so a proposal must not
- *    either; doing so would make this a second write path with MORE authority than the first, which
- *    is exactly what reusing the canonical transaction was supposed to prevent. The request is still
- *    shown to the reviewer, and granting it stays a separate, visible edit.
- *  - `grants`. Invariant 9: a created agent can never be a creator. This is the second of the two
- *    enforcement points — admission refuses the request, and this refuses to honour one that reached
- *    the store by any other route.
- *
- * `lifecycle.enabled: false` is the same value the Studio create writes, and it is what "saving does
- * not start the agent" means in the profile itself rather than only in this module's behaviour.
- */
-function profileFromProposal(proposal: SavedAgentProposal): Record<string, unknown> {
-  const spec = proposal.spec;
-  return {
-    ...(spec.displayName ? { displayName: spec.displayName } : {}),
-    runtime: { adapter: spec.runtimeAdapter, ...(spec.executable ? { executable: spec.executable } : {}) },
-    lifecycle: { enabled: false },
-    ...(spec.environment && Object.keys(spec.environment).length > 0 ? { environment: { values: { ...spec.environment } } } : {}),
-    ...(spec.ownsSubagents?.length ? { ownership: { subagents: [...spec.ownsSubagents] } } : {}),
-  };
 }
 
 /**
@@ -230,12 +215,26 @@ export async function approveSavedAgentProposal(input: {
   writeReceipt(input.workspaceRoot, base);
 
   try {
-    const committed = await input.ports.commitProfileLifecycle({
-      agentName: proposal.spec.name,
-      operation: "create",
-      createProfile: profileFromProposal(proposal),
-    });
-    const receipt: SavedAgentProposalReceipt = { ...base, outcome: "committed", txid: committed.txid, revision: committed.revision };
+    // Resume rather than repeat. The durable evidence that the create landed is the RECORDED
+    // REVISION, not the outcome word: a crash leaves `owning`, a caught ownership failure leaves
+    // `failed`, and both mean the same thing — the agent exists and is unowned. Keying on the
+    // revision covers both, where keying on `owning` would silently miss the failure case and try to
+    // create an agent that already exists ("already has canonical state"), stranding a real agent
+    // behind a confusing error.
+    const resumed = existing?.revision && !existing.ownershipRecorded ? { revision: existing.revision } : undefined;
+    const created = resumed ?? await input.ports.createSavedAgent({ agentName: proposal.spec.name, spec: proposal.spec });
+    // Between the two transactions the agent EXISTS and is unowned. Saying so on disk is the whole
+    // point of this state: a crash here is recoverable by retry, and a receipt that claimed
+    // `committed` would be a lie that nobody could detect afterwards.
+    writeReceipt(input.workspaceRoot, { ...base, outcome: "owning", revision: created.revision, owner: proposal.proposer });
+
+    // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner. This is the only
+    // ownership edge a proposal may produce; `ownsSubagents` is refused at admission in v1.
+    await input.ports.adoptSubagent({ owner: proposal.proposer, child: proposal.spec.name });
+
+    const receipt: SavedAgentProposalReceipt = {
+      ...base, outcome: "committed", revision: created.revision, owner: proposal.proposer, ownershipRecorded: true,
+    };
     writeReceipt(input.workspaceRoot, receipt);
     // The proposal is consumed only after the receipt says so. Deleting first would lose the record of
     // what was approved if the write failed.
@@ -248,9 +247,20 @@ export async function approveSavedAgentProposal(input: {
     return { ok: true, receipt };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    // The canonical transaction compensates its own durable state; what this layer must not do is
-    // leave the receipt claiming an in-flight commit that already ended.
-    writeReceipt(input.workspaceRoot, { ...base, outcome: "failed", reason });
+    // The canonical transaction compensates its own durable state. What this layer must not do is
+    // leave a receipt claiming an in-flight commit that already ended — and it must not claim
+    // `committed` when only the first of the two transactions landed. A failure AFTER the create
+    // leaves an existing, unowned agent, and the receipt says so rather than implying a clean
+    // rollback that did not happen.
+    const partial = readSavedAgentProposalReceipt(input.workspaceRoot, proposal.digest);
+    writeReceipt(input.workspaceRoot, {
+      ...base,
+      ...(partial?.outcome === "owning" ? { revision: partial.revision, owner: partial.owner } : {}),
+      outcome: "failed",
+      reason: partial?.outcome === "owning"
+        ? `${reason} (the agent was created but ownership was not recorded; re-approving completes it)`
+        : reason,
+    });
     return { ok: false, code: "commit_failed", reason };
   }
 }

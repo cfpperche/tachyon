@@ -2067,15 +2067,15 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Propose that a human create a Saved Agent (a durable agent profile in this workspace). This does NOT create " +
         "anything: it records a typed, digest-bound proposal for a human to review, and requires the caller's profile " +
-        "to hold the 'grants.proposeSavedAgent' capability — absence is refused by name. The proposed agent may never " +
-        "itself carry that capability. Identical re-proposals collapse onto the live one; proposals expire after 24h.",
+        "to hold the 'grants.proposeSavedAgent' capability — absence is refused by name. If a human approves, YOU become " +
+        "the new agent's declared owner; a proposal cannot declare or reparent other subagents. The proposed agent may " +
+        "never itself carry the proposing capability. Identical re-proposals collapse onto the live one; proposals expire after 24h.",
       inputSchema: {
         name: AGENT_NAME.describe("roster name for the proposed Saved Agent"),
         runtime_adapter: z.string().min(1).max(64).describe("runtime adapter id, e.g. 'claude'"),
         rationale: z.string().min(1).max(4000).describe("why this agent should exist — shown to the human verbatim"),
         executable: z.string().min(1).max(256).optional(),
         display_name: z.string().min(1).max(256).optional(),
-        owns_subagents: z.array(AGENT_NAME).max(64).optional().describe("roster ownership being requested (granted only by the human)"),
         skills: z.array(z.string().min(1).max(128)).max(64).optional(),
         mcp_servers: z.array(z.string().min(1).max(128)).max(64).optional(),
       },
@@ -2100,7 +2100,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             rationale: input.rationale,
             ...(input.executable ? { executable: input.executable } : {}),
             ...(input.display_name ? { displayName: input.display_name } : {}),
-            ...(input.owns_subagents?.length ? { ownsSubagents: input.owns_subagents } : {}),
             ...(input.skills?.length || input.mcp_servers?.length
               ? {
                   capabilities: {
@@ -2112,12 +2111,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           },
           base: { configSha256: workspaceConfigSha256(deps.workspaceRoot) },
           nowMs: Date.now(),
-          // Requested ownership is validated against the LIVE roster by the same spec 352 rules a
-          // Studio edit obeys. Read ONLY when ownership is actually requested — a proposal that wants
-          // none must not depend on a roster read to succeed. Absent roster refuses rather than
-          // defers: a conflict found after approval rolls the commit back with an opaque config
-          // error, and the human has by then consented to something that quietly undid itself.
-          ...(input.owns_subagents?.length ? { roster: await workspaceOwnershipRoster(deps) } : {}),
+          // The ownership edge this WILL create — proposer owns the new agent — is validated against
+          // the live roster by the same spec 352 rules a Studio edit obeys, so a conflict surfaces
+          // before a human approves rather than as an opaque config rollback afterwards. v1 refuses
+          // any other ownership claim, so there is no `owns_subagents` input to carry one.
+          roster: await workspaceOwnershipRoster(deps),
         });
         if (!admission.ok) return fail(new Error(`${admission.code}: ${admission.reason}`));
         return ok(JSON.stringify({

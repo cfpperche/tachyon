@@ -52,7 +52,11 @@ function harness(root: string, caller: BridgeDeps["caller"]) {
       tools.set(name, { config, handler });
     },
   };
-  registerTools(mcp as never, { workspaceRoot: root, manager: {} as never, caller } as unknown as BridgeDeps);
+  // A manager is required now: every proposal creates one ownership edge (proposer owns the new
+  // agent), so the roster is always consulted. An empty roster is a real workspace state.
+  registerTools(mcp as never, {
+    workspaceRoot: root, caller, manager: { list: async () => [] },
+  } as unknown as BridgeDeps);
   return {
     schemaOf: (name: string) => JSON.stringify(tools.get(name)?.config.inputSchema ?? {}),
     call: async (name: string, args: Record<string, unknown> = {}) => {
@@ -211,46 +215,64 @@ describe("readAgentProfileGrants fails closed (SDD 482 phase 4B)", () => {
  * SDD 482 phase 4C — the roster reaches admission through the Bridge, rebuilt from the rows the
  * Bridge already has. `declaredOwner` is DERIVED from `subagents` at config load, so inverting it
  * reconstructs the same relation rather than reading a second source that could disagree.
+ *
+ * v1 has no `owns_subagents` input at all: the proposer becomes the new agent's declared owner, and
+ * reparenting anyone else is a separate roster edit. So what the roster guards here is the ONE edge an
+ * approval will create.
  */
-describe("propose_saved_agent validates requested ownership (SDD 482 phase 4C)", () => {
+describe("propose_saved_agent validates the ownership it will create (SDD 482 phase 4C)", () => {
   function withRoster(root: string, rows: Array<{ name: string; kind?: "agent" | "terminal"; declaredOwner?: string }>) {
-    const tools = new Map<string, { handler: ToolHandler }>();
-    const mcp = { registerTool: (name: string, _c: unknown, handler: ToolHandler) => { tools.set(name, { handler }); } };
+    const tools = new Map<string, { config: { inputSchema?: Record<string, unknown> }; handler: ToolHandler }>();
+    const mcp = {
+      registerTool: (name: string, config: { inputSchema?: Record<string, unknown> }, handler: ToolHandler) => {
+        tools.set(name, { config, handler });
+      },
+    };
     registerTools(mcp as never, {
       workspaceRoot: root,
       caller: { kind: "agent", name: "claude-runtime" },
       manager: { list: async () => rows.map((r) => ({ kind: "agent", ...r })) },
     } as unknown as BridgeDeps);
-    return (args: Record<string, unknown>) => tools.get("propose_saved_agent")!.handler(args);
+    return {
+      schema: () => JSON.stringify(tools.get("propose_saved_agent")?.config.inputSchema ?? {}),
+      call: (args: Record<string, unknown>) => tools.get("propose_saved_agent")!.handler(args),
+    };
   }
 
-  it("refuses ownership of an agent that already has an owner, naming it", async () => {
+  it("offers no way to declare subagents at all", () => {
+    const root = workspace();
+    expect(withRoster(root, []).schema()).not.toContain("owns_subagents");
+  });
+
+  it("admits when the proposed name is free", async () => {
     const root = workspace();
     profile(root, "claude-runtime", { proposeSavedAgent: true });
-    const call = withRoster(root, [
-      { name: "boss", declaredOwner: undefined },
-      { name: "owned", declaredOwner: "boss" },
-    ]);
-    const refused = await call({ ...PROPOSAL, owns_subagents: ["owned"] });
+    const accepted = await withRoster(root, [{ name: "boss" }]).call(PROPOSAL);
+    expect(accepted.isError).toBeFalsy();
+    expect(listSavedAgentProposals(root)).toHaveLength(1);
+  });
+
+  /**
+   * The collision the synthetic roster entry must not hide: a name already taken by an OWNED agent.
+   * The refusal comes from the shared spec 352 helper, so it is worded exactly as a Studio edit would
+   * word it.
+   */
+  it("refuses a name already taken by an owned agent, naming that owner", async () => {
+    const root = workspace();
+    profile(root, "claude-runtime", { proposeSavedAgent: true });
+    const refused = await withRoster(root, [
+      { name: "boss" },
+      { name: "importer", declaredOwner: "boss" },
+    ]).call(PROPOSAL);
     expect(refused.isError).toBe(true);
     expect(JSON.stringify(refused.content)).toContain("already declared as a subagent of 'boss'");
     expect(listSavedAgentProposals(root)).toEqual([]);
   });
 
-  it("admits ownership of an unowned agent", async () => {
+  it("refuses a name already taken by a terminal, by name rather than as 'not found'", async () => {
     const root = workspace();
     profile(root, "claude-runtime", { proposeSavedAgent: true });
-    const call = withRoster(root, [{ name: "free" }]);
-    const accepted = await call({ ...PROPOSAL, owns_subagents: ["free"] });
-    expect(accepted.isError).toBeFalsy();
-    expect(listSavedAgentProposals(root)[0]?.spec.ownsSubagents).toEqual(["free"]);
-  });
-
-  it("refuses a terminal as an ownership target, by name", async () => {
-    const root = workspace();
-    profile(root, "claude-runtime", { proposeSavedAgent: true });
-    const call = withRoster(root, [{ name: "devserver", kind: "terminal" }]);
-    const refused = await call({ ...PROPOSAL, owns_subagents: ["devserver"] });
+    const refused = await withRoster(root, [{ name: "importer", kind: "terminal" }]).call(PROPOSAL);
     expect(refused.isError).toBe(true);
     expect(JSON.stringify(refused.content)).toContain("resolves to a terminal");
   });

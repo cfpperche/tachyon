@@ -194,46 +194,33 @@ describe("requested ownership is validated where the proposer can still learn wh
     { name: "devserver", kind: "terminal", subagents: [] },
   ];
 
-  it("admits ownership of an unowned agent", () => {
-    expect(admit(["free"], ROSTER).ok).toBe(true);
-  });
-
-  it("refuses an agent that already has an owner, naming the owner", () => {
-    const refused = admit(["owned"], ROSTER);
+  it("refuses ANY declared subagents in v1 — the proposer owns the new agent, nothing else moves", () => {
+    const refused = admit(["free"], ROSTER);
     expect(refused.ok).toBe(false);
     if (refused.ok) return;
     expect(refused.code).toBe("ownership_conflict");
-    expect(refused.reason).toContain("already declared as a subagent of 'boss'");
+    expect(refused.reason).toContain("reparenting an existing agent is a separate roster edit");
   });
 
-  it("refuses a terminal by name rather than as 'not found'", () => {
-    const refused = admit(["devserver"], ROSTER);
+  /**
+   * The roster is required for EVERY proposal now, because every approval creates one ownership edge:
+   * the proposer owns the new agent. "I could not check" and "it is fine" remain different answers.
+   */
+  it("refuses when the roster is unavailable, even with no ownership requested", () => {
+    const refused = admitSavedAgentProposal({
+      proposer: "claude-runtime",
+      proposerProfile: GRANTED,
+      spec: { name: "importer", runtimeAdapter: "claude", rationale: "why" },
+      base: BASE,
+      pending: [],
+      nowMs: NOW_MS,
+      id: "sp-000001",
+    });
     expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reason).toContain("resolves to a terminal");
+    if (!refused.ok) expect(refused.code).toBe("ownership_conflict");
   });
 
-  it("refuses an undeclared target", () => {
-    const refused = admit(["ghost"], ROSTER);
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reason).toContain("not declared in agents/terminals");
-  });
-
-  it("refuses a target that owns agents of its own — no nested trees", () => {
-    const refused = admit(["parent-of-one"], ROSTER);
-    expect(refused.ok).toBe(false);
-    if (!refused.ok) expect(refused.reason).toContain("nested subagent trees are not supported");
-  });
-
-  /** "I could not check" and "it is fine" are different answers, and only one of them may admit. */
-  it("refuses when the roster is unavailable instead of deferring the check past approval", () => {
-    const refused = admit(["free"], undefined);
-    expect(refused.ok).toBe(false);
-    if (refused.ok) return;
-    expect(refused.code).toBe("ownership_conflict");
-    expect(refused.reason).toContain("cannot be validated");
-  });
-
-  it("does not require a roster when no ownership is requested", () => {
+  it("admits with an empty roster — a workspace with no agents is a real state", () => {
     expect(admitSavedAgentProposal({
       proposer: "claude-runtime",
       proposerProfile: GRANTED,
@@ -242,6 +229,7 @@ describe("requested ownership is validated where the proposer can still learn wh
       pending: [],
       nowMs: NOW_MS,
       id: "sp-000001",
+      roster: [],
     }).ok).toBe(true);
   });
 
@@ -250,15 +238,30 @@ describe("requested ownership is validated where the proposer can still learn wh
    * user are being told different things about the same roster — which is the drift the extraction
    * exists to prevent.
    */
-  it("gives the identical refusal a Studio edit would give", () => {
-    const viaProposal = admit(["owned"], ROSTER);
+  /**
+   * The name collision the synthetic roster entry must NOT hide: proposing an agent whose name is
+   * already taken by an OWNED agent has to be refused with the Studio's own wording. Appending the
+   * stand-in entry unconditionally would shadow the real one (a later key wins in the Map) and turn
+   * this into a silent pass.
+   */
+  it("refuses a name already taken by an owned agent, in the Studio's words", () => {
+    const refused = admitSavedAgentProposal({
+      proposer: "claude-runtime",
+      proposerProfile: GRANTED,
+      spec: { name: "owned", runtimeAdapter: "claude", rationale: "why" },
+      base: BASE,
+      pending: [],
+      nowMs: NOW_MS,
+      id: "sp-000001",
+      roster: ROSTER,
+    });
     let viaStudio = "";
     try {
-      assertOwnershipTargets("importer", ["owned"], ROSTER);
+      assertOwnershipTargets("claude-runtime", ["owned"], ROSTER);
     } catch (error) {
       viaStudio = error instanceof Error ? error.message : String(error);
     }
-    expect(viaProposal.ok).toBe(false);
-    if (!viaProposal.ok) expect(viaProposal.reason).toBe(viaStudio);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toBe(viaStudio);
   });
 });

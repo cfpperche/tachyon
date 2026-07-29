@@ -46,7 +46,11 @@ export interface SavedAgentProposalSpec {
   rationale: string;
   /** Non-secret environment values only. A secret reference can never be requested (invariant 8). */
   environment?: Readonly<Record<string, string>>;
-  /** Roster ownership the proposer is asking the human to grant. */
+  /**
+   * REFUSED IN v1. Kept in the type only so a request can be refused BY NAME rather than silently
+   * dropped — the same reason `grants` is representable. Ratified 2026-07-29: the proposer becomes the
+   * new agent's declared owner, and a proposal may not reparent anyone else.
+   */
   ownsSubagents?: readonly string[];
   /** Resource capabilities requested — skills / MCP / hooks by id. */
   capabilities?: {
@@ -202,19 +206,43 @@ export function admitSavedAgentProposal(input: {
   //    well-behaved — the human would have consented to something that then quietly undid itself.
   //    Refusing here is the same doctrine already applied to capability recursion: the proposer
   //    learns why, and nothing reaches the queue.
+  // 3. Ownership. RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, and v1
+  //    refuses any other ownership claim. A proposal that reparents an existing agent is a roster
+  //    edit wearing a creation request — a different decision, with a different blast radius, and one
+  //    the human would be approving without it being the thing they were asked about.
   if (input.spec.ownsSubagents?.length) {
-    if (!input.roster) {
-      return {
-        ok: false,
-        code: "ownership_conflict",
-        reason: "requested roster ownership cannot be validated because the workspace roster is unavailable; refusing rather than deferring the check to after a human approves",
-      };
-    }
-    try {
-      assertOwnershipTargets(input.spec.name, input.spec.ownsSubagents, input.roster);
-    } catch (error) {
-      return { ok: false, code: "ownership_conflict", reason: error instanceof Error ? error.message : String(error) };
-    }
+    return {
+      ok: false,
+      code: "ownership_conflict",
+      reason:
+        "a proposal cannot declare subagents: the proposer becomes the new agent's declared owner, and " +
+        "reparenting an existing agent is a separate roster edit in Agent Studio, not part of creating one",
+    };
+  }
+
+  // The edge that WILL be written — proposer owns the new agent — is validated here too, against the
+  // same spec 352 rules a Studio edit obeys, so the conflict surfaces before a human approves rather
+  // than as an opaque config rollback afterwards. Fail-closed is not the same as well-behaved.
+  if (!input.roster) {
+    return {
+      ok: false,
+      code: "ownership_conflict",
+      reason:
+        "the workspace roster is unavailable, so the ownership this proposal would create cannot be validated; " +
+        "refusing rather than deferring the check to after a human approves",
+    };
+  }
+  try {
+    // The synthetic entry stands in for the agent that does not exist yet — appended ONLY when the
+    // name is free. Appending unconditionally would shadow a REAL entry of the same name (a later
+    // key wins in the Map), which would turn a name collision with an owned agent or a terminal into
+    // a silent pass — the check defeating itself.
+    const roster = input.roster.some((entry) => entry.name === input.spec.name)
+      ? input.roster
+      : [...input.roster, { name: input.spec.name, kind: "agent" as const, subagents: [] }];
+    assertOwnershipTargets(input.proposer, [input.spec.name], roster);
+  } catch (error) {
+    return { ok: false, code: "ownership_conflict", reason: error instanceof Error ? error.message : String(error) };
   }
   if (input.spec.rationale.trim().length === 0) return invalid("a proposal must carry a non-empty rationale for the human");
   if (!input.base.configSha256) return invalid("a proposal must record the base config digest it was computed against");
