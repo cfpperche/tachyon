@@ -1,8 +1,8 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-28 (canonical Grok Attention measurement + final parity audit — `t-aafa10`; verdict **limited**, see the Grok section)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-29 (`t-e7c4a9` — native-config family membership + Claude seam list; prior 2026-07-28 Grok Attention audit `t-aafa10`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
-`src/runtimeConfig/codexInventory.ts`, `src/config/codexNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`
+**Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
 
 This document is the **source of truth** for how Tachyon treats AI CLIs as first-class runtimes.  
 It is **not** a board task and is **not** a shippable SDD spec — it is continuous product/engine documentation.
@@ -195,6 +195,46 @@ The architecture contract is
 [`agent-native-config-inheritance.md`](../architecture/agent-native-config-inheritance.md). It separates
 agent policy, regenerable runtime projection, mutable runtime state and external authority. Inheritance
 means controlled materialization into the private home, never sharing that mutable home.
+
+**Family membership is not equality.** Row 12 marks Claude and Codex both **✓** when each has an
+explicit per-family source/treatment/refresh policy, but the **keys** each family projects are not
+the same object. Two profiles can author the identical policy shape
+(`interface: {source: global, treatment: overlay, refresh: every-launch}`) and still diverge on what
+lands in the private home. The tables below are the code of record (`FAMILY_KEYS` in each
+`*NativeConfigProjection.ts`, read 2026-07-29 for `t-e7c4a9`). A key added to one runtime's allowlist
+and not another's must show up here.
+
+| Family (profile `nativeConfig.<family>`) | Claude projected keys (`claudeNativeConfigProjection.ts`) | Codex projected keys (`codexNativeConfigProjection.ts`) | Grok projected keys (`grokNativeConfigProjection.ts`) |
+|---|---|---|---|
+| **permissions** | `permissions` (object: `allow` / `ask` / `deny` / `defaultMode` / `additionalDirectories`; dangerous modes need `authorize`, SDD 471) | `approval_policy`, `sandbox_mode` | `ui.permission_mode`, `ui.yolo`, `ui.default_selected_permission`, `ui.remember_tool_approvals`, `permission.allow`, `permission.ask`, `permission.deny` (`always-approve`/`yolo` require `authorize`, `t-26f508`) |
+| **interface** | `theme`, `prefersReducedMotion`, `spinnerTipsEnabled`, `showTurnDuration`, `terminalProgressBarEnabled`, `statusLine` (`t-af504e` — command object, not a scalar) | `personality`, `tui.status_line`, `tui.status_line_use_colors` | `ui.simple_mode`, `ui.vim_mode`, `ui.screen_mode`, `ui.max_thoughts_width`, `ui.compact_mode`, `ui.show_thinking_blocks`, `ui.group_tool_verbs`, `ui.collapsed_edit_blocks`, `ui.page_flip_on_send` |
+| **featureFlags** | `alwaysThinkingEnabled` | `features.terminal_resize_reflow` | `features.telemetry`, `features.feedback`, `features.lsp_tools`, `features.codebase_indexing`, `features.two_pass_compaction`, `features.remote_fetch` |
+| **selectors** (agent-owned, not from ambient files) | typed `--model` / `--effort` from `runtime.*` | typed model / reasoning from `runtime.*` | `models.default`, `models.default_reasoning_effort` from `runtime.*` |
+| **tooling / memory / authentication** | skills/hooks/MCP via exact Claude grants + Bridge; memory and auth stay external (see adapter row below) | skills/MCP/hooks capture + Bridge; auth external | `tooling` → `[compat.*]` off; `memory` → `[memory] enabled = false` + `GROK_MEMORY=0`; `authentication` → reconciled private `auth.json` (never authored as ambient scalars) |
+
+OpenCode, Pi and Hermes do **not** share this three-family scalar projector; their inheritance is
+described only in the adapter table below (`~` / `✗` there is not a claim of the same key lists).
+
+**Claude `statusLine` is not only a projected key.** Two host paths touch the slot:
+
+1. **Profile projection (`t-af504e`)** — when the Interface family is selected from global/workspace,
+   `statusLine` is an allowlisted key and may land in the private `CLAUDE_CONFIG_DIR` settings
+   generation (same family as Codex's `tui.status_line`, different native shape).
+2. **Observability capture** — on every Claude spawn that enables status-line capture, Tachyon
+   materializes a `statusLine` **command** into `.tachyon/spawn-settings/<agent>.json` via
+   `ClaudeStatusLineCaptureTransport.materialize` → `buildOwnershipSettings` →
+   `HarnessManager.materializeOwnershipSettings` (`src/runtimeObservability/claudeStatusLineCapture.ts`,
+   `src/activity/sessionOwners.ts`, `src/workspace/Workspace.ts`). That host write is independent of
+   whether the profile selected Interface: the capture wrapper may replace/wrap the effective
+   command so Tachyon can read quota windows. Unselected ambient keys still stay opaque in the
+   private home; the **spawn-settings** file is a separate, host-owned layer and must not be read as
+   “the person's `~/.claude/settings.json` was left untouched.”
+
+Policy authority for family names, lifecycle, and `authorize` lives in
+`src/config/agentNativeConfigPolicy.ts` (and the schema list in `agentNativeConfigSchema.ts`).
+Control's Runtime Config inventories (`*Inventory.ts`) may expose a **subset** of the projected
+keys (Claude Control today edits six scalars and keeps `statusLine` opaque for free-form writes —
+see §3.1.2); do not conflate the Control subset with the launch-time projection allowlist above.
 
 Current adapter evidence:
 
