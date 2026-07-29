@@ -2361,6 +2361,12 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
     const { ws, sessions } = await makeWorkspace();
     ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "restartable" } });
+    // t-fab832 — the post-cut contract: a live agent session must carry a ledger row proving THIS
+    // build spawned it, so `live-only` gets one. The case this test used to cover — live with no row
+    // at all — is no longer a state an activated workspace can be in, because the activation gate
+    // refuses it. What the test is actually about is unchanged: compaction keeps the rows that are
+    // still referenced and drops `stale`.
+    ws.ledger.record("live-only", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { identity: "temporary", lifetime: "collected" } });
     sessions.add(ws.manager.session("live-only"));
     fs.mkdirSync(path.dirname(sessionOwnersFile(ws.workspaceRoot)), { recursive: true });
     fs.writeFileSync(sessionOwnersFile(ws.workspaceRoot), [

@@ -99,15 +99,18 @@ describe("legacy fleet gate — seeds (t-fab832)", () => {
   });
 
   /**
-   * The NARROWING, tested so it is a decision rather than an oversight: a live agent with NO ledger
-   * row does not block. A compacted row is a state the product already tolerates and says nothing
-   * about which build spawned the process — absence of evidence is not evidence of the old species.
-   * The cost is real and named in the module: a pre-cut survivor whose row was also compacted slips
-   * past THIS check.
+   * FAIL-CLOSED, and this is the ratified reading rather than my first one. I initially admitted a
+   * live agent with NO ledger row, reasoning that a compacted row is absence of EVIDENCE. The gate is
+   * about absence of PROOF: "we have no record of this process" is not a reason to adopt it, and a
+   * gate that admits the unprovable is not a gate. Only a session this build can prove it spawned
+   * gets through.
    */
-  it("does not block a live agent whose ledger row is simply absent", () => {
+  it("refuses a live agent whose ledger row is absent — no proof is not permission", () => {
     const live: LegacySessionEntry = { session: `tachyon-${WS}-live-only`, name: "live-only", kind: "agent" };
-    expect(inspect({ liveSessions: [live], ledger: [] })).toEqual({ ok: true, offenders: [] });
+    const refused = inspect({ liveSessions: [live], ledger: [] });
+    expect(refused.ok).toBe(false);
+    expect(refused.offenders.map((o) => [o.kind, o.name])).toEqual([["live-agent-session", "live-only"]]);
+    expect(refused.offenders[0]!.detail).toContain("no post-cut ledger row");
   });
 });
 

@@ -139,24 +139,21 @@ export function inspectLegacyFleet(input: {
   //
   //    Two negative controls live in the first two conditions: a product terminal is not an agent,
   //    and a session outside `tachyon-<wsHash>-` is not ours.
-  //    A MISSING row is NOT evidence. A live agent whose row was compacted away is a state the
-  //    product already tolerates and tests, and it says nothing about which build spawned the
-  //    process — absence of evidence is not evidence of the old species. So the rule keys on a row
-  //    that EXISTS and is pre-cut. The cost of that narrowing, stated rather than hidden: a survivor
-  //    from before the cut whose row was also compacted slips through this check. It is still caught
-  //    the moment anything tries to resume or adopt it, because that path needs the row this build
-  //    would have to write.
-  const preCut = new Set(
-    input.ledger.filter(([, row]) => legacyFallbackUsed(row)).map(([name]) => name),
+  //    FAIL-CLOSED, ratified: only a session PROVABLY spawned by this build admits. A pre-cut row
+  //    refuses, and so does a MISSING row — "we have no record of this process" is not a reason to
+  //    adopt it. The weaker reading I first shipped treated an absent row as absence of evidence; the
+  //    ratified rule treats it as absence of PROOF, which is the direction a gate must fail.
+  const provenPostCut = new Set(
+    input.ledger.filter(([, row]) => !legacyFallbackUsed(row)).map(([name]) => name),
   );
   for (const entry of input.liveSessions) {
     if (entry.kind !== "agent") continue;
     if (!isOwnedAgentSession(entry.session, input.wsHash)) continue;
-    if (!preCut.has(entry.name)) continue;
+    if (provenPostCut.has(entry.name)) continue;
     offenders.push({
       kind: "live-agent-session",
       name: entry.name,
-      detail: `tmux session ${entry.session} is a live agent still running under a pre-cut ledger row`,
+      detail: `tmux session ${entry.session} is a live agent with no post-cut ledger row to prove this build spawned it`,
     });
   }
 
