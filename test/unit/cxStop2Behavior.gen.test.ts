@@ -49,7 +49,8 @@ describe("container-generated delegation behavior", () => {
 
     await expect(keysFor("claude")).resolves.toEqual(["Escape", "C-c", "/exit", "C-m"]);
     await expect(keysFor("codex")).resolves.toEqual(["Escape", "C-c", "C-d", "C-d"]);
-    await expect(keysFor("grok")).resolves.toEqual(["C-c", "C-c"]);
+    // t-b103c5: cancel-then-exit — third if-alive C-c when tool-auth remaps Ctrl+C to cancel
+    await expect(keysFor("grok")).resolves.toEqual(["C-c", "C-c", "C-c"]);
     await expect(keysFor("opencode")).resolves.toEqual(["C-d"]);
     await expect(keysFor("custom-ai")).resolves.toEqual(["C-c", "C-c", "C-d"]);
   });
