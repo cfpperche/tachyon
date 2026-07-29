@@ -58,6 +58,10 @@ const ENGINE_ENV_KEYS = [
   "TACHYON_TMUX_SOCKET",
   "TACHYON_DEV_HOST",
   "TACHYON_DEV_HOST_PROFILE_HOME",
+  // t-aaad95 — the global Tachyon settings file must be the SAME file on both sides. The engine
+  // reads it directly (gitPath), so if an isolated Dev Host redirects the shell's copy and this does
+  // not travel, the two halves silently answer from different documents.
+  "TACHYON_GLOBAL_SETTINGS_HOME",
   "WSL_DISTRO_NAME",
   "WSL_INTEROP",
 ] as const;
