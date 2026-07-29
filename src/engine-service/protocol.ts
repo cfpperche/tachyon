@@ -97,7 +97,16 @@ export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 // 0.56.110 added required fields to WorkspaceProbeViewRowV1. That is a wire-format break:
 // a 0.56.109 shell cannot decode the new response, and a current shell cannot decode the old one.
 // Keep this version exact rather than pretending the two shapes overlap.
-export const ENGINE_SHELL_PROTOCOL = 4 as const;
+//
+// `t-fab832` — 4 → 5 for the Agent Instance cut, step 1. The break is not a payload shape this time,
+// which is why it needs saying: a protocol-5 engine REFUSES to activate a workspace still holding
+// state from the retired agent species, where a protocol-4 peer would activate it and interpret that
+// state under the old rules. Two peers that disagree about whether a workspace is activatable cannot
+// be paired, and exact `min === max` negotiation is what makes that a refusal instead of a coin toss.
+//
+// Bumped in the SAME commit as the gate it describes. A behaviour change on an unchanged protocol is
+// the 0.56.110 D1 failure mode with different bytes — the peer has no way to know the rules moved.
+export const ENGINE_SHELL_PROTOCOL = 5 as const;
 export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {

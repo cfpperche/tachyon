@@ -58,7 +58,12 @@ function writeEngineManifest() {
     schemaVersion: 1,
     channel: engineReleaseChannel,
     engineVersion: packageVersion,
-    protocol: { min: 4, max: 4 },
+    // t-fab832 — 5 for the Agent Instance cut. This literal is a SECOND source of truth for the
+    // number that `src/engine-service/protocol.ts` also declares, and bumping only one of them
+    // produces a build whose manifest disagrees with its own code. `enginePackaging.test.ts` compares
+    // the two and is what caught exactly that here; the duplication itself is filed separately rather
+    // than fixed in this delivery.
+    protocol: { min: 5, max: 5 },
     entrypoint: "engine-daemon.cjs",
     files: [
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },
