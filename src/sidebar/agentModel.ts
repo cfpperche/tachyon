@@ -23,6 +23,11 @@ export interface AgentRaw {
   running: boolean;
   stopping?: boolean;
   stopFailed?: boolean;
+  /**
+   * t-b103c5 — measured graceful-stop timeout detail from AgentManager. When present the subline
+   * names stage, reason and the next deliberate action instead of opaque "stop failed".
+   */
+  stopFailure?: { stage: string; reason: string; nextAction: string };
   dead: boolean;
   crashed: boolean;
   exitCode?: number;
@@ -30,6 +35,14 @@ export interface AgentRaw {
   parent?: string;
   delegator?: string;
   declaredOwner?: string;
+}
+
+/** Sidebar subline for a graceful stop that timed out. Exported for unit tests. */
+export function stopFailedSubline(detail?: AgentRaw["stopFailure"]): string {
+  if (detail) {
+    return `${detail.stage}: ${detail.reason} — ${detail.nextAction}`;
+  }
+  return "await-exit: process still alive after graceful keys — Kill forced";
 }
 
 function tokenizeCommand(cmd: string): string[] {
@@ -273,7 +286,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
           : undefined;
   const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
-  const stopFailed = a.stopFailed && !a.dead ? "stop failed" : undefined;
+  const stopFailed = a.stopFailed && !a.dead ? stopFailedSubline(a.stopFailure) : undefined;
   // A terminal runs a process, not a model. Any other arm (or an unknown one) still resolves.
   const modelFact = x.kind === "terminal" ? undefined : resolveModelFact(a.cmd, x.model);
   // SDD 479 phase 3 — the runtime this row runs on, so a per-runtime card template can match it.

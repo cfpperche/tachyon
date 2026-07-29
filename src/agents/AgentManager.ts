@@ -212,6 +212,11 @@ export interface ManagedEntryInfo {
   stopping?: boolean;
   /** graceful Stop timed out while the pane stayed alive; retry is allowed */
   stopFailed?: boolean;
+  /**
+   * t-b103c5 — when `stopFailed`, the stage that timed out, a measured reason, and the next
+   * deliberate action. Opaque "stop failed" taught the human nothing; this is what the subline shows.
+   */
+  stopFailure?: { stage: "await-exit"; reason: string; nextAction: string };
   declared: boolean;
   /**
    * SDD 482 phase 3 — the DECLARED instance policy, absent on rows written before phase 2. Readers
@@ -912,6 +917,8 @@ export class AgentManager {
    */
   private startedHere = new Set<string>();
   private stopFailed = new Set<string>();
+  /** Detail for rows in `stopFailed` — cleared with the flag. */
+  private stopFailureDetail = new Map<string, NonNullable<ManagedEntryInfo["stopFailure"]>>();
   private cleanExited = new Set<string>();
   /** Runtime occupancy observations keyed by the worktree's canonical realpath.
    *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
@@ -1414,19 +1421,32 @@ export class AgentManager {
       const alive = state !== undefined && !state.dead;
       const stoppingAt = this.stoppingSince.get(name);
       const stopTimedOut = alive && stoppingAt !== undefined && now - stoppingAt >= AgentManager.STOPPING_FALLBACK_MS;
-      if (stopTimedOut) this.stopFailed.add(name);
+      if (stopTimedOut) {
+        this.stopFailed.add(name);
+        // Keys were sent; the process did not die within the bounded wait. Force is explicit
+        // (Kill forced) so a Saved Agent is never torn down without a deliberate hard stop.
+        this.stopFailureDetail.set(name, {
+          stage: "await-exit",
+          reason: "process still alive after graceful key sequence",
+          nextAction: "Kill forced",
+        });
+      }
       const stopping = alive && stoppingAt !== undefined && !stopTimedOut;
       const stopFailed = alive && this.stopFailed.has(name);
+      const stopFailure = stopFailed ? this.stopFailureDetail.get(name) : undefined;
       if (state === undefined || state.dead || stopTimedOut) {
         this.stoppingSince.delete(name);
       }
-      if (state === undefined || state.dead) this.stopFailed.delete(name);
+      if (state === undefined || state.dead) {
+        this.clearStopFailed(name);
+      }
       return {
         name,
         session: this.session(name),
         running: alive,
         ...(stopping ? { stopping: true } : {}),
         ...(stopFailed ? { stopFailed: true } : {}),
+        ...(stopFailure ? { stopFailure } : {}),
         declared: declared.includes(name),
         ...(this.opts.ledger?.get(name)?.instance ? { instance: this.opts.ledger.get(name)!.instance } : {}),
         dead: state?.dead ?? false,
@@ -1918,8 +1938,13 @@ export class AgentManager {
     }
     if (!completedSessionAbsent) return errors;
     const transient = [
-      () => this.readyAgents.delete(name), () => this.provisionalAgents.delete(name), () => this.readinessCache.delete(name),
-      () => this.stoppingSince.delete(name), () => this.stopFailed.delete(name), () => this.cleanExited.delete(name), () => this.postmortemOutput.delete(name),
+      () => this.readyAgents.delete(name),
+      () => this.provisionalAgents.delete(name),
+      () => this.readinessCache.delete(name),
+      () => this.stoppingSince.delete(name),
+      () => this.clearStopFailed(name),
+      () => this.cleanExited.delete(name),
+      () => this.postmortemOutput.delete(name),
     ];
     for (const clear of transient) try { clear(); } catch (error) { phase("in-memory cleanup failed", error); }
     if (attempt.mode !== "declared" && (attempt.materialized !== "not-started" || attempt.ledger)) {
@@ -2148,7 +2173,7 @@ export class AgentManager {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
       this.stoppingSince.delete(name);
-      this.stopFailed.delete(name);
+      this.clearStopFailed(name);
       this.cleanExited.delete(name);
       this.postmortemOutput.delete(name);
     };
@@ -3250,7 +3275,7 @@ export class AgentManager {
 
   async kill(name: string): Promise<void> {
     this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
@@ -3290,7 +3315,7 @@ export class AgentManager {
     const stoppingAt = this.stoppingSince.get(name);
     if (stoppingAt !== undefined && Date.now() - stoppingAt < AgentManager.STOPPING_FALLBACK_MS) return;
     this.stoppingSince.set(name, Date.now());
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
@@ -3311,7 +3336,7 @@ export class AgentManager {
       }
     } catch (err) {
       this.stoppingSince.delete(name);
-      this.stopFailed.delete(name);
+      this.clearStopFailed(name);
       throw err;
     }
   }
@@ -3333,7 +3358,7 @@ export class AgentManager {
     const session = this.session(name);
     const state = (await this.agentStates()).get(name);
     this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
     const rec = this.opts.ledger?.get(name);
@@ -3558,7 +3583,7 @@ export class AgentManager {
     this.provisionalAgents.delete(name);
     this.readinessCache.delete(name);
     this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
   }
@@ -3860,7 +3885,12 @@ export class AgentManager {
   /** Clear graceful-stop UI flags (used when restart/resume owns the lifecycle again). */
   private clearStoppingState(name: string): void {
     this.stoppingSince.delete(name);
+    this.clearStopFailed(name);
+  }
+
+  private clearStopFailed(name: string): void {
     this.stopFailed.delete(name);
+    this.stopFailureDetail.delete(name);
   }
 
   /** True when the named entry has a live (non-dead) pane process. */
@@ -3887,7 +3917,7 @@ export class AgentManager {
    */
   private async hardKillSessionOnly(name: string): Promise<void> {
     this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) return;
     try {
@@ -3991,7 +4021,7 @@ export class AgentManager {
       restartWorkRecord,
     );
     this.stoppingSince.delete(name);
-    this.stopFailed.delete(name);
+    this.clearStopFailed(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
