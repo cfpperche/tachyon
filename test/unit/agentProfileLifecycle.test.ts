@@ -624,7 +624,7 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
     });
 
     // The owner now declares the new agent…
-    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", operation: "edit", authority, config });
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority, config });
     expect(owner.profile.ownership?.subagents).toEqual(["importer"]);
     // …and BOTH authority records name the same transaction, which is the ratified consequence of a
     // single transaction having a single identity.
@@ -655,7 +655,7 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer", "agent.yml"))).toBe(false);
     expect(authority.records.has("importer")).toBe(false);
     // …and the OWNER is byte-for-byte what it was, including its authority record.
-    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", operation: "edit", authority, config });
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority, config });
     expect(owner.profile.ownership).toBeUndefined();
     expect(authority.records.get("boss")).toEqual(ownerBefore);
   });
