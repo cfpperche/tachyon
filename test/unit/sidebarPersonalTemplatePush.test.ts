@@ -1,13 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { __resetVscodeMock, __setConfiguration, __fireConfigurationChange, __getExecutedCommands } from "../mocks/vscode.js";
+import fs from "node:fs";
+import path from "node:path";
+import { __resetVscodeMock, __fireFileWatch, __getExecutedCommands } from "../mocks/vscode.js";
+import { globalSettingsPath, useGlobalSettingsHome } from "../../src/config/globalSettings.js";
+import { makeTempDir } from "../helpers/tempDir.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { SAMPLE, type FleetVM } from "../../src/sidebar/types.js";
 import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate, resolveCardTemplate } from "../../src/sidebar/cardTemplate.js";
 import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 
 /**
- * SDD 479 phase 5 — the personal override, from VS Code settings to the pushed fleet.
+ * SDD 479 phase 5 — the personal override, from its own home to the pushed fleet.
+ *
+ * t-aaad95 — that home moved from a VS Code settings key to `sidebar.cardTemplate` in the global
+ * Tachyon settings file. Everything this file proves is unchanged in substance; what changed is where
+ * the shell reads it from, and that a repaint is now driven by a FILE event rather than a
+ * configuration event.
  *
  * The model-level tests prove the layering; these prove the SHELL does what only it can be wrong
  * about: reading the person's setting, resolving it against THIS folder's project template, failing
@@ -17,7 +26,19 @@ import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
  * on one machine, and an agent-authored checkout must never be able to carry it. That is why this is
  * tested through the provider rather than through `sidebarFleetService`.
  */
-const KEY = "tachyon.sidebar.cardTemplate";
+/**
+ * Point the process-wide store at a throwaway home and author the personal document there. Writing
+ * the real file (rather than stubbing the store) is deliberate: the parse, the fail-closed refusal
+ * and the last-known-good all live in the store, and a stub would skip exactly the code a person
+ * hand-editing this file depends on.
+ */
+let home: string;
+function setPersonalTemplate(written: unknown): void {
+  const file = globalSettingsPath(home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ version: 1, sidebar: { cardTemplate: written } }, null, 2), "utf8");
+  useGlobalSettingsHome(home);
+}
 
 const projectTemplate = (written: Record<string, unknown>) => {
   const parsed = parseCardTemplate({ version: CARD_TEMPLATE_VERSION, ...written });
@@ -58,8 +79,15 @@ const pushedFleet = (posted: unknown[]): FleetVM | undefined => {
   return message?.fleets?.[0];
 };
 
-beforeEach(() => __resetVscodeMock());
-afterEach(() => __resetVscodeMock());
+beforeEach(() => {
+  __resetVscodeMock();
+  home = makeTempDir("tachyon-personal-template-");
+  useGlobalSettingsHome(home);
+});
+afterEach(() => {
+  __resetVscodeMock();
+  useGlobalSettingsHome(undefined);
+});
 
 describe("no personal override", () => {
   it("pushes the project's template, attributed to the project", async () => {
@@ -77,7 +105,7 @@ describe("no personal override", () => {
   it("treats an EMPTY settings object as 'not configured', never as a refusal", async () => {
     // The settings UI writes `{}` for an object key a person merely opened; calling that a refusal
     // would put a warning banner on the sidebar of everyone who looked at the setting.
-    __setConfiguration({ [KEY]: {} });
+    setPersonalTemplate({});
     const { provider: p } = provider({ cardTemplate: projectTemplate({ meta: ["branch"] }) });
     const { view, posted } = fakeView();
     p.resolveWebviewView(view);
@@ -90,7 +118,7 @@ describe("no personal override", () => {
 
 describe("a valid personal override", () => {
   it("wins over the project, and keeps the project's regions it did not mention", async () => {
-    __setConfiguration({ [KEY]: { version: CARD_TEMPLATE_VERSION, meta: ["harness"] } });
+    setPersonalTemplate({ version: CARD_TEMPLATE_VERSION, meta: ["harness"] });
     const { provider: p } = provider({
       cardTemplate: projectTemplate({ header: ["status-dot", "name"], meta: ["branch", "harness"] }),
     });
@@ -106,7 +134,7 @@ describe("a valid personal override", () => {
   });
 
   it("applies to a folder with no project template at all", async () => {
-    __setConfiguration({ [KEY]: { version: CARD_TEMPLATE_VERSION, meta: [] } });
+    setPersonalTemplate({ version: CARD_TEMPLATE_VERSION, meta: [] });
     const { provider: p } = provider({});
     const { view, posted } = fakeView();
     p.resolveWebviewView(view);
@@ -118,8 +146,8 @@ describe("a valid personal override", () => {
 });
 
 describe("an invalid personal override fails closed, and says so", () => {
-  it("falls back to the PROJECT's template and reports the refusal against the settings key", async () => {
-    __setConfiguration({ [KEY]: { version: CARD_TEMPLATE_VERSION, meta: ["cpu-graph"] } });
+  it("falls back to the PROJECT's template and names the file the person has to fix", async () => {
+    setPersonalTemplate({ version: CARD_TEMPLATE_VERSION, meta: ["cpu-graph"] });
     const { provider: p } = provider({ cardTemplate: projectTemplate({ meta: ["branch"] }) });
     const { view, posted } = fakeView();
     p.resolveWebviewView(view);
@@ -130,14 +158,14 @@ describe("an invalid personal override fails closed, and says so", () => {
     // project's did not, and dropping both would punish the wrong author.
     expect(fleet?.cardTemplate?.base.meta).toEqual(["branch"]);
     expect(fleet?.cardTemplate?.sources?.base).toBe("project");
-    expect(fleet?.personalCardTemplateRefusal?.file).toContain("tachyon.sidebar.cardTemplate");
+    expect(fleet?.personalCardTemplateRefusal?.file).toContain(globalSettingsPath(home));
     expect(fleet?.personalCardTemplateRefusal?.errors[0]).toContain("unknown component 'cpu-graph'");
     // …and the project's own refusal channel stays untouched: two homes, two diagnostics
     expect(fleet?.cardTemplateRefusal).toBeUndefined();
   });
 
   it("falls back to the product default when neither home has a valid template", async () => {
-    __setConfiguration({ [KEY]: { version: 9 } });
+    setPersonalTemplate({ version: 9 });
     const { provider: p } = provider({});
     const { view, posted } = fakeView();
     p.resolveWebviewView(view);
@@ -149,7 +177,7 @@ describe("an invalid personal override fails closed, and says so", () => {
   });
 
   it("keeps BOTH refusals when the project's template is also broken", async () => {
-    __setConfiguration({ [KEY]: { version: CARD_TEMPLATE_VERSION, footer: ["branch"] } });
+    setPersonalTemplate({ version: CARD_TEMPLATE_VERSION, footer: ["branch"] });
     const { provider: p } = provider({
       cardTemplateRefusal: { file: "tachyon.yml", errors: ["settings.sidebar.cardTemplate.meta[0]: unknown component 'x'"] },
     });
@@ -160,7 +188,7 @@ describe("an invalid personal override fails closed, and says so", () => {
     const fleet = pushedFleet(posted);
     // A person fixing this needs to know WHICH file to open; one merged banner could not say.
     expect(fleet?.cardTemplateRefusal?.file).toBe("tachyon.yml");
-    expect(fleet?.personalCardTemplateRefusal?.file).toContain("VS Code settings");
+    expect(fleet?.personalCardTemplateRefusal?.file).toContain(globalSettingsPath(home));
     // Neither home survived, so no template travels at all — and the renderer's own "nothing
     // configured" path is the product default. Sending an explicit copy of the default instead would
     // make "the project wrote a template that happens to match the default" indistinguishable from
@@ -178,8 +206,8 @@ describe("editing the setting repaints the cards", () => {
     await flush();
     expect(pushedFleet(posted)?.cardTemplate?.sources?.base).toBe("project");
 
-    __setConfiguration({ [KEY]: { version: CARD_TEMPLATE_VERSION, meta: ["harness"] } });
-    __fireConfigurationChange(KEY);
+    setPersonalTemplate({ version: CARD_TEMPLATE_VERSION, meta: ["harness"] });
+    __fireFileWatch();
     await flush();
 
     // without this, a person edits a template and watches nothing happen until an unrelated refresh
@@ -187,22 +215,13 @@ describe("editing the setting repaints the cards", () => {
     expect(pushedFleet(posted)?.cardTemplate?.sources?.base).toBe("personal");
   });
 
-  it("ignores a change to an unrelated setting", async () => {
-    const { provider: p } = provider({ cardTemplate: projectTemplate({ meta: ["branch"] }) });
-    const { view, posted } = fakeView();
-    p.resolveWebviewView(view);
-    await flush();
-    const before = posted.length;
-
-    __fireConfigurationChange("tachyon.maxAgents");
-    await flush();
-
-    expect(posted.length).toBe(before);
-  });
+  // t-aaad95 — the "ignores an unrelated setting" case is gone by construction rather than by
+  // assertion: the watcher is scoped to ONE file, so an unrelated setting cannot reach it at all.
+  // The watcher's scope is now the guarantee that the `affectsConfiguration` check used to be.
 });
 
 describe("the refusal banner's button", () => {
-  it("opens the settings editor filtered to the key it names", async () => {
+  it("opens the Tachyon settings file — which is also the recovery path when Control will not open", async () => {
     const { provider: p } = provider({});
     const { view } = fakeView();
     p.resolveWebviewView(view);
@@ -215,8 +234,8 @@ describe("the refusal banner's button", () => {
     });
 
     expect(__getExecutedCommands()).toContainEqual({
-      command: "workbench.action.openSettings",
-      args: [KEY],
+      command: "tachyon.openGlobalSettings",
+      args: [],
     });
   });
 });

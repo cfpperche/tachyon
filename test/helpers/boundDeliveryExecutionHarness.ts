@@ -31,7 +31,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     const ledger = new SessionLedger(root);
     const home = (name: string) => path.join(root, ".tachyon", "harness", name);
     const manager = new AgentManager({
-      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, ledger,
       mintAgentToken: name => { minted.push(name); return { TACHYON_AGENT_BRIDGE_TOKEN: `token-${name}` }; },
       revokeAgentToken: name => { revoked.push(name); },
       getExtraEnv: () => { if (rejectExtraEnv) throw new Error("extra env failed"); return {}; },
@@ -182,7 +182,7 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
     const ledger = new SessionLedger(root);
     const home = (name: string) => path.join(root, ".tachyon", "harness", name);
     const manager = new AgentManager({
-      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, ledger,
       launchPreflight: { check: async (_command, env) => {
         counters.preflight++;
         if (env.TACHYON_AGENT_NAME === "review-execution") {
@@ -291,7 +291,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
     const originalRecord = ledger.record.bind(ledger);
     ledger.record = ((...args: Parameters<SessionLedger["record"]>) => { counters.ledgerWrites++; return originalRecord(...args); }) as SessionLedger["record"];
     const manager = new AgentManager({
-      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, ledger,
       launchPreflight: { check: async () => kind === "failed launch preflight"
         ? { state: "failed", code: "runtime_preflight_failed", runtime: "codex", reason: "fixture" }
         : { state: "supported", runtime: "codex", source: "fixture" } },
@@ -393,7 +393,6 @@ export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger,
       getBridgeGeneration: () => 9,
       // Failed wiring: no Bridge URL → withRuntimeBridge reports wired:false.
@@ -490,7 +489,7 @@ export async function exerciseBoundDeliveryNewSessionFailure(kind: BoundDelivery
     const ledger = new SessionLedger(root);
     const home = (name: string) => path.join(root, ".tachyon", "harness", name);
     manager = new AgentManager({
-      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, ledger,
       mintAgentToken: name => ({ TACHYON_AGENT_BRIDGE_TOKEN: `token-${name}` }),
       revokeAgentToken: name => { revoked.push(name); },
       onKilled: name => { callbacks.push(name); },
@@ -616,7 +615,7 @@ export async function exerciseBoundDeliveryCleanupOrdering(kind: BoundDeliveryCl
     const ledger = new SessionLedger(root);
     const home = (name: string) => path.join(root, ".tachyon", "harness", name);
     manager = new AgentManager({
-      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8, ledger,
+      tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, ledger,
       mintAgentToken: name => ({ TACHYON_AGENT_BRIDGE_TOKEN: `token-${name}` }),
       revokeAgentToken: name => {
         revoked.push(name);

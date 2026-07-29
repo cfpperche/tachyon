@@ -4,24 +4,8 @@ import {
   resolveTaskNotificationSettings,
   taskToastFor,
   type TaskNotificationEvent,
-  type TaskNotificationSettingsInput,
 } from "../tasks/taskNotificationPolicy.js";
 import type { EngineHost } from "./EngineHost.js";
-
-const SETTING_KEYS = ["enabled", "events", "suppressOwnChanges", "dedupeWindowMs"] as const;
-
-function inspectedSettings(host: EngineHost): { user?: TaskNotificationSettingsInput; workspace?: TaskNotificationSettingsInput } {
-  if (!host.getSettingInspect) return {};
-  const user: TaskNotificationSettingsInput = {};
-  const workspace: TaskNotificationSettingsInput = {};
-  for (const key of SETTING_KEYS) {
-    const inspected = host.getSettingInspect<never>("tachyon", `taskNotifications.${key}`);
-    const workspaceValue = inspected.workspaceFolderValue ?? inspected.workspaceValue;
-    if (inspected.globalValue !== undefined) Object.assign(user, { [key]: inspected.globalValue });
-    if (workspaceValue !== undefined) Object.assign(workspace, { [key]: workspaceValue });
-  }
-  return { user, workspace };
-}
 
 export class TaskNotificationService {
   private readonly deduper = new TaskNotificationDeduper();
@@ -38,12 +22,9 @@ export class TaskNotificationService {
 
   notify(event: TaskNotificationEvent): void {
     try {
-      const inspected = inspectedSettings(this.host);
-      const settings = resolveTaskNotificationSettings({
-        vscodeUser: inspected.user,
-        vscodeWorkspace: inspected.workspace,
-        yml: this.config()?.settings.taskNotifications,
-      });
+      // t-aaad95 — `tachyon.yml` is the only authority. The four `tachyon.taskNotifications.*` VS Code
+      // keys and the scope-inspection port that read them were removed together.
+      const settings = resolveTaskNotificationSettings({ yml: this.config()?.settings.taskNotifications });
       const toast = taskToastFor(event, settings, this.workspaceRoot);
       if (!toast || !this.deduper.shouldNotify(toast.dedupeKey, settings.dedupeWindowMs)) return;
       this.host.notify(toast.message, toast.level, [

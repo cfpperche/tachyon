@@ -261,7 +261,7 @@ function configOf(yaml: string): TachyonConfig {
   return config;
 }
 
-function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
+function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
   const { sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
@@ -272,7 +272,6 @@ function makeManager(yaml: string, maxAgentsSetting = 8, tmuxOpts: { failRespawn
     wsHash: HASH,
     workspaceRoot: WS,
     getConfig: () => config,
-    getMaxAgents: () => maxAgentsSetting,
     onSpawned: (n) => spawned.push(n),
     onKilled: (n) => killed.push(n),
     onRestart: (n) => restarted.push(n),
@@ -301,7 +300,7 @@ describe("AgentManager", () => {
       fs.writeFileSync(live, JSON.stringify({ principal: "Ada", ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID }), { mode: 0o600 });
       const { tmux } = fakeTmux();
       const config = configOf("agents:\n  Ada:\n    cmd: codex\n");
-      void new AgentManager({ tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config, getMaxAgents: () => 8 });
+      void new AgentManager({ tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config });
       expect(fs.existsSync(legacy)).toBe(false);
       expect(fs.existsSync(reusedPid)).toBe(false);
       expect(fs.existsSync(dead)).toBe(false);
@@ -342,7 +341,6 @@ describe("AgentManager", () => {
         workspaceRoot: root,
         ledger,
         getConfig: () => config,
-        getMaxAgents: () => 8,
       });
       await manager.spawn("reviewer");
       expect(fake.newSessionArgs[0]!.at(-1)).toContain("Use the first approved method.");
@@ -402,7 +400,6 @@ describe("AgentManager", () => {
         workspaceRoot: root,
         ledger: new SessionLedger(root),
         getConfig: () => config,
-        getMaxAgents: () => 8,
       });
 
       await expect(manager.spawn("reviewer")).rejects.toThrow(
@@ -440,7 +437,6 @@ describe("AgentManager", () => {
           workspaceRoot: root,
           ledger,
           getConfig: () => config,
-          getMaxAgents: () => 8,
           materializePiSessionDir: (name) => path.join(root, ".tachyon", "pi-sessions", name),
         });
 
@@ -520,14 +516,18 @@ describe("AgentManager", () => {
     await expect(manager.spawn("a")).rejects.toThrow("already running");
   });
 
-  it("enforces maxAgents from tachyon.yml settings over the editor setting", async () => {
-    const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\nsettings:\n  maxAgents: 1\n", 99);
+  // t-aaad95 — these two used to pin the PRECEDENCE between tachyon.yml and the `tachyon.maxAgents`
+  // editor setting (yml won; the editor setting answered only when yml was silent). The editor key is
+  // gone, so what is left to pin is that tachyon.yml is the authority and the built-in guardrail is
+  // what answers when it says nothing — the same two observable outcomes, one source instead of two.
+  it("enforces maxAgents from tachyon.yml settings", async () => {
+    const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\nsettings:\n  maxAgents: 1\n");
     await manager.spawn("a");
     await expect(manager.spawn("b")).rejects.toThrow(MaxAgentsError);
   });
 
-  it("falls back to the editor setting when yml has no maxAgents", async () => {
-    const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\n", 1);
+  it("reports the limit it enforced", async () => {
+    const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\nsettings:\n  maxAgents: 1\n");
     await manager.spawn("a");
     await expect(manager.spawn("b")).rejects.toThrow("maxAgents limit reached (1)");
   });
@@ -551,7 +551,6 @@ describe("AgentManager", () => {
   it("t-4d2630: restart falls back to kill+new (and onRestart) when respawn fails", async () => {
     const { manager, sessions, respawnArgs, newSessionArgs, restarted } = makeManager(
       "agents:\n  a:\n    cmd: x\n",
-      8,
       { failRespawn: true },
     );
     await manager.spawn("a");
@@ -568,7 +567,6 @@ describe("AgentManager", () => {
     // respawnPane must throw so we kill+new rather than set-only respawn with stale keys.
     const { manager, sessions, respawnArgs, newSessionArgs, restarted } = makeManager(
       "agents:\n  a:\n    cmd: x\n",
-      8,
       { failShowEnvironment: true },
     );
     await manager.spawn("a"); // new-session path — does not need show-environment
@@ -616,7 +614,6 @@ describe("AgentManager", () => {
           wsHash: HASH,
           workspaceRoot: root,
           getConfig: () => config,
-          getMaxAgents: () => 8,
           ledger,
         });
         await manager.spawn("worker");
@@ -693,7 +690,6 @@ describe("AgentManager", () => {
           wsHash: HASH,
           workspaceRoot: root,
           getConfig: () => config,
-          getMaxAgents: () => 8,
           ledger,
           fileExists: (p) => fs.existsSync(p),
         });
@@ -750,7 +746,6 @@ describe("AgentManager", () => {
         wsHash: workspaceHash(root),
         workspaceRoot: root,
         getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
-        getMaxAgents: () => 8,
         ledger,
         assignedWork: () => [ASSIGNED],
         ...overrides,
@@ -1269,7 +1264,6 @@ describe("AgentManager", () => {
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
     });
     await expect(manager.restart("orphan", { stop: "force", session: "new" })).rejects.toThrow("no stored definition");
   });
@@ -1370,7 +1364,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(workspaceRoot),
       workspaceRoot,
       getConfig: () => configOf(yml),
-      getMaxAgents: () => 8,
     });
     await manager.spawn(name, opts);
     const spawnArgs = calls.find((c) => c.includes("new-session"))!;
@@ -1441,7 +1434,6 @@ describe("AgentManager", () => {
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
 
     await expect(manager.spawn("codex")).rejects.toThrow(/startup brief.*safe pane-delivery ceiling/);
@@ -1512,7 +1504,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await manager.spawn("codex");
@@ -1543,7 +1534,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
-      getMaxAgents: () => 8,
       ledger,
     });
     const taskBrief = `TASK: preserve restart metadata\nDONE_WHEN: ${"r".repeat(5_000)}`;
@@ -1577,7 +1567,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => configOf("agents:\n  anchor:\n    cmd: sh\n"),
-      getMaxAgents: () => 8,
       ledger,
     });
     const taskBrief = `TASK: preserve restart metadata\nDONE_WHEN: ${"r".repeat(5_000)}`;
@@ -1623,7 +1612,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await expect(manager.spawn("codex")).rejects.toThrow(/guidance\.md/);
@@ -1651,7 +1639,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await manager.spawn("server");
@@ -1673,7 +1660,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await manager.spawn("claude");
@@ -1699,7 +1685,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     const session = sessionName(workspaceHash(root), "hermes");
     try {
@@ -1723,7 +1708,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await manager.spawn("codex");
@@ -1745,7 +1729,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     const session = sessionName(workspaceHash(root), "hermes");
     try {
@@ -1769,7 +1752,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await manager.spawn("aider");
@@ -1791,7 +1773,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     const session = sessionName(workspaceHash(root), "hermes");
     try {
@@ -1823,7 +1804,6 @@ describe("AgentManager", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
     });
     try {
       await expect(manager.spawn("hermes")).rejects.toThrow(/Hermes startup brief requires the TUI/i);
@@ -1845,7 +1825,6 @@ describe("AgentManager", () => {
         wsHash: workspaceHash(root),
         workspaceRoot: root,
         getConfig: () => config,
-        getMaxAgents: () => 8,
       });
       try {
         await expect(manager.spawn("hermes"), `cmd=${cmd}`).rejects.toThrow(/Hermes startup brief requires the TUI/i);
@@ -1872,7 +1851,6 @@ describe("AgentManager", () => {
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
       onSpawned: (n, r) => reveals.push([n, r]),
       launchPreflight: HERMETIC_PREFLIGHT,
     });
@@ -1898,7 +1876,6 @@ describe("AgentManager", () => {
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
       onSpawned: (n, r) => reveals.push([n, r]),
     });
     await manager.spawn("a");
@@ -2104,7 +2081,6 @@ describe("AgentManager — session resume (spec 209)", () => {
       wsHash: hash,
       workspaceRoot: ws,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger,
       newSessionId: opts.newSessionId,
       fileExists: opts.fileExists ?? (() => true),
@@ -6169,7 +6145,6 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
       onSpawned: () => events.push("open"),
       onRestart: () => events.push("close"),
     });
@@ -6189,7 +6164,6 @@ describe("AgentManager — restart terminal lifecycle (t-4d2630 respawn keeps cl
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-      getMaxAgents: () => 8,
       onSpawned: () => events.push("open"),
       onRestart: () => events.push("close"),
     });
@@ -6219,7 +6193,6 @@ describe("live rename (agent/terminal, running or not)", () => {
         workspaceRoot: dir,
         ledger,
         getConfig: () => configOf("agents:\n  reviewer:\n    cmd: codex\n"),
-        getMaxAgents: () => 8,
       });
       await manager.rehydrateFromLedger();
       const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
@@ -6302,7 +6275,6 @@ describe("live rename (agent/terminal, running or not)", () => {
         wsHash: HASH,
         workspaceRoot: dir,
         getConfig: () => configOf("agents:\n  claude:\n    cmd: claude\n"),
-        getMaxAgents: () => 8,
         ledger,
       });
       await manager.rename("claude", "ace");
@@ -6347,7 +6319,6 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
       getConfig: () => configOf(yaml),
-      getMaxAgents: () => 8,
       ledger,
       // Production always wires canonical Delivery storage; most unit cases do not inspect it.
       recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
@@ -7175,7 +7146,6 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
       getConfig: () => configOf("agents:\n  boss:\n    cmd: claude\n"),
-      getMaxAgents: () => 8,
       ledger,
     });
     await reloaded.rehydrateFromLedger();
@@ -7515,7 +7485,6 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       getExtraEnv: () => ({ TACHYON_BRIDGE_TOKEN: TOKEN }),
     });
     sessions.add(`tachyon-${HASH}-clean`);
@@ -7542,7 +7511,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     dead.set(reviewSession, 0);
     dead.set(boomSession, 137);
     panes.set(reviewSession, "durable postmortem");
-    const opts = { tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), getMaxAgents: () => 8, ledger };
+    const opts = { tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"), ledger };
     const manager = new AgentManager(opts);
     await manager.rehydrateFromLedger();
     await expect(manager.dismissCleanExitPane("review")).resolves.toBe(true);
@@ -7621,7 +7590,6 @@ describe("AgentManager — spec 230 pipeline-node spawn", () => {
         workspaceRoot: ws,
         ledger,
         getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-        getMaxAgents: () => 8,
       });
       await manager.spawn("feature-r1-implement", {
         cmd: "claude",
@@ -7649,7 +7617,6 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
       revokeAgentToken: (name) => registry.revoke(name, SCOPE),
     });
@@ -7688,7 +7655,6 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       mintAgentToken: (name) => {
         lastMinted = registry.mint(name, SCOPE);
         return { TACHYON_AGENT_BRIDGE_TOKEN: lastMinted };
@@ -7719,7 +7685,6 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
         wsHash: HASH,
         workspaceRoot: dir,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         ledger,
         fileExists: () => true,
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: registry.mint(name, SCOPE) }),
@@ -7745,7 +7710,6 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       wsHash: HASH,
       workspaceRoot: WS,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
     });
     await manager.spawn("codex");
@@ -7765,7 +7729,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       .spyOn(tmux, "sessionStates")
       .mockImplementationOnce(() => older)
       .mockImplementationOnce(() => newer);
-    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
 
     // Dispatch order: agentStates() (older) then runningAgentsStrict() (newer) — e.g. a
     // LifecycleMonitor poll racing the rebind coordinator's boot scan.
@@ -7812,7 +7776,6 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
       getConfig: () => configOf(yaml),
-      getMaxAgents: () => 8,
       ledger,
       ...extra,
     });
@@ -7880,7 +7843,6 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
       wsHash: hash,
       workspaceRoot: ws,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger,
       resolveCurrentSession: async () => "11111111-1111-4111-8111-111111111111",
       fileExists: () => true,

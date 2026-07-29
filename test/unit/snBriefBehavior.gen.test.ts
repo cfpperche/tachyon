@@ -31,7 +31,6 @@ async function spawnAndCapture(
     wsHash: workspaceHash(workspaceRoot),
     workspaceRoot,
     getConfig: () => configOf("agents:\n  a:\n    cmd: x\n"),
-    getMaxAgents: () => 8,
   });
   await manager.spawn(name, {
     cmd: "claude",

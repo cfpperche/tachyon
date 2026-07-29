@@ -269,6 +269,7 @@ import {
 import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
+import { sharedGlobalSettings } from "../config/globalSettings.js";
 import type { GitDelivery, GitDeliveryListRow } from "../git-delivery/types.js";
 import { listRows } from "../git-delivery/classify.js";
 import { hasDeliveryMarker, isInvalidDeliveryMarker, isValidDeliveryBinding, sameDeliveryBinding } from "../resume/SessionLedger.js";
@@ -741,7 +742,7 @@ export class Workspace {
     this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
     if (deps.recordExecution) this.recordExecution = deps.recordExecution;
     this.wsHash = workspaceHash(workspaceRoot);
-    this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host));
+    this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host, sharedGlobalSettings().current().gitPath));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
     if (seams.tmux) {
       // spec 235 — test mode: a fake-exec tmux is supplied; the control-mode engine is NOT wired (lifecycle
@@ -1186,11 +1187,9 @@ export class Workspace {
       getConfig: () => this.config,
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
       assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
-      getMaxAgents: () => this.host.getSetting("tachyon", "maxAgents", 8),
-      getAgentMemoryMax: () => {
-        const host = this.host.getSetting<string>("tachyon", "agentMemoryMax", "");
-        return host.trim() || undefined;
-      },
+      // t-aaad95 — `maxAgents` and `agentMemoryMax` used to arrive here from VS Code settings ALONGSIDE
+      // `tachyon.yml`, and AgentManager preferred the yml. That duplication is gone: `getConfig()` is
+      // now the single authority for both, so neither needs a port of its own.
       getExtraEnv: () => {
         // Every Tachyon-spawned session can reach (and authenticate to) ITS folder's Bridge.
         // PATH is pinned too: rebind/resume after reload can land panes on a tmux global PATH

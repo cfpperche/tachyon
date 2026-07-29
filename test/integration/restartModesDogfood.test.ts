@@ -75,7 +75,6 @@ terminals:
       wsHash,
       workspaceRoot: workspace,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger,
     });
   });

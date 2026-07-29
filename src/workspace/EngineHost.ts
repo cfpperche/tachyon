@@ -50,14 +50,20 @@ export interface EngineHost {
   // FileWatchPort — `glob` relative to `root`; the impl chooses vscode-watcher / chokidar / polling.
   watch(root: string, glob: string, events: WatchEvents, onEvent: () => void): HostDisposable;
 
-  // SettingsPort
-  getSetting<T>(section: string, key: string, dflt: T): T;
-  /** Explicit values by scope; unlike getSetting, contributed defaults are omitted. */
-  getSettingInspect?<T>(section: string, key: string): {
-    globalValue?: T;
-    workspaceValue?: T;
-    workspaceFolderValue?: T;
-  };
+  /**
+   * t-aaad95 — what is LEFT of the old generic SettingsPort, and deliberately not generic any more.
+   *
+   * Tachyon contributes no settings of its own; every one of them now lives in `tachyon.yml` or in
+   * the global Tachyon file (`src/config/globalSettings.ts`), both of which the engine reads as plain
+   * files with no shell involved. The single survivor is somebody ELSE's setting: the built-in Git
+   * extension's `git.path`, consumed as a fallback when Tachyon's own `gitPath` is unset. Naming it
+   * instead of keeping a `getSetting(section, key)` door is the point — a generic port is what let
+   * eight readers grow around the abstraction in the first place, and a named one cannot.
+   *
+   * A host with no such notion (headless/CLI) returns undefined. A list means "first entry wins",
+   * which is the shape VS Code's own key allows.
+   */
+  gitExtensionPath(): string | string[] | undefined;
 
   // StoragePort — host-owned paths + persisted key/value + the engine's bundled media + app version.
   globalStoragePath(): string;

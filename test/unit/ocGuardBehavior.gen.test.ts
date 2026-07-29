@@ -38,7 +38,6 @@ describe("container-generated delegation behavior", () => {
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger,
       launchPreflight: hermeticLaunchPreflight(),
       resolveSpawnCwd: async (ctx) => {

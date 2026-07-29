@@ -57,7 +57,6 @@ describe("container-generated delegation behavior", () => {
         wsHash,
         workspaceRoot: ws,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         ledger,
         resolveSpawnCwd: async () => ({
           cwd: worktreePath,
@@ -94,7 +93,6 @@ describe("container-generated delegation behavior", () => {
         wsHash,
         workspaceRoot: ws,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         ledger,
       });
       reloadedManager.rehydrateFromLedger();

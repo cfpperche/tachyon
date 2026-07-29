@@ -316,6 +316,25 @@ export function setIdleAfterMinutes(text: string | undefined, minutes: number | 
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * t-aaad95 — write a `settings.<path>` value during the one-time import of the retired VS Code keys.
+ *
+ * Generic on purpose, unlike the hand-written `setCompanion*` setters above: this is one migration
+ * writing a fixed, closed list of paths that `planYmlImport` decides, so a setter per key would be
+ * six near-identical functions that all go away together. Validation stays where it already is —
+ * `loadConfig` refuses anything malformed on the next read, and the planner only ever emits values
+ * that already passed its own checks.
+ */
+export function setSettingsValue(text: string | undefined, keyPath: string[], value: string | number | boolean | string[]): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — settings need an existing tachyon.yml");
+  }
+  if (keyPath.length === 0) throw new Error("setSettingsValue needs a key path under 'settings'");
+  const doc = load(text);
+  doc.setIn(["settings", ...keyPath], value);
+  return { text: String(doc), warnings: [] };
+}
+
 /** 0-based line of a schedule's entry. */
 export function scheduleEntryLine(text: string, name: string): number | undefined {
   return entryLineIn(text, "schedules", name);

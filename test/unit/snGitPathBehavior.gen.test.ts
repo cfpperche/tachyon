@@ -19,18 +19,19 @@ describe("container-generated delegation behavior", () => {
     // (d) nothing configured and nothing probes → falls back to bare 'git' (PATH).
     expect(resolveGitBinary({ pathExists: () => false })).toBe("git");
 
-    const host = {
-      getSetting: <T>(section: string, key: string, fallback: T): T =>
-        (section === "tachyon" && key === "gitPath" ? "/host/configured/git" : fallback) as T,
-    };
-    expect(resolveGitBinaryForHost(host)).toBe("/host/configured/git");
+    // t-aaad95 — `gitPath` now comes from the global Tachyon settings file (passed in), and the host
+    // is asked only for the ONE external setting that survives: the git extension's `git.path`.
+    const host = { gitExtensionPath: (): string | string[] | undefined => "/git-extension/git" };
+    expect(resolveGitBinaryForHost(host, "/tachyon/configured/git")).toBe("/tachyon/configured/git");
+    expect(resolveGitBinaryForHost(host, "")).toBe("/git-extension/git");
+    expect(resolveGitBinaryForHost({ gitExtensionPath: () => undefined }, "")).not.toBe("");
 
     // when that final fallback also can't be spawned, the error NAMES the PATH problem and the remedy —
     // never a bare, cryptic "git binary not found".
     const err = gitNotFoundError();
     expect(err.message).not.toBe("git binary not found");
     expect(err.message).toMatch(/PATH/);
-    expect(err.message).toMatch(/tachyon\.gitPath/);
+    expect(err.message).toMatch(/gitPath/);
     expect(err.message).toMatch(/git\.path/);
   });
 });

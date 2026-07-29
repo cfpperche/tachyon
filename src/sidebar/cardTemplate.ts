@@ -312,7 +312,8 @@ const INHERITANCE_VALUES: readonly CardTemplateInheritance[] = ["default", "repl
 
 /**
  * SDD 479 phase 5 — where a template in effect came from. Ratified fork 1: the project default lives
- * in `tachyon.yml` and travels with the repo; an optional personal override lives in VS Code settings
+ * in `tachyon.yml` and travels with the repo; an optional personal override lives in the global
+ * Tachyon settings file (t-aaad95; VS Code settings before)
  * and WINS. This enum exists so the UI can SAY which one a row is using — the fork's own wording made
  * that sentence part of the feature, and the reason is concrete: a personal override quietly
  * contradicting the project's template is otherwise indistinguishable from a broken project template.
@@ -483,7 +484,7 @@ function parseOptions(
 
 /**
  * Validate a written card template. Pure and framework-agnostic so that **one** validator serves every
- * home the template can have — `tachyon.yml` today, VS Code settings in phase 5. Two validators that
+ * home the template can have — `tachyon.yml` and the global Tachyon settings file. Two validators that
  * can disagree about the same document is the failure this avoids.
  *
  * Fail-closed, and whole: on any error the caller gets `errors` and NO template, because a
@@ -598,7 +599,7 @@ function mapSources(runtimes: Readonly<Record<string, CardTemplate>>, source: Ca
 export function describeCardTemplateSource(source: CardTemplateSource): string {
   switch (source) {
     case "personal":
-      return "your VS Code settings (personal override — wins over the project)";
+      return "your Tachyon settings file (personal override — wins over the project)";
     case "project":
       return "this project's tachyon.yml";
     default:

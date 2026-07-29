@@ -90,7 +90,6 @@ function makeManager(yaml: string, opts: { failNewSession?: boolean; sinkThrows?
     wsHash: HASH,
     workspaceRoot: WS,
     getConfig: () => config,
-    getMaxAgents: () => 8,
     launchPreflight: HERMETIC_PREFLIGHT,
     recordExecution: (event) => {
       if (opts.sinkThrows) throw new Error("ledger is on fire");

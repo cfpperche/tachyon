@@ -40,7 +40,6 @@ describe("container-generated delegation behavior", () => {
         wsHash,
         workspaceRoot: "/workspace",
         getConfig: () => configOf(`agents:\n  agent:\n    cmd: ${cmd}\n`),
-        getMaxAgents: () => 8,
       });
 
       await manager.stopGracefully("agent");

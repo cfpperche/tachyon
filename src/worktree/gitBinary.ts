@@ -12,7 +12,7 @@ import type { EngineHost } from "../workspace/EngineHost.js";
 const DEFAULT_PROBE_LOCATIONS = ["/usr/bin/git", "/usr/local/bin/git", "/bin/git"];
 
 export interface GitBinaryInputs {
-  /** the `tachyon.gitPath` VS Code setting, if configured. */
+  /** `gitPath` from the global Tachyon settings file, if configured. */
   configuredPath?: string;
   /** the built-in git extension's `git.path` setting — a single path or a list (first entry wins). */
   gitExtensionPath?: string | string[] | null;
@@ -23,7 +23,7 @@ export interface GitBinaryInputs {
 }
 
 /**
- * Resolve the git binary to spawn, in order: `tachyon.gitPath` setting > the VS Code git
+ * Resolve the git binary to spawn, in order: Tachyon's own `gitPath` > the VS Code git
  * extension's `git.path` > the first common install location that exists on disk > bare `'git'`
  * (PATH). Pure/sync — cheap to call before every spawn, and unit-testable without touching the
  * real fs or a host implementation.
@@ -43,11 +43,15 @@ export function resolveGitBinary(inputs: GitBinaryInputs = {}): string {
   return "git";
 }
 
-/** Resolve Git using the shell-provided settings port, without binding the engine to a particular shell. */
-export function resolveGitBinaryForHost(host: Pick<EngineHost, "getSetting">): string {
-  const configuredPath = host.getSetting("tachyon", "gitPath", "");
-  const gitExtensionPath = host.getSetting<string | string[] | undefined>("git", "path", undefined);
-  return resolveGitBinary({ configuredPath, gitExtensionPath });
+/**
+ * Resolve Git from Tachyon's own global settings plus the ONE external setting only a shell can see.
+ *
+ * t-aaad95 — `gitPath` used to arrive through the same generic settings port as `git.path`; it now
+ * comes from the global Tachyon file, which the engine reads directly and which answers with no
+ * workspace open. The host is asked only for somebody else's key.
+ */
+export function resolveGitBinaryForHost(host: Pick<EngineHost, "gitExtensionPath">, configuredPath: string): string {
+  return resolveGitBinary({ configuredPath, gitExtensionPath: host.gitExtensionPath() });
 }
 
 /**
@@ -56,6 +60,6 @@ export function resolveGitBinaryForHost(host: Pick<EngineHost, "getSetting">): s
  */
 export function gitNotFoundError(): Error {
   return new Error(
-    "git not found on PATH or common locations — set `tachyon.gitPath` or `git.path`, or ensure /usr/bin is on the extension host PATH",
+    "git not found on PATH or common locations — set `gitPath` in Tachyon settings (Control → Settings, or ~/.tachyon/settings.json) or the git extension's `git.path`, or ensure /usr/bin is on the extension host PATH",
   );
 }

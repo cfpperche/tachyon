@@ -26,9 +26,9 @@ function fixture(requestUi?: (request: DaemonUiRequest) => Promise<unknown>) {
     mediaRoot,
     appVersion: "0.57.0",
     settings: {
-      global: { "tachyon.maxAgents": 8, "git.path": "global" },
-      workspace: { "tachyon.maxAgents": 4, "git.path": null },
-      workspaceFolder: { "tachyon.maxAgents": 2 },
+      global: { "git.path": "/from/global/git" },
+      workspace: { "git.path": null },
+      workspaceFolder: {},
     },
     emit: (event) => events.push(event),
     requestUi,
@@ -41,14 +41,10 @@ function fixture(requestUi?: (request: DaemonUiRequest) => Promise<unknown>) {
 describe("DaemonEngineHost", () => {
   it("owns settings, state, secrets and headless UI failure semantics", async () => {
     const f = fixture();
-    expect(f.host.getSetting("tachyon", "maxAgents", 1)).toBe(2);
-    expect(f.host.getSetting("git", "path", "fallback")).toBeNull();
-    expect(() => f.host.getSetting("tachyon", "missing", "fallback")).toThrow(/not allowlisted/);
-    expect(f.host.getSettingInspect("tachyon", "maxAgents")).toEqual({
-      globalValue: 8,
-      workspaceValue: 4,
-      workspaceFolderValue: 2,
-    });
+    // t-aaad95 — the generic settings port is gone; `git.path` is the one setting the shell still
+    // hands the engine, and a non-string (VS Code writes `null` to clear it) resolves to undefined
+    // rather than being passed through as a bogus binary path.
+    expect(f.host.gitExtensionPath()).toBeUndefined(); // workspace scope wins and it is `null`
     f.host.setState("state-key", { value: 1 });
     await f.host.setSecret("secret-key", "secret");
     expect(f.host.getState("state-key")).toEqual({ value: 1 });

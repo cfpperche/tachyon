@@ -146,7 +146,7 @@ describe("persistent engine supervisor", () => {
     const workspace = path.join(root, "workspace");
     fs.mkdirSync(workspace, { mode: 0o700 });
     const options = daemonOptions(workspace, path.join(root, "state"), path.join(root, "bundle"), path.join(root, "engine.sock"));
-    options.settings = { global: { "tachyon.maxAgents": 4 } };
+    options.settings = { global: { "git.path": "/usr/bin/git" } };
     expect(decodeEngineDaemonOptions(encodeEngineDaemonOptions(options))).toEqual(options);
 
     expect(() => decodeEngineDaemonOptions(base64({ ...options, unexpected: true })))

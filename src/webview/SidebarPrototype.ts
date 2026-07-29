@@ -1,4 +1,6 @@
+import path from "node:path";
 import * as vscode from "vscode";
+import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { panelIcon } from "./shared/panelIcon.js";
 import { isAgentRow, type FleetVM, type AgentVM, type PinPreviewAttachmentVM, type PinPreviewVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
@@ -19,7 +21,8 @@ import {
 } from "../sidebar/cardTemplate.js";
 
 /**
- * SDD 479 phase 5 — the personal card-template override's VS Code settings key.
+ * SDD 479 phase 5 — the personal card-template override's key; t-aaad95 moved its home from VS Code
+ * settings to `sidebar.cardTemplate` in the global Tachyon settings file.
  *
  * The project's template lives in `tachyon.yml` and travels with the repo; this one belongs to one
  * person on one machine, which is why it is read HERE (the shell) rather than in the engine's
@@ -128,7 +131,19 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
    * uses — a second one that could disagree with it is the failure this phase exists to avoid.
    */
   private cardTemplateFor(fleet: FleetVM): { config?: CardTemplateConfig; refusal?: string[] } {
-    const written = vscode.workspace.getConfiguration("tachyon").get<unknown>(PERSONAL_CARD_TEMPLATE_KEY);
+    const store = sharedGlobalSettings();
+    // t-aaad95 — TWO refusals can now reach this banner, and both have to.
+    //
+    // The store refuses a bad DOCUMENT whole (fail-closed, last-known-good), which is what a hand
+    // edit trips; `parseCardTemplate` below refuses a template that is well-formed on its own but
+    // invalid against THIS folder's project base. Reporting only the second would leave a person who
+    // broke the file staring at cards that silently ignore their template.
+    const documentRefusal = store.refusal();
+    if (documentRefusal) {
+      const projectOnly = mergeCardTemplateConfigs(fleet.cardTemplate, undefined);
+      return { ...(projectOnly ? { config: projectOnly } : {}), refusal: documentRefusal.errors };
+    }
+    const written = store.current().sidebarCardTemplate;
     const project = fleet.cardTemplate;
     // `null` is what a person leaves behind when they clear the setting in the JSON editor, and an
     // empty mapping is what the settings UI writes for an untouched object key — neither is an
@@ -137,7 +152,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (written === undefined || written === null || (typeof written === "object" && !Array.isArray(written) && Object.keys(written as object).length === 0)) {
       return projectOnly ? { config: projectOnly } : {};
     }
-    const parsed = parseCardTemplate(written, `tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`, project?.base ?? DEFAULT_CARD_TEMPLATE);
+    const parsed = parseCardTemplate(written, PERSONAL_CARD_TEMPLATE_KEY, project?.base ?? DEFAULT_CARD_TEMPLATE);
     if (!parsed.config) {
       return { ...(projectOnly ? { config: projectOnly } : {}), refusal: parsed.errors };
     }
@@ -152,7 +167,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         ...fleet,
         ...(config ? { cardTemplate: config } : {}),
         ...(refusal?.length
-          ? { personalCardTemplateRefusal: { file: `VS Code settings · tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`, errors: refusal } }
+          ? { personalCardTemplateRefusal: { file: `${sharedGlobalSettings().file} · ${PERSONAL_CARD_TEMPLATE_KEY}`, errors: refusal } }
           : {}),
       };
     });
@@ -179,10 +194,16 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     void this.push();
     // SDD 479 phase 5 — editing the personal override must repaint the cards, or the person is
     // editing a template they cannot see take effect until something unrelated triggers a refresh.
-    // Scoped to this one key: every other setting has its own listener or does not affect this view.
-    const settingsWatch = vscode.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration(`tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`)) void this.push();
-    });
+    // t-aaad95 — the override moved from a VS Code settings key to the global Tachyon file, so this
+    // watches that FILE instead of a configuration event. `create` matters as much as `change`: a
+    // temp+rename write (and a first-ever edit) arrives as a create, not a change.
+    const settingsFile = sharedGlobalSettings().file;
+    const settingsWatch = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(vscode.Uri.file(path.dirname(settingsFile)), path.basename(settingsFile)),
+    );
+    settingsWatch.onDidChange(() => void this.push());
+    settingsWatch.onDidCreate(() => void this.push());
+    settingsWatch.onDidDelete(() => void this.push());
     view.onDidDispose(() => {
       settingsWatch.dispose();
       if (this.view === view) {
@@ -272,11 +293,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op === "openControl") return void vscode.commands.executeCommand("tachyon.openControl");
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
-      // SDD 479 phase 5 — the personal override's home is a settings KEY, not a file: open the
-      // settings editor already filtered to it, so "Open VS Code settings · tachyon.sidebar.cardTemplate"
-      // lands on the thing it names instead of on the top of a settings page.
+      // t-aaad95 — the personal override's home is now a FILE, and opening it is also the documented
+      // recovery path when Control itself cannot open. `tachyon.openGlobalSettings` creates the
+      // document if it does not exist yet, so this never lands on a missing file.
       if (m.op === "openPersonalCardTemplate") {
-        return void vscode.commands.executeCommand("workbench.action.openSettings", `tachyon.${PERSONAL_CARD_TEMPLATE_KEY}`);
+        return void vscode.commands.executeCommand("tachyon.openGlobalSettings");
       }
       if (m.op === "doctor") return void vscode.commands.executeCommand("tachyon.doctor", m.hash); // t-8354ae
       const ws = this.wsFor(m.hash);

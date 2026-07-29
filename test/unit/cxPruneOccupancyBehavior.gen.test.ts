@@ -96,7 +96,6 @@ describe("container-generated delegation behavior", () => {
       workspaceRoot: root,
       ledger,
       getConfig: () => undefined,
-      getMaxAgents: () => 99,
     });
     await expect(manager.worktreeOccupant(wt)).resolves.toMatchObject({ state: "live", agent: "subdir-live-agent", cwd: subdir });
   });

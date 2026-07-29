@@ -65,7 +65,7 @@ class Host {
   executeCommand(): Promise<unknown> { return Promise.resolve(undefined); }
   watch(): { dispose(): void } { return { dispose(): void {} }; }
   globalStoragePath(): string { return this.storageDir; }
-  getSetting<T>(_section: string, _key: string, dflt: T): T { return dflt; }
+  gitExtensionPath(): string | string[] | undefined { return undefined; }
   getState<T>(key: string): T | undefined { return this.state.get(key) as T | undefined; }
   setState(key: string, value: unknown): void { this.state.set(key, value); }
   getSecret(key: string): Promise<string | undefined> { return Promise.resolve(this.secrets.get(key)); }

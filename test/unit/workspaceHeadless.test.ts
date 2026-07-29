@@ -73,9 +73,9 @@ class FakeHost implements EngineHost {
     this.watches.push(watch);
     return { dispose() { watch.disposed = true; } };
   }
-  getSetting<T>(section: string, key: string, dflt: T): T {
-    const configured = this.settings[`${section}.${key}`];
-    return (configured === undefined ? dflt : configured) as T;
+  gitExtensionPath(): string | string[] | undefined {
+    const configured = this.settings["git.path"];
+    return typeof configured === "string" || Array.isArray(configured) ? configured as string | string[] : undefined;
   }
   globalStoragePath(): string {
     return this.storageDir;

@@ -55,6 +55,7 @@ const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[nu
 export function __resetVscodeMock(): void {
   __configValues = {};
   __configListeners.length = 0;
+  __fileWatchListeners.length = 0;
   __createdPanels.splice(0);
   __registeredWebviewPanelSerializers.splice(0);
   __createdTerminals.splice(0);
@@ -212,6 +213,13 @@ export function __setConfiguration(values: Record<string, unknown>): void {
 
 /** Listeners registered via workspace.onDidChangeConfiguration, so a test can fire a change. */
 const __configListeners: Array<(event: { affectsConfiguration(section: string): boolean }) => void> = [];
+const __fileWatchListeners: Array<() => void> = [];
+
+/** Fire every registered file watcher (the mock does not model paths; tests register exactly one). */
+export function __fireFileWatch(): void {
+  for (const listener of [...__fileWatchListeners]) listener();
+}
+
 export function __fireConfigurationChange(changed: string): void {
   for (const listener of [...__configListeners]) {
     listener({ affectsConfiguration: (section: string) => changed === section || changed.startsWith(`${section}.`) });
@@ -232,12 +240,17 @@ export const workspace = {
       },
     };
   },
-  createFileSystemWatcher: () => ({
-    onDidChange: () => {},
-    onDidCreate: () => {},
-    onDidDelete: () => {},
-    dispose: () => {},
-  }),
+  // t-aaad95 — settings that used to arrive as configuration events now arrive as FILE events (the
+  // global Tachyon settings file), so the mock has to be able to fire one.
+  createFileSystemWatcher: () => {
+    const watcher = {
+      onDidChange: (listener: () => void) => { __fileWatchListeners.push(listener); return { dispose: () => {} }; },
+      onDidCreate: (listener: () => void) => { __fileWatchListeners.push(listener); return { dispose: () => {} }; },
+      onDidDelete: (listener: () => void) => { __fileWatchListeners.push(listener); return { dispose: () => {} }; },
+      dispose: () => { __fileWatchListeners.length = 0; },
+    };
+    return watcher;
+  },
 };
 
 export const commands = {

@@ -27,20 +27,24 @@ export const DEFAULT_TASK_NOTIFICATION_SETTINGS: TaskNotificationSettings = {
 };
 
 export interface TaskNotificationSettingScopes {
-  vscodeUser?: TaskNotificationSettingsInput;
-  vscodeWorkspace?: TaskNotificationSettingsInput;
   yml?: TaskNotificationSettingsInput;
   defaults?: TaskNotificationSettings;
 }
 
-/** Resolve each key independently. Contributed VS Code defaults are intentionally not inputs here. */
+/**
+ * Resolve each key independently against the product default.
+ *
+ * t-aaad95 — `tachyon.yml` is the ONLY scope. This used to merge two VS Code scopes over it; those
+ * keys were removed with `contributes.configuration`, so what is left is the per-key default fill,
+ * which still has to happen somewhere because `settings.taskNotifications` is a partial mapping.
+ */
 export function resolveTaskNotificationSettings(scopes: TaskNotificationSettingScopes): TaskNotificationSettings {
   const dflt = scopes.defaults ?? DEFAULT_TASK_NOTIFICATION_SETTINGS;
   return {
-    enabled: scopes.vscodeUser?.enabled ?? scopes.vscodeWorkspace?.enabled ?? scopes.yml?.enabled ?? dflt.enabled,
-    events: [...(scopes.vscodeUser?.events ?? scopes.vscodeWorkspace?.events ?? scopes.yml?.events ?? dflt.events)],
-    suppressOwnChanges: scopes.vscodeUser?.suppressOwnChanges ?? scopes.vscodeWorkspace?.suppressOwnChanges ?? scopes.yml?.suppressOwnChanges ?? dflt.suppressOwnChanges,
-    dedupeWindowMs: scopes.vscodeUser?.dedupeWindowMs ?? scopes.vscodeWorkspace?.dedupeWindowMs ?? scopes.yml?.dedupeWindowMs ?? dflt.dedupeWindowMs,
+    enabled: scopes.yml?.enabled ?? dflt.enabled,
+    events: [...(scopes.yml?.events ?? dflt.events)],
+    suppressOwnChanges: scopes.yml?.suppressOwnChanges ?? dflt.suppressOwnChanges,
+    dedupeWindowMs: scopes.yml?.dedupeWindowMs ?? dflt.dedupeWindowMs,
   };
 }
 

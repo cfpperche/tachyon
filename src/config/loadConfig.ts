@@ -460,8 +460,12 @@ export interface TachyonConfig {
      *  window); new workspaces should set this OFF once every runtime they use has per-agent tokens. */
     legacyBridgeAuth?: boolean;
     tmux?: Record<string, string>;
-    /** spec 210 — global worktree location root + branch-name template ({agent} placeholder); spec 214 — global default verify-gate */
-    worktree?: { base?: string; branch?: string; verify?: string };
+    /**
+     * spec 210 — global worktree location root + branch-name template ({agent} placeholder);
+     * spec 214 — global default verify-gate; t-aaad95 — `revealInWorkspace` (default true), migrated
+     * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
+     */
+    worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean };
     /** spec 362/385 — project-owned commands and named-behavior adapter for verify_task. */
     verify?: {
       full?: string;
@@ -503,7 +507,7 @@ export interface TachyonConfig {
       prunePrincipals?: string[];
       integratePrincipals?: string[];
     };
-    /** Shared defaults for human-facing task mutation toasts; explicit VS Code settings override these. */
+    /** t-aaad95 — the single authority for human-facing task mutation toasts (the four VS Code keys are gone). */
     taskNotifications?: TaskNotificationSettingsInput;
     /**
      * SDD 414/422 — Companion shells (browser tab tools + mobile via Tailscale).
@@ -1497,7 +1501,7 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
-          const out: { base?: string; branch?: string; verify?: string } = {};
+          const out: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean } = {};
           if (wt.base !== undefined) {
             if (typeof wt.base !== "string" || wt.base.trim().length === 0) errors.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
@@ -1518,8 +1522,15 @@ export function parseConfig(yamlText: string): ParseResult {
               out.verify = wt.verify.trim();
             }
           }
+          // t-aaad95 — migrated from the `tachyon.worktrees.revealInWorkspace` VS Code key. Per-folder
+          // here, which is strictly better than the window-scoped key it replaces: in a multi-root
+          // window two projects can legitimately disagree about revealing their worktrees.
+          if (wt.revealInWorkspace !== undefined) {
+            if (typeof wt.revealInWorkspace !== "boolean") errors.push("settings.worktree.revealInWorkspace: must be a boolean");
+            else out.revealInWorkspace = wt.revealInWorkspace;
+          }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch", "verify"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "verify", "revealInWorkspace"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }

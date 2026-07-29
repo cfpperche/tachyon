@@ -8,8 +8,8 @@ import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type Pane
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "./inspector/model.js";
-import { CONFIG_FILENAMES, type ScheduleDef } from "./config/loadConfig.js";
-import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine } from "./config/YamlConfigEditor.js";
+import { CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
+import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
@@ -87,6 +87,16 @@ import type { WorktreeRecord, WorktreeStatus } from "./worktree/WorktreeManager.
 import { previewBody } from "./prompts/injectFlow.js";
 import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
 import { resolveGitBinary } from "./worktree/gitBinary.js";
+import { sharedGlobalSettings } from "./config/globalSettings.js";
+import {
+  SETTINGS_IMPORT_MARKER_FILENAME,
+  planGlobalImport,
+  planYmlImport,
+  recordSettingsImport,
+  settingsImportAlreadyRan,
+  settingsImportMarkerPath,
+} from "./config/settingsImport.js";
+import { readLegacyVsCodeSettings } from "./config/legacyVsCodeSettings.js";
 import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
@@ -435,7 +445,12 @@ function currentWorktreesBase(): string {
 }
 
 async function applyWorktreeFolderReveal(): Promise<void> {
-  const reveal = vscode.workspace.getConfiguration("tachyon").get<boolean>("worktrees.revealInWorkspace", true);
+  // t-aaad95 — `settings.worktree.revealInWorkspace` in each project's tachyon.yml replaced the
+  // window-scoped `tachyon.worktrees.revealInWorkspace` key. The reveal itself is one window-level
+  // operation over every folder's worktrees, so one project opting out must not silently opt the
+  // others out: reveal proceeds unless EVERY configured workspace said no. Default is on, so a
+  // workspace that says nothing counts as yes.
+  const reveal = workspaces().every((ws) => ws.config?.settings.worktree?.revealInWorkspace !== false);
   if (!reveal) return;
   // A single-folder window has no .code-workspace file: the FIRST updateWorkspaceFolders call
   // there would force the single→multi-root reload this feature is meant to avoid — skip it.
@@ -902,6 +917,71 @@ async function connectRuntime(ws: WorkspaceShellHandle): Promise<void> {
   }
 }
 
+/** The global half of the import: machine-wide, so it runs once per machine, not once per folder. */
+function importLegacyGlobalSettings(): void {
+  const store = sharedGlobalSettings();
+  const markerPath = path.join(path.dirname(store.file), SETTINGS_IMPORT_MARKER_FILENAME);
+  if (settingsImportAlreadyRan(markerPath)) return;
+  try {
+    const patch = planGlobalImport(readLegacyVsCodeSettings(), store.current());
+    if (Object.keys(patch).length > 0) {
+      store.update(patch);
+      notify(vscode.l10n.t(
+        "Tachyon moved {0} of your settings out of VS Code and into {1}. Edit them there or in Control → Settings.",
+        String(Object.keys(patch).length),
+        store.file,
+      ));
+    }
+    recordSettingsImport(markerPath, Object.keys(patch));
+  } catch (error) {
+    // Never block activation on a migration: the defaults are usable and the person can re-run this
+    // by deleting the marker. Failing loudly here would turn a cosmetic import into a broken start.
+    console.debug(`[tachyon] global settings import skipped: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * The per-workspace half: values that describe how THIS project runs go into its `tachyon.yml`.
+ *
+ * `tachyon.yml` is tracked and shared with the team, so this is never silent — it names the file and
+ * the keys it wrote. Importing a personal VS Code value into a shared file is a real trade, and the
+ * person deserves to see it before it lands in their next commit.
+ */
+function importLegacyWorkspaceSettings(workspaceRoot: string): void {
+  const markerPath = settingsImportMarkerPath(workspaceRoot);
+  if (settingsImportAlreadyRan(markerPath)) return;
+  try {
+    const file = ["tachyon.yml", "tachyon.yaml"]
+      .map((name) => path.join(workspaceRoot, name))
+      .find((candidate) => fs.existsSync(candidate));
+    if (!file) return; // no config yet: nothing to import into, and no marker so a later init still gets it
+    let text = fs.readFileSync(file, "utf8");
+    const parsed = loadConfigFile(file);
+    const already = (keyPath: string[]): boolean => {
+      let node: unknown = parsed.config?.settings;
+      for (const key of keyPath) {
+        if (node === null || typeof node !== "object") return false;
+        node = (node as Record<string, unknown>)[key];
+      }
+      return node !== undefined;
+    };
+    const writes = planYmlImport(readLegacyVsCodeSettings(vscode.Uri.file(workspaceRoot)), already);
+    for (const write of writes) text = setSettingsValue(text, write.keyPath, write.value).text;
+    if (writes.length > 0) {
+      fs.writeFileSync(file, text, "utf8");
+      notify(vscode.l10n.t(
+        "Tachyon wrote {0} setting(s) you had in VS Code into {1} ({2}) — review it before committing.",
+        String(writes.length),
+        path.basename(file),
+        writes.map((w) => `settings.${w.keyPath.join(".")}`).join(", "),
+      ), "warn");
+    }
+    recordSettingsImport(markerPath, writes.map((w) => `settings.${w.keyPath.join(".")}`));
+  } catch (error) {
+    console.debug(`[tachyon] workspace settings import skipped for ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function daemonSettingsSnapshot(workspaceRoot: string): DaemonSettingsSnapshot {
   const scopes = {
     global: {} as Record<string, unknown>,
@@ -954,6 +1034,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     notify(health.message, "error");
     return;
   }
+
+  // t-aaad95 — before any reader runs, carry across whatever the person had under the retired
+  // `tachyon.*` VS Code keys. Once per machine and once per workspace, guarded by markers.
+  importLegacyGlobalSettings();
+  for (const folder of folders) importLegacyWorkspaceSettings(folder.uri.fsPath);
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
@@ -1617,7 +1702,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })(),
     plugins: pluginsPanels,
     openSettings: () => {
-      void vscode.commands.executeCommand("tachyon.openSettings");
+      void vscode.commands.executeCommand("tachyon.openGlobalSettings");
     },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
@@ -1842,6 +1927,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       notify(vscode.l10n.t("Cannot open agent pane for '{0}' — agent is not in the live roster", agent), "error");
       return;
     }
+    // t-aaad95 — `agentPane.enabled` finally has a reader; the contributed key never had one, so the
+    // switch a person could flip did nothing. It FAILS TOWARD ENABLED (globalSettings.ts): a broken
+    // settings document must never be able to hide a surface, because with VS Code settings gone the
+    // repair path runs through Tachyon's own UI.
+    if (!sharedGlobalSettings().current().agentPaneEnabled) {
+      notify(vscode.l10n.t("The Tachyon agent pane is turned off in Tachyon settings — the integrated terminal is still available from the sidebar."), "info");
+      return;
+    }
     await agentPanes.open({
       agent,
       session: projected.session,
@@ -1984,7 +2077,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       throw error;
     });
     const gitExec = createGitExec(() => resolveGitBinary({
-      configuredPath: vscode.workspace.getConfiguration("tachyon", vscode.Uri.file(client.workspaceRoot)).get<string>("gitPath"),
+      configuredPath: sharedGlobalSettings().current().gitPath,
       gitExtensionPath: vscode.workspace.getConfiguration("git", vscode.Uri.file(client.workspaceRoot)).get<string | string[]>("path"),
     }));
     const ws = new WorkspaceShellHandle(client, { extensionUri: context.extensionUri, gitExec });
@@ -2212,7 +2305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const cwd = q.get("cwd");
         const ref = q.get("ref");
         const git = createGitExec(() => resolveGitBinary({
-          configuredPath: vscode.workspace.getConfiguration("tachyon").get<string>("gitPath"),
+          configuredPath: sharedGlobalSettings().current().gitPath,
           gitExtensionPath: vscode.workspace.getConfiguration("git").get<string | string[]>("path"),
         }));
         return cwd && ref ? worktreeShowFile(cwd, ref, uri.path.replace(/^\//, ""), git) : "";
@@ -2404,10 +2497,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCockpitApprovals();
       }
     }),
-    // ---- onboarding (F24) ----
-    vscode.commands.registerCommand("tachyon.openSettings", () =>
-      vscode.commands.executeCommand("workbench.action.openSettings", "@ext:cfpperche.tachyon"),
-    ),
+    // t-aaad95 — `tachyon.openSettings` (which opened VS Code's settings page filtered to this
+    // extension) was removed with the last contributed key: it would now open an empty page.
+    // `tachyon.openGlobalSettings` above opens the file that actually holds these settings.
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => openCockpit(makeCockpitDeps(), { section: "tmux" })),
@@ -2517,6 +2609,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshAll();
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), "error");
+      }
+    }),
+    /**
+     * t-aaad95 — the documented text-file recovery path for the global Tachyon settings.
+     *
+     * It CREATES the document when absent rather than failing on a missing file: this is the command
+     * a person reaches for when something is misconfigured, and "the file you were told to edit does
+     * not exist" is the least useful thing it could say at that moment.
+     */
+    vscode.commands.registerCommand("tachyon.openGlobalSettings", async () => {
+      const store = sharedGlobalSettings();
+      try {
+        if (!fs.existsSync(store.file)) store.update({});
+        const doc = await vscode.workspace.openTextDocument(store.file);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        const refusal = store.refusal();
+        if (refusal) notify(vscode.l10n.t("Tachyon settings were refused and the last known good is in use: {0}", refusal.errors.join("; ")), "warn");
+      } catch (err) {
+        notify(vscode.l10n.t("Could not open Tachyon settings: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openConfig", async (hash?: string) => {

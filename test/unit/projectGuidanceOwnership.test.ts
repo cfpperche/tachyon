@@ -61,7 +61,6 @@ async function spawnedCommand(root: string, yaml: string, name = "consumer"): Pr
     wsHash: workspaceHash(root),
     workspaceRoot: root,
     getConfig: () => parsed.config,
-    getMaxAgents: () => 2,
   });
   await manager.spawn(name);
   if (!command) throw new Error("spawn did not produce a tmux command");

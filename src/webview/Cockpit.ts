@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { sharedGlobalSettings } from "../config/globalSettings.js";
+import type { CockpitGlobalSettingsState } from "../cockpit/model.js";
 import * as fs from "node:fs";
 import { panelIcon } from "./shared/panelIcon.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -582,7 +584,7 @@ function strings(): CockpitStrings {
     // SDD 479 phase 5 — ratified fork 1 made this sentence part of the feature: without it, a
     // personal override quietly contradicting the project reads as a broken project template.
     cardTemplateInEffect: t("In effect right now:"),
-    cardTemplatePersonalActive: t("your personal override in VS Code settings — it wins over every project template below"),
+    cardTemplatePersonalActive: t("your personal override in your Tachyon settings file — it wins over every project template below"),
     cardTemplatePersonalRefused: t("your personal override was REFUSED and ignored; the cards fall back to each project's template"),
     cardTemplatePersonalNone: t("no personal override — each project's own template decides"),
     cardTemplateProjectNone: t("uses Tachyon's default card"),
@@ -590,9 +592,9 @@ function strings(): CockpitStrings {
     cardTemplateProjectRefused: t("its tachyon.yml template was refused; showing the default card"),
     cardTemplateHomeLabel: t("Write this layout to:"),
     cardTemplateHomeProject: t("This project (tachyon.yml)"),
-    cardTemplateHomePersonal: t("Just me (VS Code settings)"),
+    cardTemplateHomePersonal: t("Just me (Tachyon settings file)"),
     cardTemplateCopyJson: t("Copy JSON"),
-    cardTemplateJsonHint: t("Paste this into your VS Code settings.json. It applies to every project you open, and wins over their templates; regions you did not change keep whatever each project chose."),
+    cardTemplateJsonHint: t("Paste this under \"sidebar\": { \"cardTemplate\": ... } in your Tachyon settings file. It applies to every project you open, and wins over their templates; regions you did not change keep whatever each project chose."),
     cardTemplateOpenSettings: t("Open settings"),
     companionTitle: t("Companion"),
     companionHint: t("Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*)."),
@@ -618,6 +620,26 @@ function strings(): CockpitStrings {
     idleNotifyOffLabel: t("Turn notifications off"),
     idleNotifySave: t("Save"),
     idleNotifyReset: t("Back to default"),
+    // t-aaad95 — Control -> Settings edits BOTH scopes now that VS Code contributes nothing.
+    globalSettingsTitle: t("Your Tachyon settings"),
+    globalSettingsHint: t("Per-person, per-machine. Kept in a plain file you can also edit by hand — that file is the recovery path when Control itself will not open."),
+    globalSettingsFileLabel: t("File:"),
+    globalSettingsOpenFile: t("Open the file"),
+    globalSettingsRefused: t("This file was refused and the last good version is in use — fix it and it reloads by itself:"),
+    globalSettingsCodeTheme: t("Activity code theme"),
+    globalSettingsCodeThemeHelp: t("Syntax-highlight palette for code blocks in Activity."),
+    globalSettingsCodeThemeAuto: t("Follow the editor"),
+    globalSettingsCodeThemeDark: t("Dark"),
+    globalSettingsCodeThemeLight: t("Light"),
+    globalSettingsAgentPane: t("Agent pane"),
+    globalSettingsAgentPaneHelp: t("The first-party agent pane. The integrated terminal stays available either way."),
+    globalSettingsGitPath: t("Path to git"),
+    globalSettingsGitPathHelp: t("Leave empty to use the git extension's git.path, then common install locations, then git on PATH."),
+    globalSettingsSave: t("Save"),
+    globalSettingsLive: t("takes effect immediately"),
+    globalSettingsNeedsReopen: t("applies the next time Control is opened"),
+    workspaceSettingsTitle: t("This project's settings"),
+    workspaceSettingsHint: t("Agent limit, memory cap, task notifications and worktree reveal live in tachyon.yml, so they travel with the repo and the whole team gets them."),
     companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
@@ -1199,13 +1221,28 @@ export async function openCockpit(
    * `SidebarPrototype.cardTemplateFor`. What differs is only the question being asked: the sidebar
    * needs the resolved template, this needs whether one exists and whether it was honored.
    */
+  /** t-aaad95 — the global file's state as Control shows it, including a refusal it must not hide. */
+  const globalSettingsState = (): CockpitGlobalSettingsState => {
+    const store = sharedGlobalSettings();
+    const current = store.current();
+    const refusal = store.refusal();
+    return {
+      file: store.file,
+      activityCodeTheme: current.activityCodeTheme,
+      agentPaneEnabled: current.agentPaneEnabled,
+      gitPath: current.gitPath,
+      hasCardTemplate: current.sidebarCardTemplate !== undefined,
+      ...(refusal ? { refusal: refusal.errors } : {}),
+    };
+  };
+
   const personalCardTemplateState = (): { state: "none" | "active" | "refused"; errors?: string[] } => {
-    const written = vscode.workspace.getConfiguration("tachyon").get<unknown>("sidebar.cardTemplate");
+    const written = sharedGlobalSettings().current().sidebarCardTemplate;
     if (written === undefined || written === null) return { state: "none" };
     if (typeof written === "object" && !Array.isArray(written) && Object.keys(written as object).length === 0) {
       return { state: "none" };
     }
-    const parsed = parseCardTemplate(written, "tachyon.sidebar.cardTemplate");
+    const parsed = parseCardTemplate(written, "sidebar.cardTemplate");
     return parsed.config ? { state: "active" } : { state: "refused", errors: parsed.errors };
   };
 
@@ -1227,6 +1264,7 @@ export async function openCockpit(
         section,
         wsHash: controlWsHash,
         personalCardTemplate: personalCardTemplateState(),
+        globalSettings: globalSettingsState(),
       });
       // SDD 480 Phase 4 — built only for the section that renders it. Folding the ledger on every
       // model tick would spend the projection on ~13 sections that never look at it.
@@ -2478,10 +2516,25 @@ export async function openCockpit(
         case "openSettings":
           deps.openSettings();
           return;
-        // SDD 479 phase 5 — the personal override's home. Filtered to the exact key so the button
-        // lands on the setting it names, not on the top of Tachyon's settings page.
+        // t-aaad95 — Control writes the global Tachyon file directly. It is a shell-owned, per-person
+        // file: routing it through the engine would put a machine-local preference on the workspace
+        // wire for no gain. `update` re-validates through the same parser a hand edit goes through,
+        // so Control cannot write a document the loader would then refuse.
+        case "setGlobalSettings":
+          try {
+            sharedGlobalSettings().update(c.patch);
+            await sendModel();
+          } catch (err) {
+            live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
+          }
+          return;
+        case "openGlobalSettingsFile":
+          await vscode.commands.executeCommand("tachyon.openGlobalSettings");
+          return;
+        // t-aaad95 — the personal override's home is the global Tachyon file now, and opening it is
+        // also the documented recovery path when Control itself will not open.
         case "openPersonalCardTemplate":
-          await vscode.commands.executeCommand("workbench.action.openSettings", "tachyon.sidebar.cardTemplate");
+          await vscode.commands.executeCommand("tachyon.openGlobalSettings");
           return;
         case "openDoctor":
           deps.openDoctor();
@@ -2829,11 +2882,10 @@ export async function openCockpit(
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
     // MarkdownView but never needed these either; unrelated pre-existing gap, out of scope here).
     // Static bundle URIs are harmless to include even on a route that never triggers them.
-    // ?? "auto" (not just the getConfiguration default param) — test/mocks/vscode.ts's naive
-    // getConfiguration().get() always returns undefined, ignoring the default entirely; without this
-    // fallback, __codeThemeForced below serializes to JSON `undefined` (not the string "undefined"),
-    // and jsonInline's JSON.stringify(...).replace(...) throws on every openCockpit() call in tests.
-    const codeTheme = vscode.workspace.getConfiguration("tachyon").get<string>("activity.codeTheme", "auto") ?? "auto";
+    // t-aaad95 — the global Tachyon file, not VS Code settings. It always resolves a value (the
+    // parser fills every field, and a refused document falls back to the last known good), so the
+    // defensive `?? "auto"` the old getConfiguration read needed is gone with it.
+    const codeTheme = sharedGlobalSettings().current().activityCodeTheme;
     const activityThemeClass = codeTheme === "dark" ? "tac-theme-dark" : codeTheme === "light" ? "tac-theme-light" : "";
     live.webview.html = renderWebviewShell({
       cspSource: live.webview.cspSource,

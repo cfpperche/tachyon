@@ -25,16 +25,19 @@ export interface DaemonSettingsSnapshot {
   workspaceFolder?: Record<string, unknown>;
 }
 
-export const DAEMON_SETTING_KEYS = [
-  "git.path",
-  "tachyon.gitPath",
-  "tachyon.maxAgents",
-  "tachyon.agentMemoryMax",
-  "tachyon.taskNotifications.enabled",
-  "tachyon.taskNotifications.events",
-  "tachyon.taskNotifications.suppressOwnChanges",
-  "tachyon.taskNotifications.dedupeWindowMs",
-] as const;
+/**
+ * t-aaad95 — the settings the shell may hand the persistent engine, now exactly ONE.
+ *
+ * Every `tachyon.*` key was removed with `contributes.configuration`; the engine reads Tachyon's own
+ * settings from `tachyon.yml` and the global Tachyon file directly. `git.path` survives because it
+ * belongs to the built-in Git extension, and only the shell can see it.
+ *
+ * The allowlist stays even at one entry, and that is deliberate: it is the fail-closed guard that
+ * makes smuggling a settings key back through this door an error rather than a quiet feature. The
+ * envelope shape is unchanged on purpose too — an engine ROLLBACK launches an older daemon binary
+ * with options this shell wrote, and a new key there would make that older validator refuse.
+ */
+export const DAEMON_SETTING_KEYS = ["git.path"] as const;
 const DAEMON_SETTING_KEY_SET = new Set<string>(DAEMON_SETTING_KEYS);
 
 export type DaemonUiRequest = EngineUiRequestV1;
@@ -265,24 +268,16 @@ export class DaemonEngineHost implements EngineHost {
     this.settings = cloneSettings(settings);
   }
 
-  getSetting<T>(section: string, key: string, dflt: T): T {
-    const setting = `${section}.${key}`;
-    assertSettingAllowed(setting);
+  /** Folder > workspace > global, the same precedence the shell's own reader applies. */
+  gitExtensionPath(): string | string[] | undefined {
+    const setting = "git.path";
     const folder = this.settings.workspaceFolder?.[setting];
     const workspace = this.settings.workspace?.[setting];
     const global = this.settings.global?.[setting];
     const value = folder !== undefined ? folder : workspace !== undefined ? workspace : global;
-    return value === undefined ? dflt : cloneJson(value) as T;
-  }
-
-  getSettingInspect<T>(section: string, key: string): { globalValue?: T; workspaceValue?: T; workspaceFolderValue?: T } {
-    const setting = `${section}.${key}`;
-    assertSettingAllowed(setting);
-    return {
-      globalValue: cloneOptional<T>(this.settings.global?.[setting]),
-      workspaceValue: cloneOptional<T>(this.settings.workspace?.[setting]),
-      workspaceFolderValue: cloneOptional<T>(this.settings.workspaceFolder?.[setting]),
-    };
+    if (typeof value === "string") return value;
+    if (Array.isArray(value) && value.every((entry) => typeof entry === "string")) return value as string[];
+    return undefined;
   }
 
   globalStoragePath(): string { return this.store.root; }
@@ -389,10 +384,6 @@ function cloneRecord(value: Record<string, unknown> | undefined): Record<string,
   if (value === undefined) return undefined;
   for (const key of Object.keys(value)) assertSettingAllowed(key);
   return cloneJson(value) as Record<string, unknown>;
-}
-
-function cloneOptional<T>(value: unknown): T | undefined {
-  return value === undefined ? undefined : cloneJson(value) as T;
 }
 
 function cloneJson(value: unknown): unknown {

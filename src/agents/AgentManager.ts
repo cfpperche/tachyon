@@ -111,6 +111,13 @@ export class AgentNotRunningError extends Error {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/**
+ * t-aaad95 — the fork-bomb guardrail when `tachyon.yml` says nothing. This used to be the default of
+ * a VS Code key reached through a host port that `tachyon.yml` already outranked at every one of the
+ * three call sites; the measured precedence was yml > VS Code > 8. Removing the port removed the
+ * duplication without moving the number.
+ */
+const DEFAULT_MAX_AGENTS = 8;
 const LAUNCH_READINESS_RUNTIMES = new Set<ResumeRuntime>(["codex", "claude", "grok"]);
 
 export interface CanonicalLiveRenameSnapshot {
@@ -475,12 +482,6 @@ export interface AgentManagerOptions {
   getConfig: () => TachyonConfig | undefined;
   /** t-8354ae — optional pre-spawn gate (e.g. refuse LKG-only names while config is invalid). */
   assertSpawnAllowed?: (name: string) => void;
-  getMaxAgents: () => number;
-  /**
-   * t-0d0152 — opt-in MemoryMax for agent spawn trees (e.g. "2G").
-   * Empty/undefined = no systemd scope wrap.
-   */
-  getAgentMemoryMax?: () => string | undefined;
   /**
    * t-2d2ce7 — a Stop All that hit its sweep bound with sessions still alive.
    *
@@ -2281,7 +2282,7 @@ export class AgentManager {
     const primerCtx = { delegator, gate: opts?.gate, verify: verifySettingsSnapshot };
 
     const liveCount = (await this.runningAgents()).length;
-    const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
+    const max = this.opts.getConfig()?.settings.maxAgents ?? DEFAULT_MAX_AGENTS;
     if (liveCount >= max) throw new MaxAgentsError(max);
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
@@ -3123,9 +3124,9 @@ export class AgentManager {
    * Fail-open (returns cmd unchanged) when off, non-Linux, or wrap fails.
    */
   private applyAgentMemoryScope(agentName: string, cmd: string): string {
-    const fromYml = parseAgentMemoryMax(this.opts.getConfig()?.settings.agentMemoryMax);
-    const fromHost = parseAgentMemoryMax(this.opts.getAgentMemoryMax?.());
-    const memoryMax = fromYml ?? fromHost;
+    // t-aaad95 — `tachyon.yml` is the single authority; the VS Code `tachyon.agentMemoryMax` key and
+    // the host port that carried it are gone.
+    const memoryMax = parseAgentMemoryMax(this.opts.getConfig()?.settings.agentMemoryMax);
     if (!memoryMax) return cmd;
     const support = agentMemoryScopeSupport();
     if (!support.ok) {
@@ -4425,7 +4426,7 @@ export class AgentManager {
     // don't reject resume of a running agent when the fleet is already at max (pre-t-4d2630
     // killed first, which dropped the seat before the check).
     const othersLive = (await this.runningAgents()).filter((n) => n !== name).length;
-    const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
+    const max = this.opts.getConfig()?.settings.maxAgents ?? DEFAULT_MAX_AGENTS;
     if (othersLive >= max) throw new MaxAgentsError(max);
 
     // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart include
@@ -4683,7 +4684,7 @@ export class AgentManager {
     await this.assertLaunchPreflight(plan.forkName, src.baseCmd, src.env, true, src.sourceCwd);
 
     const liveCount = (await this.runningAgents()).length;
-    const max = this.opts.getConfig()?.settings.maxAgents ?? this.opts.getMaxAgents();
+    const max = this.opts.getConfig()?.settings.maxAgents ?? DEFAULT_MAX_AGENTS;
     if (liveCount >= max) throw new MaxAgentsError(max); // gate BEFORE any side effect (no orphan worktree)
     // Re-derive a fresh unique name so two concurrent/stale confirmations can't both claim the same one.
     const forkName = this.uniqueForkName(source, await this.allKnownNames());

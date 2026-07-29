@@ -18,11 +18,12 @@ const task: Task = {
 };
 
 describe("task notification policy (t-bae005)", () => {
-  it("resolves each setting user > workspace > yml > hardcoded", () => {
+  // t-aaad95 — this used to pin a three-way precedence (VS Code user > VS Code workspace > yml).
+  // The two VS Code scopes were removed with `contributes.configuration`, so what remains to pin is
+  // that yml supplies each key independently and the product default fills the rest.
+  it("resolves each setting from yml, key by key, over the hardcoded defaults", () => {
     expect(resolveTaskNotificationSettings({
-      vscodeUser: { enabled: false },
-      vscodeWorkspace: { enabled: true, dedupeWindowMs: 10 },
-      yml: { enabled: true, dedupeWindowMs: 20, suppressOwnChanges: false },
+      yml: { enabled: false, dedupeWindowMs: 10, suppressOwnChanges: false },
     })).toEqual({
       enabled: false,
       events: DEFAULT_TASK_NOTIFICATION_SETTINGS.events,
@@ -31,7 +32,7 @@ describe("task notification policy (t-bae005)", () => {
     });
   });
 
-  it("lets yml win when VS Code has no explicit value (contributed defaults are not inputs)", () => {
+  it("lets yml win over the hardcoded defaults", () => {
     expect(resolveTaskNotificationSettings({ yml: { enabled: false, events: ["awaitingHuman"] } })).toMatchObject({
       enabled: false,
       events: ["awaitingHuman"],

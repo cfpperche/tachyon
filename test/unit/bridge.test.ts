@@ -97,7 +97,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     wsHash: HASH,
     workspaceRoot: WS,
     getConfig: () => config,
-    getMaxAgents: () => 8,
     launchPreflight: {
       check: async (command) => command.model === "missing-model"
         ? { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: command.model, suggestions: ["gpt-5.6-sol"] }

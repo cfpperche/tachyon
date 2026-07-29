@@ -247,6 +247,26 @@ export interface CockpitStrings {
   idleNotifyOffLabel: string;
   idleNotifySave: string;
   idleNotifyReset: string;
+  // t-aaad95 — Control -> Settings owns both scopes now that VS Code contributes none.
+  globalSettingsTitle: string;
+  globalSettingsHint: string;
+  globalSettingsFileLabel: string;
+  globalSettingsOpenFile: string;
+  globalSettingsRefused: string;
+  globalSettingsCodeTheme: string;
+  globalSettingsCodeThemeHelp: string;
+  globalSettingsCodeThemeAuto: string;
+  globalSettingsCodeThemeDark: string;
+  globalSettingsCodeThemeLight: string;
+  globalSettingsAgentPane: string;
+  globalSettingsAgentPaneHelp: string;
+  globalSettingsGitPath: string;
+  globalSettingsGitPathHelp: string;
+  globalSettingsSave: string;
+  globalSettingsLive: string;
+  globalSettingsNeedsReopen: string;
+  workspaceSettingsTitle: string;
+  workspaceSettingsHint: string;
   companionAllowedHostsPlaceholder: string;
   companionAllowedHostsSave: string;
   companionPaired: string;
@@ -349,6 +369,8 @@ export type CockpitAction =
   // t-585d5c — `minutes` absent means "reset to the product default", which REMOVES the key rather
   // than writing the default number; `"never"` is the explicit off.
   | { type: "setIdleAfterMinutes"; wsHash: string; minutes?: number | "never" }
+  | { type: "setGlobalSettings"; patch: { activityCodeTheme?: "auto" | "dark" | "light"; agentPaneEnabled?: boolean; gitPath?: string } }
+  | { type: "openGlobalSettingsFile" }
   /** SDD 420 — patch settings.companion.allowedHosts for one workspace. */
   | { type: "setCompanionAllowedHosts"; wsHash: string; hosts: string[] }
   /** SDD 414/422 — host unpair; deviceId clears one row, omit clears all. */
@@ -501,6 +523,12 @@ export const openConfigFileAction = (wsHash?: string): CockpitAction => ({
 });
 export const engineLogClearAction = (wsHash: string): CockpitAction => ({ type: "engineLogClear", wsHash });
 export const engineLogJournalAction = (wsHash: string): CockpitAction => ({ type: "engineLogJournal", wsHash });
+export const setGlobalSettingsAction = (
+  patch: { activityCodeTheme?: "auto" | "dark" | "light"; agentPaneEnabled?: boolean; gitPath?: string },
+): CockpitAction => ({ type: "setGlobalSettings", patch });
+
+export const openGlobalSettingsFileAction = (): CockpitAction => ({ type: "openGlobalSettingsFile" });
+
 export const setIdleAfterMinutesAction = (wsHash: string, minutes?: number | "never"): CockpitAction => ({
   type: "setIdleAfterMinutes",
   wsHash,

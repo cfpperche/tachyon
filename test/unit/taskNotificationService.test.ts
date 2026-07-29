@@ -14,30 +14,29 @@ const task: Task = {
 };
 
 describe("TaskNotificationService (t-bae005)", () => {
-  function setup(values: Record<string, { globalValue?: unknown; workspaceValue?: unknown }> = {}, yml?: TachyonConfig["settings"]["taskNotifications"]) {
+  function setup(yml?: TachyonConfig["settings"]["taskNotifications"]) {
     const notices: Array<{ message: string; level: string; actions: Array<{ label: string; run: () => void }> }> = [];
     const openTask = vi.fn();
     const host = {
       t: (message: string) => message,
       notify: (message: string, level: string, actions: Array<{ label: string; run: () => void }>) => notices.push({ message, level, actions }),
       openTask,
-      getSettingInspect: (_section: string, key: string) => values[key] ?? {},
     } as unknown as EngineHost;
     const config = { settings: { taskNotifications: yml } } as TachyonConfig;
     return { service: new TaskNotificationService("/ws", "wshash01", host, () => config), notices, openTask };
   }
 
-  it("does not let contributed defaults mask a disabled yml value", () => {
-    const { service, notices } = setup({}, { enabled: false });
+  it("honors a disabled yml value", () => {
+    const { service, notices } = setup({ enabled: false });
     service.notify({ type: "created", task, actor: "agent" });
     expect(notices).toEqual([]);
   });
 
-  it("uses explicit user values ahead of workspace/yml and offers a best-effort Open action", () => {
-    const { service, notices, openTask } = setup({
-      "taskNotifications.enabled": { globalValue: true, workspaceValue: false },
-      "taskNotifications.dedupeWindowMs": { globalValue: 0 },
-    }, { enabled: false });
+  // t-aaad95 — this used to prove VS Code user scope outranked workspace scope and yml. Those scopes
+  // are gone; `tachyon.yml` is the only authority, so the same two behaviors (enabled, and a dedupe
+  // window of 0 letting an identical event through twice) are now stated once, from the yml.
+  it("emits per yml settings and offers a best-effort Open action", () => {
+    const { service, notices, openTask } = setup({ enabled: true, dedupeWindowMs: 0 });
     service.notify({ type: "created", task, actor: "agent" });
     service.notify({ type: "created", task, actor: "agent" });
     expect(notices).toHaveLength(2);

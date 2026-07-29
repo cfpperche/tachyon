@@ -49,7 +49,6 @@ const manager = new AgentManager({
   wsHash: workspaceHash(workspaceRoot),
   workspaceRoot,
   getConfig: () => config,
-  getMaxAgents: () => 3,
 });
 
 const token = process.env.TACHYON_E2E_TOKEN;

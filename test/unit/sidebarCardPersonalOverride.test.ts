@@ -176,7 +176,8 @@ describe("the V1 boundary and the default hold under the personal layer too", ()
 
 describe("what the UI says", () => {
   it("names each home in words a person can act on", () => {
-    expect(describeCardTemplateSource("personal")).toContain("VS Code settings");
+    // t-aaad95 — the personal home moved from VS Code settings to the global Tachyon settings file.
+    expect(describeCardTemplateSource("personal")).toContain("Tachyon settings file");
     expect(describeCardTemplateSource("personal")).toContain("wins");
     expect(describeCardTemplateSource("project")).toContain("tachyon.yml");
     expect(describeCardTemplateSource("default")).toContain("default");

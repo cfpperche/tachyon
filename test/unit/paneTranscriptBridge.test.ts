@@ -55,7 +55,7 @@ describe("Bridge durable pane-transcript read path (t-6a6a00)", () => {
   const { sessions, exec } = fakeTmuxExec();
   const tmux = new TmuxService(exec);
   const config = parseConfig("agents:\n  worker:\n    cmd: sh\n").config;
-  const manager = new AgentManager({ tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => config, getMaxAgents: () => 8 });
+  const manager = new AgentManager({ tmux, wsHash: hash, workspaceRoot: ws, getConfig: () => config });
   const pins = new PinStore(ws);
   const tasks = new TaskStore(ws);
   const validations = new ValidationStore(ws);

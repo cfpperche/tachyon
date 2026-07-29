@@ -28,9 +28,7 @@ class FakeHost implements EngineHost {
   watch(_root: string, _glob: string, _events: WatchEvents, _onEvent: () => void): { dispose(): void } {
     return { dispose() {} };
   }
-  getSetting<T>(_s: string, _k: string, dflt: T): T {
-    return dflt;
-  }
+  gitExtensionPath(): string | string[] | undefined { return undefined; }
   globalStoragePath(): string {
     return this.storageDir;
   }

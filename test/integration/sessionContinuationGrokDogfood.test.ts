@@ -70,9 +70,7 @@ class DogfoodHost {
   watch(): { dispose(): void } {
     return { dispose() {} };
   }
-  getSetting<T>(_s: string, _k: string, d: T): T {
-    return d;
-  }
+  gitExtensionPath(): string | string[] | undefined { return undefined; }
   globalStoragePath(): string {
     return this.storageDir;
   }

@@ -61,7 +61,6 @@ describe("container-generated delegation behavior", () => {
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
         resolveSpawnCwd: async () => ({
@@ -117,7 +116,6 @@ describe("container-generated delegation behavior", () => {
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
         // No resolveSpawnCwd → no worktree; the child inherits the parent's (shared) cwd, same as a
@@ -176,7 +174,6 @@ describe("container-generated delegation behavior", () => {
         wsHash: workspaceHash(ws),
         workspaceRoot: ws,
         getConfig: () => config,
-        getMaxAgents: () => 8,
         ledger,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),

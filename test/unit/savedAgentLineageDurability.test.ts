@@ -55,7 +55,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
     // A fresh manager with empty in-memory lineage — the state right after an extension-host reload.
     const reloaded = new AgentManager({
       tmux: fakeTmux(), wsHash: HASH, workspaceRoot: ws,
-      getConfig: () => config, getMaxAgents: () => 8, ledger,
+      getConfig: () => config, ledger,
     });
     await reloaded.rehydrateFromLedger();
 
@@ -76,7 +76,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
 
     const reloaded = new AgentManager({
       tmux: fakeTmux(), wsHash: HASH, workspaceRoot: ws,
-      getConfig: () => config, getMaxAgents: () => 8, ledger,
+      getConfig: () => config, ledger,
     });
     await reloaded.rehydrateFromLedger();
 
@@ -97,7 +97,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
 
     const reloaded = new AgentManager({
       tmux: fakeTmux(), wsHash: HASH, workspaceRoot: ws,
-      getConfig: () => config, getMaxAgents: () => 8, ledger,
+      getConfig: () => config, ledger,
     });
     await reloaded.rehydrateFromLedger();
 
@@ -115,7 +115,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
 
     const reloaded = new AgentManager({
       tmux: fakeTmux(), wsHash: HASH, workspaceRoot: ws,
-      getConfig: () => config, getMaxAgents: () => 8, ledger,
+      getConfig: () => config, ledger,
     });
     await reloaded.rehydrateFromLedger();
 

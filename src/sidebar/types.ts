@@ -230,7 +230,8 @@ export interface FleetVM {
    */
   cardTemplateRefusal?: { file: string; errors: string[] };
   /**
-   * SDD 479 phase 5 — the same, for the PERSONAL override in VS Code settings. Its own field rather
+   * SDD 479 phase 5 — the same, for the PERSONAL override in the global Tachyon settings file
+   * (t-aaad95). Its own field rather
    * than a second entry in the one above, because the two homes fail independently: a project
    * template and a personal one can be refused in the same window, and a human fixing them needs to
    * know which file to open. Attached by the shell (SidebarPrototype), never by the engine — this

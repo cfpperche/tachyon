@@ -46,17 +46,13 @@ export class VsCodeHost implements EngineHost {
     return watcher;
   }
 
-  getSetting<T>(section: string, key: string, dflt: T): T {
-    return vscode.workspace.getConfiguration(section).get<T>(key, dflt);
-  }
-
-  getSettingInspect<T>(section: string, key: string) {
-    const value = vscode.workspace.getConfiguration(section).inspect<T>(key);
-    return {
-      globalValue: value?.globalValue,
-      workspaceValue: value?.workspaceValue,
-      workspaceFolderValue: value?.workspaceFolderValue,
-    };
+  /**
+   * t-aaad95 — the ONLY VS Code configuration Tachyon still consumes, and it is not Tachyon's:
+   * the built-in Git extension's `git.path`. Tachyon's own eleven keys were removed with their
+   * `contributes.configuration` block; see `src/config/globalSettings.ts`.
+   */
+  gitExtensionPath(): string | string[] | undefined {
+    return vscode.workspace.getConfiguration("git").get<string | string[]>("path");
   }
 
   globalStoragePath(): string {

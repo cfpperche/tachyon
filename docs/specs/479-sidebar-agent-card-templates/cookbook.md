@@ -35,15 +35,20 @@ That is a complete, valid template. `version` is required.
 
 ### …or just for you
 
-The same template also has a personal home: **VS Code settings**, under `tachyon.sidebar.cardTemplate`.
+The same template also has a personal home: your **Tachyon settings file** (`~/.tachyon/settings.json`),
+under `sidebar.cardTemplate`. (Before `t-aaad95` this was the VS Code setting `tachyon.sidebar.cardTemplate`;
+Tachyon imports an existing value across once.)
 It belongs to one person on one machine — it does not travel with the repo, and no agent-authored
 checkout can carry it.
 
 ```json
 {
-  "tachyon.sidebar.cardTemplate": {
-    "version": 1,
-    "meta": ["harness", "branch"]
+  "version": 1,
+  "sidebar": {
+    "cardTemplate": {
+      "version": 1,
+      "meta": ["harness", "branch"]
+    }
   }
 }
 ```
@@ -215,10 +220,10 @@ settings:
       meta: [branch, verify, attention]
 ```
 
-**Just me, everywhere — one badge, on every project I open** (VS Code settings, not the repo):
+**Just me, everywhere — one badge, on every project I open** (`~/.tachyon/settings.json`, not the repo):
 
 ```json
-{ "tachyon.sidebar.cardTemplate": { "version": 1, "meta": ["harness"] } }
+{ "version": 1, "sidebar": { "cardTemplate": { "version": 1, "meta": ["harness"] } } }
 ```
 
 Each project's header and footer stay whatever that project chose; only the badges are yours.

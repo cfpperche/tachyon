@@ -65,7 +65,7 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
   const { exec } = fakeTmuxExec();
   const config = parseConfig("agents:\n  claude:\n    cmd: claude\n  codex:\n    cmd: codex\n").config;
   const tmux = new TmuxService(exec);
-  const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+  const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-actor-"));
   const pins = new PinStore(root);
   const tasks = new TaskStore(root);

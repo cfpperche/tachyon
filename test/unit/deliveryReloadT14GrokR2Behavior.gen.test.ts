@@ -276,7 +276,6 @@ describe("container-generated delegation behavior", () => {
       wsHash: workspaceHash(root),
       workspaceRoot: root,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       ledger: new SessionLedger(root),
       fileExists: () => true,
       isDeliveryLifecycleDenied: (name) => denySet.has(name),
@@ -480,7 +479,6 @@ describe("container-generated delegation behavior", () => {
       wsHash: workspaceHash(driftRoot),
       workspaceRoot: driftRoot,
       getConfig: () => parseConfig("agents: {}\n").config!,
-      getMaxAgents: () => 8,
       ledger: driftLedger,
       fileExists: () => true,
     });
@@ -530,9 +528,7 @@ describe("container-generated delegation behavior", () => {
       watch(_root: string, _glob: string, _events: WatchEvents, _onEvent: () => void): { dispose(): void } {
         return { dispose() {} };
       }
-      getSetting<T>(_section: string, _key: string, dflt: T): T {
-        return dflt;
-      }
+      gitExtensionPath(): string | string[] | undefined { return undefined; }
       globalStoragePath(): string {
         return storage;
       }

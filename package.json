@@ -348,6 +348,11 @@
         "icon": "$(file-code)"
       },
       {
+        "command": "tachyon.openGlobalSettings",
+        "title": "%command.openGlobalSettings%",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "tachyon.openApprovals",
         "title": "%command.openApprovals%"
       },
@@ -366,11 +371,6 @@
       {
         "command": "tachyon.stopBridge",
         "title": "Tachyon: Stop Bridge"
-      },
-      {
-        "command": "tachyon.openSettings",
-        "title": "%command.openSettings%",
-        "icon": "$(gear)"
       },
       {
         "command": "tachyon.inspectServer",
@@ -742,126 +742,6 @@
           "when": "false"
         }
       ]
-    },
-    "configuration": {
-      "title": "Tachyon",
-      "properties": {
-        "tachyon.maxAgents": {
-          "type": "number",
-          "default": 8,
-          "minimum": 1,
-          "description": "%config.maxAgents%"
-        },
-        "tachyon.agentMemoryMax": {
-          "type": "string",
-          "default": "",
-          "description": "Opt-in systemd --user MemoryMax for each agent process tree (e.g. 2G, 512M). Empty = off. Linux only."
-        },
-        "tachyon.taskNotifications.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.taskNotifications.enabled%"
-        },
-        "tachyon.taskNotifications.events": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "created",
-              "assigned",
-              "statusChanged",
-              "awaitingHuman",
-              "journalAppended"
-            ]
-          },
-          "uniqueItems": true,
-          "default": [
-            "created",
-            "assigned",
-            "statusChanged",
-            "awaitingHuman",
-            "journalAppended"
-          ],
-          "description": "%config.taskNotifications.events%"
-        },
-        "tachyon.taskNotifications.suppressOwnChanges": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.taskNotifications.suppressOwnChanges%"
-        },
-        "tachyon.taskNotifications.dedupeWindowMs": {
-          "type": "number",
-          "default": 30000,
-          "minimum": 0,
-          "description": "%config.taskNotifications.dedupeWindowMs%"
-        },
-        "tachyon.activity.codeTheme": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "dark",
-            "light"
-          ],
-          "default": "auto",
-          "description": "%config.activity.codeTheme%"
-        },
-        "tachyon.worktrees.revealInWorkspace": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.worktrees.revealInWorkspace%"
-        },
-        "tachyon.gitPath": {
-          "type": "string",
-          "default": "",
-          "description": "%config.gitPath%"
-        },
-        "tachyon.agentPane.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "%config.agentPane.enabled%"
-        },
-        "tachyon.sidebar.cardTemplate": {
-          "type": "object",
-          "default": {},
-          "scope": "application",
-          "markdownDescription": "%config.sidebar.cardTemplate%",
-          "properties": {
-            "version": {
-              "type": "number",
-              "enum": [
-                1
-              ],
-              "description": "%config.sidebar.cardTemplate.version%"
-            },
-            "header": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "%config.sidebar.cardTemplate.region%"
-            },
-            "meta": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "%config.sidebar.cardTemplate.region%"
-            },
-            "footer": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "%config.sidebar.cardTemplate.region%"
-            },
-            "runtimes": {
-              "type": "object",
-              "description": "%config.sidebar.cardTemplate.runtimes%"
-            }
-          },
-          "additionalProperties": false
-        }
-      }
     },
     "yamlValidation": [
       {

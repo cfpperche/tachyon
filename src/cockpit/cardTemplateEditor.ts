@@ -171,7 +171,8 @@ export function toYaml(state: CardEditorState): string {
 }
 
 /**
- * SDD 479 phase 5 — the same template for the PERSONAL home, which is JSON in VS Code settings.
+ * SDD 479 phase 5 — the same template for the PERSONAL home; t-aaad95 moved that home from VS Code
+ * settings to `sidebar.cardTemplate` in the global Tachyon settings file. Still JSON either way.
  *
  * The block emits for whichever home the person picked rather than making them hand-translate YAML
  * into settings.json — a translation step is where a working template becomes a refused one, and the

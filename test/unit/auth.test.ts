@@ -67,7 +67,6 @@ describe("Bridge auth enforcement (live HTTP)", () => {
       wsHash: "deadbeef",
       workspaceRoot: "/tmp",
       getConfig: () => undefined,
-      getMaxAgents: () => 8,
     });
     const root = makeTempDir("tachyon-auth-");
     return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
@@ -132,7 +131,6 @@ describe("Bridge caller resolution (spec 351 T3)", () => {
       wsHash: "deadbeef",
       workspaceRoot: "/tmp",
       getConfig: () => undefined,
-      getMaxAgents: () => 8,
     });
     const root = makeTempDir("tachyon-caller-auth-");
     return { workspaceRoot: root, manager, tmux, pins: new PinStore(root), tasks: new TaskStore(root), validations: new ValidationStore(root), notify: () => {} };
@@ -327,7 +325,6 @@ describe("env injection into spawned sessions", () => {
       wsHash: workspaceHash("/repo"),
       workspaceRoot: "/repo",
       getConfig: () => config,
-      getMaxAgents: () => 8,
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:41931/mcp", TACHYON_BRIDGE_TOKEN: "tok123" }),
     });
     await manager.spawn("a");

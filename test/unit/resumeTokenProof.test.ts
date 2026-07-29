@@ -41,9 +41,7 @@ class SharedHost implements EngineHost {
   watch(): { dispose(): void } {
     return { dispose() {} };
   }
-  getSetting<T>(_section: string, _key: string, dflt: T): T {
-    return dflt;
-  }
+  gitExtensionPath(): string | string[] | undefined { return undefined; }
   globalStoragePath(): string {
     return this.storageDir;
   }

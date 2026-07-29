@@ -929,9 +929,47 @@ backstop; CPU sampling for attention stays polled — tmux has no events for tha
 
 ## Settings
 
-- `tachyon.maxAgents` (default 8) — concurrent-agent guardrail; `settings.maxAgents` in
-  `tachyon.yml` takes precedence.
-- In `tachyon.yml` → `settings:`: `maxAgents`, `bridgePort`, `auth`, `tmux`, `worktree`,
+Tachyon contributes **no VS Code settings**. There are exactly two homes, split by scope of meaning,
+and both are plain text you can also edit by hand:
+
+| Home | What lives there | Path |
+|---|---|---|
+| `tachyon.yml` → `settings:` | how **this project** runs — shared with the team, tracked in the repo | `<workspace>/tachyon.yml` |
+| Your Tachyon settings file | how **this machine** behaves for **you** — never committed | `~/.tachyon/settings.json` |
+
+Both are edited from **Control → Settings**, which also says whether a change takes effect
+immediately or waits for Control to be reopened. Both are validated fail-closed: an invalid value is
+refused with a named error and the last known-good is kept, never silently defaulted.
+
+The global file is versioned and hand-editable, and that is deliberate — it is the recovery path when
+Control itself will not open. `Tachyon: Open Global Settings File` opens it (creating it if needed).
+
+```json
+{
+  "version": 1,
+  "activity": { "codeTheme": "auto" },
+  "agentPane": { "enabled": true },
+  "sidebar": { "cardTemplate": { "version": 1, "meta": ["harness"] } },
+  "gitPath": ""
+}
+```
+
+- `activity.codeTheme` (`auto` | `dark` | `light`) — syntax-highlight palette for Activity code blocks.
+- `agentPane.enabled` (default true) — the first-party agent pane. **An invalid or absent value fails
+  toward enabled**, so a broken document can never hide a surface you would need to repair it.
+- `sidebar.cardTemplate` — your personal agent-card layout; wins over the project's, and a region you
+  do not list keeps whatever that project chose.
+- `gitPath` — the git binary Tachyon spawns. Empty falls back to the Git extension's `git.path`, then
+  common install locations, then `git` on `PATH`. (`git.path` is the one VS Code setting Tachyon still
+  reads, because it is not Tachyon's.)
+
+If you had any of the retired `tachyon.*` VS Code settings, Tachyon imports them once, on first
+activation, into whichever of the two homes now owns them — and tells you when it writes to a tracked
+`tachyon.yml`, so nothing lands in your next commit unannounced.
+
+- In `tachyon.yml` → `settings:`: `maxAgents` (default 8 — concurrent-agent guardrail),
+  `agentMemoryMax`, `taskNotifications.*`, `worktree.revealInWorkspace` (default true),
+  `bridgePort`, `auth`, `tmux`, `worktree`,
   `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
   `projectGuidance` (explicit project-owned guidance files; no default),
   `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),

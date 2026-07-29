@@ -153,7 +153,6 @@ describe("Codex readiness recovery", () => {
         settings: { maxAgents: 4 },
         declaredOwner: {},
       }) as never,
-      getMaxAgents: () => 4,
     });
 
     await expect(manager.isReady("codex")).resolves.toBe(false);
@@ -165,7 +164,6 @@ describe("Codex readiness recovery", () => {
       workspaceRoot: "/workspace",
       wsHash: "test",
       getConfig: () => ({ agents: { codex: { cmd: "codex", kind: "agent" } }, settings: { maxAgents: 4 }, declaredOwner: {} }) as never,
-      getMaxAgents: () => 4,
     });
     await expect(restartedManager.isReady("codex")).resolves.toBe(false);
     expect(killed).toBe(true);
@@ -184,7 +182,6 @@ describe("Codex readiness recovery", () => {
         settings: { maxAgents: 4 },
         declaredOwner: {},
       }) as never,
-      getMaxAgents: () => 4,
     });
 
     await expect(manager.isReady("unknown")).resolves.toBe(true);

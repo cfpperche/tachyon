@@ -86,7 +86,6 @@ describe("container-generated delegation behavior", () => {
       wsHash: workspaceHash(ws),
       workspaceRoot: ws,
       getConfig: () => config,
-      getMaxAgents: () => 8,
       launchPreflight: hermeticLaunchPreflight(),
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: BRIDGE_URL, TACHYON_BRIDGE_TOKEN: "tok" }),
       mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),

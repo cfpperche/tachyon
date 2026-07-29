@@ -637,5 +637,10 @@
   "This agent declares no subagents.": "Este agente não declara subagentes.",
   "This agent is already declared as a subagent of {0}, so it cannot own others.": "Este agente já está declarado como subagente de {0}, portanto não pode ser dono de outros.",
   "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.": "Nenhum outro agente está disponível para declarar. Um candidato precisa ser um agente que ninguém mais possui e que não declara subagentes próprios.",
-  "Save declared subagents": "Salvar subagentes declarados"
+  "Save declared subagents": "Salvar subagentes declarados",
+  "Tachyon moved {0} of your settings out of VS Code and into {1}. Edit them there or in Control → Settings.": "O Tachyon moveu {0} das suas configurações do VS Code para {1}. Edite-as lá ou em Control → Settings.",
+  "Tachyon wrote {0} setting(s) you had in VS Code into {1} ({2}) — review it before committing.": "O Tachyon escreveu {0} configuração(ões) que você tinha no VS Code em {1} ({2}) — revise antes de commitar.",
+  "The Tachyon agent pane is turned off in Tachyon settings — the integrated terminal is still available from the sidebar.": "O painel de agente do Tachyon está desligado nas configurações do Tachyon — o terminal integrado continua disponível pela sidebar.",
+  "Tachyon settings were refused and the last known good is in use: {0}": "As configurações do Tachyon foram recusadas e a última versão válida está em uso: {0}",
+  "Could not open Tachyon settings: {0}": "Não foi possível abrir as configurações do Tachyon: {0}"
 }

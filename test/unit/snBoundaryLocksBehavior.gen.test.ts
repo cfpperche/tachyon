@@ -30,17 +30,14 @@ describe("container-generated delegation behavior", () => {
     expect(DEFAULT_FULL_VERIFY).toBeUndefined();
 
     // (2) docs/architecture/dogfood-product-boundary.md — "contributes.configuration defaults carry no
-    // Tachyon-repo assumptions". Read the shipped package.json directly (not via import) so this pins the
-    // manifest that actually ships, not a cached module.
+    // Tachyon-repo assumptions". t-aaad95 satisfied that boundary the strongest way available: there
+    // are no contributed settings left to carry an assumption. Read the shipped package.json directly
+    // (not via import) so this pins the manifest that actually ships, not a cached module.
+    //
+    // The narrow "no build marker in a default" check moved to settingsAuthorityInventory.test.ts,
+    // which now enforces the whole absence rather than the contents of what is present.
     const pkgJson = JSON.parse(fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"));
-    const properties = pkgJson.contributes.configuration.properties as Record<string, { default?: unknown }>;
-    expect(Object.keys(properties).length).toBeGreaterThan(0);
-    for (const [key, schema] of Object.entries(properties)) {
-      const defaultValue = JSON.stringify(schema.default ?? "");
-      for (const marker of TACHYON_BUILD_MARKERS) {
-        expect(defaultValue, `tachyon.${key} default should not carry Tachyon-build marker "${marker}"`).not.toContain(marker);
-      }
-    }
+    expect(pkgJson.contributes.configuration).toBeUndefined();
 
     // (3) docs/architecture/dogfood-product-boundary.md — "Tachyon: Init scaffolds from the USER's stack".
     // Generated tachyon.yml must derive purely from the user's own manifests, never embed Tachyon-only

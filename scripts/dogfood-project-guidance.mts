@@ -85,7 +85,6 @@ async function captureStartup(
     wsHash: workspaceHash(root),
     workspaceRoot: root,
     getConfig: () => config,
-    getMaxAgents: () => 8,
   });
   await manager.spawn(agent, options);
   assert.ok(launch, `AgentManager did not create a session for ${agent}`);

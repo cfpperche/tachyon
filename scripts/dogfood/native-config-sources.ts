@@ -83,7 +83,7 @@ class HeadlessHost implements EngineHost {
   openTask(): void {}
   executeCommand(): Promise<unknown> { return Promise.resolve(undefined); }
   watch(): { dispose(): void } { return { dispose() {} }; }
-  getSetting<T>(_section: string, _key: string, dflt: T): T { return dflt; }
+  gitExtensionPath(): string | string[] | undefined { return undefined; }
   globalStoragePath(): string { return this.storageDir; }
   getState<T>(key: string): T | undefined { return this.state.get(key) as T | undefined; }
   setState(key: string, value: unknown): void { this.state.set(key, value); }

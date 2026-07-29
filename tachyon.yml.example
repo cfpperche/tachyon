@@ -49,4 +49,14 @@ settings:
       executorPaths: [ package.json, package-lock.json, vitest.config.ts, tsconfig.json ]
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
+  #   revealInWorkspace: true     # show each running agent's worktree as a folder (multi-root windows only)
   # maxAgents: 8                  # fork-bomb guardrail (default 8)
+  # agentMemoryMax: "2G"          # opt-in systemd --user MemoryMax per agent spawn tree (Linux only)
+  # taskNotifications:            # human-facing toasts for task create/edit events
+  #   enabled: true
+  #   events: [created, assigned, statusChanged, awaitingHuman, journalAppended]
+  #   suppressOwnChanges: true
+  #   dedupeWindowMs: 30000
+  #
+  # Per-person, per-machine settings (activity.codeTheme, agentPane.enabled, sidebar.cardTemplate,
+  # gitPath) do NOT belong here — they live in ~/.tachyon/settings.json. See README -> Settings.

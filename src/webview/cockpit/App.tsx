@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import {
   COCKPIT_SECTION_ORDER,
   type CockpitModel,
+  type CockpitGlobalSettingsState,
   type CockpitSectionId,
   type CockpitWorktreeRow,
 } from "../../cockpit/model";
@@ -12,8 +13,10 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import {
   formatCompanionPairClipboard,
   navigateReturnAction,
+  openGlobalSettingsFileAction,
   openPersonalCardTemplateAction,
   openProjectHandoffAction,
+  setGlobalSettingsAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
@@ -447,6 +450,114 @@ export function parseAllowedHostsDraft(raw: string): string[] {
  * gate, but a save that silently does nothing is the worst version of this. The bounds shown are the
  * bounds enforced, both derived from the same setting.
  */
+/**
+ * t-aaad95 — the per-person half of Tachyon's settings, edited where every other Tachyon setting is
+ * edited now that VS Code contributes none.
+ *
+ * Each row says whether it takes effect immediately or waits for Control to be reopened. That is not
+ * decoration: with the VS Code settings UI gone there is no other place that would have told the
+ * person their change did land, and "I changed it and nothing happened" is how a working setting gets
+ * reported as a bug.
+ */
+function GlobalSettingsBlock({
+  s,
+  settings,
+  onPost,
+}: {
+  s: CockpitStrings;
+  settings: CockpitGlobalSettingsState;
+  onPost: (action: CockpitAction) => void;
+}) {
+  const [gitPath, setGitPath] = useState(settings.gitPath);
+  useEffect(() => {
+    setGitPath(settings.gitPath);
+  }, [settings.gitPath]);
+
+  return (
+    <div class="ck-settings-block" data-testid="control-settings-global">
+      <h3 class="ck-settings-block-title">{s.globalSettingsTitle}</h3>
+      <p class="ck-settings-block-hint">{s.globalSettingsHint}</p>
+      <p class="ck-settings-block-body dim" data-testid="global-settings-file">
+        {s.globalSettingsFileLabel} <code>{settings.file}</code>
+      </p>
+      {settings.refusal?.length ? (
+        <p class="ck-settings-block-body" data-testid="global-settings-refusal">
+          {s.globalSettingsRefused} {settings.refusal.join("; ")}
+        </p>
+      ) : null}
+
+      <div class="ck-settings-hosts-actions">
+        <label class="ck-settings-hosts-label" for="global-settings-code-theme">
+          <strong>{s.globalSettingsCodeTheme}</strong>
+          <span class="ck-settings-toggle-help">{s.globalSettingsCodeThemeHelp}</span>
+        </label>
+        <select
+          id="global-settings-code-theme"
+          class="ck-settings-hosts-input"
+          data-testid="global-settings-code-theme"
+          value={settings.activityCodeTheme}
+          onChange={(e) =>
+            onPost(setGlobalSettingsAction({
+              activityCodeTheme: (e.target as HTMLSelectElement).value as "auto" | "dark" | "light",
+            }))
+          }
+        >
+          <option value="auto">{s.globalSettingsCodeThemeAuto}</option>
+          <option value="dark">{s.globalSettingsCodeThemeDark}</option>
+          <option value="light">{s.globalSettingsCodeThemeLight}</option>
+        </select>
+        <span class="ck-settings-toggle-help">{s.globalSettingsNeedsReopen}</span>
+      </div>
+
+      <label class="ck-settings-toggle">
+        <input
+          type="checkbox"
+          checked={settings.agentPaneEnabled}
+          data-testid="global-settings-agent-pane"
+          onChange={(e) => onPost(setGlobalSettingsAction({ agentPaneEnabled: (e.target as HTMLInputElement).checked }))}
+        />
+        <span>
+          <strong>{s.globalSettingsAgentPane}</strong>
+          <span class="ck-settings-toggle-help">{s.globalSettingsAgentPaneHelp} — {s.globalSettingsLive}</span>
+        </span>
+      </label>
+
+      <div class="ck-settings-hosts-actions">
+        <label class="ck-settings-hosts-label" for="global-settings-git-path">
+          <strong>{s.globalSettingsGitPath}</strong>
+          <span class="ck-settings-toggle-help">{s.globalSettingsGitPathHelp} — {s.globalSettingsLive}</span>
+        </label>
+        <input
+          id="global-settings-git-path"
+          type="text"
+          class="ck-settings-hosts-input"
+          data-testid="global-settings-git-path"
+          value={gitPath}
+          onInput={(e) => setGitPath((e.target as HTMLInputElement).value)}
+        />
+        <Button
+          variant="default"
+          disabled={gitPath === settings.gitPath}
+          data-testid="global-settings-git-path-save"
+          onClick={() => onPost(setGlobalSettingsAction({ gitPath }))}
+        >
+          {s.globalSettingsSave}
+        </Button>
+      </div>
+
+      <div class="ck-settings-hosts-actions">
+        <Button
+          variant="default"
+          data-testid="global-settings-open-file"
+          onClick={() => onPost(openGlobalSettingsFileAction())}
+        >
+          {s.globalSettingsOpenFile}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function IdleNotifyField({
   s,
   idle,
@@ -1968,6 +2079,14 @@ export function App(p: CockpitAppProps) {
             onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
             inEffect={m.cardTemplate}
           />
+
+          {m.globalSettings ? <GlobalSettingsBlock s={s} settings={m.globalSettings} onPost={p.onPost} /> : null}
+
+          {/* t-aaad95 — the workspace scope, named so the split is visible rather than folklore. */}
+          <div class="ck-settings-block" data-testid="control-settings-workspace">
+            <h3 class="ck-settings-block-title">{s.workspaceSettingsTitle}</h3>
+            <p class="ck-settings-block-hint">{s.workspaceSettingsHint}</p>
+          </div>
 
           {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}
 

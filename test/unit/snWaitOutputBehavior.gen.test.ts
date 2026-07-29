@@ -78,7 +78,7 @@ describe("container-generated delegation behavior", () => {
     const { panes, exec } = fakeTmuxExec();
     const config = parseConfig("agents:\n  watcher:\n    cmd: sh\n  stranger:\n    cmd: sh\n").config;
     const tmux = new TmuxService(exec);
-    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-wait-output-"));
     dirs.push(root);
     const pins = new PinStore(root);
@@ -172,7 +172,7 @@ describe("container-generated delegation behavior", () => {
     const { panes, exec } = fakeTmuxExec();
     const config = parseConfig("agents:\n  watcher:\n    cmd: sh\n").config;
     const tmux = new TmuxService(exec);
-    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-wait-output-"));
     dirs.push(root);
     const pins = new PinStore(root);
@@ -231,7 +231,7 @@ describe("container-generated delegation behavior", () => {
     const { exec } = fakeTmuxExec();
     const config = parseConfig("agents:\n  watcher:\n    cmd: sh\n").config;
     const tmux = new TmuxService(exec);
-    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config, getMaxAgents: () => 8 });
+    const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-wait-output-"));
     dirs.push(root);
     const pins = new PinStore(root);

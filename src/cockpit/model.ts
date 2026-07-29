@@ -140,7 +140,7 @@ export interface CockpitDeliveryRow {
  * project template until something says which one the cards are actually using.
  */
 export interface CockpitCardTemplateState {
-  /** the personal override in VS Code settings: absent, in effect, or refused and fallen back */
+  /** the personal override in the global Tachyon settings file: absent, in effect, or refused */
   personal: "none" | "active" | "refused";
   /** why it was refused — the same diagnostics the sidebar banner shows, from the same validator */
   personalErrors?: string[];
@@ -347,6 +347,25 @@ export interface CockpitModel {
   idleNotify?: { wsHash: string; folderName: string; configured?: number | "never"; defaultMinutes: number };
   /** SDD 479 phase 5 — see CockpitCardTemplateState. */
   cardTemplate?: CockpitCardTemplateState;
+  /**
+   * t-aaad95 — the per-person, per-machine half of Tachyon's settings, read from the global Tachyon
+   * file. It arrives as an option rather than as bundle data for the same reason `cardTemplate` does:
+   * it belongs to one person on one machine, not to any workspace, and it must answer with zero
+   * workspaces open.
+   */
+  globalSettings?: CockpitGlobalSettingsState;
+}
+
+export interface CockpitGlobalSettingsState {
+  /** the hand-editable path, shown verbatim because it is also the documented recovery surface */
+  file: string;
+  activityCodeTheme: "auto" | "dark" | "light";
+  agentPaneEnabled: boolean;
+  gitPath: string;
+  /** whether a personal card template is authored; the template itself is edited in its own block */
+  hasCardTemplate: boolean;
+  /** named errors when the document was refused and the last known good is in use */
+  refusal?: string[];
 }
 
 export function buildCockpitModel(
@@ -356,11 +375,14 @@ export function buildCockpitModel(
     nowIso?: string;
     wsHash?: string;
     /**
-     * SDD 479 phase 5 — the PERSONAL override's state, read from VS Code settings by the host. It
+     * SDD 479 phase 5 — the PERSONAL override's state, read from the global Tachyon settings file
+     * by the host (t-aaad95; it was VS Code settings before). It
      * arrives as an option rather than as bundle data because it belongs to one person on one
      * machine: no workspace owns it, and no engine should ever project it.
      */
     personalCardTemplate?: { state: "none" | "active" | "refused"; errors?: string[] },
+    /** t-aaad95 — the global Tachyon settings file's current state; see CockpitGlobalSettingsState. */
+    globalSettings?: CockpitGlobalSettingsState,
   },
 ): CockpitModel {
   // t-d16a39 — the shell-level workspace scope: when a specific workspace is selected, every
@@ -501,6 +523,7 @@ export function buildCockpitModel(
     ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
     ...(idleNotify ? { idleNotify } : {}),
     cardTemplate,
+    ...(opts?.globalSettings ? { globalSettings: opts.globalSettings } : {}),
   };
 }
 
