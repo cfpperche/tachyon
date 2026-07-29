@@ -36,8 +36,9 @@ export interface LegacyMissionControlSource extends WorkspacePresentationTarget 
   /**
    * t-c6c4ad — optional in-process inject port (full Workspace has this; thin fakes may omit).
    * When present, a human close wakes the author the same way the engine path does.
+   * Return type is intentionally open: real tmux returns a SubmitReceipt; callers ignore it.
    */
-  readonly tmux?: { sendSubmittedLine(session: string, text: string): Promise<void> };
+  readonly tmux?: { sendSubmittedLine(session: string, text: string): Promise<unknown> };
 }
 
 /** Compatibility adapter used only until extension activation switches to WorkspaceClient. */
