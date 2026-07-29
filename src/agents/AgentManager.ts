@@ -22,6 +22,7 @@ import {
   type SessionResume,
   type AgentInstanceLifetime,
   type AgentInstancePolicy,
+  type AgentInstanceResumePolicy,
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
@@ -228,6 +229,13 @@ export interface ManagedEntryInfo {
    * than the inference this cut removes.
    */
   lifetime: AgentInstanceLifetime;
+  /**
+   * t-04052d — the SECOND axis, resolved the same way and carried beside the first because the two do
+   * not imply each other. A FORK is `temporary` + `restartable`: no durable Profile, but it owns a
+   * resume block. A reader that has only `lifetime` cannot tell it apart from a plain ad-hoc, and any
+   * rule that tries collapses the axes this cut exists to keep apart.
+   */
+  resumePolicy: AgentInstanceResumePolicy;
   /**
    * SDD 482 phase 3 — the DECLARED instance policy of a recorded instance; absent when this row is a
    * roster entry with no session ledger row behind it. Readers ask their question through the
@@ -1472,6 +1480,9 @@ export class AgentManager {
         // The fallback is fail-closed for the same reason the helpers are: an unknown name with a
         // policy-less row reads as temporary rather than being granted Saved capability on a guess.
         lifetime: declared.includes(name) ? "saved" : (recordedInstance?.lifetime ?? "temporary"),
+        // Same config-first order, same fail-closed tail: a config Profile can always be started again,
+        // otherwise the recorded policy answers, otherwise `collected` (withhold, never grant).
+        resumePolicy: declared.includes(name) ? "restartable" : (recordedInstance?.resumePolicy ?? "collected"),
         ...(stopFailure ? { stopFailure } : {}),
         ...(recordedInstance ? { instance: recordedInstance } : {}),
         dead: state?.dead ?? false,

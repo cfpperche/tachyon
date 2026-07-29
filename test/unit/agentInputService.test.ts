@@ -42,7 +42,7 @@ function row(name: string, overrides: Partial<ManagedEntryInfo> = {}): ManagedEn
     running: false,
     stopping: false,
     stopFailed: false,
-    lifetime: "saved",
+    lifetime: "saved", resumePolicy: "restartable",
     dead: false,
     crashed: false,
     kind: "agent",

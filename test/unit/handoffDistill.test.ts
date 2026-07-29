@@ -70,12 +70,12 @@ describe("handoff distill prompt (spec 328)", () => {
 describe("buildDistillTargets (t-1ba76d)", () => {
   it("includes Saved stopped/resumable agents and orders running first", () => {
     const rows: DistillListRow[] = [
-      { name: "zeta", kind: "agent", running: false, lifetime: "saved" },
-      { name: "alpha", kind: "agent", running: true, lifetime: "saved" },
-      { name: "beta", kind: "agent", running: false, lifetime: "saved" },
-      { name: "dev", kind: "terminal", running: true, lifetime: "saved" },
-      { name: "worker", kind: "agent", running: false, lifetime: "temporary" },
-      { name: "live-adhoc", kind: "agent", running: true, lifetime: "temporary" },
+      { name: "zeta", kind: "agent", running: false, lifetime: "saved", resumePolicy: "restartable" },
+      { name: "alpha", kind: "agent", running: true, lifetime: "saved", resumePolicy: "restartable" },
+      { name: "beta", kind: "agent", running: false, lifetime: "saved", resumePolicy: "restartable" },
+      { name: "dev", kind: "terminal", running: true, lifetime: "saved", resumePolicy: "restartable" },
+      { name: "worker", kind: "agent", running: false, lifetime: "temporary", resumePolicy: "collected" },
+      { name: "live-adhoc", kind: "agent", running: true, lifetime: "temporary", resumePolicy: "collected" },
     ];
     const targets = buildDistillTargets(rows, ["beta"]);
     expect(targets.map((t) => t.name)).toEqual(["alpha", "live-adhoc", "beta", "zeta"]);
@@ -86,12 +86,44 @@ describe("buildDistillTargets (t-1ba76d)", () => {
     expect(targets.some((t) => t.name === "worker" || t.name === "dev")).toBe(false);
   });
 
+  /**
+   * t-04052d, from adversarial review — A STOPPED FORK IS A HANDOFF TARGET, and the two axes are why.
+   *
+   * The rule is "is this agent's definition still there to receive work?". Written on `lifetime` alone
+   * it read "a Temporary must be running", which refused a fork: `temporary` because no durable
+   * Profile backs it, but `restartable` because it owns its own resume block and its definition
+   * reloads — the property SDD 482 phase 2 was obliged to preserve. Refusing it is `lifetime`
+   * absorbing resume capability, the exact collapse the split exists to prevent.
+   *
+   * The second case is the NEGATIVE CONTROL and it is what makes the first one safe. The tempting fix
+   * is "list a stopped Temporary when it is in `resumable`" — but `resumableAgentNames` is every row
+   * carrying a resume block, and `spawnCore` writes one for EVERY adapter-backed start, ad-hoc
+   * included. That fix would list `plain-adhoc` below and erase the refusal entirely. `resumePolicy`
+   * is the fact that separates the two, which is what it was created for.
+   */
+  it("lists a stopped RESTARTABLE temporary (a fork) but still refuses a collected one", () => {
+    const rows: DistillListRow[] = [
+      { name: "claude-fork-1", kind: "agent", running: false, lifetime: "temporary", resumePolicy: "restartable" },
+      { name: "plain-adhoc", kind: "agent", running: false, lifetime: "temporary", resumePolicy: "collected" },
+    ];
+    // BOTH carry a resume block, so both are "resumable" — that set cannot tell them apart.
+    const targets = buildDistillTargets(rows, ["claude-fork-1", "plain-adhoc"]);
+
+    expect(targets.map((t) => t.name)).toEqual(["claude-fork-1"]);
+    expect(targets[0]).toMatchObject({
+      state: "resumable",
+      lifetime: "temporary",
+      resumePolicy: "restartable",
+      description: "resumable · temporary",
+    });
+  });
+
   it("omits dead/stopping panes from the running tier", () => {
     const targets = buildDistillTargets(
       [
-        { name: "a", kind: "agent", running: true, dead: true, lifetime: "saved" },
-        { name: "b", kind: "agent", running: true, stopping: true, lifetime: "saved" },
-        { name: "c", kind: "agent", running: true, lifetime: "saved" },
+        { name: "a", kind: "agent", running: true, dead: true, lifetime: "saved", resumePolicy: "restartable" },
+        { name: "b", kind: "agent", running: true, stopping: true, lifetime: "saved", resumePolicy: "restartable" },
+        { name: "c", kind: "agent", running: true, lifetime: "saved", resumePolicy: "restartable" },
       ],
       ["a"],
     );

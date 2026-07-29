@@ -128,6 +128,7 @@ function handoffView() {
         description: "running · saved",
         state: "running" as const,
         lifetime: "saved" as const,
+        resumePolicy: "restartable" as const,
       }],
     },
   };

@@ -1,4 +1,4 @@
-import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/SessionLedger.js";
 export type HandoffDistillRuntime = "codex" | "claude";
 
 export interface HandoffDistillProfileVM {
@@ -76,12 +76,18 @@ export interface HandoffDistillTargetRow {
   /** UI sublabel after the name, e.g. `running · saved`. */
   description: string;
   state: HandoffDistillTargetState;
-  /**
-   * t-04052d — the DECLARED durability of this agent's definition, replacing the `declared` boolean.
-   * It carries the eligibility rule as well as the label: a `temporary` target is only a legal
-   * handoff destination while it is running, because its definition dies with the session.
-   */
+  /** t-04052d — the DECLARED durability of this agent's definition, replacing the `declared` boolean. */
   lifetime: AgentInstanceLifetime;
+  /**
+   * The second axis, and it is load-bearing for eligibility rather than decorative.
+   *
+   * The rule is "a Temporary is a legal destination while its definition is still there". For a plain
+   * ad-hoc that means WHILE RUNNING — its definition dies with the session. A FORK is also
+   * `temporary`, but it is `restartable`: it owns a resume block, and phase 2 was required to keep its
+   * definition reloading. Refusing it would collapse `lifetime` back into resume capability, which is
+   * the whole defect this cut removes.
+   */
+  resumePolicy: AgentInstanceResumePolicy;
 }
 
 /** Minimal list() row fields the distill target builder needs (keeps pure helpers free of AgentManager). */
@@ -97,6 +103,8 @@ export interface DistillListRow {
    * all, and asking the policy directly would drop it from the handoff list entirely.
    */
   lifetime: AgentInstanceLifetime;
+  /** The roster's resolved resume answer — see `HandoffDistillTargetRow.resumePolicy`. */
+  resumePolicy: AgentInstanceResumePolicy;
 }
 
 /**
@@ -112,9 +120,17 @@ export function buildDistillTargets(
   for (const a of rows) {
     if (a.kind !== "agent") continue;
     const live = a.running && !a.dead && !a.stopping;
-    // The question is "is this Temporary?", not "which store owns it".
+    // t-04052d — BOTH AXES, because one cannot answer this.
+    //
+    // The rule is "is this agent's definition still there to hand work to?". A Saved one always is. A
+    // Temporary one is while it runs — and ALSO when it is `restartable`, which is exactly and only the
+    // fork: no durable Profile, but its own resume block, whose reload phase 2 was obliged to preserve.
+    //
+    // NOT expressible as "is it in `resumable`": that set is every row carrying a resume block, and
+    // spawnCore writes one for EVERY adapter-backed start, ad-hoc included. Gating on it would make
+    // every stopped Temporary a handoff target and erase the refusal this rule exists to be.
     const temporary = a.lifetime === "temporary";
-    if (temporary && !live) continue; // temporary only while running
+    if (temporary && !live && a.resumePolicy !== "restartable") continue;
     let state: HandoffDistillTargetState;
     if (live) state = "running";
     else if (resumable.has(a.name)) state = "resumable";
@@ -123,6 +139,7 @@ export function buildDistillTargets(
       name: a.name,
       state,
       lifetime: a.lifetime,
+      resumePolicy: a.resumePolicy,
       description: `${state} · ${a.lifetime}`,
     });
   }

@@ -16,7 +16,7 @@ describe("Activity Runtime API", () => {
         transcriptPathOf: async () => undefined,
         list: async () => [
           row("codex", { attention: undefined }),
-          row("reviewer", { running: true, lifetime: "temporary" }),
+          row("reviewer", { running: true, lifetime: "temporary", resumePolicy: "collected" }),
           row("terminal", { running: true, kind: "terminal" }),
           row("stopped"),
         ],
@@ -73,6 +73,7 @@ function row(
   overrides: Partial<{
     running: boolean;
     lifetime: "saved" | "temporary";
+    resumePolicy: "restartable" | "collected";
     kind: "agent" | "terminal";
     attention: undefined;
   }> = {},
@@ -84,6 +85,7 @@ function row(
     stopping: false,
     stopFailed: false,
     lifetime: "saved" as const,
+    resumePolicy: "restartable" as const,
     dead: false,
     crashed: false,
     kind: "agent" as const,
