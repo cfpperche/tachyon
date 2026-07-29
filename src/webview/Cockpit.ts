@@ -1126,8 +1126,17 @@ export async function openCockpit(
     };
     panel.iconPath = panelIcon(deps.extensionUri, "pulse");
     markCockpitSingletonClaimed();
+    // t-a632eb — this teardown belongs to THIS panel, so it must only run when THIS panel is still
+    // the live one. `panel` is module-scoped and the guard used to ask `if (panel)` — "is there a
+    // panel?" rather than "is the dead one mine?". VS Code does not order panel revivals (see
+    // cockpitSingleton.ts), so a Control opened by a retired-panel shim can be superseded by
+    // Control's own `revivedPanel` revive and dispose AFTERWARDS. Under the old guard that late
+    // disposal nulled the LIVE panel's wiring, bumped navEpoch, reset the route and released the
+    // singleton claim — after which the model push below is suppressed forever and every section
+    // of the shell renders "No Tachyon workspace attached in this window."
+    const disposingPanel = panel;
     panel.onDidDispose(() => {
-      if (panel) {
+      if (panel === disposingPanel) {
         panel = undefined;
         clearCockpitSingletonClaim();
         pushMissionBoard = undefined;
