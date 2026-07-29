@@ -41,6 +41,14 @@ export interface ActivitySignalProfile extends RuntimeProfileSection {
   tailLines: number;
   /** Line shape that means the runtime still owes this turn work it has not finished. */
   runningLine: RegExp;
+  /**
+   * Optional, newer proof that the runtime already handed the turn back. Some runtimes leave a
+   * background monitor in their mode line after the work it watched has finished; that residual
+   * process must not outweigh an explicit handback at the stable composer.
+   */
+  settledLine?: RegExp;
+  /** Tail bound for `settledLine`; defaults to `tailLines`. */
+  settledTailLines?: number;
 }
 
 export interface ComposerRegionProfile extends RuntimeProfileSection {
@@ -274,16 +282,25 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       // the after-final pane too. Matching it without a bottom bound would hold an agent at
       // "working" forever. Fixtures for both states: test/fixtures/claude-activity/.
       runningLine: /·\s*\d+\s+shells?\s*·/,
+      // t-ca4a3c — measured on the claude-reviewer incident. Claude had completed its response,
+      // emitted the recap handback and returned to a stable composer, while a harness monitor was
+      // still counted as `1 shell` in the mode line. The recap is newer evidence about the turn
+      // than that residual process counter. A genuinely outstanding background shell has no recap
+      // (the t-30ff0d fixture remains the positive control).
+      settledLine: /※\s*recap:/,
+      settledTailLines: 12,
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-28",
+      verifiedAt: "2026-07-29",
       notes:
         "t-30ff0d: a background shell leaves the pane byte-identical for seconds while the process"
         + " blocks on I/O, so both of AttentionMonitor's idle inputs (no content change, quiet CPU)"
         + " read as idle while the agent is demonstrably mid-flight. This is the pane's own statement"
         + " that it still owes the turn work. NOT measured: an MCP/tool call with no shell — the"
         + " reproduction that prompted this was a background shell, and the streaming spinner ticks"
-        + " (so content change already covers it).",
+        + " (so content change already covers it). t-ca4a3c: an explicit Claude recap at the stable"
+        + " composer wins over a residual shell/monitor counter; without that precedence an idle"
+        + " claude-reviewer was reported working indefinitely.",
     },
     gracefulStop: {
       steps: [
