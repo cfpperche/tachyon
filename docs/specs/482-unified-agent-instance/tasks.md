@@ -32,8 +32,11 @@ behaviour today. It also removes a strip that the fork work would otherwise have
 _Replaces the first draft's "durable lineage" phase, which adversarial review showed was aimed at a
 non-problem (`notes.md`)._
 
-- [ ] `commitFork` stops building its own session; env merge, identity mint, session ownership and
-      admission happen once, in the shared implementation.
+- [x] `commitFork` stops building its own session — `createOwnedSession` is the one door, carrying the
+      execution-env ordering, the memory scope and Pi admission. Identity is minted by the caller and
+      passed in, because both callers need the provenance in their DIFFERENT failure paths (an
+      ordinary launch must never kill an ambiguous same-named pane; a fork preserves its Git-locked
+      checkout as recovery state). Pinned by `test/unit/ownedSessionCreationShared.test.ts`.
 - [ ] Equivalence proof before deleting the duplicate: same env, same minted identity, same admission,
       same ownership — and fork's transcript sharing and per-runtime refusals (Codex, Grok) intact.
 - [ ] Forking a Saved agent stops forcing `declared: false`.
