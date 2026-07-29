@@ -56,10 +56,10 @@ interface RetiredSymbol {
  * Symbols already cut. Each later step of the removal appends its own entry in the SAME change that
  * removes it — that is why this is data rather than a pile of assertions.
  *
- * NOT yet listed, because they are still live and correct on this tree: `AdhocAgent` / `.adhoc`
- * (t-eb4b30 collapses the second instance store, 41 occurrences in `src`) and `adhocAdmission`
- * (t-7ff13d collapses admission, 5). Listing a symbol before its step lands would fail the build for
- * code that has no replacement yet, which is the guard front-running the plan.
+ * NOT yet listed, because it is still live and correct on this tree: `AdhocAgent` / `.adhoc`
+ * (t-eb4b30 collapses the second instance store, 41 occurrences in `src`). Listing a symbol before its
+ * step lands would fail the build for code that has no replacement yet, which is the guard
+ * front-running the plan.
  */
 const RETIRED: readonly RetiredSymbol[] = [
   {
@@ -103,6 +103,18 @@ const RETIRED: readonly RetiredSymbol[] = [
     name: 'kind: "adhoc"',
     cutBy: "t-04052d",
     replacedBy: 'kind: "agent-instance" plus a declared lifetime',
+  },
+  {
+    pattern: /\badhocAdmission\b/,
+    name: "adhocAdmission",
+    cutBy: "t-7ff13d",
+    replacedBy: "admitAgentRuntimeCommand — one admission door keyed on runtime, not on lifetime",
+  },
+  {
+    pattern: /\bSUPPORTED_ADHOC_/,
+    name: "SUPPORTED_ADHOC_*",
+    cutBy: "t-7ff13d",
+    replacedBy: "isSupportedAgentRuntime / SupportedAgentRuntime — no Temporary-only vocabulary",
   },
   {
     pattern: /storage\s*===\s*"canonical"/,

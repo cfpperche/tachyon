@@ -14,7 +14,7 @@ import { instructionsDeliverable, KNOWN_AI_CLIS } from "../../src/config/loadCon
 /**
  * SDD 478 M9 (`t-8f3f7d`) — Agent Instance admission stops inferring what it creates.
  * Agent Instance cut etapa 4 (`t-7ff13d`) — one runtime-capability door (not Temporary-only
- * `adhocAdmission` / `SUPPORTED_ADHOC_*`).
+ * `adhocAdmission` / `SUPPORTED_ADHOC_*`). legacy-absence-exempt: names the retired symbols it replaced (t-a5bd6b)
  *
  * Before M9, `spawn_agent` took any command and `suggestKindForCommand` decided the outcome: a name
  * in the authoring catalog became an Agent, everything else became a Terminal. So the Bridge could

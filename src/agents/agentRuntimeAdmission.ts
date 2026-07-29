@@ -5,6 +5,7 @@ import { parseLaunchCommand } from "../runtime/launchPreflight.js";
  * t-7ff13d (Agent Instance cut, etapa 4) — ONE admission path for Agent Instance, keyed on runtime
  * capability.
  *
+ * legacy-absence-exempt: names the retired symbols to say what replaced them (t-a5bd6b)
  * Replaces `adhocAdmission` / `SUPPORTED_ADHOC_*`, which named a Temporary-only door and read as a
  * second species. Saved and Temporary both need the same answer: "can Tachyon operate this
  * executable as an Agent?" Identity/lifetime are declared elsewhere; this module never infers them
