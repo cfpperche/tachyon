@@ -128,15 +128,35 @@ export function inspectLegacyFleet(input: {
     });
   }
 
-  // 3. Live agent sessions THIS workspace owns. Two negative controls live in this one condition:
-  //    a product terminal is not an agent, and a session outside `tachyon-<wsHash>-` is not ours.
+  // 3. Live agent sessions THIS workspace owns that the new build cannot account for.
+  //
+  //    "LEGACY" IS DOING WORK IN THIS RULE, and getting it wrong is expensive: a live agent session
+  //    is the NORMAL state of a running fleet, so refusing on every one of them would mean the
+  //    product refuses to activate after any restart with agents up. What makes a session legacy is
+  //    that it survived from a build before the cut — and the evidence for that is its ledger row:
+  //    a session spawned by this build has a row carrying an instance policy. Absent or pre-cut row
+  //    means nothing here can say what that process is, which is exactly the state to refuse.
+  //
+  //    Two negative controls live in the first two conditions: a product terminal is not an agent,
+  //    and a session outside `tachyon-<wsHash>-` is not ours.
+  //    A MISSING row is NOT evidence. A live agent whose row was compacted away is a state the
+  //    product already tolerates and tests, and it says nothing about which build spawned the
+  //    process — absence of evidence is not evidence of the old species. So the rule keys on a row
+  //    that EXISTS and is pre-cut. The cost of that narrowing, stated rather than hidden: a survivor
+  //    from before the cut whose row was also compacted slips through this check. It is still caught
+  //    the moment anything tries to resume or adopt it, because that path needs the row this build
+  //    would have to write.
+  const preCut = new Set(
+    input.ledger.filter(([, row]) => legacyFallbackUsed(row)).map(([name]) => name),
+  );
   for (const entry of input.liveSessions) {
     if (entry.kind !== "agent") continue;
     if (!isOwnedAgentSession(entry.session, input.wsHash)) continue;
+    if (!preCut.has(entry.name)) continue;
     offenders.push({
       kind: "live-agent-session",
       name: entry.name,
-      detail: `tmux session ${entry.session} is a live agent of this workspace`,
+      detail: `tmux session ${entry.session} is a live agent still running under a pre-cut ledger row`,
     });
   }
 

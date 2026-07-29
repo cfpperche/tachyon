@@ -65,14 +65,49 @@ describe("legacy fleet gate — seeds (t-fab832)", () => {
     expect(inspect({ rosterEntries: [POINTER, { ...INLINE, hasProfilePointer: true }] }).ok).toBe(true);
   });
 
-  /** SEED 3 — a LIVE tmux session of an agent this workspace owns. */
-  it("refuses on a live owned agent session, and admits once it is stopped", () => {
+  /**
+   * SEED 3 — a LIVE tmux session this build cannot account for.
+   *
+   * "Legacy" is doing real work in this rule. A live agent session is the NORMAL state of a running
+   * fleet, so refusing on every one would mean the product refuses to activate after any restart with
+   * agents up. What makes one legacy is that it survived a build from before the cut, and the
+   * evidence is its ledger row: a session this build spawned has a row carrying an instance policy.
+   */
+  it("refuses on a live owned agent still running under a pre-cut ledger row, and admits once stopped", () => {
     const live: LegacySessionEntry = { session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" };
-    const refused = inspect({ liveSessions: [live] });
+    const refused = inspect({ liveSessions: [live], ledger: [["reviewer", PRE_CUT]] });
     expect(refused.ok).toBe(false);
-    expect(refused.offenders[0]).toMatchObject({ kind: "live-agent-session", name: "reviewer" });
-    expect(refused.offenders[0]!.detail).toContain(`tachyon-${WS}-reviewer`);
-    expect(inspect({ liveSessions: [] }).ok).toBe(true);
+    expect(refused.offenders.some((o) => o.kind === "live-agent-session" && o.name === "reviewer")).toBe(true);
+    expect(refused.offenders.find((o) => o.kind === "live-agent-session")!.detail).toContain(`tachyon-${WS}-reviewer`);
+    // Stopping it clears the session offender; the pre-cut ROW is still its own, separate offender.
+    const stopped = inspect({ liveSessions: [], ledger: [["reviewer", PRE_CUT]] });
+    expect(stopped.offenders.map((o) => o.kind)).toEqual(["ledger-row"]);
+  });
+
+  /**
+   * The other half of seed 3, and the one that keeps the product usable: a live agent THIS build
+   * spawned is accounted for by its ledger row and must NOT block activation. Without this, the gate
+   * would refuse every ordinary restart that happened to have a fleet running — which is not a
+   * legacy check, it is an outage.
+   */
+  it("admits a live agent that this build can account for", () => {
+    const live: LegacySessionEntry = { session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" };
+    expect(inspect({ liveSessions: [live], ledger: [["reviewer", MODERN]] })).toEqual({ ok: true, offenders: [] });
+    // A pre-cut row for the same live agent is refused by BOTH rules, independently.
+    const stillLegacy = inspect({ liveSessions: [live], ledger: [["reviewer", PRE_CUT]] });
+    expect(stillLegacy.offenders.map((o) => o.kind).sort()).toEqual(["ledger-row", "live-agent-session"]);
+  });
+
+  /**
+   * The NARROWING, tested so it is a decision rather than an oversight: a live agent with NO ledger
+   * row does not block. A compacted row is a state the product already tolerates and says nothing
+   * about which build spawned the process — absence of evidence is not evidence of the old species.
+   * The cost is real and named in the module: a pre-cut survivor whose row was also compacted slips
+   * past THIS check.
+   */
+  it("does not block a live agent whose ledger row is simply absent", () => {
+    const live: LegacySessionEntry = { session: `tachyon-${WS}-live-only`, name: "live-only", kind: "agent" };
+    expect(inspect({ liveSessions: [live], ledger: [] })).toEqual({ ok: true, offenders: [] });
   });
 });
 
@@ -109,7 +144,8 @@ describe("legacy fleet gate — negative controls (t-fab832)", () => {
 describe("legacy fleet gate — what the operator is told (t-fab832)", () => {
   it("names every offender class present, and only those", () => {
     const result = inspect({
-      ledger: [["old-spike", PRE_CUT]],
+      // `reviewer` is live AND pre-cut, so both the session and the row classes are present.
+      ledger: [["old-spike", PRE_CUT], ["reviewer", PRE_CUT]],
       liveSessions: [{ session: `tachyon-${WS}-reviewer`, name: "reviewer", kind: "agent" }],
     });
     expect(result.remedy).toContain("stop those agents");
