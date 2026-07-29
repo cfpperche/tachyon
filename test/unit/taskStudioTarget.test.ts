@@ -28,7 +28,7 @@ describe("Workspace Task Studio target", () => {
     let fake!: FakeWorkspaceClient;
     fake = new FakeWorkspaceClient({
       identity,
-      snapshot: projectionSnapshot(identity, 0, [projectedAgent("codex", { declared: true })]),
+      snapshot: projectionSnapshot(identity, 0, [projectedAgent("codex", { lifetime: "saved" })]),
       query: async (query) => {
         expect(query).toEqual({ schemaVersion: 1, method: "task.studio", input: { id: "t-abc123" } });
         return workspaceTaskStudioViewSuccessV1({

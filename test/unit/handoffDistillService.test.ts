@@ -39,7 +39,7 @@ describe("handoff distillation service", () => {
   });
 
   it("fresh-starts a stopped declared target and refuses stopped ad-hoc targets", async () => {
-    const rows = [agent("reviewer", { running: false }), agent("adhoc", { running: false, declared: false })];
+    const rows = [agent("reviewer", { running: false }), agent("adhoc", { running: false, lifetime: "temporary" })];
     const operations = fakeOperations(rows);
     vi.mocked(operations.startDeclaredAgent).mockImplementation(async (name) => {
       rows[0] = agent(name, { running: true });
@@ -53,7 +53,7 @@ describe("handoff distillation service", () => {
   });
 
   it("starts an allowlisted ad-hoc profile with an exact unique command and approval prompt", async () => {
-    const rows = [agent("handoff-codex-73", { running: true, declared: false })];
+    const rows = [agent("handoff-codex-73", { running: true, lifetime: "temporary" })];
     const operations = fakeOperations(rows);
 
     const result = await startHandoffDistillation(operations, {
@@ -104,7 +104,7 @@ function agent(name: string, overrides: Partial<ManagedEntryInfo> = {}): Managed
     name,
     session: `tachyon-ws-${name}`,
     running: false,
-    declared: true,
+    lifetime: "saved",
     dead: false,
     crashed: false,
     kind: "agent",

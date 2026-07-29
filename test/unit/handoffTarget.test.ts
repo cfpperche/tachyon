@@ -125,9 +125,9 @@ function handoffView() {
       }],
       distillTargets: [{
         name: "codex",
-        description: "running · declared",
+        description: "running · saved",
         state: "running" as const,
-        declared: true,
+        lifetime: "saved" as const,
       }],
     },
   };

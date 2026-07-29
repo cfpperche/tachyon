@@ -32,9 +32,9 @@ describe("Project Handoff Runtime API projection", () => {
       lastActivityAt: "2026-07-14T12:01:00.000Z",
       distill: {
         listAgents: async () => [
-          { name: "codex", session: "s1", running: true, declared: true, dead: false, crashed: false, kind: "agent" },
-          { name: "reviewer", session: "s2", running: false, declared: true, dead: false, crashed: false, kind: "agent" },
-          { name: "terminal", session: "s3", running: true, declared: true, dead: false, crashed: false, kind: "terminal" },
+          { name: "codex", session: "s1", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" },
+          { name: "reviewer", session: "s2", running: false, lifetime: "saved", dead: false, crashed: false, kind: "agent" },
+          { name: "terminal", session: "s3", running: true, lifetime: "saved", dead: false, crashed: false, kind: "terminal" },
         ],
         resumableAgentNames: () => new Set(["reviewer"]),
       },
@@ -51,8 +51,8 @@ describe("Project Handoff Runtime API projection", () => {
         updatedBy: "human",
         notes: [{ agent: "codex", kind: "decision", summary: "Keep the engine authoritative" }],
         distillTargets: [
-          { name: "codex", state: "running", declared: true },
-          { name: "reviewer", state: "resumable", declared: true },
+          { name: "codex", state: "running", lifetime: "saved" },
+          { name: "reviewer", state: "resumable", lifetime: "saved" },
         ],
       },
     });
@@ -139,7 +139,7 @@ describe("Project Handoff Runtime API projection", () => {
       ...valid,
       handoff: {
         ...valid.handoff,
-        distillTargets: [{ name: "codex", state: "running", declared: true, description: "stopped · declared" }],
+        distillTargets: [{ name: "codex", state: "running", lifetime: "saved", description: "stopped · declared" }],
       },
     })).toThrow(/description contradicts/i);
     expect(() => parseHandoffViewV1({

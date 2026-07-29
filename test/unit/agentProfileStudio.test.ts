@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentOwnershipView,
   agentOwnershipViewSchemaV1,
+  agentProfileStudioMutationSchemaV1,
   agentProfileStudioSnapshotSchemaV1,
   agentProfileStudioLifecycleMutationSchemaV1,
   agentProfileStudioLifecycleResultSchemaV1,
@@ -54,7 +55,7 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
 function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
   return {
     schemaVersion: 1,
-    kind: "canonical",
+    kind: "agent-instance",
     agentName: "reviewer",
     ...(expectedRevision ? { expectedRevision } : {}),
     editable: {
@@ -406,5 +407,29 @@ describe("declared subagents authoring (t-4c113c)", () => {
     expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse({ ...setSubagents([]), enabled: true }).success).toBe(false);
     expect(agentProfileStudioLifecycleMutationSchemaV1.safeParse(setSubagents(Array.from({ length: 129 }, (_, i) => `a${i}`))).success).toBe(false);
     expect(agentOwnershipViewSchemaV1.safeParse({ subagents: [], candidates: [], extra: 1 }).success).toBe(false);
+  });
+
+  /**
+   * t-04052d — the Studio speaks ONE contract, and the retired species is refused rather than mapped.
+   *
+   * `kind` was the species discriminator: `canonical` designated a second kind of worker beside the
+   * ad-hoc one. The cut leaves a single Agent Instance contract, so the literal changes and the old
+   * value stops parsing. Refusal is the deliverable — accepting `canonical` as an alias would keep the
+   * species alive in the one place a client can still name it.
+   */
+  it("accepts only the Agent Instance contract and refuses the retired species", () => {
+    const accepted = mutation();
+    expect(accepted.kind).toBe("agent-instance");
+    expect(agentProfileStudioMutationSchemaV1.safeParse(accepted).success).toBe(true);
+
+    const retired = { ...accepted, kind: "canonical" };
+    expect(agentProfileStudioMutationSchemaV1.safeParse(retired).success).toBe(false);
+    // Not reinterpreted either: the refusal is at the contract, before any field is read.
+    expect(() => createProfileFromStudioMutation(retired as never)).toThrow();
+
+    // The snapshot side states the same single contract.
+    const snapshot = projectAgentProfileStudioSnapshot(lifecycleSnapshot());
+    expect(snapshot.kind).toBe("agent-instance");
+    expect(agentProfileStudioSnapshotSchemaV1.safeParse({ ...snapshot, kind: "canonical" }).success).toBe(false);
   });
 });

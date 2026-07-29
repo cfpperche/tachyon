@@ -17,7 +17,7 @@ const entry = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntry
   name,
   session: `s-${name}`,
   running: true,
-  declared: false,
+  lifetime: "temporary",
   dead: false,
   crashed: false,
   kind: "agent",

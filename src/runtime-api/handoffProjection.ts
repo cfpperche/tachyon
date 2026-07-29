@@ -5,6 +5,7 @@ import {
 } from "../handoff/handoffDistillService.js";
 import { isSafeHandoffRelativePath, projectHandoffRelativePath } from "../handoff/handoffPath.js";
 import type { HandoffDistillTargetState } from "../handoff/distill.js";
+import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 
 export const HANDOFF_BODY_MAX_CHARS = 1024 * 1024;
 export const HANDOFF_PENDING_NOTE_LIMIT = 1_000;
@@ -22,7 +23,11 @@ export interface HandoffDistillTargetProjectionV1 {
   name: string;
   description: string;
   state: HandoffDistillTargetState;
-  declared: boolean;
+  /**
+   * t-04052d — replaces `declared`. The wire now states the durability of the DEFINITION rather than
+   * which store happened to hold it, and the eligibility rule below is expressed on this directly.
+   */
+  lifetime: AgentInstanceLifetime;
 }
 
 export interface HandoffProjectionV1 {
@@ -182,17 +187,21 @@ function canonicalizeHandoffTimestamp(value: unknown): string {
 }
 
 function projectTarget(value: unknown): HandoffDistillTargetProjectionV1 {
-  const input = exactRecord(value, ["name", "description", "state", "declared"], "handoff target");
+  const input = exactRecord(value, ["name", "description", "state", "lifetime"], "handoff target");
   if (input.state !== "running" && input.state !== "resumable" && input.state !== "stopped") {
     throw invalid("handoff target state is invalid");
   }
-  if (typeof input.declared !== "boolean") throw invalid("handoff target declared is invalid");
-  if (!input.declared && input.state !== "running") throw invalid("stopped ad-hoc agent cannot be a handoff target");
+  if (input.lifetime !== "saved" && input.lifetime !== "temporary") throw invalid("handoff target lifetime is invalid");
+  // t-04052d — THE REFUSAL SURVIVES THE FIELD IT USED TO LIVE ON. This was `!declared && state !==
+  // "running"`, and it is a rule rather than a label: a Temporary instance's definition dies with its
+  // session, so once it is not running there is nothing left to hand work off to. Carrying only the
+  // display string across would have quietly opened handoff to agents that no longer exist.
+  if (input.lifetime === "temporary" && input.state !== "running") throw invalid("stopped temporary agent cannot be a handoff target");
   const name = boundedString(input.name, 1, 128, "handoff target name");
   if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(name)) throw invalid("handoff target name is invalid");
-  const expectedDescription = `${input.state} · ${input.declared ? "declared" : "ad-hoc"}`;
+  const expectedDescription = `${input.state} · ${input.lifetime}`;
   if (input.description !== expectedDescription) throw invalid("handoff target description contradicts its state");
-  return { name, description: expectedDescription, state: input.state, declared: input.declared };
+  return { name, description: expectedDescription, state: input.state, lifetime: input.lifetime };
 }
 
 function isCanonicalTimestamp(value: string): boolean {

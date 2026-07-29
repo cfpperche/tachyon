@@ -1,4 +1,4 @@
-import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
+import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 export type HandoffDistillRuntime = "codex" | "claude";
 
 export interface HandoffDistillProfileVM {
@@ -68,15 +68,20 @@ export function buildHandoffDistillPrompt(opts: { additionalInstruction?: unknow
 
 export type HandoffDistillMode = "existing" | "adhoc";
 
-/** Live-pane vs stopped declared agent (t-1ba76d). Ad-hoc only appears while running. */
+/** Live-pane vs stopped Saved agent (t-1ba76d). A Temporary one only appears while running. */
 export type HandoffDistillTargetState = "running" | "resumable" | "stopped";
 
 export interface HandoffDistillTargetRow {
   name: string;
-  /** UI sublabel after the name, e.g. `running · declared`. */
+  /** UI sublabel after the name, e.g. `running · saved`. */
   description: string;
   state: HandoffDistillTargetState;
-  declared: boolean;
+  /**
+   * t-04052d — the DECLARED durability of this agent's definition, replacing the `declared` boolean.
+   * It carries the eligibility rule as well as the label: a `temporary` target is only a legal
+   * handoff destination while it is running, because its definition dies with the session.
+   */
+  lifetime: AgentInstanceLifetime;
 }
 
 /** Minimal list() row fields the distill target builder needs (keeps pure helpers free of AgentManager). */
@@ -86,12 +91,17 @@ export interface DistillListRow {
   running: boolean;
   dead?: boolean;
   stopping?: boolean;
-  declared: boolean;
+  /**
+   * The roster's resolved durability answer (`ManagedEntryInfo.lifetime`). Read here rather than the
+   * raw instance policy on purpose: a Saved agent that has never been started has no ledger row at
+   * all, and asking the policy directly would drop it from the handoff list entirely.
+   */
+  lifetime: AgentInstanceLifetime;
 }
 
 /**
- * t-1ba76d — Distill "existing" targets: all **declared** agents (running or not) plus live ad-hoc agents.
- * Order: running first, then resumable, then stopped (each group alpha by name).
+ * t-1ba76d — Distill "existing" targets: all **Saved** agents (running or not) plus live Temporary
+ * agents. Order: running first, then resumable, then stopped (each group alpha by name).
  */
 export function buildDistillTargets(
   rows: ReadonlyArray<DistillListRow>,
@@ -102,19 +112,18 @@ export function buildDistillTargets(
   for (const a of rows) {
     if (a.kind !== "agent") continue;
     const live = a.running && !a.dead && !a.stopping;
-    // SDD 482 phase 3 — the question is "is this Temporary?", not "which store owns it". Equivalent
-    // for every row this build writes; the declared policy is what a fork answers correctly.
-    if (isTemporaryInstance(a) && !live) continue; // temporary only while running
+    // The question is "is this Temporary?", not "which store owns it".
+    const temporary = a.lifetime === "temporary";
+    if (temporary && !live) continue; // temporary only while running
     let state: HandoffDistillTargetState;
     if (live) state = "running";
     else if (resumable.has(a.name)) state = "resumable";
     else state = "stopped";
-    const ownership = a.declared ? "declared" : "ad-hoc";
     out.push({
       name: a.name,
       state,
-      declared: a.declared,
-      description: `${state} · ${ownership}`,
+      lifetime: a.lifetime,
+      description: `${state} · ${a.lifetime}`,
     });
   }
   const rank = (s: HandoffDistillTargetState): number => (s === "running" ? 0 : s === "resumable" ? 1 : 2);

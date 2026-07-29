@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { AgentInstanceLifetime } from "../../resume/SessionLedger.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PluginActionBroker, type PluginActionBrokerResult } from "./broker.js";
@@ -34,7 +35,7 @@ interface LegacyPluginWorkspaceSource extends WorkspacePresentationTarget {
       name: string;
       kind: "agent" | "terminal";
       running: boolean;
-      declared: boolean;
+      lifetime: AgentInstanceLifetime;
     }>>;
   };
   attentionOf(agent: string): { state: "working" | "idle" | "needs-input" | "throttled" } | undefined;

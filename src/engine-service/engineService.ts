@@ -671,7 +671,7 @@ async function buildProjections(
         running: agent.running,
         stopping: agent.stopping ?? false,
         stopFailed: agent.stopFailed ?? false,
-        declared: agent.declared,
+        lifetime: agent.lifetime,
         dead: agent.dead,
         crashed: agent.crashed,
         ...(attention ? { attention } : {}),

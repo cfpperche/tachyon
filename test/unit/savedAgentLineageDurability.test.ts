@@ -46,7 +46,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
     ledger.record("child", {
       def: { cmd: "claude", kind: "agent", parent: "boss" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     });
 
     // The parent must still be ON DISK: the write path used to strip it for declared rows.
@@ -71,7 +71,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
     ledger.record("child", {
       def: { cmd: "stale-command-from-the-ledger", kind: "agent", parent: "boss" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     });
 
     const reloaded = new AgentManager({
@@ -92,7 +92,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
     ledger.record("temp", {
       def: { cmd: "claude", kind: "agent", parent: "boss" },
       cwd: ws,
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
     });
 
     const reloaded = new AgentManager({
@@ -111,7 +111,7 @@ describe("Saved agent lineage durability (SDD 482, decision 5)", () => {
     const ws = workspace();
     const ledger = new SessionLedger(ws);
     const { config } = parseConfig("agents:\n  loop:\n    cmd: claude\n");
-    ledger.record("loop", { def: { cmd: "claude", kind: "agent", parent: "loop" }, cwd: ws, declared: true });
+    ledger.record("loop", { def: { cmd: "claude", kind: "agent", parent: "loop" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
 
     const reloaded = new AgentManager({
       tmux: fakeTmux(), wsHash: HASH, workspaceRoot: ws,

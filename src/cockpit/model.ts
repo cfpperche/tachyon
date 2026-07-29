@@ -13,6 +13,7 @@ import {
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
 import { DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS } from "../workspace/AdhocBackstopMonitor.js";
+import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 
 /**
  * t-585d5c — the product default in the unit Settings speaks. DERIVED from the monitor's constant,
@@ -80,7 +81,11 @@ export interface CockpitAgentRow {
   name: string;
   kind?: string;
   running: boolean;
-  declared?: boolean;
+  /**
+   * t-04052d — replaces `declared`. Optional because a row collected from a workspace whose projection
+   * was unavailable carries no agents at all; a PRESENT row always states it.
+   */
+  lifetime?: AgentInstanceLifetime;
   attention?: string;
   /** Present when collected from a live workspace shell (for Control actions). */
   folder?: string;

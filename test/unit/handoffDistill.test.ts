@@ -9,6 +9,7 @@ import {
   normalizeHandoffDistillArgs,
   reconcileDistillSelection,
   resolveHandoffDistillProfile,
+  type DistillListRow,
 } from "../../src/handoff/distill.js";
 
 describe("handoff distill prompt (spec 328)", () => {
@@ -67,30 +68,30 @@ describe("handoff distill prompt (spec 328)", () => {
 });
 
 describe("buildDistillTargets (t-1ba76d)", () => {
-  it("includes declared stopped/resumable agents and orders running first", () => {
-    const rows = [
-      { name: "zeta", kind: "agent", running: false, declared: true },
-      { name: "alpha", kind: "agent", running: true, declared: true },
-      { name: "beta", kind: "agent", running: false, declared: true },
-      { name: "dev", kind: "terminal", running: true, declared: true },
-      { name: "worker", kind: "agent", running: false, declared: false },
-      { name: "live-adhoc", kind: "agent", running: true, declared: false },
+  it("includes Saved stopped/resumable agents and orders running first", () => {
+    const rows: DistillListRow[] = [
+      { name: "zeta", kind: "agent", running: false, lifetime: "saved" },
+      { name: "alpha", kind: "agent", running: true, lifetime: "saved" },
+      { name: "beta", kind: "agent", running: false, lifetime: "saved" },
+      { name: "dev", kind: "terminal", running: true, lifetime: "saved" },
+      { name: "worker", kind: "agent", running: false, lifetime: "temporary" },
+      { name: "live-adhoc", kind: "agent", running: true, lifetime: "temporary" },
     ];
     const targets = buildDistillTargets(rows, ["beta"]);
     expect(targets.map((t) => t.name)).toEqual(["alpha", "live-adhoc", "beta", "zeta"]);
-    expect(targets.find((t) => t.name === "alpha")).toMatchObject({ state: "running", description: "running · declared" });
-    expect(targets.find((t) => t.name === "beta")).toMatchObject({ state: "resumable", description: "resumable · declared" });
-    expect(targets.find((t) => t.name === "zeta")).toMatchObject({ state: "stopped", description: "stopped · declared" });
-    expect(targets.find((t) => t.name === "live-adhoc")).toMatchObject({ state: "running", description: "running · ad-hoc" });
+    expect(targets.find((t) => t.name === "alpha")).toMatchObject({ state: "running", description: "running · saved" });
+    expect(targets.find((t) => t.name === "beta")).toMatchObject({ state: "resumable", description: "resumable · saved" });
+    expect(targets.find((t) => t.name === "zeta")).toMatchObject({ state: "stopped", description: "stopped · saved" });
+    expect(targets.find((t) => t.name === "live-adhoc")).toMatchObject({ state: "running", description: "running · temporary" });
     expect(targets.some((t) => t.name === "worker" || t.name === "dev")).toBe(false);
   });
 
   it("omits dead/stopping panes from the running tier", () => {
     const targets = buildDistillTargets(
       [
-        { name: "a", kind: "agent", running: true, dead: true, declared: true },
-        { name: "b", kind: "agent", running: true, stopping: true, declared: true },
-        { name: "c", kind: "agent", running: true, declared: true },
+        { name: "a", kind: "agent", running: true, dead: true, lifetime: "saved" },
+        { name: "b", kind: "agent", running: true, stopping: true, lifetime: "saved" },
+        { name: "c", kind: "agent", running: true, lifetime: "saved" },
       ],
       ["a"],
     );

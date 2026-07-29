@@ -76,7 +76,7 @@ function session(over: Partial<SessionRecord> & { cwd: string }): SessionRecord 
   return {
     def: { cmd: "claude", kind: "agent" },
     resume: { runtime: "claude", sessionId: "s" },
-    declared: false,
+    instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
     updatedAt: "t",
     ...over,
   };
@@ -498,7 +498,7 @@ describe("reload reconciliation (SDD 368 T14)", () => {
           cwd: wt,
           worktree: { path: wt, branch: "b", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t" },
           resume: { runtime: "claude", sessionId: "s-crash" },
-          declared: true,
+          instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
         })],
       ]),
       processByAgent: new Map([["holder", exactObs()]]),

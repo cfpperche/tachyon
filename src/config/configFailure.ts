@@ -7,7 +7,7 @@
  */
 import type { EntryKind } from "./loadConfig.js";
 import type { ConfigLkgSnapshot } from "./configLkg.js";
-import type { AgentInstancePolicy, SessionRecord } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstancePolicy, SessionRecord } from "../resume/SessionLedger.js";
 import { isResumable } from "../resume/SessionLedger.js";
 
 /** Persistent config-error surface for the sidebar (and doctor). */
@@ -45,12 +45,15 @@ export interface DegradedRosterEntry {
   kind: EntryKind;
   /** from ledger when present; otherwise LKG */
   source: "ledger" | "lkg";
-  declared: boolean;
+  /**
+   * t-04052d — replaces `declared`, mirroring the live roster's field so the degraded view answers the
+   * durability question the same way the healthy one does.
+   */
+  lifetime: AgentInstanceLifetime;
   /**
    * SDD 482 phase 3 — the declared instance policy, carried through from the ledger row so the
    * degraded roster asks the identity question the same way the live roster does. Absent for LKG
-   * rows: the last-known-good CONFIG snapshot has no instance, and inventing one from `declared`
-   * is the inference this split exists to end.
+   * rows: the last-known-good CONFIG snapshot describes a Profile, not a recorded instance.
    */
   instance?: AgentInstancePolicy;
   cmd?: string;
@@ -86,7 +89,8 @@ export function degradedRosterExtras(input: DegradedRosterInput): DegradedRoster
       name,
       kind,
       source: "ledger",
-      declared: rec.declared,
+      // Fail-closed, matching `isTemporaryInstance`: a row that declares no policy is not read as Saved.
+      lifetime: rec.instance?.lifetime ?? "temporary",
       ...(rec.instance ? { instance: rec.instance } : {}),
       ...(rec.def?.cmd ? { cmd: rec.def.cmd } : {}),
       ...(rec.def?.parent ? { parent: rec.def.parent } : {}),
@@ -103,7 +107,9 @@ export function degradedRosterExtras(input: DegradedRosterInput): DegradedRoster
       name: agent.name,
       kind: agent.kind,
       source: "lkg",
-      declared: true,
+      // An LKG entry IS a config-declared Profile — durable by construction, which is why it survived
+      // into the last-known-good snapshot at all.
+      lifetime: "saved",
       ...(agent.cmd ? { cmd: agent.cmd } : {}),
       ...(agent.declaredOwner ? { declaredOwner: agent.declaredOwner } : {}),
       resumable: false,

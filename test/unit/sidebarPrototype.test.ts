@@ -389,7 +389,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("spec 378: gathers the observed model via the injected accessor and surfaces provenance on the row", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" }],
       observedModel: () => ({
         id: "gpt-5.6-sol", observedAt: "2026-07-13T00:00:00Z", stale: false,
       }),
@@ -408,7 +408,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("spec 378: with no observation yet, the row shows the declared/profile label (never a fake observed)", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "worker", session: "tachyon-demohash-worker", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" }],
     });
     (ws.manager as { defOf: (name: string) => { cmd: string } | undefined }).defOf = () => ({ cmd: "codex" });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
@@ -424,7 +424,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("routes sidebar graceful stop actions through the stop command with the target workspace", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" }],
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();
@@ -441,7 +441,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("routes the unified Remove action through the destructive agent-removal command", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "scratch", session: "tachyon-demohash-scratch", running: true, declared: false, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "scratch", session: "tachyon-demohash-scratch", running: true, lifetime: "temporary", dead: false, crashed: false, kind: "agent" }],
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();
@@ -459,8 +459,10 @@ describe("SidebarPrototypeProvider", () => {
   it("does not show continuity badges for ad-hoc agents without Tachyon lifecycle hooks", async () => {
     const ws = fakeWorkspace([], {
       agents: [
-        { name: "declared", session: "tachyon-demohash-declared", running: true, declared: true, dead: false, crashed: false, kind: "agent" },
-        { name: "reviewer", session: "tachyon-demohash-reviewer", running: true, declared: false, dead: false, crashed: false, kind: "agent", parent: "declared" },
+        // A RUNNING agent always has a ledger row, so the fixture carries the policy the row would:
+        // `continuity` asks the recorded CAPABILITY, which is the whole point of the separate field.
+        { name: "declared", session: "tachyon-demohash-declared", running: true, lifetime: "saved", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, dead: false, crashed: false, kind: "agent" },
+        { name: "reviewer", session: "tachyon-demohash-reviewer", running: true, lifetime: "temporary", instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, dead: false, crashed: false, kind: "agent", parent: "declared" },
       ],
       continuityBadge: () => "missing",
     });
@@ -478,7 +480,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("does not attach stale attention to stopped agent rows", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "finished", session: "tachyon-demohash-finished", running: false, declared: false, dead: false, crashed: false, cleanExited: true, kind: "agent" }],
+      agents: [{ name: "finished", session: "tachyon-demohash-finished", running: false, lifetime: "temporary", dead: false, crashed: false, cleanExited: true, kind: "agent" }],
       attentionOf: () => ({ state: "working" }),
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
@@ -494,7 +496,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("routes sidebar forced kill actions through the kill command with the target workspace", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" }],
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();
@@ -511,7 +513,7 @@ describe("SidebarPrototypeProvider", () => {
 
   it("does not route agent actions from stale workspace hashes", async () => {
     const ws = fakeWorkspace([], {
-      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      agents: [{ name: "claude", session: "tachyon-demohash-claude", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" }],
     });
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [ws]);
     const { view, receive } = fakeView();

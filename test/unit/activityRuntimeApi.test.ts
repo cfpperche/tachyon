@@ -16,7 +16,7 @@ describe("Activity Runtime API", () => {
         transcriptPathOf: async () => undefined,
         list: async () => [
           row("codex", { attention: undefined }),
-          row("reviewer", { running: true, declared: false }),
+          row("reviewer", { running: true, lifetime: "temporary" }),
           row("terminal", { running: true, kind: "terminal" }),
           row("stopped"),
         ],
@@ -32,7 +32,7 @@ describe("Activity Runtime API", () => {
       targets: {
         total: 1,
         truncated: false,
-        items: [{ name: "reviewer", declared: false }],
+        items: [{ name: "reviewer", lifetime: "temporary" }],
       },
     });
   });
@@ -45,7 +45,7 @@ describe("Activity Runtime API", () => {
         agent: "codex",
         sharedCwd: false,
         attention: null,
-        targets: { total: 1, truncated: false, items: [{ name: "reviewer", declared: true }] },
+        targets: { total: 1, truncated: false, items: [{ name: "reviewer", lifetime: "saved" }] },
       },
     };
     expect(parseActivityContextViewV1(view)).toEqual(view);
@@ -55,7 +55,7 @@ describe("Activity Runtime API", () => {
     })).toThrow(/bounds contradict/);
     expect(() => parseActivityContextViewV1({
       ...view,
-      context: { ...view.context, targets: { total: 1, truncated: false, items: [{ name: "codex", declared: true }] } },
+      context: { ...view.context, targets: { total: 1, truncated: false, items: [{ name: "codex", lifetime: "saved" }] } },
     })).toThrow(/include the source agent/);
   });
 
@@ -72,7 +72,7 @@ function row(
   name: string,
   overrides: Partial<{
     running: boolean;
-    declared: boolean;
+    lifetime: "saved" | "temporary";
     kind: "agent" | "terminal";
     attention: undefined;
   }> = {},
@@ -83,7 +83,7 @@ function row(
     running: false,
     stopping: false,
     stopFailed: false,
-    declared: true,
+    lifetime: "saved" as const,
     dead: false,
     crashed: false,
     kind: "agent" as const,

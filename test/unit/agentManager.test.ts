@@ -481,7 +481,7 @@ describe("AgentManager", () => {
       const child = (await manager.list()).find((a) => a.name === "lineage-child");
       expect(child?.running).toBe(true);
       expect(child?.parent).toBe("orchestrator");
-      expect(child?.declared).toBe(false);
+      expect(child?.lifetime).toBe("temporary");
     });
 
     it("a spawn without a parent records none — lineage is never inferred", async () => {
@@ -682,7 +682,7 @@ describe("AgentManager", () => {
         const { sessions, dead, tmux } = fakeTmux();
         const ledger = new SessionLedger(root);
         ledger.record("claude", {
-          declared: true,
+          instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
           cwd: "/ws",
           def: { cmd: "claude", kind: "agent" },
           resume: { runtime: "claude", sessionId: sid, configHome: root },
@@ -1153,7 +1153,7 @@ describe("AgentManager", () => {
       try {
         const { fake, manager, ledger } = harness(root, { fileExists: (p: string) => fs.existsSync(p) });
         ledger.record("claude", {
-          declared: true,
+          instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
           cwd: "/ws",
           def: { cmd: "claude", kind: "agent" },
           resume: { runtime: "claude", sessionId: sid, configHome: root },
@@ -1279,10 +1279,10 @@ describe("AgentManager", () => {
     await manager.spawn("a");
     await manager.spawn("extra", { cmd: "sleep 1", kind: "terminal" });
     const list = await manager.list();
-    expect(list.map((i) => [i.name, i.running, i.declared])).toEqual([
-      ["a", true, true],
-      ["b", false, true],
-      ["extra", true, false],
+    expect(list.map((i) => [i.name, i.running, i.lifetime])).toEqual([
+      ["a", true, "saved"],
+      ["b", false, "saved"],
+      ["extra", true, "temporary"],
     ]);
   });
 
@@ -2163,7 +2163,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "codex", kind: "agent" },
       resume: { runtime: "codex", sessionId: "session-1" },
       cwd: h.ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "now",
     })).rejects.toThrow("canonical agent profile is disabled");
     await expect(h.manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow("canonical agent profile is disabled");
@@ -2316,7 +2316,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" },
       resume: { runtime: "claude", sessionId: "s1" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" },
     });
     await expect(manager.resume("claude", ledger.get("claude")!)).rejects.toThrow(/Delivery-bound/);
@@ -2326,7 +2326,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" },
       resume: { runtime: "claude", sessionId: "s2" },
       cwd: ws,
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       delivery: { invalid: true },
     });
     await expect(manager.resume("invalid", ledger.get("invalid")!)).rejects.toThrow(/Delivery-bound/);
@@ -2346,7 +2346,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" },
       resume: { runtime: "claude", sessionId: "s-crash" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
     });
     expect(ledger.get("crash-holder")?.delivery).toBeUndefined();
 
@@ -2402,13 +2402,13 @@ describe("AgentManager — session resume (spec 209)", () => {
     ledger.record("a1", {
       def: { cmd: "claude", kind: "agent" },
       cwd: wt,
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       delivery: { deliveryId: "d-1", segmentId: "seg-a", executionNonce: "n1" },
     });
     ledger.record("a2", {
       def: { cmd: "claude", kind: "agent" },
       cwd: wt,
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       delivery: { deliveryId: "d-1", segmentId: "seg-b", executionNonce: "n2" },
     });
     // Probe occupancy via reuse path's public surface when possible; fall back to private method.
@@ -2440,7 +2440,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         baseRef: "abc",
         createdAt: "t0",
       },
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       delivery: { deliveryId: "d-drift", segmentId: "seg-d", executionNonce: "n-d" },
     });
     const publicOcc = await manager.worktreeOccupant(deliveryWt);
@@ -2716,7 +2716,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude")).toMatchObject({
       def: { cmd: "claude", kind: "agent" }, // original, pre-injection (resume re-passes clean flags)
       resume: { runtime: "claude", sessionId: name }, // the name; upgraded to the real uuid at kill (customTitle capture)
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       cwd: ws,
     });
   });
@@ -2726,7 +2726,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("codex");
     expect(cmds[0]).toContain("codex '");
     expect(cmds[0]).toContain("── TACHYON PRIMER ──");
-    expect(ledger.get("codex")).toMatchObject({ resume: { runtime: "codex", sessionId: "" }, declared: true });
+    expect(ledger.get("codex")).toMatchObject({ resume: { runtime: "codex", sessionId: "" }, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
   });
 
   it("spawn injects TACHYON_AGENT_NAME for runtime hooks", async () => {
@@ -2942,14 +2942,14 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "codex", kind: "agent" },
       resume: { runtime: "codex", sessionId: "", configHome: "/home/test/.claude" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
     ledger.record("claude", {
       def: { cmd: "claude", kind: "agent" },
       resume: { runtime: "claude", sessionId: "claude-id", configHome: "/home/test/.claude" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
 
@@ -2975,7 +2975,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "hermes", kind: "agent" },
       resume: { runtime: "hermes", sessionId: "captured-old", configHome },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
 
@@ -3102,7 +3102,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("claude");
     cmds.length = 0;
-    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     expect(cmds.at(-1)).toContain(`--resume ${NEW}`); // reopened the current session, not the stale CAP
     expect(cmds.at(-1)).not.toContain(CAP);
     expect(ledger.get("claude")!.resume!.sessionId).toBe(NEW); // ledger persisted the owned id
@@ -3117,7 +3117,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("claude");
     cmds.length = 0;
-    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     expect(cmds.at(-1)).toContain(`--resume ${CAP}`); // owned gone → fall back to the stored id (today's behavior)
   });
 
@@ -3129,7 +3129,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("claude");
     cmds.length = 0;
-    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: CAP }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     expect(cmds.at(-1)).toContain(`--resume ${CAP}`); // unchanged behavior
   });
 
@@ -3167,7 +3167,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("spec 240: rehydrateFromLedger backfills a missing configHome on a pre-240 row (locks it before any toggle)", async () => {
     const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n");
-    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "x" }, cwd: "/repo", declared: true });
+    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "x" }, cwd: "/repo", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
     await manager.rehydrateFromLedger();
     expect(ledger.get("claude")!.resume!.configHome).toContain(".claude"); // derived + persisted once
   });
@@ -3190,7 +3190,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists: () => true,
     });
     // a PRE-toggle row: the session was recorded under the SHARED home before `isolate` was declared.
-    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "old-uuid", configHome: "/home/whoever/.claude" }, cwd: "/repo", declared: true });
+    ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "old-uuid", configHome: "/home/whoever/.claude" }, cwd: "/repo", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
     await manager.restart("claude", { stop: "force", session: "new" });
     // restart mints a FRESH session under the CURRENT derived home → re-homed to the private home (not preserved).
     expect(ledger.get("claude")!.resume!.configHome).toContain("harness");
@@ -3256,7 +3256,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists: () => true,
     });
     await manager.spawn("codex"); // cwd = ws
-    ledger.record("sibling", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s" }, cwd: `${ws}/.`, declared: true });
+    ledger.record("sibling", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "s" }, cwd: `${ws}/.`, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
     await manager.kill("codex");
     expect(ledger.get("codex")!.resume!.sessionId).toBe(""); // alias resolved as shared → skipped (capture stays empty)
   });
@@ -3266,7 +3266,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("scratch", { cmd: "claude" });
     // claude name-mints (spec 220): the resume id is the deterministic name for the ad-hoc agent
     const name = `tachyon-${path.basename(ws)}-scratch`;
-    expect(ledger.get("scratch")).toMatchObject({ declared: false, def: { cmd: "claude" }, resume: { sessionId: name } });
+    expect(ledger.get("scratch")).toMatchObject({ instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }, def: { cmd: "claude" }, resume: { sessionId: name } });
   });
 
   it("deterministic soul preflight preserves a crashed pane, ledger and postmortem with zero resource residue", async () => {
@@ -3282,7 +3282,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     sessions.add(session);
     dead.add(session);
     const identity = { soul: { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "123e4567-e89b-42d3-a456-426614174000", sha256: "a".repeat(64), chars: 5, bytes: 5, channel: "startup-argument" as const, state: "offered" as const, offeredAt: new Date(0).toISOString() }, health: "offered" as const };
-    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", soul: true }, resume: { runtime: "codex", sessionId: "prior" }, cwd: ws, declared: true, identity });
+    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", soul: true }, resume: { runtime: "codex", sessionId: "prior" }, cwd: ws, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, identity });
     const postmortem = (manager as unknown as { postmortemOutput: Map<string, { text: string; truncated: boolean; maxLines: number; maxBytes: number }> }).postmortemOutput;
     postmortem.set("reviewer", { text: "prior crash output", truncated: false, maxLines: 1000, maxBytes: 65_536 });
 
@@ -3375,7 +3375,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: "claude" as const, sessionId: "sid" },
       cwd: "/ws",
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
     expect(respawnArgs).toHaveLength(1);
@@ -3398,7 +3398,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: "claude" as const, sessionId: "sid" },
       cwd: "/ws",
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
     expect(respawnArgs).toHaveLength(0);
@@ -3444,7 +3444,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("rename moves the durable activity log to the new agent name", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  old:\n    cmd: claude\n", {});
-    ledger.record("old", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true, updatedAt: "t" });
+    ledger.record("old", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const oldLog = path.join(actDir, `${agentLogId("old")}.jsonl`);
@@ -3470,7 +3470,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: (over.runtime ?? "claude") as "claude" | "qwen", sessionId: over.sessionId ?? uuid },
       cwd: "/ws",
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
     // distinct agent names per assertion — resumeReadiness caches per name (validated by sessionId).
@@ -3486,9 +3486,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     // qwen (resumesWithoutId) → always ready; no resume block → not ready
     const q = resumeHarness("agents:\n  q:\n    cmd: qwen\n");
     expect(await q.manager.resumeReadiness("a-qwen", rec({ runtime: "qwen", sessionId: "" }))).toBe(true);
-    expect(await present.manager.resumeReadiness("a-nodef", { def: { cmd: "x", kind: "agent" }, cwd: "/ws", declared: true, updatedAt: "t" })).toBe(false);
+    expect(await present.manager.resumeReadiness("a-nodef", { def: { cmd: "x", kind: "agent" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" })).toBe(false);
     // resume block but NO def.cmd → resume() rejects it, so the badge must NOT say resumable (codex MAJOR)
-    expect(await present.manager.resumeReadiness("a-noclmd", { resume: { runtime: "claude", sessionId: uuid }, cwd: "/ws", declared: true, updatedAt: "t" })).toBe(false);
+    expect(await present.manager.resumeReadiness("a-noclmd", { resume: { runtime: "claude", sessionId: uuid }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" })).toBe(false);
   });
 
   it("221: resumeReadiness is cached per agent, auto-invalidated when the sessionId changes (no re-scan per refresh)", async () => {
@@ -3525,7 +3525,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: "claude" as const, sessionId },
       cwd: h.ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     };
 
@@ -3565,7 +3565,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: "claude" as const, sessionId: "delivery-session" },
       cwd: h.ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
       delivery: { deliveryId: "delivery-1", segmentId: "segment-1", executionNonce: "nonce-1" },
     };
@@ -3573,7 +3573,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" as const },
       resume: { runtime: "claude" as const, sessionId: "snapshot-session" },
       cwd: h.ws,
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     };
 
@@ -3666,7 +3666,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("planFork: resolves the live uuid and the unique sibling name", async () => {
     const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");
-    ledger.record("claude-fork-1", { def: { cmd: "claude", kind: "agent" }, cwd: "/x", declared: false }); // occupy -fork-1
+    ledger.record("claude-fork-1", { def: { cmd: "claude", kind: "agent" }, cwd: "/x", instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // occupy -fork-1
     const plan = await manager.planFork("claude");
     expect(plan).toMatchObject({ source: "claude", forkName: "claude-fork-2", sourceId: UUID, runtime: "claude" });
   });
@@ -3875,16 +3875,15 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
 
     await manager.spawn("claude");
-    expect(ledger.get("claude")?.instance).toEqual({ lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true });
+    expect(ledger.get("claude")?.instance).toEqual({ lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true });
 
     await manager.spawn("temp", { cmd: "claude --temp" });
-    expect(ledger.get("temp")?.instance).toEqual({ lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false });
+    expect(ledger.get("temp")?.instance).toEqual({ lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false });
 
     // A fork is the independent-axes case: no durable Profile, but it owns a resume block.
     const forkName = await manager.commitFork(await manager.planFork("claude"));
     // A fork records lifecycleHooks:false explicitly — commitFork already decides it; now the row says so.
-    expect(ledger.get(forkName)?.instance).toEqual({ lifetime: "temporary", resumePolicy: "restartable", lifecycleHooks: false });
-    expect(ledger.get(forkName)?.declared).toBe(false); // storage fact, unchanged by the split
+    expect(ledger.get(forkName)?.instance).toEqual({ lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false });
     await manager.kill(forkName);
   });
 
@@ -3924,7 +3923,8 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")).toMatchObject({
       def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
-      declared: false,
+      // temporary AND restartable — the fork is the case the two axes exist for.
+      instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
       cwd: ws, // no worktree → shares the source cwd (same project dir, context carries)
     });
     expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
@@ -4352,7 +4352,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("worker");
     await manager.kill("worker");
     newSessionArgs.length = 0; // only inspect the resume's new-session
-    await manager.resume("worker", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u9" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("worker", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u9" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     const args = newSessionArgs.at(-1)!;
     expect(args).toContain("ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic");
   });
@@ -4536,7 +4536,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("researcher");
     const before = startArgs.length;
-    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     expect(cmds.at(-1)).toContain("--strict-mcp-config");
     expect(startArgs.length).toBe(before + 1);
     expect(envFromTmuxArgs(startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBe("/h/researcher");
@@ -4553,7 +4553,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude --model sonnet", kind: "agent", parent: "boss" },
       resume: { runtime: "claude", sessionId, configHome: privateHome },
       cwd: "/ws",
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       updatedAt: "t",
     });
 
@@ -4572,7 +4572,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       def: { cmd: "claude", kind: "agent" },
       resume: { runtime: "claude", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", configHome: globalHome },
       cwd: "/ws",
-      declared: true,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       updatedAt: "t",
     });
 
@@ -4595,7 +4595,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("researcher");
     // a non-uuid stored id (a name) forces the by-title resolver to run
-    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "tachyon-ws-researcher" }, cwd: "/ws", declared: true, updatedAt: "t" });
+    await manager.resume("researcher", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "tachyon-ws-researcher" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
     const expectedHome = harnessHome(ws, "researcher");
     expect(seen.configHome).toBe(expectedHome);
     // the transcript-exists probe used the redirected home (H2), not ~/.claude
@@ -5065,7 +5065,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "stale-session" },
         cwd: "/ws",
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         bridgeClient: { boundGeneration: 6, wired: true },
       });
 
@@ -5097,7 +5097,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
         cwd: "/ws",
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         bridgeClient: { boundGeneration: 6, wired: true },
       });
 
@@ -5110,7 +5110,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { ...BRIDGE(), fileExists: () => true });
       await manager.spawn("claude");
       cmds.length = 0;
-      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u-uuid-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
       expect(cmds.at(-1)).toContain("--mcp-config '/ws/.tachyon/bridge-mcp/claude.json'");
     });
 
@@ -5173,7 +5173,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "opencode", kind: "agent" },
         resume: { runtime: "opencode", sessionId: "ses_x" },
         cwd: "/ws",
-        declared: false,
+        instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
         updatedAt: "t",
       });
       expect(envFromTmuxArgs(startArgs.at(-1)!).OPENCODE_CONFIG).toBe(spawnEnv);
@@ -5257,7 +5257,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "grok", kind: "agent" },
         resume: { runtime: "grok", sessionId: "g-ses" },
         cwd: "/ws",
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "t",
       });
       expect(envFromTmuxArgs(startArgs.at(-1)!).GROK_HOME).toBe(spawnEnv);
@@ -5362,7 +5362,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { ...OWN(), fileExists: () => true });
       await manager.spawn("claude");
       cmds.length = 0;
-      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      await manager.resume("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/claude.json'");
       expect(cmds.at(-1)).not.toContain("--allowedTools");
     });
@@ -5392,7 +5392,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       });
       await manager.spawn("codex");
       await manager.restart("codex", { stop: "force", session: "new" });
-      await manager.resume("codex", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "captured-id" }, cwd: "/ws", declared: true, updatedAt: "t" });
+      await manager.resume("codex", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "captured-id" }, cwd: "/ws", instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, updatedAt: "t" });
       expect(cmds).toHaveLength(3);
       for (const cmd of cmds) {
         expect(cmd).toContain("-c 'hooks.SessionStart=[{hooks=[]}]'");
@@ -5494,7 +5494,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "captured-id" },
         cwd: h.ws,
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "now",
       });
 
@@ -5571,7 +5571,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "grok", kind: "agent" },
         resume: { runtime: "grok", sessionId: "captured-id" },
         cwd: h.ws,
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "now",
       });
 
@@ -5663,7 +5663,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "pi", kind: "agent" },
         resume: { runtime: "pi", sessionId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
         cwd: h.ws,
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "now",
       });
 
@@ -5751,7 +5751,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "codex", kind: "agent" },
         resume: { runtime: "codex", sessionId: "captured-id" },
         cwd: h.ws,
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "now",
       });
 
@@ -5818,7 +5818,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "grok", kind: "agent" },
         resume: { runtime: "grok", sessionId: "22222222-2222-4222-8222-222222222222" },
         cwd: h.ws,
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "now",
       });
 
@@ -5946,7 +5946,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "codex", kind: "agent" },
         resume: { runtime: "codex", sessionId: "codex-session-1" },
         cwd: "/ws",
-        declared: true,
+        instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
         updatedAt: "t",
       });
       expect(cmds.at(-1)).toContain("resume codex-session-1");
@@ -6007,7 +6007,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         def: { cmd: "codex", kind: "agent" },
         resume: { runtime: "codex", sessionId: "codex-session-1" },
         cwd: "/ws",
-        declared: false,
+        instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
         updatedAt: "t",
       });
       expect(cmds.at(-1)).toContain("resume codex-session-1");
@@ -6205,8 +6205,8 @@ describe("live rename (agent/terminal, running or not)", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-canonical-live-rename-"));
     try {
       const ledger = new SessionLedger(dir);
-      ledger.record("reviewer", { resume: { runtime: "codex", sessionId: "session-1" }, cwd: dir, declared: true });
-      ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "reviewer", delegator: "reviewer" }, cwd: dir, declared: false });
+      ledger.record("reviewer", { resume: { runtime: "codex", sessionId: "session-1" }, cwd: dir, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
+      ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "reviewer", delegator: "reviewer" }, cwd: dir, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
       const fake = fakeTmux();
       const hash = workspaceHash(dir);
       fake.sessions.add(`tachyon-${hash}-reviewer`);
@@ -6295,7 +6295,7 @@ describe("live rename (agent/terminal, running or not)", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-rename-"));
     try {
       const ledger = new SessionLedger(dir);
-      ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "abc" }, cwd: dir, declared: true });
+      ledger.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "abc" }, cwd: dir, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
       const { tmux } = fakeTmux();
       const manager = new AgentManager({
         tmux,
@@ -6460,7 +6460,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     await expect(h.manager.spawn("claude-child", { cmd: `claude --model ${model}` })).resolves.toBeUndefined();
     expect(h.sessions.has(h.manager.session("claude-child"))).toBe(true);
     expect(h.ledger.get("claude-child")).toMatchObject({
-      declared: false,
+      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
       def: { cmd: `claude --model ${model}` },
       resume: { runtime: "claude" },
     });
@@ -6599,7 +6599,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   it("spec 352 — rehydrate keeps declared ownership out of runtime lineage", async () => {
     const { manager, ledger, ws } = harness("agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  codex:\n    cmd: codex\n  reviewer:\n    cmd: claude\n");
     await manager.spawn("reviewer"); // running, but no runtime parent
-    ledger.record("reviewer", { def: { cmd: "claude", kind: "agent", parent: "codex" }, cwd: ws, declared: true });
+    ledger.record("reviewer", { def: { cmd: "claude", kind: "agent", parent: "codex" }, cwd: ws, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
     await manager.rehydrateFromLedger();
     const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
     expect(reviewer?.declaredOwner).toBe("claude");
@@ -6677,7 +6677,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
         return null;
       },
     });
-    ledger.record("w", { def: { cmd: "claude", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
+    ledger.record("w", { def: { cmd: "claude", kind: "agent" }, worktree: REC, cwd: REC.path, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     void ws;
     await manager.restart("w", { stop: "force", session: "new" });
@@ -6901,7 +6901,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const worktreePath = path.join(ws, "worktrees", "rev");
     fs.mkdirSync(worktreePath, { recursive: true });
     const REC = { path: worktreePath, branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, declared: false });
+    ledger.record("rev", { def: { cmd: "opencode", kind: "agent" }, worktree: REC, cwd: REC.path, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await expect(manager.spawn("helper", { cmd: "opencode", parent: "boss", cwd: REC.path }))
       .rejects.toThrow(PARENT_CWD_REFUSAL);
     expect(newSessionArgs).toHaveLength(0);
@@ -7367,7 +7367,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
   it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {
     const { manager, ledger, ws, cmds } = harness("agents:\n  claude:\n    cmd: claude\n");
-    ledger.record("worker", { def: { cmd: "sh", kind: "terminal", parent: "claude" }, cwd: ws, declared: false });
+    ledger.record("worker", { def: { cmd: "sh", kind: "terminal", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     const worker = (await manager.list()).find((a) => a.name === "worker");
     expect(worker?.parent).toBe("claude"); // lineage restored
@@ -7377,10 +7377,10 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
   it("does NOT rehydrate a name that is declared in config (no ad-hoc shadow)", async () => {
     const { manager, ledger, ws } = harness("agents:\n  claude:\n    cmd: claude\n");
-    ledger.record("claude", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, declared: false }); // stale/odd
+    ledger.record("claude", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // stale/odd
     await manager.rehydrateFromLedger();
     const claude = (await manager.list()).find((a) => a.name === "claude");
-    expect(claude?.declared).toBe(true); // config wins, not the ledger shadow
+    expect(claude?.lifetime).toBe("saved"); // config wins, not the ledger shadow
   });
 
   it("kill removes an ad-hoc agent's ledger row (no resurrection); keeps a declared one's", async () => {
@@ -7481,8 +7481,8 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const ledger = new SessionLedger(ws);
-    ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // clean exit
-    ledger.record("boom", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, declared: false }); // crashed
+    ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // clean exit
+    ledger.record("boom", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // crashed
     const { tmux, sessions, dead, panes } = fakeTmux();
     const reviewSession = sessionName(hash, "review");
     const boomSession = sessionName(hash, "boom");
@@ -7512,7 +7512,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
   it("dismissAdhoc forgets a sessionless stopped ad-hoc — def, lineage AND ledger row", async () => {
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n");
-    ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, declared: false });
+    ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     expect((await manager.list()).find((a) => a.name === "ghost")).toBeDefined();
     manager.dismissAdhoc("ghost");
@@ -7523,7 +7523,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   it("dismissAdhoc emits the lifecycle callback so Bridge callers refresh the sidebar", async () => {
     const killed: string[] = [];
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n", { onKilled: (name) => killed.push(name) });
-    ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, declared: false });
+    ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     manager.dismissAdhoc("ghost");
     expect(killed).toEqual(["ghost"]);
@@ -7531,8 +7531,8 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
 
   it("rename rewrites a child's persisted parent in the ledger", async () => {
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n");
-    ledger.record("parent", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });
-    ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "parent" }, cwd: ws, declared: false });
+    ledger.record("parent", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
+    ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "parent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     await manager.rename("parent", "boss");
     expect(ledger.get("child")?.def?.parent).toBe("boss");

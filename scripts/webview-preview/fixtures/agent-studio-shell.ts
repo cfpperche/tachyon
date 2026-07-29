@@ -78,7 +78,7 @@ const denseEntity: AgentStudioEntity = {
 
 const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   schemaVersion: 1,
-  kind: "canonical",
+  kind: "agent-instance",
   agentName: "reviewer",
   agentId: "123e4567-e89b-42d3-a456-426614174000",
   revision: "a".repeat(64),

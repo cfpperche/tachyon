@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { degradedRosterExtras } from "../../src/config/configFailure.js";
-import { isTemporaryInstance } from "../../src/agents/agentInstancePolicy.js";
 import type { SessionRecord } from "../../src/resume/SessionLedger.js";
 
 /**
@@ -16,16 +15,16 @@ import type { SessionRecord } from "../../src/resume/SessionLedger.js";
  *  2. Mission Control's live-Temporary filter;
  *  3. the degraded roster's `adhoc` flag, including the LKG row that has no policy to read.
  *
- * It also PINS THE BOUNDARY the sweep found. `declared` still appears in four projections and in
- * `declaredAgentNames`, and those are not stragglers — they are a wire field and a storage question
- * respectively. A future convergence pass that "finishes the job" by converting them would widen the
- * Bridge protocol without a version bump, which `t-5e1113` forbids. The assertions below fail if
- * that happens, so the boundary is enforced rather than merely documented.
+ * t-04052d then removed `declared` outright, so the readers below ask `lifetime` — the roster's
+ * resolved answer — rather than the instance policy directly. That distinction is load-bearing and the
+ * last two cases exist to keep it: a Saved agent with no ledger row (never started, or restored from
+ * an LKG config snapshot) has NO instance policy, and asking the policy would classify it Temporary —
+ * rendering it as ad-hoc and offering to dismiss it through the Bridge.
  */
 const SOURCE = (rel: string): string => fs.readFileSync(path.resolve(__dirname, "../..", rel), "utf8");
 
 function record(over: Partial<SessionRecord>): SessionRecord {
-  return { def: { cmd: "claude", kind: "agent" }, cwd: "/ws", declared: false, updatedAt: "t", ...over } as SessionRecord;
+  return { def: { cmd: "claude", kind: "agent" }, cwd: "/ws", updatedAt: "t", ...over } as SessionRecord;
 }
 
 describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
@@ -34,16 +33,17 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    * asked the identity question through `declared`. A behavioural test cannot see a fourth one
    * appearing beside them, which is exactly how the first three drifted apart from Fleet's answer.
    */
-  it("the Bridge dismiss family asks the resolver, and nothing beside it asks `declared`", () => {
+  it("the Bridge dismiss family asks the roster's resolved lifetime, and nothing beside it asks `declared`", () => {
     const src = SOURCE("src/bridge/tools.ts");
-    expect(src).toMatch(/const canDismiss = isTemporaryInstance\(info\) && !info\.running;/);
-    expect(src).toMatch(/if \(info && isTemporaryInstance\(info\) && !info\.running\)/);
-    expect(src).toMatch(/if \(!isTemporaryInstance\(info\)\) \{/);
+    expect(src).toMatch(/const canDismiss = info\.lifetime === "temporary" && !info\.running;/);
+    expect(src).toMatch(/if \(info && info\.lifetime === "temporary" && !info\.running\)/);
+    expect(src).toMatch(/if \(info\.lifetime === "saved"\) \{/);
 
-    // No remaining identity read of an entry row. `info.declared` may still appear as the REASON
-    // string's input (it explains which store owns the row), which is what `declared` means.
-    const identityReads = src.match(/[!(]\s*info\.declared\s*(?:&&|\)|;)/g) ?? [];
-    expect(identityReads).toEqual([]);
+    // t-04052d — these ask the ROSTER row, not the instance policy, and the difference is a security
+    // one rather than a style one: a Saved agent that has never been started has no ledger row, so
+    // `isTemporaryInstance` would report it Temporary and make it Bridge-dismissible.
+    expect(src).not.toMatch(/isTemporaryInstance/);
+    expect(src.match(/info\.declared/g) ?? []).toEqual([]);
   });
 
   /**
@@ -60,7 +60,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   /** Reader 2. Mission Control's live-Temporary filter, and its second guard which is NOT the same question. */
   it("Mission Control filters live Temporary instances by policy, keeping the config-ownership guard separate", () => {
     const src = SOURCE("src/cockpit/missionVm.ts");
-    expect(src).toMatch(/\.filter\(\(a\) => isTemporaryInstance\(a\) && !declared\.has\(a\.name\)\)/);
+    expect(src).toMatch(/\.filter\(\(a\) => a\.lifetime === "temporary" && !declared\.has\(a\.name\)\)/);
     // `declared.has(name)` is a set of CONFIG-OWNED NAMES — a different question, correctly kept.
     expect(src).toMatch(/const declared = new Set\(ws\.declaredAgentNames\(\)\)/);
   });
@@ -74,9 +74,9 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set<string>(),
       ledger: [
-        ["temp", record({ declared: false, instance: { lifetime: "temporary", resumePolicy: "collected" } })],
-        ["fork", record({ declared: false, instance: { lifetime: "temporary", resumePolicy: "restartable" } })],
-        ["legacy", record({ declared: false })],
+        ["temp", record({ instance: { lifetime: "temporary", resumePolicy: "collected" } })],
+        ["fork", record({ instance: { lifetime: "temporary", resumePolicy: "restartable" } })],
+        ["legacy", record({})], // a pre-cut row: no instance policy at all
       ],
       lkg: { agents: [{ name: "from-config", kind: "agent", cmd: "claude" }] } as never,
     });
@@ -84,14 +84,16 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
 
     expect(by.get("temp")?.instance).toEqual({ lifetime: "temporary", resumePolicy: "collected" });
     expect(by.get("fork")?.instance).toEqual({ lifetime: "temporary", resumePolicy: "restartable" });
-    expect(by.get("legacy")?.instance).toBeUndefined();     // pre-split row: nothing invented
+    expect(by.get("legacy")?.instance).toBeUndefined();     // pre-cut row: nothing invented
     expect(by.get("from-config")?.instance).toBeUndefined(); // a config snapshot has no instance
 
-    // And every row still answers the question the sidebar asks, legacy rows included.
-    expect(isTemporaryInstance(by.get("temp")!)).toBe(true);
-    expect(isTemporaryInstance(by.get("fork")!)).toBe(true);
-    expect(isTemporaryInstance(by.get("legacy")!)).toBe(true);
-    expect(isTemporaryInstance(by.get("from-config")!)).toBe(false);
+    // And every row still answers the question the sidebar asks — off `lifetime`, which is what the
+    // LKG row makes necessary: it has no instance policy to read, and being in the last-known-good
+    // config snapshot IS its durable Profile. Asking the policy would call it Temporary.
+    expect(by.get("temp")?.lifetime).toBe("temporary");
+    expect(by.get("fork")?.lifetime).toBe("temporary");
+    expect(by.get("legacy")?.lifetime).toBe("temporary");
+    expect(by.get("from-config")?.lifetime).toBe("saved");
   });
 
   /**
@@ -103,29 +105,33 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   it("follows the policy, not the store, when the two disagree", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set<string>(),
-      ledger: [["odd", record({ declared: true, instance: { lifetime: "temporary", resumePolicy: "collected" } })]],
+      ledger: [["odd", record({ instance: { lifetime: "temporary", resumePolicy: "collected" } })]],
       lkg: null,
     });
-    expect(extras[0]?.declared).toBe(true);            // the storage fact is preserved, not rewritten
-    expect(isTemporaryInstance(extras[0]!)).toBe(true); // and the policy still decides
+    expect(extras[0]?.lifetime).toBe("temporary"); // the projected row states the policy's answer
+    expect(extras[0]?.instance).toEqual({ lifetime: "temporary", resumePolicy: "collected" }); // carried, not rewritten
   });
 
   it("the sidebar's degraded rows go through the resolver too", () => {
     const src = SOURCE("src/sidebar/sidebarFleetService.ts");
     expect(src).not.toMatch(/adhoc: !extra\.declared/);
-    expect((src.match(/adhoc: isTemporaryInstance\(extra\)/g) ?? []).length).toBe(2);
+    expect((src.match(/adhoc: extra\.lifetime === "temporary"/g) ?? []).length).toBe(2);
   });
 
   /**
-   * The boundary, and since RATIFIED DECISION 7 it is a requirement rather than my own caution.
+   * THE BOUNDARY, INVERTED — and the inversion is the deliverable, not an incidental edit.
    *
-   * These sites carry `declared` ACROSS THE WIRE — a Bridge client on an older build reads that
-   * field. The human ruled that it stays, with a compatible meaning, for this phase: not removed,
-   * not renamed, not silently reinterpreted. Policy fields and retirement of the legacy one belong
-   * to phase 5, and only behind an explicit protocol bump with cross-version proof and a
-   * compatibility window. So this test fails if someone "finishes" the migration through them.
+   * Phase 3 ratified decision 7 froze `declared` on the wire: a Bridge client on an older build read
+   * that field, so it could not be removed, renamed, or reinterpreted without a protocol bump and a
+   * compatibility window. This test enforced that freeze, and it was right to.
+   *
+   * `t-fab832` bought the removal by taking ENGINE_SHELL_PROTOCOL to 5 and gating activation on any
+   * pre-cut state, which is exactly the bump-and-window decision 7 required. So the guard now asserts
+   * the opposite fact: these projections must NOT carry `declared`, and a future change that
+   * reintroduces it — as a compatibility alias, a dual-write, or a "harmless" extra field — fails here
+   * rather than quietly restoring the species this cut removed.
    */
-  it("leaves `declared` on the wire alone — ratified decision 7 keeps it stable this phase", () => {
+  it("keeps `declared` OFF the wire — the freeze is discharged, not merely lifted", () => {
     for (const rel of [
       "src/runtime-api/handoffProjection.ts",
       "src/runtime-api/workspaceProjection.ts",
@@ -133,8 +139,11 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
       "src/engine-service/engineService.ts",
     ]) {
       const src = SOURCE(rel);
-      expect(src, `${rel} should still carry declared on the wire`).toMatch(/declared/);
-      expect(src, `${rel} must not read instance policy`).not.toMatch(/isTemporaryInstance/);
+      // Match the FIELD, not the English word — the prose above these projections still discusses
+      // `declared` by name, and it should. `declaredOwner`/`declaredAgent` are different edges.
+      const retired = src.match(/(?<![A-Za-z])declared\s*:|\.declared\b(?![A-Za-z])/g) ?? [];
+      expect(retired, `${rel} must not carry the retired declared field`).toEqual([]);
+      expect(src, `${rel} should state lifetime instead`).toMatch(/lifetime/);
     }
   });
 });

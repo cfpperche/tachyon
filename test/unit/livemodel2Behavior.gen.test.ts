@@ -53,7 +53,7 @@ function agentRaw(name: string, cmd: string): AgentRaw {
 }
 function fleetSource(root: string, agents: Record<string, "claude" | "codex" | "grok">): RuntimeOpsWorkspaceSource {
   const sessions = new Map<string, SessionRecord>(
-    Object.entries(agents).map(([name, runtime]) => [name, { cwd: root, declared: true, updatedAt: "2026-07-13T00:00:00Z", resume: { runtime, sessionId: "s" } }]),
+    Object.entries(agents).map(([name, runtime]) => [name, { cwd: root, lifetime: "saved", updatedAt: "2026-07-13T00:00:00Z", resume: { runtime, sessionId: "s" } }]),
   );
   return { workspaceRoot: root, wsHash: "ws", folderName: "app", ledger: { all: () => sessions } };
 }
@@ -148,7 +148,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
 
     const source = fleetSource(root, { worker: "codex" }) as RuntimeOpsWorkspaceSource & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" as const }],
+      list: async () => [{ name: "worker", session: "pane", running: true, lifetime: "saved", dead: false, crashed: false, kind: "agent" as const }],
       defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
       resumeReadiness: async () => true,
     };

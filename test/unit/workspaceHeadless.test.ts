@@ -529,7 +529,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
   try {
     const created = await ws.commitAgentProfileStudio({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "reviewer",
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
@@ -544,7 +544,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
 
     const edited = await ws.commitAgentProfileStudio({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "reviewer",
       expectedRevision: created.revision,
       editable: {
@@ -556,7 +556,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
     await expect(ws.commitAgentProfileStudio({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "reviewer",
       expectedRevision: created.revision,
       editable: {
@@ -583,7 +583,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
   try {
     const created = await ws.commitAgentProfileStudio({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "reviewer",
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
@@ -739,7 +739,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
     await ws.evolutionStore.ensureProfile("reviewer");
-    ws.ledger.record("reviewer", { cwd: root, declared: true, updatedAt: "captured", instance: { lifetime: "saved", resumePolicy: "restartable" } });
+    ws.ledger.record("reviewer", { cwd: root, updatedAt: "captured", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     const activityDir = path.join(root, ".tachyon", "activity");
     fs.mkdirSync(activityDir, { recursive: true });
     fs.writeFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "owned activity\n");
@@ -1163,7 +1163,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("keeps a failed Resume-all offer and reports a failed fresh-spawn fallback", async () => {
     const { ws, host } = await makeWorkspace();
-    const record = { declared: true, cwd: ws.workspaceRoot };
+    const record = { instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, cwd: ws.workspaceRoot };
     (ws as unknown as { resumable: Array<{ name: string; record: typeof record }> }).resumable = [
       { name: "a", record },
     ];
@@ -2336,7 +2336,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("GC of a removed declared agent deletes its durable activity log with the ledger row", async () => {
     const { ws } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     const actDir = path.join(ws.workspaceRoot, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("old")}.jsonl`);
@@ -2360,7 +2360,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
     const { ws, host } = await makeWorkspace();
-    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: true, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
+    ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     await ws.evolutionStore.ensureProfile("old");
     vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
 
@@ -2375,7 +2375,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
     const { ws, sessions, sessionEnv } = await makeWorkspace();
-    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, declared: false, updatedAt: "t", instance: { lifetime: "temporary", resumePolicy: "restartable" } });
+    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, updatedAt: "t", instance: { lifetime: "temporary", resumePolicy: "restartable" } });
     // t-fab832 — the post-cut contract: a live agent session must ATTEST that this build created it,
     // and the proof lives on the session rather than in the ledger. This fixture adds the session
     // directly, so it seeds the attestation the way a real `new-session` would. The case this test

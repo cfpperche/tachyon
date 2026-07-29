@@ -8,9 +8,15 @@ import {
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 const MAX_SHARE_TARGETS = 256;
 
+/**
+ * t-04052d — `declared` becomes `lifetime`. This row is TRANSPORT: the consumer (the Activity share
+ * QuickPick) renders it as a description and nothing else, so no rule moved with it — the one rule
+ * that lived on `declared`, handoff eligibility, stays in `handoffProjection` where it belongs rather
+ * than being duplicated here.
+ */
 const target = z.object({
   name: z.string().regex(AGENT_NAME_RE),
-  declared: z.boolean(),
+  lifetime: z.enum(["saved", "temporary"]),
 }).strict();
 
 const context = z.object({
@@ -78,7 +84,10 @@ export async function projectActivityContext(
     targets: {
       total: targets.length,
       truncated: targets.length > MAX_SHARE_TARGETS,
-      items: targets.slice(0, MAX_SHARE_TARGETS).map((row) => ({ name: row.name, declared: row.declared })),
+      items: targets.slice(0, MAX_SHARE_TARGETS).map((row) => ({
+        name: row.name,
+        lifetime: row.lifetime,
+      })),
     },
   });
 }

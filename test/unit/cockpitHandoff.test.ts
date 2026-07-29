@@ -32,7 +32,7 @@ function fakeSnapshot(overrides: Partial<HandoffProjectionV1> = {}): HandoffProj
     updatedBy: "human",
     revision: "0123456789abcdef",
     notes: [],
-    distillTargets: [{ name: "codex", description: "running · declared", state: "running", declared: true }],
+    distillTargets: [{ name: "codex", description: "running · declared", state: "running", lifetime: "saved" }],
     ...overrides,
   };
 }
