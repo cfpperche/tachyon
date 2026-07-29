@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
+import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 (`t-5e1113`) — a Saved Agent proposal is INERT DATA.
@@ -81,6 +82,7 @@ export type SavedAgentProposalRefusalCode =
   | "capability_absent"
   | "capability_recursion"
   | "pending_ceiling"
+  | "ownership_conflict"
   | "invalid_spec";
 
 export type SavedAgentProposalAdmission =
@@ -156,6 +158,12 @@ export function admitSavedAgentProposal(input: {
    * writer corrupt a pending proposal to make it invisible and get a fresh id every time.
    */
   untrustedPending?: number;
+  /**
+   * The workspace roster, for validating requested ownership against the spec 352 contract. Absent
+   * means the caller could not read it — and that is treated as a REFUSAL when ownership is requested,
+   * never as permission, because "I could not check" and "it is fine" are different answers.
+   */
+  roster?: AgentOwnershipRosterV1;
   nowMs: number;
   id: string;
 }): SavedAgentProposalAdmission {
@@ -186,6 +194,28 @@ export function admitSavedAgentProposal(input: {
   }
 
   if (!AGENT_NAME_RE.test(input.spec.name)) return invalid(`'${input.spec.name}' is not a valid agent name`);
+
+  // 3. Requested ownership, checked against the SAME spec 352 rules a Studio edit obeys, and with the
+  //    same wording. Without this the conflict surfaces only after a human has already approved: the
+  //    config loader is fail-closed, so the reload the transaction activates would throw and the
+  //    commit would roll back with an opaque config error. Fail-closed is not the same as
+  //    well-behaved — the human would have consented to something that then quietly undid itself.
+  //    Refusing here is the same doctrine already applied to capability recursion: the proposer
+  //    learns why, and nothing reaches the queue.
+  if (input.spec.ownsSubagents?.length) {
+    if (!input.roster) {
+      return {
+        ok: false,
+        code: "ownership_conflict",
+        reason: "requested roster ownership cannot be validated because the workspace roster is unavailable; refusing rather than deferring the check to after a human approves",
+      };
+    }
+    try {
+      assertOwnershipTargets(input.spec.name, input.spec.ownsSubagents, input.roster);
+    } catch (error) {
+      return { ok: false, code: "ownership_conflict", reason: error instanceof Error ? error.message : String(error) };
+    }
+  }
   if (input.spec.rationale.trim().length === 0) return invalid("a proposal must carry a non-empty rationale for the human");
   if (!input.base.configSha256) return invalid("a proposal must record the base config digest it was computed against");
 

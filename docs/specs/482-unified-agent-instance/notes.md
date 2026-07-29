@@ -323,3 +323,24 @@ forbids widening the wire without versioning and cross-version proof.
 Rather than smuggle it in, the port stays optional and the Cockpit refuses OUT LOUD when it is absent.
 That is not the half-open door the earlier slices argued against: a refusal with a reason is feedback,
 whereas a click that quietly does nothing is what teaches a human that approving is harmless.
+
+
+## Fail-closed is not the same as well-behaved (2026-07-29)
+
+The slice C review found that nothing on the proposal path validated `ownsSubagents` against the spec
+352 contract, and the reason it was not a blocker is worth keeping: the outcome was already
+fail-closed. `buildDeclaredOwner` records an error, `loadProfileAwareConfig` returns `{errors}` for the
+whole config, `activateState("target")` throws, and the lifecycle transaction compensates. Nothing
+corrupt would have been written.
+
+But the COST landed in the wrong place. The human had already approved, and what they would see is a
+rollback with an opaque config error — consent given to something that then quietly undid itself. The
+proposer would learn nothing at all. That is the same shape as approving into a void, one step later.
+
+So the check moved to admission, and the rules were EXTRACTED rather than reimplemented:
+`assertOwnershipTargets` is now called by `ownershipPatchFromStudioMutation` and by proposal
+admission, so a proposer and a Studio user are told the identical fact in identical words. A test
+asserts the two messages are equal, because "same rule" written twice is how they diverge.
+
+One decision inside it: an unavailable roster REFUSES a proposal that requests ownership. "I could not
+check" and "it is fine" are different answers, and only one of them may admit.

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
 import { buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
-import type { SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
+import { admitSavedAgentProposal, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
+import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "../../src/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — what the human sees, and what they must never see.
@@ -155,5 +156,109 @@ describe("Saved Agent proposals in the Human Inbox (SDD 482 phase 4C)", () => {
       savedAgentProposals: [review()],
     }, { now: "2026-07-29T06:00:00.000Z" });
     expect(items.map((i) => i.kind)).toEqual(["approval", "saved-agent-proposal", "validation"]);
+  });
+});
+
+/**
+ * SDD 482 phase 4C — requested ownership is refused at ADMISSION, by the spec 352 rules a Studio edit
+ * obeys, with the same wording.
+ *
+ * `claude-reviewer` found the gap and named the cost precisely: the config loader is fail-closed, so a
+ * conflicting `ownsSubagents` WOULD have been caught — but only after a human approved, as an opaque
+ * config error during the transaction's reload, with the commit rolling back. Fail-closed is not the
+ * same as well-behaved: the human would have consented to something that then quietly undid itself.
+ */
+describe("requested ownership is validated where the proposer can still learn why", () => {
+  const GRANTED = { grants: { proposeSavedAgent: true } } as const;
+  const BASE = { configSha256: "a".repeat(64) };
+  const NOW_MS = Date.parse("2026-07-29T00:00:00.000Z");
+
+  const admit = (ownsSubagents: string[], roster?: AgentOwnershipRosterV1) =>
+    admitSavedAgentProposal({
+      proposer: "claude-runtime",
+      proposerProfile: GRANTED,
+      spec: { name: "importer", runtimeAdapter: "claude", rationale: "why", ownsSubagents },
+      base: BASE,
+      pending: [],
+      nowMs: NOW_MS,
+      id: "sp-000001",
+      ...(roster ? { roster } : {}),
+    });
+
+  const ROSTER: AgentOwnershipRosterV1 = [
+    { name: "boss", kind: "agent", subagents: ["owned"] },
+    { name: "owned", kind: "agent", subagents: [] },
+    { name: "free", kind: "agent", subagents: [] },
+    { name: "parent-of-one", kind: "agent", subagents: ["free2"] },
+    { name: "free2", kind: "agent", subagents: [] },
+    { name: "devserver", kind: "terminal", subagents: [] },
+  ];
+
+  it("admits ownership of an unowned agent", () => {
+    expect(admit(["free"], ROSTER).ok).toBe(true);
+  });
+
+  it("refuses an agent that already has an owner, naming the owner", () => {
+    const refused = admit(["owned"], ROSTER);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.code).toBe("ownership_conflict");
+    expect(refused.reason).toContain("already declared as a subagent of 'boss'");
+  });
+
+  it("refuses a terminal by name rather than as 'not found'", () => {
+    const refused = admit(["devserver"], ROSTER);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toContain("resolves to a terminal");
+  });
+
+  it("refuses an undeclared target", () => {
+    const refused = admit(["ghost"], ROSTER);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toContain("not declared in agents/terminals");
+  });
+
+  it("refuses a target that owns agents of its own — no nested trees", () => {
+    const refused = admit(["parent-of-one"], ROSTER);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) expect(refused.reason).toContain("nested subagent trees are not supported");
+  });
+
+  /** "I could not check" and "it is fine" are different answers, and only one of them may admit. */
+  it("refuses when the roster is unavailable instead of deferring the check past approval", () => {
+    const refused = admit(["free"], undefined);
+    expect(refused.ok).toBe(false);
+    if (refused.ok) return;
+    expect(refused.code).toBe("ownership_conflict");
+    expect(refused.reason).toContain("cannot be validated");
+  });
+
+  it("does not require a roster when no ownership is requested", () => {
+    expect(admitSavedAgentProposal({
+      proposer: "claude-runtime",
+      proposerProfile: GRANTED,
+      spec: { name: "importer", runtimeAdapter: "claude", rationale: "why" },
+      base: BASE,
+      pending: [],
+      nowMs: NOW_MS,
+      id: "sp-000001",
+    }).ok).toBe(true);
+  });
+
+  /**
+   * The rule lives in ONE place. If these two ever answer differently, the proposer and the Studio
+   * user are being told different things about the same roster — which is the drift the extraction
+   * exists to prevent.
+   */
+  it("gives the identical refusal a Studio edit would give", () => {
+    const viaProposal = admit(["owned"], ROSTER);
+    let viaStudio = "";
+    try {
+      assertOwnershipTargets("importer", ["owned"], ROSTER);
+    } catch (error) {
+      viaStudio = error instanceof Error ? error.message : String(error);
+    }
+    expect(viaProposal.ok).toBe(false);
+    if (!viaProposal.ok) expect(viaProposal.reason).toBe(viaStudio);
   });
 });

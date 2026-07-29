@@ -512,6 +512,42 @@ export function agentOwnershipView(owner: string, roster: AgentOwnershipRosterV1
 }
 
 /**
+ * The CHILD-side half of the spec 352 ownership contract, shared by every path that may declare
+ * subagents.
+ *
+ * Extracted for SDD 482 phase 4C (`t-5e1113`): a Saved Agent PROPOSAL can request ownership, and it
+ * has to be refused by the same rules for the same reasons — with the same wording, so a proposer and
+ * a Studio user learn the identical fact. Re-implementing these checks beside the original is exactly
+ * the drift this project keeps paying for; there is one rule and two callers.
+ *
+ * The OWNER-side checks (revision conflict, owner already owned, direct cycle) stay in
+ * `ownershipPatchFromStudioMutation`: they ask about an agent that already exists, which a proposal's
+ * subject does not.
+ */
+export function assertOwnershipTargets(
+  owner: string,
+  subagents: readonly string[],
+  roster: AgentOwnershipRosterV1,
+): void {
+  const byName = new Map(roster.map((entry) => [entry.name, entry]));
+  for (const child of subagents) {
+    if (child === owner) throw new Error(`ownership target '${child}' cannot reference itself`);
+    const entry = byName.get(child);
+    if (!entry) throw new Error(`ownership target '${child}' is not declared in agents/terminals`);
+    if (entry.kind !== "agent") {
+      throw new Error(`ownership target '${child}' resolves to a terminal; subagents must reference agents`);
+    }
+    const otherOwner = ownerOf(child, roster, owner);
+    if (otherOwner !== undefined) {
+      throw new Error(`ownership target '${child}' is already declared as a subagent of '${otherOwner}'`);
+    }
+    if (entry.subagents.length > 0) {
+      throw new Error(`ownership target '${child}' declares its own subagents; nested subagent trees are not supported`);
+    }
+  }
+}
+
+/**
  * t-4c113c — turn a `set-subagents` mutation into the canonical patch, or refuse.
  *
  * Every refusal here mirrors a loadConfig rule (`buildDeclaredOwner`), and that is the point: the
@@ -550,21 +586,7 @@ export function ownershipPatchFromStudioMutation(
       throw new Error(`agent '${owner}' is already declared as a subagent of '${ownedBy}'; nested subagent trees are not supported`);
     }
   }
-  for (const child of mutation.subagents) {
-    if (child === owner) throw new Error(`ownership target '${child}' cannot reference itself`);
-    const entry = byName.get(child);
-    if (!entry) throw new Error(`ownership target '${child}' is not declared in agents/terminals`);
-    if (entry.kind !== "agent") {
-      throw new Error(`ownership target '${child}' resolves to a terminal; subagents must reference agents`);
-    }
-    const otherOwner = ownerOf(child, roster, owner);
-    if (otherOwner !== undefined) {
-      throw new Error(`ownership target '${child}' is already declared as a subagent of '${otherOwner}'`);
-    }
-    if (entry.subagents.length > 0) {
-      throw new Error(`ownership target '${child}' declares its own subagents; nested subagent trees are not supported`);
-    }
-  }
+  assertOwnershipTargets(owner, mutation.subagents, roster);
   // The key is always present so the spread in `targetProfile` CLEARS ownership on an empty list;
   // an absent key would silently preserve the previous declaration instead of removing it.
   return { ownership: mutation.subagents.length > 0 ? { subagents: [...mutation.subagents] } : undefined };

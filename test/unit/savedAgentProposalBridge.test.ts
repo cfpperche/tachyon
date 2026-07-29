@@ -206,3 +206,52 @@ describe("readAgentProfileGrants fails closed (SDD 482 phase 4B)", () => {
     expect(readAgentProfileGrants(root, "granted")).toEqual({ proposeSavedAgent: true });
   });
 });
+
+/**
+ * SDD 482 phase 4C — the roster reaches admission through the Bridge, rebuilt from the rows the
+ * Bridge already has. `declaredOwner` is DERIVED from `subagents` at config load, so inverting it
+ * reconstructs the same relation rather than reading a second source that could disagree.
+ */
+describe("propose_saved_agent validates requested ownership (SDD 482 phase 4C)", () => {
+  function withRoster(root: string, rows: Array<{ name: string; kind?: "agent" | "terminal"; declaredOwner?: string }>) {
+    const tools = new Map<string, { handler: ToolHandler }>();
+    const mcp = { registerTool: (name: string, _c: unknown, handler: ToolHandler) => { tools.set(name, { handler }); } };
+    registerTools(mcp as never, {
+      workspaceRoot: root,
+      caller: { kind: "agent", name: "claude-runtime" },
+      manager: { list: async () => rows.map((r) => ({ kind: "agent", ...r })) },
+    } as unknown as BridgeDeps);
+    return (args: Record<string, unknown>) => tools.get("propose_saved_agent")!.handler(args);
+  }
+
+  it("refuses ownership of an agent that already has an owner, naming it", async () => {
+    const root = workspace();
+    profile(root, "claude-runtime", { proposeSavedAgent: true });
+    const call = withRoster(root, [
+      { name: "boss", declaredOwner: undefined },
+      { name: "owned", declaredOwner: "boss" },
+    ]);
+    const refused = await call({ ...PROPOSAL, owns_subagents: ["owned"] });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("already declared as a subagent of 'boss'");
+    expect(listSavedAgentProposals(root)).toEqual([]);
+  });
+
+  it("admits ownership of an unowned agent", async () => {
+    const root = workspace();
+    profile(root, "claude-runtime", { proposeSavedAgent: true });
+    const call = withRoster(root, [{ name: "free" }]);
+    const accepted = await call({ ...PROPOSAL, owns_subagents: ["free"] });
+    expect(accepted.isError).toBeFalsy();
+    expect(listSavedAgentProposals(root)[0]?.spec.ownsSubagents).toEqual(["free"]);
+  });
+
+  it("refuses a terminal as an ownership target, by name", async () => {
+    const root = workspace();
+    profile(root, "claude-runtime", { proposeSavedAgent: true });
+    const call = withRoster(root, [{ name: "devserver", kind: "terminal" }]);
+    const refused = await call({ ...PROPOSAL, owns_subagents: ["devserver"] });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain("resolves to a terminal");
+  });
+});

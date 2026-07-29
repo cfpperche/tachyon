@@ -9,6 +9,7 @@ import {
   type SavedAgentProposalAdmission,
 } from "./savedAgentProposal.js";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
+import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — where a proposal LIVES, and what a restart does to it.
@@ -236,6 +237,8 @@ export function recordSavedAgentProposal(input: {
   base: SavedAgentProposal["base"];
   nowMs: number;
   id?: string;
+  /** Workspace roster for the spec 352 ownership check; absent REFUSES a proposal that wants ownership. */
+  roster?: AgentOwnershipRosterV1;
 }): SavedAgentProposalAdmission {
   const queue = readLiveSavedAgentProposalQueue(input.workspaceRoot, input.nowMs);
   const at = new Date(input.nowMs).toISOString();
@@ -255,6 +258,7 @@ export function recordSavedAgentProposal(input: {
     base: input.base,
     pending: queue.proposals,
     untrustedPending: queue.unreadable.length,
+    ...(input.roster ? { roster: input.roster } : {}),
     nowMs: input.nowMs,
     id: input.id ?? newSavedAgentProposalId(),
   });

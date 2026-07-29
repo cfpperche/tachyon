@@ -10,6 +10,7 @@ import {
   recordSavedAgentProposal,
 } from "../agents/savedAgentProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
+import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
 import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
@@ -2025,6 +2026,25 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   /**
+   * SDD 482 phase 4C — the ownership roster, rebuilt from the rows the Bridge already has.
+   *
+   * `declaredOwner` is DERIVED from each agent's `subagents` at config load, so inverting it here
+   * reconstructs the same relation rather than reading a second source that could disagree with the
+   * first. Terminals are included because the spec 352 contract refuses them as ownership targets by
+   * NAME — omitting them would turn "that is a terminal" into the less useful "that does not exist".
+   */
+  const workspaceOwnershipRoster = async (
+    bridge: Pick<BridgeDeps, "manager">,
+  ): Promise<AgentOwnershipRosterV1> => {
+    const rows = await bridge.manager.list();
+    return rows.map((row) => ({
+      name: row.name,
+      kind: row.kind === "terminal" ? ("terminal" as const) : ("agent" as const),
+      subagents: rows.filter((other) => other.declaredOwner === row.name).map((other) => other.name),
+    }));
+  };
+
+  /**
    * SDD 482 phase 4 slice B (`t-5e1113`) — the ONLY agent-facing entry point to the creation door,
    * and it can do exactly one thing: leave a typed, digest-bound proposal where a human will find it.
    *
@@ -2092,6 +2112,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           },
           base: { configSha256: workspaceConfigSha256(deps.workspaceRoot) },
           nowMs: Date.now(),
+          // Requested ownership is validated against the LIVE roster by the same spec 352 rules a
+          // Studio edit obeys. Read ONLY when ownership is actually requested — a proposal that wants
+          // none must not depend on a roster read to succeed. Absent roster refuses rather than
+          // defers: a conflict found after approval rolls the commit back with an opaque config
+          // error, and the human has by then consented to something that quietly undid itself.
+          ...(input.owns_subagents?.length ? { roster: await workspaceOwnershipRoster(deps) } : {}),
         });
         if (!admission.ok) return fail(new Error(`${admission.code}: ${admission.reason}`));
         return ok(JSON.stringify({

@@ -250,7 +250,15 @@ preconditions current, not future, which is why they are closed here.
       task forbids widening the wire protocol without versioning and cross-version proof, so this is
       a human decision rather than something to slip in. Until it is wired the Cockpit says
       "This window cannot commit Saved Agent proposals" rather than accepting the click silently.
-- [ ] `ownsSubagents` review by the reviewer, still open from slice A.
+- [x] `ownsSubagents` REVIEWED (CLEAN) and its recommendation implemented: requested ownership is now
+      validated at ADMISSION against the spec 352 contract, not left to fail-closed at commit. The
+      child-side rules were EXTRACTED to `assertOwnershipTargets` so the proposal path and
+      `ownershipPatchFromStudioMutation` share one rule with identical wording — a test asserts the
+      two produce the same message. An unavailable roster REFUSES rather than defers: "I could not
+      check" and "it is fine" are different answers.
+- [x] Approve+save atomicity REVIEWED (CLEAN): `lifecycle.enabled: false` makes "saving does not
+      start" a property of the DATA rather than of this path's conduct, and the commit has no port
+      through which a launch could happen.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
       affected files/authorities, diff without secrets.
 - [ ] Approval bound to the digest; A2A cannot simulate it.
