@@ -1,3 +1,4 @@
+import { mayRestartInstance } from "../agents/agentInstancePolicy.js";
 import type { ManagedEntryInfo, SpawnOptions } from "../agents/AgentManager.js";
 import { sendManagedAgentInput, type ManagedAgentInputSource } from "../agents/agentInputService.js";
 import type { SessionRecord } from "../resume/SessionLedger.js";
@@ -113,7 +114,9 @@ async function ensureAgentLive(
   if (!current || current.kind !== "agent") throw new Error(`agent '${agent}' is not a managed AI agent`);
   if (isLive(current)) return;
   if (operations.resumableAgentNames().has(agent)) await operations.resumeAgent(agent);
-  else if (current.declared) await operations.startDeclaredAgent(agent);
+  // SDD 482 phase 3 — "may it be started again from its own definition?" A fork could always be
+  // resumed; under `declared` it read as if it could not.
+  else if (mayRestartInstance(current)) await operations.startDeclaredAgent(agent);
   else throw new Error(`agent '${agent}' is stopped and cannot be resumed or respawned`);
 
   const timeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;

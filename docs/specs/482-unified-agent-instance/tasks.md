@@ -74,10 +74,25 @@ non-problem (`notes.md`)._
 - [x] `declared` untouched as a storage fact; no reader moved. Phase 3 owns that, deliberately apart
       so the write side is proven before anything depends on it.
 
-## Phase 3 — converge the readers
+## Phase 3 — converge the readers (IN PROGRESS — foundation + first group landed)
 
-- [ ] Fleet, Activity, Attention, Execution Graph, worktree and cleanup branch on policy.
-- [ ] Equivalence proof per reader before any duplicate is deleted.
+- [x] The resolver: `src/agents/agentInstancePolicy.ts` answers the QUESTIONS readers ask
+      (`isTemporaryInstance`, `mayRestartInstance`) instead of exposing the fields. The legacy path
+      lives in exactly one place, and `legacyFallbackUsed` makes it observable so removing it later is
+      an observation rather than a hope.
+- [x] Legacy rows stay honest: no policy is invented for a pre-phase-2 row. The helper answers such a
+      row the way the reader always did — which is exactly as right, and as wrong, as it has been.
+- [x] The declared policy is exposed on the `AgentManager.list()` row so readers need not touch the ledger.
+- [x] Equivalence proof, enumerating row shapes rather than sampling: policy agrees with `declared`
+      on every shape this build writes, with ONE deliberate divergence — a fork is not `declared`, so
+      the old answer said it could not be restarted, while it owns a resume block and always could.
+      A contradictory row is pinned too, so no reader may depend on the two agreeing.
+- [x] Converged: handoff distill (`isTemporaryInstance`) and handoff distill service
+      (`mayRestartInstance`) — a coherent group that asks both questions.
+- [ ] Remaining readers: Fleet/sidebar (`canDismiss`, `continuity`, `adhoc` presentation), Activity,
+      Attention, Execution Graph, worktree, cleanup. Each needs its own equivalence proof; the
+      resolver they will use is landed and proven.
+- [ ] No duplicate removed yet — deletion waits until every reader is converged, per the plan.
 
 ## Phase 4 — the governed creation door (severable)
 

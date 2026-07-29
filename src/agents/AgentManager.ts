@@ -18,6 +18,7 @@ import {
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
+  type AgentInstancePolicy,
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
@@ -211,6 +212,12 @@ export interface ManagedEntryInfo {
   /** graceful Stop timed out while the pane stayed alive; retry is allowed */
   stopFailed?: boolean;
   declared: boolean;
+  /**
+   * SDD 482 phase 3 — the DECLARED instance policy, absent on rows written before phase 2. Readers
+   * ask their question through `agentInstancePolicy` helpers rather than reading this directly, so
+   * the legacy path lives in one place.
+   */
+  instance?: AgentInstancePolicy;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
   dead: boolean;
   /** dead with a NON-ZERO exit — a clean exit (0) is dead but not crashed */
@@ -1420,6 +1427,7 @@ export class AgentManager {
         ...(stopping ? { stopping: true } : {}),
         ...(stopFailed ? { stopFailed: true } : {}),
         declared: declared.includes(name),
+        ...(this.opts.ledger?.get(name)?.instance ? { instance: this.opts.ledger.get(name)!.instance } : {}),
         dead: state?.dead ?? false,
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,

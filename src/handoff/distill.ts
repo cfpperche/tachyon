@@ -1,3 +1,4 @@
+import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 export type HandoffDistillRuntime = "codex" | "claude";
 
 export interface HandoffDistillProfileVM {
@@ -101,7 +102,9 @@ export function buildDistillTargets(
   for (const a of rows) {
     if (a.kind !== "agent") continue;
     const live = a.running && !a.dead && !a.stopping;
-    if (!a.declared && !live) continue; // ad-hoc only while running
+    // SDD 482 phase 3 — the question is "is this Temporary?", not "which store owns it". Equivalent
+    // for every row this build writes; the declared policy is what a fork answers correctly.
+    if (isTemporaryInstance(a) && !live) continue; // temporary only while running
     let state: HandoffDistillTargetState;
     if (live) state = "running";
     else if (resumable.has(a.name)) state = "resumable";
