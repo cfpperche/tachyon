@@ -81,6 +81,10 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   commitAgentProfileStudio(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudio"]>[0]) {
     return this.studio.commitAgentProfileStudio(mutation);
   }
+  /** SDD 482 phase 4 — create + record owner in one canonical transaction. */
+  createSavedAgentWithOwner(mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgentWithOwner"]>[0], owner: string) {
+    return this.studio.createSavedAgentWithOwner(mutation, owner);
+  }
   commitAgentProfileStudioLifecycle(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudioLifecycle"]>[0]) {
     return this.studio.commitAgentProfileStudioLifecycle(mutation);
   }

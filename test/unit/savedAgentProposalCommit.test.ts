@@ -45,10 +45,7 @@ function ports(over: Partial<SavedAgentCommitPorts> = {}): SavedAgentCommitPorts
     calls,
     createSavedAgent: async (input) => {
       calls.push({ kind: "create", ...input } as unknown as Record<string, unknown>);
-      return { revision: "rev-1" };
-    },
-    adoptSubagent: async (input) => {
-      calls.push({ kind: "adopt", ...input } as unknown as Record<string, unknown>);
+      return { revision: "rev-1", txid: "tx-1" };
     },
     readProposerGrants: () => ({ proposeSavedAgent: true }),
     currentConfigSha256: () => CONFIG_SHA,
@@ -91,15 +88,15 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     if (!result.ok) return;
     expect(result.receipt).toMatchObject({
       outcome: "committed", operation: "create", proposer: "claude-runtime",
-      approvedBy: "human:cfpperche", agentName: "importer", revision: "rev-1",
+      approvedBy: "human:cfpperche", agentName: "importer", revision: "rev-1", txid: "tx-1",
       digest: proposal.digest,
-      // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner.
-      owner: "claude-runtime", ownershipRecorded: true,
+      // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, in the SAME
+      // transaction — so both authority records carry `lifecycle-tx-1`.
+      owner: "claude-runtime",
     });
-    // Two canonical transactions, in order: create the agent, then record who owns it.
+    // ONE canonical transaction carrying both subjects.
     expect(p.calls).toEqual([
-      { kind: "create", agentName: "importer", spec: expect.objectContaining({ name: "importer" }) },
-      { kind: "adopt", owner: "claude-runtime", child: "importer" },
+      { kind: "create", agentName: "importer", owner: "claude-runtime", spec: expect.objectContaining({ name: "importer" }) },
     ]);
     // The proposal is consumed, and the witness records who approved it.
     expect(listSavedAgentProposals(ws)).toEqual([]);
@@ -272,7 +269,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     if (!second.ok) return;
     expect(second.alreadyCommitted).toBe(true);
     expect(second.receipt.revision).toBe("rev-1");
-    expect(p.calls).toHaveLength(2); // create + adopt, each exactly once
+    expect(p.calls).toHaveLength(1); // the single transaction ran exactly once
   });
 
   /**
@@ -304,7 +301,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     const p = ports({
       createSavedAgent: async () => {
         seenDuringCommit = readSavedAgentProposalReceipt(ws, proposal.digest)?.outcome;
-        return { revision: "rev-1" };
+        return { revision: "rev-1", txid: "tx-1" };
       },
     });
     await approveSavedAgentProposal({
@@ -316,14 +313,14 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
   });
 
   /**
-   * The two-transaction window, which is the honest cost of the ratified model: the lifecycle
-   * transaction is per-agent, so creating the agent and recording its owner cannot be one commit.
-   * A crash between them must be RESUMABLE and must never read as success.
+   * The saga is GONE, and its absence is asserted rather than assumed. A failure means nothing
+   * landed: the canonical transaction compensates profile, authority and roster for BOTH subjects, so
+   * there is no "created but unowned" state for a receipt to describe or a retry to finish.
    */
-  it("records the agent as created-but-unowned when ownership fails, instead of claiming success", async () => {
+  it("records a plain failure — there is no half-committed state to describe", async () => {
     const ws = workspace();
     const proposal = proposed(ws);
-    const p = ports({ adoptSubagent: async () => { throw new Error("profile revision conflict"); } });
+    const p = ports({ createSavedAgent: async () => { throw new Error("lifecycle companion tuple did not converge"); } });
     const result = await approveSavedAgentProposal({
       workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
       approvedBy: "human", nowMs: NOW, ports: p,
@@ -331,33 +328,14 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     expect(result.ok).toBe(false);
     const receipt = readSavedAgentProposalReceipt(ws, proposal.digest);
     expect(receipt?.outcome).toBe("failed");
-    expect(receipt?.ownershipRecorded).toBeUndefined();
-    // The agent really does exist; the receipt says so rather than implying a rollback that did not
-    // happen, and it says how to finish.
-    expect(receipt?.revision).toBe("rev-1");
-    expect(receipt?.reason).toContain("created but ownership was not recorded");
+    expect(receipt?.revision).toBeUndefined();     // nothing was created
+    expect(receipt?.reason).not.toContain("ownership was not recorded");
   });
 
-  it("RESUMES a half-finished approval instead of re-creating the agent", async () => {
-    const ws = workspace();
-    const proposal = proposed(ws);
-    const failing = ports({ adoptSubagent: async () => { throw new Error("transient"); } });
-    await approveSavedAgentProposal({
-      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
-      approvedBy: "human", nowMs: NOW, ports: failing,
-    });
-
-    // Second attempt, this time with a working ownership port. Re-creating would fail with "already
-    // has canonical state" and strand a real agent behind a confusing error.
-    const p = ports();
-    const retry = await approveSavedAgentProposal({
-      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
-      approvedBy: "human", nowMs: NOW, ports: p,
-    });
-    expect(retry.ok).toBe(true);
-    if (!retry.ok) return;
-    expect(retry.receipt.ownershipRecorded).toBe(true);
-    expect(p.calls.map((c) => c.kind)).toEqual(["adopt"]); // no second create
+  it("has no intermediate outcome at all", () => {
+    const source = fs.readFileSync(path.resolve(__dirname, "../../src/agents/savedAgentProposalCommit.ts"), "utf8");
+    expect(source).not.toContain('"owning"');
+    expect(source).not.toContain("adoptSubagent");
   });
 
   it("refuses an unknown proposal without touching anything", async () => {
@@ -421,28 +399,46 @@ describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
  * create and already crosses the engine/shell seam, and `set-subagents` crosses it too. So the door
  * opens on paths a human already uses — no new operation, no protocol bump.
  */
-describe("the commit port is wired on existing seams (SDD 482 phase 4C)", () => {
+describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () => {
   const extension = fs.readFileSync(path.resolve(__dirname, "../../src/extension.ts"), "utf8");
 
   it("supplies the port from the extension host, and nowhere else", () => {
     expect(extension).toMatch(/approveSavedAgentProposal:\s*async/);
   });
 
-  it("creates through the canonical Studio commit rather than a new operation", () => {
-    expect(extension).toContain("ws.commitAgentProfileStudio(");
-    expect(extension).toContain("operation: \"set-subagents\"");
-    // No engine protocol surface was added to open this door.
-    expect(extension).not.toContain("savedAgentProposal.approve");
+  it("creates through the single canonical transaction, not two Studio calls", () => {
+    expect(extension).toContain("ws.createSavedAgentWithOwner(");
+    // The two-call version is gone: no separate set-subagents, no adopt step.
+    expect(extension).not.toContain("operation: \"set-subagents\"");
+    expect(extension).not.toContain("adoptSubagent");
+  });
+
+  /**
+   * The action is ADDITIVE, which is the skew-safe shape in both directions: an older engine refuses
+   * an unknown action by name, an older client never sends it. Widening `agent-profile.studio-commit`
+   * instead would make a newer engine undecodable to an older shell, because that payload is
+   * `.strict()` — the shape that broke 0.56.110 D1.
+   */
+  it("crosses the seam by a NEW action rather than a widened payload", () => {
+    const operations = fs.readFileSync(path.resolve(__dirname, "../../src/runtime-api/extensionOperations.ts"), "utf8");
+    expect(operations).toContain('"agent-profile.saved-agent-create"');
+    // The pre-existing create payload is untouched.
+    expect(operations).toContain('z.object({ action: z.literal("agent-profile.studio-commit"), mutation: agentProfileStudioMutationSchemaV1 }).strict()');
   });
 
   it("asks for no capability references, leaving that refusal to the canonical validator", () => {
     expect(extension).toMatch(/capabilities: \{ skills: \[\], mcp: \[\], hooks: \[\] \}/);
   });
 
-  it("adds to the owner's existing subagents instead of replacing them", () => {
-    // `set-subagents` is a whole-list write, so reading first is what keeps it from being a reset.
-    expect(extension).toContain("ws.agentOwnershipView(owner)");
-    expect(extension).toMatch(/new Set\(\[\.\.\.view\.subagents, child\]\)/);
+  /**
+   * The owner's existing subagents are read INSIDE the transaction, under its own lock — not from a
+   * caller's earlier snapshot. `set-subagents` is a whole-list write, so reading it outside the lock
+   * is precisely the race the single transaction removes.
+   */
+  it("reads the owner's subagents inside the transaction, not in the caller", () => {
+    const workspaceSource = fs.readFileSync(path.resolve(__dirname, "../../src/workspace/Workspace.ts"), "utf8");
+    expect(workspaceSource).toMatch(/new Set\(\[\.\.\.\(ownerSnapshot\.profile\.ownership\?\.subagents \?\? \[\]\), input\.agentName\]\)/);
+    expect(workspaceSource).toContain("companion: { agentName: input.owner, ownership: { subagents } }");
   });
 
   it("keeps the spec's deployment table honest about the change", () => {

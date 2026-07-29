@@ -1462,8 +1462,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         approvedBy: "human",
         nowMs: Date.now(),
         ports: {
-          createSavedAgent: async ({ agentName, spec }) => {
-            const snapshot = await ws.commitAgentProfileStudio({
+          createSavedAgent: async ({ agentName, spec, owner }) => {
+            // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
+            // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
+            // two-transaction version: ownership is parent-side, so committing separately left a
+            // window where the agent existed unowned.
+            return ws.createSavedAgentWithOwner({
               schemaVersion: 1,
               kind: "canonical",
               agentName,
@@ -1481,26 +1485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // authorization, and the review pane tells the human that approving does not grant them.
                 capabilities: { skills: [], mcp: [], hooks: [] },
               },
-            });
-            return { revision: snapshot.revision };
-          },
-          adoptSubagent: async ({ owner, child }) => {
-            // The owner's CURRENT declarations come from the ownership view — the same read the
-            // Studio's own picker uses — so this adds the new agent instead of replacing whatever the
-            // proposer already owns. `set-subagents` is a whole-list write; reading first is what
-            // keeps it from being a silent reset.
-            const [view, current] = await Promise.all([
-              ws.agentOwnershipView(owner),
-              ws.inspectAgentProfileStudio(owner),
-            ]);
-            const subagents = [...new Set([...view.subagents, child])];
-            await ws.commitAgentProfileStudioLifecycle({
-              schemaVersion: 1,
-              operation: "set-subagents",
-              agentName: owner,
-              expectedRevision: current.revision,
-              subagents,
-            });
+            }, owner);
           },
           // Re-read at commit time, which is what makes a revoked capability effective on a proposal
           // queued before the revocation.

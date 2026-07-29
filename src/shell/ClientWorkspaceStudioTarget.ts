@@ -168,6 +168,34 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     return parsed.data;
   }
 
+  /**
+   * SDD 482 phase 4 — create a Saved Agent and record its owner in ONE canonical transaction.
+   *
+   * A distinct action rather than a flag on `studio-commit`: that payload is `.strict()`, so widening
+   * it would make a newer engine undecodable to an older shell. A new action is refused by name on an
+   * older engine and never sent by an older client, which is skew-safe in both directions.
+   */
+  async createSavedAgentWithOwner(
+    mutation: AgentProfileStudioMutationV1,
+    owner: string,
+  ): Promise<{ revision: string; txid: string }> {
+    const result = await this.client.invoke(`saved-agent-create:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.saved-agent-create", mutation, owner },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.saved-agent-create") {
+      throw new Error("persistent engine returned a malformed Saved Agent creation result");
+    }
+    const value = result.value as { revision?: unknown; txid?: unknown };
+    if (typeof value?.revision !== "string" || typeof value?.txid !== "string") {
+      throw new Error("persistent engine returned a malformed Saved Agent creation result");
+    }
+    this.refreshConfig();
+    return { revision: value.revision, txid: value.txid };
+  }
+
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     const result = await this.client.invoke(`agent-profile-studio:${this.operationId()}`, {
       schemaVersion: 1,

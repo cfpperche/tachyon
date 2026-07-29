@@ -344,3 +344,32 @@ asserts the two messages are equal, because "same rule" written twice is how the
 
 One decision inside it: an unavailable roster REFUSES a proposal that requests ownership. "I could not
 check" and "it is fine" are different answers, and only one of them may admit.
+
+
+## The audit that killed the saga (2026-07-29)
+
+I shipped create-and-adopt as two canonical transactions with an `owning` receipt state, and argued
+the window was honest because it was declared. The audit rejected that, and it was right: the task
+requires an atomic commit of profile + authority + roster, and "declared" is not "atomic".
+
+The reason I built the saga was a MEASUREMENT ERROR, the same shape as my earlier wire claim. I wrote
+that the lifecycle transaction is per-agent, full stop. It is per-agent — but
+`acquireAgentProfileTransactionLocks` (plural) already exists and is used in production by
+`agentProfileRename`, which locks two names under one txid with its own journal and compensation. The
+base supported what I said it could not.
+
+So the fix was to extend the ONE phase machine rather than write a second one: an optional `companion`
+subject on `CommitAgentProfileLifecycleInput`, carried in the journal, published inside the existing
+phases, unwound first in compensation, and checked as part of the target tuple in `reconcile` — that
+last one matters, because without it a crash that published the agent but not the ownership edge would
+look CONVERGED and commit the half-state the change exists to forbid.
+
+Two things I would flag to anyone reading this later:
+
+- The companion is deliberately narrow — only `ownership`, only an agent that already has canonical
+  state. A general "apply this patch to another agent too" would be a second write path wearing a
+  parameter, which is exactly what putting it in the shared machine was meant to avoid.
+- Crossing the engine/shell seam needed a NEW action (`agent-profile.saved-agent-create`), not a
+  widened one. `agent-profile.studio-commit` is `.strict()`, so adding a field there would make a
+  newer engine undecodable to an older shell — the shape that broke 0.56.110 D1. A new action is
+  refused by name on an older engine and never sent by an older client.

@@ -38,12 +38,13 @@ import type { AgentProfileGrants } from "../config/agentProfileGrants.js";
 export const SAVED_AGENT_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_PROPOSALS_REL_DIR, "receipts");
 
 /**
- * `owning` is a real state, not bookkeeping. The ratified model needs TWO canonical transactions —
- * create the agent, then record the proposer as its declared owner — and the lifecycle transaction is
- * per-agent, so no single transaction spans both. A crash between them leaves an agent that exists
- * and is unowned, and this state is what makes that attributable and retryable instead of a mystery.
+ * There is no intermediate state, because there is no intermediate. Ratified 2026-07-29: creating the
+ * agent and recording its owner are ONE canonical transaction, so the only states are "an approval is
+ * in flight", "it landed", and "it did not". An earlier version of this file carried an `owning`
+ * state for a two-transaction design; that design was rejected on audit, and keeping its state would
+ * have preserved the ambiguity the single transaction exists to remove.
  */
-export type SavedAgentCommitOutcome = "committing" | "owning" | "committed" | "failed";
+export type SavedAgentCommitOutcome = "committing" | "committed" | "failed";
 
 /** Ratified: proposer, approver, digest, transaction/operation id, outcome. */
 export interface SavedAgentProposalReceipt {
@@ -56,12 +57,12 @@ export interface SavedAgentProposalReceipt {
   approvedAt: string;
   outcome: SavedAgentCommitOutcome;
   operation: "create";
-  /** Revision of the created profile, once the canonical create reports one. */
+  /** Revision of the created profile, once the canonical transaction reports one. */
   revision?: string;
-  /** The proposer, recorded as the new agent's declared owner (ratified 2026-07-29). */
+  /** The proposer, recorded as the new agent's declared owner in the SAME transaction. */
   owner?: string;
-  /** True once the ownership edge is durable. `committed` requires it. */
-  ownershipRecorded?: boolean;
+  /** Transaction id. Both authority records carry `lifecycle-<txid>` — one transaction, one identity. */
+  txid?: string;
   /** Present when `outcome === "failed"`. */
   reason?: string;
 }
@@ -81,20 +82,19 @@ export type SavedAgentCommitResult =
 
 export interface SavedAgentCommitPorts {
   /**
-   * Create the Saved Agent through the canonical Agent Studio commit — the SAME path a human uses,
-   * crossing the SAME already-versioned seam, so no protocol changes to open this door. Injected
-   * rather than imported so this module cannot become a second write path, and so the commit can be
-   * exercised without a live Workspace.
+   * Create the Saved Agent AND record its owner, in ONE canonical transaction.
    *
-   * The canonical create is also what enforces "a new profile cannot select capability references
-   * before host authorization"; this module does not re-implement that rule, it inherits it.
+   * A single port because it is a single transaction: two ports would invite a caller to perform half
+   * of it. Injected rather than imported so this module cannot become a second write path, and so the
+   * commit can be exercised without a live Workspace. The canonical path is also what enforces "a new
+   * profile cannot select capability references before host authorization" — this module inherits
+   * that rule rather than re-implementing it.
    */
-  createSavedAgent(input: { agentName: string; spec: SavedAgentProposal["spec"] }): Promise<{ revision: string }>;
-  /**
-   * Record `owner` as the declared owner of `child`, through the canonical `set-subagents` path.
-   * Separate because the lifecycle transaction is per-agent: this one edits the PROPOSER's profile.
-   */
-  adoptSubagent(input: { owner: string; child: string }): Promise<void>;
+  createSavedAgent(input: {
+    agentName: string;
+    spec: SavedAgentProposal["spec"];
+    owner: string;
+  }): Promise<{ revision: string; txid: string }>;
   /** Re-read at commit time; this is what makes revocation effective on a pending proposal. */
   readProposerGrants(agentName: string): AgentProfileGrants | undefined;
   /** Live config digest for the CAS check. */
@@ -215,25 +215,16 @@ export async function approveSavedAgentProposal(input: {
   writeReceipt(input.workspaceRoot, base);
 
   try {
-    // Resume rather than repeat. The durable evidence that the create landed is the RECORDED
-    // REVISION, not the outcome word: a crash leaves `owning`, a caught ownership failure leaves
-    // `failed`, and both mean the same thing — the agent exists and is unowned. Keying on the
-    // revision covers both, where keying on `owning` would silently miss the failure case and try to
-    // create an agent that already exists ("already has canonical state"), stranding a real agent
-    // behind a confusing error.
-    const resumed = existing?.revision && !existing.ownershipRecorded ? { revision: existing.revision } : undefined;
-    const created = resumed ?? await input.ports.createSavedAgent({ agentName: proposal.spec.name, spec: proposal.spec });
-    // Between the two transactions the agent EXISTS and is unowned. Saying so on disk is the whole
-    // point of this state: a crash here is recoverable by retry, and a receipt that claimed
-    // `committed` would be a lie that nobody could detect afterwards.
-    writeReceipt(input.workspaceRoot, { ...base, outcome: "owning", revision: created.revision, owner: proposal.proposer });
-
-    // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner. This is the only
-    // ownership edge a proposal may produce; `ownsSubagents` is refused at admission in v1.
-    await input.ports.adoptSubagent({ owner: proposal.proposer, child: proposal.spec.name });
-
+    // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, written by the SAME
+    // transaction. There is nothing to resume between two commits because there are not two commits;
+    // the lifecycle machine's own journal recovers a crash inside this one.
+    const created = await input.ports.createSavedAgent({
+      agentName: proposal.spec.name,
+      spec: proposal.spec,
+      owner: proposal.proposer,
+    });
     const receipt: SavedAgentProposalReceipt = {
-      ...base, outcome: "committed", revision: created.revision, owner: proposal.proposer, ownershipRecorded: true,
+      ...base, outcome: "committed", revision: created.revision, txid: created.txid, owner: proposal.proposer,
     };
     writeReceipt(input.workspaceRoot, receipt);
     // The proposal is consumed only after the receipt says so. Deleting first would lose the record of
@@ -247,20 +238,10 @@ export async function approveSavedAgentProposal(input: {
     return { ok: true, receipt };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    // The canonical transaction compensates its own durable state. What this layer must not do is
-    // leave a receipt claiming an in-flight commit that already ended — and it must not claim
-    // `committed` when only the first of the two transactions landed. A failure AFTER the create
-    // leaves an existing, unowned agent, and the receipt says so rather than implying a clean
-    // rollback that did not happen.
-    const partial = readSavedAgentProposalReceipt(input.workspaceRoot, proposal.digest);
-    writeReceipt(input.workspaceRoot, {
-      ...base,
-      ...(partial?.outcome === "owning" ? { revision: partial.revision, owner: partial.owner } : {}),
-      outcome: "failed",
-      reason: partial?.outcome === "owning"
-        ? `${reason} (the agent was created but ownership was not recorded; re-approving completes it)`
-        : reason,
-    });
+    // The canonical transaction compensates its own durable state — profile, authority and roster for
+    // BOTH subjects — so a failure here means nothing landed. What this layer must not do is leave a
+    // receipt claiming an in-flight commit that already ended.
+    writeReceipt(input.workspaceRoot, { ...base, outcome: "failed", reason });
     return { ok: false, code: "commit_failed", reason };
   }
 }

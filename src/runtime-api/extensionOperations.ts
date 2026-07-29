@@ -60,6 +60,12 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "legacy-delivery.retirement-apply",
   "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
   "agent-profile.studio-bundle-clone", "agent-profile.studio-bundle-import",
+  // SDD 482 phase 4 (`t-5e1113`) — create a Saved Agent and record its owner in ONE canonical
+  // transaction. A NEW action rather than a widened payload, which is the skew-safe shape in both
+  // directions: an older engine refuses an unknown action by name, and an older client never sends
+  // it. Widening `agent-profile.studio-commit` instead would make a newer engine undecodable to an
+  // older shell, because that payload is `.strict()`.
+  "agent-profile.saved-agent-create",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -146,6 +152,12 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("agent-profile.studio-lifecycle"), mutation: agentProfileStudioLifecycleMutationSchemaV1 }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-clone"), agent: name, expectedRevision: sha256, destinationAgentName: name }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-import"), destinationAgentName: name, payload: agentProfileBundlePayload }).strict(),
+  z.object({
+    action: z.literal("agent-profile.saved-agent-create"),
+    mutation: agentProfileStudioMutationSchemaV1,
+    /** The proposer, recorded as the new agent's declared owner by the SAME transaction. */
+    owner: name,
+  }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),

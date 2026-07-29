@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
+import { createProfileFromStudioMutation } from "../config/agentProfileStudio.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
@@ -376,6 +377,15 @@ export async function executeExtensionCommand(
       return promoteAgent(workspace, command.agent, onViewsChanged);
     case "agent-profile.studio-commit":
       return json(await workspace.commitAgentProfileStudio(command.mutation));
+    case "agent-profile.saved-agent-create": {
+      // One transaction covering both subjects; the snapshot returned is the CREATED agent's.
+      const created = await workspace.commitSavedAgentCreation({
+        agentName: command.mutation.agentName,
+        createProfile: createProfileFromStudioMutation(command.mutation),
+        owner: command.owner,
+      });
+      return json({ revision: created.revision, txid: created.txid });
+    }
     case "agent-profile.studio-lifecycle":
       return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "agent-profile.studio-bundle-clone": {

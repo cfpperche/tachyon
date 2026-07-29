@@ -55,6 +55,7 @@ import {
   ownershipPatchFromStudioMutation,
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
+  assertOwnershipTargets,
   type AgentOwnershipRosterV1,
   type AgentOwnershipViewV1,
   type AgentProfileStudioLifecycleMutationV1,
@@ -5225,6 +5226,42 @@ export class Workspace {
       patch: patchProfileFromStudioMutation(mutation, current),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
+  }
+
+  /**
+   * SDD 482 phase 4 (`t-5e1113`) — create a Saved Agent AND record its owner in ONE canonical
+   * transaction.
+   *
+   * Ratified 2026-07-29 after an audit found the two-transaction version indefensible: ownership is
+   * parent-side (spec 352), so the edge lives in the PROPOSER's profile, and committing the two
+   * separately left a window where the agent existed unowned. One txid, both locks, one journal,
+   * one compensation — and both authority records carry `revision: lifecycle-<txid>`, which is the
+   * ratified consequence of a single transaction having a single identity.
+   *
+   * The owner's subagent list is read HERE, under the transaction's own lock, rather than taken from
+   * a caller's earlier snapshot: `set-subagents` is a whole-list write, and reading it outside the
+   * lock is the race this design removes.
+   */
+  async commitSavedAgentCreation(input: {
+    agentName: string;
+    createProfile: Parameters<typeof commitCanonicalAgentProfileLifecycle>[0]["createProfile"];
+    owner: string;
+  }): Promise<AgentProfileLifecycleCommitResult> {
+    await this.assertAgentStoppedForProfileMutation(input.agentName);
+    const ownerSnapshot = await this.inspectAgentProfileLifecycle(input.owner);
+    const subagents = [...new Set([...(ownerSnapshot.profile.ownership?.subagents ?? []), input.agentName])];
+    // The same spec 352 gate a Studio edit passes, against a roster that already includes the agent
+    // this transaction is about to create.
+    assertOwnershipTargets(input.owner, [input.agentName], [
+      ...this.agentOwnershipRoster().filter((entry) => entry.name !== input.agentName),
+      { name: input.agentName, kind: "agent", subagents: [] },
+    ]);
+    return this.runAgentProfileLifecycleCommit({
+      agentName: input.agentName,
+      operation: "create",
+      createProfile: input.createProfile,
+      companion: { agentName: input.owner, ownership: { subagents } },
+    });
   }
 
   async commitAgentProfileStudioLifecycle(

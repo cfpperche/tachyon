@@ -13,7 +13,9 @@ import {
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import {
   acquireAgentProfileTransactionLock,
+  acquireAgentProfileTransactionLocks,
   acquireAgentProfileRecoveryLock,
+  acquireAgentProfileRecoveryLocks,
   agentProfileTransactionsRoot,
   currentProfileDigest,
   publishCanonicalProfile,
@@ -31,6 +33,7 @@ const LIFECYCLE_DIR = "lifecycle";
 const JOURNAL = "journal.json";
 const STAGED = "staged-agent.yml";
 const BACKUP = "backup-agent.yml";
+const COMPANION_BACKUP = "backup-companion-agent.yml";
 const ARTIFACTS = "artifacts";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
 const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md"]);
@@ -78,6 +81,25 @@ export interface AgentProfileLifecycleJournal {
   priorConfigSha256: string;
   targetConfigSha256: string;
   targetArtifacts?: Array<{ path: string; sha256: string }>;
+  /**
+   * SDD 482 phase 4 (`t-5e1113`) — a SECOND agent whose profile this same transaction edits.
+   *
+   * Present only for the ratified create-and-adopt: creating a Saved Agent and recording the proposer
+   * as its declared owner. Ownership is parent-side (spec 352), so the edge lives in the PROPOSER's
+   * profile — a different subject from the agent being created. Two transactions would leave a window
+   * where the agent exists unowned; one journal, one txid and one pair of locks removes it.
+   *
+   * Both authorities carry `revision: lifecycle-<txid>` as a result. That is ratified, not incidental:
+   * one transaction has one identity, and an auditor reading two records with the same revision is
+   * seeing the truth rather than a collision.
+   */
+  companion?: {
+    agentName: string;
+    priorProfileSha256: string;
+    targetProfileSha256: string;
+    priorAuthority: AgentProfileAuthorityRecord;
+    targetAuthority: AgentProfileAuthorityRecord;
+  };
   degradedReason?: string;
 }
 
@@ -119,6 +141,14 @@ export interface CommitAgentProfileLifecycleInput {
    * `set-enabled`, which changes a flag and no bytes.
    */
   artifacts?: Array<{ path: string; text: string; sha256: string }>;
+  /**
+   * SDD 482 phase 4 — edit a SECOND agent's ownership inside this same transaction.
+   *
+   * Narrow on purpose: only `ownership`, only an agent that already has canonical state. A general
+   * "apply this patch to another agent too" would be a second write path wearing a parameter, and the
+   * point of putting it here is that there is exactly one phase machine for durable authority.
+   */
+  companion?: { agentName: string; ownership: AgentProfileV1["ownership"] };
   authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
@@ -506,6 +536,26 @@ function isEmptyRoster(configText: string): boolean {
 async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string, journal: AgentProfileLifecycleJournal): Promise<void> {
   journal = transition(txDir, journal, "compensating", input.onPhase);
   try {
+    // The COMPANION unwinds first: it was published last within its phase, so restoring in reverse
+    // keeps every intermediate state one this machine can re-enter. Its prior profile always exists
+    // (a companion must already have canonical state), so there is no create-shaped removal branch.
+    if (journal.companion) {
+      const c = journal.companion;
+      const companionSha = currentProfileDigest(input.workspaceRoot, c.agentName);
+      if (companionSha === c.targetProfileSha256) {
+        const backup = readPrivateFile(path.join(txDir, COMPANION_BACKUP));
+        if (digest(backup) !== c.priorProfileSha256) throw new Error("companion profile backup digest mismatch");
+        replaceCanonicalProfileExact(input.workspaceRoot, c.agentName, c.targetProfileSha256, backup.toString("utf8"));
+      } else if (companionSha !== c.priorProfileSha256) {
+        throw new Error("companion profile changed outside lifecycle transaction");
+      }
+      const companionAuthority = await input.authority.read(c.agentName);
+      if (sameAuthority(companionAuthority, c.targetAuthority)) {
+        await input.authority.replace(c.priorAuthority, c.targetAuthority);
+      } else if (!sameAuthority(companionAuthority, c.priorAuthority)) {
+        throw new Error("companion authority changed outside lifecycle transaction");
+      }
+    }
     const profileSha = currentProfileDigest(input.workspaceRoot, input.agentName);
     if (profileSha === journal.targetProfileSha256) {
       if (journal.priorProfileSha256 === null) {
@@ -557,7 +607,11 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
 export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifecycleInput): Promise<AgentProfileLifecycleCommitResult> {
   if (!isValidAgentName(input.agentName)) throw new Error("invalid agent name");
   const txid = crypto.randomUUID();
-  const release = acquireAgentProfileTransactionLock(input.workspaceRoot, input.agentName, txid);
+  // Both subjects under ONE txid. `acquireAgentProfileTransactionLocks` is the same helper the rename
+  // transaction uses for its two names, so the ordering/deadlock question was answered before this.
+  const release = input.companion
+    ? acquireAgentProfileTransactionLocks(input.workspaceRoot, [input.agentName, input.companion.agentName], txid)
+    : acquireAgentProfileTransactionLock(input.workspaceRoot, input.agentName, txid);
   let txDir: string | undefined;
   try {
     const configBefore = input.config.read();
@@ -583,6 +637,42 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       input.operation === "create" ? undefined : priorAuthority,
       txid,
     );
+    // The companion's target, built under the SAME lock as the main subject — which is also why its
+    // CAS is a read here rather than an `expectedRevision` the caller carried in from earlier: there
+    // is no interval between reading it and using it.
+    let companion: {
+      agentName: string;
+      text: string;
+      priorText: string;
+      priorSha: string;
+      targetSha: string;
+      priorAuthority: AgentProfileAuthorityRecord;
+      targetAuthority: AgentProfileAuthorityRecord;
+    } | undefined;
+    if (input.companion) {
+      if (!isValidAgentName(input.companion.agentName)) throw new Error("invalid companion agent name");
+      if (input.companion.agentName === input.agentName) throw new Error("companion must be a different agent");
+      const companionCanonical = canonicalProfile(input.workspaceRoot, input.companion.agentName);
+      const companionPriorAuthority = await input.authority.read(input.companion.agentName);
+      if (!companionCanonical || !companionPriorAuthority) {
+        throw new Error(`agent '${input.companion.agentName}' has incomplete canonical state`);
+      }
+      const companionProfile: AgentProfileV1 = input.companion.ownership
+        ? { ...companionCanonical.profile, ownership: input.companion.ownership }
+        : (() => { const { ownership: _drop, ...rest } = companionCanonical.profile; return rest as AgentProfileV1; })();
+      const companionText = stringify(companionProfile);
+      const companionSha = digest(companionText);
+      companion = {
+        agentName: input.companion.agentName,
+        text: companionText,
+        priorText: companionCanonical.text,
+        priorSha: companionCanonical.sha256,
+        targetSha: companionSha,
+        priorAuthority: companionPriorAuthority,
+        // Same txid, so both records carry `revision: lifecycle-<txid>` — ratified 2026-07-29.
+        targetAuthority: authorityFor(input.companion.agentName, companionProfile, companionSha, companionPriorAuthority, txid),
+      };
+    }
     const configTarget = input.operation === "create" ? addPointer(configBefore, input.agentName) : configBefore;
     const root = ensureLifecycleRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
@@ -594,6 +684,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     }
     writeNew(path.join(txDir, "backup-tachyon.yml"), configBefore);
     if (canonical) writeNew(path.join(txDir, BACKUP), canonical.text);
+    if (companion) writeNew(path.join(txDir, COMPANION_BACKUP), companion.priorText);
     let journal: AgentProfileLifecycleJournal = {
       schemaVersion: SCHEMA_VERSION,
       txid,
@@ -609,6 +700,15 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       priorConfigSha256: digest(configBefore),
       targetConfigSha256: digest(configTarget),
       ...(createArtifacts.length > 0 ? { targetArtifacts: createArtifacts.map(({ path, sha256 }) => ({ path, sha256 })) } : {}),
+      ...(companion ? {
+        companion: {
+          agentName: companion.agentName,
+          priorProfileSha256: companion.priorSha,
+          targetProfileSha256: companion.targetSha,
+          priorAuthority: structuredClone(companion.priorAuthority),
+          targetAuthority: companion.targetAuthority,
+        },
+      } : {}),
     };
     writeJournal(txDir, journal);
     try {
@@ -616,15 +716,23 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       if (canonical) replaceCanonicalProfileExact(input.workspaceRoot, input.agentName, canonical.sha256, profileText);
       else publishCanonicalProfile(input.workspaceRoot, input.agentName, profileText);
       publishCreateArtifacts(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
+      // The phase covers BOTH subjects, so compensation at this phase already knows to restore both.
+      if (companion) replaceCanonicalProfileExact(input.workspaceRoot, companion.agentName, companion.priorSha, companion.text);
       journal = transition(txDir, journal, "profile-published", input.onPhase);
       if (priorAuthority) await input.authority.replace(targetAuthority, priorAuthority);
       else await input.authority.publish(targetAuthority, undefined);
+      if (companion) await input.authority.replace(companion.targetAuthority, companion.priorAuthority);
       journal = transition(txDir, journal, "authority-published", input.onPhase);
       if (configTarget !== configBefore) input.config.replace(journal.priorConfigSha256, configTarget);
       journal = transition(txDir, journal, "locator-written", input.onPhase);
       const snapshot = await inspectAgentProfileLifecycle(input);
       if (snapshot.profile.agentId !== profile.agentId || currentProfileDigest(input.workspaceRoot, input.agentName) !== targetSha) {
         throw new Error("lifecycle target tuple did not converge");
+      }
+      // The companion is part of the tuple, so a half-converged pair fails here rather than committing
+      // and leaving the ownership edge silently absent.
+      if (companion && currentProfileDigest(input.workspaceRoot, companion.agentName) !== companion.targetSha) {
+        throw new Error("lifecycle companion tuple did not converge");
       }
       input.activateState("target");
       journal = transition(txDir, journal, "activated", input.onPhase);
@@ -663,13 +771,25 @@ export async function reconcileAgentProfileLifecycle(input: {
       requireSafeDirectory(input.workspaceRoot, txDir);
       const journal = readJournal(txDir);
       if (journal.phase === "degraded") { degraded.push(entry); continue; }
-      const release = acquireAgentProfileRecoveryLock(input.workspaceRoot, journal.agentName, journal.txid);
+      // SDD 482 phase 4 — recovery holds BOTH subjects' locks when the journal has a companion.
+      // Recovering under only the main lock would let a concurrent edit of the companion race the
+      // restore this pass is about to perform.
+      const release = journal.companion
+        ? acquireAgentProfileRecoveryLocks(input.workspaceRoot, [journal.agentName, journal.companion.agentName], journal.txid)
+        : acquireAgentProfileRecoveryLock(input.workspaceRoot, journal.agentName, journal.txid);
       try {
         const profileTarget = currentProfileDigest(input.workspaceRoot, journal.agentName) === journal.targetProfileSha256
           && artifactsMatch(input.workspaceRoot, journal.agentName, journal.targetArtifacts ?? []);
         const authorityTarget = sameAuthority(await input.authority.read(journal.agentName), journal.targetAuthority);
         const configTarget = digest(input.config.read()) === journal.targetConfigSha256;
-        if (profileTarget && authorityTarget && configTarget) {
+        // The companion is part of the target tuple. Without this, a crash that published the new
+        // agent but not the ownership edge would look CONVERGED and commit — the exact half-state a
+        // single transaction exists to make impossible.
+        const companionTarget = !journal.companion || (
+          currentProfileDigest(input.workspaceRoot, journal.companion.agentName) === journal.companion.targetProfileSha256
+          && sameAuthority(await input.authority.read(journal.companion.agentName), journal.companion.targetAuthority)
+        );
+        if (profileTarget && authorityTarget && configTarget && companionTarget) {
           input.activateState(journal.agentName, "target");
           const activated = transition(txDir, journal, "activated");
           transition(txDir, activated, "committed");

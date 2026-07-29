@@ -239,6 +239,11 @@ one changes measured behaviour, so it is called out rather than filed.
    a proposal may not declare subagents or reparent an existing agent. Reparenting is a roster edit
    wearing a creation request — a different decision with a different blast radius, and one the human
    would be approving without having been asked about it.
+10. **Create-and-adopt is ONE canonical transaction.** Creating the Saved Agent and recording the
+    proposer as its declared owner share a txid, both agents' locks, one journal and one compensation.
+    Both authority records therefore carry `revision: lifecycle-<txid>` — ratified, not incidental:
+    one transaction has one identity, and an auditor seeing two records with the same revision is
+    seeing the truth. No saga, no intermediate state.
 9. **"Approve and save" writes the agent DISABLED**; starting it is a separate action with its own
    policy. `lifecycle.enabled: false` is written by the canonical create, so this is a property of the
    data rather than the conduct of one code path.

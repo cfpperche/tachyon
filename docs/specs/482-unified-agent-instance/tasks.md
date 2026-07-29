@@ -250,10 +250,14 @@ preconditions current, not future, which is why they are closed here.
       already uses.
 - [x] Ratified 2026-07-29: proposer becomes the new agent's declared owner; v1 refuses `ownsSubagents`
       and reparenting; approve-and-save writes DISABLED with start separate.
-- [x] TWO canonical transactions, and the window between them is declared rather than hidden: the
-      lifecycle transaction is per-agent and the second edits the PROPOSER's profile, so no single
-      commit spans both. The receipt has an `owning` state, a failure after the create says "created
-      but ownership was not recorded", and re-approving RESUMES instead of re-creating.
+- [x] ONE canonical transaction for create-and-adopt (ratified after audit; the two-transaction
+      version and its `owning` state are GONE). Optional `companion` subject on the existing phase
+      machine: both locks, one journal, published inside the existing phases, unwound first in
+      compensation, and part of the target tuple in `reconcile` — without that last one, a crash that
+      published the agent but not the ownership edge would look converged and commit the half-state.
+- [x] Both authority records carry `revision: lifecycle-<txid>`, ratified rather than incidental.
+- [x] Compensation proven for BOTH subjects by disabling the companion unwind: exactly that test failed.
+- [x] Seam crossed by a NEW additive action, never a widened `.strict()` payload.
 
 - [x] `ownsSubagents` REVIEWED (CLEAN) and its recommendation implemented: requested ownership is now
       validated at ADMISSION against the spec 352 contract, not left to fail-closed at commit. The

@@ -594,3 +594,87 @@ describe("agent profile lifecycle kernel", () => {
     })).resolves.toMatchObject({ operation: "create" });
   });
 });
+
+/**
+ * SDD 482 phase 4 (`t-5e1113`) — create-and-adopt as ONE transaction.
+ *
+ * Ratified 2026-07-29 after an audit rejected a two-transaction version. Ownership is parent-side
+ * (spec 352), so recording the proposer as the new agent's owner edits a SECOND agent's profile.
+ * Committing the two separately left a window where the agent existed unowned; these tests are about
+ * that window not existing.
+ */
+describe("create with a companion owner is one transaction (SDD 482 phase 4)", () => {
+  async function seedOwner(root: string, authority: MemoryAuthority, config: AgentProfileLifecycleConfigPort) {
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "boss", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+    });
+  }
+
+  it("publishes both profiles and both authorities under one txid", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    await seedOwner(root, authority, config);
+
+    const result = await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      companion: { agentName: "boss", ownership: { subagents: ["importer"] } },
+    });
+
+    // The owner now declares the new agent…
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", operation: "edit", authority, config });
+    expect(owner.profile.ownership?.subagents).toEqual(["importer"]);
+    // …and BOTH authority records name the same transaction, which is the ratified consequence of a
+    // single transaction having a single identity.
+    expect(authority.records.get("importer")?.revision).toBe(`lifecycle-${result.txid}`);
+    expect(authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
+  });
+
+  /**
+   * The property the whole change exists for: a failure leaves NEITHER subject changed. Not "the
+   * agent exists but is unowned" — nothing.
+   */
+  it("compensates BOTH subjects when the transaction fails", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    await seedOwner(root, authority, config);
+    const ownerBefore = structuredClone(authority.records.get("boss"));
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      companion: { agentName: "boss", ownership: { subagents: ["importer"] } },
+      // Fails after both profiles and both authorities are published, so compensation has real work.
+      activateState: (state) => { if (state === "target") throw new Error("activation refused"); },
+    })).rejects.toThrow(/activation refused/);
+
+    // The created agent is gone…
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer", "agent.yml"))).toBe(false);
+    expect(authority.records.has("importer")).toBe(false);
+    // …and the OWNER is byte-for-byte what it was, including its authority record.
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", operation: "edit", authority, config });
+    expect(owner.profile.ownership).toBeUndefined();
+    expect(authority.records.get("boss")).toEqual(ownerBefore);
+  });
+
+  it("refuses a companion that is the same agent, or one without canonical state", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      companion: { agentName: "importer", ownership: { subagents: [] } },
+    })).rejects.toThrow(/companion must be a different agent/);
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      companion: { agentName: "ghost", ownership: { subagents: ["importer"] } },
+    })).rejects.toThrow(/incomplete canonical state/);
+  });
+});
