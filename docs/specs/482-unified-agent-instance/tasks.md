@@ -257,6 +257,15 @@ preconditions current, not future, which is why they are closed here.
       published the agent but not the ownership edge would look converged and commit the half-state.
 - [x] Both authority records carry `revision: lifecycle-<txid>`, ratified rather than incidental.
 - [x] Compensation proven for BOTH subjects by disabling the companion unwind: exactly that test failed.
+- [x] CRASH path proven, not just compensation: a hand-built journal describing a transaction that
+      published the new agent but NOT the companion's ownership edge is compensated by `reconcile`,
+      never committed. Proven by forcing the companion out of the target tuple — exactly that test
+      failed. Compensation covers a failure in-process; reconcile covers the process that died, and
+      they are different halves.
+- [x] "Saving does not start the agent" re-pinned where it now LIVES: moving onto the canonical Studio
+      path handed `lifecycle.enabled: false` to `createProfileFromStudioMutation`, which left the
+      property unasserted from the proposal side — how a guarantee evaporates in a refactor that "only
+      moved things". Asserted through that helper with the exact editable the extension sends.
 - [x] Seam crossed by a NEW additive action, never a widened `.strict()` payload.
 
 - [x] `ownsSubagents` REVIEWED (CLEAN) and its recommendation implemented: requested ownership is now

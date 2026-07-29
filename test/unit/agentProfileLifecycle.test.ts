@@ -660,6 +660,70 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
     expect(authority.records.get("boss")).toEqual(ownerBefore);
   });
 
+  /**
+   * The CRASH half of atomicity, which compensation does not cover: compensation handles a failure
+   * in-process, `reconcile` handles the process that died. Raised by `claude-reviewer` as unverified;
+   * a grep shows the code, only a test shows the behaviour.
+   *
+   * The journal here describes a transaction that published the NEW agent but not the companion's
+   * ownership edge — the exact half-state. Recovery must NOT read that as converged.
+   */
+  it("reconcile refuses to commit a crash that left the companion behind", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    await seedOwner(root, authority, config);
+    const priorOwnerAuthority = structuredClone(authority.records.get("boss"))!;
+    const priorOwnerProfile = fs.readFileSync(path.join(root, ".tachyon", "agents", "boss", "agent.yml"), "utf8");
+    const originalConfig = config.read();
+    const originalConfigSha256 = sha256(originalConfig);
+
+    const committed = await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+    });
+
+    // A journal claiming a companion target that was never published: `boss` still holds its ORIGINAL
+    // profile and authority, so the tuple is half-converged.
+    const txid = crypto.randomUUID();
+    const txDir = path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle", txid);
+    fs.mkdirSync(txDir, { recursive: true });
+    fs.writeFileSync(path.join(txDir, "backup-companion-agent.yml"), priorOwnerProfile);
+    // The real transaction always stages this; a hand-built txDir must too, or compensation fails on
+    // the config restore before it ever reaches the companion.
+    fs.writeFileSync(path.join(txDir, "backup-tachyon.yml"), originalConfig);
+    fs.writeFileSync(path.join(txDir, "journal.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      txid,
+      operation: "create",
+      agentName: "importer",
+      phase: "locator-written",
+      createdAt: new Date().toISOString(),
+      expectedRevision: null,
+      priorProfileSha256: null,
+      targetProfileSha256: committed.snapshot.provenance.canonical.sha256,
+      priorAuthority: null,
+      targetAuthority: authority.records.get("importer"),
+      priorConfigSha256: originalConfigSha256,
+      targetConfigSha256: sha256(config.read()),
+      companion: {
+        agentName: "boss",
+        priorProfileSha256: sha256(priorOwnerProfile),
+        targetProfileSha256: "f".repeat(64), // never reached disk
+        priorAuthority: priorOwnerAuthority,
+        targetAuthority: { ...priorOwnerAuthority, revision: `lifecycle-${txid}` },
+      },
+    }, null, 2)}\n`);
+
+    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config)))
+      .toEqual({ reconciled: [txid], degraded: [] });
+
+    // Compensated, not committed: the created agent is rolled back and the owner is untouched.
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer", "agent.yml"))).toBe(false);
+    expect(fs.readFileSync(path.join(root, ".tachyon", "agents", "boss", "agent.yml"), "utf8")).toBe(priorOwnerProfile);
+    expect(authority.records.get("boss")).toEqual(priorOwnerAuthority);
+  });
+
   it("refuses a companion that is the same agent, or one without canonical state", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();

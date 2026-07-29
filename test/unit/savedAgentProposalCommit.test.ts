@@ -233,6 +233,37 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
    * CANONICAL Studio create, which is the thing that refuses capability references. This test now
    * pins that inheritance rather than a local copy of the rule.
    */
+  /**
+   * "Saving does not start the agent" as a property of the DATA, pinned where it now lives.
+   *
+   * `claude-reviewer` could not find `enabled: false` in this module and was right not to assume: it
+   * is no longer here. Moving the create onto the canonical Studio path handed that guarantee to
+   * `createProfileFromStudioMutation`, which writes it unconditionally. Better ownership — but it
+   * left the property unasserted from this side, which is exactly how a guarantee evaporates during a
+   * refactor that "only moved things".
+   */
+  it("creates the agent DISABLED, asserted through the canonical helper that now writes it", async () => {
+    const { createProfileFromStudioMutation } = await import("../../src/config/agentProfileStudio.js");
+    const profile = createProfileFromStudioMutation({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "importer",
+      editable: {
+        displayName: "",
+        runtime: { adapter: "claude", executable: "claude" },
+        role: "",
+        cwd: "",
+        // Exactly what the extension's port sends, including autostart false.
+        lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        worktree: { enabled: false, branch: "" },
+        isolation: "",
+        capabilities: { skills: [], mcp: [], hooks: [] },
+      },
+    } as never);
+    expect(profile.lifecycle?.enabled).toBe(false);
+    expect(profile.lifecycle?.autostart).toBeUndefined(); // nothing starts it on the next load either
+  });
+
   it("verifies the capability rule against the canonical helper, which now owns it", async () => {
     const { createProfileFromStudioMutation } = await import("../../src/config/agentProfileStudio.js");
     // The exact refusal this module defers to. If the canonical rule ever relaxes, this fails and the
