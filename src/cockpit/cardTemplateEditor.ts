@@ -11,7 +11,9 @@
  * through `parseCardTemplate` — the SAME function the config loader calls — so the preview and the
  * loader cannot disagree about what is valid.
  */
-import { GLOBAL_SETTINGS_SCHEMA_VERSION } from "../config/globalSettings.js";
+// The PURE document module, not the file-backed store: this file is bundled for the webview, and
+// the store pulls in node:fs/os/path.
+import { GLOBAL_SETTINGS_SCHEMA_VERSION } from "../config/globalSettingsDocument.js";
 import {
   CARD_CATALOG,
   CARD_REGIONS,
