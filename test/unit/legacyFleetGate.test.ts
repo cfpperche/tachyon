@@ -23,10 +23,9 @@ import type { InstancePolicySource } from "../../src/agents/agentInstancePolicy.
 const WS = "b349073a";
 
 const MODERN: InstancePolicySource = {
-  declared: true,
-  instance: { identity: "saved", lifetime: "restartable" },
+  instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
 };
-const PRE_CUT: InstancePolicySource = { declared: true }; // no instance policy: written before the cut
+const PRE_CUT: InstancePolicySource = {}; // no instance policy: written before the cut
 
 const POINTER: LegacyRosterEntry = { name: "reviewer", kind: "agent", hasProfilePointer: true };
 const INLINE: LegacyRosterEntry = { name: "old-spike", kind: "agent", hasProfilePointer: false };

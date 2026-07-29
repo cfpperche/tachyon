@@ -1,4 +1,5 @@
 import type { WorkspaceSnapshotEnvelopeV1 } from "../engine-service/protocol.js";
+import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 
 export interface WorkspaceConfigFailureProjectionV1 {
   file: string;
@@ -28,7 +29,12 @@ export interface WorkspaceAgentProjectionV1 {
   running: boolean;
   stopping: boolean;
   stopFailed: boolean;
-  declared: boolean;
+  /**
+   * t-04052d — replaces `declared`. The wire states the durability of the DEFINITION, not which store
+   * happened to hold it. `declaredOwner` below is a DIFFERENT edge (Profile→Profile ownership from
+   * `subagents`) and is deliberately untouched; the name similarity is a trap, not a relationship.
+   */
+  lifetime: AgentInstanceLifetime;
   dead: boolean;
   crashed: boolean;
   attention?: "working" | "idle" | "needs-input" | "throttled";
@@ -178,10 +184,18 @@ function projectAgents(value: unknown): BoundedProjectionListV1<WorkspaceAgentPr
   return { total, truncated, items };
 }
 
+/** Fail-closed: an unrecognised value is refused, never coerced to one of the two this build knows. */
+function agentLifetime(value: unknown): AgentInstanceLifetime {
+  if (value !== "saved" && value !== "temporary") throw invalid("agent lifetime is invalid");
+  return value;
+}
+
 function projectAgent(value: unknown): WorkspaceAgentProjectionV1 {
   const input = record(value, "agent projection");
   const allowed = [
-    "name", "session", "kind", "running", "stopping", "stopFailed", "declared", "dead", "crashed",
+    // NOTE: `required` below is `allowed.slice(0, 9)` — position-sensitive. `lifetime` takes the exact
+    // slot `declared` held, so the required set is unchanged in size and membership semantics.
+    "name", "session", "kind", "running", "stopping", "stopFailed", "lifetime", "dead", "crashed",
     "attention", "unseen", "configurationPending", "exitCode", "parent", "delegator", "declaredOwner",
   ];
   if (Object.keys(input).some((key) => !allowed.includes(key))) throw invalid("agent projection has unknown fields");
@@ -195,7 +209,7 @@ function projectAgent(value: unknown): WorkspaceAgentProjectionV1 {
     running: boolean(input.running, "agent running"),
     stopping: boolean(input.stopping, "agent stopping"),
     stopFailed: boolean(input.stopFailed, "agent stopFailed"),
-    declared: boolean(input.declared, "agent declared"),
+    lifetime: agentLifetime(input.lifetime),
     dead: boolean(input.dead, "agent dead"),
     crashed: boolean(input.crashed, "agent crashed"),
   };

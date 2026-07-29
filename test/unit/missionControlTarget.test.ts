@@ -10,8 +10,8 @@ describe("Workspace Mission Control target", () => {
     const fake = new FakeWorkspaceClient({
       identity,
       snapshot: projectionSnapshot(identity, 0, [
-        projectedAgent("codex", { running: true, declared: true }),
-        projectedAgent("reviewer", { running: true, declared: false }),
+        projectedAgent("codex", { running: true, lifetime: "saved" }),
+        projectedAgent("reviewer", { running: true, lifetime: "temporary" }),
       ]),
       query: async (query) => {
         expect(query).toEqual({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
@@ -42,8 +42,8 @@ describe("Workspace Mission Control target", () => {
 
     expect(target.declaredAgentNames()).toEqual(["codex"]);
     expect(await target.listMissionControlAgents()).toEqual([
-      { name: "codex", kind: "agent", running: true, declared: true },
-      { name: "reviewer", kind: "agent", running: true, declared: false },
+      { name: "codex", kind: "agent", running: true, lifetime: "saved" },
+      { name: "reviewer", kind: "agent", running: true, lifetime: "temporary" },
     ]);
     expect(await target.boardSnapshot(["reviewer"])).toMatchObject({
       views: [{ task: { id: "t-abc123", body: "search me" } }],

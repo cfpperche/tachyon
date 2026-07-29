@@ -1199,7 +1199,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             name: a.name,
             kind: a.kind,
             running: !!a.running,
-            declared: a.declared,
+            lifetime: a.lifetime,
             folder: ws.folderName,
             wsHash: ws.wsHash,
           }));
@@ -1469,7 +1469,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // window where the agent existed unowned.
             return ws.createSavedAgentWithOwner({
               schemaVersion: 1,
-              kind: "canonical",
+              kind: "agent-instance",
               agentName,
               editable: {
                 displayName: spec.displayName ?? "",
@@ -1637,7 +1637,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       const listed = await extensionQuery(ws, { action: "agents.list" });
       const rows = Array.isArray(listed) ? listed : [];
-      type AgentRow = { name?: string; running?: boolean; kind?: string; declared?: boolean };
+      type AgentRow = { name?: string; running?: boolean; kind?: string; lifetime?: "saved" | "temporary" };
       const dest = rows
         .map((r) => r as AgentRow)
         .find((r) => r.name === toName);
@@ -1647,8 +1647,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (dest.kind === "terminal") {
         throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
       }
-      if (dest.declared === false) {
-        throw new Error(`destination '${toName}' is ad-hoc (not declared in tachyon.yml)`);
+      // t-04052d — fail-closed on `!== "saved"`, not on `=== "temporary"`. This guard is over an
+      // untyped `agents.list` payload, so an absent field must refuse rather than pass: written the
+      // other way it silently stopped firing the moment the field it named was removed.
+      if (dest.lifetime !== "saved") {
+        throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
       }
       if (dest.running) {
         throw new Error(`destination '${toName}' is running — stop it first`);

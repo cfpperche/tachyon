@@ -276,7 +276,7 @@ describe("agent profile lifecycle kernel", () => {
     // Exact editable the extension's saved-agent-create port sends.
     const createProfile = createProfileFromStudioMutation({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "importer",
       editable: {
         displayName: "",

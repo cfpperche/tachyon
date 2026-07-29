@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
-import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import {
   cancelSavedAgentProposal,
   readLiveSavedAgentProposalQueue,
@@ -856,16 +855,18 @@ function outputCapabilities(
   const durable = !info.running && !retained && paneTranscriptExists(deps.workspaceRoot, info.name);
   const canReadOutput = info.running || info.dead || !!retained || durable;
   const readOutputState = info.running ? "live" : info.dead || retained || durable ? "postmortem" : "unavailable";
-  // SDD 482 phase 3 — same identity question Fleet asks: only a Temporary instance can be dismissed;
-  // a Saved one always exists in its store and must be removed there.
-  const canDismiss = isTemporaryInstance(info) && !info.running;
+  // Same identity question Fleet asks: only a Temporary instance can be dismissed; a Saved one always
+  // exists in its store and must be removed there. Read off the ROSTER's resolved answer — a Saved
+  // agent that has never been started has no ledger row, and asking its instance policy directly would
+  // report it as dismissible through the Bridge.
+  const canDismiss = info.lifetime === "temporary" && !info.running;
   return {
     canReadOutput,
     readOutputState,
     ...(!canReadOutput ? { readOutputReason: "no live pane or retained postmortem output is available" } : {}),
     canDismiss,
     ...(!canDismiss
-      ? { dismissReason: info.declared ? "Saved Agents (declared in tachyon.yml) must be deleted from config" : "agent is still running" }
+      ? { dismissReason: info.lifetime === "saved" ? "Saved Agents (declared in tachyon.yml) must be deleted from config" : "agent is still running" }
       : {}),
   };
 }
@@ -1957,7 +1958,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         return ok(`agent '${name}' killed`);
       } catch (err) {
         const info = await managedEntry(deps, name);
-        if (info && isTemporaryInstance(info) && !info.running) {
+        if (info && info.lifetime === "temporary" && !info.running) {
           return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped ad-hoc entry`));
         }
         return fail(err);
@@ -1982,7 +1983,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // is kept in the same sentence rather than replaced outright: an agent or operator searching
         // logs for "declared in tachyon.yml" still finds this, which is what a compatibility alias
         // means for a message nobody can grep twice.
-        if (!isTemporaryInstance(info)) {
+        if (info.lifetime === "saved") {
           return fail(new Error(
             `agent '${name}' is a Saved Agent (declared in tachyon.yml) and cannot be dismissed through the Bridge; ` +
             "remove it from tachyon.yml instead",

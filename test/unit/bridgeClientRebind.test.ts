@@ -30,7 +30,7 @@ function baseRecord(over: Partial<SessionRecord> = {}): SessionRecord {
     def: { cmd: "grok", kind: "agent" },
     resume: { runtime: "grok", sessionId: "s1" },
     cwd: "/ws",
-    declared: true,
+    instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     updatedAt: new Date(0).toISOString(),
     ...over,
   };
@@ -237,7 +237,7 @@ describe("SessionLedger bridgeClient", () => {
       def: { cmd: "grok", kind: "agent" },
       resume: { runtime: "grok", sessionId: "x" },
       cwd: ws,
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
       bridgeClient: { boundGeneration: 2, wired: true },
     });
     const back = new SessionLedger(ws).get("a");

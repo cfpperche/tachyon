@@ -247,7 +247,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     // Exactly what the extension's port sends for Approve and create.
     const profile = createProfileFromStudioMutation({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "importer",
       editable: {
         displayName: "",
@@ -288,7 +288,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     // drop above becomes a deliberate re-decision instead of stale caution.
     expect(() => createProfileFromStudioMutation({
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "importer",
       editable: {
         displayName: "",

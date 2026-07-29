@@ -42,7 +42,7 @@ describe("agent soul lifecycle composition closure", () => {
     const { SessionLedger } = await import("../../src/resume/SessionLedger.js");
     const root = makeTempDir("soul-ledger-");
     const ledger = new SessionLedger(root);
-    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", role: "reviewer", soul: true, taskBrief: "Current execution task." }, cwd: root, declared: false, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
+    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", role: "reviewer", soul: true, taskBrief: "Current execution task." }, cwd: root, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, identity: { soul: { ...composed.soul!, offeredAt: new Date(0).toISOString(), channel: "startup-argument", state: "offered" }, health: "offered" } });
     expect(fs.readFileSync(ledger.path, "utf8")).not.toContain(identityBody);
     expect(new SessionLedger(root).get("reviewer")?.identity?.soul.sha256).toBe("a".repeat(64));
     const malformed = JSON.parse(fs.readFileSync(ledger.path, "utf8")) as { sessions: Record<string, { identity?: { soul: { bytes: number; profileId: string; offeredAt: string }; degradedAt?: string } }> };

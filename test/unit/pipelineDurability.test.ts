@@ -25,7 +25,7 @@ describe("SessionDef.pipeline survives a ledger round-trip (codex S4 M4)", () =>
     led.record("feature-r1-implement", {
       def: { cmd: "claude", kind: "agent", pipeline: { runId: "r1", nodeId: "implement" } },
       cwd: "/wt/r1",
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
     });
     expect(led.get("feature-r1-implement")?.def?.pipeline).toEqual({ runId: "r1", nodeId: "implement" });
   });

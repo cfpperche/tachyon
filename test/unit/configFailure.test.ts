@@ -27,7 +27,7 @@ function tmpRoot(): string {
 function ledgerRec(partial: Partial<SessionRecord> & { cwd?: string } = {}): SessionRecord {
   return {
     cwd: partial.cwd ?? "/ws",
-    declared: partial.declared ?? true,
+    instance: partial.instance ?? { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     updatedAt: partial.updatedAt ?? new Date().toISOString(),
     ...(partial.def ? { def: partial.def } : {}),
     ...(partial.resume ? { resume: partial.resume } : {}),
@@ -84,8 +84,8 @@ describe("degraded roster + LKG spawn gate", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set(),
       ledger: [
-        ["codex", ledgerRec({ declared: true, resume: { runtime: "codex", sessionId: "s1" } })],
-        ["ad-hoc-fix", ledgerRec({ declared: false, def: { cmd: "claude", kind: "agent" } })],
+        ["codex", ledgerRec({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, resume: { runtime: "codex", sessionId: "s1" } })],
+        ["ad-hoc-fix", ledgerRec({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, def: { cmd: "claude", kind: "agent" } })],
       ],
       lkg: {
         schemaVersion: 1,
@@ -121,7 +121,7 @@ agents:
     // break: reviewer removed but still referenced — parse would fail; we only need degraded merge
     const extras = degradedRosterExtras({
       existingNames: new Set(), // cold start with invalid config: manager.list empty of declared
-      ledger: [["codex", ledgerRec({ declared: true, resume: { runtime: "codex", sessionId: "abc" } })]],
+      ledger: [["codex", ledgerRec({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, resume: { runtime: "codex", sessionId: "abc" } })]],
       lkg,
     });
     expect(extras.map((e) => e.name).sort()).toEqual(["codex", "reviewer"]);
@@ -144,7 +144,7 @@ agents:
   it("does not duplicate names already in the live list", () => {
     const extras = degradedRosterExtras({
       existingNames: new Set(["codex"]),
-      ledger: [["codex", ledgerRec({ declared: true })]],
+      ledger: [["codex", ledgerRec({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } })]],
       lkg: {
         schemaVersion: 1,
         savedAt: "t",
@@ -202,7 +202,7 @@ describe("doctor report", () => {
         agents: [{ name: "codex", kind: "agent" }],
       },
       ledger: [
-        ["codex", ledgerRec({ declared: true, resume: { runtime: "codex", sessionId: "s1" } })],
+        ["codex", ledgerRec({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, resume: { runtime: "codex", sessionId: "s1" } })],
       ],
       liveSessions: new Set(),
       knownSessions: new Set(),

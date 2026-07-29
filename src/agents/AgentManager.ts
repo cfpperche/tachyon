@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { POST_CUT_SESSION_ATTESTATION, POST_CUT_SESSION_ATTESTATION_ENV } from "./legacyFleetGate.js";
+import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,7 +20,9 @@ import {
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
+  type AgentInstanceLifetime,
   type AgentInstancePolicy,
+  type AgentInstanceResumePolicy,
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
@@ -217,11 +220,26 @@ export interface ManagedEntryInfo {
    * deliberate action. Opaque "stop failed" taught the human nothing; this is what the subline shows.
    */
   stopFailure?: { stage: "await-exit"; reason: string; nextAction: string };
-  declared: boolean;
   /**
-   * SDD 482 phase 3 — the DECLARED instance policy, absent on rows written before phase 2. Readers
-   * ask their question through `agentInstancePolicy` helpers rather than reading this directly, so
-   * the legacy path lives in one place.
+   * t-04052d — replaces `declared`, which said "config owns this definition" and was read as though it
+   * said "what kind of worker is this". This says the latter, and only the latter.
+   *
+   * Resolved once, in `list()`, from the declared policy where an instance exists and from the ROSTER
+   * where none does — see the comment at that site for why the second half is an observation rather
+   * than the inference this cut removes.
+   */
+  lifetime: AgentInstanceLifetime;
+  /**
+   * t-04052d — the SECOND axis, resolved the same way and carried beside the first because the two do
+   * not imply each other. A FORK is `temporary` + `restartable`: no durable Profile, but it owns a
+   * resume block. A reader that has only `lifetime` cannot tell it apart from a plain ad-hoc, and any
+   * rule that tries collapses the axes this cut exists to keep apart.
+   */
+  resumePolicy: AgentInstanceResumePolicy;
+  /**
+   * SDD 482 phase 3 — the DECLARED instance policy of a recorded instance; absent when this row is a
+   * roster entry with no session ledger row behind it. Readers ask their question through the
+   * `agentInstancePolicy` helpers rather than reading this directly.
    */
   instance?: AgentInstancePolicy;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
@@ -1260,7 +1278,7 @@ export class AgentManager {
       // skipped the lineage restore below as well. Persisting a Saved agent's parent would therefore
       // have changed nothing on its own: the row was never read back. Only the DEFINITION is config's
       // to own; the execution lineage below is the ledger's, for Saved and Temporary alike.
-      const configOwned = rec.declared || declared.has(name);
+      const configOwned = !isTemporaryInstance(rec) || declared.has(name);
       if (!configOwned && !this.adhoc.has(name)) {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
@@ -1440,15 +1458,33 @@ export class AgentManager {
       if (state === undefined || state.dead) {
         this.clearStopFailed(name);
       }
+      const recordedInstance = this.opts.ledger?.get(name)?.instance;
       return {
         name,
         session: this.session(name),
         running: alive,
         ...(stopping ? { stopping: true } : {}),
         ...(stopFailed ? { stopFailed: true } : {}),
+        // t-04052d — THE ONE PLACE the roster's durability question is answered.
+        //
+        // CONFIG FIRST, and that order is the pre-existing rule rather than a new choice: a name
+        // declared in `tachyon.yml` has a durable Profile, and a ledger row that disagrees is a stale
+        // shadow of some earlier instance that held the name. "Config wins, not the ledger shadow" is
+        // already pinned by test, and inverting it inside a field rename would be a behavior change
+        // smuggled in as vocabulary.
+        //
+        // This is not the inference the cut removes. That one read a RUNNING INSTANCE's policy off
+        // config; this row is a ROSTER entry, and `instance` below still carries the instance's own
+        // declared policy untouched for readers who are asking about the instance rather than the name.
+        //
+        // The fallback is fail-closed for the same reason the helpers are: an unknown name with a
+        // policy-less row reads as temporary rather than being granted Saved capability on a guess.
+        lifetime: declared.includes(name) ? "saved" : (recordedInstance?.lifetime ?? "temporary"),
+        // Same config-first order, same fail-closed tail: a config Profile can always be started again,
+        // otherwise the recorded policy answers, otherwise `collected` (withhold, never grant).
+        resumePolicy: declared.includes(name) ? "restartable" : (recordedInstance?.resumePolicy ?? "collected"),
         ...(stopFailure ? { stopFailure } : {}),
-        declared: declared.includes(name),
-        ...(this.opts.ledger?.get(name)?.instance ? { instance: this.opts.ledger.get(name)!.instance } : {}),
+        ...(recordedInstance ? { instance: recordedInstance } : {}),
         dead: state?.dead ?? false,
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
@@ -2516,7 +2552,7 @@ export class AgentManager {
     // Ownership materialization can write files. Complete it before replacing a dead incumbent so
     // every fallible launch-preparation step preserves the old postmortem pane on failure.
     const ownedSpawnCmd = this.withSessionOwnership(name, def, spawnBridge.cmd, {
-      declared: !adhoc,
+      lifecycleHooks: !adhoc,
       cwd,
       configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
     });
@@ -2712,17 +2748,16 @@ export class AgentManager {
       resume: resumeBlock,
       worktree,
       cwd,
-      declared: !adhoc,
       // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `adhoc` is set by the
       // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
       // from the name, the tmux session or `tachyon.yml`. A declared start is a Saved instance that
       // may be restarted; an ad-hoc start is a Temporary one collected when its work ends.
       // `lifecycleHooks` mirrors what `withSessionOwnership` was actually told above
-      // (`declared: !adhoc` → `ownershipOnly`), recorded as a capability of THIS instance rather than
-      // left to be re-derived from identity by every reader.
+      // (`lifecycleHooks: !adhoc` → `ownershipOnly`), recorded as a capability of THIS instance rather
+      // than left to be re-derived from identity by every reader.
       instance: adhoc
-        ? { identity: "temporary" as const, lifetime: "collected" as const, lifecycleHooks: false }
-        : { identity: "saved" as const, lifetime: "restartable" as const, lifecycleHooks: true },
+        ? { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }
+        : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
@@ -3155,7 +3190,10 @@ export class AgentManager {
     name: string,
     def: Pick<AgentEntry, "cmd">,
     cmd: string,
-    opts: { declared: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean },
+    // t-04052d — this option was called `declared`, and it never asked about storage: `!declared`
+    // became `ownershipOnly`, i.e. "inject profile-backed lifecycle hooks, or ownership only?". It is
+    // renamed to the question it actually asks, which is also the capability the ledger records.
+    opts: { lifecycleHooks: boolean; cwd: string; configHome?: string; preservePermissionMode?: boolean },
   ): string {
     const binary = binaryOf(def.cmd);
     const adapter = adapterFor(def.cmd);
@@ -3163,7 +3201,7 @@ export class AgentManager {
       this.opts.onSessionHooksInjected?.(name, false);
       return cmd;
     }
-    const ownershipOnly = !opts.declared;
+    const ownershipOnly = !opts.lifecycleHooks;
     if (binary === "codex") {
       const config = this.opts.materializeCodexSessionStartHookConfig?.(name, { ownershipOnly });
       this.opts.onSessionHooksInjected?.(name, !!config);
@@ -3362,7 +3400,7 @@ export class AgentManager {
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
     const rec = this.opts.ledger?.get(name);
-    if (rec && !rec.declared && this.adhoc.has(name)) {
+    if (rec && isTemporaryInstance(rec) && this.adhoc.has(name)) {
       this.opts.ledger!.record(name, {
         ...rec,
         lifecycle: {
@@ -4065,7 +4103,7 @@ export class AgentManager {
       restartBuild.env.GROK_HOME,
     );
     const restartOwnedCmd = this.withSessionOwnership(name, def, restartBridge.cmd, {
-      declared: !this.adhoc.has(name),
+      lifecycleHooks: !this.adhoc.has(name),
       cwd,
       configHome: restartBuild.env.CLAUDE_CONFIG_DIR,
     });
@@ -4101,7 +4139,19 @@ export class AgentManager {
       const capability = openingPromptCapability(def.cmd);
       const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
       const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
-      const { lifecycle: _terminalLifecycle, ...restartable } = existing ?? { declared: !this.adhoc.has(name) };
+      // t-04052d — this fallback (no prior row) used to supply `declared` and nothing else, which left
+      // the new row with NO instance policy. That was invisible while `declared` still answered for
+      // readers; with the field gone it would write a row this build cannot describe and the
+      // activation gate would later refuse the whole workspace over it. So the fallback declares the
+      // policy, from what a restart actually is: it is `restartable` by definition — that is the
+      // operation in progress — and its lifetime follows the same source restart already uses to
+      // decide hook injection two dozen lines above, so the two cannot disagree.
+      const restartTemporary = this.adhoc.has(name);
+      const { lifecycle: _terminalLifecycle, ...restartable } = existing ?? {
+        instance: restartTemporary
+          ? { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false }
+          : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
+      };
       this.opts.ledger.record(name, {
         ...restartable,
         cwd,
@@ -4457,7 +4507,7 @@ export class AgentManager {
       name,
       cmd,
       { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, ...(resumeHarness?.env ?? {}), ...persistedResumeHomeEnv },
-      !record.declared,
+      isTemporaryInstance(record),
       cwd,
     );
     const resumeBuild = this.applyHarness(
@@ -4489,7 +4539,11 @@ export class AgentManager {
     await this.startSessionCommand({
       session,
       cmd: this.withSessionOwnership(name, { cmd }, resumeBridge.cmd, {
-        declared: record.declared,
+        // Resume re-attaches an EXISTING instance, so it must reuse the capability that instance was
+        // launched with — read from the row, never re-derived. This is the promotion case the
+        // capability field exists for: a promoted agent has a Saved Profile while its running
+        // instance still carries the ownership-only hooks it started with.
+        lifecycleHooks: hasLifecycleHooks(record),
         cwd,
         configHome: resumeBuild.env.CLAUDE_CONFIG_DIR ?? persistedResumeHomeEnv.CLAUDE_CONFIG_DIR,
       }),
@@ -4760,16 +4814,15 @@ export class AgentManager {
       ...(sourceRecord?.evolution ? { evolution: structuredClone(sourceRecord.evolution) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,
-      declared: false,
       // SDD 482 phase 2 — the case that justifies TWO fields rather than one enum. A fork has no
-      // durable Profile, so its identity is `temporary`; but it owns a resume block and can be
-      // resumed, so its lifetime is `restartable`. A single saved/temporary value would have to lie
-      // about one of the two, and the thing it would most likely lie about is whether the fork
+      // durable Profile, so its `lifetime` is `temporary`; but it owns a resume block and can be
+      // resumed, so its `resumePolicy` is `restartable`. A single saved/temporary value would have to
+      // lie about one of the two, and the thing it would most likely lie about is whether the fork
       // survives — which is the reload this phase must not break.
       // `lifecycleHooks: false` records what commitFork already decides above by passing
-      // `declared: false` to withSessionOwnership — "a canonical fork must not inherit
-      // profileLifecycle authority". Now the row says so instead of a reader guessing.
-      instance: { identity: "temporary" as const, lifetime: "restartable" as const, lifecycleHooks: false },
+      // `lifecycleHooks: false` to withSessionOwnership — "a fork must not inherit profileLifecycle
+      // authority". Now the row says so instead of a reader guessing.
+      instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
     });
     let spawnedSession: string | undefined;
     let sessionAttempted = false;
@@ -4866,7 +4919,7 @@ export class AgentManager {
         agent: forkName,
         session,
         ownedCmd: this.withSessionOwnership(forkName, forkDefinition, forkBridge.cmd, {
-          declared: false,
+          lifecycleHooks: false,
           cwd,
           configHome: forkBuild.env.CLAUDE_CONFIG_DIR ?? this.defaultClaudeConfigHome(),
           // A user-created fork inherits the source command's permission posture; capture must not widen it.

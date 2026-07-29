@@ -126,13 +126,13 @@ export function workspaceTaskStudioTarget(client: WorkspaceClient): WorkspaceTas
   };
   return {
     ...identity,
-    declaredAgentNames: () => client.presentation.agents.items.filter((agent) => agent.declared).map((agent) => agent.name),
+    declaredAgentNames: () => client.presentation.agents.items.filter((agent) => agent.lifetime === "saved").map((agent) => agent.name),
     loadTaskStudio: async (taskId) => {
-      if (!taskId) return emptyEntity(identity, client.presentation.agents.items.filter((agent) => agent.declared).map((agent) => agent.name));
+      if (!taskId) return emptyEntity(identity, client.presentation.agents.items.filter((agent) => agent.lifetime === "saved").map((agent) => agent.name));
       const result = await client.query({ schemaVersion: 1, method: "task.studio", input: { id: taskId } });
       if (result.status === "error") throw new Error(result.message);
       if (result.method !== "task.studio") throw new Error("Task Studio query returned the wrong view");
-      return hydrateProjection(identity, result.view.studio, client.presentation.agents.items.filter((agent) => agent.declared).map((agent) => agent.name));
+      return hydrateProjection(identity, result.view.studio, client.presentation.agents.items.filter((agent) => agent.lifetime === "saved").map((agent) => agent.name));
     },
     saveTaskStudio: async (taskId, rawPatch) => {
       const payload = validatePayload("save", { schemaVersion: 1, patch: rawPatch });

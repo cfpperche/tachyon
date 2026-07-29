@@ -448,7 +448,7 @@ function workspace(root: string, wsHash: string, folderName: string, sessions: A
 }
 
 function record(runtime: "codex" | "claude"): SessionRecord {
-  return { cwd: "/work", declared: true, updatedAt: "2026-07-09T20:00:00.000Z", resume: { runtime, sessionId: "secret-session" } };
+  return { cwd: "/work", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, updatedAt: "2026-07-09T20:00:00.000Z", resume: { runtime, sessionId: "secret-session" } };
 }
 
 function event(type: string, timestamp: string, payload: unknown, runtimeVersion?: string): LoggedEvent {

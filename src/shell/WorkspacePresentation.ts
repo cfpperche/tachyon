@@ -132,7 +132,7 @@ export function workspacePluginPresentationTarget(client: WorkspaceClient): Work
 export function pluginFleetPresentation(
   workspace: WorkspacePresentationTarget,
   bridge: { port?: number | string; connected: boolean },
-  agents: readonly Pick<WorkspaceAgentProjectionV1, "name" | "kind" | "running" | "declared" | "attention" | "unseen" | "configurationPending">[],
+  agents: readonly Pick<WorkspaceAgentProjectionV1, "name" | "kind" | "running" | "lifetime" | "attention" | "unseen" | "configurationPending">[],
 ): FleetVM {
   return {
     folder: { hash: workspace.wsHash, name: workspace.folderName },
@@ -144,7 +144,7 @@ export function pluginFleetPresentation(
         status: pluginAgentStatus(agent.running, agent.attention, agent.unseen),
         ...(agent.attention ? { attention: agent.attention } : {}),
         kind: "agent",
-        adhoc: !agent.declared,
+        adhoc: agent.lifetime === "temporary",
       })),
     terminals: [],
     commands: [],

@@ -4,6 +4,7 @@
 
 import type { StalenessState } from "../../handoff/ProjectHandoffStore.js";
 import type { HandoffDistillProfileVM } from "../../handoff/distill.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../../resume/SessionLedger.js";
 
 /** A pending note as the panel renders it (the engine's HandoffNote shape, kept local so the webview bundle
  *  doesn't drag the engine's fs types). */
@@ -22,7 +23,14 @@ export interface HandoffDistillTargetVM {
   description: string;
   /** t-1ba76d — optional for older snapshots; host always sets it. */
   state?: HandoffDistillTargetState;
-  declared?: boolean;
+  /**
+   * t-04052d — `declared?: boolean` was left here as a dead optional alias when the host moved to
+   * `lifetime`. Nothing read it, and that is precisely the hazard: an optional field the compiler
+   * cannot miss keeps the retired contract constructible by a TypeScript consumer long after the wire
+   * stopped carrying it. Both axes now, matching the host row exactly.
+   */
+  lifetime?: AgentInstanceLifetime;
+  resumePolicy?: AgentInstanceResumePolicy;
 }
 
 /** The single message payload the host posts to the webview. */

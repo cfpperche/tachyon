@@ -5,6 +5,7 @@ import {
 } from "../handoff/handoffDistillService.js";
 import { isSafeHandoffRelativePath, projectHandoffRelativePath } from "../handoff/handoffPath.js";
 import type { HandoffDistillTargetState } from "../handoff/distill.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/SessionLedger.js";
 
 export const HANDOFF_BODY_MAX_CHARS = 1024 * 1024;
 export const HANDOFF_PENDING_NOTE_LIMIT = 1_000;
@@ -22,7 +23,16 @@ export interface HandoffDistillTargetProjectionV1 {
   name: string;
   description: string;
   state: HandoffDistillTargetState;
-  declared: boolean;
+  /**
+   * t-04052d — replaces `declared`. The wire states the durability of the DEFINITION rather than which
+   * store happened to hold it.
+   */
+  lifetime: AgentInstanceLifetime;
+  /**
+   * The second axis travels too, because the eligibility rule below needs BOTH and a validator that
+   * cannot restate the rule is not validating it.
+   */
+  resumePolicy: AgentInstanceResumePolicy;
 }
 
 export interface HandoffProjectionV1 {
@@ -182,17 +192,28 @@ function canonicalizeHandoffTimestamp(value: unknown): string {
 }
 
 function projectTarget(value: unknown): HandoffDistillTargetProjectionV1 {
-  const input = exactRecord(value, ["name", "description", "state", "declared"], "handoff target");
+  const input = exactRecord(value, ["name", "description", "state", "lifetime", "resumePolicy"], "handoff target");
   if (input.state !== "running" && input.state !== "resumable" && input.state !== "stopped") {
     throw invalid("handoff target state is invalid");
   }
-  if (typeof input.declared !== "boolean") throw invalid("handoff target declared is invalid");
-  if (!input.declared && input.state !== "running") throw invalid("stopped ad-hoc agent cannot be a handoff target");
+  if (input.lifetime !== "saved" && input.lifetime !== "temporary") throw invalid("handoff target lifetime is invalid");
+  if (input.resumePolicy !== "restartable" && input.resumePolicy !== "collected") throw invalid("handoff target resumePolicy is invalid");
+  // t-04052d — THE REFUSAL SURVIVES THE FIELD IT USED TO LIVE ON, and needs BOTH axes to be stated
+  // correctly. It was `!declared && state !== "running"`, and it is a rule rather than a label: hand
+  // work off only to an agent whose definition is still there to receive it.
+  //
+  // A plain Temporary's definition dies with its session, so once it stops there is nothing left. A
+  // FORK is Temporary too but `restartable` — it owns its resume block, and its definition reloads.
+  // Written on `lifetime` alone this refused the fork, which is `lifetime` silently absorbing resume
+  // capability: the exact collapse the two axes exist to prevent.
+  if (input.lifetime === "temporary" && input.state !== "running" && input.resumePolicy !== "restartable") {
+    throw invalid("stopped temporary agent cannot be a handoff target");
+  }
   const name = boundedString(input.name, 1, 128, "handoff target name");
   if (!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(name)) throw invalid("handoff target name is invalid");
-  const expectedDescription = `${input.state} · ${input.declared ? "declared" : "ad-hoc"}`;
+  const expectedDescription = `${input.state} · ${input.lifetime}`;
   if (input.description !== expectedDescription) throw invalid("handoff target description contradicts its state");
-  return { name, description: expectedDescription, state: input.state, declared: input.declared };
+  return { name, description: expectedDescription, state: input.state, lifetime: input.lifetime, resumePolicy: input.resumePolicy };
 }
 
 function isCanonicalTimestamp(value: string): boolean {

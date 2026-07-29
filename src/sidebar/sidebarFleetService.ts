@@ -1,4 +1,4 @@
-import { hasLifecycleHooks, isTemporaryInstance } from "../agents/agentInstancePolicy.js";
+import { hasLifecycleHooks } from "../agents/agentInstancePolicy.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
@@ -214,8 +214,10 @@ export async function buildSidebarFleet(
         resumable: !agent.running && resumable.has(agent.name),
         freshStart: !agent.running && resumable.has(agent.name) && resumeReadyOf.get(agent.name) === false,
         kind: "agent",
-        // "Is this a Temporary Agent?" — an identity question, converted.
-        adhoc: isTemporaryInstance(agent),
+        // "Is this a Temporary Agent?" — asked of the ROSTER's resolved answer, not of the instance
+        // policy directly. A Saved agent that has never been started has no ledger row and therefore no
+        // policy; asking the policy would render it as ad-hoc and offer to dismiss it.
+        adhoc: agent.lifetime === "temporary",
         // The continuity pointer is part of the same injected hook set, so it asks the same
         // capability question rather than re-deriving from identity.
         continuity: agent.running && hasLifecycleHooks(agent) ? source.continuityBadge(agent.name) : undefined,
@@ -229,7 +231,7 @@ export async function buildSidebarFleet(
         externalTools: externalSummary ? { ...externalSummary, items: externalSummary.items.slice(0, 100) } : undefined,
         // "May this row be dismissed?" — only a Temporary instance can be; a Saved one always exists
         // in its store. Identity question, converted.
-        canDismiss: isTemporaryInstance(agent) && !agent.running,
+        canDismiss: agent.lifetime === "temporary" && !agent.running,
         ...(configFailure ? { configInvalid: true } : {}),
       });
     });
@@ -239,11 +241,11 @@ export async function buildSidebarFleet(
     .map((agent) => {
       const view = toAgentVM(agent, {
         kind: "terminal",
-        adhoc: isTemporaryInstance(agent),
+        adhoc: agent.lifetime === "temporary",
         resumable: !agent.running && resumable.has(agent.name),
         ...(configFailure ? { configInvalid: true } : {}),
       });
-      if (isTemporaryInstance(agent) && !agent.running) view.canDismiss = true;
+      if (agent.lifetime === "temporary" && !agent.running) view.canDismiss = true;
       const command = source.manager.defOf(agent.name)?.cmd;
       return command && !view.sub ? { ...view, sub: command } : view;
     });
@@ -265,7 +267,7 @@ export async function buildSidebarFleet(
       if (extra.kind === "terminal") {
         const view = toAgentVM(raw, {
           kind: "terminal",
-          adhoc: isTemporaryInstance(extra),
+          adhoc: extra.lifetime === "temporary",
           resumable: extra.resumable,
           configInvalid: true,
         });
@@ -274,10 +276,10 @@ export async function buildSidebarFleet(
       } else {
         agents.push(toAgentVM(raw, {
           kind: "agent",
-          // SDD 482 phase 3 — the degraded roster asks the same identity question as the live one.
-          // A ledger row carries its policy here; an LKG row has none and falls back, honestly, to
-          // `declared`, which is all a config snapshot ever knew.
-          adhoc: isTemporaryInstance(extra),
+          // The degraded roster asks the same identity question as the live one, off the same resolved
+          // field. An LKG row has no instance policy at all — a config snapshot never had one — and its
+          // `lifetime` is `saved` because being in that snapshot IS the durable Profile.
+          adhoc: extra.lifetime === "temporary",
           resumable: extra.resumable,
           worktree: extra.worktreeBranch,
           configInvalid: true,

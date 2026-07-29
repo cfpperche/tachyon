@@ -25,7 +25,7 @@ describe("Workspace Activity target", () => {
       identity,
       snapshot: projectionSnapshot(identity, 0, [
         projectedAgent("codex", { running: true, attention: "working" }),
-        projectedAgent("reviewer", { running: true, declared: false }),
+        projectedAgent("reviewer", { running: true, lifetime: "temporary" }),
       ]),
       query: async (query) => {
         expect(query).toEqual({ schemaVersion: 1, method: "activity.context", input: { agent: "codex" } });
@@ -36,7 +36,7 @@ describe("Workspace Activity target", () => {
             agent: "codex",
             sharedCwd: true,
             attention: "working",
-            targets: { total: 1, truncated: false, items: [{ name: "reviewer", declared: false }] },
+            targets: { total: 1, truncated: false, items: [{ name: "reviewer", lifetime: "temporary" }] },
           },
         });
       },
@@ -48,7 +48,7 @@ describe("Workspace Activity target", () => {
     await expect(target.activityContext("codex")).resolves.toMatchObject({
       agent: "codex",
       sharedCwd: true,
-      targets: { items: [{ name: "reviewer", declared: false }] },
+      targets: { items: [{ name: "reviewer", lifetime: "temporary" }] },
     });
     await expect(target.sendAgentInput("reviewer", "review this", false)).resolves.toBeUndefined();
     expect(fake.invocations).toHaveLength(1);

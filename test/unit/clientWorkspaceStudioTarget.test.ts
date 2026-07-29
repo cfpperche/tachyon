@@ -52,7 +52,7 @@ describe("ClientWorkspaceStudioTarget", () => {
     const identity = projectionIdentity(root);
     const snapshot: AgentProfileStudioSnapshotV1 = {
       schemaVersion: 1,
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: "Ada",
       agentId: "123e4567-e89b-42d3-a456-426614174000",
       revision: "a".repeat(64),
@@ -92,7 +92,7 @@ describe("ClientWorkspaceStudioTarget", () => {
     const target = new ClientWorkspaceStudioTarget(fake, { extensionUri: {} as StudioDeps["extensionUri"], operationId: () => "profile-studio-operation" });
 
     await expect(target.inspectAgentProfileStudio("Ada")).resolves.toEqual(snapshot);
-    await expect(target.commitAgentProfileStudio({ schemaVersion: 1, kind: "canonical", agentName: "Ada", expectedRevision: snapshot.revision, editable: snapshot.editable }))
+    await expect(target.commitAgentProfileStudio({ schemaVersion: 1, kind: "agent-instance", agentName: "Ada", expectedRevision: snapshot.revision, editable: snapshot.editable }))
       .resolves.toMatchObject({ revision: "c".repeat(64) });
     await expect(target.commitAgentProfileStudioLifecycle({ schemaVersion: 1, operation: "set-enabled", agentName: "Ada", expectedRevision: snapshot.revision, enabled: true }))
       .resolves.toMatchObject({ kind: "snapshot", snapshot: { revision: "d".repeat(64), enabled: true } });

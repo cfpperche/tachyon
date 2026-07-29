@@ -139,19 +139,30 @@ export function sameDeliveryBinding(a: SessionDeliveryBinding, b: SessionDeliver
  * value could not express without lying about one of the two.
  *
  * Both are DECLARED at creation by whoever performed the operation. Nothing may derive them from the
- * command, the name, the tmux session, or presence in `tachyon.yml` — that inference is what
- * `declared` accidentally became, and it is the defect this split exists to end.
- *
- * `declared` stays as what it always honestly was: which STORE owns the definition. Readers still use
- * it; moving them onto these fields is phase 3, deliberately separate so the write side can be
- * proven before anything depends on it.
+ * command, the name, the tmux session, or presence in `tachyon.yml` — that inference is what the
+ * retired `declared` field accidentally became, and it is the defect this split exists to end.
  */
-export type AgentInstanceIdentity = "saved" | "temporary";
-export type AgentInstanceLifetime = "restartable" | "collected";
+/**
+ * t-04052d — the ratified vocabulary of the Agent Instance cut.
+ *
+ * `lifetime` answers the only question about the DEFINITION: does it outlive the process? That is the
+ * question `declared` was answering by proxy, through which store the definition happened to sit in,
+ * and it is now declared data rather than an inference.
+ *
+ * `resumePolicy` is a SEPARATE axis, and keeping the two apart is mandatory rather than stylistic. A
+ * fork is `temporary` — no durable Profile behind it — AND `restartable`, because it owns a resume
+ * block. One value would have to lie about one of the two, most likely about the fork surviving,
+ * which is the reload this cut must not break.
+ *
+ * The second axis is RENAMED rather than left alone: it used to be called `lifetime`, and leaving two
+ * fields one rename apart is how a reader ends up configuring the one they did not mean.
+ */
+export type AgentInstanceLifetime = "saved" | "temporary";
+export type AgentInstanceResumePolicy = "restartable" | "collected";
 
 export interface AgentInstancePolicy {
-  identity: AgentInstanceIdentity;
   lifetime: AgentInstanceLifetime;
+  resumePolicy: AgentInstanceResumePolicy;
   /**
    * A declared CAPABILITY of this instance: were profile-backed lifecycle hooks injected at spawn?
    * Recorded, never derived from `identity`/`lifetime` — that derivation happens to hold today and
@@ -177,8 +188,6 @@ export interface SessionRecord {
   worktree?: WorktreeRecord;
   /** absolute cwd the agent ran in — resume respawns here, transcript resolves here. */
   cwd: string;
-  /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
-  declared: boolean;
   /*
    * t-5e1113 (SDD 482, ratified decision 5) — `def.parent` used to be stripped from DECLARED records
    * on every write, so a Saved agent's runtime lineage died with the extension host while a Temporary
@@ -497,7 +506,6 @@ function normalize(r: unknown): SessionRecord | null {
   if (typeof r !== "object" || r === null) return null;
   const o = r as Record<string, unknown>;
   if (typeof o.cwd !== "string") return null;
-  const declared = o.declared === true;
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient + SDD 368 T14 delivery).
@@ -513,7 +521,11 @@ function normalize(r: unknown): SessionRecord | null {
     const lifecycle = parseLifecycle(o.lifecycle);
     const instance = parseInstancePolicy(o.instance);
     if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity && !evolution) return null;
-    return { def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, instance, cwd: o.cwd, declared, updatedAt };
+    // t-04052d — a row whose `instance` did not parse is KEPT, not dropped. Dropping it would delete
+    // the very evidence the activation gate refuses on, turning its ledger check into a no-op and
+    // discarding a pre-cut operator's rows without telling them. It survives here and is refused
+    // there; no reader can get a policy answer out of it in the meantime.
+    return { def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, instance, cwd: o.cwd, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -554,12 +566,15 @@ function withoutSelfParent<T extends SessionRecord>(name: string, rec: T): T {
 function parseInstancePolicy(value: unknown): AgentInstancePolicy | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const o = value as Record<string, unknown>;
-  const identity = o.identity === "saved" || o.identity === "temporary" ? o.identity : undefined;
-  const lifetime = o.lifetime === "restartable" || o.lifetime === "collected" ? o.lifetime : undefined;
-  if (!identity || !lifetime) return undefined;
+  const lifetime = o.lifetime === "saved" || o.lifetime === "temporary" ? o.lifetime : undefined;
+  const resumePolicy = o.resumePolicy === "restartable" || o.resumePolicy === "collected" ? o.resumePolicy : undefined;
+  // A PRE-CUT row carries `identity` and no `resumePolicy`, so it yields undefined here rather than
+  // being half-read. That is fail-closed, not reinterpretation: t-fab832's activation gate refuses
+  // the workspace before this parser is ever reached with one.
+  if (!lifetime || !resumePolicy) return undefined;
   return typeof o.lifecycleHooks === "boolean"
-    ? { identity, lifetime, lifecycleHooks: o.lifecycleHooks }
-    : { identity, lifetime };
+    ? { lifetime, resumePolicy, lifecycleHooks: o.lifecycleHooks }
+    : { lifetime, resumePolicy };
 }
 
 function parseDef(d: unknown): SessionDef | undefined {

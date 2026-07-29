@@ -31,7 +31,7 @@ interface FakeAgents {
 function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
   return {
     schemaVersion: 1,
-    kind: "canonical",
+    kind: "agent-instance",
     agentName,
     agentId: "123e4567-e89b-42d3-a456-426614174000",
     revision: "a".repeat(64),
@@ -218,7 +218,7 @@ describe("AgentStudioAdapter — load", () => {
 
     expect(fields.isolate).toBe(true);
     expect(patch).toMatchObject({
-      kind: "canonical",
+      kind: "agent-instance",
       editable: { isolation: "transcript", capabilities: { skills: ["research"], mcp: [], hooks: [] } },
     });
   });
@@ -269,7 +269,7 @@ describe("AgentStudioAdapter — save", () => {
     const patch = serializeAgentPatch(fields, true)!;
 
     expect(await adapter.save("frontend", patch)).toEqual({ status: "ok" });
-    expect(mutations).toEqual([expect.objectContaining({ kind: "canonical", agentName: "frontend", expectedRevision: "a".repeat(64) })]);
+    expect(mutations).toEqual([expect.objectContaining({ kind: "agent-instance", agentName: "frontend", expectedRevision: "a".repeat(64) })]);
     expect(mutations[0]?.editable).toEqual(expect.objectContaining({
       role: "tester",
       runtime: expect.objectContaining({ executable: "codex" }),
@@ -301,7 +301,7 @@ describe("AgentStudioAdapter — save", () => {
     fields.cmd = runtime;
     const patch = serializeAgentPatch(fields, true)!;
     expect(patch).toMatchObject({
-      kind: "canonical",
+      kind: "agent-instance",
       agentName: `${runtime}-helper`,
       editable: { runtime: { adapter: runtime, executable: runtime } },
     });
@@ -382,7 +382,7 @@ describe("AgentStudioAdapter — save", () => {
     excluded.cmd = "codex";
     const patch = serializeAgentPatch(excluded, true);
     expect(patch).toMatchObject({
-      kind: "canonical",
+      kind: "agent-instance",
       editable: {
         nativeConfig: {
           permissions: { source: "workspace" },
