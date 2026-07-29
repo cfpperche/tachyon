@@ -1155,7 +1155,10 @@ export class AgentManager {
    *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
    *  miss must not read as "no parent" while the ledger still has one. */
   parentOf(name: string): string | undefined {
-    return this.lineage.get(name) ?? this.opts.ledger?.get(name)?.def?.parent;
+    const parent = this.lineage.get(name) ?? this.opts.ledger?.get(name)?.def?.parent;
+    // t-5e1113 — the ledger fallback bypasses rehydrate's own guard, and rows written before
+    // `withoutSelfParent` existed can still carry a self-edge. A cycle is never a lineage.
+    return parent === name ? undefined : parent;
   }
 
   /** spec 363 T3 — the gated delegation's delegator (Bridge-witnessed doorbell target from T1),
@@ -1207,8 +1210,13 @@ export class AgentManager {
     if (!this.opts.ledger) return;
     const declared = new Set(Object.keys(this.opts.getConfig()?.agents ?? {}));
     for (const [name, rec] of this.opts.ledger.all()) {
-      if (!rec.def || rec.declared || declared.has(name)) continue;
-      if (!this.adhoc.has(name)) {
+      if (!rec.def) continue;
+      // t-5e1113 (SDD 482, decision 5) — this used to `continue` for every config-owned row, which
+      // skipped the lineage restore below as well. Persisting a Saved agent's parent would therefore
+      // have changed nothing on its own: the row was never read back. Only the DEFINITION is config's
+      // to own; the execution lineage below is the ledger's, for Saved and Temporary alike.
+      const configOwned = rec.declared || declared.has(name);
+      if (!configOwned && !this.adhoc.has(name)) {
         this.adhoc.set(name, {
           cmd: rec.def.cmd,
           instructions: rec.def.instructions,
@@ -1233,7 +1241,9 @@ export class AgentManager {
         const delegator = rec.def.delegator;
         if (delegator && delegator !== name) this.delegators.set(name, delegator);
       }
-      if (rec.lifecycle?.state === "clean-exited") this.cleanExited.add(name);
+      // Left gated on the non-config-owned rows it has always applied to: decision 5 is about
+      // lineage, and widening clean-exit rehydration is a separate question with its own consequences.
+      if (!configOwned && rec.lifecycle?.state === "clean-exited") this.cleanExited.add(name);
     }
     // spec 240 — backfill resume.configHome on pre-240 rows (derive from current config) so transcript lookup
     // is LOCKED before any later isolate/harness toggle. spec 305 follow-up: also repair rows whose persisted

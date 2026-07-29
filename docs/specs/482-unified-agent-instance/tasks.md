@@ -2,8 +2,8 @@
 
 _Generated from `plan.md` on 2026-07-28._
 
-**Implementation is blocked until the human ratifies `spec.md` (`t-5e1113`).** Nothing below is
-started; the boxes exist so the decomposition is reviewable alongside the architecture.
+**Ratified 2026-07-29** (`t-5e1113`, journal `j-f7fc20368177`). Implementation is authorised and
+proceeds in verifiable slices, each landing green on its own tree.
 
 ## Gate
 
@@ -13,8 +13,19 @@ started; the boxes exist so the decomposition is reviewable alongside the archit
       confirmed against the code and corrected (see `notes.md`, which keeps the errors visible).
 - [x] Second adversarial pass on the corrected scope and the creation-door threat model — no new
       blocker; one residue of the first correction and two threat-model gaps, all three closed.
-- [ ] Present only the real decisions to the human (`spec.md` § Open questions) and ratify.
-- [ ] Decompose into verifiable slices, each in an isolated worktree/Delivery.
+- [x] Present only the real decisions to the human and ratify — five approved, recorded in
+      `spec.md` § Ratified decisions.
+- [x] Decompose into verifiable slices (below).
+
+## Slice 0 — symmetric durable lineage (ratified decision 5)
+
+_First because it is small, self-contained, and the only ratified decision that changes measured
+behaviour today. It also removes a strip that the fork work would otherwise have to reason around._
+
+- [ ] `stripDeclaredParent` stops discarding a declared instance's parent.
+- [ ] A Saved instance's parent survives a restart, exactly as a Temporary one's does.
+- [ ] `declaredOwner` is untouched, and neither edge is derived from the other.
+- [ ] Lineage is bounded by the INSTANCE: a new instance of the same profile does not inherit it.
 
 ## Phase 1 — converge fork onto the spawn implementation
 

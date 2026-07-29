@@ -143,6 +143,14 @@ export interface SessionRecord {
   cwd: string;
   /** declared (tachyon.yml) vs ad-hoc — declared+autostart auto-resumes, others are offered. */
   declared: boolean;
+  /*
+   * t-5e1113 (SDD 482, ratified decision 5) — `def.parent` used to be stripped from DECLARED records
+   * on every write, so a Saved agent's runtime lineage died with the extension host while a Temporary
+   * agent's survived. That asymmetry was measured, mis-stated in the first draft of the SDD, and then
+   * resolved by the human the other way: lineage is durable for BOTH, for the life of the instance.
+   * Profile ownership (`declaredOwner`, derived from `subagents`) is a different edge and is still
+   * never derived from this one, nor this one from it.
+   */
   /** spec 364 — durable Bridge-client generation stamp for rebind after host reload. */
   bridgeClient?: BridgeClientBinding;
   /**
@@ -214,7 +222,7 @@ export class SessionLedger {
   /** Insert/replace one agent's record (timestamp stamped here). */
   record(name: string, rec: Omit<SessionRecord, "updatedAt"> & { updatedAt?: string }): void {
     const all = this.all();
-    all.set(name, stripDeclaredParent({ ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rec, updatedAt: rec.updatedAt ?? new Date().toISOString() }));
     this.write(all);
   }
 
@@ -293,7 +301,7 @@ export class SessionLedger {
     const rec = all.get(name);
     if (!rec?.resume) return;
     const { resume: _drop, ...rest } = rec;
-    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rest, updatedAt: new Date().toISOString() }));
     this.write(all);
   }
 
@@ -386,7 +394,7 @@ export class SessionLedger {
       if (sameDeliveryBinding(rec.delivery, normalized)) return; // idempotent exact-bind
       throw new Error(`cannot bind Delivery for '${name}': existing binding differs`);
     }
-    all.set(name, stripDeclaredParent({
+    all.set(name, withoutSelfParent(name, {
       ...rec,
       delivery: normalized,
       updatedAt: new Date().toISOString(),
@@ -409,7 +417,7 @@ export class SessionLedger {
       throw new Error(`cannot clear Delivery for '${name}': expected binding does not match`);
     }
     const { delivery: _drop, ...rest } = rec;
-    all.set(name, stripDeclaredParent({ ...rest, updatedAt: new Date().toISOString() }));
+    all.set(name, withoutSelfParent(name, { ...rest, updatedAt: new Date().toISOString() }));
     this.write(all);
   }
 
@@ -462,7 +470,7 @@ function normalize(r: unknown): SessionRecord | null {
     const evolution = parseEvolution(o.evolution);
     const lifecycle = parseLifecycle(o.lifecycle);
     if (!def && !resume && !worktree && !bridgeClient && delivery === undefined && !identity && !evolution) return null;
-    return stripDeclaredParent({ def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, cwd: o.cwd, declared, updatedAt });
+    return { def, resume, worktree, bridgeClient, delivery, identity, evolution, lifecycle, cwd: o.cwd, declared, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -481,8 +489,16 @@ function parseLifecycle(value: unknown): SessionLifecycle | undefined {
   return { state: "clean-exited", exitedAt: o.exitedAt };
 }
 
-function stripDeclaredParent<T extends SessionRecord>(rec: T): T {
-  if (!rec.declared || !rec.def?.parent) return rec;
+/**
+ * t-5e1113 — refuse a record that names itself as its own parent.
+ *
+ * This became reachable when decision 5 stopped stripping `def.parent` for declared rows. It is
+ * enforced on WRITE rather than on read, because a cycle on disk outlives whatever read guard
+ * happens to be in front of it — `AgentManager.parentOf` reads the ledger directly when the
+ * in-memory lineage map is cold, which is exactly the post-reload path this decision exists to fix.
+ */
+function withoutSelfParent<T extends SessionRecord>(name: string, rec: T): T {
+  if (rec.def?.parent !== name) return rec;
   const { parent: _parent, ...def } = rec.def;
   return { ...rec, def } as T;
 }

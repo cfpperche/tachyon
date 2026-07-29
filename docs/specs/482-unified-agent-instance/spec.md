@@ -2,7 +2,8 @@
 
 _Created 2026-07-28._
 
-**Status:** draft — **ratification required before any implementation** (`t-5e1113`).
+**Status:** in-progress — **ratified by the human on 2026-07-29** (`t-5e1113`, journal
+`j-f7fc20368177`). Decomposition and incremental implementation are authorised against this document.
 
 ## Intent
 
@@ -197,17 +198,36 @@ here.
 - **Big-bang unification.** Discarded by the repository's own history — the abandoned migration/rollback
   track in the project handoff is what that costs.
 
-## Open questions for the human
+## Ratified decisions (human, 2026-07-29)
 
-Only decisions that are genuinely open — everything else is settled by measurement above.
+These were the open questions. They are answered, and the answers are now requirements — the fifth
+one changes measured behaviour, so it is called out rather than filed.
 
-1. **Does the creation door ship at all in v1?** It is the largest new surface and the only part that
-   adds risk rather than removing it. The model unification stands on its own without it.
-2. **Should a Temporary agent be promotable to Saved through the same proposal door?** Same review
-   surface, or a distinct one because the configuration already ran.
-3. **Lifetime policy vocabulary in the product**: `Saved Agent` / `Temporary Agent` are proposed. They
-   are user-visible and hard to change later.
-4. **How long does a pending proposal live** before it expires, and does a restart preserve or void it?
-5. **Does lineage stay asymmetric?** Today a Temporary agent's parent survives a restart and a Saved
-   agent's is deliberately dropped. That is a real product choice, not a bug — but a unified Agent
-   Instance either keeps the asymmetry deliberately or resolves it, and the code cannot say which.
+1. **The creation door ships in v1.** It is a Bridge *proposal* tool. An agent never writes or creates
+   directly, under any circumstance.
+2. **Temporary → Saved promotion uses the same door**, and carries no session, transcript, credentials,
+   memory or cache across the boundary.
+3. **Official vocabulary: Saved Agent, Temporary Agent, Probe.**
+4. **A pending proposal lives 24h**, survives a restart, collapses an identical digest, and is
+   invalidated when its CAS/base state diverges.
+5. **Lineage becomes symmetric and durable** for Saved and Temporary alike, for the life of the
+   instance — and never becomes `declaredOwner`.
+
+### What decision 5 changes
+
+The SDD had recorded lineage asymmetry as deliberate: ad-hoc parents persist, declared parents are
+stripped by `stripDeclaredParent` (`src/resume/SessionLedger.ts:484`). The human resolved it the other
+way — both are durable. So that function's declared-only strip is now a defect to remove rather than a
+behaviour to preserve, and the acceptance criterion below replaces the one the second draft deleted.
+
+- [ ] **Scenario: a Saved agent's parent survives a restart**
+  - **Given** a Saved (declared) instance that was spawned with a runtime parent
+  - **When** the engine restarts and rehydrates
+  - **Then** its parent edge is still there, exactly as a Temporary agent's already is
+  - **And** the parent is still not `declaredOwner`: profile ownership is untouched by this, and
+    neither edge is derived from the other
+- [ ] **Scenario: lineage is bounded by the instance, not by the profile**
+  - **Given** a Saved instance whose lineage was recorded
+  - **When** that instance ends and a new instance of the same profile starts
+  - **Then** the new instance does not inherit the old lineage — "durable for the life of the
+    instance" is the bound, and a profile is not an instance
