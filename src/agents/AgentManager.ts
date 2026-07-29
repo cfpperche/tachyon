@@ -895,6 +895,14 @@ export class AgentManager {
    *  sidebar probe doesn't re-resolve/scan on every tree refresh. Cleared on lifecycle changes. */
   private readinessCache = new Map<string, { sessionId: string; ready: boolean }>();
   private stoppingSince = new Map<string, number>();
+  /**
+   * t-5e1113 (SDD 482, decision 5) — instances THIS process started. Decision 5 makes lineage durable
+   * "for the life of the instance", and that bound is what this set enforces: a ledger row describes
+   * some instance, and if we started the current one ourselves we already know its lineage — including
+   * that it deliberately has none. Without this, a stale row from a PREVIOUS instance of the same
+   * declared agent would re-nest a top-level agent after a rehydrate.
+   */
+  private startedHere = new Set<string>();
   private stopFailed = new Set<string>();
   private cleanExited = new Set<string>();
   /** Runtime occupancy observations keyed by the worktree's canonical realpath.
@@ -1155,10 +1163,27 @@ export class AgentManager {
    *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
    *  miss must not read as "no parent" while the ledger still has one. */
   parentOf(name: string): string | undefined {
-    const parent = this.lineage.get(name) ?? this.opts.ledger?.get(name)?.def?.parent;
-    // t-5e1113 — the ledger fallback bypasses rehydrate's own guard, and rows written before
-    // `withoutSelfParent` existed can still carry a self-edge. A cycle is never a lineage.
-    return parent === name ? undefined : parent;
+    return this.lineage.get(name) ?? this.ledgerParentOf(name);
+  }
+
+  /**
+   * t-5e1113 (SDD 482, decision 5) — the ONE place a persisted parent is admitted, so the instance
+   * bound is applied identically everywhere instead of being re-derived per reader.
+   *
+   * Two refusals, each with a reason the readers must not have to remember:
+   *  - an instance THIS process started has already settled its lineage at spawn, including having
+   *    none, so a row describing some earlier instance must not re-nest it;
+   *  - a row naming itself as parent is a cycle, not a lineage. `withoutSelfParent` stops new ones
+   *    reaching disk; this covers rows written before it existed.
+   *
+   * The fallback itself stays (rather than trusting `lineage` alone) because `liveDescendants` is a
+   * safety guard against yanking a running child's cwd, and there failing closed means keeping the
+   * child visible.
+   */
+  private ledgerParentOf(name: string): string | undefined {
+    if (this.startedHere.has(name)) return undefined;
+    const parent = this.opts.ledger?.get(name)?.def?.parent;
+    return parent && parent !== name ? parent : undefined;
   }
 
   /** spec 363 T3 — the gated delegation's delegator (Bridge-witnessed doorbell target from T1),
@@ -1179,7 +1204,12 @@ export class AgentManager {
     // so its link lives only in the ledger — without this the guard would miss it and a
     // running child's worktree/cwd could be yanked.
     const ledgerParent = new Map<string, string>();
-    if (this.opts.ledger) for (const [c, r] of this.opts.ledger.all()) if (r.def?.parent) ledgerParent.set(c, r.def.parent);
+    if (this.opts.ledger) {
+      for (const [c] of this.opts.ledger.all()) {
+        const parent = this.ledgerParentOf(c); // same instance bound as parentOf
+        if (parent) ledgerParent.set(c, parent);
+      }
+    }
     const childrenOf = (p: string): string[] => {
       const kids = new Set<string>();
       for (const [c, par] of this.lineage.entries()) if (par === p) kids.add(c);
@@ -1234,7 +1264,9 @@ export class AgentManager {
           worktree: !!rec.worktree,
         });
       }
-      if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name)) {
+      // The instance bound: only adopt a ledger parent for an instance this process did not start.
+      // If we started it, its lineage was settled at spawn — including deliberately having none.
+      if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name) && !this.startedHere.has(name)) {
         this.lineage.set(name, rec.def.parent);
       }
       if (!this.delegators.has(name)) {
@@ -2762,6 +2794,7 @@ export class AgentManager {
       }
     }
     if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
+    this.startedHere.add(name);
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, adhoc });

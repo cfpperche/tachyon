@@ -6498,6 +6498,13 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(calls.every((call) => call.cwd === h.ws && call.home === harnessHome(h.ws, "codex"))).toBe(true);
   });
 
+  /**
+   * t-5e1113 (SDD 482, decision 5) — the INTENT is unchanged and still the point of this test: a stale
+   * row must not re-nest an agent that is running top-level. What changed is the mechanism. The parent
+   * used to be erased from the row on write; now it is retained (Saved lineage is durable) and the
+   * instance bound is what refuses it — this process started `child` without a parent, so its lineage
+   * is settled and a row describing an earlier instance cannot override it.
+   */
   it("stale declared ledger parents are ignored so declared agents stay top-level", async () => {
     const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: claude\n");
     await manager.spawn("child"); // running, but spawned WITHOUT parent → no in-memory lineage link
@@ -6511,7 +6518,8 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const child = (await manager.list()).find((a) => a.name === "child");
     expect(child?.parent).toBeUndefined();
     expect(manager.parentOf("child")).toBeUndefined();
-    expect(ledger.get("child")?.def?.parent).toBeUndefined();
+    // The row KEEPS its parent now — durability is the decision; the instance bound is the refusal.
+    expect(ledger.get("child")?.def?.parent).toBe("boss");
     expect(await manager.liveDescendants("boss")).toEqual([]);
   });
 
