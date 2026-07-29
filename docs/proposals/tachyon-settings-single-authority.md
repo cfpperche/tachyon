@@ -144,24 +144,35 @@ the profile and runtime-config stores already do.
 4. **Migrate the eight direct `getConfiguration` readers**, routing them through the host abstraction
    instead of reading VS Code — this is the bulk of the work and the part that makes the surface
    uniform.
-5. **Remove `contributes.configuration` entirely** from `package.json`.
+5. **Remove `contributes.configuration` entirely** from `package.json` — and with it every reader,
+   the `assertSettingAllowed` allowlist, `getSettingInspect`, the schemas, the tests and the docs that
+   only existed to serve it. Integral removal, no dead code (ratified).
 6. **Control → Settings gains the migrated keys**, grouped by the workspace/global split.
 
 Steps 3 and 4 are per-key and independently landable. Step 5 is the point of no return.
 
 ---
 
-## 7. Human decisions strictly necessary
+## 7. Human decisions — RATIFIED 2026-07-29
 
-1. **Accept losing Settings Sync for `sidebar.cardTemplate`** (and remote-scoped preferences
-   generally), or keep exactly that one key contributed. Keeping one key means keeping
-   `contributes.configuration`, which forfeits the goal — so this is genuinely either/or.
-2. **Accept that repair-when-broken moves into Tachyon's own surface**, mitigated by hand-editable
-   plain-text files and a fail-toward-enabled rule for `agentPane.enabled`.
-3. **Confirm the workspace/global split in §4** — specifically that `gitPath` is per-machine rather
-   than per-project, which is what makes it global.
+All three were answered; recorded here so this document never reads as pending to whoever implements
+it.
 
----
+1. **Remove all eleven contributions.** Ratified.
+2. **Settings Sync / remote-preference loss for `sidebar.cardTemplate` is accepted.** Ratified — this
+   was the genuine either/or and the human took the trade knowingly.
+3. **Recovery goes through Control plus hand-editable text files**, and **`gitPath` is
+   global/per-machine**. Ratified, matching the split in §4.
+
+**Added by the ratification, and it widens step 5:** the removal must be *integral* — readers,
+allowlists, schemas, contributions, tests and obsolete docs all go. No permanent dual source and no
+dead code left behind. Concretely that includes the engine's `assertSettingAllowed` allowlist and the
+`getSettingInspect` surface in `DaemonEngineHost`, which exist only to serve VS Code-shaped settings
+and have no meaning once nothing is contributed.
+
+The one design rule from §5 survives ratification and is not optional: **`agentPane.enabled` must fail
+toward enabled.** Recovery now depends on Tachyon's own surface, so a bad value must never be able to
+hide the surface that would repair it.
 
 ## 8. What this investigation did not do
 
