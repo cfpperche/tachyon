@@ -1854,7 +1854,7 @@ export async function openCockpit(
     const context = await ws.activityContext(sourceAgent);
     return context.targets.items.map((target) => ({
       name: target.name,
-      description: target.declared ? "declared agent" : "ad-hoc agent",
+      description: target.lifetime === "saved" ? "Saved Agent" : "Temporary Agent",
     }));
   };
 

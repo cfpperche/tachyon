@@ -23,7 +23,7 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
   it("revokes editor frame/session handles when an installed view target disappears", async () => {
     const wsRoot = await installFixture("spec349-mundinho");
     const workspace = fakeWorkspace(wsRoot, "ws-editor", [{
-      name: "alpha", running: true, declared: true, attention: "needs-input",
+      name: "alpha", running: true, lifetime: "saved", attention: "needs-input",
     }]);
     const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => [workspace]);
 
@@ -70,8 +70,8 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
     const wsA = await installFixture("spec349-sidebar", "sidebar-a");
     const wsB = await installFixture("spec349-sidebar", "sidebar-b");
     const workspaces = [
-      fakeWorkspace(wsA, "b-ws", [{ name: "old-agent", running: true, declared: true }]),
-      fakeWorkspace(wsB, "a-ws", [{ name: "new-agent", running: true, declared: true }]),
+      fakeWorkspace(wsA, "b-ws", [{ name: "old-agent", running: true, lifetime: "saved" }]),
+      fakeWorkspace(wsB, "a-ws", [{ name: "new-agent", running: true, lifetime: "saved" }]),
     ];
     const host = new PluginSurfaceHost(vscode.Uri.file(ROOT), () => workspaces);
     const view = fakeWebviewView();
@@ -143,7 +143,7 @@ function fakeWorkspace(
   entries: Array<{
     name: string;
     running: boolean;
-    declared: boolean;
+    lifetime: "saved" | "temporary";
     attention?: "working" | "idle" | "needs-input" | "throttled";
   }>,
 ): WorkspacePluginPresentationTarget {

@@ -724,12 +724,12 @@ async function configHealth(workspace: Workspace): Promise<JsonValue> {
     lkg: lkg
       ? { savedAt: lkg.savedAt, sourceFile: lkg.sourceFile, agents: lkg.agents.map((agent) => agent.name) }
       : null,
-    ledger: ledgerPairs.map(([name, record]) => ({ name, declared: record.declared, resumable: isResumable(record) })),
-    live: live.map((agent) => ({ name: agent.name, running: agent.running, declared: agent.declared, kind: agent.kind })),
+    ledger: ledgerPairs.map(([name, record]) => ({ name, lifetime: record.instance?.lifetime ?? null, resumable: isResumable(record) })),
+    live: live.map((agent) => ({ name: agent.name, running: agent.running, lifetime: agent.lifetime, kind: agent.kind })),
     extras: extras.map((entry) => ({
       name: entry.name,
       source: entry.source,
-      declared: entry.declared,
+      lifetime: entry.lifetime,
       resumable: entry.resumable,
     })),
     rosterNames,
@@ -928,7 +928,19 @@ async function promoteAgent(
     () => onViewsChanged("agents"),
   );
   if (!changed) throw new Error(`could not save '${agent}' to tachyon.yml`);
-  if (isResumable(record)) workspace.ledger.record(agent, { ...record, declared: true });
+  // t-04052d — PROMOTION, and the one place the two axes and the capability must be written apart.
+  // A durable Profile now exists for this name (the config edit above), so the definition outlives the
+  // process: `lifetime` becomes `saved` and it may be started again from that Profile. What does NOT
+  // change is what this RUNNING instance was given: it launched ownership-only and keeps
+  // `lifecycleHooks: false`. That asymmetry is the human's promotion ruling, and it is the reason
+  // `lifecycleHooks` is a recorded field instead of something derived from `lifetime` — derive it and
+  // promotion silently claims hooks this process never got.
+  if (isResumable(record)) {
+    workspace.ledger.record(agent, {
+      ...record,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: record.instance?.lifecycleHooks ?? false },
+    });
+  }
   else workspace.ledger.remove(agent);
   workspace.manager.forgetAdhoc(agent);
   return json({ changed: true });

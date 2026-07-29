@@ -183,7 +183,7 @@ describe("daemon engine service", () => {
     expect(initial.projections).toMatchObject({
       workspace: { root: identity.workspaceRoot, hash: identity.workspaceHash, configValid: true },
       bridge: { port: identity.bridge.port, instanceId: identity.bridge.instanceId, direct: true },
-      agents: { total: 1, truncated: false, items: [{ name: "worker", declared: true, running: false }] },
+      agents: { total: 1, truncated: false, items: [{ name: "worker", lifetime: "saved", running: false }] },
     });
     const doctorReport = await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "doctor.report" } });
     expect(doctorReport).toMatchObject({
@@ -286,7 +286,7 @@ describe("daemon engine service", () => {
           canonicalRelativePath: ".tachyon/HANDOFF.md",
           exists: false,
           pendingCount: 0,
-          distillTargets: [{ name: "worker", state: "stopped", declared: true }],
+          distillTargets: [{ name: "worker", state: "stopped", lifetime: "saved" }],
         },
       },
     });
@@ -587,7 +587,7 @@ describe("daemon engine service", () => {
       method: "extension.query",
       status: "ok",
       action: "agents.list",
-      value: [{ name: "worker", declared: true, running: false }],
+      value: [{ name: "worker", lifetime: "saved", running: false }],
     });
     const createPin = {
       schemaVersion: 1 as const,
@@ -795,7 +795,7 @@ function canonicalAgentCreate(agentName: string) {
       action: "agent-profile.studio-commit" as const,
       mutation: {
         schemaVersion: 1 as const,
-        kind: "canonical" as const,
+        kind: "agent-instance" as const,
         agentName,
         editable: {
           displayName: agentName,

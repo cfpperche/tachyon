@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 import { buildBoardSnapshot, type BoardSnapshot } from "../tasks/boardSnapshot.js";
 import type { ReorderLaneInput, TaskStore } from "../tasks/TaskStore.js";
 import type { TaskPriority, TaskStatus } from "../tasks/types.js";
@@ -14,7 +15,7 @@ export interface MissionControlAgentRow {
   name: string;
   kind: "agent" | "terminal";
   running: boolean;
-  declared: boolean;
+  lifetime: AgentInstanceLifetime;
 }
 
 export interface WorkspaceMissionControlTarget extends WorkspacePresentationTarget {
@@ -87,7 +88,7 @@ export function workspaceMissionControlTarget(client: WorkspaceClient): Workspac
   };
   return {
     ...identity,
-    declaredAgentNames: () => client.presentation.agents.items.filter((agent) => agent.declared).map((agent) => agent.name),
+    declaredAgentNames: () => client.presentation.agents.items.filter((agent) => agent.lifetime === "saved").map((agent) => agent.name),
     listMissionControlAgents: async () => {
       const agents = client.presentation.agents;
       if (agents.truncated) throw new Error("Mission Control agent projection is truncated");
@@ -95,7 +96,7 @@ export function workspaceMissionControlTarget(client: WorkspaceClient): Workspac
         name: agent.name,
         kind: agent.kind,
         running: agent.running,
-        declared: agent.declared,
+        lifetime: agent.lifetime,
       }));
     },
     boardSnapshot: async (liveAdhocAgents) => {

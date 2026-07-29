@@ -86,7 +86,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
   }
 
   save(entityId: string | undefined, patch: AgentStudioPatch): StudioSaveResult | Promise<StudioSaveResult> {
-    if (patch.kind === "canonical") {
+    if (patch.kind === "agent-instance") {
       return this.ws.commitAgentProfileStudio(patch).then(
         () => ({ status: "ok" as const, ...(entityId === undefined ? { entityId: patch.agentName } : {}) }),
         (error: unknown) => {

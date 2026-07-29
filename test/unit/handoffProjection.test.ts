@@ -32,9 +32,9 @@ describe("Project Handoff Runtime API projection", () => {
       lastActivityAt: "2026-07-14T12:01:00.000Z",
       distill: {
         listAgents: async () => [
-          { name: "codex", session: "s1", running: true, declared: true, dead: false, crashed: false, kind: "agent" },
-          { name: "reviewer", session: "s2", running: false, declared: true, dead: false, crashed: false, kind: "agent" },
-          { name: "terminal", session: "s3", running: true, declared: true, dead: false, crashed: false, kind: "terminal" },
+          { name: "codex", session: "s1", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" },
+          { name: "reviewer", session: "s2", running: false, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" },
+          { name: "terminal", session: "s3", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "terminal" },
         ],
         resumableAgentNames: () => new Set(["reviewer"]),
       },
@@ -51,8 +51,8 @@ describe("Project Handoff Runtime API projection", () => {
         updatedBy: "human",
         notes: [{ agent: "codex", kind: "decision", summary: "Keep the engine authoritative" }],
         distillTargets: [
-          { name: "codex", state: "running", declared: true },
-          { name: "reviewer", state: "resumable", declared: true },
+          { name: "codex", state: "running", lifetime: "saved", resumePolicy: "restartable" },
+          { name: "reviewer", state: "resumable", lifetime: "saved", resumePolicy: "restartable" },
         ],
       },
     });
@@ -139,9 +139,27 @@ describe("Project Handoff Runtime API projection", () => {
       ...valid,
       handoff: {
         ...valid.handoff,
-        distillTargets: [{ name: "codex", state: "running", declared: true, description: "stopped · declared" }],
+        distillTargets: [{ name: "codex", state: "running", lifetime: "saved", resumePolicy: "restartable", description: "stopped · declared" }],
       },
     })).toThrow(/description contradicts/i);
+    // t-04052d — the validator restates the eligibility rule, and it needs BOTH axes to restate it
+    // correctly. A `collected` Temporary that is not running is refused; a `restartable` one (a fork)
+    // is admitted, because its resume block means its definition is still there to receive work.
+    // Written on `lifetime` alone this second case threw, rejecting the very row the host just built.
+    expect(() => parseHandoffViewV1({
+      ...valid,
+      handoff: {
+        ...valid.handoff,
+        distillTargets: [{ name: "gone", state: "stopped", lifetime: "temporary", resumePolicy: "collected", description: "stopped · temporary" }],
+      },
+    })).toThrow(/stopped temporary agent cannot be a handoff target/i);
+    expect(parseHandoffViewV1({
+      ...valid,
+      handoff: {
+        ...valid.handoff,
+        distillTargets: [{ name: "fork", state: "resumable", lifetime: "temporary", resumePolicy: "restartable", description: "resumable · temporary" }],
+      },
+    }).handoff.distillTargets[0]).toMatchObject({ name: "fork", lifetime: "temporary", resumePolicy: "restartable" });
     expect(() => parseHandoffViewV1({
       ...valid,
       handoff: { ...valid.handoff, exists: true, updatedAt: "", updatedBy: "", revision: "" },

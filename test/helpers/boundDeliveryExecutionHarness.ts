@@ -110,7 +110,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     expect(fs.readFileSync(path.join(home("reviewer"), "marker"))).toEqual(beforeExtraEnv.home);
     await manager.spawn("review-execution", { taskBrief: "Bridge contract", deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: "op", declaredAgent: "reviewer" } });
     expect(Buffer.from(JSON.stringify(ledger.get("reviewer")))).toEqual(principalBytes);
-    expect(ledger.get("review-execution")?.declared).toBe(false);
+    expect(ledger.get("review-execution")?.instance?.lifetime).toBe("temporary");
     expect(minted).toEqual(["reviewer", "reviewer", "review-execution"]);
     expect(sessions.size).toBe(2);
     expect(fs.readFileSync(path.join(home("review-execution"), "marker"))).toEqual(Buffer.from("review-execution"));
@@ -206,7 +206,7 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
       confirmDeliveryJoin: async (name, request, receipt) => { counters.confirm++; confirmations.push({ name, request: structuredClone(request), prepared: receipt }); },
     });
     await manager.spawn("reviewer");
-    expect(ledger.get("reviewer")).toMatchObject({ declared: true, cwd: root, resume: { configHome: home("reviewer") } });
+    expect(ledger.get("reviewer")).toMatchObject({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, cwd: root, resume: { configHome: home("reviewer") } });
     const activity = path.join(root, ".tachyon", "activity"); fs.mkdirSync(activity, { recursive: true });
     fs.writeFileSync(path.join(activity, `${agentLogId("reviewer")}.jsonl`), "principal activity\n");
     fs.writeFileSync(path.join(activity, `${agentLogId("reviewer")}.state.json`), "principal state\n");
@@ -230,8 +230,8 @@ export async function exerciseBoundDeliveryIdentitySnapshot(): Promise<void> {
     expect(source).toMatchObject({ env: { MODE: "new" }, watch: ["new-watch"], attention: { enabled: false, silenceSec: 99, patterns: ["new-attention"] }, harness: { mcp: { "new-mcp": { command: "new-mcp" } }, hooks: { Stop: ["new-hook"] }, rules: ["new-rule.md"], skills: ["new-skill"] } });
     expect(execution).toMatchObject({ cwd: prepared, env: { MODE: "old", TACHYON_AGENT_NAME: "review-execution", TACHYON_AGENT_BRIDGE_TOKEN: "token-review-execution", CODEX_HOME: home("review-execution") } });
     expect(execution.cmd).toContain("--sandbox read-only"); expect(execution.cmd).toContain("durable reviewer"); expect(execution.cmd).toContain("Bridge contract"); expect(execution.cmd.indexOf("reviewer")).toBeLessThan(execution.cmd.indexOf("Bridge contract")); expect(hooks).toEqual(["reviewer", "review-execution"]);
-    expect((await manager.list()).find(info => info.name === "review-execution")).toMatchObject({ declared: false });
-    expect(ledger.get("review-execution")).toMatchObject({ declared: false, cwd: prepared, worktree: { path: prepared }, def: { cmd: "codex --sandbox read-only --model gpt-5" } });
+    expect((await manager.list()).find(info => info.name === "review-execution")).toMatchObject({ lifetime: "temporary" });
+    expect(ledger.get("review-execution")).toMatchObject({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, cwd: prepared, worktree: { path: prepared }, def: { cmd: "codex --sandbox read-only --model gpt-5" } });
 
     await manager.kill("review-execution");
     expect(sessions).toEqual(new Set([manager.session("reviewer")])); expect(revoked).toEqual(["review-execution"]); expect(minted).toEqual([...principalTokenHistory, "review-execution"]);
@@ -284,7 +284,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
     const config = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    role: reviewer\n    isolate: transcript\n").config!;
     const ledger = new SessionLedger(root);
     const completeDef = (): ManagedEntryDef => ({ ...config.agents.reviewer! });
-    ledger.record("principal", { def: completeDef(), cwd: root, declared: true });
+    ledger.record("principal", { def: completeDef(), cwd: root, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     const activity = path.join(root, ".tachyon", "activity", `${agentLogId("principal")}.jsonl`);
     fs.mkdirSync(path.dirname(activity), { recursive: true }); fs.writeFileSync(activity, "principal activity\n");
     const activityBytes = fs.readFileSync(activity);
@@ -317,7 +317,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
       case "same execution name": join.declaredAgent = name; break;
       case "configured execution-name collision": config.agents[name] = completeDef(); break;
       case "ad-hoc execution-name collision": internals.adhoc.set(name, completeDef()); break;
-      case "ledger execution-name collision": originalRecord(name, { def: completeDef(), cwd: root, declared: false }); break;
+      case "ledger execution-name collision": originalRecord(name, { def: completeDef(), cwd: root, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } }); break;
       case "live tmux execution-name collision": sessions.add(manager.session(name)); break;
       case "dead tmux execution-name collision": sessions.add(manager.session(name)); dead.add(manager.session(name)); break;
       case "reserved token in declared source": config.agents.reviewer!.env = { TACHYON_AGENT_BRIDGE_TOKEN: "forbidden" }; break;
@@ -382,7 +382,7 @@ export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<
       resume: principalResume,
       worktree: principalWorktree,
       cwd: principalCwd,
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
       bridgeClient: { boundGeneration: 3, wired: true },
     });
     const before = structuredClone(ledger.get("reviewer")!);
@@ -439,7 +439,7 @@ export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<
     expect(after.resume).toEqual(before.resume);
     expect(after.worktree).toEqual(before.worktree);
     expect(after.cwd).toEqual(before.cwd);
-    expect(after.declared).toBe(true);
+    expect(after.instance).toEqual(before.instance);
     // Current failed-wiring stamp replaces the stale wired:true from generation 3.
     expect(after.bridgeClient).toEqual({ boundGeneration: 9, wired: false });
     expect(sessions.has(manager.session("reviewer"))).toBe(true);

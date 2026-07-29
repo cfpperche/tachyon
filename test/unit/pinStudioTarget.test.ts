@@ -26,7 +26,7 @@ describe("Workspace Pin Studio target", () => {
     let fake!: FakeWorkspaceClient;
     fake = new FakeWorkspaceClient({
       identity,
-      snapshot: projectionSnapshot(identity, 0, [projectedAgent("codex", { declared: true })]),
+      snapshot: projectionSnapshot(identity, 0, [projectedAgent("codex", { lifetime: "saved" })]),
       query: async (query) => {
         expect(query).toEqual({ schemaVersion: 1, method: "pin.studio", input: { id: "p-abc123" } });
         return workspacePinStudioViewSuccessV1({

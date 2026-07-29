@@ -44,7 +44,7 @@ function findType(posted: unknown[], type: string) {
 function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentProfileStudioSnapshotV1 {
   return {
     schemaVersion: 1,
-    kind: "canonical",
+    kind: "agent-instance",
     agentName,
     agentId: "123e4567-e89b-42d3-a456-426614174000",
     revision,

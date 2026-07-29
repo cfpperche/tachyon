@@ -254,8 +254,8 @@ describe("SessionLedger", () => {
   it("renames one exact row and child lineage in one replayable replacement", () => {
     const ws = tmpWs();
     const ledger = new SessionLedger(ws);
-    ledger.record("parent", { def: { cmd: "codex", kind: "agent" }, cwd: ws, declared: false });
-    ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "parent", delegator: "parent" }, cwd: ws, declared: false });
+    ledger.record("parent", { def: { cmd: "codex", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
+    ledger.record("child", { def: { cmd: "sh", kind: "terminal", parent: "parent", delegator: "parent" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
     const expected = ledger.get("parent")!;
 
     ledger.renameExact("parent", "boss", expected);
@@ -283,12 +283,12 @@ describe("SessionLedger", () => {
   it("records, reads back, and overwrites by agent name", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u1" }, cwd: ws, declared: true });
+    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u1" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     expect(fs.existsSync(path.join(ws, ".tachyon", "sessions.json"))).toBe(true);
-    expect(l.get("claude")).toMatchObject({ resume: { sessionId: "u1", runtime: "claude" }, declared: true });
+    expect(l.get("claude")).toMatchObject({ resume: { sessionId: "u1", runtime: "claude" }, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     expect(typeof l.get("claude")!.updatedAt).toBe("string");
 
-    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u2" }, cwd: ws, declared: true });
+    l.record("claude", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "u2" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     expect(l.get("claude")!.resume!.sessionId).toBe("u2");
     expect(l.all().size).toBe(1);
   });
@@ -296,7 +296,7 @@ describe("SessionLedger", () => {
   it("removes a record", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    l.record("a", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "c1" }, cwd: ws, declared: false });
+    l.record("a", { def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "c1" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
     l.remove("a");
     expect(l.get("a")).toBeUndefined();
   });
@@ -307,7 +307,7 @@ describe("SessionLedger", () => {
     l.record("done", {
       def: { cmd: "codex exec", kind: "agent" },
       cwd: ws,
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
       lifecycle: { state: "clean-exited", exitedAt: "2026-07-19T12:00:00.000Z" },
     });
     expect(new SessionLedger(ws).get("done")?.lifecycle).toEqual({
@@ -347,7 +347,7 @@ describe("SessionLedger", () => {
             contract: { task: "implement fix", context: "persisted context", constraints: "stay scoped", ...completion },
           },
           cwd: ws,
-          declared: false,
+          instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
           updatedAt: "2026-07-19T00:00:00.000Z",
         },
       },
@@ -380,7 +380,7 @@ describe("SessionLedger", () => {
             },
           },
           cwd: ws,
-          declared: false,
+          instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
           updatedAt: "2026-07-19T00:00:00.000Z",
         },
       },
@@ -392,7 +392,7 @@ describe("SessionLedger", () => {
 
     // Any later ledger write sanitizes away the malformed body but must preserve the fail-closed marker.
     const ledger = new SessionLedger(ws);
-    ledger.record("other", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, declared: false });
+    ledger.record("other", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
     const reparsed = new SessionLedger(ws).get("worker")?.def;
     expect(reparsed?.contract).toBeUndefined();
     expect(reparsed?.contractInvalid).toBe("invalid-shape");
@@ -404,7 +404,7 @@ describe("SessionLedger", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
     const worktree = { path: "/wt/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "base", baseBranch: "develop", createdAt: "t0" };
-    l.record("rev", { def: { cmd: "claude", kind: "agent" }, worktree, cwd: "/wt/rev", declared: true });
+    l.record("rev", { def: { cmd: "claude", kind: "agent" }, worktree, cwd: "/wt/rev", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     l.recordVerify("rev", { command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
 
     const back = new SessionLedger(ws).get("rev");
@@ -416,7 +416,7 @@ describe("SessionLedger", () => {
   it("recordVerify is a no-op for an agent with no worktree (verify is worktree-scoped)", () => {
     const ws = tmpWs();
     const l = new SessionLedger(ws);
-    l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true });
+    l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
     l.recordVerify("plain", { command: "npm test", passed: false, atCommit: "x", ranAt: "t" });
     expect(l.get("plain")?.worktree).toBeUndefined();
   });
@@ -437,7 +437,7 @@ describe("SessionLedger", () => {
       ...e,
     });
     const withWorktree = (l: SessionLedger, name = "rev") =>
-      l.record(name, { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/rev", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/rev", declared: true });
+      l.record(name, { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/rev", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/rev", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
 
     it("appendEvidence persists + round-trips; getEvidence reads back", () => {
       const ws = tmpWs();
@@ -452,7 +452,7 @@ describe("SessionLedger", () => {
     it("appendEvidence is a no-op without a worktree", () => {
       const ws = tmpWs();
       const l = new SessionLedger(ws);
-      l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: true });
+      l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
       l.appendEvidence("plain", evi({ targetAgent: "plain" }));
       expect(l.getEvidence("plain")).toEqual([]);
     });
@@ -502,7 +502,7 @@ describe("SessionLedger", () => {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "s1" },
         cwd: "/wt/d",
-        declared: false,
+        instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
         bridgeClient: { boundGeneration: 2, wired: true },
       });
       const binding = { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "nonce-1" };
@@ -516,7 +516,7 @@ describe("SessionLedger", () => {
         def: { cmd: "claude", kind: "agent" },
         resume: { runtime: "claude", sessionId: "s1" },
         cwd: "/wt/d",
-        declared: false,
+        instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
         bridgeClient: { boundGeneration: 2, wired: true },
       });
       expect(isValidDeliveryBinding(back?.delivery)).toBe(true);
@@ -526,7 +526,7 @@ describe("SessionLedger", () => {
     it("refuses conflicting bind and refuses overwrite of an invalid marker", () => {
       const ws = tmpWs();
       const l = new SessionLedger(ws);
-      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });
+      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
       l.bindDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
       expect(() => l.bindDelivery("holder", { deliveryId: "d-2", segmentId: "seg-1", executionNonce: "n1" }))
         .toThrow(/existing binding differs/);
@@ -544,7 +544,7 @@ describe("SessionLedger", () => {
     it("clear requires the exact expected binding (no name-only clear)", () => {
       const ws = tmpWs();
       const l = new SessionLedger(ws);
-      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, declared: false });
+      l.record("holder", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
       l.bindDelivery("holder", { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n1" });
       expect(() => l.clearDelivery("holder", { deliveryId: "d-1", segmentId: "seg-OTHER", executionNonce: "n1" }))
         .toThrow(/does not match/);
@@ -563,7 +563,7 @@ describe("SessionLedger", () => {
             def: { cmd: "claude", kind: "agent" },
             resume: { runtime: "claude", sessionId: "s" },
             cwd: "/wt",
-            declared: false,
+            instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
             delivery: { deliveryId: 99 }, // malformed
             updatedAt: "t",
           },
@@ -582,7 +582,7 @@ describe("planResume", () => {
     def: { cmd: "claude", kind: "agent" },
     resume: { runtime: "claude", sessionId: "id" },
     cwd: "/ws",
-    declared: true,
+    instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     updatedAt: "t",
     ...over,
   });
@@ -591,7 +591,7 @@ describe("planResume", () => {
     const ledger = new Map<string, SessionRecord>([
       ["alive", rec()],
       ["deadDeclared", rec()],
-      ["deadAdhoc", rec({ declared: false })],
+      ["deadAdhoc", rec({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } })],
       ["deadDeclaredNoAutostart", rec()],
     ]);
     const plan = planResume({
@@ -616,7 +616,7 @@ describe("planResume", () => {
 
   it("never reattaches, auto-resumes, or offers a clean-exited postmortem row", () => {
     const ledger = new Map<string, SessionRecord>([
-      ["done", rec({ declared: false, lifecycle: { state: "clean-exited", exitedAt: "2026-07-19T12:00:00.000Z" } })],
+      ["done", rec({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, lifecycle: { state: "clean-exited", exitedAt: "2026-07-19T12:00:00.000Z" } })],
       ["ordinary", rec()],
     ]);
     expect(planResume({
@@ -664,7 +664,7 @@ describe("planResume", () => {
   it("SDD 368 T14/R3 denies every generic plan action when reload snapshot is not ready", () => {
     const ledger = new Map<string, SessionRecord>([
       ["ordinary", rec()],
-      ["offered", { ...rec(), declared: false }],
+      ["offered", { ...rec(), instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } }],
       ["live", rec()],
     ]);
     const plan = planResume({
@@ -938,7 +938,7 @@ describe("capture-id resolvers (spec 209 task 6)", () => {
 
 describe("isResumable + def-only rows are never offered (spec 211)", () => {
   it("isResumable: true for an adapter-backed runtime (even with empty id), false for def-only", () => {
-    const base = { cwd: "/ws", declared: false, updatedAt: "t" };
+    const base = { cwd: "/ws", instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, updatedAt: "t" } as const;
     expect(isResumable({ ...base, def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "x" } })).toBe(true);
     expect(isResumable({ ...base, def: { cmd: "codex", kind: "agent" }, resume: { runtime: "codex", sessionId: "" } })).toBe(true);
     expect(isResumable({ ...base, def: { cmd: "sh", kind: "terminal" } })).toBe(false); // def-only, no resume block
@@ -946,8 +946,8 @@ describe("isResumable + def-only rows are never offered (spec 211)", () => {
 
   it("planResume never auto-resumes/offers a def-only (sh) row", () => {
     const recs = new Map<string, SessionRecord>([
-      ["ai", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "1" }, cwd: "/ws", declared: false, updatedAt: "t" }],
-      ["sh", { def: { cmd: "sh", kind: "terminal" }, cwd: "/ws", declared: false, updatedAt: "t" }],
+      ["ai", { def: { cmd: "claude", kind: "agent" }, resume: { runtime: "claude", sessionId: "1" }, cwd: "/ws", instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, updatedAt: "t" }],
+      ["sh", { def: { cmd: "sh", kind: "terminal" }, cwd: "/ws", instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, updatedAt: "t" }],
     ]);
     const plan = planResume({ ledger: recs, declaredAutostart: new Set(), liveSessions: new Set() });
     expect(offers(plan).map((p) => p.name)).toEqual(["ai"]); // sh row excluded

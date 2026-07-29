@@ -23,7 +23,7 @@ import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
  */
 
 const agent = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntryInfo => ({
-  name, session: `s-${name}`, running: true, declared: false, dead: false, crashed: false, kind: "agent", ...opts,
+  name, session: `s-${name}`, running: true, lifetime: "temporary", resumePolicy: "collected", dead: false, crashed: false, kind: "agent", ...opts,
 });
 
 const att = (state: AgentAttention["state"], stableSince: number): AgentAttention => ({

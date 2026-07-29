@@ -43,7 +43,7 @@ function buildDegradedFleet(opts: {
         },
         {
           kind: "agent",
-          adhoc: !e.declared,
+          adhoc: e.lifetime === "temporary",
           resumable: e.resumable,
           configInvalid: true,
         },
@@ -77,7 +77,7 @@ describe("fail-visible sidebar view-model", () => {
           "codex",
           {
             cwd: "/ws",
-            declared: true,
+            instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
             updatedAt: "2026-07-10T15:00:00.000Z",
             resume: { runtime: "codex", sessionId: "sess-1" },
           },
