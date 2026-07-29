@@ -95,8 +95,9 @@ non-problem (`notes.md`)._
       (`instance.lifecycleHooks`), recorded at spawn and never derived from identity. The promotion
       ruling (`j-20febbd260be`) removes the hybrid state but does not fuse the two: a promoted agent
       is `identity: saved` with `lifecycleHooks: false` while it keeps running. See `notes.md`.
-- [ ] From that same decision, a NEW slice (not a reader convergence): surface "promoted, still
-      running as Temporary" and offer `Restart as Saved` as a separate action.
+- **DEFERRED (not this SDD):** surfacing "promoted, still running as Temporary" and offering
+  `Restart as Saved`. New capability rather than reader convergence; registered here since phase 3 and
+  never authorized as a slice. Carried out of SDD 482 as its own future task.
 - [x] Remaining POLICY readers converted in one grouped delivery, each with its own assertion:
       `bridge/tools.ts` dismiss family (canDismiss, the kill_agent hint, the dismiss guard),
       `missionVm`'s live-Temporary filter, and the DEGRADED roster's `adhoc` flag — the last needed
@@ -117,7 +118,7 @@ non-problem (`notes.md`)._
       now the enforcement of a ratified decision rather than a provisional guardrail.
 - [x] PHASE 3 CLOSED. Every reader that asked a policy question asks the resolver; every remaining
       `declared` is either a wire field held deliberately stable or a genuine storage question.
-- [ ] No duplicate removed yet — deletion waits until phase 5, per the plan and decision 7.
+- **RESOLVED in phase 5:** no duplicate proved removable. See "What phase 5 did NOT remove, and why".
 
 ## Phase 4 — the governed creation door (severable)
 
@@ -277,17 +278,26 @@ preconditions current, not future, which is why they are closed here.
 - [x] Approve+save atomicity REVIEWED (CLEAN): `lifecycle.enabled: false` makes "saving does not
       start" a property of the DATA rather than of this path's conduct, and the commit has no port
       through which a launch could happen.
-- [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
-      affected files/authorities, diff without secrets.
-- [ ] Approval bound to the digest; A2A cannot simulate it.
-- [ ] Atomic commit of profile + authority + roster; compensation on failure.
-- [ ] Receipt: proposer, approver, digest, transaction/operation id, outcome.
+- [x] Human Inbox review: a third inbox kind with runtime, requested ownership, dangerous grants, what
+      approving writes, and the digest. Environment renders as NAMES ONLY, asserted in the browser
+      test that the value never reaches the DOM (`savedAgentProposalReview.test.ts`,
+      `humanInboxShots.test.ts`).
+- [x] Approval bound to the digest end to end — pane → message → commit, which compares it. A2A cannot
+      simulate it because the approval has no Bridge tool at all, asserted by absence
+      (`savedAgentProposalCommit.test.ts`).
+- [x] Atomic commit of profile + authority + roster, for BOTH subjects, in ONE canonical transaction
+      with compensation. Proven in-process by disabling the companion unwind, and on the CRASH path by
+      a hand-built journal that `reconcile` compensates rather than commits
+      (`agentProfileLifecycle.test.ts`).
+- [x] Receipt: proposer, approver, digest, txid, outcome — with idempotent retry converging on it.
 - [x] Revocation/cancellation, expiry, idempotent retry and post-restart behaviour — slice B.
-- [ ] Ownership requested via `ownsSubagents` needs its own look when the commit path lands: a
-      proposal may REQUEST roster ownership, and `declaredOwner` confers no operational authority
-      today. Raised by `claude-reviewer` as explicitly not-reached in the slice A review; it belongs
-      to the slice that can actually grant it.
-- [ ] Saving does not start the agent.
+- [x] Ownership: reviewed CLEAN, and the model changed under ratification. v1 REFUSES `ownsSubagents`
+      by name; the only edge an approval creates is proposer-owns-the-new-agent, validated at
+      admission by the shared spec 352 rule (`assertOwnershipTargets`, one implementation, asserted to
+      produce wording identical to a Studio edit).
+- [x] Saving does not start the agent — `lifecycle.enabled: false` written by the canonical create,
+      no spawn call, and no port through which a launch could happen. Asserted three ways, including
+      through the canonical helper that now owns the guarantee.
 
 ## Phase 5 — terminology and removal (delivered)
 
@@ -305,34 +315,49 @@ preconditions current, not future, which is why they are closed here.
 
 ### What phase 5 did NOT remove, and why
 
-- [ ] The legacy `declared` fallback in `agentInstancePolicy` STAYS. It is the one duplicate the plan
+- **DECISION — keep:** the legacy `declared` fallback in `agentInstancePolicy` STAYS. It is the one duplicate the plan
       pointed at, and removing it needs field evidence that no pre-phase-2 ledger row survives —
       `legacyFallbackUsed` exists precisely to make that removal an observation rather than a guess.
       Deleting the instrument before the measurement would be the opposite of the plan.
-- [ ] `declared` itself stays everywhere: decision 7 froze it on the wire, and phase 3 proved the
+- **DECISION — keep (ratified 7):** `declared` itself stays everywhere: decision 7 froze it on the wire, and phase 3 proved the
       remaining reads are storage questions rather than policy. There is no proven duplication left to
       delete — the honest finding is that phase 3 converged the READERS without creating a redundant
       mechanism to remove.
 
 ## Verification
 
-- [ ] Each phase green under `npm run verify:full:quiet` on the tree it delivers.
-- [ ] Every threat-model control has a test that fails without the control.
-- [ ] No regression for Claude, Codex and Grok first; OpenCode/Pi/Hermes secondary.
+- [x] Each phase green under `npm run verify:full:quiet` on the tree it delivered — trees recorded in
+      the task journal, the last being `e36b9e69f32e` (633 files / 7237 passed / 4 skipped).
+- [x] Every threat-model control has a test that fails without the control. Each was proven by
+      DISABLING it and observing exactly its own test fail: capability absence, capability recursion,
+      digest collapse ordering, tamper, cancel ownership, read-time expiry, symlink refusal,
+      untrusted-counts-toward-ceiling, companion compensation, companion reconcile.
+- [x] No regression: the full suite is green on every delivered tree, and no runtime adapter behaviour
+      was touched — this SDD changed instance policy, a proposal store and one lifecycle transaction,
+      none of which are per-runtime.
 
 **Verify:** `npm run typecheck`
 **Verify:** `npm run verify:full:quiet`
 
 ## Dogfood
 
-**Dogfood-Opt-Out:** architecture only; nothing executable ships until a ratified slice does.
+**Dogfood-Opt-Out:** the creation door cannot be dogfooded from here. No profile in this repository
+holds `grants.proposeSavedAgent`, so nothing can propose; granting it is a human edit in Agent Studio,
+and approving is a human action in a Dev Host, which agents in this project do not open (`t-ce83a2`).
+What COULD be exercised headlessly was, and is listed under Verification.
 
 ## Visual QA
 
-**Visual QA Opt-Out:** no surface changes in this deliverable. Phase 4's Human Inbox review surface
-needs it when that phase is authored, and agents do not open a Dev Host here (`t-ce83a2`).
+**Visual QA DONE, headlessly.** Phase 4C shipped the Human Inbox proposal pane, so the opt-out no
+longer applies. `test/browser/humanInboxShots.test.ts` renders the real `ItemApp` against the shipped
+stylesheets at 880px and 360px, asserts neither width scrolls horizontally, and asserts the
+environment VALUE never reaches the DOM — the property a screenshot would otherwise immortalize.
+Screenshots in `docs/screenshots/e76acc-human-inbox/`. A human still owns the in-editor pass, since
+agents do not open a Dev Host here (`t-ce83a2`).
 
 ## Cookbook
 
-**Cookbook-Opt-Out:** no operator surface ships in this deliverable. Phase 4 adds a proposal/approval
-flow and should carry one when authored.
+**Cookbook-Opt-Out:** the operator flow exists but is not reachable by default — the capability is
+granted by a human editing a profile in Agent Studio, and no profile holds it. A cookbook entry should
+accompany the first workspace that turns it on, describing grant → propose → review → approve; writing
+one for a path nobody can currently walk would document an intention rather than a procedure.

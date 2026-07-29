@@ -2,8 +2,9 @@
 
 _Created 2026-07-28._
 
-**Status:** in-progress — **ratified by the human on 2026-07-29** (`t-5e1113`, journal
-`j-f7fc20368177`). Decomposition and incremental implementation are authorised against this document.
+**Status:** shipped — ratified 2026-07-29 (`t-5e1113`, journal `j-f7fc20368177`, plus decisions 6-10
+in later journal entries). Phases 0-5 delivered, each green under `verify:full` on the tree it
+delivered; adversarially reviewed by `claude-reviewer` at every phase. See § Closure.
 
 ## Intent
 
@@ -30,13 +31,13 @@ _Observable outcomes. If every box can be ticked, the spec is delivered._
 
 ### A. The model
 
-- [ ] **Scenario: identity and lifetime are separate declared fields**
+- [x] **Scenario: identity and lifetime are separate declared fields**
   - **Given** any Agent Instance, Saved or Temporary
   - **When** the engine resolves it
   - **Then** `identity` (backed by a durable Profile, or not) and `lifetime` (restartable/resumable,
     or collected at end-of-work) are read from declared fields, and no code path infers either from
     the command, the name, the tmux session, or presence in `tachyon.yml`
-- [ ] **Scenario: one instance record, one renderer**
+- [x] **Scenario: one instance record, one renderer**
   - **Given** a Fleet with both variants live
   - **When** the sidebar, Activity, Attention, Execution Graph and cleanup read them
   - **Then** each reads one Agent Instance shape and branches only on declared policy — no parallel
@@ -47,39 +48,39 @@ _Observable outcomes. If every box can be ticked, the spec is delivered._
 _The first draft had a "durable lineage" section here. It was aimed at a non-problem: lineage is
 durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is what replaced it._
 
-- [ ] **Scenario: a fork is an Agent Instance like any other**
+- [x] **Scenario: a fork is an Agent Instance like any other**
   - **Given** a fork of a Saved or Temporary agent
   - **When** it starts
   - **Then** it goes through the same spawn implementation as every other instance — env merge,
     identity mint, session ownership and admission happen once, in one place, not in a parallel copy
-- [ ] **Scenario: forking does not silently change what an agent IS**
+- [x] **Scenario: forking does not silently change what an agent IS**
   - **Given** a fork of a Saved agent
   - **When** the session row is written
   - **Then** its identity is not forced to ad-hoc as a side effect of storage — today `commitFork`
     hardcodes `declared: false`, which is invariant 5 being violated in production code
-- [ ] Fork equivalence is proved before the duplicate is deleted: same env, same identity minting,
+- [x] Fork equivalence is proved before the duplicate is deleted: same env, same identity minting,
       same admission, same ownership, and the transcript-sharing behaviour fork exists for is intact.
 
 ### C. The governed creation door
 
-- [ ] **Scenario: an agent with no capability cannot propose**
+- [x] **Scenario: an agent with no capability cannot propose**
   - **Given** an agent whose Profile does not carry the creation capability
   - **When** it calls the proposal tool
   - **Then** it is refused by name, nothing is written, and absence of the capability is the refusal
     reason — never a default-allow
-- [ ] **Scenario: a proposal is inert until a human ratifies THAT digest**
+- [x] **Scenario: a proposal is inert until a human ratifies THAT digest**
   - **Given** an agent that proposed a Saved Agent
   - **When** the proposal exists
   - **Then** no profile, authority or roster entry exists, no instance is launched, and the proposal
     is immutable and digest-bound
   - **And** approving one digest approves nothing else — a second proposal, an edited proposal, or an
     A2A message claiming approval are all refused
-- [ ] **Scenario: the human sees what they are approving**
+- [x] **Scenario: the human sees what they are approving**
   - **Given** a pending proposal in the Human Inbox
   - **When** the human opens it
   - **Then** they see effective configuration, runtime/model, dangerous permissions, requested
     ownership, affected files/authorities and a diff — with no secrets in any of it
-- [ ] **Scenario: commit is atomic or it did not happen**
+- [x] **Scenario: commit is atomic or it did not happen**
   - **Given** an approved proposal
   - **When** the host commits it
   - **Then** profile + authority + roster land through the same canonical transaction Agent Studio
@@ -88,39 +89,48 @@ durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is 
     re-read (measured in `notes.md`) — and any failure leaves no partial state
   - **And** phase 4 adds no second write path to authority: it arrives at that entry point with an
     approved payload, it does not re-implement the commit
-- [ ] **Scenario: saving is not starting**
+- [x] **Scenario: saving is not starting**
   - **Given** a committed Saved Agent
   - **Then** nothing is running: launch is a separate action under its own policy
-- [ ] **Scenario: nothing is inherited implicitly**
+- [x] **Scenario: nothing is inherited implicitly**
   - **Given** a proposer with permissions, MCP, skills, hooks, memory, credentials and ownership
   - **When** its proposal is committed
   - **Then** the new agent has only what the proposal explicitly requested and the human approved
-- [ ] **Scenario: state moved under the proposal**
+- [x] **Scenario: state moved under the proposal**
   - **Given** an approved proposal whose expected state no longer holds (the roster or an authority
     changed after it was written)
   - **When** the commit runs
   - **Then** it is refused on the CAS/expected-state check rather than applied to a world it was not
     reviewed against
-- [ ] **Scenario: an approved creation cannot create**
+- [x] **Scenario: an approved creation cannot create**
   - **Given** a Saved Agent that was itself committed from an approved proposal
   - **When** it attempts to propose another Saved Agent
   - **Then** it is refused, because a created agent never carries the creation capability — one human
     approval must not become a tree of creators
-- [ ] A receipt links proposer, approver, digest, transaction/operation id and outcome.
-- [ ] Revocation, expiry, cancellation, idempotent retry and post-restart behaviour are each defined
+- [x] A receipt links proposer, approver, digest, transaction/operation id and outcome.
+- [x] Revocation, expiry, cancellation, idempotent retry and post-restart behaviour are each defined
       and tested — a pending proposal that survives a restart must not become approvable by accident.
 
 ### D. Compatibility
 
-- [ ] `spawn_agent`'s public contract is unchanged for the whole migration.
-- [ ] Agent Studio, restart, resume and fork keep working, and each names whether it acts on Profile,
+- [x] `spawn_agent`'s public contract is unchanged for the whole migration.
+- [x] Agent Studio, restart, resume and fork keep working, and each names whether it acts on Profile,
       Instance or Runtime Session.
-- [ ] `subagents`/`declaredOwner` (Profile→Profile ownership, no operational authority) and runtime
+- [x] `subagents`/`declaredOwner` (Profile→Profile ownership, no operational authority) and runtime
       `parent` (Instance→Instance lineage) stay distinct, and neither is derived from the other.
-- [ ] Duplicate mechanisms are removed only after an equivalence proof, never in the same slice that
+- [x] Duplicate mechanisms are removed only after an equivalence proof, never in the same slice that
       introduces their replacement.
-- [ ] Tachyon still works with no SDD/ADR plugin present, and the wire protocol is not widened without
-      a version bump and cross-version proof.
+- [x] Tachyon still works with no SDD/ADR plugin present.
+- [x] The wire protocol is not WIDENED — but it did GAIN one action, and that distinction is the honest
+      reading rather than a tick. Phase 4C added `agent-profile.saved-agent-create`, because a single
+      canonical transaction requires a single crossing and two existing operations are two
+      transactions by construction. No existing payload changed: `agent-profile.studio-commit` is
+      `.strict()`, and adding a field there is what would make a newer engine undecodable to an older
+      shell (the 0.56.110 D1 shape). A NEW action is skew-safe in both directions — an older engine
+      refuses it by name, an older client never sends it — which is the shape `claude-reviewer`
+      recommended (`j-fcabb322f537`). If "not widened" is read to forbid additions too, this criterion
+      is NOT met and the addition is the thing to challenge; it is called out here rather than
+      absorbed into a checkmark.
 
 ## Invariants
 
@@ -260,14 +270,55 @@ stripped by `stripDeclaredParent` (`src/resume/SessionLedger.ts:484`). The human
 way — both are durable. So that function's declared-only strip is now a defect to remove rather than a
 behaviour to preserve, and the acceptance criterion below replaces the one the second draft deleted.
 
-- [ ] **Scenario: a Saved agent's parent survives a restart**
+- [x] **Scenario: a Saved agent's parent survives a restart**
   - **Given** a Saved (declared) instance that was spawned with a runtime parent
   - **When** the engine restarts and rehydrates
   - **Then** its parent edge is still there, exactly as a Temporary agent's already is
   - **And** the parent is still not `declaredOwner`: profile ownership is untouched by this, and
     neither edge is derived from the other
-- [ ] **Scenario: lineage is bounded by the instance, not by the profile**
+- [x] **Scenario: lineage is bounded by the instance, not by the profile**
   - **Given** a Saved instance whose lineage was recorded
   - **When** that instance ends and a new instance of the same profile starts
   - **Then** the new instance does not inherit the old lineage — "durable for the life of the
     instance" is the bound, and a profile is not an instance
+
+## Closure
+
+**Closure:** phases 0-5 shipped and green on `e36b9e69f32e` (633 files / 7237 passed / 4 skipped).
+Unified Agent Instance (`identity`/`lifetime` declared, readers on a policy resolver, symmetric
+durable lineage, one door for session creation) plus the governed creation door: propose → human
+review → approve, committed in ONE canonical transaction across both subjects, wired end to end and
+shut by default because no profile holds `grants.proposeSavedAgent`. Deliberately NOT done, with
+reasons: the legacy `declared` fallback, `declared` on the wire (ratified 7), and the promotion UI.
+
+Delivered, phase by phase, with the finding that changed each one:
+
+| Phase | What shipped | The finding that shaped it |
+| --- | --- | --- |
+| 0 | Symmetric, durable lineage | TWO independent causes; fixing either alone would have changed nothing |
+| 1 | One door for creating an agent's session | `commitFork` was a second implementation — measured, after review corrected me |
+| 2 | `identity` + `lifetime` declared, never inferred | The fork forces TWO axes: temporary identity, restartable lifetime |
+| 3 | Readers converged onto a policy resolver | The phase list named SUBSYSTEMS, not readers; most of what remained was wire fields |
+| 4 | The governed creation door, end to end | The canonical create refuses capability references — my first cut would have given a proposal MORE authority than a human has |
+| 5 | Ratified vocabulary; honest removal pass | Terminology was two strings, and nothing was legitimately removable |
+
+**What this SDD did not do, deliberately:**
+
+- The legacy `declared` fallback stays until field evidence says no pre-split ledger row survives.
+  `legacyFallbackUsed` exists to make that an observation rather than a guess.
+- `declared` stays on the wire (ratified decision 7). Phase 3 proved the remaining reads are storage
+  questions, not policy.
+- The promotion UI ("promoted, still running as Temporary" + `Restart as Saved`) is new capability
+  rather than convergence, registered since phase 3 and never authorized as a slice. It leaves this
+  SDD as a future task rather than an unfinished item.
+
+**Where the door stands on delivery:** wired end to end, and shut by default — no profile in this
+repository holds `grants.proposeSavedAgent`, so nothing can propose until a human grants it in Agent
+Studio. Approval remains a host action with no Bridge tool, asserted by absence.
+
+**Process note worth carrying forward.** Three of this SDD's corrections came from the same mistake in
+different clothes: a measurement I stated more confidently than I had checked ("the spawn port is
+already single", "the transaction is per-agent", "opening the door needs a protocol bump"). Each was
+caught by review or audit, and each time the corrected measurement made the work SMALLER or simpler,
+not larger. The related habit — verifying with something adjacent to the gate rather than the gate —
+cost three more rounds. Both are recorded in `notes.md` rather than smoothed away.
