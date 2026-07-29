@@ -1,10 +1,13 @@
 import { describe, expect, it, afterEach } from "vitest";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 import { listSavedAgentProposals, readSavedAgentProposalWitness } from "../../src/agents/savedAgentProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
+import { commitAgentProfileLifecycle, inspectAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
+import { proposeSavedAgentGrantPatchFromStudioMutation } from "../../src/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — the only agent-facing door, and what it refuses.
@@ -27,6 +30,53 @@ function workspace(): string {
   dirs.push(dir);
   fs.writeFileSync(path.join(dir, "tachyon.yml"), "agents:\n  boss:\n    cmd: claude\n", "utf8");
   return dir;
+}
+
+/**
+ * t-3bde32 — in-memory authority + a real config file, the two ports the canonical transaction needs.
+ * Kept local to this file because the point is to drive the SAME transaction Studio drives, not a
+ * stand-in for it.
+ */
+function authorityPort(root: string) {
+  const file = path.join(root, ".tachyon", "authority.json");
+  const load = (): Record<string, unknown> => {
+    try { return JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>; } catch { return {}; }
+  };
+  const save = (records: Record<string, unknown>): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(records), "utf8");
+  };
+  return {
+    read: async (name: string) => load()[name] as never,
+    publish: async (record: { agentName: string }) => {
+      const records = load();
+      if (records[record.agentName]) throw new Error("authority CAS conflict");
+      records[record.agentName] = record; save(records);
+    },
+    replace: async (record: { agentName: string }, expected: unknown) => {
+      const records = load();
+      if (JSON.stringify(records[record.agentName]) !== JSON.stringify(expected)) throw new Error("authority CAS conflict");
+      records[record.agentName] = record; save(records);
+    },
+    retire: async (name: string, expected: unknown) => {
+      const records = load();
+      if (JSON.stringify(records[name]) !== JSON.stringify(expected)) throw new Error("authority CAS conflict");
+      delete records[name]; save(records);
+    },
+  } as never;
+}
+
+function configPort(root: string) {
+  const file = path.join(root, "tachyon.yml");
+  return {
+    read: () => fs.readFileSync(file, "utf8"),
+    replace: (expected: string, text: string) => {
+      const current = fs.readFileSync(file, "utf8");
+      const sha = crypto.createHash("sha256").update(current).digest("hex");
+      if (sha !== expected) throw new Error("config CAS conflict");
+      fs.writeFileSync(file, text, "utf8");
+    },
+  };
 }
 
 /** Writes a canonical profile so the grant read has something real to parse. */
@@ -161,6 +211,62 @@ describe("propose_saved_agent (SDD 482 phase 4B)", () => {
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer"))).toBe(false);
     // …and the proposed agent has no grant to read, because it has no profile to read it from.
     expect(readAgentProfileGrants(root, "importer")).toBeUndefined();
+  });
+});
+
+describe("t-3bde32 — the grant Studio writes is the grant the Bridge door reads", () => {
+  /**
+   * The seam this task introduced, end to end and without a human: SDD 482's door was already correct,
+   * but nothing could turn the grant ON through a governed path. These two arms prove the profile the
+   * canonical transaction writes is the one the door then reads — which is what would silently break
+   * if the patch shape were wrong (writing `false` instead of removing the key, or clobbering the
+   * wrong object).
+   */
+  async function commitGrant(root: string, agent: string, granted: boolean): Promise<void> {
+    const current = await inspectAgentProfileLifecycle({
+      workspaceRoot: root, agentName: agent, authority: authorityPort(root), config: configPort(root),
+    });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: agent,
+      operation: "edit",
+      expectedRevision: current.revision,
+      patch: proposeSavedAgentGrantPatchFromStudioMutation(
+        { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: agent, expectedRevision: current.revision, granted },
+        current,
+      ),
+      authority: authorityPort(root),
+      config: configPort(root),
+      activateState: () => undefined,
+    });
+  }
+
+  it("refuses before the grant, accepts after it, and refuses again after revocation", async () => {
+    const root = workspace();
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "coord", operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority: authorityPort(root), config: configPort(root), activateState: () => undefined,
+    });
+    const bridge = harness(root, { kind: "agent", name: "coord" });
+
+    // FAIL-BEFORE: a freshly created agent holds no grant, and the door says so by name.
+    const before = await bridge.call("propose_saved_agent", PROPOSAL);
+    expect(before.isError).toBe(true);
+    expect(JSON.stringify(before.content)).toContain("capability_absent");
+
+    // PASS-AFTER: the grant written by the Studio mutation is read by the door.
+    await commitGrant(root, "coord", true);
+    const after = await bridge.call("propose_saved_agent", PROPOSAL);
+    expect(after.isError).toBeFalsy();
+    expect(listSavedAgentProposals(root)).toHaveLength(1);
+
+    // And revocation closes it again — absence, not an explicit `false`.
+    await commitGrant(root, "coord", false);
+    expect(readAgentProfileGrants(root, "coord")).toEqual({});
+    const revoked = await bridge.call("propose_saved_agent", { ...PROPOSAL, name: "other" });
+    expect(revoked.isError).toBe(true);
+    expect(JSON.stringify(revoked.content)).toContain("capability_absent");
   });
 });
 
