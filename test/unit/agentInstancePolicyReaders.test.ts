@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasLifecycleHooks,
   isTemporaryInstance,
   legacyFallbackUsed,
   mayRestartInstance,
@@ -12,9 +13,9 @@ import {
  * must equal the `declared` answer — except where `declared` was WRONG, and there the difference has
  * to be deliberate and named. This enumerates the shapes rather than sampling them.
  */
-const SAVED = { declared: true, instance: { identity: "saved", lifetime: "restartable" } } as const;
-const TEMPORARY = { declared: false, instance: { identity: "temporary", lifetime: "collected" } } as const;
-const FORK = { declared: false, instance: { identity: "temporary", lifetime: "restartable" } } as const;
+const SAVED = { declared: true, instance: { identity: "saved", lifetime: "restartable", lifecycleHooks: true } } as const;
+const TEMPORARY = { declared: false, instance: { identity: "temporary", lifetime: "collected", lifecycleHooks: false } } as const;
+const FORK = { declared: false, instance: { identity: "temporary", lifetime: "restartable", lifecycleHooks: false } } as const;
 const LEGACY_DECLARED = { declared: true } as const;
 const LEGACY_ADHOC = { declared: false } as const;
 
@@ -58,5 +59,34 @@ describe("instance policy readers (SDD 482 phase 3)", () => {
     const contradictory = { declared: true, instance: { identity: "temporary", lifetime: "collected" } } as const;
     expect(isTemporaryInstance(contradictory)).toBe(true);
     expect(mayRestartInstance(contradictory)).toBe(false);
+  });
+
+  /**
+   * Lifecycle hooks are a CAPABILITY, read rather than derived. The promoted agent is the case that
+   * makes it matter: the human ruled that promotion does not mutate a live instance, so it holds a
+   * Saved Profile while still running with the ownership-only hooks it launched with. Deriving from
+   * identity would answer that case wrong the moment identity is allowed to change.
+   */
+  it("reads lifecycle hooks as a capability, not as a consequence of identity", () => {
+    expect(hasLifecycleHooks(SAVED)).toBe(true);
+    expect(hasLifecycleHooks(TEMPORARY)).toBe(false);
+    // A fork is temporary AND explicitly ownership-only — commitFork says so; the row records it.
+    expect(hasLifecycleHooks(FORK)).toBe(false);
+
+    // The separable case: identity says saved, the instance still launched without the hooks.
+    const promotedButRunning = {
+      declared: true,
+      instance: { identity: "saved", lifetime: "restartable", lifecycleHooks: false },
+    } as const;
+    expect(isTemporaryInstance(promotedButRunning)).toBe(false);
+    expect(hasLifecycleHooks(promotedButRunning)).toBe(false); // derivation would have said true
+  });
+
+  it("falls back to declared when the capability was never recorded", () => {
+    expect(hasLifecycleHooks(LEGACY_DECLARED)).toBe(true);
+    expect(hasLifecycleHooks(LEGACY_ADHOC)).toBe(false);
+    // A policy written before the capability existed also has no answer, and does not invent one.
+    const prePolicy = { declared: true, instance: { identity: "saved", lifetime: "restartable" } } as const;
+    expect(hasLifecycleHooks(prePolicy)).toBe(true); // from `declared`, exactly as the reader did before
   });
 });

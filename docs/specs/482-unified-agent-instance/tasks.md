@@ -91,9 +91,10 @@ non-problem (`notes.md`)._
       (`mayRestartInstance`) — a coherent group that asks both questions.
 - [x] Fleet/sidebar, converted per-read rather than per-file: `adhoc` (agent + terminal) and
       `canDismiss` (both sites) as identity questions; then `persistenceHooks` and `continuity` too,
-      once the human resolved the third axis (`j-20febbd260be`) by ruling that promotion does not
-      mutate a live instance. That makes "identity implies hooks" a guaranteed property rather than a
-      coincidence — see `notes.md` § the third axis.
+      then `persistenceHooks` and `continuity` via `hasLifecycleHooks` — a declared CAPABILITY
+      (`instance.lifecycleHooks`), recorded at spawn and never derived from identity. The promotion
+      ruling (`j-20febbd260be`) removes the hybrid state but does not fuse the two: a promoted agent
+      is `identity: saved` with `lifecycleHooks: false` while it keeps running. See `notes.md`.
 - [ ] From that same decision, a NEW slice (not a reader convergence): surface "promoted, still
       running as Temporary" and offer `Restart as Saved` as a separate action.
 - [ ] Remaining readers: Activity, Attention, Execution Graph, worktree, cleanup.

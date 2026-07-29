@@ -59,6 +59,23 @@ export function mayRestartInstance(row: InstancePolicySource): boolean {
 }
 
 /**
+ * Whether this instance was given profile-backed lifecycle hooks — persistence hooks, the
+ * continuity pointer, and the rest of the declared-agent set.
+ *
+ * READ, never derived. It would be derivable from `identity` today, and the human's promotion ruling
+ * even makes that derivation sound for a running instance — but "sound today" is exactly what
+ * `declared` was, and re-deriving it would rebuild the same trap one field over. A promoted agent is
+ * the case that makes the distinction real: it has a Saved Profile while its RUNNING instance still
+ * carries the ownership-only hooks it launched with.
+ *
+ * Legacy: `declared`, matching what the reader did before the capability was recorded.
+ */
+export function hasLifecycleHooks(row: InstancePolicySource): boolean {
+  if (row.instance?.lifecycleHooks !== undefined) return row.instance.lifecycleHooks;
+  return row.declared;
+}
+
+/**
  * Whether the answer came from the legacy path. Exported so the eventual removal of that path is an
  * observation rather than a guess — a workspace whose rows all declare a policy can drop it.
  */

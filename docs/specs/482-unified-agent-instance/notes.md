@@ -203,13 +203,17 @@ running execution keeps the identity, hooks and policies it was launched with. O
 is born Saved, with hooks, continuity and full lifecycle. `Restart as Saved` becomes a separate,
 visible action, and the UI is expected to show the "promoted, still running as Temporary" condition.
 
-That answer is better than the third axis I was about to ask for, and worth understanding rather than
-just applying. It removes the divergence at its source instead of modelling it: because an instance's
-identity is fixed for its life, and its hooks are decided at spawn FROM that identity, the two can
-never disagree mid-life. So "identity implies hooks" stops being a coincidence of the current write
-paths and becomes a property the model guarantees — which is exactly what made it safe to converge
-`persistenceHooks` and `continuity` after all. A third declared axis would have modelled a hybrid
-state the design now simply refuses to create.
+That ruling removes the HYBRID STATE — an instance whose hooks contradict its identity mid-life. It
+does not, however, make hooks a consequence of identity, and I briefly implemented it as though it
+did: I converted both reads to `isTemporaryInstance`. That was corrected in the same phase.
+
+**Hooks are modelled as a declared CAPABILITY of the instance (`instance.lifecycleHooks`), read and
+never derived.** The reasoning is the same one this SDD keeps arriving at: deriving would be sound
+today and would still be a derivation, which is precisely what `declared` was before it grew a second
+job. And the promotion ruling supplies the case that separates them rather than the one that fuses
+them — a promoted agent holds a Saved Profile while its RUNNING instance keeps the ownership-only
+hooks it launched with. `identity: "saved"` with `lifecycleHooks: false` is a real, reachable row, and
+a derivation would answer it wrong.
 
 Remaining from that decision, NOT implemented here: the UI affordance itself — surfacing "promoted,
 running as Temporary" and offering `Restart as Saved`. That is a new capability rather than a reader

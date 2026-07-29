@@ -3875,14 +3875,15 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
 
     await manager.spawn("claude");
-    expect(ledger.get("claude")?.instance).toEqual({ identity: "saved", lifetime: "restartable" });
+    expect(ledger.get("claude")?.instance).toEqual({ identity: "saved", lifetime: "restartable", lifecycleHooks: true });
 
     await manager.spawn("temp", { cmd: "claude --temp" });
-    expect(ledger.get("temp")?.instance).toEqual({ identity: "temporary", lifetime: "collected" });
+    expect(ledger.get("temp")?.instance).toEqual({ identity: "temporary", lifetime: "collected", lifecycleHooks: false });
 
     // A fork is the independent-axes case: no durable Profile, but it owns a resume block.
     const forkName = await manager.commitFork(await manager.planFork("claude"));
-    expect(ledger.get(forkName)?.instance).toEqual({ identity: "temporary", lifetime: "restartable" });
+    // A fork records lifecycleHooks:false explicitly — commitFork already decides it; now the row says so.
+    expect(ledger.get(forkName)?.instance).toEqual({ identity: "temporary", lifetime: "restartable", lifecycleHooks: false });
     expect(ledger.get(forkName)?.declared).toBe(false); // storage fact, unchanged by the split
     await manager.kill(forkName);
   });

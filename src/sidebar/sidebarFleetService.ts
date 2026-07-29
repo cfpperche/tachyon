@@ -1,4 +1,4 @@
-import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
+import { hasLifecycleHooks, isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 import type { AgentManager } from "../agents/AgentManager.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
@@ -168,13 +168,11 @@ export async function buildSidebarFleet(
     .map((agent) => {
       const definition = source.manager.defOf(agent.name);
       const live = agent.running ? source.attentionOf(agent.name) : undefined;
-      // SDD 482 phase 3 — converted, and only because the human resolved the third axis
-      // (`j-20febbd260be`): promotion Temporary→Saved does NOT mutate the live instance. The running
-      // execution keeps the identity, hooks and policies it was launched with; only the NEXT instance
-      // is born Saved. So an instance's hooks are fixed at spawn FROM its identity and can never
-      // disagree with it mid-life — which turns "identity implies hooks" from a coincidence of the
-      // current write paths into a property the model guarantees.
-      const hookHealth = isTemporaryInstance(agent) ? undefined : source.persistenceHookHealth(agent.name);
+      // SDD 482 phase 3 — reads the instance's declared CAPABILITY, not its identity. Deriving this
+      // from identity would be sound today and would still be a derivation; a promoted agent is the
+      // case that separates them, since it has a Saved Profile while this running instance kept the
+      // ownership-only hooks it launched with.
+      const hookHealth = hasLifecycleHooks(agent) ? source.persistenceHookHealth(agent.name) : undefined;
       const externalSummary = externalTools.summary(agent.name);
       const liveGit = liveGitOf.get(agent.name);
       const ledgerDef = source.ledger.get(agent.name)?.def;
@@ -218,9 +216,9 @@ export async function buildSidebarFleet(
         kind: "agent",
         // "Is this a Temporary Agent?" — an identity question, converted.
         adhoc: isTemporaryInstance(agent),
-        // Same resolution as `persistenceHooks`: the continuity-pointer hook is injected at spawn from
-        // the instance's identity, and promotion cannot change it under a running instance.
-        continuity: agent.running && !isTemporaryInstance(agent) ? source.continuityBadge(agent.name) : undefined,
+        // The continuity pointer is part of the same injected hook set, so it asks the same
+        // capability question rather than re-deriving from identity.
+        continuity: agent.running && hasLifecycleHooks(agent) ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
         persistenceHooks: hookHealth ? {
           state: hookHealth.state,

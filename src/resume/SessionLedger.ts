@@ -152,6 +152,20 @@ export type AgentInstanceLifetime = "restartable" | "collected";
 export interface AgentInstancePolicy {
   identity: AgentInstanceIdentity;
   lifetime: AgentInstanceLifetime;
+  /**
+   * A declared CAPABILITY of this instance: were profile-backed lifecycle hooks injected at spawn?
+   * Recorded, never derived from `identity`/`lifetime` — that derivation happens to hold today and
+   * would still be a derivation, which is the habit this whole SDD exists to break.
+   *
+   * It earns its own field because the human's promotion ruling (`j-20febbd260be`) makes the two
+   * genuinely separable in time: promotion creates a Saved Profile while the RUNNING instance keeps
+   * the hooks it launched with. The instance is Temporary-with-a-Profile-waiting, and only the next
+   * execution is born Saved. A reader asking "show me the hook health" must read what this instance
+   * actually got, not what its identity would imply.
+   *
+   * Optional: rows written before this field simply do not say, and nothing invents an answer.
+   */
+  lifecycleHooks?: boolean;
 }
 
 export interface SessionRecord {
@@ -542,7 +556,10 @@ function parseInstancePolicy(value: unknown): AgentInstancePolicy | undefined {
   const o = value as Record<string, unknown>;
   const identity = o.identity === "saved" || o.identity === "temporary" ? o.identity : undefined;
   const lifetime = o.lifetime === "restartable" || o.lifetime === "collected" ? o.lifetime : undefined;
-  return identity && lifetime ? { identity, lifetime } : undefined;
+  if (!identity || !lifetime) return undefined;
+  return typeof o.lifecycleHooks === "boolean"
+    ? { identity, lifetime, lifecycleHooks: o.lifecycleHooks }
+    : { identity, lifetime };
 }
 
 function parseDef(d: unknown): SessionDef | undefined {
