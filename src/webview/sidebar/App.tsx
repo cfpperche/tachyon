@@ -955,28 +955,22 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
 /**
  * t-37f554 / spec 415 — Tachyon's sole non-modal attention surface.
  * Lives only on the Attentions tab (never stacked above Agents). Same store/actions as before.
+ *
+ * t-28fddf — the tab strip already owns the title + open count (icon + badge). The panel must not
+ * repeat "Attentions"/badge; it starts with Clear (when needed) and the list.
  */
 function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
   const rows = useMemo(() => attentionRows(fleets), [fleets]);
   if (rows.length === 0) {
     return (
-      <section class="attention-stack attention-empty" aria-labelledby="attention-title" data-testid="attention-stack-empty">
-        <div class="attention-head">
-          <span class="attention-title" id="attention-title">
-            <Icon name="bell-dot" /> Attentions
-          </span>
-        </div>
+      <section class="attention-stack attention-empty" aria-label="Attentions" data-testid="attention-stack-empty">
         <p class="attention-empty-body">No open attentions</p>
       </section>
     );
   }
   return (
-    <section class="attention-stack" aria-labelledby="attention-title" data-testid="attention-stack">
-      <div class="attention-head">
-        <span class="attention-title" id="attention-title">
-          <Icon name="bell-dot" /> Attentions
-          <span class="notice-unread" title={`${rows.length} open`} data-testid="attention-count">{rows.length}</span>
-        </span>
+    <section class="attention-stack" aria-label="Attentions" data-testid="attention-stack">
+      <div class="attention-toolbar" data-testid="attention-toolbar">
         <Button class="attention-clear"
           title="Dismiss all attention items"
           data-testid="attention-clear"

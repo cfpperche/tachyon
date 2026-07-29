@@ -66,15 +66,18 @@ describe("t-37f554 — Attentions tab composition", () => {
     expect(app).not.toMatch(/setTab\(\s*"Attentions"\s*\)/);
   });
 
-  it("Attentions tab renders the full list, count, clear, open actions, and tab badge", async () => {
+  it("Attentions tab renders the full list, clear, open actions, and tab badge only", async () => {
     const App = await loadApp();
     const fleet = fleetWithNotices(3);
     const html = renderStatic(App({ fleets: [fleet], initialTab: "Attentions" }));
     expect(html).toContain('data-testid="attention-stack"');
-    expect(html).toContain('data-testid="attention-count"');
-    expect(html).toMatch(/data-testid="attention-count"[^>]*>3</);
+    expect(html).toContain('data-testid="attention-toolbar"');
     expect(html).toContain('data-testid="attention-clear"');
     expect(html).toContain("Clear");
+    // t-28fddf — in-panel title/count are gone; the tab badge is the sole open-count chrome.
+    expect(html).not.toContain('data-testid="attention-count"');
+    expect(html).not.toContain('class="attention-title"');
+    expect(html).not.toContain('class="attention-head"');
     // Three cards in emission order.
     const cards = html.match(/data-testid="attention-card"/g) ?? [];
     expect(cards).toHaveLength(3);
@@ -96,6 +99,8 @@ describe("t-37f554 — Attentions tab composition", () => {
     expect(html).toContain('data-testid="attention-stack-empty"');
     expect(html).toContain("No open attentions");
     expect(html).not.toContain('data-testid="attention-clear"');
+    expect(html).not.toContain('data-testid="attention-count"');
+    expect(html).not.toContain('class="attention-title"');
     expect(html).not.toContain('data-testid="tab-attentions-badge"');
   });
 
