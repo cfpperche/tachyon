@@ -2675,6 +2675,13 @@ export class AgentManager {
       worktree,
       cwd,
       declared: !adhoc,
+      // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `adhoc` is set by the
+      // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
+      // from the name, the tmux session or `tachyon.yml`. A declared start is a Saved instance that
+      // may be restarted; an ad-hoc start is a Temporary one collected when its work ends.
+      instance: adhoc
+        ? { identity: "temporary" as const, lifetime: "collected" as const }
+        : { identity: "saved" as const, lifetime: "restartable" as const },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
       ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
@@ -4708,6 +4715,12 @@ export class AgentManager {
       ...(worktree ? { worktree } : {}),
       cwd,
       declared: false,
+      // SDD 482 phase 2 — the case that justifies TWO fields rather than one enum. A fork has no
+      // durable Profile, so its identity is `temporary`; but it owns a resume block and can be
+      // resumed, so its lifetime is `restartable`. A single saved/temporary value would have to lie
+      // about one of the two, and the thing it would most likely lie about is whether the fork
+      // survives — which is the reload this phase must not break.
+      instance: { identity: "temporary" as const, lifetime: "restartable" as const },
     });
     let spawnedSession: string | undefined;
     let sessionAttempted = false;

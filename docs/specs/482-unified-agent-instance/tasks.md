@@ -61,8 +61,18 @@ non-problem (`notes.md`)._
 
 ## Phase 2 — identity and lifetime as declared fields
 
-- [ ] Add `identity` and `lifetime` to the instance record; keep `declared` as storage only.
-- [ ] Refuse any inference of kind from command, name, tmux session, or `tachyon.yml` presence.
+- [x] `instance: { identity, lifetime }` on the session record, written by both real paths.
+      TWO fields rather than one enum, and the fork is what proves it: no durable Profile
+      (`temporary`) but it owns a resume block (`restartable`). One value would have to lie about one
+      of the two, most likely about whether the fork survives.
+- [x] No inference. Both are declared from what the operation WAS: `adhoc = !!opts.cmd ||
+      forced.ephemeral` is the caller's declaration, never the name, the tmux session or
+      `tachyon.yml`. Verified before writing this, because deriving from YAML presence is exactly the
+      forbidden move.
+- [x] Pre-split rows keep an ABSENT policy — synthesising one from `declared` at read time would
+      re-create the inference this replaces. An unrecognised value is dropped, not coerced.
+- [x] `declared` untouched as a storage fact; no reader moved. Phase 3 owns that, deliberately apart
+      so the write side is proven before anything depends on it.
 
 ## Phase 3 — converge the readers
 

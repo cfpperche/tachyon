@@ -3863,6 +3863,30 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.kill(forkName);
   });
 
+  /**
+   * t-5e1113 (SDD 482 phase 2) — the declared policy is WRITTEN by the real paths, not just parseable.
+   * `adhoc` comes from the caller supplying a command, which is a declaration; nothing here reads the
+   * name, the tmux session or `tachyon.yml` to decide.
+   */
+  it("t-5e1113: spawn and fork write the declared instance policy", async () => {
+    const { manager, ledger } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSession: async () => UUID,
+      seedTranscript: () => true,
+    });
+
+    await manager.spawn("claude");
+    expect(ledger.get("claude")?.instance).toEqual({ identity: "saved", lifetime: "restartable" });
+
+    await manager.spawn("temp", { cmd: "claude --temp" });
+    expect(ledger.get("temp")?.instance).toEqual({ identity: "temporary", lifetime: "collected" });
+
+    // A fork is the independent-axes case: no durable Profile, but it owns a resume block.
+    const forkName = await manager.commitFork(await manager.planFork("claude"));
+    expect(ledger.get(forkName)?.instance).toEqual({ identity: "temporary", lifetime: "restartable" });
+    expect(ledger.get(forkName)?.declared).toBe(false); // storage fact, unchanged by the split
+    await manager.kill(forkName);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const settings: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
