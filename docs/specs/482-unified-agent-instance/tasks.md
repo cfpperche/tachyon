@@ -231,12 +231,14 @@ preconditions current, not future, which is why they are closed here.
 - [x] Visual QA: two headless browser shots at 880px and 360px, each asserting no horizontal overflow,
       plus a DOM assertion that the secret VALUE never reaches the pane.
 
-### Slice C — what did NOT land, and why
+### Slice C — the review-only stage, and how it ended
 
-- [x] The review-only state is DECLARED, not implicit: a deployment table in `spec.md`, the reason
-      written at the injection site in `extension.ts`, and a test that fails if someone supplies the
-      port without updating the table. `claude-reviewer` named the failure mode — an optional
-      dependency nobody declares is a silent gap rather than staging.
+- [x] HISTORICAL: slice C first shipped REVIEW-ONLY, with the commit port deliberately unsupplied and
+      that state DECLARED rather than implicit — a deployment table, the reason at the injection site,
+      and a test that would fail if someone supplied the port without updating the table.
+      `claude-reviewer` named the failure mode: an optional dependency nobody declares is a silent gap
+      rather than staging. The stage is OVER — the port is supplied, the table says approve→create:
+      yes, and that test now asserts the wiring instead of its absence.
 - [x] Wire question ANSWERED by review, not by me: slice C touches no `engine-service/`, `runtime-api/`
       or `protocol.ts` file and leaves `ENGINE_SHELL_PROTOCOL` unchanged; the Cockpit↔webview messages
       ship in the same VSIX, so no skew is possible. No bump needed FOR THE TREE THEY REVIEWED (this

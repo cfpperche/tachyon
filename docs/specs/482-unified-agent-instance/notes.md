@@ -311,7 +311,14 @@ test does not take my word for the rule either; it calls `createProfileFromStudi
 the refusal, so if the canonical rule ever relaxes this becomes a deliberate re-decision rather than
 stale caution.
 
-## The last wire is a decision, not an oversight
+## The last wire is a decision, not an oversight — SUPERSEDED, see below
+
+> **SUPERSEDED 2026-07-29.** Everything in this section was true when written and is FALSE now. The
+> port IS wired, and the protocol DID gain one additive action. Kept rather than deleted because this
+> file is a log and the reasoning is what a later reader needs — but marked here, in the current
+> tense, because a stale section that reads as present fact is worse than no section at all. This is
+> the second time in this SDD that a claim outlived the change which invalidated it; the closure audit
+> caught the first, and this sweep caught this one.
 
 The approve button reaches `Cockpit`, which calls an optional `approveSavedAgentProposal` port. That
 port is NOT wired in `extension.ts`, and the reason is structural rather than unfinished work:
@@ -323,6 +330,15 @@ forbids widening the wire without versioning and cross-version proof.
 Rather than smuggle it in, the port stays optional and the Cockpit refuses OUT LOUD when it is absent.
 That is not the half-open door the earlier slices argued against: a refusal with a reason is feedback,
 whereas a click that quietly does nothing is what teaches a human that approving is harmless.
+
+**What actually happened next.** Phase 4C wired the port on existing seams
+(`commitAgentProfileStudio` with no `expectedRevision`, plus `set-subagents`), so for a while the "no
+new operation" reading above WAS the outcome. The ratified single transaction then made that
+arrangement impossible — one transaction requires ONE crossing, and two existing operations are two
+transactions by construction — so the protocol gained the additive action
+`agent-profile.saved-agent-create`. The precise, current statement lives in `spec.md` § Where the
+creation door is open: no existing `.strict()` payload widened, one additive named action, safe in
+both skew directions, no version bump.
 
 
 ## Fail-closed is not the same as well-behaved (2026-07-29)

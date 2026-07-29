@@ -414,21 +414,18 @@ describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
 });
 
 /**
- * SDD 482 phase 4C — the shipped deployment is REVIEW-ONLY, and that is a declared product state
- * rather than an unfinished edge.
+ * SDD 482 phase 4 — the door is wired, and it crosses the seam ONCE.
  *
- * `claude-reviewer` named the failure mode this guards: an optional dependency nobody declares is a
- * silent gap, not staging. So the absence is asserted, with the reason attached — if someone supplies
- * the port, this test fails and they must update the spec's deployment table in the same change
- * instead of quietly opening the door.
- */
-/**
- * SDD 482 phase 4C — the door is wired, and wired onto seams that already exist.
+ * Two earlier versions of this comment are gone rather than stacked: one described a review-only
+ * deployment where the port was deliberately unsupplied, the other said the door opened with "no new
+ * operation, no protocol bump". Both were true when written and both are false now — the port is
+ * supplied, and the ratified single transaction added the additive action
+ * `agent-profile.saved-agent-create`, because one transaction requires one crossing and two existing
+ * operations are two transactions by construction.
  *
- * The earlier delivery left the port unsupplied because `WorkspaceShellHandle` exposes no `create`.
- * That reading was incomplete: `commitAgentProfileStudio` with no `expectedRevision` IS the canonical
- * create and already crosses the engine/shell seam, and `set-subagents` crosses it too. So the door
- * opens on paths a human already uses — no new operation, no protocol bump.
+ * The precise protocol position lives in `spec.md` § Where the creation door is open: no existing
+ * `.strict()` payload widened, one additive named action, safe in both skew directions, no version
+ * bump. The assertions below are what keep that statement honest.
  */
 describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () => {
   const extension = fs.readFileSync(path.resolve(__dirname, "../../src/extension.ts"), "utf8");
