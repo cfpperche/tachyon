@@ -43,6 +43,16 @@
   .tab:hover { color: var(--vscode-foreground); }
   .tab.active { color: var(--vscode-foreground); border-bottom-color: var(--ds-focus); }
   .tab .codicon { font-size: 16px; }
+  /* t-37f554 — open-attention count on the Attentions tab; updates without stealing focus. */
+  .tab-badge {
+    position: absolute; top: 2px; right: max(2px, calc(50% - 14px));
+    min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9px; font-weight: 600; line-height: 1;
+    background: var(--vscode-badge-background, var(--ds-accent));
+    color: var(--vscode-badge-foreground, #fff);
+    pointer-events: none;
+  }
 
   /* active section title */
   .sec { display: flex; align-items: center; gap: 6px; padding: 9px 12px 2px; }
@@ -412,15 +422,25 @@
   .config-error-actions .ds-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 
-  /* spec 415 — owned Attention Stack: six visible FIFO cards, no toast companion. */
-  .attention-stack { flex: 0 0 auto; margin: 0 8px 6px; border: 1px solid var(--ds-border); border-radius: 6px; background: var(--vscode-sideBar-background, transparent); max-height: min(64vh, 600px); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-  .attention-head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-bottom: 1px solid var(--ds-border); font-size: 11px; font-weight: 600; }
+  /* t-37f554 / spec 415 — Attention Stack owns the Attentions tab panel only (not above Agents). */
+  .panel .attention-stack {
+    flex: 1 1 auto; margin: 0; border: 0; border-radius: 0;
+    max-height: none; height: 100%; min-height: 0;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: transparent;
+  }
+  .attention-stack.attention-empty { flex: 0 0 auto; }
+  .attention-empty-body {
+    margin: 0; padding: 10px 12px 12px; color: var(--ds-muted);
+    font-size: 11px; line-height: 1.35;
+  }
+  .attention-head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border-bottom: 1px solid var(--ds-border); font-size: 11px; font-weight: 600; flex: 0 0 auto; }
   .attention-title { display: inline-flex; align-items: center; gap: 5px; }
   .attention-title .codicon { font-size: 12px; color: var(--ds-warn); }
   .notice-unread { display: inline-flex; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; align-items: center; justify-content: center; font-size: 10px; background: var(--vscode-badge-background, var(--ds-accent)); color: var(--vscode-badge-foreground, #fff); }
   .attention-clear { margin-left: auto; font: inherit; font-size: 10px; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--ds-border); background: transparent; color: var(--ds-muted); cursor: pointer; }
   .attention-clear:hover { color: var(--vscode-foreground); background: var(--hover); }
-  .attention-list { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 5px; padding: 6px; }
+  .attention-list { overflow: auto; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 5px; padding: 6px; }
   .attention-card { position: relative; display: flex; flex-direction: column; gap: 5px; padding: 6px 7px; border: 1px solid color-mix(in srgb, var(--ds-border) 85%, transparent); border-left: 3px solid var(--ds-info); border-radius: 4px; background: color-mix(in srgb, var(--vscode-list-hoverBackground) 46%, transparent); }
   .attention-card.level-warn { border-left-color: var(--ds-warn); }
   .attention-card.level-error { border-left-color: var(--ds-err); }

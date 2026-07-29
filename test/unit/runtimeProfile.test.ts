@@ -136,6 +136,13 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     // fixtures and state-by-state assertions living in grokComposerMeasured.test.ts.
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true, verifiedAt: "2026-07-28" });
     expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);
+    // t-b103c5 — cancel-then-exit for tool-auth prompts where Ctrl+C means cancel, not exit.
+    expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-29" });
+    expect(profile?.gracefulStop?.steps).toEqual([
+      { type: "sendKey", key: "C-c" },
+      { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
+      { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
+    ]);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
   });

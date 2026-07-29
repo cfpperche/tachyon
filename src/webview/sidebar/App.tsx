@@ -952,19 +952,34 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
   );
 }
 
-/** spec 415 — Tachyon's sole non-modal attention surface. */
+/**
+ * t-37f554 / spec 415 — Tachyon's sole non-modal attention surface.
+ * Lives only on the Attentions tab (never stacked above Agents). Same store/actions as before.
+ */
 function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
   const rows = useMemo(() => attentionRows(fleets), [fleets]);
-  if (rows.length === 0) return null;
+  if (rows.length === 0) {
+    return (
+      <section class="attention-stack attention-empty" aria-labelledby="attention-title" data-testid="attention-stack-empty">
+        <div class="attention-head">
+          <span class="attention-title" id="attention-title">
+            <Icon name="bell-dot" /> Attentions
+          </span>
+        </div>
+        <p class="attention-empty-body">No open attentions</p>
+      </section>
+    );
+  }
   return (
-    <section class="attention-stack" aria-labelledby="attention-title">
+    <section class="attention-stack" aria-labelledby="attention-title" data-testid="attention-stack">
       <div class="attention-head">
         <span class="attention-title" id="attention-title">
-          <Icon name="bell-dot" /> Attention
-          <span class="notice-unread" title={`${rows.length} open`}>{rows.length}</span>
+          <Icon name="bell-dot" /> Attentions
+          <span class="notice-unread" title={`${rows.length} open`} data-testid="attention-count">{rows.length}</span>
         </span>
         <Button class="attention-clear"
           title="Dismiss all attention items"
+          data-testid="attention-clear"
           onClick={() => {
             for (const f of fleets) {
               if ((f.notices ?? []).some((n) => !n.read)) {
@@ -980,7 +995,7 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
         {rows.map(({ n, hash, folder }) => {
           const { body, author } = splitNoticeAuthor(n.message);
           return (
-          <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`}>
+          <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`} data-testid="attention-card">
             <div class="attention-card-head">
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
               {folder && fleets.length > 1 ? <span class="attention-folder">{folder}</span> : null}
@@ -1022,9 +1037,23 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
   );
 }
 
-export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [] }: { fleets?: FleetVM[]; dispatch?: Dispatch; prefs?: { agents?: string; terminals?: string }; collapsedKeys?: string[]; appVersion?: string }) {
+export function App({
+  fleets = [SAMPLE],
+  dispatch,
+  prefs = {},
+  collapsedKeys = [],
+  /** Test seam — production always starts on Agents; never auto-switches when attentions arrive. */
+  initialTab = "Agents",
+}: {
+  fleets?: FleetVM[];
+  dispatch?: Dispatch;
+  prefs?: { agents?: string; terminals?: string };
+  collapsedKeys?: string[];
+  appVersion?: string;
+  initialTab?: TabId;
+}) {
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [tab, setTab] = useState<TabId>("Agents");
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set(collapsedKeys));
   /** spec 386 — which agents show resource detail lanes (`${wsHash}:m:${name}`); session-local. */
@@ -1089,6 +1118,8 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
     [fleets],
   );
   const totalAgents = agentFilterCounts.all;
+  /** t-37f554 — open attention count for the tab badge only; never forces a tab switch. */
+  const openAttentionCount = useMemo(() => attentionRows(fleets).length, [fleets]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
@@ -1201,15 +1232,21 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
       </div>
-      <AttentionStack fleets={fleets} dispatch={dispatch} />
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
-        {TABS.map(({ id, icon }, i) => (
+        {TABS.map(({ id, icon }, i) => {
+          const badge = id === "Attentions" && openAttentionCount > 0 ? openAttentionCount : 0;
+          const label = badge > 0 ? `${id}, ${badge} open` : id;
+          return (
           <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}
-            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={id}
+            aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={label}
+            title={label}
+            data-testid={id === "Attentions" ? "tab-attentions" : undefined}
             tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
             <Icon name={icon} />
+            {badge > 0 ? <span class="tab-badge" data-testid="tab-attentions-badge" aria-hidden="true">{badge > 99 ? "99+" : badge}</span> : null}
           </button>
-        ))}
+          );
+        })}
       </div>
       <div class="sec">
         <b>{tab}</b>
@@ -1274,7 +1311,10 @@ export function App({ fleets = [SAMPLE], dispatch, prefs = {}, collapsedKeys = [
         )}
       </div>
       <div class="panel active" role="tabpanel" id="sidebar-panel" aria-labelledby={`tab-${tab}`} tabindex={0}>
-        {fleets.map((f) => {
+        {tab === "Attentions" ? (
+          // t-37f554 — one global stack (multi-root already merged by attentionRows); not per-folder panels.
+          <AttentionStack fleets={fleets} dispatch={dispatch} />
+        ) : fleets.map((f) => {
           // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
           // single-root is multi-root with N=1, one code path. It's where the Project Handoff chip lives.
           const fkey = `folder:${f.folder?.hash}`;

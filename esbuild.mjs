@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertStableBuildSource, resolveEngineReleaseChannel } from "./scripts/engine-release-channel.mjs";
+import { readEngineShellProtocol } from "./scripts/engine-protocol.mjs";
 
 const watch = process.argv.includes("--watch");
 const engineReleaseChannel = resolveEngineReleaseChannel();
@@ -27,6 +28,7 @@ function buildStamp() {
 
 const buildStampSnapshot = buildStamp();
 const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+const engineShellProtocol = readEngineShellProtocol();
 
 function sha256File(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -58,12 +60,9 @@ function writeEngineManifest() {
     schemaVersion: 1,
     channel: engineReleaseChannel,
     engineVersion: packageVersion,
-    // t-fab832 — 5 for the Agent Instance cut. This literal is a SECOND source of truth for the
-    // number that `src/engine-service/protocol.ts` also declares, and bumping only one of them
-    // produces a build whose manifest disagrees with its own code. `enginePackaging.test.ts` compares
-    // the two and is what caught exactly that here; the duplication itself is filed separately rather
-    // than fixed in this delivery.
-    protocol: { min: 5, max: 5 },
+    // t-2dec2d — `protocol.ts` is the single authority. The build reads its exact literal and fails
+    // closed if that declaration becomes missing, ambiguous or non-integral.
+    protocol: { min: engineShellProtocol, max: engineShellProtocol },
     entrypoint: "engine-daemon.cjs",
     files: [
       { path: "engine-daemon.cjs", sha256: sha256File("dist/engine/engine-daemon.cjs") },

@@ -155,6 +155,32 @@ describe("cockpit model", () => {
     const stale = buildCockpitModel(bundles, { section: "fleet", wsHash: "gone", nowIso: "now" });
     expect(stale.selectedWsHash).toBeUndefined();
     expect(stale.fleet).toHaveLength(5);
+
+    // t-4917e4 — the SELECTOR-RENDERS-EMPTY property, stated the way the UI actually binds it.
+    // Overview omits the "All workspaces" option when there is a single root, so a model that leaves
+    // the selection undefined there gives the control a value with no matching option: a blank
+    // button, which is the reported bug. Every valid loaded state must name an option that exists.
+    const optionValues = (m: ReturnType<typeof buildCockpitModel>): string[] => [
+      ...(m.workspaces.length > 1 ? ["__all__"] : []),
+      ...m.workspaces.map((w) => w.hash),
+    ];
+    for (const [label, m] of [
+      ["single root, no persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" })],
+      ["single root, stale persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "gone", nowIso: "now" })],
+      ["single root, explicit selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "solo", nowIso: "now" })],
+      ["multi root, no selection", all],
+      ["multi root, explicit selection", scoped],
+      ["multi root, stale selection", stale],
+    ] as const) {
+      const rendered = m.selectedWsHash ?? "__all__";
+      expect(optionValues(m), `${label}: selector value must be an offered option`).toContain(rendered);
+    }
+
+    // And the single-root selection is the root itself, not the aggregate sentinel.
+    expect(buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" }).selectedWsHash)
+      .toBe("solo");
+    // Scoping is unchanged by naming it: one bundle filtered is one bundle.
+    expect(buildCockpitModel([bundle("solo", "only", 1)], { section: "fleet", nowIso: "now" }).fleet).toHaveLength(1);
   });
 
   it("formatCockpitDiagnostics is product-oriented", () => {

@@ -239,8 +239,13 @@ export interface FleetVM {
   personalCardTemplateRefusal?: { file: string; errors: string[] };
 }
 
-export type TabId = "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
+/**
+ * t-37f554 — `Attentions` is a first-class tab (not a permanent panel above Agents). Tab order is
+ * visual only; the default selected tab remains Agents so a cold open still lands on the roster.
+ */
+export type TabId = "Attentions" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
 export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
+  { id: "Attentions", icon: "bell-dot" },
   { id: "Agents", icon: "hubot" },
   { id: "Terminals", icon: "terminal" },
   { id: "Pipelines", icon: "run-all" },

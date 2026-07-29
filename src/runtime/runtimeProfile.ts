@@ -138,15 +138,28 @@ export const DEFAULT_GRACEFUL_STOP: GracefulStopProfile = {
   notes: "Fallback for unknown runtimes: try a double interrupt before EOF so CLIs that ignore bare Ctrl-D still get a common exit path.",
 };
 
+/**
+ * t-b103c5 (2026-07-29) — Grok's native tool-authorization chrome binds Ctrl+C to **cancel**, not
+ * exit (`1/3:select │ Ctrl+o:always-approve │ Ctrl+c:cancel`, fixture in
+ * `test/unit/grokAuthorizationPrompt.test.ts`). Back-to-back C-c C-c both land as cancel while the
+ * prompt is up, so the process stays alive and the UI flips to opaque "stop failed" after
+ * STOPPING_FALLBACK_MS. Delays let cancel leave the prompt before the exit pair is sent; a third
+ * if-alive C-c completes the exit pair when the first press only cancelled. Measured idle (0.2.114):
+ * single C-c stays alive; delayed C-c C-c exits; `/exit` does not exit.
+ */
 const GROK_GRACEFUL_STOP: GracefulStopProfile = {
   steps: [
     { type: "sendKey", key: "C-c" },
-    { type: "sendKey", key: "C-c" },
+    { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
+    { type: "sendKeyIfAliveAfterDelay", key: "C-c", delayMs: 300 },
   ],
   source: "measured",
   verified: true,
-  verifiedAt: "2026-07-08",
-  notes: "t-bae032 journal: grok exits on Ctrl-C then Ctrl-C; bare Ctrl-D and single Ctrl-C stay alive.",
+  verifiedAt: "2026-07-29",
+  notes:
+    "t-bae032: idle exits on Ctrl-C then Ctrl-C (bare Ctrl-D and single Ctrl-C stay alive). "
+    + "t-b103c5: tool-auth prompt remaps Ctrl+C to cancel — delay between presses and a third "
+    + "if-alive Ctrl+C so cancel-then-exit still works; do not auto-force on user Stop (Kill forced is explicit).",
 };
 
 export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = {

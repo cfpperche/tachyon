@@ -105,13 +105,12 @@ describe("Attention Stack headless dogfood (spec 415)", () => {
     expect(stack.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("queued");
   });
 
-  it("keeps the panel bounded and scrollable in CSS, which is what makes the cap unnecessary", () => {
+  it("keeps the Attentions-tab panel scrollable (t-37f554 — no permanent max-height above Agents)", () => {
     const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/sidebar.css"), "utf8");
-    const stackRule = css.split("\n").find((line) => line.includes(".attention-stack {")) ?? "";
+    // Stack lives inside the tab panel and fills it; the list remains the scroll surface.
+    expect(css).toContain(".panel .attention-stack");
+    expect(css).toMatch(/\.panel \.attention-stack[\s\S]*?overflow:\s*hidden/);
     const listRule = css.split("\n").find((line) => line.includes(".attention-list {")) ?? "";
-
-    expect(stackRule).toContain("max-height: min(64vh, 600px)");
-    expect(stackRule).toContain("overflow: hidden");
     expect(listRule).toContain("overflow: auto");
     expect(listRule).toContain("min-height: 0");
   });

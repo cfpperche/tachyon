@@ -133,7 +133,13 @@ import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMon
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { AdhocBackstopMonitor, idleNotifyThresholdMs } from "./AdhocBackstopMonitor.js";
-import { GatedCompletionMonitor, assignedCompletionFacts, type GatedCandidateRecord, type GatedCompletionFacts } from "./GatedCompletionMonitor.js";
+import {
+  GatedCompletionMonitor,
+  assignedCompletionFacts,
+  resolveAssignedCompletionWorktree,
+  type GatedCandidateRecord,
+  type GatedCompletionFacts,
+} from "./GatedCompletionMonitor.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { hasDoorbellRung } from "../bridge/doorbell.js";
@@ -5825,10 +5831,15 @@ export class Workspace {
       entries,
       declared: new Set(Object.keys(this.config?.agents ?? {})),
       tasks,
-      locate: (agent) => {
+      locate: (agent, taskId) => {
         const rec = this.ledger.get(agent);
         const worktreePath = rec?.worktree?.path ?? rec?.cwd;
-        return worktreePath ? { worktreePath, baseSha: rec?.worktree?.baseRef } : undefined;
+        return resolveAssignedCompletionWorktree({
+          agent,
+          taskId,
+          managed: this.managedWorktrees.list({ kind: "change", status: "active" }),
+          persistent: worktreePath ? { worktreePath, baseSha: rec?.worktree?.baseRef } : undefined,
+        });
       },
     });
   }

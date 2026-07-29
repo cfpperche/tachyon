@@ -7428,16 +7428,67 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       await manager.spawn("a");
       await manager.stopGracefully("a");
       now.mockReturnValue(1_000 + AgentManager.STOPPING_FALLBACK_MS + 1);
-      expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopFailed: true });
+      expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({
+        running: true,
+        stopFailed: true,
+        // t-b103c5 — stage, measured reason, next deliberate action
+        stopFailure: {
+          stage: "await-exit",
+          reason: "process still alive after graceful key sequence",
+          nextAction: "Kill forced",
+        },
+      });
       expect((await manager.list()).find((a) => a.name === "a")).not.toMatchObject({ stopping: true });
 
       await manager.stopGracefully("a");
       expect(sentKeys).toHaveLength(6);
       expect((await manager.list()).find((a) => a.name === "a")).toMatchObject({ running: true, stopping: true });
       expect((await manager.list()).find((a) => a.name === "a")).not.toMatchObject({ stopFailed: true });
+      expect((await manager.list()).find((a) => a.name === "a")?.stopFailure).toBeUndefined();
     } finally {
       now.mockRestore();
     }
+  });
+
+  it("t-b103c5: Grok graceful stop uses delayed if-alive C-c so auth-prompt cancel does not swallow exit", async () => {
+    const { manager, sentKeys } = makeManager("agents:\n  grok:\n    cmd: grok\n");
+    await manager.spawn("grok");
+    await manager.stopGracefully("grok");
+    // First C-c is immediate (cancel tool-auth or first interrupt); the next two only fire while alive.
+    expect(sentKeys).toEqual([
+      { session: `tachyon-${HASH}-grok`, key: "C-c" },
+      { session: `tachyon-${HASH}-grok`, key: "C-c" },
+      { session: `tachyon-${HASH}-grok`, key: "C-c" },
+    ]);
+  });
+
+  it("t-b103c5: Grok graceful stop skips remaining keys once the pane is dead", async () => {
+    const { manager, sentKeys, dead } = makeManager("agents:\n  grok:\n    cmd: grok\n");
+    await manager.spawn("grok");
+    const session = `tachyon-${HASH}-grok`;
+    // Die as soon as the first C-c is recorded so delayed if-alive steps skip.
+    const originalPush = sentKeys.push.bind(sentKeys);
+    sentKeys.push = ((...args: Array<{ session: string; key: string }>) => {
+      const n = originalPush(...args);
+      if (args[0]?.key === "C-c") dead.set(session, 0);
+      return n;
+    }) as typeof sentKeys.push;
+    await manager.stopGracefully("grok");
+    expect(sentKeys.filter((k) => k.session === session && k.key === "C-c")).toHaveLength(1);
+  });
+
+  it("t-b103c5: Kill forced on a declared Grok Saved Agent ends the session but keeps the profile row", async () => {
+    // Same harness as the sibling kill/ledger test — declared agents stay resumable after kill.
+    const { manager, ledger } = harness("agents:\n  grok-builder:\n    cmd: grok\n");
+    await manager.spawn("grok-builder");
+    expect(ledger.get("grok-builder")).toBeDefined();
+    await manager.kill("grok-builder");
+    expect(ledger.get("grok-builder")).toBeDefined();
+    expect((await manager.list()).find((a) => a.name === "grok-builder")).toMatchObject({
+      name: "grok-builder",
+      declared: true,
+      running: false,
+    });
   });
 
   it("dismissCleanExitPane clears only clean-exit dead panes and retains bounded postmortem output", async () => {
