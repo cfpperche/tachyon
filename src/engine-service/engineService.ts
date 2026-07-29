@@ -10,6 +10,7 @@ import {
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
 import { EDITOR_HUMAN_ACTOR } from "../validations/types.js";
+import { wakeValidationClosedAuthors } from "../validations/validationCloseNotify.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import { Workspace } from "../workspace/Workspace.js";
@@ -144,6 +145,9 @@ export function routeHumanApprovalRequest(
  * the per-kind section, because "what is waiting on me" is now one queue. It deliberately does NOT
  * write into any agent's session: nothing is blocked on this the way an agent is blocked on an
  * approval.
+ *
+ * t-1f6d02 — Review deep-links the **exact** validation's inbox-item route (not the bare inbox list).
+ * A gone/stale item still lands on the list via the existing Control handshake fallback.
  */
 export function routeHumanValidationPending(
   host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
@@ -156,7 +160,10 @@ export function routeHumanValidationPending(
     [{
       label: host.t("Review"),
       run: async () => {
-        await host.executeCommand("tachyon.openHumanInbox", workspaceHash);
+        await host.executeCommand("tachyon.openHumanInbox", workspaceHash, {
+          kind: "validation",
+          id: validation.id,
+        });
       },
     }],
   );
@@ -457,12 +464,24 @@ async function executeWorkspaceCommand(
     return workspaceCommandSuccessV1(command);
   }
   if (command.method === "validation.close") {
-    await workspace.validationStore.closeRound(command.input.id, {
-      // t-98256c — this command only ever arrives from an attached editor shell, so the actor is the
-      // human at the keyboard. Stamped here, never carried on the wire.
+    // t-98256c — this command only ever arrives from an attached editor shell, so the actor is the
+    // human at the keyboard. Stamped here, never carried on the wire.
+    const closed = await workspace.validationStore.closeRound(command.input.id, {
       actor: EDITOR_HUMAN_ACTOR,
       outcome: command.input.outcome,
       result_note: command.input.result_note,
+    });
+    // t-c6c4ad — durable close first (never undone). Best-effort FIXED inject into author/assignee
+    // live sessions mirrors approval resolve; offline agents re-read the closed validation on resume.
+    // Inbox + legacy Validations UI both route through this single command, so the wake fires once.
+    await wakeValidationClosedAuthors({
+      validation: closed,
+      outcome: command.input.outcome,
+      listEntries: () => workspace.manager.list(),
+      inject: async (session, text) => {
+        await workspace.tmux.sendSubmittedLine(session, text);
+        return { receipt: `tmux:${session}` };
+      },
     });
     return workspaceCommandSuccessV1(command);
   }
@@ -671,7 +690,7 @@ async function buildProjections(
         running: agent.running,
         stopping: agent.stopping ?? false,
         stopFailed: agent.stopFailed ?? false,
-        declared: agent.declared,
+        lifetime: agent.lifetime,
         dead: agent.dead,
         crashed: agent.crashed,
         ...(attention ? { attention } : {}),

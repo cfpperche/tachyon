@@ -6,6 +6,7 @@ import type { ConfigFailure } from "../config/configFailure.js";
 import type { ConfigLkgSnapshot } from "../config/configLkg.js";
 import type { SessionRecord } from "../resume/SessionLedger.js";
 import { isResumable } from "../resume/SessionLedger.js";
+import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
 
 export type DoctorSeverity = "ok" | "warn" | "error" | "info";
 
@@ -146,8 +147,8 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
       if (input.transcriptPresence?.has(name) && input.transcriptPresence.get(name) === false) {
         staleResumable++;
       }
-    } else if (!live && !known && rec.declared) {
-      // declared ledger row with no session — informational
+    } else if (!live && !known && !isTemporaryInstance(rec)) {
+      // Saved ledger row with no session — informational
     }
   }
   for (const name of input.liveSessions) {

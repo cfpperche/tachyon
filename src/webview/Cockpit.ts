@@ -1418,11 +1418,15 @@ export async function openCockpit(
     });
 
   /**
-   * t-e5e995 — a terminal Inbox decision removes the item from the pending projection, so its
-   * detail route ceases to identify an actionable resource. Commit the parent route and reload the
-   * shell + list as one navigation transaction. Callers invoke this only after their own typed
-   * mutation succeeds; failures deliberately leave the detail route mounted with its actionable
-   * error.
+   * t-e5e995 / t-00f4bc — a terminal Inbox decision removes the item from the pending projection,
+   * so its detail route ceases to identify an actionable resource. Commit the parent route and
+   * reload the shell + list as one navigation transaction. Callers invoke this only after their
+   * own typed mutation succeeds; failures deliberately leave the detail route mounted with its
+   * actionable error.
+   *
+   * Dogfood (t-00f4bc): staying on the dead detail route rendered a "no longer waiting" tombstone
+   * after a normal Approve/Close. That tombstone is not used on the success path — navigation
+   * replaces it. The host never posts `humanInboxItemMissing` after a terminal decision.
    */
   const returnToInbox = async () => {
     await requestNavigate(routes.section("inbox"), live, async () => {
@@ -1888,7 +1892,7 @@ export async function openCockpit(
     const context = await ws.activityContext(sourceAgent);
     return context.targets.items.map((target) => ({
       name: target.name,
-      description: target.declared ? "declared agent" : "ad-hoc agent",
+      description: target.lifetime === "saved" ? "Saved Agent" : "Temporary Agent",
     }));
   };
 

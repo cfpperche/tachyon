@@ -335,7 +335,7 @@ describe("persistent engine protocol", () => {
         agent: "codex",
         sharedCwd: false,
         attention: null,
-        targets: { total: 1, truncated: false, items: [{ name: "reviewer", declared: true }] },
+        targets: { total: 1, truncated: false, items: [{ name: "reviewer", lifetime: "saved" }] },
       },
     });
     expect(isWorkspaceQueryV1(query)).toBe(true);

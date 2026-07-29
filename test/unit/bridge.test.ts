@@ -122,7 +122,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = makeTempDir("tachyon-bridge-ev-");
   const evLedger = new SessionLedger(evRoot);
-  evLedger.record("claude", { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/claude", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/claude", declared: true });
+  evLedger.record("claude", { def: { cmd: "claude", kind: "agent" }, worktree: { path: "/wt/claude", branch: "b", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t0" }, cwd: "/wt/claude", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
   const EV_HEAD = "abc123";
   let evSeq = 0;
   let validationChanges = 0;

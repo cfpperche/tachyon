@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isTemporaryInstance, mayRestartInstance } from "../agents/agentInstancePolicy.js";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
@@ -107,6 +108,7 @@ import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } f
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
+import { composeHygieneLineageSource } from "../worktree/hygieneAuthority.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
@@ -855,7 +857,12 @@ export class Workspace {
       // constructed AFTER this service, and lineage is session-local memory that keeps growing as
       // agents spawn. A snapshot taken here would be empty forever, and "empty" reads as "no
       // ancestors" — the one answer that must never be guessed in an authorization decision.
-      lineage: { parentOf: (name: string) => this.manager.parentOf(name) },
+      // t-ff0a7a — also honor config declaredOwner so a governed Saved Agent's owner can sweep that
+      // builder's CHANGE residue (runtime parent alone misses top-level Saved Agents).
+      lineage: composeHygieneLineageSource({
+        runtimeParentOf: (name: string) => this.manager.parentOf(name),
+        declaredOwnerOf: (name: string) => this.config?.declaredOwner?.[name],
+      }),
     });
     // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
     this.deliveryProjection = new DeliveryProjectionService({
@@ -5018,11 +5025,14 @@ export class Workspace {
    * spec 239 — prune STALE DECLARED ledger rows at startup: a row marked `declared` that is no longer in
    * tachyon.yml AND has no live session is a deleted agent whose row was orphaned (defense-in-depth against
    * external yaml edits / crash paths; the delete command also removes its row directly). Narrow on purpose —
-   * never touches ad-hoc/fork rows (declared=false) or a stopped-but-still-declared agent (kept for resume).
+   * never touches Temporary/fork rows or a stopped-but-still-declared Saved agent (kept for resume).
    */
   private async gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> {
     for (const [name, rec] of this.ledger.all()) {
-      if (rec.declared && !declaredInConfig.has(name) && !live.has(name)) {
+      // t-04052d — `!isTemporaryInstance` rather than the retired `declared`. This branch DELETES, so
+      // the fail-closed direction is to skip: a row with no declared policy reads as temporary here and
+      // is left alone rather than collected on a guess.
+      if (!isTemporaryInstance(rec) && !declaredInConfig.has(name) && !live.has(name)) {
         try {
           await this.evolutionStore.retireAgent(name);
           forgetAgentFootprint(name, {
@@ -6149,7 +6159,7 @@ export class Workspace {
     } catch (err) {
       // spec 220 (codex dueto MAJOR): a genuinely-gone session degrades to a fresh start for a
       // DECLARED agent (parity with resumeAllOffered), instead of hard-erroring the sidebar ↻.
-      if (err instanceof ResumeUnavailableError && record.declared) {
+      if (err instanceof ResumeUnavailableError && mayRestartInstance(record)) {
         await this.manager.spawn(name);
       } else {
         throw err;
@@ -6167,7 +6177,7 @@ export class Workspace {
         await this.manager.resume(item.name, item.record);
       } catch (err) {
         try {
-          if (err instanceof ResumeUnavailableError && item.record.declared) {
+          if (err instanceof ResumeUnavailableError && mayRestartInstance(item.record)) {
             await this.manager.spawn(item.name);
           } else {
             throw err;

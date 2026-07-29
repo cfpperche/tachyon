@@ -101,7 +101,7 @@ describe("Agent Evolution startup snapshot (SDD 421 Slice 3)", () => {
     ledger.record("reviewer", {
       def: { cmd: "codex", kind: "agent" },
       cwd: root,
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
       evolution: current,
     });
     const reloaded = new SessionLedger(root).get("reviewer")?.evolution;

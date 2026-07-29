@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertStableBuildSource, resolveEngineReleaseChannel } from "./scripts/engine-release-channel.mjs";
 import { readEngineShellProtocol } from "./scripts/engine-protocol.mjs";
+import { pruneUnreachableWebviewChunks } from "./scripts/webview-chunk-hygiene.mjs";
 
 const watch = process.argv.includes("--watch");
 const engineReleaseChannel = resolveEngineReleaseChannel();
@@ -274,6 +275,20 @@ const sidebar = {
 // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; no mobile).
 // spec 410 — ESM + code-splitting so section bodies can lazy-import without bloating eager cockpit.js.
 // emits dist/webview/cockpit.js + dist/webview/chunks/cockpit-*.js
+// t-06a542 — after each build, drop content-hashed chunks no longer referenced by cockpit.js so a
+// reused dist/ does not accumulate multi-MB stale cockpit-App-* files into the VSIX.
+const cockpitChunkHygienePlugin = {
+  name: "cockpit-chunk-hygiene",
+  setup(build) {
+    build.onEnd((result) => {
+      if (result.errors.length > 0) return;
+      const { pruned } = pruneUnreachableWebviewChunks("dist/webview");
+      if (pruned.length > 0) {
+        console.log(`webview chunks: pruned ${pruned.length} unreferenced file(s)`);
+      }
+    });
+  },
+};
 const cockpit = {
   ...sidebar,
   entryPoints: ["src/webview/cockpit/main.tsx"],
@@ -282,6 +297,7 @@ const cockpit = {
   outdir: "dist/webview",
   splitting: true,
   format: "esm",
+  plugins: [...(sidebar.plugins ?? []), cockpitChunkHygienePlugin],
 };
 delete cockpit.outfile;
 
@@ -427,6 +443,9 @@ function buildTailwind() {
 }
 
 mkdirSync("dist/webview", { recursive: true });
+// t-06a542 — wipe the previous content-hashed chunk tree before esbuild writes a new one. Leaving
+// it in place is how 134 stale cockpit-App-* files accumulated into 0.56.110 (only ~24 reachable).
+rmSync("dist/webview/chunks", { recursive: true, force: true });
 // spec 382 — never leave the retired Extension-Host proxy in a reused build directory or VSIX.
 rmSync("dist/persistent-bridge-daemon.cjs", { force: true });
 rmSync("dist/engine", { recursive: true, force: true });

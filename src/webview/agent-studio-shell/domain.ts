@@ -765,7 +765,7 @@ export type AgentEvolutionCandidateSummaryMessage = EvolutionStudioCandidateSumm
 export type AgentEvolutionCandidateDetailMessage = EvolutionStudioCandidateDetail;
 
 export interface AgentStudioCanonicalContext {
-  kind: "canonical";
+  kind: "agent-instance";
   expectedRevision?: string;
   displayName: string;
   runtime: AgentProfileStudioSnapshotV1["editable"]["runtime"];
@@ -830,7 +830,7 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.branch = snapshot?.editable.worktree.branch ?? "";
   fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {
-    kind: "canonical",
+    kind: "agent-instance",
     ...(snapshot ? { expectedRevision: snapshot.revision } : {}),
     displayName: snapshot?.editable.displayName ?? "",
     runtime: snapshot ? { ...snapshot.editable.runtime } : { adapter: "codex", executable: "" },
@@ -1042,7 +1042,7 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
   const nativeConfig = normalizedNativeConfig(fields, adapter, runtime);
   return {
     schemaVersion: 1,
-    kind: "canonical",
+    kind: "agent-instance",
     agentName: fields.name,
     ...(fields.canonical.expectedRevision ? { expectedRevision: fields.canonical.expectedRevision } : {}),
     editable: {

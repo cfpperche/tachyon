@@ -1,4 +1,3 @@
-import { mayRestartInstance } from "../agents/agentInstancePolicy.js";
 import type { ManagedEntryInfo, SpawnOptions } from "../agents/AgentManager.js";
 import { sendManagedAgentInput, type ManagedAgentInputSource } from "../agents/agentInputService.js";
 import type { SessionRecord } from "../resume/SessionLedger.js";
@@ -114,9 +113,13 @@ async function ensureAgentLive(
   if (!current || current.kind !== "agent") throw new Error(`agent '${agent}' is not a managed AI agent`);
   if (isLive(current)) return;
   if (operations.resumableAgentNames().has(agent)) await operations.resumeAgent(agent);
-  // SDD 482 phase 3 — "may it be started again from its own definition?" A fork could always be
-  // resumed; under `declared` it read as if it could not.
-  else if (mayRestartInstance(current)) await operations.startDeclaredAgent(agent);
+  // t-04052d — `lifetime === "saved"`, NOT the general "may it restart?". The operation on this branch
+  // is `startDeclaredAgent`: a fresh spawn from the CONFIG definition, which only a Saved agent has. A
+  // fork is temporary-and-restartable, but it has no config definition to spawn from — it is resumed by
+  // the branch above or it is not started at all. Asking the broader question here would route a fork
+  // into a start path that cannot serve it, and would refuse a stopped Saved agent that has never run
+  // and therefore has no instance policy to read.
+  else if (current.lifetime === "saved") await operations.startDeclaredAgent(agent);
   else throw new Error(`agent '${agent}' is stopped and cannot be resumed or respawned`);
 
   const timeoutMs = options.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS;

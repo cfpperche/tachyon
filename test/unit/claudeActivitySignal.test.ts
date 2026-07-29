@@ -53,6 +53,13 @@ describe("Claude activity signal (t-30ff0d)", () => {
     expect(await settle(pane("after-final"))).toBe("idle");
   });
 
+  it("returns to idle after an explicit recap even when a residual shell remains counted (t-ca4a3c)", async () => {
+    // Measured from claude-reviewer: the response and recap are complete, the composer is stable,
+    // and only a harness monitor remains in Claude's mode-line shell count. Before this fix the
+    // t-30ff0d activity signal outweighed the newer handback forever.
+    expect(await settle(pane("recap-residual-shell"))).toBe("idle");
+  });
+
   it("reads the signal only from the pane bottom, never from transcript history", () => {
     const activity = runtimeProfile("claude")!.activity!;
     const after = pane("after-final").split("\n");
@@ -89,6 +96,6 @@ describe("Claude activity signal (t-30ff0d)", () => {
     const activity = runtimeProfile("claude")!.activity!;
     expect(activity.source).toBe("measured");
     expect(activity.verified).toBe(true);
-    expect(activity.verifiedAt).toBe("2026-07-28");
+    expect(activity.verifiedAt).toBe("2026-07-29");
   });
 });

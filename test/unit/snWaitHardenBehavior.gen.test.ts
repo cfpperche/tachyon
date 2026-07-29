@@ -92,7 +92,7 @@ describe("container-generated delegation behavior", () => {
       // ad-hoc, or by any non-spawn() writer). Since t-5e1113 (SDD 482, decision 5) `def.parent` is
       // persisted for declared rows too, so this row's parent survives either way — the flag is no
       // longer what decides it.
-      ledger.record("child", { def: { cmd: "claude", kind: "agent", parent: "boss" }, cwd: ws, declared: false });
+      ledger.record("child", { def: { cmd: "claude", kind: "agent", parent: "boss" }, cwd: ws, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
 
       // Fresh AgentManager instance sharing the ledger, in-memory lineage empty — simulates the
       // state right after an extension-host reload.

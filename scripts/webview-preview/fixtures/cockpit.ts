@@ -355,10 +355,10 @@ const bundles: CockpitWorkspaceBundle[] = [
       authConfigured: true,
     },
     agents: [
-      { name: "grok-hermes", kind: "agent", running: true, declared: true, folder: "tachyon", wsHash: "b349073a" },
-      { name: "claude", kind: "agent", running: true, declared: true, folder: "tachyon", wsHash: "b349073a" },
-      { name: "codex", kind: "agent", running: true, declared: true, folder: "tachyon", wsHash: "b349073a" },
-      { name: "codex-budget", kind: "agent", running: false, declared: true, folder: "tachyon", wsHash: "b349073a" },
+      { name: "grok-hermes", kind: "agent", running: true, lifetime: "saved", folder: "tachyon", wsHash: "b349073a" },
+      { name: "claude", kind: "agent", running: true, lifetime: "saved", folder: "tachyon", wsHash: "b349073a" },
+      { name: "codex", kind: "agent", running: true, lifetime: "saved", folder: "tachyon", wsHash: "b349073a" },
+      { name: "codex-budget", kind: "agent", running: false, lifetime: "saved", folder: "tachyon", wsHash: "b349073a" },
     ],
     // spec 444 — one row per hygiene classification group so the preview renders the full tab.
     worktrees: [
@@ -522,7 +522,7 @@ const goldenBundle: CockpitWorkspaceBundle = {
     agents: { total: 1, running: 1 },
     authConfigured: true,
   },
-  agents: [{ name: "claude", kind: "agent", running: true, declared: true, folder: "golem", wsHash: "c7d21e90" }],
+  agents: [{ name: "claude", kind: "agent", running: true, lifetime: "saved", folder: "golem", wsHash: "c7d21e90" }],
   worktrees: [],
   deliveries: [],
   approvals: [],

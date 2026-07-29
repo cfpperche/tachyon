@@ -49,7 +49,7 @@ describe("container-generated delegation behavior", () => {
       resume: { runtime: "claude", sessionId: "sess" },
       cwd: wt,
       worktree: { path: wt, branch: "tachyon/d", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t0" },
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
     });
     const binding = { deliveryId: "d-exact", segmentId: "seg-exact", executionNonce: "nonce-exact" };
     ledger.bindDelivery("holder", binding);
@@ -194,7 +194,7 @@ describe("container-generated delegation behavior", () => {
         baseRef: "abc",
         createdAt: "t0",
       },
-      declared: true,
+      instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true },
     });
 
     const listed = await deliveries.list();
@@ -305,7 +305,7 @@ describe("container-generated delegation behavior", () => {
       def: { cmd: "claude", kind: "agent" },
       cwd: wt,
       worktree: { path: wt, branch: "tachyon/d", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t0" },
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
       delivery: { deliveryId: "d-exact", segmentId: "seg-intruder", executionNonce: "other" },
     });
     const dupSnap = reconcileDeliveryReload({
@@ -471,7 +471,7 @@ describe("container-generated delegation behavior", () => {
       def: { cmd: "claude", kind: "agent" },
       cwd: driftedCwd,
       worktree: { path: deliveryWt, branch: "tachyon/d", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "t0" },
-      declared: false,
+      instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false },
       delivery: { deliveryId: "d-drift", segmentId: "seg-d", executionNonce: "n-d" },
     });
     const driftManager = new AgentManager({

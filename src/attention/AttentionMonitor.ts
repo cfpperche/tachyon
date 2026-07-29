@@ -763,9 +763,19 @@ export class AttentionMonitor {
     const activity = runtime ? runtimeProfile(runtime)?.activity : undefined;
     if (!activity) return false;
     const lines = content.split("\n").filter((line) => stripAnsi(line).trim().length > 0);
-    return lines
+    const running = lines
       .slice(Math.max(0, lines.length - activity.tailLines))
       .some((line) => activity.runningLine.test(stripAnsi(line)));
+    if (!running) return false;
+    if (!activity.settledLine) return true;
+    const settledTailLines = activity.settledTailLines ?? activity.tailLines;
+    const settled = lines
+      .slice(Math.max(0, lines.length - settledTailLines))
+      .some((line) => activity.settledLine!.test(stripAnsi(line)));
+    // t-ca4a3c — an explicit handback at the stable composer is newer evidence about the turn than
+    // a residual shell/monitor counter in the mode line. The positive t-30ff0d case has the counter
+    // but no handback and therefore remains working.
+    return !settled;
   }
 
   private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {

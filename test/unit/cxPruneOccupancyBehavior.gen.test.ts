@@ -85,7 +85,7 @@ describe("container-generated delegation behavior", () => {
     const subdir = path.join(wt, "nested");
     fs.mkdirSync(subdir, { recursive: true });
     const ledger = new SessionLedger(root);
-    ledger.record("subdir-live-agent", { def: { cmd: "sh", kind: "agent" }, cwd: subdir, declared: false });
+    ledger.record("subdir-live-agent", { def: { cmd: "sh", kind: "agent" }, cwd: subdir, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } });
     const manager = new AgentManager({
       tmux: {
         sessionStates: async (prefix: string) => new Map([[`${prefix}subdir-live-agent`, { dead: false }]]),

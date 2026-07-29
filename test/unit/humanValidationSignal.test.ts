@@ -100,16 +100,16 @@ describe("a validation that lands on a human raises the same signal an approval 
 });
 
 describe("the notice it produces", () => {
-  it("offers Review → the Human Inbox, and carries no decision authority", async () => {
+  it("offers Review → the Human Inbox item detail, and carries no decision authority", async () => {
     const notices: Array<{ text: string; level: string; actions: Array<{ label: string; run: () => Promise<void> }> }> = [];
-    const executed: Array<{ command: string; arg: unknown }> = [];
+    const executed: Array<{ command: string; args: unknown[] }> = [];
     const host = {
       t: (template: string, ...args: string[]) => template.replace(/\{(\d)\}/g, (_m, i) => args[Number(i)] ?? ""),
       notify: (text: string, level: string, actions: Array<{ label: string; run: () => Promise<void> }>) => {
         notices.push({ text, level, actions });
       },
-      executeCommand: async (command: string, arg: unknown) => {
-        executed.push({ command, arg });
+      executeCommand: async (command: string, ...args: unknown[]) => {
+        executed.push({ command, args });
       },
     };
 
@@ -122,7 +122,10 @@ describe("the notice it produces", () => {
     expect(notices[0].level).toBe("info");
 
     await notices[0].actions[0].run();
-    // one destination for "what is waiting on me" — not the per-kind section
-    expect(executed).toEqual([{ command: "tachyon.openHumanInbox", arg: "ws-1" }]);
+    // t-1f6d02 — exact validation deep-link (list-only open was the dogfood defect).
+    expect(executed).toEqual([{
+      command: "tachyon.openHumanInbox",
+      args: ["ws-1", { kind: "validation", id: "v-1" }],
+    }]);
   });
 });

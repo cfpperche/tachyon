@@ -36,7 +36,7 @@ export function projectedAgent(
     running: false,
     stopping: false,
     stopFailed: false,
-    declared: true,
+    lifetime: "saved",
     dead: false,
     crashed: false,
     ...overrides,

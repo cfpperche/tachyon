@@ -3,6 +3,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { classifyShipFile, engineManifestClosureViolations } from "./ship-boundary.mjs";
 import { assertStableBuildSource, assertStableEngineManifest } from "./engine-release-channel.mjs";
+import { assertWebviewChunksReachable, pruneUnreachableWebviewChunks } from "./webview-chunk-hygiene.mjs";
 
 const root = process.cwd();
 const dist = path.join(root, "dist");
@@ -33,6 +34,16 @@ for (const file of walk(dist)) {
     console.log(`pruned ${rel}`);
   }
 }
+
+// t-06a542 — ship-boundary allows every dist/webview/chunks/* file; unreferenced content-hashed
+// cockpit chunks must still be removed (or the package is bloated). Prune, then fail closed if any
+// remain unreachable so a half-built dist cannot ship.
+const webviewDir = path.join(dist, "webview");
+const chunkHygiene = pruneUnreachableWebviewChunks(webviewDir);
+if (chunkHygiene.pruned.length > 0) {
+  console.log(`pruned ${chunkHygiene.pruned.length} unreferenced webview chunk(s)`);
+}
+assertWebviewChunksReachable(webviewDir);
 
 // t-05a0b0 — the manifest above was written BEFORE the prune. The installed engine verifies it
 // fail-closed, so a manifest entry the prune removed (or altered) ships a VSIX that can never

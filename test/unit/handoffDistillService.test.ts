@@ -38,8 +38,32 @@ describe("handoff distillation service", () => {
     expect(operations.startDeclaredAgent).not.toHaveBeenCalled();
   });
 
+  /**
+   * t-04052d, from adversarial review — the END-TO-END half of the fork case.
+   *
+   * `buildDistillTargets` listing the fork is only half the fix: `startHandoffDistillation` gates on
+   * target membership BEFORE it ever calls `ensureAgentLive`, so while the fork was filtered out of
+   * the list, the resume branch below was unreachable for it no matter what that branch said. This
+   * asserts the whole path — listed, then RESUMED rather than fresh-spawned, because a fork has no
+   * config definition for `startDeclaredAgent` to spawn from.
+   */
+  it("resumes a stopped fork end to end — listed as a target, then resumed, never fresh-spawned", async () => {
+    const rows = [agent("claude-fork-1", { running: false, lifetime: "temporary", resumePolicy: "restartable" })];
+    const operations = fakeOperations(rows, new Set(["claude-fork-1"]));
+    vi.mocked(operations.resumeAgent).mockImplementation(async () => {
+      rows[0] = agent("claude-fork-1", { running: true, lifetime: "temporary", resumePolicy: "restartable" });
+    });
+
+    expect((await listHandoffDistillTargets(operations)).map((t) => t.name)).toEqual(["claude-fork-1"]);
+    await expect(startHandoffDistillation(operations, { mode: "existing", agent: "claude-fork-1" }, { readyTimeoutMs: 0 }))
+      .resolves.toEqual({ mode: "existing", agent: "claude-fork-1" });
+
+    expect(operations.resumeAgent).toHaveBeenCalledWith("claude-fork-1");
+    expect(operations.startDeclaredAgent).not.toHaveBeenCalled();
+  });
+
   it("fresh-starts a stopped declared target and refuses stopped ad-hoc targets", async () => {
-    const rows = [agent("reviewer", { running: false }), agent("adhoc", { running: false, declared: false })];
+    const rows = [agent("reviewer", { running: false }), agent("adhoc", { running: false, lifetime: "temporary", resumePolicy: "collected" })];
     const operations = fakeOperations(rows);
     vi.mocked(operations.startDeclaredAgent).mockImplementation(async (name) => {
       rows[0] = agent(name, { running: true });
@@ -53,7 +77,7 @@ describe("handoff distillation service", () => {
   });
 
   it("starts an allowlisted ad-hoc profile with an exact unique command and approval prompt", async () => {
-    const rows = [agent("handoff-codex-73", { running: true, declared: false })];
+    const rows = [agent("handoff-codex-73", { running: true, lifetime: "temporary", resumePolicy: "collected" })];
     const operations = fakeOperations(rows);
 
     const result = await startHandoffDistillation(operations, {
@@ -104,7 +128,7 @@ function agent(name: string, overrides: Partial<ManagedEntryInfo> = {}): Managed
     name,
     session: `tachyon-ws-${name}`,
     running: false,
-    declared: true,
+    lifetime: "saved", resumePolicy: "restartable",
     dead: false,
     crashed: false,
     kind: "agent",

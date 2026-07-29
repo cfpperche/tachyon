@@ -363,14 +363,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     } else if (d.type === "restore") {
       if (d.snapshot?.patch) {
         const patch: AgentStudioPatch = d.snapshot.patch;
-        const restored: AgentStudioFields = patch.kind === "canonical"
+        const restored: AgentStudioFields = patch.kind === "agent-instance"
           ? {
               ...(entityRef.current?.fields ?? blankAgentFields()),
               name: patch.agentName,
               cmd: patch.editable.runtime.executable,
               role: patch.editable.role,
               canonical: {
-                kind: "canonical",
+                kind: "agent-instance",
                 ...(patch.expectedRevision ? { expectedRevision: patch.expectedRevision } : {}),
                 displayName: patch.editable.displayName,
                 runtime: { ...patch.editable.runtime },

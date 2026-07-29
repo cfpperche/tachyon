@@ -1,83 +1,74 @@
 import type { AgentInstancePolicy } from "../resume/SessionLedger.js";
 
 /**
- * SDD 482 phase 3 (`t-5e1113`) — the questions readers are actually asking, answered from the
- * DECLARED policy, with one honest legacy path.
+ * t-04052d — the questions readers actually ask, answered from the DECLARED policy and from nothing
+ * else.
  *
- * Readers used to branch on `declared`, which answers "which store owns this definition" and was
- * being read as though it answered "what kind of worker is this". Phase 2 added `instance`
- * ({identity, lifetime}) on the write side. This is where the reading moves.
+ * ## What changed, and why there is no fallback any more
  *
- * ## Why there is a legacy branch at all, and why it is not synthesis
+ * These helpers used to have a second answer: if a row declared no policy, they fell back to
+ * `declared` — the storage fact "config owns this definition" — because that is what readers used
+ * before SDD 482 phase 2 existed. That fallback was correct for its moment and is now removed with
+ * the field itself. `lifetime` is the only property that answers durability of the definition, so
+ * there is no longer a second source to consult, honest or otherwise.
  *
- * A row written before phase 2 has no `instance`, and phase 2 deliberately refused to invent one at
- * read time — inventing it from `declared` would re-create the inference the split exists to end.
- * So these helpers take the question, not the field:
+ * ## What a policy-less row means now
  *
- *  - if the row DECLARES a policy, the policy answers, full stop;
- *  - if it does not, the answer falls back to `declared`, which is what the reader used before, and
- *    is therefore exactly as right (and exactly as wrong) as it has always been for those rows.
+ * It means the row predates the cut, and this build does not know what it is. The three helpers below
+ * FAIL CLOSED on that shape rather than guessing: not restartable, no lifecycle hooks, and treated as
+ * temporary — the reading that withholds capability instead of granting it. That is deliberately the
+ * conservative direction, because every consequence of being wrong is then a refusal an operator can
+ * see, not a restart of something this build cannot describe.
  *
- * The distinction is the whole point. We are not writing a policy value we do not have; we are
- * answering a question the old way for rows that predate the new way. That branch is temporary by
- * construction: it disappears when the last pre-phase-2 row ages out, and `legacyFallbackUsed` makes
- * it observable so the removal can be evidence-based rather than hopeful.
+ * In an ACTIVATED workspace the branch is unreachable by construction: `inspectLegacyFleet` refuses to
+ * activate while any ledger row lacks a policy (`legacyFallbackUsed` is that exact check), so a row
+ * reaching these helpers has declared one. The fail-closed answers exist for the paths that read the
+ * ledger before or around that gate, not as a compatibility mode.
  */
 export interface InstancePolicySource {
-  /** Storage fact: does config own this definition? Never a policy answer on its own. */
-  declared: boolean;
-  /** Declared policy, absent on rows written before SDD 482 phase 2. */
+  /** Declared policy. Absent only on a row written before the cut, which the activation gate refuses. */
   instance?: AgentInstancePolicy;
 }
 
 /**
  * True when this instance has no durable Profile behind it — a Temporary Agent.
  *
- * Legacy: `!declared`. That equivalence is exact for every row this build writes, because a declared
- * start writes `saved` and an ad-hoc start writes `temporary`. A FORK is where the two would diverge
- * if `declared` were still the answer, and it is why this function exists: a fork is `temporary`
- * AND `declared: false`, so both agree today — but a fork's LIFETIME is `restartable`, which
- * `declared` alone could never have expressed.
+ * A FORK is the case that proves this must be its own axis: a fork is `temporary` AND `restartable`,
+ * so the answer here says nothing about whether it may be started again. Ask `mayRestartInstance` for
+ * that, and never infer one from the other.
  */
 export function isTemporaryInstance(row: InstancePolicySource): boolean {
-  if (row.instance) return row.instance.identity === "temporary";
-  return !row.declared;
+  return row.instance?.lifetime !== "saved";
 }
 
 /**
  * True when this instance may be started again from its own definition — restart, resume, or an
  * offer to do either.
- *
- * Legacy: `declared`. Note this is where the old conflation was most costly and where the new answer
- * is genuinely BETTER rather than merely equivalent: a fork is not `declared`, yet it owns a resume
- * block and can be resumed. Under `declared` it read as non-restartable; under the declared policy
- * it reads as `restartable`, which is what it has always actually been.
  */
 export function mayRestartInstance(row: InstancePolicySource): boolean {
-  if (row.instance) return row.instance.lifetime === "restartable";
-  return row.declared;
+  return row.instance?.resumePolicy === "restartable";
 }
 
 /**
  * Whether this instance was given profile-backed lifecycle hooks — persistence hooks, the
- * continuity pointer, and the rest of the declared-agent set.
+ * continuity pointer, and the rest of the profile-backed set.
  *
- * READ, never derived. It would be derivable from `identity` today, and the human's promotion ruling
+ * READ, never derived. It would be derivable from `lifetime` today, and the human's promotion ruling
  * even makes that derivation sound for a running instance — but "sound today" is exactly what
  * `declared` was, and re-deriving it would rebuild the same trap one field over. A promoted agent is
  * the case that makes the distinction real: it has a Saved Profile while its RUNNING instance still
  * carries the ownership-only hooks it launched with.
- *
- * Legacy: `declared`, matching what the reader did before the capability was recorded.
  */
 export function hasLifecycleHooks(row: InstancePolicySource): boolean {
-  if (row.instance?.lifecycleHooks !== undefined) return row.instance.lifecycleHooks;
-  return row.declared;
+  return row.instance?.lifecycleHooks === true;
 }
 
 /**
- * Whether the answer came from the legacy path. Exported so the eventual removal of that path is an
- * observation rather than a guess — a workspace whose rows all declare a policy can drop it.
+ * Whether this row predates the cut and therefore declares no policy at all.
+ *
+ * This is what the activation gate refuses on (`inspectLegacyFleet`, check 1). It is the observation
+ * the legacy path was instrumented to produce, now cashed in as an admission rule rather than a
+ * branch: the answer is no longer "read it the old way", it is "do not activate".
  */
 export function legacyFallbackUsed(row: InstancePolicySource): boolean {
   return row.instance === undefined;

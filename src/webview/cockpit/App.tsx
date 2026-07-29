@@ -1810,7 +1810,7 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{a.name}</span>
                     <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
-                    {a.declared === false ? <Badge tone="info">{s.adhoc}</Badge> : <Badge>{s.declared}</Badge>}
+                    {a.lifetime === "temporary" ? <Badge tone="info">{s.adhoc}</Badge> : <Badge>{s.declared}</Badge>}
                     {a.kind ? <Badge>{a.kind}</Badge> : null}
                   </>
                 }
@@ -1840,7 +1840,7 @@ export function App(p: CockpitAppProps) {
                     <Button variant="default" onClick={() => p.onFleetProbes(a.name, a.wsHash)}>
                       {s.openProbes}
                     </Button>
-                    {a.declared !== false && a.kind !== "terminal" ? (
+                    {a.lifetime !== "temporary" && a.kind !== "terminal" ? (
                       <Button
                         variant="default"
                         data-testid="fleet-continue-task"
@@ -1849,7 +1849,7 @@ export function App(p: CockpitAppProps) {
                         {s.continueTask}
                       </Button>
                     ) : null}
-                    {a.declared !== false ? (
+                    {a.lifetime !== "temporary" ? (
                       <Button variant="default" onClick={() => p.onFleetAgentStudio(a.name, a.wsHash)}>
                         {s.editAgent}
                       </Button>
@@ -2312,7 +2312,7 @@ export function App(p: CockpitAppProps) {
           .filter((row) => row.name !== from)
           .filter((row) => !wsHash || row.wsHash === wsHash)
           .filter((row) => row.kind !== "terminal")
-          .filter((row) => row.declared !== false)
+          .filter((row) => row.lifetime !== "temporary")
           .slice()
           .sort((a, b) => Number(!!a.running) - Number(!!b.running));
         const items: QuickPickerItem[] = candidates.map((row) => ({

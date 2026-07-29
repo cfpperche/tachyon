@@ -1,4 +1,4 @@
-import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/SessionLedger.js";
 export type HandoffDistillRuntime = "codex" | "claude";
 
 export interface HandoffDistillProfileVM {
@@ -68,15 +68,26 @@ export function buildHandoffDistillPrompt(opts: { additionalInstruction?: unknow
 
 export type HandoffDistillMode = "existing" | "adhoc";
 
-/** Live-pane vs stopped declared agent (t-1ba76d). Ad-hoc only appears while running. */
+/** Live-pane vs stopped Saved agent (t-1ba76d). A Temporary one only appears while running. */
 export type HandoffDistillTargetState = "running" | "resumable" | "stopped";
 
 export interface HandoffDistillTargetRow {
   name: string;
-  /** UI sublabel after the name, e.g. `running · declared`. */
+  /** UI sublabel after the name, e.g. `running · saved`. */
   description: string;
   state: HandoffDistillTargetState;
-  declared: boolean;
+  /** t-04052d — the DECLARED durability of this agent's definition, replacing the `declared` boolean. */
+  lifetime: AgentInstanceLifetime;
+  /**
+   * The second axis, and it is load-bearing for eligibility rather than decorative.
+   *
+   * The rule is "a Temporary is a legal destination while its definition is still there". For a plain
+   * ad-hoc that means WHILE RUNNING — its definition dies with the session. A FORK is also
+   * `temporary`, but it is `restartable`: it owns a resume block, and phase 2 was required to keep its
+   * definition reloading. Refusing it would collapse `lifetime` back into resume capability, which is
+   * the whole defect this cut removes.
+   */
+  resumePolicy: AgentInstanceResumePolicy;
 }
 
 /** Minimal list() row fields the distill target builder needs (keeps pure helpers free of AgentManager). */
@@ -86,12 +97,19 @@ export interface DistillListRow {
   running: boolean;
   dead?: boolean;
   stopping?: boolean;
-  declared: boolean;
+  /**
+   * The roster's resolved durability answer (`ManagedEntryInfo.lifetime`). Read here rather than the
+   * raw instance policy on purpose: a Saved agent that has never been started has no ledger row at
+   * all, and asking the policy directly would drop it from the handoff list entirely.
+   */
+  lifetime: AgentInstanceLifetime;
+  /** The roster's resolved resume answer — see `HandoffDistillTargetRow.resumePolicy`. */
+  resumePolicy: AgentInstanceResumePolicy;
 }
 
 /**
- * t-1ba76d — Distill "existing" targets: all **declared** agents (running or not) plus live ad-hoc agents.
- * Order: running first, then resumable, then stopped (each group alpha by name).
+ * t-1ba76d — Distill "existing" targets: all **Saved** agents (running or not) plus live Temporary
+ * agents. Order: running first, then resumable, then stopped (each group alpha by name).
  */
 export function buildDistillTargets(
   rows: ReadonlyArray<DistillListRow>,
@@ -102,19 +120,27 @@ export function buildDistillTargets(
   for (const a of rows) {
     if (a.kind !== "agent") continue;
     const live = a.running && !a.dead && !a.stopping;
-    // SDD 482 phase 3 — the question is "is this Temporary?", not "which store owns it". Equivalent
-    // for every row this build writes; the declared policy is what a fork answers correctly.
-    if (isTemporaryInstance(a) && !live) continue; // temporary only while running
+    // t-04052d — BOTH AXES, because one cannot answer this.
+    //
+    // The rule is "is this agent's definition still there to hand work to?". A Saved one always is. A
+    // Temporary one is while it runs — and ALSO when it is `restartable`, which is exactly and only the
+    // fork: no durable Profile, but its own resume block, whose reload phase 2 was obliged to preserve.
+    //
+    // NOT expressible as "is it in `resumable`": that set is every row carrying a resume block, and
+    // spawnCore writes one for EVERY adapter-backed start, ad-hoc included. Gating on it would make
+    // every stopped Temporary a handoff target and erase the refusal this rule exists to be.
+    const temporary = a.lifetime === "temporary";
+    if (temporary && !live && a.resumePolicy !== "restartable") continue;
     let state: HandoffDistillTargetState;
     if (live) state = "running";
     else if (resumable.has(a.name)) state = "resumable";
     else state = "stopped";
-    const ownership = a.declared ? "declared" : "ad-hoc";
     out.push({
       name: a.name,
       state,
-      declared: a.declared,
-      description: `${state} · ${ownership}`,
+      lifetime: a.lifetime,
+      resumePolicy: a.resumePolicy,
+      description: `${state} · ${a.lifetime}`,
     });
   }
   const rank = (s: HandoffDistillTargetState): number => (s === "running" ? 0 : s === "resumable" ? 1 : 2);

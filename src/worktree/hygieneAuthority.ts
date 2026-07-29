@@ -56,6 +56,32 @@ export interface HygieneLineageSource {
   parentOf(name: string): string | undefined;
 }
 
+/**
+ * t-ff0a7a — compose session/runtime parent with config `declaredOwner` for hygiene walks.
+ *
+ * Saved Agents created via the governed port are top-level managed entries: they expose
+ * `declaredOwner` in list_agents / tachyon.yml but deliberately do NOT write a runtime `parent`
+ * (sidebar stays flat; runtime lineage stays for ad-hoc children only). Hygiene is an AUTHORITY
+ * question over CHANGE residue — the declared owner is an authorized ancestor for that purpose.
+ *
+ * Precedence matches the rest of the product (sidebar grouping): runtime parent first, then
+ * declaredOwner. Self-parent and empty values are ignored so a corrupt config cannot cycle on itself.
+ */
+export function composeHygieneLineageSource(input: {
+  runtimeParentOf: (name: string) => string | undefined;
+  declaredOwnerOf: (name: string) => string | undefined;
+}): HygieneLineageSource {
+  return {
+    parentOf(name: string): string | undefined {
+      const runtime = input.runtimeParentOf(name);
+      if (runtime && runtime !== name) return runtime;
+      const declared = input.declaredOwnerOf(name);
+      if (declared && declared !== name) return declared;
+      return undefined;
+    },
+  };
+}
+
 export interface HygieneActor {
   kind: string;
   name?: string;

@@ -36,7 +36,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; managedEntries?: Array<{ name: string; running?: boolean; declared?: boolean; kind?: "agent" | "terminal" }> } = {}) {
+function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, opts: { hash?: string; name?: string; managedEntries?: Array<{ name: string; running?: boolean; lifetime?: "saved" | "temporary"; kind?: "agent" | "terminal" }> } = {}) {
   return {
     wsHash: opts.hash ?? "ws-1",
     folderName: opts.name ?? "Project",
@@ -51,7 +51,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
         crashed: false,
         ...a,
         running: a.running ?? true,
-        declared: a.declared ?? false,
+        lifetime: a.lifetime ?? "temporary",
         kind: a.kind ?? "agent",
       })),
     },
@@ -62,7 +62,7 @@ const target = (workspace: Workspace): WorkspaceMissionControlTarget => legacyMi
 
 describe("buildMissionVm (bounded agent liveness)", () => {
   it("computes liveness + live ad-hoc chips when the agent list resolves in time", async () => {
-    const ws = fakeWorkspace(undefined, { codex: {} }, { managedEntries: [{ name: "codex", declared: true }, { name: "live-ad-hoc" }] });
+    const ws = fakeWorkspace(undefined, { codex: {} }, { managedEntries: [{ name: "codex", lifetime: "saved" }, { name: "live-ad-hoc" }] });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
 

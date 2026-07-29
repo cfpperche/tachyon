@@ -79,7 +79,7 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
 
 export const agentProfileStudioMutationSchemaV1 = z.object({
   schemaVersion: z.literal(1),
-  kind: z.literal("canonical"),
+  kind: z.literal("agent-instance"),
   agentName: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/),
   expectedRevision: z.string().regex(REVISION).optional(),
   editable: agentProfileStudioEditableSchemaV1,
@@ -231,7 +231,7 @@ export type AgentProfileStudioBundleCreatedResultV1 = z.infer<typeof agentProfil
 
 export const agentProfileStudioSnapshotSchemaV1 = z.object({
   schemaVersion: z.literal(1),
-  kind: z.literal("canonical"),
+  kind: z.literal("agent-instance"),
   agentName: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/),
   agentId: z.string().uuid(),
   revision: z.string().regex(REVISION),
@@ -294,7 +294,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
   const profile = snapshot.profile;
   return agentProfileStudioSnapshotSchemaV1.parse({
     schemaVersion: 1,
-    kind: "canonical",
+    kind: "agent-instance",
     agentName: snapshot.agentName,
     agentId: snapshot.agentId,
     revision: snapshot.revision,
