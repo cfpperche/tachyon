@@ -32,6 +32,26 @@ redundant run is not free caution — it is time taken from someone else's gate.
 
 - **While implementing, run focused tests.** The full suite belongs to the tree you deliver, not to
   each step that led there.
+- **Deliver related changes as ONE batch, and pay the gate once for it.** Changes belong in the same
+  delivery when they share a contract and would have to be reverted together; a fix and the test that
+  proves it, a projector and the renderer it feeds, a rule and the guard that enforces it. Split them
+  across deliveries and you buy N full suites for one idea — on a machine-wide lock, that is N-1 gates
+  taken from other agents. Keep a focused, fail-before test per unit inside the batch, then run one
+  `verify:full` on the combined final tree. Nothing about landing relaxes: that exact tree must still
+  be the recorded one.
+- **Batch by coherence, never by convenience.** Two unrelated fixes bundled to save a gate are a
+  worse delivery, not a cheaper one: they cannot be reverted independently, and the review has to
+  hold two contracts in its head at once. And a batch must never be a place to park something that
+  fails — if part of it is red, the delivery is red. Padding a green batch with an unproven change is
+  the one use of this rule that is dishonest rather than merely wasteful.
+
+  A worked example, from this repository: `t-26f508` shipped a Grok config projector, its renderer,
+  the Studio wiring, the profile plumbing and the docs as ONE batch — focused unit runs per piece
+  while building, then a single full on that tree. Everything in it shared one contract and would have
+  had to be reverted together. What followed is the other half of the lesson: review then found an
+  upgrade hazard in that batch, and the fix was a SEPARATE delivery with its own gate, because it
+  changed a different contract (the authority/upgrade path) and had to be revertible on its own.
+  Re-verifying after `main` moved is neither of these — that is an integration round, not a batch.
 - **Do not hand-manage reuse of an attested tree — just run the command.** `verify:full` decides for
   itself whether an identical tree already passed, and it decides BEFORE taking the lock, so a
   reused run costs nothing and blocks nobody. Skipping the command to save time is now the slower
@@ -46,14 +66,40 @@ redundant run is not free caution — it is time taken from someone else's gate.
 
 ## Reporting and handoff
 
-- **A completion notify is a doorbell, not a report.** It carries status, commit, tree, a count, and a
-  pointer to where the detail lives. Findings, evidence and reasoning go somewhere durable — the task
-  journal (`append_task_note`) or a file — because a notify is best-effort pane input, not history.
+- **A completion notify is a doorbell, not a report.** It carries status, commit, tree, the gate
+  result, the ONE decisive finding, and a pointer to where the rest lives. Findings, evidence and
+  reasoning go somewhere durable — the task journal (`append_task_note`) or a file — because a notify
+  is best-effort pane input, not history.
+- **Do not re-narrate what is already durable.** Merge history, integration rounds, why an approach
+  was chosen and what a review said are in the journal and in git; repeating them in the report costs
+  the reader's attention and the next agent's context, and adds no fact a reader could not already
+  check. The test is whether a line changes what the recipient does next. "Blocked on X" and "the
+  measurement refuted the design" pass it; "merged main, resolved conflicts, re-ran the gate" does
+  not — that is the job, and the tree hash already proves it.
 - **Hand off before you run out, not after.** When context is closing, commit or stage what exists,
   write a short handoff naming the exact next step, and request recovery. A precise unfinished report
   beats a finished-sounding one; work nobody can resume was not delivered.
 - **Never report a green you did not get.** A check that could not run is not a check that passed, and
   a scenario whose precondition was satisfied trivially proved nothing.
+
+## Review proportionality
+
+Adversarial review is the most expensive check available and the only one that catches a plausible,
+well-argued, wrong design. Spend it where being wrong is dear and hard to undo:
+
+- **Ask for it** on architecture and contracts, irreversible or destructive decisions, authority and
+  trust boundaries, security posture, migrations and upgrade paths, and any place two agents actually
+  disagree about a premise.
+- **Do not ask for it** on a mechanical edit whose contract is already settled — a rename, a
+  measured-value update, a test that pins behavior nobody disputes. There the gate and a focused test
+  already say everything a reviewer would, and a review round buys a second opinion on a question that
+  was never open.
+- The choice is the author's to make and to state. Say which one this delivery is and why, so a
+  coordinator can overrule the call instead of guessing at it.
+
+Proportional is not optional: a change in the first list that ships unreviewed is a gap, and the
+recent record shows why — a review caught an upgrade hazard that a green gate could not, because the
+gate proved the code worked and the reviewer asked what it did to workspaces that already existed.
 
 ## Post-landing hygiene
 
@@ -122,6 +168,15 @@ refusing outright, which is preferable when history shape allows it.
 
 Compare trees, not commits: a rebase or an amended message produces a different commit id for identical
 content, and it is the content that was verified.
+
+**Integrate once, at the end.** The trunk moves under you constantly, so re-merging after every
+advance turns one delivery into an integration treadmill and re-buys the gate each lap. Do the
+integration once, when the work is otherwise finished. If `main` then advances again before you land:
+inspect whether it TOUCHED what you touched. No intersection — same files untouched, same contracts —
+means one more merge and one more verified tree, not a re-litigation of the work. An intersection is
+different in kind: read the other change semantically before merging, because two green parents can
+merge red with no textual conflict, and then verify the new tree. Either way the rule above is
+unchanged — what lands is the tree that was verified, and "it was green one merge ago" is not that.
 
 Note the boundary: the pre-push gate cannot cover this. It runs at `git push`, and every step above
 happens before the trunk is pushed anywhere.
