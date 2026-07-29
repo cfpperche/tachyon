@@ -7,6 +7,7 @@
  */
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
+import type { ManagedWorktreeEntry } from "../worktree/managedWorktree.js";
 
 export const DEFAULT_GATED_COMPLETION_GRACE_MS = 45_000;
 
@@ -134,8 +135,40 @@ export interface AssignedCompletionInput {
   /** names present in `agents:` — declared only, so an ad-hoc sibling can never arm. */
   declared: ReadonlySet<string>;
   tasks: readonly AssignedTaskFact[];
-  /** worktree path and spawn base for an agent, from the ledger. */
-  locate(agent: string): { worktreePath?: string; baseSha?: string } | undefined;
+  /** worktree path and base for this exact agent+task, resolved from host-owned records. */
+  locate(agent: string, taskId: string): { worktreePath?: string; baseSha?: string } | undefined;
+}
+
+export interface AssignedCompletionWorktreeInput {
+  agent: string;
+  taskId: string;
+  /** Host-owned managed registry rows; paths supplied by an agent are never accepted here. */
+  managed: readonly ManagedWorktreeEntry[];
+  /** The agent's persistent checkout from its host-owned session ledger. */
+  persistent?: { worktreePath?: string; baseSha?: string };
+}
+
+/**
+ * Resolve the checkout that can prove an assigned task's delivery.
+ *
+ * A change worktree is authoritative only when its registry row binds all three identities:
+ * active change kind + this task + this agent as creator. A row for another task/agent is unrelated,
+ * and multiple matching rows are ambiguous rather than permission to guess. With no exact change
+ * row, preserve the original persistent-worktree behavior.
+ */
+export function resolveAssignedCompletionWorktree(
+  input: AssignedCompletionWorktreeInput,
+): { worktreePath?: string; baseSha?: string } | undefined {
+  const matching = input.managed.filter((entry) =>
+    entry.kind === "change"
+    && entry.status === "active"
+    && entry.taskId === input.taskId
+    && entry.createdBy === input.agent);
+  if (matching.length > 1) return undefined;
+  if (matching.length === 1) {
+    return { worktreePath: matching[0]!.path, baseSha: matching[0]!.baseRef };
+  }
+  return input.persistent;
 }
 
 /**
@@ -153,10 +186,10 @@ export function assignedCompletionFacts(input: AssignedCompletionInput): GatedCo
     if (!input.declared.has(entry.name)) continue;
     const owner = entry.declaredOwner ?? entry.parent;
     if (!owner || owner === entry.name) continue;
-    const located = input.locate(entry.name);
-    if (!located?.worktreePath) continue;
     const task = input.tasks.find((t) => t.status === "active" && t.assignee === entry.name);
     if (!task) continue;
+    const located = input.locate(entry.name, task.id);
+    if (!located?.worktreePath) continue;
     out.push({
       agent: entry.name,
       delegator: owner,

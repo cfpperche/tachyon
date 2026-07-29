@@ -5,6 +5,7 @@ import {
   hostFallbackLine,
   isArmableAttention,
   assignedCompletionFacts,
+  resolveAssignedCompletionWorktree,
   type GatedCandidateRecord,
   type GatedCompletionFacts,
 } from "../../src/workspace/GatedCompletionMonitor.js";
@@ -362,5 +363,62 @@ describe("assignedCompletionFacts selection (t-5e9bf8)", () => {
   it("does not emit when the agent has no locatable worktree", () => {
     expect(select({ locate: () => undefined })).toEqual([]);
     expect(select({ locate: () => ({ baseSha: "base" }) })).toEqual([]);
+  });
+});
+
+describe("assigned completion worktree resolution (t-357879)", () => {
+  const change = (over: Record<string, unknown> = {}) => ({
+    id: "mw-change-delivery",
+    kind: "change" as const,
+    path: "/wt/change/task",
+    branch: "tachyon/change/task",
+    baseRef: "task-base",
+    tachyonCreatedBranch: true,
+    taskId: "t-abc123",
+    createdBy: "worker",
+    slug: "task",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    status: "active" as const,
+    ...over,
+  });
+  const input = (managed: ReturnType<typeof change>[]) => ({
+    agent: "worker",
+    taskId: "t-abc123",
+    managed,
+    persistent: { worktreePath: "/wt/worker", baseSha: "spawn-base" },
+  });
+
+  it("prefers the exact active task+creator registry binding over the persistent checkout", () => {
+    expect(resolveAssignedCompletionWorktree(input([change()]))).toEqual({
+      worktreePath: "/wt/change/task",
+      baseSha: "task-base",
+    });
+  });
+
+  it("ignores another task, another creator, and abandoned change worktrees", () => {
+    for (const unrelated of [
+      change({ taskId: "t-other" }),
+      change({ createdBy: "other-agent" }),
+      change({ status: "abandoned" }),
+    ]) {
+      expect(resolveAssignedCompletionWorktree(input([unrelated]))).toEqual({
+        worktreePath: "/wt/worker",
+        baseSha: "spawn-base",
+      });
+    }
+  });
+
+  it("fails closed instead of guessing between duplicate exact bindings", () => {
+    expect(resolveAssignedCompletionWorktree(input([
+      change(),
+      change({ id: "mw-change-second", path: "/wt/change/second", slug: "second" }),
+    ]))).toBeUndefined();
+  });
+
+  it("preserves persistent-worktree delivery when no matching change row exists", () => {
+    expect(resolveAssignedCompletionWorktree(input([]))).toEqual({
+      worktreePath: "/wt/worker",
+      baseSha: "spawn-base",
+    });
   });
 });
