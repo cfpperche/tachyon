@@ -4,6 +4,12 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { AgentManager } from "../agents/AgentManager.js";
 import { isTemporaryInstance } from "../agents/agentInstancePolicy.js";
+import {
+  cancelSavedAgentProposal,
+  listLiveSavedAgentProposals,
+  recordSavedAgentProposal,
+} from "../agents/savedAgentProposalStore.js";
+import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
@@ -2012,6 +2018,150 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           result.forcedAfterGracefulTimeout ? "graceful timed out → session hard-kill" : undefined,
         ].filter(Boolean).join("; ");
         return ok(`agent '${name}' restarted (${mode}; ${detail})`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  /**
+   * SDD 482 phase 4 slice B (`t-5e1113`) — the ONLY agent-facing entry point to the creation door,
+   * and it can do exactly one thing: leave a typed, digest-bound proposal where a human will find it.
+   *
+   * The baseline this changes: before this tool, an agent could not reach profile creation by any
+   * route at all. It still cannot — nothing here writes a profile, an authority record or a roster
+   * entry, and there is deliberately no approval or commit path yet. What an agent gains is the
+   * ability to ASK, under a capability no profile in this workspace currently holds.
+   *
+   * IDENTITY IS AUTHENTICATED, NOT DECLARED. The proposer is `deps.caller`, resolved by the Bridge
+   * from the token, and there is no `proposer` parameter to override it. This matters more here than
+   * almost anywhere else: the Bridge's auth is one shared token, so if the tool accepted a name, ANY
+   * agent could borrow the identity of one that holds the grant and the capability check would be
+   * decorative. A non-agent caller is refused outright — a legacy or human-kind token has no profile
+   * to carry a grant, and treating "no profile" as "no restriction" is the classic direction of this
+   * bug.
+   */
+  mcp.registerTool(
+    "propose_saved_agent",
+    {
+      description:
+        "Propose that a human create a Saved Agent (a durable agent profile in this workspace). This does NOT create " +
+        "anything: it records a typed, digest-bound proposal for a human to review, and requires the caller's profile " +
+        "to hold the 'grants.proposeSavedAgent' capability — absence is refused by name. The proposed agent may never " +
+        "itself carry that capability. Identical re-proposals collapse onto the live one; proposals expire after 24h.",
+      inputSchema: {
+        name: AGENT_NAME.describe("roster name for the proposed Saved Agent"),
+        runtime_adapter: z.string().min(1).max(64).describe("runtime adapter id, e.g. 'claude'"),
+        rationale: z.string().min(1).max(4000).describe("why this agent should exist — shown to the human verbatim"),
+        executable: z.string().min(1).max(256).optional(),
+        display_name: z.string().min(1).max(256).optional(),
+        owns_subagents: z.array(AGENT_NAME).max(64).optional().describe("roster ownership being requested (granted only by the human)"),
+        skills: z.array(z.string().min(1).max(128)).max(64).optional(),
+        mcp_servers: z.array(z.string().min(1).max(128)).max(64).optional(),
+      },
+    },
+    async (input) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error(
+            "CALLER_REQUIRED: propose_saved_agent requires a Bridge-resolved agent caller; a proposal is bound to the " +
+            "proposer's profile grant, and a caller without a profile has no grant to check",
+          ));
+        }
+        const proposer = caller.name;
+        const admission = recordSavedAgentProposal({
+          workspaceRoot: deps.workspaceRoot,
+          proposer,
+          proposerProfile: { grants: readAgentProfileGrants(deps.workspaceRoot, proposer) },
+          spec: {
+            name: input.name,
+            runtimeAdapter: input.runtime_adapter,
+            rationale: input.rationale,
+            ...(input.executable ? { executable: input.executable } : {}),
+            ...(input.display_name ? { displayName: input.display_name } : {}),
+            ...(input.owns_subagents?.length ? { ownsSubagents: input.owns_subagents } : {}),
+            ...(input.skills?.length || input.mcp_servers?.length
+              ? {
+                  capabilities: {
+                    ...(input.skills?.length ? { skills: input.skills } : {}),
+                    ...(input.mcp_servers?.length ? { mcp: input.mcp_servers } : {}),
+                  },
+                }
+              : {}),
+          },
+          base: { configSha256: workspaceConfigSha256(deps.workspaceRoot) },
+          nowMs: Date.now(),
+        });
+        if (!admission.ok) return fail(new Error(`${admission.code}: ${admission.reason}`));
+        return ok(JSON.stringify({
+          id: admission.proposal.id,
+          digest: admission.proposal.digest,
+          expiresAt: admission.proposal.expiresAt,
+          collapsedOnto: admission.collapsedOnto,
+          // Said plainly so a proposer does not wait for something that cannot happen yet.
+          state: "pending human review; nothing is created until a human approves this exact digest",
+        }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_saved_agent_proposals",
+    {
+      description:
+        "List this workspace's live (unexpired) Saved Agent proposals. Read-only. Rows carry the proposer, the digest a " +
+        "human approval would be bound to, and the expiry; the requested spec is included so a proposer can confirm " +
+        "what is actually pending.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        // Not scoped to the caller: the queue is shared, the ceiling is per-proposer, and an agent
+        // that cannot see a neighbour's pending proposal will re-propose the same agent under a
+        // different name. Nothing here is secret — it is what the human is about to be shown.
+        const live = listLiveSavedAgentProposals(deps.workspaceRoot, Date.now());
+        return ok(JSON.stringify(live.map((p) => ({
+          id: p.id,
+          proposer: p.proposer,
+          digest: p.digest,
+          createdAt: p.createdAt,
+          expiresAt: p.expiresAt,
+          spec: p.spec,
+        })), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "cancel_saved_agent_proposal",
+    {
+      description:
+        "Withdraw a Saved Agent proposal you made. Only the proposer may cancel its own proposal. Cancelling an id that " +
+        "is already gone succeeds, so a retry after a crash converges instead of failing.",
+      inputSchema: {
+        id: z.string().regex(/^sp-[0-9a-f]{6}$/, "proposal id must be sp-<6hex>"),
+        reason: z.string().min(1).max(500).describe("short audit reason, recorded in the witness log"),
+      },
+    },
+    async ({ id, reason }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error("CALLER_REQUIRED: cancel_saved_agent_proposal requires a Bridge-resolved agent caller"));
+        }
+        const result = cancelSavedAgentProposal({
+          workspaceRoot: deps.workspaceRoot,
+          id,
+          by: caller.name,
+          reason,
+          nowMs: Date.now(),
+        });
+        return ok(result.cancelled ? `proposal '${id}' cancelled` : `proposal '${id}' was already gone`);
       } catch (err) {
         return fail(err);
       }

@@ -274,3 +274,18 @@ unfinished edge. A door that lets an agent queue something a human can approve, 
 nothing, is worse than a shut door: it trains the human that approving is harmless, which is exactly
 the habit the real door must not inherit. The baseline is still "an agent cannot create a Saved Agent
 by any route" and stays that way until the commit path is proven.
+
+
+## Why the proposing door opened before the commit path (2026-07-29)
+
+Slices A and B argued the opposite — "the door opens in one slice, complete, or it does not open" —
+on the grounds that a human approving something inert teaches them approving is harmless. The human
+directed the propose/cancel/read door to ship first, without commit path or UI, and that direction
+is sound for a reason worth writing down rather than merely complying with: there is no approval
+surface either. Nothing can be approved, so no approval habit is formed. What ships is an agent's
+ability to ASK, into a queue only the host can read.
+
+The residual risk that does change is narrower and real: an agent can now cause a durable write under
+`.tachyon/`. It is bounded by the capability (no profile in this repo holds it), the per-proposer
+ceiling, digest collapse, 24h expiry, and 0600 files that create nothing. That is the trade the
+direction accepts, stated plainly so slice C is reviewed knowing it.

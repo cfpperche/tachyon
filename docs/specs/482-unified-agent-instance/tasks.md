@@ -163,10 +163,31 @@ non-problem (`notes.md`)._
 - [x] Still NO agent-reachable door. The rule holds and tightens as the machinery grows: the door
       opens in one slice, complete, or not at all.
 
-### Slice C — still to do (opens the door)
+### Slice B (continued) — the Bridge door to PROPOSE only
+
+- [x] `propose_saved_agent`, `list_saved_agent_proposals`, `cancel_saved_agent_proposal`. The first is
+      the only agent-facing entry point, and it can do exactly one thing: leave a typed, digest-bound
+      proposal where a human will find it.
+- [x] IDENTITY IS AUTHENTICATED, NOT DECLARED. The proposer is `deps.caller`; there is no `proposer`
+      parameter, asserted against the published input schema. This matters more here than almost
+      anywhere: the Bridge authenticates with ONE shared token, so a tool that accepted a name would
+      let any agent borrow the identity of one holding the grant, and the capability check would be
+      decorative.
+- [x] A non-agent caller (legacy/human kind) is refused outright — "no profile" must never read as
+      "no restriction". Proven by disabling the check: exactly that test failed.
+- [x] The grant is read per call from the caller's canonical profile, fail-closed on missing,
+      unreadable, invalid-YAML and schema-mismatched profiles.
+- [x] The tool cannot even EXPRESS a request for the proposing capability — no `grants` in its schema —
+      and admission refuses it anyway. Schema stops today's callers; admission stops whatever calls
+      the store next.
+- [x] Asserted that the door still creates nothing: config byte-identical, no profile directory, no
+      authority. And no profile in this repo holds the grant, so nothing is newly permitted today.
+
+### Slice C — still to do (the part that actually creates)
 
 - [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.
-- [ ] Bridge proposal tool — the only agent-facing entry point, added last.
+- [ ] Human Inbox review surface + approval bound to the digest.
+- [ ] Atomic commit of profile + authority + roster, with compensation, and the receipt.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
       affected files/authorities, diff without secrets.
 - [ ] Approval bound to the digest; A2A cannot simulate it.

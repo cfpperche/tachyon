@@ -248,7 +248,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 75 canonical tools, including the explicit Terminal operation", async () => {
+  it("exposes exactly the 78 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -256,6 +256,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "attach_evidence",
       "attach_task_prototype",
       "cancel_human_approval",
+      "cancel_saved_agent_proposal",
       "clear_human_flag",
       "close_validation",
       "complete_node",
@@ -289,6 +290,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_evidence",
       "list_pending_approvals",
       "list_pins",
+      "list_saved_agent_proposals",
       "list_schedules",
       "list_tasks",
       "list_validations",
@@ -297,6 +299,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "next_validation",
       "notify",
       "notify_agent",
+      "propose_saved_agent",
       "propose_schedule",
       "read_output",
       "reanchor_agent",
