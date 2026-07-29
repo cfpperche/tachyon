@@ -197,8 +197,20 @@ instance was launched with ownership-only hooks.
 So they are deliberately NOT converted, and the code says why at each site rather than leaving a
 future reader to rediscover it.
 
-**This is a question for the human, not something to invent:** does the model need a third declared
-axis (call it `authority`: does this instance carry profile-backed lifecycle hooks?), or is "hooks
-were injected" a runtime fact that should be read from the session rather than declared on the
-instance? Both are defensible. Guessing would put a field in the ratified model that nobody approved,
-and the whole point of `declared` was that one word grew a second job nobody noticed.
+**RESOLVED by the human, 2026-07-29 (`j-20febbd260be`), and not by adding a field.** Promotion
+Temporary → Saved does **not mutate the live instance**: approval creates the Saved Profile, while the
+running execution keeps the identity, hooks and policies it was launched with. Only the NEXT instance
+is born Saved, with hooks, continuity and full lifecycle. `Restart as Saved` becomes a separate,
+visible action, and the UI is expected to show the "promoted, still running as Temporary" condition.
+
+That answer is better than the third axis I was about to ask for, and worth understanding rather than
+just applying. It removes the divergence at its source instead of modelling it: because an instance's
+identity is fixed for its life, and its hooks are decided at spawn FROM that identity, the two can
+never disagree mid-life. So "identity implies hooks" stops being a coincidence of the current write
+paths and becomes a property the model guarantees — which is exactly what made it safe to converge
+`persistenceHooks` and `continuity` after all. A third declared axis would have modelled a hybrid
+state the design now simply refuses to create.
+
+Remaining from that decision, NOT implemented here: the UI affordance itself — surfacing "promoted,
+running as Temporary" and offering `Restart as Saved`. That is a new capability rather than a reader
+convergence, so it belongs in its own slice.

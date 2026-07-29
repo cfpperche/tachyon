@@ -168,13 +168,13 @@ export async function buildSidebarFleet(
     .map((agent) => {
       const definition = source.manager.defOf(agent.name);
       const live = agent.running ? source.attentionOf(agent.name) : undefined;
-      // SDD 482 phase 3 — NOT converted, and the reason matters. This asks "were full lifecycle hooks
-      // injected for this instance?", which `withSessionOwnership` decides via `ownershipOnly`. That is
-      // a THIRD axis (authority), not identity and not lifetime: a fork is `temporary` AND gets
-      // ownership-only hooks, so `!declared` and `isTemporaryInstance` agree here today — by
-      // coincidence, not by meaning. Converting it would be right for the wrong reason and would
-      // silently break the day the axes diverge. See notes.md § the third axis.
-      const hookHealth = agent.declared ? source.persistenceHookHealth(agent.name) : undefined;
+      // SDD 482 phase 3 — converted, and only because the human resolved the third axis
+      // (`j-20febbd260be`): promotion Temporary→Saved does NOT mutate the live instance. The running
+      // execution keeps the identity, hooks and policies it was launched with; only the NEXT instance
+      // is born Saved. So an instance's hooks are fixed at spawn FROM its identity and can never
+      // disagree with it mid-life — which turns "identity implies hooks" from a coincidence of the
+      // current write paths into a property the model guarantees.
+      const hookHealth = isTemporaryInstance(agent) ? undefined : source.persistenceHookHealth(agent.name);
       const externalSummary = externalTools.summary(agent.name);
       const liveGit = liveGitOf.get(agent.name);
       const ledgerDef = source.ledger.get(agent.name)?.def;
@@ -218,9 +218,9 @@ export async function buildSidebarFleet(
         kind: "agent",
         // "Is this a Temporary Agent?" — an identity question, converted.
         adhoc: isTemporaryInstance(agent),
-        // NOT converted: the continuity badge exists only where the continuity-pointer lifecycle hook
-        // was injected, which is the same authority axis as `persistenceHooks` above.
-        continuity: agent.running && agent.declared ? source.continuityBadge(agent.name) : undefined,
+        // Same resolution as `persistenceHooks`: the continuity-pointer hook is injected at spawn from
+        // the instance's identity, and promotion cannot change it under a running instance.
+        continuity: agent.running && !isTemporaryInstance(agent) ? source.continuityBadge(agent.name) : undefined,
         ...(focus ? { focus } : {}),
         persistenceHooks: hookHealth ? {
           state: hookHealth.state,
