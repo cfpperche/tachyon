@@ -10,17 +10,14 @@ import path from "node:path";
  * Import shape matches packageCleanGate.test.ts: dynamic import of the ESM .mjs helper.
  */
 
-type Hygiene = typeof import("../../scripts/webview-chunk-hygiene.mjs");
-
-let reachableWebviewChunkBasenames: Hygiene["reachableWebviewChunkBasenames"];
-let pruneUnreachableWebviewChunks: Hygiene["pruneUnreachableWebviewChunks"];
-let assertWebviewChunksReachable: Hygiene["assertWebviewChunksReachable"];
+let reachableWebviewChunkBasenames: (webviewDir: string, entryFiles?: string[]) => Set<string>;
+let pruneUnreachableWebviewChunks: (webviewDir: string) => { kept: string[]; pruned: string[] };
+let assertWebviewChunksReachable: (webviewDir: string) => void;
 
 beforeAll(async () => {
-  const mod = await import("../../scripts/webview-chunk-hygiene.mjs");
-  reachableWebviewChunkBasenames = mod.reachableWebviewChunkBasenames;
-  pruneUnreachableWebviewChunks = mod.pruneUnreachableWebviewChunks;
-  assertWebviewChunksReachable = mod.assertWebviewChunksReachable;
+  // @ts-expect-error -- owned ESM script; declarations live beside it for editors, not CJS emit.
+  ({ reachableWebviewChunkBasenames, pruneUnreachableWebviewChunks, assertWebviewChunksReachable } =
+    await import("../../scripts/webview-chunk-hygiene.mjs"));
 });
 
 const roots: string[] = [];
