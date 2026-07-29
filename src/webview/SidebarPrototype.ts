@@ -143,15 +143,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       const projectOnly = mergeCardTemplateConfigs(fleet.cardTemplate, undefined);
       return { ...(projectOnly ? { config: projectOnly } : {}), refusal: documentRefusal.errors };
     }
+    // t-aaad95 — the store already normalized "nothing configured": `null` and `{}`, which is what a
+    // person leaves behind after clearing the key, both parse to `undefined` there. Repeating that
+    // rule here would be a second place it could drift from the loader's.
     const written = store.current().sidebarCardTemplate;
     const project = fleet.cardTemplate;
-    // `null` is what a person leaves behind when they clear the setting in the JSON editor, and an
-    // empty mapping is what the settings UI writes for an untouched object key — neither is an
-    // attempt to configure anything, so neither is a refusal.
     const projectOnly = mergeCardTemplateConfigs(project, undefined);
-    if (written === undefined || written === null || (typeof written === "object" && !Array.isArray(written) && Object.keys(written as object).length === 0)) {
-      return projectOnly ? { config: projectOnly } : {};
-    }
+    if (written === undefined) return projectOnly ? { config: projectOnly } : {};
     const parsed = parseCardTemplate(written, PERSONAL_CARD_TEMPLATE_KEY, project?.base ?? DEFAULT_CARD_TEMPLATE);
     if (!parsed.config) {
       return { ...(projectOnly ? { config: projectOnly } : {}), refusal: parsed.errors };
