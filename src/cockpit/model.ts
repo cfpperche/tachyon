@@ -369,7 +369,23 @@ export function buildCockpitModel(
   // was closed since the selection persisted) keeps today's aggregate behavior. The selector list
   // itself always spans ALL bundles, never the filtered set.
   const workspaces = bundles.map((b) => ({ hash: b.control.wsHash, folder: b.control.folderName }));
-  const selected = opts?.wsHash && workspaces.some((w) => w.hash === opts.wsHash) ? opts.wsHash : undefined;
+  const requested = opts?.wsHash && workspaces.some((w) => w.hash === opts.wsHash) ? opts.wsHash : undefined;
+  /**
+   * t-4917e4 — with exactly ONE root the effective selection IS that root, and saying so here is what
+   * keeps the selector from rendering blank.
+   *
+   * The Overview selector deliberately omits the "All workspaces" option when there is a single root
+   * (offering it and the root would be two labels for the same data). But the model left
+   * `selectedWsHash` undefined until someone chose explicitly, so the control bound the
+   * "All workspaces" sentinel to a list that did not contain it — a value with no option, which
+   * renders as an empty button. That is the reported bug, and it needed fixing HERE rather than by
+   * having the UI substitute a value: the model is the one authority for scope, and a UI-side default
+   * would be a second one that the host's next authoritative model could silently contradict.
+   *
+   * Nothing about scoping changes: with one bundle, filtering to it and not filtering are the same
+   * set, so this names the state that already existed instead of altering it.
+   */
+  const selected = requested ?? (workspaces.length === 1 ? workspaces[0]!.hash : undefined);
   const scoped = selected ? bundles.filter((b) => b.control.wsHash === selected) : bundles;
 
   const controlInputs = scoped.map((b) => b.control);
