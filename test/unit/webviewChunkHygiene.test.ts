@@ -15,7 +15,6 @@ let pruneUnreachableWebviewChunks: (webviewDir: string) => { kept: string[]; pru
 let assertWebviewChunksReachable: (webviewDir: string) => void;
 
 beforeAll(async () => {
-  // @ts-expect-error -- owned ESM script; declarations live beside it for editors, not CJS emit.
   ({ reachableWebviewChunkBasenames, pruneUnreachableWebviewChunks, assertWebviewChunksReachable } =
     await import("../../scripts/webview-chunk-hygiene.mjs"));
 });
