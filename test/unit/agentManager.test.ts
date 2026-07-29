@@ -1339,11 +1339,11 @@ describe("AgentManager", () => {
     const { manager } = makeManager("agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  codex:\n    cmd: codex\n  reviewer:\n    cmd: claude\n");
     await manager.spawn("reviewer", { parent: "codex" });
     const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
-    expect(reviewer?.parent).toBeUndefined();
+    expect(reviewer?.parent).toBe("codex");
     expect(reviewer?.declaredOwner).toBe("claude");
-    expect(manager.parentOf("reviewer")).toBeUndefined();
+    expect(manager.parentOf("reviewer")).toBe("codex");
     expect(await manager.liveDescendants("claude")).toEqual([]);
-    expect(await manager.liveDescendants("codex")).toEqual([]);
+    expect(await manager.liveDescendants("codex")).toEqual(["reviewer"]);
   });
 
   // spec 216 — captures the launched command for one spawn.
@@ -6567,38 +6567,47 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(await manager.liveDescendants("boss")).toEqual([]);
   });
 
-  it("spec 352 — rehydrate keeps declared ownership out of runtime lineage", async () => {
+  it("rehydrates Saved lineage without conflating it with declared ownership", async () => {
     const { manager, ledger, ws } = harness("agents:\n  claude:\n    cmd: claude\n    subagents: [reviewer]\n  codex:\n    cmd: codex\n  reviewer:\n    cmd: claude\n");
-    await manager.spawn("reviewer"); // running, but no runtime parent
     ledger.record("reviewer", { def: { cmd: "claude", kind: "agent", parent: "codex" }, cwd: ws, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true } });
     await manager.rehydrateFromLedger();
     const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
     expect(reviewer?.declaredOwner).toBe("claude");
-    expect(reviewer?.parent).toBeUndefined();
+    expect(reviewer?.parent).toBe("codex");
+    expect(manager.parentOf("reviewer")).toBe("codex");
     expect(await manager.liveDescendants("claude")).toEqual([]);
+    // The pane is not live in this reload fixture, so the safety query has no live descendant.
     expect(await manager.liveDescendants("codex")).toEqual([]);
   });
 
-  it("does not record a parent for a declared NON-adapter agent", async () => {
+  it("records the explicit parent for a Saved non-adapter instance", async () => {
     const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
     await manager.spawn("child", { parent: "boss" });
-    expect(ledger.get("child")?.def?.parent).toBeUndefined();
+    expect(manager.parentOf("child")).toBe("boss");
+    expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBe("boss");
+    expect(ledger.get("child")?.def?.parent).toBe("boss");
   });
 
-  it("t-f660d8: declared spawn_agent parent reaches primer without runtime lineage", async () => {
-    // Sidebar keeps declared agents top-level (declaredOwner); primer must still name the spawner for doorbell.
+  it("Saved spawn/restart preserves explicit runtime lineage separately from declaredOwner", async () => {
     const { manager, ledger, cmds } = harness(
       "agents:\n  codex:\n    cmd: claude\n    subagents: [reviewer]\n  reviewer:\n    cmd: claude\n",
     );
     await manager.spawn("reviewer", { parent: "codex" });
-    const listed = (await manager.list()).find((a) => a.name === "reviewer");
-    expect(listed?.parent).toBeUndefined(); // no runtime lineage
-    expect(listed?.declaredOwner).toBe("codex");
-    expect(manager.parentOf("reviewer")).toBeUndefined();
-    expect(ledger.get("reviewer")?.def?.parent).toBeUndefined();
+    expect((await manager.list()).find((a) => a.name === "reviewer")).toMatchObject({
+      parent: "codex",
+      declaredOwner: "codex",
+      lifetime: "saved",
+    });
+    expect(manager.parentOf("reviewer")).toBe("codex");
+    expect(ledger.get("reviewer")?.def?.parent).toBe("codex");
     // Primer is embedded in the spawn command payload for claude.
     expect(cmds.some((c) => c.includes("spawned by \"codex\""))).toBe(true);
     expect(cmds.some((c) => c.includes("no delegator/parent on record"))).toBe(false);
+
+    await manager.restart("reviewer", { stop: "force", session: "new" });
+    expect(manager.parentOf("reviewer")).toBe("codex");
+    expect((await manager.list()).find((a) => a.name === "reviewer")?.parent).toBe("codex");
+    expect(ledger.get("reviewer")?.def?.parent).toBe("codex");
   });
 
   it("t-f660d8: declaredOwner alone still frames primer when spawn omits parent", async () => {
