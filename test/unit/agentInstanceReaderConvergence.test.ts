@@ -115,12 +115,15 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   });
 
   /**
-   * The boundary. These four sites carry `declared` ACROSS THE WIRE — a Bridge client on an older
-   * build reads that field. Converting them changes a protocol field's meaning silently, which is a
-   * versioned change and not a reader convergence. Left as-is on purpose; this fails if someone
-   * "finishes" the migration through them.
+   * The boundary, and since RATIFIED DECISION 7 it is a requirement rather than my own caution.
+   *
+   * These sites carry `declared` ACROSS THE WIRE — a Bridge client on an older build reads that
+   * field. The human ruled that it stays, with a compatible meaning, for this phase: not removed,
+   * not renamed, not silently reinterpreted. Policy fields and retirement of the legacy one belong
+   * to phase 5, and only behind an explicit protocol bump with cross-version proof and a
+   * compatibility window. So this test fails if someone "finishes" the migration through them.
    */
-  it("leaves `declared` on the wire alone — protocol widening is not part of this migration", () => {
+  it("leaves `declared` on the wire alone — ratified decision 7 keeps it stable this phase", () => {
     for (const rel of [
       "src/runtime-api/handoffProjection.ts",
       "src/runtime-api/workspaceProjection.ts",

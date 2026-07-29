@@ -246,3 +246,31 @@ at all — they never asked the question. The convergence is therefore closer to
 list suggested, and what remains is a protocol decision rather than a refactor: does the wire keep a
 `declared` field, gain a policy one behind a version bump, or stay as it is? That belongs to the human
 alongside the terminology rename, not to a slice that quietly changes a wire field.
+
+
+## Phase 4 slice A: authority is not a capability (2026-07-29)
+
+The ratified wording is "capability explícita e estreita no perfil do agente proponente", and the
+profile schema already has a `capabilities` field — so the obvious move was to add it there. Measuring
+what that field means says otherwise. `capabilities` is `{skills, mcp, hooks, pi}`: a list of
+RESOURCES the agent is given. Whether an agent may bring a new Saved Agent into existence is authority
+over the roster.
+
+Folding the second into the first means a reader — human or code — cannot tell "has the fetch MCP
+server" from "may create agents". That is precisely the one-word-two-jobs conflation this SDD exists
+to undo in `declared`, and repeating it one field over inside the SDD that removes it would be a poor
+joke. Hence a separate top-level `grants`, strict, optional, absent = refused.
+
+Rejected alternatives: (a) `capabilities.proposeSavedAgent` — the conflation above, and a test now
+asserts the schema REFUSES it; (b) naming the field `authority` — the profile already has an authority
+RECORD (`agentProfileAuthority.ts`) that is a separate attestation artifact, so the name would collide
+with an existing concept; (c) an instance-level axis — phase 3 already declined to invent one, and
+this is a property of the durable Profile, not of a running instance.
+
+### Why slice A ships nothing reachable
+
+There is no Bridge tool and no commit path in this slice, and that is the design rather than an
+unfinished edge. A door that lets an agent queue something a human can approve, where approval does
+nothing, is worse than a shut door: it trains the human that approving is harmless, which is exactly
+the habit the real door must not inherit. The baseline is still "an agent cannot create a Saved Agent
+by any route" and stays that way until the commit path is proven.

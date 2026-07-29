@@ -110,16 +110,40 @@ non-problem (`notes.md`)._
       `workspaceProjection`, `activityProjection`, `engineService`) and genuine storage questions
       (`declaredAgentNames`, `configOwned`, `ownershipOnly`) — the former blocked by the
       no-wire-widening rule, the latter correct as they are.
-- [ ] HUMAN DECISION, not a refactor: does the wire keep `declared`, gain a policy field behind a
-      version bump, or stay as is? Pairs naturally with the terminology rename (phase 5).
-- [ ] No duplicate removed yet — deletion waits until every reader is converged, per the plan.
+- [x] HUMAN DECISION TAKEN (ratified decision 7): `declared` STAYS on the wire this phase, with a
+      compatible meaning — not removed, not renamed, not silently reinterpreted. Policy fields and
+      retirement of the legacy one are phase 5's, and only with an explicit protocol bump,
+      cross-version proof and a compatibility window. The boundary test written for this delivery is
+      now the enforcement of a ratified decision rather than a provisional guardrail.
+- [x] PHASE 3 CLOSED. Every reader that asked a policy question asks the resolver; every remaining
+      `declared` is either a wire field held deliberately stable or a genuine storage question.
+- [ ] No duplicate removed yet — deletion waits until phase 5, per the plan and decision 7.
 
 ## Phase 4 — the governed creation door (severable)
 
-- [ ] Capability in the proposer's Profile; absence refuses by name.
-- [ ] A committed agent never carries the creation capability — refused at commit, tested directly.
-- [ ] Per-proposer pending ceiling; identical re-proposals collapse on digest instead of queueing.
-- [ ] Typed, immutable, digest-bound proposal; agent writes nothing durable.
+### Slice A — the proposal is inert data (delivered)
+
+- [x] Capability in the proposer's Profile; absence refuses BY NAME. New `grants.proposeSavedAgent`,
+      kept OUT of `capabilities` — see `notes.md`: `capabilities` lists resources the agent is given,
+      this is authority over the roster, and folding them together repeats the one-word-two-jobs
+      conflation this SDD exists to undo.
+- [x] Capability recursion refused at ADMISSION (invariant 9). The proposal fails rather than being
+      silently pruned, so a proposer that asked for it learns it was refused. The commit-side half
+      lands with the commit path (slice C) — it is a second check, not a replacement.
+- [x] Per-proposer pending ceiling; identical re-proposals collapse on digest FIRST, so a retrying
+      agent never consumes its own slots and gets refused for flooding.
+- [x] Typed, immutable, digest-bound proposal; the digest covers proposer + spec + base state and is
+      computed over canonical (key-sorted) JSON. Approving one proposer's request never authorizes an
+      identical request from another.
+- [x] 24h expiry as a pure predicate; an unparseable expiry reads as EXPIRED, never as "never expires".
+- [x] Every control above proven by disabling it: each disabled check produced exactly one failure.
+- [x] Slice A ships NO reachable door on purpose — no Bridge tool, no Inbox surface, no commit. A
+      half-open door teaches the human that approving is harmless; the data layer lands refused-by-
+      default and stays unreachable until the commit path is proven.
+
+### Slices B and C — still to do
+
+- [ ] Bridge proposal tool + durable pending store that survives restart.
 - [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
       affected files/authorities, diff without secrets.

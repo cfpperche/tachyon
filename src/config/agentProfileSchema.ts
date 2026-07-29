@@ -166,6 +166,24 @@ const capabilitiesSchema = z.object({
   }).strict().optional(),
 }).strict();
 
+/**
+ * SDD 482 phase 4 (`t-5e1113`) — AUTHORITY a human granted this agent, kept apart from
+ * `capabilities`.
+ *
+ * `capabilities` above is a list of RESOURCES the agent is given: skills, MCP servers, hooks,
+ * packages. Whether an agent may ask to bring a NEW Saved Agent into existence is not a resource, it
+ * is authority over the roster — and folding it in there would mean a reader could not tell "has the
+ * fetch MCP server" from "may propose new agents". That conflation is the exact failure this SDD
+ * exists to undo (`declared` doing two jobs), so it does not get repeated one field over.
+ *
+ * Absence is REFUSAL, never a default. Ratified decision 1: the capability is explicit and narrow in
+ * the proposer's profile, and its absence refuses by name.
+ */
+const grantsSchema = z.object({
+  /** May ask a human to create a Saved Agent. Proposal only — never a direct write (invariant 8). */
+  proposeSavedAgent: z.boolean().optional(),
+}).strict();
+
 const guidanceSchema = z.object({
   project: z.array(z.string().regex(ID_RE)).max(32).optional(),
   bridge: z.array(z.string().regex(ID_RE)).max(32).optional(),
@@ -183,6 +201,7 @@ export const agentProfileSchemaV1 = z.object({
   isolation: z.enum(["transcript"]).optional(),
   ownership: z.object({ subagents: z.array(z.string().regex(ID_RE)).max(128) }).strict().optional(),
   capabilities: capabilitiesSchema.optional(),
+  grants: grantsSchema.optional(),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
   guidance: guidanceSchema.optional(),
   inherit: z.object({

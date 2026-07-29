@@ -212,6 +212,16 @@ one changes measured behaviour, so it is called out rather than filed.
    invalidated when its CAS/base state diverges.
 5. **Lineage becomes symmetric and durable** for Saved and Temporary alike, for the life of the
    instance — and never becomes `declaredOwner`.
+6. **Promotion does not mutate a live instance.** Approval creates the Saved Profile; the running
+   execution stays Temporary with the hooks and policies it launched with. `Restart as Saved` is a
+   separate, explicit action, and only the NEXT instance is born Saved. (This is what removed the
+   need for a declared `authority` axis: the design refuses the hybrid state rather than modelling
+   it. Hooks are still a RECORDED capability, never derived from identity.)
+7. **`declared` stays on the wire, with a compatible meaning, for this phase.** It is not removed,
+   renamed, or silently reinterpreted. Phase 5 may add policy fields and migrate or retire the legacy
+   one, but only with an explicit protocol bump, cross-version proof, and a compatibility window.
+   **Phase 4's governed door must not depend on that wire change** — the door has to work against the
+   protocol exactly as it stands today.
 
 ### What decision 5 changes
 
