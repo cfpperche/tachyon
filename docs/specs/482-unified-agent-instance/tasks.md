@@ -141,16 +141,42 @@ non-problem (`notes.md`)._
       half-open door teaches the human that approving is harmless; the data layer lands refused-by-
       default and stays unreachable until the commit path is proven.
 
-### Slices B and C — still to do
+### Slice B — the proposal is durable (delivered)
 
-- [ ] Bridge proposal tool + durable pending store that survives restart.
+- [x] Store under `.tachyon/agent-proposals/<id>.json`, atomic temp+rename, mode 0600, witness log
+      alongside. Survives a restart because it is a file; asserted by re-reading with nothing cached.
+- [x] Digest RE-CHECKED on every read; a mismatch is a hard refusal, never a repair. Recomputing would
+      launder the one edit that matters — changing a proposal a human already looked at.
+- [x] A record moved into another id's file is refused too, by an INDEPENDENT check (proven: it still
+      refuses with the digest check disabled).
+- [x] Read-by-id fails loudly; LISTING excludes corrupt files instead of throwing, so one bad write
+      cannot blind the human to the whole queue.
+- [x] Traversal-shaped ids refused before becoming a path.
+- [x] Expiry evaluated at READ time. The sweep is housekeeping and nothing depends on it — asserted by
+      showing the ceiling admits again after expiry with no sweep having run.
+- [x] Only the proposer may withdraw its own proposal, checked against the STORED record; a repeated
+      cancel converges rather than failing a retry the caller cannot fix.
+- [x] Collapse writes nothing new, and still records `collapsed` in the witness log: "nothing changed"
+      and "nothing was attempted" must stay distinguishable in an audit.
+- [x] Controls proven by disabling: tamper check, cancel ownership and read-time expiry each produced
+      exactly their own failure.
+- [x] Still NO agent-reachable door. The rule holds and tightens as the machinery grows: the door
+      opens in one slice, complete, or not at all.
+
+### Slice C — still to do (opens the door)
+
 - [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.
+- [ ] Bridge proposal tool — the only agent-facing entry point, added last.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
       affected files/authorities, diff without secrets.
 - [ ] Approval bound to the digest; A2A cannot simulate it.
 - [ ] Atomic commit of profile + authority + roster; compensation on failure.
 - [ ] Receipt: proposer, approver, digest, transaction/operation id, outcome.
-- [ ] Revocation, expiry, cancellation, idempotent retry, post-restart behaviour.
+- [x] Revocation/cancellation, expiry, idempotent retry and post-restart behaviour — slice B.
+- [ ] Ownership requested via `ownsSubagents` needs its own look when the commit path lands: a
+      proposal may REQUEST roster ownership, and `declaredOwner` confers no operational authority
+      today. Raised by `claude-reviewer` as explicitly not-reached in the slice A review; it belongs
+      to the slice that can actually grant it.
 - [ ] Saving does not start the agent.
 
 ## Phase 5 — terminology and removal
