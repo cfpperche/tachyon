@@ -395,16 +395,12 @@ describe("assigned completion worktree resolution (t-357879)", () => {
     });
   });
 
-  it("ignores another task, another creator, and abandoned change worktrees", () => {
-    for (const unrelated of [
+  it("fails closed on partial task/agent bindings instead of using a cross-task persistent HEAD", () => {
+    for (const conflicting of [
       change({ taskId: "t-other" }),
       change({ createdBy: "other-agent" }),
-      change({ status: "abandoned" }),
     ]) {
-      expect(resolveAssignedCompletionWorktree(input([unrelated]))).toEqual({
-        worktreePath: "/wt/worker",
-        baseSha: "spawn-base",
-      });
+      expect(resolveAssignedCompletionWorktree(input([conflicting]))).toBeUndefined();
     }
   });
 
@@ -415,10 +411,16 @@ describe("assigned completion worktree resolution (t-357879)", () => {
     ]))).toBeUndefined();
   });
 
-  it("preserves persistent-worktree delivery when no matching change row exists", () => {
-    expect(resolveAssignedCompletionWorktree(input([]))).toEqual({
-      worktreePath: "/wt/worker",
-      baseSha: "spawn-base",
-    });
+  it("preserves persistent delivery only when active registry rows are wholly unrelated", () => {
+    for (const managed of [
+      [],
+      [change({ taskId: "t-other", createdBy: "other-agent" })],
+      [change({ status: "abandoned" })],
+    ]) {
+      expect(resolveAssignedCompletionWorktree(input(managed))).toEqual({
+        worktreePath: "/wt/worker",
+        baseSha: "spawn-base",
+      });
+    }
   });
 });

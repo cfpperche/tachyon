@@ -159,14 +159,22 @@ export interface AssignedCompletionWorktreeInput {
 export function resolveAssignedCompletionWorktree(
   input: AssignedCompletionWorktreeInput,
 ): { worktreePath?: string; baseSha?: string } | undefined {
-  const matching = input.managed.filter((entry) =>
+  const activeChanges = input.managed.filter((entry) =>
     entry.kind === "change"
-    && entry.status === "active"
-    && entry.taskId === input.taskId
+    && entry.status === "active");
+  const matching = activeChanges.filter((entry) =>
+    entry.taskId === input.taskId
     && entry.createdBy === input.agent);
   if (matching.length > 1) return undefined;
   if (matching.length === 1) {
     return { worktreePath: matching[0]!.path, baseSha: matching[0]!.baseRef };
+  }
+  // A partial registry association is evidence that the persistent checkout is NOT a safe
+  // substitute: either this task belongs to another creator's change worktree, or this agent has a
+  // different task's change worktree. Falling through here reproduced the cross-task HEAD notice in
+  // t-b103c5. Only a registry with no relation to either identity permits the legacy persistent path.
+  if (activeChanges.some((entry) => entry.taskId === input.taskId || entry.createdBy === input.agent)) {
+    return undefined;
   }
   return input.persistent;
 }
