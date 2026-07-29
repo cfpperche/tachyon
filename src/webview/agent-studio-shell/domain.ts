@@ -76,6 +76,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "renameCanonicalProfile",
   "forgetCanonicalProfile",
   "setCanonicalProfileSubagents",
+  "setCanonicalProfileProposeGrant",
   "exportCanonicalProfileBundle",
   "cloneCanonicalProfileBundle",
   "importCanonicalProfileBundle",
@@ -160,7 +161,9 @@ export type AgentStudioLifecycleActionMessage =
   | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
   | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string }
   /** t-4c113c — the owner's full declared-subagents list; an empty list clears the declaration. */
-  | { type: "setCanonicalProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] };
+  | { type: "setCanonicalProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }
+  /** t-3bde32 — grant or revoke this agent's authority to PROPOSE Saved Agents for human review. */
+  | { type: "setCanonicalProfileProposeGrant"; agent: string; expectedRevision: string; granted: boolean };
 
 export type AgentStudioBundleActionMessage =
   | { type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }
@@ -241,6 +244,14 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       && Array.isArray(value.subagents) && value.subagents.length <= AGENT_OWNERSHIP_MAX_SUBAGENTS
       && value.subagents.every((child) => typeof child === "string" && AGENT_NAME_RE.test(child))
       ? { type: "setCanonicalProfileSubagents", agent: value.agent, expectedRevision: value.expectedRevision, subagents: [...value.subagents as string[]] }
+      : undefined;
+  }
+  if (value.type === "setCanonicalProfileProposeGrant") {
+    return exactKeys(value, ["type", "agent", "expectedRevision", "granted"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      && typeof value.granted === "boolean"
+      ? { type: "setCanonicalProfileProposeGrant", agent: value.agent, expectedRevision: value.expectedRevision, granted: value.granted }
       : undefined;
   }
   if (value.type === "refreshEvolution") {
@@ -401,7 +412,7 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   const value = raw as Record<string, unknown>;
   if (value.type === "canonicalProfileSnapshot") {
     return exactKeys(value, ["type", "action", "snapshot"])
-      && ["refresh", "set-enabled", "rename", "set-subagents"].includes(String(value.action))
+      && ["refresh", "set-enabled", "rename", "set-subagents", "set-propose-saved-agent-grant"].includes(String(value.action))
       && isAgentProfileStudioSnapshotV1(value.snapshot);
   }
   if (value.type === "canonicalProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
@@ -519,6 +530,12 @@ export interface AgentProfileLabels {
   ownershipOwnedBy: string;
   ownershipNoCandidates: string;
   ownershipApply: string;
+  proposeGrantTitle: string;
+  proposeGrantHelp: string;
+  proposeGrantRisk: string;
+  proposeGrantLabel: string;
+  proposeGrantOn: string;
+  proposeGrantOff: string;
   export: string;
   clone: string;
   import: string;
@@ -683,6 +700,19 @@ export function createAgentProfileLabels(t: AgentStudioTranslate = (message) => 
     ownershipOwnedBy: t("This agent is already declared as a subagent of {0}, so it cannot own others."),
     ownershipNoCandidates: t("No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own."),
     ownershipApply: t("Save declared subagents"),
+    proposeGrantTitle: t("Saved Agent proposals"),
+    proposeGrantHelp: t(
+      "Lets this agent ASK you to create a new Saved Agent. It never creates one: every proposal waits"
+      + " in the Human Inbox for your review, and an approved agent is created disabled.",
+    ),
+    proposeGrantRisk: t(
+      "Grant this only to an agent you trust to spend your attention. It can propose repeatedly, and each"
+      + " proposal is a decision you have to make. A proposed agent can never receive this same"
+      + " capability, so approving one cannot hand out the right to propose.",
+    ),
+    proposeGrantLabel: t("May propose Saved Agents for your review"),
+    proposeGrantOn: t("Granted — this agent may send you proposals."),
+    proposeGrantOff: t("Not granted — proposals from this agent are refused."),
     saveFirst: t("Save or discard form changes before a lifecycle action."),
     newAgentSetupHelp: t("Save this agent to create its canonical profile. Then choose pre-authorized MCP servers, skills, and hooks in Runtime tooling."),
     provenanceTitle: t("Profile sources and authority"),

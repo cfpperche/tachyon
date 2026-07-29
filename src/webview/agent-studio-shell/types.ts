@@ -32,7 +32,7 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "evolutionCandidateDetail"; agent: string; detail: AgentEvolutionCandidateDetailMessage }>
   | StudioDomainMessage<{ type: "evolutionActionResult"; agent: string; candidateId: string; status: "approved" | "rejected"; activeVersion: number }>
   | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>
-  | StudioDomainMessage<{ type: "canonicalProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents"; snapshot: AgentProfileStudioSnapshotV1 }>
+  | StudioDomainMessage<{ type: "canonicalProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
   | StudioDomainMessage<{ type: "canonicalProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
   | StudioDomainMessage<{ type: "canonicalProfileForgotten"; agent: string; agentId: string }>
   | StudioDomainMessage<{ type: "canonicalProfileError"; agent: string; code: string; message: string; conflict: boolean }>

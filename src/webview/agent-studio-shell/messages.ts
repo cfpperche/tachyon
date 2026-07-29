@@ -86,6 +86,9 @@ export const forgetCanonicalProfileMessage = (agent: string, expectedRevision: s
 /** t-4c113c — webview → host: replace the owner's whole declared-subagents list under its CAS revision. */
 export const setCanonicalProfileSubagentsMessage = (agent: string, expectedRevision: string, subagents: string[]) =>
   envelope({ type: "setCanonicalProfileSubagents" as const, agent, expectedRevision, subagents });
+/** t-3bde32 — webview → host: grant or revoke this agent's Saved Agent PROPOSAL authority. */
+export const setCanonicalProfileProposeGrantMessage = (agent: string, expectedRevision: string, granted: boolean) =>
+  envelope({ type: "setCanonicalProfileProposeGrant" as const, agent, expectedRevision, granted });
 export const exportCanonicalProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportCanonicalProfileBundle" as const, agent, expectedRevision });
 export const cloneCanonicalProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneCanonicalProfileBundle" as const, agent, expectedRevision, destinationAgentName });
 export const importCanonicalProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importCanonicalProfileBundle" as const, agent, destinationAgentName, contentBase64 });
@@ -114,7 +117,7 @@ export const evolutionErrorMessage = (agent: string, code: string, message: stri
   envelope({ type: "evolutionError" as const, agent, code, message, conflict });
 
 export const canonicalProfileSnapshotMessage = (
-  action: "refresh" | "set-enabled" | "rename" | "set-subagents",
+  action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant",
   snapshot: AgentProfileStudioSnapshotV1,
 ) => envelope({ type: "canonicalProfileSnapshot" as const, action, snapshot });
 export const canonicalProfileOwnershipMessage = (agent: string, ownership: AgentOwnershipViewV1) =>

@@ -43,6 +43,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
       worktree: { enabled: true, branch: "feature/web" }, isolation: "transcript",
     },
     bindings: {
+      grants: { proposeSavedAgent: false },
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
       prompt: { soul: true, instructions: false, evolution: true },

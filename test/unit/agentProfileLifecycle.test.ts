@@ -11,6 +11,8 @@ import {
   type AgentProfileLifecycleConfigPort,
   type CommitAgentProfileLifecycleInput,
 } from "../../src/config/agentProfileLifecycle.js";
+import { proposeSavedAgentGrantPatchFromStudioMutation } from "../../src/config/agentProfileStudio.js";
+import { readAgentProfileGrants } from "../../src/config/agentProfileGrants.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
 import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileTransactions.js";
@@ -740,5 +742,59 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       companion: { agentName: "ghost", ownership: { subagents: ["importer"] } },
     })).rejects.toThrow(/incomplete canonical state/);
+  });
+});
+
+describe("t-3bde32 — Saved Agent proposal grant, through the governed door", () => {
+  it("grants, revokes, and treats revocation as absence rather than an explicit false", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    const created = await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "coord", operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+      authority, config,
+    });
+    // Default is ABSENT, which the whole feature reads as refusal.
+    expect(created.snapshot.profile.grants).toBeUndefined();
+
+    const granted = await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "coord", operation: "edit",
+      expectedRevision: created.revision,
+      patch: proposeSavedAgentGrantPatchFromStudioMutation(
+        { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "coord", expectedRevision: created.revision, granted: true },
+        created.snapshot,
+      ),
+      authority, config,
+    });
+    expect(granted.snapshot.profile.grants?.proposeSavedAgent).toBe(true);
+    // It survives a re-read from disk — the door reads the file, not this object.
+    expect(readAgentProfileGrants(root, "coord")?.proposeSavedAgent).toBe(true);
+
+    const revoked = await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "coord", operation: "edit",
+      expectedRevision: granted.revision,
+      patch: proposeSavedAgentGrantPatchFromStudioMutation(
+        { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "coord", expectedRevision: granted.revision, granted: false },
+        granted.snapshot,
+      ),
+      authority, config,
+    });
+    // Revocation removes the key rather than writing `false`: one representation of refusal.
+    expect(revoked.snapshot.profile.grants).toEqual({});
+    expect(revoked.snapshot.profile.grants?.proposeSavedAgent).toBeUndefined();
+    expect(readAgentProfileGrants(root, "coord")?.proposeSavedAgent).not.toBe(true);
+  });
+
+  it("refuses a stale revision instead of writing an authority change the human never saw", () => {
+    const snapshot = { agentName: "coord", revision: "a".repeat(64), profile: {} } as never;
+    expect(() => proposeSavedAgentGrantPatchFromStudioMutation(
+      { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "coord", expectedRevision: "b".repeat(64), granted: true },
+      snapshot,
+    )).toThrow(/revision conflict/);
+    expect(() => proposeSavedAgentGrantPatchFromStudioMutation(
+      { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "other", expectedRevision: "a".repeat(64), granted: true },
+      snapshot,
+    )).toThrow(/revision conflict/);
   });
 });

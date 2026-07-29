@@ -165,6 +165,28 @@ export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion(
     expectedRevision: z.string().regex(REVISION),
     subagents: z.array(studioAgentName).max(AGENT_OWNERSHIP_MAX_SUBAGENTS),
   }).strict(),
+  /**
+   * t-3bde32 — grant or revoke `grants.proposeSavedAgent` on this agent's canonical profile.
+   *
+   * SDD 482 shipped the schema, the reader, the Bridge door and the commit gate for this grant, and
+   * every one of them refuses when it is absent — but nothing could ever set it. Dogfood on 0.56.115
+   * found the hole the only way it could be found: `codex-canonico` called `propose_saved_agent`, was
+   * correctly refused `capability_absent`, and the sole remaining move was hand-editing
+   * `.tachyon/agents/<agent>/agent.yml`, which is precisely the ungoverned door the whole feature
+   * exists to close. A governed capability nobody can grant through the governed path is not governed;
+   * it is unusable.
+   *
+   * Its own operation rather than a field on the Agent Form save: this is an authority decision, it
+   * needs its own risk copy, and it must not be something a human changes by accident while editing a
+   * model name. Same reasoning that gave `set-subagents` its own operation.
+   */
+  z.object({
+    schemaVersion: z.literal(1),
+    operation: z.literal("set-propose-saved-agent-grant"),
+    agentName: studioAgentName,
+    expectedRevision: z.string().regex(REVISION),
+    granted: z.boolean(),
+  }).strict(),
 ]);
 
 export type AgentProfileStudioLifecycleMutationV1 = z.infer<typeof agentProfileStudioLifecycleMutationSchemaV1>;
@@ -237,6 +259,17 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
       hooks: z.array(z.object({ id: z.string().regex(ID), scope: z.enum(["profile", "project", "product"]) }).strict()).max(128),
     }).strict(),
     externalReferences: z.number().int().nonnegative().max(128),
+    /**
+     * t-3bde32 — the profile's own `grants`, surfaced so Studio can show and change them.
+     *
+     * NOT `provenance.authority.grants`, which is a COUNT of host-custodied capability grants for
+     * skills/MCP/hooks. These are different things that a reader would otherwise conflate: one is how
+     * many tool resources a host authorized, the other is whether a human gave this agent the
+     * authority to ask for new agents. Absence is refusal, so the projection writes an explicit
+     * `false` rather than omitting the field — a UI that renders "not set" and a UI that renders
+     * "denied" should not be the same pixel.
+     */
+    grants: z.object({ proposeSavedAgent: z.boolean() }).strict(),
   }).strict(),
   provenance: z.object({
     canonical: z.object({ scope: z.literal("profile"), writable: z.literal(true), sha256: z.string().regex(REVISION) }).strict(),
@@ -291,6 +324,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       },
     },
     bindings: {
+      grants: { proposeSavedAgent: profile.grants?.proposeSavedAgent === true },
       environmentValueNames: Object.keys(profile.environment?.values ?? {}).sort(),
       secretNames: Object.keys(profile.environment?.secrets ?? {}).sort(),
       prompt: {
@@ -545,6 +579,31 @@ export function assertOwnershipTargets(
       throw new Error(`ownership target '${child}' declares its own subagents; nested subagent trees are not supported`);
     }
   }
+}
+
+/**
+ * t-3bde32 — turn a `set-propose-saved-agent-grant` mutation into the canonical patch, or refuse.
+ *
+ * REVOKING WRITES `grants: {}`, not `proposeSavedAgent: false`. The whole feature reads absence as
+ * refusal (`readAgentProfileGrants` returns `{}` and every door tests `=== true`), so removing the key
+ * leaves the profile in the same shape it had before anyone granted anything. Writing an explicit
+ * `false` would work identically today and would quietly become a second way to say "no" — one that a
+ * future reader has to check for alongside absence. One representation of refusal, not two.
+ *
+ * The patch replaces `grants` wholesale because the lifecycle's edit merge is shallow; that is safe
+ * while `proposeSavedAgent` is the only member, and the moment a second grant exists this function is
+ * where it must be merged rather than clobbered. Stated here because the bug would be silent.
+ */
+export function proposeSavedAgentGrantPatchFromStudioMutation(
+  mutation: Extract<AgentProfileStudioLifecycleMutationV1, { operation: "set-propose-saved-agent-grant" }>,
+  current: AgentProfileLifecycleSnapshot,
+): { grants: AgentProfileV1["grants"] } {
+  if (mutation.agentName !== current.agentName || mutation.expectedRevision !== current.revision) {
+    throw new Error(`agent '${mutation.agentName}' profile revision conflict`);
+  }
+  const others = { ...(current.profile.grants ?? {}) };
+  delete others.proposeSavedAgent;
+  return { grants: mutation.granted ? { ...others, proposeSavedAgent: true } : others };
 }
 
 /**

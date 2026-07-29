@@ -53,6 +53,7 @@ import {
   agentOwnershipView,
   createProfileFromStudioMutation,
   ownershipPatchFromStudioMutation,
+  proposeSavedAgentGrantPatchFromStudioMutation,
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
   assertOwnershipTargets,
@@ -5287,6 +5288,22 @@ export class Workspace {
       // `declaredOwner` for the roster/sidebar and never seeds spawn lineage, so the running owner's
       // session cannot diverge from it. Requiring a stop here would mean an agent could never declare
       // its own team while it works, which is the case t-4c113c exists to serve.
+      const result = await this.runAgentProfileLifecycleCommit({
+        agentName: mutation.agentName,
+        operation: "edit",
+        expectedRevision: mutation.expectedRevision,
+        patch,
+      });
+      return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
+    }
+    if (mutation.operation === "set-propose-saved-agent-grant") {
+      const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+      const patch = proposeSavedAgentGrantPatchFromStudioMutation(mutation, current);
+      // No stopped-agent precondition, and that is required rather than convenient: every door reads
+      // this grant from disk at the moment it is used (`readAgentProfileGrants` at admission, again at
+      // commit), so a live session holds no cached copy that could diverge. Requiring a stop would
+      // also make the intended flow impossible — a human grants the capability to a RUNNING
+      // coordinator so it can then propose, which is exactly the dogfood this task exists for.
       const result = await this.runAgentProfileLifecycleCommit({
         agentName: mutation.agentName,
         operation: "edit",

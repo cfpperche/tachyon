@@ -56,7 +56,7 @@ function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentPro
       worktree: { enabled: false, branch: "" }, isolation: "",
       nativeConfig: {},
     },
-    bindings: { environmentValueNames: [], secretNames: [], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },
+    bindings: { grants: { proposeSavedAgent: false }, environmentValueNames: [], secretNames: [], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },
     provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
   };
 }
@@ -304,6 +304,45 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     }));
     await flush();
     expect(mutations).toHaveLength(1);
+    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({ agent: "Ada" });
+  });
+
+  it("t-3bde32: dispatches the Saved Agent proposal grant, and refuses cross-agent tampering", async () => {
+    const mutations: Array<Record<string, unknown>> = [];
+    const target = ws({
+      commitAgentProfileStudioLifecycle: async (mutation) => {
+        mutations.push(mutation as Record<string, unknown>);
+        return { schemaVersion: 1, kind: "snapshot", snapshot: profileSnapshot("Ada", "c".repeat(64)) };
+      },
+    });
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    for (const granted of [true, false]) {
+      handleAgentStudioDomainMessage(target, ctx, envelope({
+        type: "setCanonicalProfileProposeGrant" as const,
+        agent: "Ada",
+        expectedRevision: "a".repeat(64),
+        granted,
+      }));
+      await flush();
+    }
+    expect(mutations).toEqual([
+      expect.objectContaining({ operation: "set-propose-saved-agent-grant", agentName: "Ada", granted: true }),
+      expect.objectContaining({ operation: "set-propose-saved-agent-grant", agentName: "Ada", granted: false }),
+    ]);
+    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1))
+      .toMatchObject({ action: "set-propose-saved-agent-grant" });
+
+    // An authority change for ANOTHER agent must not ride this binding — same guard as every other
+    // profile action, and the one that matters most on a grant.
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "setCanonicalProfileProposeGrant" as const,
+      agent: "Bea",
+      expectedRevision: "a".repeat(64),
+      granted: true,
+    }));
+    await flush();
+    expect(mutations).toHaveLength(2);
     expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({ agent: "Ada" });
   });
 

@@ -108,6 +108,16 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
+  if (m.type === "setCanonicalProfileProposeGrant") {
+    void runCanonicalProfileAction(ws, ctx, {
+      schemaVersion: 1,
+      operation: "set-propose-saved-agent-grant",
+      agentName: agent,
+      expectedRevision: m.expectedRevision,
+      granted: m.granted,
+    });
+    return;
+  }
   if (m.type === "forgetCanonicalProfile") {
     void runCanonicalProfileAction(ws, ctx, {
       schemaVersion: 1,

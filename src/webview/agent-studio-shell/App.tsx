@@ -49,6 +49,7 @@ import {
   renameCanonicalProfileMessage,
   forgetCanonicalProfileMessage,
   setCanonicalProfileSubagentsMessage,
+  setCanonicalProfileProposeGrantMessage,
   exportCanonicalProfileBundleMessage,
   cloneCanonicalProfileBundleMessage,
   importCanonicalProfileBundleMessage,
@@ -472,6 +473,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
           ? `Renamed to ${d.snapshot.agentName}. Reopen the agent from the sidebar to continue editing.`
           : d.action === "refresh" ? "Latest profile loaded."
             : d.action === "set-subagents" ? "Declared subagents saved."
+            : d.action === "set-propose-saved-agent-grant"
+              ? (d.snapshot.bindings.grants.proposeSavedAgent
+                ? "Saved Agent proposals granted."
+                : "Saved Agent proposals revoked.")
               : d.snapshot.enabled ? "Agent enabled." : "Agent disabled.",
       });
     } else if (d.type === "canonicalProfileOwnership") {
@@ -803,6 +808,37 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                             </div>
                           </>
                         )}
+                  </div>
+                )}
+                {canonicalSnapshot && (
+                  <div class="ash-ownership" aria-labelledby="ash-propose-grant-title">
+                    <div class="ash-label" id="ash-propose-grant-title">{profileLabels.proposeGrantTitle}</div>
+                    <div class="hint">{profileLabels.proposeGrantHelp}</div>
+                    <label class="check">
+                      <input
+                        type="checkbox"
+                        id="ash-propose-grant"
+                        checked={canonicalSnapshot.bindings.grants.proposeSavedAgent}
+                        disabled={canonicalLifecycleDisabled}
+                        onChange={(event) => runCanonicalLifecycle(
+                          (event.currentTarget as HTMLInputElement).checked
+                            ? "Granting Saved Agent proposals"
+                            : "Revoking Saved Agent proposals",
+                          setCanonicalProfileProposeGrantMessage(
+                            canonicalSnapshot.agentName,
+                            canonicalSnapshot.revision,
+                            (event.currentTarget as HTMLInputElement).checked,
+                          ),
+                        )}
+                      />
+                      {" "}{profileLabels.proposeGrantLabel}
+                    </label>
+                    <div class="hint ash-native-config-risk">{profileLabels.proposeGrantRisk}</div>
+                    <div class="ash-soul-status">
+                      {canonicalSnapshot.bindings.grants.proposeSavedAgent
+                        ? profileLabels.proposeGrantOn
+                        : profileLabels.proposeGrantOff}
+                    </div>
                   </div>
                 )}
                 {dirty && <div class="ash-soul-status">{profileLabels.saveFirst}</div>}

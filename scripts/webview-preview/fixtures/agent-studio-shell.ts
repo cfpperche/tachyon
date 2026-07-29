@@ -91,6 +91,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
+    grants: { proposeSavedAgent: false },
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
     prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
