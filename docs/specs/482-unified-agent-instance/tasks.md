@@ -232,6 +232,17 @@ preconditions current, not future, which is why they are closed here.
 
 ### Slice C — what did NOT land, and why
 
+- [x] The review-only state is DECLARED, not implicit: a deployment table in `spec.md`, the reason
+      written at the injection site in `extension.ts`, and a test that fails if someone supplies the
+      port without updating the table. `claude-reviewer` named the failure mode — an optional
+      dependency nobody declares is a silent gap rather than staging.
+- [x] Wire question ANSWERED by review, not by me: slice C touches no `engine-service/`, `runtime-api/`
+      or `protocol.ts` file and leaves `ENGINE_SHELL_PROTOCOL` unchanged; the Cockpit↔webview messages
+      ship in the same VSIX, so no skew is possible. No bump needed for what landed. When a persistent
+      engine client eventually needs the port, the safe shape is a NEW additive `extension.invoke`
+      action (an old engine refuses an unknown action by name; an old client never sends it) — never a
+      widened payload on an existing `.strict()` seam like the Studio snapshot, which is what broke
+      0.56.110 D1.
 - [ ] HOST WIRING of the commit port. `WorkspaceShellHandle` exposes
       `commitAgentProfileStudioLifecycle` (set-enabled / rename / forget / set-subagents) but no
       `create`, so wiring the approve button end to end needs a NEW extension operation

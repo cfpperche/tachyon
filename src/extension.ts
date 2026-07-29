@@ -1438,6 +1438,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
     humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
     /**
+     * SDD 482 phase 4C — `approveSavedAgentProposal` is DELIBERATELY NOT SUPPLIED HERE, and that
+     * absence is the current product state rather than an oversight.
+     *
+     * Consequence, stated where the wiring is rather than only in the spec: in this deployment the
+     * creation door is REVIEW-ONLY. An agent may propose, a human may read and deny, and approving
+     * refuses out loud with "This window cannot commit Saved Agent proposals". Nothing creates a
+     * profile, an authority record or a roster entry by any route.
+     *
+     * Why it is not wired: `WorkspaceShellHandle` proxies to a client target exposing
+     * `commitAgentProfileStudioLifecycle` (set-enabled / rename / forget / set-subagents) — there is
+     * no `create` across the engine/shell boundary. Supplying it means either an in-process provider
+     * or a NEW additive `extension.invoke` action; both are decisions for the human, and an optional
+     * dep that nobody declares is exactly how a door ends up half-open without anyone choosing it
+     * (`t-c6a89e` is the cautionary tale: a declared-but-unsupplied port left a whole section inert
+     * for every workspace, and nothing said so).
+     */
+    /**
      * t-c6a89e — the ledger Control's Execution section reads.
      *
      * This dependency was declared and never supplied, so the section returned `undefined` before it

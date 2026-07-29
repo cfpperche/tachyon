@@ -350,3 +350,31 @@ describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
     expect(tools).not.toContain("denySavedAgentProposal");
   });
 });
+
+/**
+ * SDD 482 phase 4C — the shipped deployment is REVIEW-ONLY, and that is a declared product state
+ * rather than an unfinished edge.
+ *
+ * `claude-reviewer` named the failure mode this guards: an optional dependency nobody declares is a
+ * silent gap, not staging. So the absence is asserted, with the reason attached — if someone supplies
+ * the port, this test fails and they must update the spec's deployment table in the same change
+ * instead of quietly opening the door.
+ */
+describe("the shipped deployment is review-only (SDD 482 phase 4C)", () => {
+  const extension = fs.readFileSync(path.resolve(__dirname, "../../src/extension.ts"), "utf8");
+
+  it("does not supply the commit port, and says why where the wiring is", () => {
+    // Exactly one occurrence: the comment explaining the absence. No `approveSavedAgentProposal:` key.
+    expect(extension).not.toMatch(/approveSavedAgentProposal\s*:/);
+    expect(extension).toContain("creation door is REVIEW-ONLY");
+  });
+
+  it("keeps the spec's deployment table honest about it", () => {
+    const spec = fs.readFileSync(
+      path.resolve(__dirname, "../../docs/specs/482-unified-agent-instance/spec.md"),
+      "utf8",
+    );
+    expect(spec).toContain("Where the creation door is open today");
+    expect(spec).toMatch(/VS Code extension as shipped.*\*\*no\*\*/);
+  });
+});

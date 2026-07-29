@@ -198,6 +198,23 @@ here.
 - **Big-bang unification.** Discarded by the repository's own history — the abandoned migration/rollback
   track in the project handoff is what that costs.
 
+## Where the creation door is open today (2026-07-29)
+
+Stated explicitly because an optional dependency that nobody declares is a silent gap rather than
+staging — raised by `claude-reviewer` on slice C and worth answering in the spec rather than only in a
+commit message.
+
+| Deployment | Propose | Review / deny | Approve → create |
+| --- | --- | --- | --- |
+| VS Code extension as shipped | yes, with `grants.proposeSavedAgent` | yes | **no** — refuses out loud |
+| A host that supplies `approveSavedAgentProposal` | yes | yes | yes |
+
+No profile in this repository holds `grants.proposeSavedAgent`, so today nothing can propose either.
+The commit path is complete and tested; what is absent is the injection point, and supplying it is a
+decision (in-process provider, or a new ADDITIVE `extension.invoke` action — never a widened payload
+on an existing `.strict()` seam such as the Agent Studio snapshot, which is what would break an older
+shell).
+
 ## Ratified decisions (human, 2026-07-29)
 
 These were the open questions. They are answered, and the answers are now requirements — the fifth
