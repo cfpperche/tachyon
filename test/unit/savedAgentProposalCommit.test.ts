@@ -53,6 +53,13 @@ function ports(over: Partial<SavedAgentCommitPorts> = {}): SavedAgentCommitPorts
   };
 }
 
+/**
+ * A roster in which `helper` is a free agent. Supplied because admission now validates requested
+ * ownership against the spec 352 contract (SDD 482 phase 4C) — a fixture that asks for ownership with
+ * no roster is REFUSED, which is the control working, not a test problem to route around.
+ */
+const ROSTER = [{ name: "helper", kind: "agent" as const, subagents: [] }];
+
 function proposed(ws: string, specOver: Record<string, unknown> = {}) {
   const admitted = recordSavedAgentProposal({
     workspaceRoot: ws,
@@ -61,6 +68,7 @@ function proposed(ws: string, specOver: Record<string, unknown> = {}) {
     spec: { name: "importer", runtimeAdapter: "claude", rationale: "runs the nightly import", ...specOver } as never,
     base: { configSha256: CONFIG_SHA },
     nowMs: NOW,
+    roster: ROSTER,
   });
   if (!admitted.ok) throw new Error(`fixture: ${admitted.reason}`);
   return admitted.proposal;
