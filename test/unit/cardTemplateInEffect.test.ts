@@ -47,7 +47,7 @@ describe("the model reports both homes", () => {
   it("carries the personal state and its refusal reasons verbatim", () => {
     const model = buildCockpitModel([bundle("alpha")], {
       nowIso: "now",
-      personalCardTemplate: { state: "refused", errors: ["tachyon.sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph'"] },
+      personalCardTemplate: { state: "refused", errors: ["sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph'"] },
     });
     expect(model.cardTemplate?.personal).toBe("refused");
     // the same words the sidebar banner shows, from the same validator — a person should not have to
@@ -93,7 +93,7 @@ describe("what the block renders", () => {
         s: STRINGS,
         state: {
           personal: "refused",
-          personalErrors: ["tachyon.sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph'"],
+          personalErrors: ["sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph'"],
           projects: [{ folder: "alpha", configured: true, refused: false }],
         },
       }),

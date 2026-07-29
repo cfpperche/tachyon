@@ -78,7 +78,7 @@ describe("remote WorkspaceClient", () => {
         uiRequests.push(request.operationId);
         return request.kind === "execute-command" ? { command: request.command } : null;
       },
-      settings: { global: { "tachyon.maxAgents": 4 } },
+      settings: { global: { "git.path": "/usr/bin/git" } },
       ensure: async () => {
         ensureCalls += 1;
         return { identity: currentIdentity, controlSocketPath: socketPath, disposition: "reused-exact" };

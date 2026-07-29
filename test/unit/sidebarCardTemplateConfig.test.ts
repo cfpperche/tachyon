@@ -155,8 +155,8 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
 
   it("is one validator, reusable by the personal override phase 5 adds", () => {
     // Same function, a different key path — so two homes for the same document cannot disagree.
-    const parsed = parseCardTemplate({ version: CARD_TEMPLATE_VERSION, meta: ["oops"] }, "tachyon.sidebar.cardTemplate");
-    expect(parsed.errors[0]).toContain("tachyon.sidebar.cardTemplate.meta[0]");
+    const parsed = parseCardTemplate({ version: CARD_TEMPLATE_VERSION, meta: ["oops"] }, "sidebar.cardTemplate");
+    expect(parsed.errors[0]).toContain("sidebar.cardTemplate.meta[0]");
   });
 
   it("leaves the sidebar settings absent when nothing is configured", () => {

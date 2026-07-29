@@ -963,6 +963,9 @@ Control itself will not open. `Tachyon: Open Global Settings File` opens it (cre
   common install locations, then `git` on `PATH`. (`git.path` is the one VS Code setting Tachyon still
   reads, because it is not Tachyon's.)
 
+The dogfood steps for this surface — including how recovery behaves when the file is broken — are in
+`docs/runbooks/settings-authority-dogfood.md`.
+
 If you had any of the retired `tachyon.*` VS Code settings, Tachyon imports them once, on first
 activation, into whichever of the two homes now owns them — and tells you when it writes to a tracked
 `tachyon.yml`, so nothing lands in your next commit unannounced.

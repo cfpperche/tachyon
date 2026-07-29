@@ -11,6 +11,7 @@
  * through `parseCardTemplate` — the SAME function the config loader calls — so the preview and the
  * loader cannot disagree about what is valid.
  */
+import { GLOBAL_SETTINGS_SCHEMA_VERSION } from "../config/globalSettings.js";
 import {
   CARD_CATALOG,
   CARD_REGIONS,
@@ -192,5 +193,8 @@ export function toSettingsJson(state: CardEditorState): string {
       ids.every((id, index) => id === DEFAULT_CARD_TEMPLATE[region][index]);
     if (!isDefault) body[region] = [...ids];
   }
-  return `${JSON.stringify({ "tachyon.sidebar.cardTemplate": body }, null, 2)}\n`;
+  // t-aaad95 — the shape of the FILE it is pasted into, not the flat VS Code settings key this used
+  // to emit. That old snippet would now be refused by the global settings loader as an unknown key —
+  // and the refusal would name a key Control itself had told the person to paste.
+  return `${JSON.stringify({ version: GLOBAL_SETTINGS_SCHEMA_VERSION, sidebar: { cardTemplate: body } }, null, 2)}\n`;
 }

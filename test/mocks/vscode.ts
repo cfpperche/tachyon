@@ -203,7 +203,7 @@ export const window = {
 
 /**
  * SDD 479 phase 5 — settings values a test wants the code under test to read. Keyed by the FULL id
- * (`tachyon.sidebar.cardTemplate`), because that is what a reader composes from its section and key,
+ * (`git.path`), because that is what a reader composes from its section and key,
  * and a mock that only matched one of the two halves would pass for the wrong reason.
  */
 let __configValues: Record<string, unknown> = {};

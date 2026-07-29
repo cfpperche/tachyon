@@ -102,6 +102,32 @@ describe("no reader of the retired surface survives", () => {
     expect([...DAEMON_SETTING_KEYS]).toEqual(["git.path"]);
   });
 
+  /**
+   * The gap that let a real orphan through: this guard checked package.json for the retired key
+   * NAMES but only grepped the tree for reader SHAPES. `test/integration/extension.test.js` went on
+   * dereferencing `contributes.configuration.properties["tachyon.maxAgents"]` — and because
+   * `verify:full` runs neither `test:integration` nor `test:browser`, nothing failed. A retired id
+   * quoted as a string is a reference to a surface that no longer exists, wherever it appears.
+   */
+  it("no retired setting id survives as a string literal, including where the gate cannot run it", () => {
+    const retired = [
+      "tachyon.maxAgents",
+      "tachyon.agentMemoryMax",
+      "tachyon.taskNotifications",
+      "tachyon.activity.codeTheme",
+      "tachyon.worktrees.revealInWorkspace",
+      "tachyon.gitPath",
+      "tachyon.agentPane.enabled",
+      "tachyon.sidebar.cardTemplate",
+      "tachyon.openSettings",
+    ];
+    const offenders = retired.flatMap((id) => [
+      ...withoutSelfAndDocs(grep(`"${id}`, ["src", "test", "scripts"])),
+      ...withoutSelfAndDocs(grep(`'${id}`, ["src", "test", "scripts"])),
+    ]);
+    expect(offenders).toEqual([]);
+  });
+
   it("no `maxAgents` duplication is left between the shell and tachyon.yml", () => {
     expect(withoutSelfAndDocs(grep("getMaxAgents", ["src", "test", "scripts"]))).toEqual([]);
     expect(withoutSelfAndDocs(grep("getAgentMemoryMax", ["src", "test", "scripts"]))).toEqual([]);

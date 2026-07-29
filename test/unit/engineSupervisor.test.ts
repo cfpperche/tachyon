@@ -159,7 +159,7 @@ describe("persistent engine supervisor", () => {
       .toThrowError(expect.objectContaining({ code: "INVALID_DAEMON_OPTIONS" }));
     expect(() => encodeEngineDaemonOptions({
       ...options,
-      settings: { global: { "tachyon.maxAgents": "x".repeat(70_000) } },
+      settings: { global: { "git.path": "x".repeat(70_000) } },
     })).toThrowError(expect.objectContaining({ code: "DAEMON_OPTIONS_TOO_LARGE" }));
   });
 

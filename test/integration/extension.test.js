@@ -125,7 +125,10 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const contributes = ext.packageJSON.contributes;
     const leaked = contributes.commands.filter((c) => c.title.includes("%"));
     assert.deepStrictEqual(leaked.map((c) => c.command), [], "nls keys did not resolve");
-    assert.ok(!contributes.configuration.properties["tachyon.maxAgents"].description.includes("%"));
+    // t-aaad95 — the configuration contribution is gone entirely, so there is no contributed
+    // description left to leak a %key%. What replaced it as a localization surface is the command
+    // titles above and the view names below; both are still checked.
+    assert.ok(contributes.configuration === undefined, "contributes.configuration came back");
     for (const v of contributes.views.tachyon) assert.ok(!v.name.includes("%"), `view name unresolved: ${v.name}`);
   });
 
@@ -139,6 +142,10 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       "tachyon.openAgentTerminal",
       "tachyon.copyBridgeUrl",
       "tachyon.connectRuntime",
+      // t-aaad95 — the recovery command for the global Tachyon settings file. Pinned HERE, in a real
+      // extension host, because the defect it guards was precisely that a contributed command had no
+      // registered handler; only an activation-level check can catch that.
+      "tachyon.openGlobalSettings",
     ]) {
       assert.ok(commands.includes(cmd), `missing command ${cmd}`);
     }

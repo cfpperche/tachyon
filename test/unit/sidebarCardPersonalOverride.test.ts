@@ -38,20 +38,20 @@ const project = (written: Record<string, unknown>): CardTemplateConfig => {
 
 /** The personal document, parsed the way the shell parses it: against the project's own template. */
 const personal = (written: Record<string, unknown>, base = DEFAULT_CARD_TEMPLATE) =>
-  parseCardTemplate({ version: CARD_TEMPLATE_VERSION, ...written }, "tachyon.sidebar.cardTemplate", base);
+  parseCardTemplate({ version: CARD_TEMPLATE_VERSION, ...written }, "sidebar.cardTemplate", base);
 
 describe("the personal override is validated by the SAME rules as the project's", () => {
   it("refuses an unknown component with the same words, under its own key path", () => {
     const refused = personal({ meta: ["cpu-graph"] });
     expect(refused.config).toBeUndefined();
     // the key path names the home the person actually edits — the message is otherwise identical
-    expect(refused.errors[0]).toContain("tachyon.sidebar.cardTemplate.meta[0]");
+    expect(refused.errors[0]).toContain("sidebar.cardTemplate.meta[0]");
     expect(refused.errors[0]).toContain("unknown component 'cpu-graph'");
   });
 
   it("refuses a missing or unknown version, exactly like the project's template", () => {
-    expect(parseCardTemplate({ meta: [] }, "tachyon.sidebar.cardTemplate").errors[0]).toContain("version: required");
-    expect(parseCardTemplate({ version: 7, meta: [] }, "tachyon.sidebar.cardTemplate").errors[0]).toContain("unknown template version 7");
+    expect(parseCardTemplate({ meta: [] }, "sidebar.cardTemplate").errors[0]).toContain("version: required");
+    expect(parseCardTemplate({ version: 7, meta: [] }, "sidebar.cardTemplate").errors[0]).toContain("unknown template version 7");
   });
 
   it("refuses whole — a personal override is never half-applied either", () => {

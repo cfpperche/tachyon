@@ -140,7 +140,7 @@ describe("SDD 479 phase 5 — the personal override's two surfaces", () => {
         state: {
           personal: "refused",
           personalErrors: [
-            "tachyon.sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph' — the catalog is status-dot, name, model, …",
+            "sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph' — the catalog is status-dot, name, model, …",
           ],
           projects: [{ folder: "tachyon", configured: true, refused: false }],
         },
@@ -171,10 +171,13 @@ describe("SDD 479 phase 5 — the personal override's two surfaces", () => {
     const html = renderStatic(
       CardTemplateRefusalBanner({
         refusal: {
-          file: "VS Code settings · tachyon.sidebar.cardTemplate",
+          // t-aaad95 — the personal home is a FILE now, and the banner shows its path. A screenshot
+          // built from the retired settings-key wording would keep passing while showing a home that
+          // no longer exists, which is the one thing a shot test is supposed to prevent.
+          file: "/home/you/.tachyon/settings.json · sidebar.cardTemplate",
           errors: [
-            "tachyon.sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph' — the catalog is status-dot, name, model, …",
-            "tachyon.sidebar.cardTemplate.version: unknown template version 7 (this Tachyon understands version 1)",
+            "sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph' — the catalog is status-dot, name, model, …",
+            "sidebar.cardTemplate.version: unknown template version 7 (this Tachyon understands version 1)",
           ],
         },
         personal: true,

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseGlobalSettings } from "../../src/config/globalSettings.js";
 import {
   editorStateFrom,
   moveComponent,
   templateFrom,
+  toSettingsJson,
   toYaml,
   toggleComponent,
   validate,
@@ -13,6 +15,7 @@ import {
   CARD_REGIONS,
   DEFAULT_CARD_TEMPLATE,
   parseCardTemplate,
+  type CardComponentId,
 } from "../../src/sidebar/cardTemplate.js";
 import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../src/sidebar/cardPreviewRows.js";
 
@@ -144,5 +147,41 @@ describe("SDD 479 phase 4 — the rows the preview shows", () => {
 
   it("previews at the sidebar's real width and at its narrowest", () => {
     expect(CARD_PREVIEW_WIDTHS.map((w) => w.px)).toEqual([320, 220]);
+  });
+});
+
+/**
+ * t-aaad95 — the personal home moved from a VS Code settings key to the global Tachyon settings file,
+ * and this block's "Copy JSON" is what a person actually pastes there.
+ *
+ * There was NO test on this payload, which is how it kept emitting the flat `tachyon.sidebar.*` key
+ * after that key stopped existing: Control would have handed someone a snippet the loader refuses as
+ * an unknown key, naming a key Control itself told them to paste. So the assertion that matters is
+ * not the shape in the abstract — it is that the real parser ACCEPTS what this emits.
+ */
+describe("the personal-home JSON Control tells you to paste", () => {
+  const stateWith = (meta: readonly CardComponentId[]) => {
+    let state = editorStateFrom(undefined);
+    for (const id of DEFAULT_CARD_TEMPLATE.meta) state = toggleComponent(state, "meta", id);
+    for (const id of meta) state = toggleComponent(state, "meta", id);
+    return state;
+  };
+
+  it("is accepted verbatim by the global settings parser", () => {
+    const emitted = JSON.parse(toSettingsJson(stateWith(["harness"])));
+    const parsed = parseGlobalSettings(emitted, "settings.json");
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.settings?.sidebarCardTemplate).toBeDefined();
+  });
+
+  it("nests under sidebar.cardTemplate rather than the retired flat key", () => {
+    const emitted = JSON.parse(toSettingsJson(stateWith(["harness"]))) as Record<string, unknown>;
+    expect(Object.keys(emitted).sort()).toEqual(["sidebar", "version"]);
+    expect((emitted.sidebar as Record<string, unknown>).cardTemplate).toMatchObject({ meta: ["harness"] });
+  });
+
+  it("still emits only what differs, so a silent region keeps the project's choice", () => {
+    const untouched = JSON.parse(toSettingsJson(editorStateFrom(undefined))) as { sidebar: { cardTemplate: Record<string, unknown> } };
+    expect(Object.keys(untouched.sidebar.cardTemplate)).toEqual(["version"]);
   });
 });
