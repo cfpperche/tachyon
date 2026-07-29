@@ -19,14 +19,14 @@
  * Framework-agnostic on purpose (same contract as `types.ts`): no preact, no vscode. The webview owns
  * the fragments; this module owns which fragments exist, where they may sit, and in what order.
  */
-import { SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
+import { SUPPORTED_AGENT_RUNTIME_NAMES } from "../agents/agentRuntimeAdmission.js";
 import { isAgentRow, type AgentVM } from "./types.js";
 
 /**
  * SDD 479 phase 3 — the runtime names a per-runtime override may key on: every runtime Tachyon can run
  * an Agent on. Borrowed, not redeclared, so a runtime added to the product is overridable the same day.
  */
-const AGENT_RUNTIME_NAMES: readonly string[] = SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES;
+const AGENT_RUNTIME_NAMES: readonly string[] = SUPPORTED_AGENT_RUNTIME_NAMES;
 
 /** Bumped when the template SHAPE changes. An unknown version is refused, never guessed (phase 2). */
 export const CARD_TEMPLATE_VERSION = 1;
@@ -611,7 +611,7 @@ export function describeCardTemplateSource(source: CardTemplateSource): string {
  * SDD 479 phase 3 — per-runtime overrides, each resolved to a COMPLETE template.
  *
  * A key must name a runtime that can actually operate an Agent. That list is
- * `SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES`, not the narrower attested four: a declared agent is attested,
+ * `SUPPORTED_AGENT_RUNTIME_NAMES`, not the narrower attested four: a declared agent is attested,
  * but an ad-hoc one may be OpenCode/Gemini/Qwen/Hermes, and refusing `opencode:` would refuse an
  * override for rows this product creates. It is still the product's own list, not one invented here.
  */

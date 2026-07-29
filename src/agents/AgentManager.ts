@@ -62,7 +62,7 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { AdhocAgentAdmissionError, admitAdhocAgentCommand } from "./adhocAdmission.js";
+import { AgentRuntimeAdmissionError, admitAgentRuntimeCommand } from "./agentRuntimeAdmission.js";
 import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
@@ -461,7 +461,7 @@ export interface SpawnOptions {
    * SDD 478 M9 — what the caller is asking to create. Required alongside `cmd`, because the manager
    * no longer infers it: which entity an ad-hoc command produces is a decision belonging to the door
    * that took the request, and this manager serves several. An `agent` request is admitted only for
-   * an attested runtime (`admitAdhocAgentCommand`); a `terminal` request has no agent fields to carry.
+   * a supported agent runtime (`admitAgentRuntimeCommand`); a `terminal` request has no agent fields to carry.
    */
   kind?: EntryKind;
   cwd?: string;
@@ -2235,8 +2235,8 @@ export class AgentManager {
       // runtime is run with an advisory rather than refused. That policy is not M9's to withdraw.
       const requested = opts.kind ?? "agent";
       if (requested === "agent" && !opts.deliveryJoin && !forced?.attempt) {
-        const admission = admitAdhocAgentCommand(opts.cmd);
-        if (!admission.ok) throw new AdhocAgentAdmissionError(admission.reason);
+        const admission = admitAgentRuntimeCommand(opts.cmd);
+        if (!admission.ok) throw new AgentRuntimeAdmissionError(admission.reason);
       }
       def = requested === "agent"
         ? {

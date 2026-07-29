@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import { SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../../src/agents/adhocAdmission.js";
+import { SUPPORTED_AGENT_RUNTIME_NAMES } from "../../src/agents/agentRuntimeAdmission.js";
 import {
   CARD_TEMPLATE_VERSION,
   DEFAULT_CARD_TEMPLATE,
@@ -128,14 +128,14 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
           meta: [branch]
 `);
     expect(refusal).toContain("unknown runtime 'emacs'");
-    for (const runtime of SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES) expect(refusal).toContain(runtime);
+    for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) expect(refusal).toContain(runtime);
   });
 
   it("accepts every runtime the product can run an agent on — including the non-attested ones", () => {
-    // Validated against SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES, not the narrower attested four: an ad-hoc
+    // Validated against SUPPORTED_AGENT_RUNTIME_NAMES, not the narrower attested four: an ad-hoc
     // agent may be OpenCode/Gemini/Qwen/Hermes, and refusing those keys would refuse an override for
     // rows this product creates.
-    for (const runtime of SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES) {
+    for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
       const config = templateFor(`settings:
   sidebar:
     cardTemplate:
