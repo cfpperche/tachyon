@@ -6348,7 +6348,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     // and the invariant is the manager's, not any one door's discretion.
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
     await expect(h.manager.spawn("shelly", { cmd: "sh", kind: "agent" })).rejects.toMatchObject({
-      code: "adhoc_agent_runtime_unsupported",
+      code: "agent_runtime_unsupported",
     });
     expect(h.sessions.size).toBe(0);
     expect(h.ledger.get("shelly")).toBeUndefined();
@@ -6357,7 +6357,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
   it("t-8f3f7d treats an omitted kind as the STRICT arm, so a forgetful caller never gets a silent terminal", async () => {
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
     await expect(h.manager.spawn("forgot", { cmd: "npm run dev" })).rejects.toMatchObject({
-      code: "adhoc_agent_runtime_unsupported",
+      code: "agent_runtime_unsupported",
     });
     expect(h.sessions.size).toBe(0);
   });

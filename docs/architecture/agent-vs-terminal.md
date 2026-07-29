@@ -65,15 +65,16 @@ lighter path that does not require a canonical profile. Generic commands use `sp
 explicit Terminal operation with no agent parameters at all.
 
 **"Supported" here is a different list from "attested", and deliberately so.** `ATTESTED_RUNTIMES`
-answers which runtime may back a **canonical profile**; `SUPPORTED_ADHOC_AGENT_RUNTIMES`
-(`src/agents/adhocAdmission.ts`) answers which runtime Tachyon can hand a delegation and get an answer
-back from. Every attested runtime is in the second list; the reverse is false, because OpenCode,
-Hermes, Gemini and Qwen have measured resume adapters, private homes, activity readers and attention
-manifests without being profile-backed. Using the canonical bar for the ad-hoc door would have deleted
-them as agents outright — `agents:` already admits only attested executables, so the ad-hoc path is
-their only door — and that is a product decision, not a migration side effect. Each entry states the
-mechanism that earns it a place, and any shortfall against the delegation contract is written down in
-the same entry rather than settled by silently refusing the runtime.
+answers which runtime may back a **canonical profile**; `SUPPORTED_AGENT_RUNTIMES`
+(`src/agents/agentRuntimeAdmission.ts`) answers which runtime Tachyon can operate as an **Agent
+Instance** (Saved or Temporary) — hand a delegation and get an answer back. Every attested runtime is
+in the second list; the reverse is false, because OpenCode, Hermes, Gemini and Qwen have measured
+resume adapters, private homes, activity readers and attention manifests without being profile-backed.
+Using the canonical bar for Agent Instance admission would have deleted them as agents outright —
+`agents:` already admits only attested executables for Saved profiles, so Temporary is their only
+door — and that is a product decision, not a migration side effect. Each entry states the mechanism
+that earns it a place, and any shortfall against the delegation contract is written down in the same
+entry rather than settled by silently refusing the runtime.
 
 ## Where to declare what
 
@@ -132,7 +133,7 @@ reclassify rows already on disk. The surviving helper is named `suggestKindForCo
 is all it is: a pre-selection an authoring surface shows a human, who can override it.
 
 **M9 has landed.** The ad-hoc door no longer infers. `spawn_agent` admits only a runtime declared in
-`SUPPORTED_ADHOC_AGENT_RUNTIMES`, resolving the executable through the same launcher-aware parse the
+`SUPPORTED_AGENT_RUNTIMES`, resolving the executable through the same launcher-aware parse the
 launch preflight uses and refusing anything it cannot name — shell composition included, because a
 Terminal runs a command verbatim while an Agent's identity depends on which runtime actually starts.
 `spawn_terminal` is the other half: name, cmd, cwd, and no parameter to put a task, a lineage, a brief,

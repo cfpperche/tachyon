@@ -2,7 +2,7 @@
  * SDD 478 M9 / `t-8f3f7d` — real-runtime dogfood for the ad-hoc Agent/Terminal door.
  *
  * The admission rule itself is pure string logic and unit tests pin it. What unit tests cannot check is
- * whether the DECLARATION is still true of the machine: `SUPPORTED_ADHOC_AGENT_RUNTIMES` claims each
+ * whether the DECLARATION is still true of the machine: `SUPPORTED_AGENT_RUNTIMES` claims each
  * entry is a real LLM runtime with a real brief channel, and a list like that rots silently — a renamed
  * flag or a retired binary would leave the door admitting something Tachyon can no longer operate.
  *
@@ -16,11 +16,11 @@
  */
 import { spawnSync } from "node:child_process";
 import {
-  admitAdhocAgentCommand,
-  SUPPORTED_ADHOC_AGENT_RUNTIMES,
-  SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES,
+  admitAgentRuntimeCommand,
+  SUPPORTED_AGENT_RUNTIMES,
+  SUPPORTED_AGENT_RUNTIME_NAMES,
   TERMINAL_OPERATION,
-} from "../../src/agents/adhocAdmission.js";
+} from "../../src/agents/agentRuntimeAdmission.js";
 
 /** The flag each declared brief channel actually rides on, for the runtimes that use argv. */
 const BRIEF_FLAG: Partial<Record<string, string>> = {
@@ -52,14 +52,14 @@ const checks: boolean[] = [];
 const absent: string[] = [];
 
 console.log("\n== 1: every DECLARED runtime that is installed is a real CLI the door admits ==");
-for (const runtime of SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES) {
+for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
   if (!installed(runtime)) {
     absent.push(runtime);
     console.log(`SKIP — ${runtime}: not installed on this machine (absence is not evidence about it)`);
     continue;
   }
   const version = run(runtime, ["--version"]);
-  const admission = admitAdhocAgentCommand(runtime);
+  const admission = admitAgentRuntimeCommand(runtime);
   checks.push(report(
     `${runtime}: answers --version and is admitted as an ad-hoc agent runtime`,
     version.ok && admission.ok,
@@ -79,13 +79,13 @@ for (const [runtime, flag] of Object.entries(BRIEF_FLAG)) {
   checks.push(report(
     `${runtime}: still advertises ${flag}, the channel the declaration names`,
     help.text.includes(flag!),
-    { declared: SUPPORTED_ADHOC_AGENT_RUNTIMES[runtime as keyof typeof SUPPORTED_ADHOC_AGENT_RUNTIMES].brief, flag },
+    { declared: SUPPORTED_AGENT_RUNTIMES[runtime as keyof typeof SUPPORTED_AGENT_RUNTIMES].brief, flag },
   ));
 }
 
 console.log("\n== 3: real generic commands are refused, and told where to go ==");
 for (const cmd of ["sh", "npm run dev", "git status", "sh -c 'echo hi'", "node --version"]) {
-  const admission = admitAdhocAgentCommand(cmd);
+  const admission = admitAgentRuntimeCommand(cmd);
   const refusedWell = !admission.ok && admission.reason.includes(TERMINAL_OPERATION);
   checks.push(report(
     `'${cmd}' is refused as an agent and named ${TERMINAL_OPERATION}`,
@@ -98,7 +98,7 @@ console.log("\n== 4: a runtime binary reached through a launcher still resolves 
 {
   // Tachyon launches through `env`/`npx` wrappers in real configs; the door must see through them or it
   // would refuse working commands. Checked against a runtime that is actually present.
-  const present = SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.find((runtime) => installed(runtime));
+  const present = SUPPORTED_AGENT_RUNTIME_NAMES.find((runtime) => installed(runtime));
   if (!present) {
     console.log("SKIP — no declared runtime is installed on this machine");
   } else {
@@ -106,7 +106,7 @@ console.log("\n== 4: a runtime binary reached through a launcher still resolves 
     checks.push(report(
       `${present}: admitted through env/npx launchers, not just bare`,
       wrapped.every((cmd) => {
-        const admission = admitAdhocAgentCommand(cmd);
+        const admission = admitAgentRuntimeCommand(cmd);
         return admission.ok && admission.runtime === present;
       }),
       wrapped,
