@@ -2,58 +2,50 @@ import type { ResumeRuntime } from "../resume/adapters.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 
 /**
- * SDD 478 M9 (`t-8f3f7d`) — the admission rule for the ad-hoc door.
+ * t-7ff13d (Agent Instance cut, etapa 4) — ONE admission path for Agent Instance, keyed on runtime
+ * capability.
+ *
+ * Replaces `adhocAdmission` / `SUPPORTED_ADHOC_*`, which named a Temporary-only door and read as a
+ * second species. Saved and Temporary both need the same answer: "can Tachyon operate this
+ * executable as an Agent?" Identity/lifetime are declared elsewhere; this module never infers them
+ * from origin (config vs session vs cmd).
+ *
+ * ## History (SDD 478 M9 / `t-8f3f7d`)
  *
  * `spawn_agent` used to accept an arbitrary command and let `suggestKindForCommand` decide what came
- * out: a name in `KNOWN_AI_CLIS` produced an Agent, anything else produced a Terminal. That is the
- * inference rule 1 of the boundary forbids, and it left the tool unable to guarantee the entity it is
- * named for — the Bridge could hand a shell a task, a lineage, a brief and a worktree.
- *
- * The human ratified the replacement on 2026-07-27: the ad-hoc path stays an **Agent** operation and
- * admits only a supported LLM runtime, through a lighter path that needs no canonical profile. Generic
- * commands use an explicit Terminal operation instead, which carries no agent fields at all.
+ * out: a name in `KNOWN_AI_CLIS` produced an Agent, anything else produced a Terminal. That inference
+ * is forbidden. The human ratified: the Agent path admits only a supported LLM runtime; generic
+ * commands use `spawn_terminal`, which carries no agent fields.
  *
  * ## Why this list exists instead of reusing one that already did
  *
- * Two neighbouring lists were both wrong for this door, in opposite directions.
+ * `ATTESTED_RUNTIMES` answers a *different* question: which runtime may back a **Saved Profile**
+ * (host-signed authority). Using it here would delete OpenCode, Hermes, Gemini and Qwen as agents
+ * for Temporary delegation — measured machinery with no profile door. That is not this cut.
  *
- * `ATTESTED_RUNTIMES` answers a *different* question: which runtime may back a **canonical profile**,
- * one Tachyon regenerates from an authored, host-signed authority. That bar is about owning a runtime's
- * native inputs, and it is deliberately narrow — using it here would have deleted OpenCode, Hermes,
- * Gemini and Qwen as agents outright, since `agents:` already admits only attested executables and the
- * ad-hoc path is their only door. That would orphan measured, shipped machinery (private XDG/HERMES
- * homes, resume, fork, activity normalizers, attention manifests, OpenCode's credential preflight) as a
- * side effect of a migration, which is exactly the kind of decision-by-negation this work was told not
- * to make.
+ * `KNOWN_AI_CLIS` is wrong the other way: authoring suggestions (`aider`, `goose`, …) with no
+ * adapter. A chip is not evidence Tachyon can operate something.
  *
- * `KNOWN_AI_CLIS` is wrong in the other direction: it is an authoring *suggestion* catalog, and it
- * carries names (`aider`, `goose`, `amp`, `cursor-agent`, `copilot`, `verboo`, `agy`) that have no
- * adapter of any kind. A quick-add chip is not evidence that Tachyon can operate something.
- *
- * So membership here is declared per runtime, with the measured mechanism written down — and the gaps
- * written down too, because a runtime can be genuinely supported and still be missing something the
- * delegation contract wants. Recording that is what keeps a gap a filed task instead of a silent
- * deprecation.
+ * Membership is declared per runtime with measured mechanisms — and gaps — so a shortfall stays a
+ * filed task, not a silent deprecation. Do not widen the set without new measured evidence.
  *
  * ## What membership means
  *
- * Every entry has a resume adapter in `src/resume/adapters.ts` — the deliberate, measured support that
- * makes an ad-hoc child survive restart and resume as the same entity, which is what makes it safe to
- * leave an assigned task with one. `antigravity` and `continue` have resume adapters but are absent
- * here on purpose: they are not AI CLIs to any authoring surface either, so the ad-hoc door never
- * produced an agent for them and this changes nothing for them.
+ * Every entry has a resume adapter in `src/resume/adapters.ts` — measured support that lets an
+ * instance survive restart/resume as the same entity. `antigravity` and `continue` have resume
+ * adapters but stay absent: they are not AI CLIs on any authoring surface.
  *
- * `test/unit/adhocAdmission.test.ts` re-derives the resume-adapter and brief-channel claims from the
- * same sources this file cites, so the declaration cannot drift from the code it describes.
+ * `test/unit/agentRuntimeAdmission.test.ts` re-derives resume-adapter and brief-channel claims from
+ * the same sources this file cites, so the declaration cannot drift from the code it describes.
  */
 
-/** One runtime's measured ad-hoc Agent support. Prose is evidence: it names the mechanism, or the gap. */
-export interface AdhocAgentRuntimeSupport {
-  /** How a child reaches the Bridge, or null when it cannot — see `gap`. */
+/** One runtime's measured Agent Instance support. Prose is evidence: it names the mechanism, or the gap. */
+export interface AgentRuntimeSupport {
+  /** How an instance reaches the Bridge, or null when it cannot — see `gap`. */
   bridge: string | null;
-  /** How the delegation brief is delivered, or null when the runtime has no channel for one. */
+  /** How a delegation brief is delivered, or null when the runtime has no channel for one. */
   brief: string | null;
-  /** True when this runtime may ALSO back a canonical profile (`ATTESTED_RUNTIMES`). */
+  /** True when this runtime may ALSO back a Saved Profile (`ATTESTED_RUNTIMES`). */
   canonicalProfile: boolean;
   /** What makes this a runtime Tachyon operates rather than a process it starts. */
   evidence: string;
@@ -62,10 +54,10 @@ export interface AdhocAgentRuntimeSupport {
 }
 
 /**
- * The runtimes the ad-hoc door may operate as an Agent.
+ * The runtimes Tachyon may operate as an Agent Instance.
  *
- * Keyed by the resolved executable name, which is also the resume-runtime name. Adding one means
- * stating its mechanisms; a runtime absent here is refused with a reason naming the Terminal operation.
+ * Keyed by the resolved executable name (also the resume-runtime name). Adding one means stating
+ * its mechanisms; a runtime absent here is refused with a reason naming the Terminal operation.
  */
 const DECLARED = {
   claude: {
@@ -118,62 +110,64 @@ const DECLARED = {
     evidence: "resume adapter scoped to the cwd (--continue / --resume), measured around QwenLM/qwen-code#2603",
     gap: "no Bridge wiring and no opening-brief channel, so a delegated child receives neither the contract nor a way to report on it (t-59f67c)",
   },
-} as const satisfies Partial<Record<ResumeRuntime, AdhocAgentRuntimeSupport>>;
+} as const satisfies Partial<Record<ResumeRuntime, AgentRuntimeSupport>>;
 
 /**
  * The keys come from the literal above — so a name here is a real `ResumeRuntime`, checked by the
  * compiler — while the VALUE type is widened to the interface, so a reader can ask any entry for its
  * `gap` instead of the answer depending on which entry happens to declare one.
  */
-export type SupportedAdhocAgentRuntime = keyof typeof DECLARED;
+export type SupportedAgentRuntime = keyof typeof DECLARED;
 
-export const SUPPORTED_ADHOC_AGENT_RUNTIMES: Readonly<Record<SupportedAdhocAgentRuntime, AdhocAgentRuntimeSupport>> = DECLARED;
+export const SUPPORTED_AGENT_RUNTIMES: Readonly<Record<SupportedAgentRuntime, AgentRuntimeSupport>> = DECLARED;
 
 /** The refusal is contract: it must name the operation to use instead, not merely say no. */
 export const TERMINAL_OPERATION = "spawn_terminal";
 
-export type AdhocAdmission =
-  | { ok: true; runtime: SupportedAdhocAgentRuntime }
+export type AgentRuntimeAdmission =
+  | { ok: true; runtime: SupportedAgentRuntime }
   | { ok: false; reason: string };
 
 /**
- * Thrown when a door asks the manager for an ad-hoc Agent it may not create.
+ * Thrown when a door asks the manager for an Agent Instance it may not create.
  *
  * Typed rather than a bare `Error` so a caller can tell "this may not be an Agent" from every other
  * spawn failure — the difference decides whether the answer is "fix the command" or "use the other
  * operation", and only the second is actionable without changing what you meant to run.
  */
-export class AdhocAgentAdmissionError extends Error {
-  readonly code = "adhoc_agent_runtime_unsupported";
+export class AgentRuntimeAdmissionError extends Error {
+  readonly code = "agent_runtime_unsupported";
 
   constructor(reason: string) {
     super(reason);
-    this.name = "AdhocAgentAdmissionError";
+    this.name = "AgentRuntimeAdmissionError";
   }
 }
 
-export function isSupportedAdhocAgentRuntime(value: string | null | undefined): value is SupportedAdhocAgentRuntime {
-  return typeof value === "string" && Object.hasOwn(SUPPORTED_ADHOC_AGENT_RUNTIMES, value);
+export function isSupportedAgentRuntime(value: string | null | undefined): value is SupportedAgentRuntime {
+  return typeof value === "string" && Object.hasOwn(SUPPORTED_AGENT_RUNTIMES, value);
 }
 
 /** The supported names, in declaration order, for diagnostics and tool descriptions. */
-export const SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES = Object.keys(SUPPORTED_ADHOC_AGENT_RUNTIMES) as SupportedAdhocAgentRuntime[];
+export const SUPPORTED_AGENT_RUNTIME_NAMES = Object.keys(SUPPORTED_AGENT_RUNTIMES) as SupportedAgentRuntime[];
 
 function supportedList(): string {
-  return SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ");
+  return SUPPORTED_AGENT_RUNTIME_NAMES.join(", ");
 }
 
 /**
- * Decide whether an ad-hoc `cmd` may become an Agent.
+ * Decide whether a command may become an Agent Instance.
  *
  * Returns the runtime it resolved to, or a refusal whose text names `spawn_terminal` — the entire cost
  * of the `t-9418ac` incident was three increments spent discovering *which* door an entry belonged in,
  * so a refusal that does not name the other door repeats it.
+ *
+ * Does not decide Saved vs Temporary — callers declare lifetime/identity separately.
  */
-export function admitAdhocAgentCommand(cmd: string): AdhocAdmission {
+export function admitAgentRuntimeCommand(cmd: string): AgentRuntimeAdmission {
   const trimmed = cmd.trim();
   if (!trimmed) {
-    return { ok: false, reason: `an ad-hoc agent needs a command naming a supported LLM runtime (${supportedList()})` };
+    return { ok: false, reason: `an agent needs a command naming a supported LLM runtime (${supportedList()})` };
   }
 
   const parsed = parseLaunchCommand(trimmed);
@@ -191,7 +185,7 @@ export function admitAdhocAgentCommand(cmd: string): AdhocAdmission {
   }
 
   const binary = parsed.binary.split(/[\\/]/).pop() ?? parsed.binary;
-  if (isSupportedAdhocAgentRuntime(binary)) return { ok: true, runtime: binary };
+  if (isSupportedAgentRuntime(binary)) return { ok: true, runtime: binary };
 
   return {
     ok: false,

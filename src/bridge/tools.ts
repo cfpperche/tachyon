@@ -92,7 +92,7 @@ import type { DeliveryStore } from "../delivery/store.js";
 import type { Delivery } from "../delivery/types.js";
 import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
-import { admitAdhocAgentCommand, SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES } from "../agents/adhocAdmission.js";
+import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "../agents/agentRuntimeAdmission.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { sealExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
@@ -1673,7 +1673,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
         "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
-        `cmd MUST name a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
+        `cmd MUST name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
         "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
         "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
@@ -1690,7 +1690,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .string()
           .min(1)
           .optional()
-          .describe(`command for an ad-hoc agent — must name a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
+          .describe(`command for an ad-hoc agent — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
         cwd: z.string().optional().describe("working directory for an ad-hoc agent"),
         instructions: z
           .string()
@@ -1780,7 +1780,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // policy for an unrecognized reviewer runtime — SDD 368 T10 deliberately runs one and advises
         // rather than refusing. M9 was told to enforce a boundary, not to withdraw that.
         if (cmd && !delivery_join) {
-          const admission = admitAdhocAgentCommand(cmd);
+          const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
         // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
@@ -1926,7 +1926,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Start a generic process in this workspace — a shell, a server, a build, a watcher. This is the other half of " +
         "the Agent/Terminal boundary (SDD 478): a terminal is a process, not an entity. It has no task, no lineage, no " +
         "brief, no delegation contract, no worktree, no soul, no memory and no model — those are agent capabilities, and " +
-        `there are no parameters here to carry them. Use spawn_agent for a supported LLM runtime (${SUPPORTED_ADHOC_AGENT_RUNTIME_NAMES.join(", ")}). ` +
+        `there are no parameters here to carry them. Use spawn_agent for a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}). ` +
         "Stop it with kill_agent and remove the stopped row with dismiss_agent, exactly like any other ad-hoc entry.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),

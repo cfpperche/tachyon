@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { admitAdhocAgentCommand } from "../agents/adhocAdmission.js";
+import { admitAgentRuntimeCommand } from "../agents/agentRuntimeAdmission.js";
 
 /**
  * spec 230 — pure loader + validator for a one-shot agent pipeline (`.tachyon/pipelines/<name>.yml`).
@@ -197,7 +197,7 @@ function parseNode(
   // Refused here, at load, where the author can see which line to change — not at spawn, three states
   // into a run.
   if (hasCmd && typeof done === "string" && !EXIT_DONE.has(done as DoneKind)) {
-    const admission = admitAdhocAgentCommand(raw.cmd as string);
+    const admission = admitAgentRuntimeCommand(raw.cmd as string);
     if (!admission.ok) {
       errors.push(
         `nodes.${id}.cmd: '${(raw.cmd as string).trim()}' cannot run as an agent node — ${admission.reason}`
