@@ -22,10 +22,14 @@ proceeds in verifiable slices, each landing green on its own tree.
 _First because it is small, self-contained, and the only ratified decision that changes measured
 behaviour today. It also removes a strip that the fork work would otherwise have to reason around._
 
-- [ ] `stripDeclaredParent` stops discarding a declared instance's parent.
-- [ ] A Saved instance's parent survives a restart, exactly as a Temporary one's does.
-- [ ] `declaredOwner` is untouched, and neither edge is derived from the other.
-- [ ] Lineage is bounded by the INSTANCE: a new instance of the same profile does not inherit it.
+- [x] `stripDeclaredParent` stops discarding a declared instance's parent — the function is gone.
+- [x] A Saved instance's parent survives a restart, exactly as a Temporary one's does. Needed BOTH
+      halves: the write stopped stripping AND `rehydrateFromLedger` stopped skipping config-owned rows.
+- [x] `declaredOwner` is untouched, and neither edge is derived from the other (asserted).
+- [x] Lineage is bounded by the INSTANCE — `startedHere`, admitted in one place (`ledgerParentOf`).
+      Caught by the existing suite, not by me: my first cut re-nested a top-level agent from a stale row.
+- [x] A self-parent is refused on WRITE (`withoutSelfParent`), with a defensive read for older rows.
+      Landed in `main` as 6882b2dc / tree 6a5131f0e085.
 
 ## Phase 1 — converge fork onto the spawn implementation
 
@@ -37,9 +41,23 @@ non-problem (`notes.md`)._
       passed in, because both callers need the provenance in their DIFFERENT failure paths (an
       ordinary launch must never kill an ambiguous same-named pane; a fork preserves its Git-locked
       checkout as recovery state). Pinned by `test/unit/ownedSessionCreationShared.test.ts`.
-- [ ] Equivalence proof before deleting the duplicate: same env, same minted identity, same admission,
-      same ownership — and fork's transcript sharing and per-runtime refusals (Codex, Grok) intact.
-- [ ] Forking a Saved agent stops forcing `declared: false`.
+- [x] Equivalence proof. Two layers, because they catch different failures:
+      `test/unit/ownedSessionCreationShared.test.ts` proves there is ONE door (a behavioural test
+      cannot see a second `newSession` appearing), and `agentManager.test.ts`
+      "spawn and fork both refuse an agent-forged execution identity" proves the door BEHAVES the same
+      through both callers — a hostile agent declaring `TACHYON_EXECUTION_ID` is overridden on both
+      paths, and the fork gets a distinct identity. Fork's transcript sharing, `--fork-session`,
+      per-runtime refusals (`adapter.forkCommand`) and every gate stayed in `commitFork`; the existing
+      fork suite covers them unchanged.
+- [~] Forking a Saved agent and `declared: false` — **moved to phase 2, deliberately.** Measurement:
+      there are TWO `declared: false` in `commitFork` with DIFFERENT meanings, which is itself the
+      clearest illustration of invariant 5. (a) `withSessionOwnership(..., {declared: false})` sets
+      `ownershipOnly` — it withholds the declared-agent lifecycle hooks, and that is a correct
+      authority boundary: a fork has no profile authority to inherit. (b) the ledger row's
+      `declared: false` means "config does not own this definition", which is TRUE — a fork has no
+      `tachyon.yml` entry. Flipping (b) to `true` would make `rehydrateFromLedger` treat the fork as
+      config-owned and NOT adopt its definition, so the fork would lose its definition on reload. The
+      conflation is real but the fix is the `identity`/`lifetime` split, not a boolean flip.
 
 ## Phase 2 — identity and lifetime as declared fields
 

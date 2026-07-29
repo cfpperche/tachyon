@@ -3815,6 +3815,54 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.kill(forkName);
   });
 
+  /**
+   * t-5e1113 (SDD 482 phase 1) — EQUIVALENCE PROOF for converging fork onto `createOwnedSession`.
+   *
+   * The source-shape test proves there is one door. This proves the door behaves identically through
+   * BOTH callers, on the property that made the duplication dangerous: the minted execution env is
+   * merged last, so an agent cannot forge its own execution identity. Fork used to re-derive that
+   * ordering from a comment ("Merged last for the same reason as spawnCore"), which is a copy of the
+   * reasoning, not of the code.
+   *
+   * The agent below declares a HOSTILE env: it sets the execution id and agent to values it chose.
+   * Both a normal spawn and a fork of it must overwrite them.
+   */
+  it("t-5e1113: spawn and fork both refuse an agent-forged execution identity", async () => {
+    const forged = { id: "FORGED-EXECUTION-ID", agent: "FORGED-AGENT" };
+    const { manager, newSessionArgs } = resumeHarness(
+      `agents:\n  claude:\n    cmd: claude\n    env:\n      TACHYON_EXECUTION_ID: ${forged.id}\n      TACHYON_EXECUTION_AGENT: ${forged.agent}\n`,
+      { resolveCurrentSession: async () => UUID, seedTranscript: () => true },
+    );
+
+    const envOf = (args: string[]): Record<string, string> => {
+      const env: Record<string, string> = {};
+      args.forEach((arg, index) => {
+        if (arg !== "-e") return;
+        const pair = args[index + 1] ?? "";
+        const at = pair.indexOf("=");
+        if (at > 0) env[pair.slice(0, at)] = pair.slice(at + 1);
+      });
+      return env;
+    };
+
+    await manager.spawn("claude");
+    const spawnEnv = envOf(newSessionArgs.at(-1)!);
+    expect(spawnEnv.TACHYON_EXECUTION_ID).toBeDefined();
+    expect(spawnEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
+    expect(spawnEnv.TACHYON_EXECUTION_AGENT).toBe("claude");
+
+    const forkName = await manager.commitFork(await manager.planFork("claude"));
+    const forkEnv = envOf(newSessionArgs.at(-1)!);
+    // The same refusal, through the other door — and a DISTINCT identity, because a fork is its own
+    // execution that happens to share a transcript.
+    expect(forkEnv.TACHYON_EXECUTION_ID).toBeDefined();
+    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
+    expect(forkEnv.TACHYON_EXECUTION_AGENT).toBe(forkName);
+    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(spawnEnv.TACHYON_EXECUTION_ID);
+
+    await manager.kill(forkName);
+  });
+
   it("commitFork (no worktree): spawns the fork-session combo and records a persistent sibling row", async () => {
     const settings: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
