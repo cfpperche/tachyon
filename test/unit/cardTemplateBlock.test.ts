@@ -27,7 +27,7 @@ const STRINGS = {
   cardTemplateReset: "Reset to default",
   cardTemplateCriticalNote: "shown anyway when a row is in this state",
   cardTemplateInlineNote: "renders inside another element",
-  settingsOpenConfig: "Open tachyon.yml",
+  settingsOpenConfig: "Open workspace settings",
 } as unknown;
 
 describe("SDD 479 phase 4 — the card template Settings block", () => {

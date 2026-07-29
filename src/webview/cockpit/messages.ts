@@ -205,6 +205,12 @@ export interface CockpitStrings {
   copyId: string;
   openConfig: string;
   settingsBody: string;
+  /** t-7b4bb5 — dual-scope explainer cards at the top of Control → Settings. */
+  settingsScopeGlobalTitle: string;
+  settingsScopeGlobalHint: string;
+  settingsScopeWorkspaceTitle: string;
+  settingsScopeWorkspaceHint: string;
+  settingsFileLabel: string;
   settingsOpenTachyon: string;
   settingsOpenConfig: string;
   settingsDoctor: string;

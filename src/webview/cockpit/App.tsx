@@ -2051,21 +2051,53 @@ export function App(p: CockpitAppProps) {
   } else {
     // settings (and any unknown section fallback)
     const companion = m.companion;
+    const settingsWsHash = companion?.wsHash ?? m.control.workspaces[0]?.wsHash;
+    const settingsWorkspace = m.control.workspaces.find((w) => w.wsHash === settingsWsHash) ?? m.control.workspaces[0];
+    // Display path only — openConfigFile still resolves the live file through the host.
+    const workspaceSettingsPath = settingsWorkspace
+      ? `${settingsWorkspace.workspaceRoot.replace(/[/\\]+$/, "")}/tachyon.yml`
+      : "tachyon.yml";
     body = (
       <ModuleChrome title={s.settingsTitle} hint={s.settingsHint}>
         <div class="ck-panel" data-testid="control-settings">
-          <p>{s.settingsBody}</p>
-          <div class="ck-jump">
-            <Button variant="default" onClick={p.onOpenSettings}>
-              {s.settingsOpenTachyon}
-            </Button>
-            <Button
-              variant="default"
-              onClick={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
-            >
-              {s.settingsOpenConfig}
-            </Button>
-            <Button variant="default" onClick={p.onOpenDoctor}>
+          {/* t-7b4bb5 — scope split first: two authorities, named paths, no VS Code settings detour. */}
+          <p class="ck-settings-intro" data-testid="control-settings-intro">{s.settingsBody}</p>
+          <div class="ck-settings-scopes" data-testid="control-settings-scopes">
+            <section class="ck-settings-scope" data-testid="control-settings-scope-global" aria-labelledby="ck-settings-scope-global-title">
+              <h3 class="ck-settings-scope-title" id="ck-settings-scope-global-title">{s.settingsScopeGlobalTitle}</h3>
+              <p class="ck-settings-scope-hint">{s.settingsScopeGlobalHint}</p>
+              {m.globalSettings?.file ? (
+                <p class="ck-settings-scope-path" data-testid="control-settings-global-path">
+                  <span class="ck-settings-scope-path-label">{s.settingsFileLabel}</span>{" "}
+                  <code class="ck-settings-path">{m.globalSettings.file}</code>
+                </p>
+              ) : null}
+              <div class="ck-settings-scope-actions">
+                <Button variant="default" data-testid="control-settings-open-global" onClick={p.onOpenSettings}>
+                  {s.settingsOpenTachyon}
+                </Button>
+              </div>
+            </section>
+            <section class="ck-settings-scope" data-testid="control-settings-scope-workspace" aria-labelledby="ck-settings-scope-workspace-title">
+              <h3 class="ck-settings-scope-title" id="ck-settings-scope-workspace-title">{s.settingsScopeWorkspaceTitle}</h3>
+              <p class="ck-settings-scope-hint">{s.settingsScopeWorkspaceHint}</p>
+              <p class="ck-settings-scope-path" data-testid="control-settings-workspace-path">
+                <span class="ck-settings-scope-path-label">{s.settingsFileLabel}</span>{" "}
+                <code class="ck-settings-path">{workspaceSettingsPath}</code>
+              </p>
+              <div class="ck-settings-scope-actions">
+                <Button
+                  variant="default"
+                  data-testid="control-settings-open-workspace"
+                  onClick={() => p.onOpenConfigFile(settingsWsHash)}
+                >
+                  {s.settingsOpenConfig}
+                </Button>
+              </div>
+            </section>
+          </div>
+          <div class="ck-settings-hosts-actions ck-settings-doctor-row">
+            <Button variant="default" data-testid="control-settings-doctor" onClick={p.onOpenDoctor}>
               {s.settingsDoctor}
             </Button>
           </div>
@@ -2073,7 +2105,7 @@ export function App(p: CockpitAppProps) {
           {/* SDD 479 phase 4 — compose a card layout and watch the REAL card update (ratified fork 5). */}
           <CardTemplateBlock
             s={s}
-            onOpenConfig={() => p.onOpenConfigFile(companion?.wsHash ?? m.control.workspaces[0]?.wsHash)}
+            onOpenConfig={() => p.onOpenConfigFile(settingsWsHash)}
             // SDD 479 phase 5 — the personal home is a settings KEY, so its button opens the settings
             // editor filtered to that key rather than a file.
             onOpenSettings={() => p.onPost(openPersonalCardTemplateAction())}
@@ -2086,6 +2118,14 @@ export function App(p: CockpitAppProps) {
           <div class="ck-settings-block" data-testid="control-settings-workspace">
             <h3 class="ck-settings-block-title">{s.workspaceSettingsTitle}</h3>
             <p class="ck-settings-block-hint">{s.workspaceSettingsHint}</p>
+            <p class="ck-settings-block-body dim" data-testid="workspace-settings-file">
+              {s.settingsFileLabel} <code class="ck-settings-path">{workspaceSettingsPath}</code>
+            </p>
+            <div class="ck-settings-hosts-actions">
+              <Button variant="default" data-testid="workspace-settings-open-file" onClick={() => p.onOpenConfigFile(settingsWsHash)}>
+                {s.settingsOpenConfig}
+              </Button>
+            </div>
           </div>
 
           {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}

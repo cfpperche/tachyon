@@ -1372,10 +1372,89 @@ main.ck-main.ck-main--mission,
 }
 
 /* Settings — Companion tab tools (SDD 414) */
+/* t-7b4bb5 — dual-authority intro: two cards, paths wrap, stacks on narrow viewports. */
+.ck-settings-intro {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  color: var(--vscode-foreground);
+}
+
+.ck-settings-scopes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+
+.ck-settings-scope {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--vscode-editor-foreground) 3%, transparent);
+  box-sizing: border-box;
+}
+
+.ck-settings-scope-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+}
+
+.ck-settings-scope-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ds-muted);
+  overflow-wrap: anywhere;
+}
+
+.ck-settings-scope-path {
+  margin: 0 0 10px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ds-muted);
+  min-width: 0;
+}
+
+.ck-settings-scope-path-label {
+  font-weight: 600;
+}
+
+.ck-settings-path {
+  display: inline;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 10px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.ck-settings-scope-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ck-settings-doctor-row {
+  margin: 0 0 4px;
+}
+
+@media (max-width: 720px) {
+  .ck-settings-scopes {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ck-settings-block {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.35));
+  min-width: 0;
 }
 
 .ck-settings-block-title {
@@ -1388,7 +1467,9 @@ main.ck-main.ck-main--mission,
 .ck-settings-block-hint {
   margin: 0 0 8px;
   font-size: 11px;
+  line-height: 1.45;
   color: var(--ds-muted);
+  overflow-wrap: anywhere;
 }
 
 .ck-settings-block-body {
@@ -1396,6 +1477,8 @@ main.ck-main.ck-main--mission,
   font-size: 11px;
   line-height: 1.45;
   color: var(--vscode-foreground);
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .ck-settings-toggle {
@@ -1452,7 +1535,9 @@ main.ck-main.ck-main--mission,
 .ck-settings-hosts-actions {
   margin-top: 6px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+  min-width: 0;
 }
 
 .ck-settings-status {
