@@ -121,16 +121,15 @@ durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is 
 - [x] Duplicate mechanisms are removed only after an equivalence proof, never in the same slice that
       introduces their replacement.
 - [x] Tachyon still works with no SDD/ADR plugin present.
-- [x] The wire protocol is not WIDENED — but it did GAIN one action, and that distinction is the honest
-      reading rather than a tick. Phase 4C added `agent-profile.saved-agent-create`, because a single
-      canonical transaction requires a single crossing and two existing operations are two
-      transactions by construction. No existing payload changed: `agent-profile.studio-commit` is
-      `.strict()`, and adding a field there is what would make a newer engine undecodable to an older
-      shell (the 0.56.110 D1 shape). A NEW action is skew-safe in both directions — an older engine
-      refuses it by name, an older client never sends it — which is the shape `claude-reviewer`
-      recommended (`j-fcabb322f537`). If "not widened" is read to forbid additions too, this criterion
-      is NOT met and the addition is the thing to challenge; it is called out here rather than
-      absorbed into a checkmark.
+- [x] No existing wire payload or schema was widened, and no protocol-version bump was taken. The
+      protocol GAINED one additive named action, `agent-profile.saved-agent-create`: an older engine
+      refuses it by name, an older client never sends it, so both skew directions fail safe — the
+      shape `claude-reviewer` recommended (`j-fcabb322f537`), and the reason no bump is required.
+      `agent-profile.studio-commit` and the Agent Studio snapshot stay `.strict()` and untouched;
+      adding a field to one of those is the 0.56.110 D1 shape and is what this criterion forbids.
+      Stated this way deliberately: the earlier phrasing ("not widened") could be read either as
+      forbidding additions or as forbidding only payload growth, and a criterion that means two things
+      cannot be met.
 
 ## Invariants
 
@@ -218,10 +217,23 @@ commit message.
 | --- | --- | --- | --- |
 | VS Code extension as shipped | yes, with `grants.proposeSavedAgent` | yes | yes |
 
-The door is wired, and wired onto seams that already exist: `commitAgentProfileStudio` with no
-`expectedRevision` IS the canonical create and already crosses the engine/shell boundary as
-`agent-profile.studio-commit`; `set-subagents` crosses it too. No new operation and NO PROTOCOL BUMP
-were needed — an earlier reading of mine said otherwise and was incomplete.
+The door is wired. Its protocol position, stated once and precisely, because two earlier drafts of
+this paragraph disagreed with each other:
+
+- **No existing payload or schema was widened.** `agent-profile.studio-commit` and the Agent Studio
+  snapshot are `.strict()` and are untouched. Widening one is what makes a newer engine undecodable to
+  an older shell — the 0.56.110 D1 shape — and it did not happen here.
+- **The protocol GAINED one named action**, `agent-profile.saved-agent-create`. This is additive:
+  an older engine refuses an unknown action by name, and an older client never sends it, so both skew
+  directions fail safe. That is the shape `claude-reviewer` recommended (`j-fcabb322f537`).
+- **No protocol-version bump was taken**, resting on exactly that skew-safety and nothing else.
+
+The intermediate wiring did run on existing seams alone — `commitAgentProfileStudio` with no
+`expectedRevision` plus `set-subagents` — and this paragraph once said so as if it were still true.
+The ratified single transaction made it false: one transaction requires ONE crossing, and two existing
+operations are two transactions by construction. The stale sentence survived the change that
+invalidated it, which is the same failure mode this SDD documents elsewhere — a claim that was true
+when written and was never revisited when its subject moved.
 
 The gate that remains is the capability: no profile in this repository holds
 `grants.proposeSavedAgent`, so nothing can propose until a human grants it in Agent Studio.

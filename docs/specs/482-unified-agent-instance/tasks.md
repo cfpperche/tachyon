@@ -239,16 +239,22 @@ preconditions current, not future, which is why they are closed here.
       dependency nobody declares is a silent gap rather than staging.
 - [x] Wire question ANSWERED by review, not by me: slice C touches no `engine-service/`, `runtime-api/`
       or `protocol.ts` file and leaves `ENGINE_SHELL_PROTOCOL` unchanged; the Cockpit↔webview messages
-      ship in the same VSIX, so no skew is possible. No bump needed for what landed. When a persistent
+      ship in the same VSIX, so no skew is possible. No bump needed FOR THE TREE THEY REVIEWED (this
+      records a review of slice C as it then stood; the single transaction later added one additive
+      action — see the entry below). When a persistent
       engine client eventually needs the port, the safe shape is a NEW additive `extension.invoke`
       action (an old engine refuses an unknown action by name; an old client never sends it) — never a
       widened payload on an existing `.strict()` seam like the Studio snapshot, which is what broke
       0.56.110 D1.
-- [x] HOST WIRING DONE, and no protocol bump was needed. My earlier reading — that
-      `WorkspaceShellHandle` has no `create` — was incomplete: `commitAgentProfileStudio` with no
-      `expectedRevision` IS the canonical create and already crosses the seam as
-      `agent-profile.studio-commit`; `set-subagents` crosses it too. The door opens on paths a human
-      already uses.
+- [x] HOST WIRING DONE. Protocol position, in the single precise form (see `spec.md` § Where the
+      creation door is open): no existing `.strict()` payload or schema was widened; the protocol
+      gained ONE additive named action, `agent-profile.saved-agent-create`, which an older engine
+      refuses by name and an older client never sends; no version bump was taken, resting on that
+      skew-safety alone.
+      History, since it explains two contradictory sentences in earlier drafts: the intermediate
+      wiring did run on existing seams alone (`commitAgentProfileStudio` with no `expectedRevision`,
+      plus `set-subagents`), and the ratified SINGLE transaction then made that arrangement
+      impossible — one transaction needs one crossing.
 - [x] Ratified 2026-07-29: proposer becomes the new agent's declared owner; v1 refuses `ownsSubagents`
       and reparenting; approve-and-save writes DISABLED with start separate.
 - [x] ONE canonical transaction for create-and-adopt (ratified after audit; the two-transaction
