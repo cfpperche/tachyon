@@ -24,6 +24,7 @@
  *    parent is a different node, so these stay two functions on purpose.
  */
 import type { CockpitSectionId } from "./model.js";
+import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../humanInbox/model.js";
 import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
 import { isStudioId, type StudioId } from "./studioIds.js";
 
@@ -112,7 +113,7 @@ export interface CockpitProjectHandoffRoute {
 export interface CockpitInboxItemRoute {
   readonly kind: "inbox-item";
   readonly wsHash: string;
-  readonly itemKind: "approval" | "validation";
+  readonly itemKind: HumanInboxKind;
   readonly itemId: string;
 }
 
@@ -416,7 +417,7 @@ export const routes = {
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
   workspaceProbes: (wsHash: string): CockpitWorkspaceProbesRoute => ({ kind: "workspace-probes", wsHash }),
   projectHandoff: (wsHash: string): CockpitProjectHandoffRoute => ({ kind: "project-handoff", wsHash }),
-  inboxItem: (wsHash: string, itemKind: "approval" | "validation", itemId: string): CockpitInboxItemRoute => ({
+  inboxItem: (wsHash: string, itemKind: HumanInboxKind, itemId: string): CockpitInboxItemRoute => ({
     kind: "inbox-item",
     wsHash,
     itemKind,
@@ -486,9 +487,12 @@ function decodeNonStudioRoute(raw: unknown): CockpitNonStudioRoute | null {
     if (typeof obj.wsHash !== "string" || !obj.wsHash) return null;
     // the closed kind set, checked here rather than trusted: this decoder is the trust boundary for
     // persisted panel state and every webview message, and an unrecognized kind has no store to read.
-    if (obj.itemKind !== "approval" && obj.itemKind !== "validation") return null;
+    // Total decoder at a trust boundary: the kind must be one this build knows, so a new kind from a
+    // newer window is rejected rather than routed to a renderer that has no arm for it.
+    if (typeof obj.itemKind !== "string" || !(HUMAN_INBOX_KINDS as readonly string[]).includes(obj.itemKind)) return null;
+    const itemKind = obj.itemKind as HumanInboxKind;
     if (typeof obj.itemId !== "string" || !obj.itemId) return null;
-    return { kind: "inbox-item", wsHash: obj.wsHash, itemKind: obj.itemKind, itemId: obj.itemId };
+    return { kind: "inbox-item", wsHash: obj.wsHash, itemKind, itemId: obj.itemId };
   }
   if (obj.kind === "workspace-probes" || obj.kind === "project-handoff") {
     if (keys.length !== 2 || !keys.includes("wsHash")) return null;

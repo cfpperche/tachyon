@@ -204,11 +204,42 @@ open the door without closing both", on the understanding that slice B was unrea
 DIRECTED included the Bridge tool, so the door is already reachable in `c61f2efbfc41`. That makes both
 preconditions current, not future, which is why they are closed here.
 
-### Slice C — still to do (the part that actually creates)
+### Slice C — the door opens (delivered)
 
-- [ ] Host validation through the Agent Studio schemas/projections/policies/transaction.
-- [ ] Human Inbox review surface + approval bound to the digest.
-- [ ] Atomic commit of profile + authority + roster, with compensation, and the receipt.
+- [x] Human Inbox review: a third inbox KIND, ranked between an approval (which blocks an agent) and a
+      validation (evidence to read) — a proposal blocks nobody but creates durable authority.
+- [x] The pane shows effective config, runtime, requested ownership, dangerous grants, what approving
+      writes, and the digest. Environment renders as NAMES ONLY: a proposal cannot reference a secret
+      provider by type, but nothing stops a proposer pasting a token into an ordinary value, and a
+      pane that echoes it puts the credential into a screenshot.
+- [x] Approval is DIGEST-BOUND end to end: the digest travels from the pane through the message to the
+      commit path, which compares it. A proposal that changed between render and click is refused.
+- [x] Revalidation/CAS on the base config; the row WARNS and the approve button is disabled before the
+      click rather than failing after it.
+- [x] Canonical Studio transaction, injected as a port — never a second write path.
+- [x] Compensation: the receipt is written BEFORE the transaction (`committing`) and finalized after,
+      so a crash is attributable; a failure records `failed` with the reason instead of leaving an
+      in-flight claim.
+- [x] Receipt names proposer, approver, digest, txid/revision, outcome. Idempotent: a retry converges
+      on the existing receipt and the transaction runs exactly once.
+- [x] Revocation is effective on a pending proposal: the proposer's grant is RE-READ at commit.
+- [x] Capability recursion refused at commit as well as at admission.
+- [x] Saving does not start the agent: no spawn, no port that could perform one, `lifecycle.enabled:
+      false` in the created profile — asserted three ways.
+- [x] Approval is unreachable from the Bridge, asserted by absence of the wiring.
+- [x] Visual QA: two headless browser shots at 880px and 360px, each asserting no horizontal overflow,
+      plus a DOM assertion that the secret VALUE never reaches the pane.
+
+### Slice C — what did NOT land, and why
+
+- [ ] HOST WIRING of the commit port. `WorkspaceShellHandle` exposes
+      `commitAgentProfileStudioLifecycle` (set-enabled / rename / forget / set-subagents) but no
+      `create`, so wiring the approve button end to end needs a NEW extension operation
+      (`savedAgentProposal.approve`) in `runtime-api/extensionOperations.ts` — a wire addition. The
+      task forbids widening the wire protocol without versioning and cross-version proof, so this is
+      a human decision rather than something to slip in. Until it is wired the Cockpit says
+      "This window cannot commit Saved Agent proposals" rather than accepting the click silently.
+- [ ] `ownsSubagents` review by the reviewer, still open from slice A.
 - [ ] Human Inbox review: effective config, runtime/model, dangerous permissions, requested ownership,
       affected files/authorities, diff without secrets.
 - [ ] Approval bound to the digest; A2A cannot simulate it.

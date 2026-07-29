@@ -25,6 +25,7 @@ import {
 } from "../../humanInbox/artifacts.js";
 import type { ApprovalViewItem } from "../approval/viewModel.js";
 import type { ValidationViewItem } from "../validations/viewModel.js";
+import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview.js";
 
 export interface HumanInboxViewModel {
   folder: string;
@@ -51,6 +52,10 @@ export function buildHumanInboxViewModel(input: {
   wsHash: string;
   approvals: readonly ApprovalViewItem[];
   validations: readonly ValidationViewItem[];
+  /** SDD 482 phase 4C — live Saved Agent proposals, already reviewed into their human-facing shape. */
+  savedAgentProposals?: readonly SavedAgentProposalReview[];
+  /** Proposal files that exist but cannot be trusted; surfaced as warned rows, never dropped. */
+  untrustedSavedAgentProposals?: readonly { id: string; reason: string }[];
   now?: string;
   /**
    * t-e4f662 — the workspace's configured staleness threshold, or absent for the product default.
@@ -61,7 +66,14 @@ export function buildHumanInboxViewModel(input: {
   staleAfterHours?: StaleAfter;
 }): HumanInboxViewModel {
   const items = buildHumanInbox(
-    { wsHash: input.wsHash, folder: input.folder, approvals: input.approvals, validations: input.validations },
+    {
+      wsHash: input.wsHash,
+      folder: input.folder,
+      approvals: input.approvals,
+      validations: input.validations,
+      ...(input.savedAgentProposals ? { savedAgentProposals: input.savedAgentProposals } : {}),
+      ...(input.untrustedSavedAgentProposals ? { untrustedSavedAgentProposals: input.untrustedSavedAgentProposals } : {}),
+    },
     {
       ...(input.now ? { now: input.now } : {}),
       ...(input.staleAfterHours === undefined ? {} : { staleAfterHours: input.staleAfterHours }),

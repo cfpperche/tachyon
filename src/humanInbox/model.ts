@@ -30,16 +30,23 @@
 import type { ApprovalViewItem } from "../webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../webview/validations/viewModel.js";
 import type { ArtifactRef } from "../tasks/types.js";
+import type { SavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 
-export const HUMAN_INBOX_KINDS = ["approval", "validation"] as const;
+export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "validation"] as const;
 export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
 
 /**
- * Kind severity, highest first. An approval outranks a validation because an approval BLOCKS an agent
+ * Kind severity, highest first. An approval outranks the rest because an approval BLOCKS an agent
  * that cannot proceed without it (and, once granted, is redeemed by a governed Delivery operation),
- * while a validation is evidence waiting to be read. This orders the list; it grants nothing.
+ * while a validation is evidence waiting to be read.
+ *
+ * A Saved Agent proposal sits between the two, and the placement is an argument rather than a guess:
+ * it blocks nobody — the proposer carries on without it — but approving one creates DURABLE
+ * authority, which no validation does and which outlives the session an approval unblocks. So it
+ * ranks below the thing that is stuck and above the thing that is merely waiting to be read. This
+ * orders the list; it grants nothing.
  */
-const KIND_SEVERITY: Record<HumanInboxKind, number> = { approval: 0, validation: 1 };
+const KIND_SEVERITY: Record<HumanInboxKind, number> = { approval: 0, "saved-agent-proposal": 1, validation: 2 };
 
 /**
  * The kind-specific half of a row. A discriminated union rather than a flattened record: it is what
@@ -47,6 +54,7 @@ const KIND_SEVERITY: Record<HumanInboxKind, number> = { approval: 0, validation:
  */
 export type HumanInboxDetail =
   | { kind: "approval"; approval: ApprovalViewItem }
+  | { kind: "saved-agent-proposal"; proposal: SavedAgentProposalReview }
   | { kind: "validation"; validation: ValidationViewItem };
 
 /** One row. The shared fields are only what a LIST needs; anything else lives on the `detail` arm. */
@@ -81,6 +89,14 @@ export interface HumanInboxInput {
   approvals: readonly ApprovalViewItem[];
   /** every validation in the workspace; this module decides which ones still await a human */
   validations: readonly ValidationViewItem[];
+  /** live Saved Agent proposals, already reviewed into their human-facing shape (SDD 482 phase 4C) */
+  savedAgentProposals?: readonly SavedAgentProposalReview[];
+  /**
+   * Proposal files that exist but could not be trusted. Surfaced as rows rather than counted
+   * elsewhere: a corrupt proposal is a thing a human must SEE, and the row is the only place where
+   * "someone edited this" is distinguishable from "it was withdrawn".
+   */
+  untrustedSavedAgentProposals?: readonly { id: string; reason: string }[];
 }
 
 /** The product's answer when a workspace configures nothing. */
@@ -158,6 +174,75 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
     });
   }
 
+  for (const proposal of input.savedAgentProposals ?? []) {
+    // An expired proposal is not a decision any more; showing it would invite an approval that the
+    // commit path would then refuse, which teaches the human that approving does nothing.
+    if (proposal.expired) continue;
+    items.push({
+      id: proposal.id,
+      kind: "saved-agent-proposal",
+      title: `create Saved Agent '${proposal.agentName}' (${proposal.runtime.adapter})`,
+      requester: proposal.proposer,
+      // Same trust as an approval, and for the same reason: the Bridge resolved the proposer from the
+      // token, so no agent could have named itself here.
+      requesterTrust: "bridge-resolved",
+      createdAt: proposal.createdAt,
+      wsHash: input.wsHash,
+      folder: input.folder,
+      stale: isStale(proposal.createdAt),
+      artifacts: [],
+      // The base having moved does not hide the row — it warns on it. The commit path refuses anyway;
+      // the human still deserves to know why the button will not work before pressing it.
+      ...(proposal.baseDiverged
+        ? { warning: "the workspace config changed since this proposal was made — it can no longer be committed as reviewed" }
+        : {}),
+      detail: { kind: "saved-agent-proposal", proposal },
+    });
+  }
+
+  for (const untrusted of input.untrustedSavedAgentProposals ?? []) {
+    items.push({
+      id: untrusted.id,
+      kind: "saved-agent-proposal",
+      title: `unreadable Saved Agent proposal '${untrusted.id}'`,
+      requester: "unknown",
+      // Nothing about this file can be attributed, and saying "bridge-resolved" about a record whose
+      // proposer field cannot be trusted would be the single most misleading thing on the row.
+      requesterTrust: "self-declared",
+      createdAt: new Date(0).toISOString(),
+      wsHash: input.wsHash,
+      folder: input.folder,
+      stale: false,
+      artifacts: [],
+      warning: `this proposal file could not be read or failed its digest check: ${untrusted.reason}`,
+      detail: {
+        kind: "saved-agent-proposal",
+        proposal: {
+          id: untrusted.id,
+          proposer: "unknown",
+          proposerTrust: "bridge-resolved",
+          digest: "",
+          createdAt: new Date(0).toISOString(),
+          expiresAt: new Date(0).toISOString(),
+          expired: false,
+          agentName: "(unreadable)",
+          runtime: { adapter: "(unreadable)" },
+          rationale: untrusted.reason,
+          environmentNames: [],
+          requestedOwnership: [],
+          requestedSkills: [],
+          requestedMcpServers: [],
+          requestedHooks: [],
+          hasUngrantedCapabilityRequests: false,
+          dangerous: [{ label: "unreadable", detail: "this file cannot be trusted and must not be approved" }],
+          affected: [],
+          baseConfigSha256: "",
+          baseDiverged: true,
+        },
+      },
+    });
+  }
+
   for (const validation of input.validations) {
     if (!validationAwaitsHuman(validation)) continue;
     items.push({
@@ -186,6 +271,8 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
 export interface HumanInboxCounts {
   total: number;
   approvals: number;
+  /** SDD 482 phase 4C — counted separately because approving one creates durable authority. */
+  savedAgentProposals: number;
   validations: number;
   stale: number;
 }
@@ -195,6 +282,7 @@ export function humanInboxCounts(items: readonly HumanInboxItem[]): HumanInboxCo
   return {
     total: items.length,
     approvals: items.filter((i) => i.kind === "approval").length,
+    savedAgentProposals: items.filter((i) => i.kind === "saved-agent-proposal").length,
     validations: items.filter((i) => i.kind === "validation").length,
     stale: items.filter((i) => i.stale).length,
   };

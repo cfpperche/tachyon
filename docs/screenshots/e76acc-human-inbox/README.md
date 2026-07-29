@@ -11,6 +11,10 @@ npx vitest run --config vitest.browser.config.ts test/browser/humanInboxShots.te
 
 - `list-880.png`
 - `list-narrow-360.png`
+- `item-saved-agent-proposal-880.png`
+- `item-saved-agent-proposal-narrow-360.png`
+- `item-saved-agent-proposal-diverged-880.png`
+- `item-saved-agent-proposal-diverged-narrow-360.png`
 - `item-approval-880.png`
 - `item-approval-narrow-360.png`
 - `item-no-artifacts-880.png`

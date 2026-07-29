@@ -42,7 +42,9 @@ export type SavedAgentProposalWitnessEvent =
   | { kind: "cancelled"; id: string; by: string; reason: string; at: string }
   | { kind: "refused"; proposer: string; code: string; at: string }
   /** Untrusted files seen in the queue. Recorded so corruption is diagnosable rather than merely felt. */
-  | { kind: "unreadable"; ids: string[]; at: string };
+  | { kind: "unreadable"; ids: string[]; at: string }
+  /** A human approved this exact digest and the canonical transaction created the agent. */
+  | { kind: "committed"; id: string; digest: string; approvedBy: string; at: string };
 
 export function newSavedAgentProposalId(): string {
   return `${SAVED_AGENT_PROPOSAL_ID_PREFIX}${crypto.randomBytes(3).toString("hex")}`;

@@ -115,6 +115,7 @@ import {
   resolveInboxApprovalAction,
   closeInboxValidationAction,
   assignInboxValidationAction,
+  decideSavedAgentProposalAction,
 } from "../human-inbox/messages";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
 import {
@@ -621,6 +622,10 @@ function CockpitRoot() {
       resolveApproval: (id: string, decision: ApprovalDecision) => post(resolveInboxApprovalAction(id, decision)),
       closeValidation: (id, outcome, note) => post(closeInboxValidationAction(id, outcome, note)),
       assignValidation: (id, assignee, expect) => post(assignInboxValidationAction(id, assignee, expect)),
+      // The digest travels with the decision: the host compares it, so a proposal that changed since
+      // this pane rendered is refused rather than approved from a stale view.
+      decideSavedAgentProposal: (id, digest, decision, reason) =>
+        post(decideSavedAgentProposalAction(id, digest, decision, reason)),
     }),
     [],
   );

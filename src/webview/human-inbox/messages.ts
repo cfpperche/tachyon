@@ -62,7 +62,13 @@ export type HumanInboxAction =
   | { type: "resolveInboxApproval"; id: string; decision: ApprovalDecision }
   /** validation-only: evidence being read and closed out; can never authorize anything */
   | { type: "closeInboxValidation"; id: string; outcome: ValidationOutcome; note: string }
-  | { type: "assignInboxValidation"; id: string; assignee: string; expect: { assignee: string | null; updatedAt: string } };
+  | { type: "assignInboxValidation"; id: string; assignee: string; expect: { assignee: string | null; updatedAt: string } }
+  /**
+   * SDD 482 phase 4C — the approval carries the DIGEST the human was shown, not just the id. The
+   * commit path compares it, so a proposal that changed between render and click is refused rather
+   * than approved on the strength of a stale pane.
+   */
+  | { type: "decideSavedAgentProposal"; id: string; digest: string; decision: "approve" | "deny"; reason?: string };
 
 export const humanInboxMessage = (vm: HumanInboxViewModel): HumanInboxMessage => ({ type: HUMAN_INBOX, vm });
 export const humanInboxErrorMessage = (message: string): HumanInboxErrorMessage => ({ type: HUMAN_INBOX_ERROR, message });
@@ -74,6 +80,12 @@ export const humanInboxItemMissingMessage = (kind: HumanInboxKind, id: string): 
 });
 
 export const refreshInboxAction = (): HumanInboxAction => ({ type: "refreshInbox" });
+export const decideSavedAgentProposalAction = (
+  id: string,
+  digest: string,
+  decision: "approve" | "deny",
+  reason?: string,
+): HumanInboxAction => ({ type: "decideSavedAgentProposal", id, digest, decision, ...(reason ? { reason } : {}) });
 export const openInboxItemAction = (kind: HumanInboxKind, id: string): HumanInboxAction => ({ type: "openInboxItem", kind, id });
 export const resolveInboxApprovalAction = (id: string, decision: ApprovalDecision): HumanInboxAction => ({
   type: "resolveInboxApproval",

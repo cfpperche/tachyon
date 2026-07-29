@@ -289,3 +289,37 @@ The residual risk that does change is narrower and real: an agent can now cause 
 `.tachyon/`. It is bounded by the capability (no profile in this repo holds it), the per-proposer
 ceiling, digest collapse, 24h expiry, and 0600 files that create nothing. That is the trade the
 direction accepts, stated plainly so slice C is reviewed knowing it.
+
+
+## Slice C measured a rule I would otherwise have broken (2026-07-29)
+
+`createProfileFromStudioMutation` refuses a create that selects capability references at all:
+
+    if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
+      throw new Error("new canonical profile cannot select capability references before host authorization");
+    }
+
+My first commit path put the proposal's requested skills/MCP/hooks straight into `createProfile` and
+called the lifecycle transaction directly — which would have let an approved PROPOSAL do something a
+human using Agent Studio cannot do. That is precisely the "second write path with more authority than
+the first" that reusing the canonical transaction was supposed to prevent, and it would have shipped
+looking like faithful reuse.
+
+So capability references are dropped at commit and the review pane says so in the reviewer's own
+terms: "Approving does NOT grant these — granting them stays a separate edit in Agent Studio." The
+test does not take my word for the rule either; it calls `createProfileFromStudioMutation` and asserts
+the refusal, so if the canonical rule ever relaxes this becomes a deliberate re-decision rather than
+stale caution.
+
+## The last wire is a decision, not an oversight
+
+The approve button reaches `Cockpit`, which calls an optional `approveSavedAgentProposal` port. That
+port is NOT wired in `extension.ts`, and the reason is structural rather than unfinished work:
+`WorkspaceShellHandle` proxies to a client target that exposes `commitAgentProfileStudioLifecycle`
+with operations set-enabled / rename / forget / set-subagents — there is no `create` across that
+boundary. Wiring it means adding an extension operation, which is a wire addition, and this task
+forbids widening the wire without versioning and cross-version proof.
+
+Rather than smuggle it in, the port stays optional and the Cockpit refuses OUT LOUD when it is absent.
+That is not the half-open door the earlier slices argued against: a refusal with a reason is feedback,
+whereas a click that quietly does nothing is what teaches a human that approving is harmless.

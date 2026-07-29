@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ValidationOutcome } from "../../validations/types";
 import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
+import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
@@ -22,6 +23,8 @@ export interface HumanInboxDispatch {
   resolveApproval(id: string, decision: ApprovalDecision): void;
   closeValidation(id: string, outcome: ValidationOutcome, note: string): void;
   assignValidation(id: string, assignee: string, expect: { assignee: string | null; updatedAt: string }): void;
+  /** SDD 482 phase 4C — carries the DIGEST that was rendered, so a changed proposal cannot be approved. */
+  decideSavedAgentProposal(id: string, digest: string, decision: "approve" | "deny", reason?: string): void;
 }
 
 /** "3h" / "2d" — how long this has been waiting, which is the thing a human scans the list for. */
@@ -35,9 +38,12 @@ function age(createdAt: string, now = Date.now()): string {
 }
 
 function KindBadge({ kind }: { kind: HumanInboxKind }) {
-  // An approval BLOCKS an agent; a validation is evidence waiting to be read. Different weights, and
-  // the badge says which — the row must never read as "some generic thing to click".
-  return kind === "approval" ? <Badge tone="warn">approval</Badge> : <Badge tone="info">validation</Badge>;
+  // An approval BLOCKS an agent; a validation is evidence waiting to be read; a Saved Agent proposal
+  // blocks nobody but CREATES durable authority. Different weights, and the badge says which — the row
+  // must never read as "some generic thing to click", and a proposal must never read as a validation.
+  if (kind === "approval") return <Badge tone="warn">approval</Badge>;
+  if (kind === "saved-agent-proposal") return <Badge tone="warn">new Saved Agent</Badge>;
+  return <Badge tone="info">validation</Badge>;
 }
 
 /**
@@ -324,6 +330,92 @@ function ValidationDetail({
   );
 }
 
+/**
+ * SDD 482 phase 4C — the pane a human decides a Saved Agent on.
+ *
+ * Two properties are load-bearing and are why this is not a generic key/value dump:
+ *
+ *  - APPROVE CARRIES THE DIGEST that was rendered. If the proposal changed between this render and the
+ *    click, the commit path refuses rather than approving whatever is on disk now. The button is
+ *    disabled outright once the base has diverged, so the refusal is visible before it happens rather
+ *    than as a failure afterwards.
+ *  - ENVIRONMENT SHOWS NAMES, NEVER VALUES. The view model already strips them; the renderer has no
+ *    field to leak. Stated here too because "the other layer handles it" is how both layers end up
+ *    assuming the other did.
+ */
+function SavedAgentProposalDetail({
+  proposal,
+  dispatch,
+}: {
+  proposal: SavedAgentProposalReview;
+  dispatch: HumanInboxDispatch;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <div class="hi-proposal" data-testid="inbox-saved-agent-proposal">
+      <p class="hi-proposal-rationale">{proposal.rationale}</p>
+      <dl class="hi-proposal-facts">
+        <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
+        <dt>Runtime</dt><dd>{proposal.runtime.adapter}{proposal.runtime.executable ? ` (${proposal.runtime.executable})` : ""}</dd>
+        <dt>Proposed by</dt><dd>{proposal.proposer} <Badge tone="info">Bridge-resolved</Badge></dd>
+        <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
+        <dt>Digest</dt><dd class="hi-proposal-digest">{proposal.digest.slice(0, 16)}…</dd>
+      </dl>
+
+      {proposal.dangerous.length > 0 ? (
+        <div class="hi-proposal-dangerous" data-testid="proposal-dangerous">
+          <h3>What this grants</h3>
+          <ul>
+            {proposal.dangerous.map((entry) => (
+              <li key={entry.label}><strong>{entry.label}</strong>: {entry.detail}</li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p class="hi-proposal-plain" data-testid="proposal-dangerous-none">
+          This proposal requests no ownership, MCP servers, hooks or environment.
+        </p>
+      )}
+
+      {proposal.environmentNames.length > 0 ? (
+        <p class="hi-proposal-env">
+          Environment variables requested (names only): {proposal.environmentNames.join(", ")}
+        </p>
+      ) : null}
+
+      <div class="hi-proposal-affected">
+        <h3>What approving writes</h3>
+        <ul>{proposal.affected.map((entry) => <li key={entry}>{entry}</li>)}</ul>
+        <p class="hi-proposal-note">Saving does not start the agent — launching it stays a separate action.</p>
+      </div>
+
+      <div class="hi-proposal-decide">
+        <Textarea
+          value={reason}
+          placeholder="Reason (required to deny)"
+          onInput={(e) => setReason((e.currentTarget as HTMLTextAreaElement).value)}
+        />
+        <Button
+          variant="primary"
+          data-testid="inbox-approve-saved-agent"
+          disabled={proposal.baseDiverged || proposal.expired}
+          onClick={() => dispatch.decideSavedAgentProposal(proposal.id, proposal.digest, "approve")}
+        >
+          Approve and create
+        </Button>
+        <Button
+          variant="default"
+          data-testid="inbox-deny-saved-agent"
+          disabled={!reason.trim()}
+          onClick={() => dispatch.decideSavedAgentProposal(proposal.id, proposal.digest, "deny", reason.trim())}
+        >
+          Deny
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ItemApp({
   vm,
   missing,
@@ -367,6 +459,8 @@ export function ItemApp({
       ) : null}
       {item.detail.kind === "approval" ? (
         <ApprovalDetail item={item.detail.approval} dispatch={dispatch} />
+      ) : item.detail.kind === "saved-agent-proposal" ? (
+        <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} />
       ) : (
         <ValidationDetail item={item.detail.validation} dispatch={dispatch} />
       )}

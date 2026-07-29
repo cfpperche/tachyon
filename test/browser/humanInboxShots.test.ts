@@ -8,6 +8,8 @@ import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../sr
 import { assembleUntrustedSrcdoc } from "../../src/webview/shared/untrustedSrcdoc.js";
 import type { ApprovalViewItem } from "../../src/webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../../src/webview/validations/viewModel.js";
+import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
+import type { SavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
 
 /**
  * Human Inbox — headless Visual QA for the states the task enumerates (t-e76acc).
@@ -86,10 +88,43 @@ const validation = (id: string, over: Partial<ValidationViewItem> = {}): Validat
   ...over,
 });
 
-const vmOf = (approvals: ApprovalViewItem[], validations: ValidationViewItem[]) =>
+const vmOf = (
+  approvals: ApprovalViewItem[],
+  validations: ValidationViewItem[],
+  savedAgentProposals: SavedAgentProposalReview[] = [],
+) =>
   // no explicit `now`: staleness is judged by the same real clock the age labels read, so a row can
   // never render "3d" without the stale mark that ought to accompany it.
-  buildHumanInboxViewModel({ folder: "tachyon", wsHash: "ws-1", approvals, validations });
+  buildHumanInboxViewModel({ folder: "tachyon", wsHash: "ws-1", approvals, validations, savedAgentProposals });
+
+/**
+ * SDD 482 phase 4C — a Saved Agent proposal, built through the REAL review projection so the shot
+ * cannot show a field the projection would have stripped. The environment value below is the point:
+ * it must not appear anywhere in the rendered pane.
+ */
+const proposalSource = () => ({
+      id: "sp-4f1a2b",
+      proposer: "claude-runtime",
+      proposerKind: "agent",
+      createdAt: hoursAgo(5),
+      expiresAt: new Date(Date.now() + 19 * 60 * 60 * 1000).toISOString(),
+      digest: "9f".repeat(32),
+      base: { configSha256: "a".repeat(64) },
+      spec: {
+        name: "nightly-importer",
+        runtimeAdapter: "claude",
+        executable: "claude",
+        rationale:
+          "The nightly import currently runs inside my own session, so it dies whenever I am restarted. " +
+          "A Saved Agent would own it and survive reloads.",
+        environment: { ANTHROPIC_API_KEY: "sk-ant-DO-NOT-RENDER-THIS", IMPORT_REGION: "eu-west-1" },
+        ownsSubagents: ["import-checker"],
+        capabilities: { mcp: ["fetch"], hooks: ["preflight"], skills: ["review"] },
+      },
+});
+
+const proposalReview = (currentConfigSha256 = "a".repeat(64)): SavedAgentProposalReview =>
+  buildSavedAgentProposalReview({ proposal: proposalSource() as never, currentConfigSha256, nowMs: Date.now() });
 
 /**
  * The codicon @font-face points at a RELATIVE url, which resolves to nothing under `setContent` — so
@@ -136,7 +171,7 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
   let App: (props: unknown) => unknown;
   let ItemApp: (props: unknown) => unknown;
   const written: string[] = [];
-  const noopDispatch = { refresh() {}, open() {}, resolveApproval() {}, closeValidation() {}, assignValidation() {} };
+  const noopDispatch = { refresh() {}, open() {}, resolveApproval() {}, closeValidation() {}, assignValidation() {}, decideSavedAgentProposal() {} };
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
@@ -186,6 +221,37 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
     );
     const html = renderStatic(App({ vm, dispatch: noopDispatch }));
     for (const w of WIDTHS) await shoot(`list-${w.id}`, html, w.px);
+  }, 60_000);
+
+  /**
+   * SDD 482 phase 4C — the pane where a human creates durable authority.
+   *
+   * Two things are being measured, and only one of them is layout. The shot exists so a person can
+   * judge whether the consequences read clearly at a glance; the ASSERTION is that the environment
+   * VALUE never reaches the DOM. A review pane that echoed a pasted token would put it into this very
+   * screenshot, which is the most durable place a credential could possibly land.
+   */
+  it("shoots a SAVED AGENT PROPOSAL item — and proves no secret value reaches the pane", async () => {
+    const vm = vmOf([], [], [proposalReview()]);
+    const item = buildHumanInboxItemViewModel(vm, "saved-agent-proposal", "sp-4f1a2b");
+    expect(item, "the proposal must open under its own kind, not a validation route").toBeTruthy();
+    const html = renderStatic(ItemApp({ vm: item, dispatch: noopDispatch }));
+
+    expect(html).not.toContain("sk-ant-DO-NOT-RENDER-THIS");
+    expect(html).toContain("ANTHROPIC_API_KEY");        // the NAME is shown…
+    expect(html).toContain("new canonical profile");     // …and so is what approving writes
+    expect(html).toContain("Saving does not start the agent");
+    for (const w of WIDTHS) await shoot(`item-saved-agent-proposal-${w.id}`, html, w.px);
+  }, 60_000);
+
+  it("shoots a proposal whose base MOVED — the approve button must be visibly unavailable", async () => {
+    const vm = vmOf([], [], [proposalReview("b".repeat(64))]); // the roster changed since the proposal
+    const item = buildHumanInboxItemViewModel(vm, "saved-agent-proposal", "sp-4f1a2b");
+    const html = renderStatic(ItemApp({ vm: item, dispatch: noopDispatch }));
+    // Disabled in the markup, not merely refused later: the human sees why before pressing.
+    expect(html).toMatch(/data-testid="inbox-approve-saved-agent"[^>]*disabled/);
+    expect(html).toContain("no longer be committed as reviewed");
+    for (const w of WIDTHS) await shoot(`item-saved-agent-proposal-diverged-${w.id}`, html, w.px);
   }, 60_000);
 
   it("shoots an APPROVAL item — verbatim payload above the decision", async () => {

@@ -73,6 +73,10 @@ import {
 import { buildApprovalViewModel, listPendingApprovalViewItems } from "./approval/viewModel.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel.js";
+import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
+import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
+import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
+import { workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import {
   humanInboxMessage,
   humanInboxErrorMessage,
@@ -310,6 +314,16 @@ export interface CockpitDeps {
   validations: CockpitValidations;
   /** t-e4f662 — see CockpitInboxStaleAfter. Optional: absent means the product default everywhere. */
   humanInboxStaleAfter?: CockpitInboxStaleAfter;
+  /**
+   * SDD 482 phase 4C — commit an approved Saved Agent proposal through the canonical Studio
+   * transaction. Optional so a host that has not wired it says so out loud rather than accepting a
+   * click and doing nothing; supplied by the extension, never reachable from the Bridge.
+   */
+  approveSavedAgentProposal?: (input: {
+    workspaceRoot: string;
+    proposalId: string;
+    approvedDigest: string;
+  }) => Promise<SavedAgentCommitResult>;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
@@ -1339,6 +1353,22 @@ export async function openCockpit(
       validations: validationWs
         ? buildValidationsViewModel({ folder: approvalWs.folderName, wsHash: approvalWs.wsHash, validations: validationWs.listValidations() }).validations
         : [],
+      // SDD 482 phase 4C — Saved Agent proposals, read from the same store the Bridge writes to.
+      // `unreadable` travels beside them rather than being dropped: a corrupt proposal is a thing the
+      // human must SEE, and this is the only place where "someone edited this" is distinguishable
+      // from "it was withdrawn".
+      ...(() => {
+        const queue = readLiveSavedAgentProposalQueue(approvalWs.workspaceRoot, Date.now());
+        return {
+          savedAgentProposals: queue.proposals.map((proposal) =>
+            buildSavedAgentProposalReview({
+              proposal,
+              currentConfigSha256: workspaceConfigSha256(approvalWs.workspaceRoot),
+              nowMs: Date.now(),
+            })),
+          untrustedSavedAgentProposals: queue.unreadable,
+        };
+      })(),
       // t-e4f662 — this workspace's own threshold; absent falls through to the product default.
       ...(() => {
         const configured = deps.humanInboxStaleAfter?.(approvalWs.wsHash);
@@ -2115,7 +2145,7 @@ export async function openCockpit(
       await sendInboxItem();
       return true;
     }
-    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation")) {
+    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation" || m.kind === "saved-agent-proposal")) {
       const sources = inboxSources();
       if (!sources) return true;
       const kind = m.kind;
@@ -2132,6 +2162,47 @@ export async function openCockpit(
       if (!wsHash) return true;
       try {
         await deps.approvals.resolve(wsHash, m.id, m.decision);
+        await sendInbox();
+        await sendInboxItem();
+      } catch (err) {
+        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return true;
+    }
+    /**
+     * SDD 482 phase 4C — the human decision that creates a Saved Agent.
+     *
+     * The DIGEST arrives from the pane and is passed straight through to the commit path, which
+     * compares it against the stored proposal. That is what makes an approval bind to one exact
+     * proposal: if the file changed between render and click, this refuses instead of creating
+     * something the human never saw. Nothing here is reachable from the Bridge — an approval an agent
+     * could reach is not an approval.
+     */
+    if (m.type === "decideSavedAgentProposal" && typeof m.id === "string" && typeof m.digest === "string") {
+      const sources = inboxSources();
+      if (!sources) return true;
+      const workspaceRoot = sources.approvalWs.workspaceRoot;
+      try {
+        if (m.decision === "deny") {
+          denySavedAgentProposal({
+            workspaceRoot, proposalId: m.id, deniedBy: "human",
+            reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
+            nowMs: Date.now(),
+          });
+        } else if (m.decision === "approve") {
+          const result = await deps.approveSavedAgentProposal?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });
+          // A host without the port wired must say so rather than silently doing nothing — the shape
+          // of failure that teaches a human their approval is decorative.
+          if (!result) {
+            live.webview.postMessage(humanInboxErrorMessage("This window cannot commit Saved Agent proposals."));
+            return true;
+          }
+          if (!result.ok) {
+            live.webview.postMessage(humanInboxErrorMessage(`${result.code}: ${result.reason}`));
+          }
+        } else {
+          return true;
+        }
         await sendInbox();
         await sendInboxItem();
       } catch (err) {
