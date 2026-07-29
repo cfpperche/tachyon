@@ -96,7 +96,7 @@ import {
   settingsImportAlreadyRan,
   settingsImportMarkerPath,
 } from "./config/settingsImport.js";
-import { readLegacyVsCodeSettings } from "./config/legacyVsCodeSettings.js";
+import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
 import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
 import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
@@ -957,6 +957,11 @@ function importLegacyWorkspaceSettings(workspaceRoot: string): void {
     if (!file) return; // no config yet: nothing to import into, and no marker so a later init still gets it
     let text = fs.readFileSync(file, "utf8");
     const parsed = loadConfigFile(file);
+    // A config that did not parse cannot answer "is this key already set", and `already()` would
+    // then say "no" for every key — turning the import into an overwrite of project decisions it
+    // merely failed to read. Skip, and leave the marker unwritten so a later, healthy activation
+    // still gets its one chance.
+    if (!parsed.config) return;
     const already = (keyPath: string[]): boolean => {
       let node: unknown = parsed.config?.settings;
       for (const key of keyPath) {

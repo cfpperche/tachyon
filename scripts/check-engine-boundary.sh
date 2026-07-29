@@ -18,7 +18,7 @@ cd "$(dirname "$0")/.."
 # directory (route/resolveSection/model/missionVm/taskDetailVm/activityFeed/studioIds) are pure logic and
 # must STAY vscode-free. A directory-wide allow would let them acquire a vscode import in silence, which
 # is the regression this guard exists to catch.
-SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify)\.ts|cockpit/(studioHost|studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
+SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings)\.ts|cockpit/(studioHost|studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'

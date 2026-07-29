@@ -87,7 +87,7 @@ describe("no reader of the retired surface survives", () => {
     // what stops the exception from quietly becoming a permanent VS Code fallback somewhere else.
     const readers = withoutSelfAndDocs(grep('getConfiguration("tachyon"', ["src", "test", "scripts"]))
       .map((line) => line.split(":")[0]);
-    expect([...new Set(readers)]).toEqual(["src/config/legacyVsCodeSettings.ts"]);
+    expect([...new Set(readers)]).toEqual(["src/workspace/legacyVsCodeSettings.ts"]);
   });
 
   it("the generic settings port is gone from EngineHost and every implementation", () => {
