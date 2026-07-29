@@ -2386,13 +2386,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     // t-e76acc — one destination for "what is waiting on me", and the target of the Review action on
     // both the approval and the human-validation notices.
-    vscode.commands.registerCommand("tachyon.openHumanInbox", async (hash?: string) => {
-      const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), {
-        section: "inbox",
-        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
-      });
-    }),
+    // t-1f6d02 — optional `target` deep-links Control → Inbox → exact item (validation/approval/
+    // saved-agent-proposal). Omitted target opens the list. Missing items fall back to the list
+    // (cockpit inbox-item handshake).
+    vscode.commands.registerCommand(
+      "tachyon.openHumanInbox",
+      async (hash?: string, target?: { kind?: string; id?: string }) => {
+        const ws = hash ? byHash(hash) : await pickWorkspace();
+        const kind = target?.kind;
+        const id = typeof target?.id === "string" ? target.id.trim() : "";
+        if (
+          ws
+          && (kind === "validation" || kind === "approval" || kind === "saved-agent-proposal")
+          && id.length > 0
+        ) {
+          await openCockpit(makeCockpitDeps(), {
+            route: cockpitRoutes.inboxItem(ws.wsHash, kind, id),
+          });
+          return;
+        }
+        await openCockpit(makeCockpitDeps(), {
+          section: "inbox",
+          ...(ws ? { approvalWsHash: ws.wsHash } : {}),
+        });
+      },
+    ),
     vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: "approved" | "denied"; wsHash?: string }) => {
       const ws = targetOf(arg?.wsHash);
       if (!ws || !arg?.id || (arg.decision !== "approved" && arg.decision !== "denied")) return;
