@@ -6,19 +6,37 @@ Read before designing, because the proposal (`docs/proposals/unified-agent-insta
 canonical and ad-hoc as "two technical species" and the code does not agree with that in the place it
 matters most. Everything below is a citation, not a recollection.
 
-### The execution path is ALREADY one path
+### The execution path is one path FOR SPAWN, and fork is a second implementation
 
-- `AgentManager.spawn(name, opts)` (`src/agents/AgentManager.ts:1675`) is the **only** spawn door.
-  Every caller goes through it — the Bridge's `spawn_agent` (`src/bridge/tools.ts:1866`), the pipeline
-  (`Workspace.ts:2499`), schedules (`Workspace.ts:5795`), `continue_task` (`Workspace.ts:3789`),
-  handoff distillation, and the Activity-logged UI start. There is no second spawn implementation to
-  merge.
-- Runtime home materialization, config projection, permissions, tools, Attention, Activity, Execution
-  Graph, worktree and cleanup all hang off that one path already.
+> **CORRECTED 2026-07-29 after adversarial review.** The first version of this section said
+> `AgentManager.spawn` is the *only* spawn door and concluded that unifying spawn paths "is not the
+> work". That was wrong, it was load-bearing, and the plan built on it deleted real work. What
+> follows is re-measured.
 
-**Consequence for the architecture: "unify the two spawn paths" is not the work, because it is
-already done.** Saying otherwise in an SDD would send an implementer looking for a duplicate that
-does not exist.
+- `AgentManager.spawn(name, opts)` (`src/agents/AgentManager.ts:1675`) is the door for *starting a
+  named agent*, and every such caller does go through it — Bridge `spawn_agent`
+  (`src/bridge/tools.ts:1866`), pipeline (`Workspace.ts:2499`), schedules (`Workspace.ts:5795`),
+  `continue_task` (`Workspace.ts:3789`), handoff distillation, the Activity-logged UI start.
+- **`commitFork` is a second implementation.** It creates its session directly —
+  `createForkSession = () => this.opts.tmux.newSession({…})` (`:4726`) — and there is no call to
+  `this.spawn` / `spawnUnlocked` / `spawnCore` anywhere in `:4540-4760`. It re-does what spawnCore
+  does: env merge, identity mint (`mintExecution`), session-ownership wrapping, Pi admission. Its own
+  comment concedes the parallel — *"Merged last for the same reason as spawnCore"* — which is a
+  statement about copying that reasoning, not about reusing that code.
+- The two other `tmux.newSession` calls (`:3685`, `:3691`) are NOT a third door: both sit inside the
+  one low-level create/replace helper that spawnCore itself calls. Precision matters here in both
+  directions — the fork finding stands, and inflating it to "three doors" would be the same failure
+  in the opposite direction.
+
+**Consequence: unifying the spawn path is real work, and fork is where it bites first**, because it
+is the path that already diverges. An `Agent Instance` abstraction that does not cover fork would be
+unified in name only.
+
+Sharper still, and directly relevant to invariant 5: the fork path hardcodes `declared: false`
+(`:4731`) when it writes session ownership. So **forking a Saved agent produces a row stored as
+ad-hoc**, regardless of what the source was. That is the storage-vs-identity conflation this SDD
+names, sitting in production code — a much better grounded example than the one the first draft
+invented.
 
 ### What IS duplicated: the definition store, and only that
 
@@ -37,19 +55,40 @@ Two stores, one resolution point:
 | durability | the file, human-owned | `SessionLedger` (`.tachyon/sessions.json`), rehydrated by `rehydrateFromLedger()` (`:1206`) |
 | identity flag | `declared: true` | `declared: false` (`src/resume/SessionLedger.ts:145`) |
 
-### The load-bearing correction: ad-hoc agents ARE durable
+### Durability: ad-hoc keeps its lineage, DECLARED is the one that drops it
 
-The in-code comment at `AgentManager.ts:889` says lineage is "session-local memory" — that is true of
-**lineage**, and reading it as true of ad-hoc agents in general is the mistake this note exists to
-prevent. `SessionLedger` persists `def` for every ad-hoc agent (`:136-137`) and
-`rehydrateFromLedger()` restores it, so a Temporary agent already survives an extension restart.
+> **CORRECTED 2026-07-29 after adversarial review.** The first version of this section had the sign
+> INVERTED: it claimed a Temporary agent's lineage does not survive a restart. The opposite is true,
+> and an entire phase of the plan was aimed at that non-problem.
 
-What genuinely does NOT survive is the parent edge: `lineage` and `delegators` are in-memory maps
-(`:889`, `:892`), and the ledger actively strips a declared agent's parent (`stripDeclaredParent`,
-`SessionLedger.ts:485`). So today an agent's *identity* is durable while its *lineage* is not.
+`SessionLedger` (`src/resume/SessionLedger.ts`) persists `def` for every ad-hoc agent (`:136-137`)
+and `rehydrateFromLedger()` restores it, so a Temporary agent survives an extension restart. That
+part was right.
 
-**That asymmetry, not the two stores, is the defect with user-visible consequence** — after an engine
-restart a Temporary agent is still there and still governed, but nobody can say what spawned it.
+The parent edge, re-read:
+
+```ts
+// src/resume/SessionLedger.ts:484
+function stripDeclaredParent<T extends SessionRecord>(rec: T): T {
+  if (!rec.declared || !rec.def?.parent) return rec;   // ad-hoc: returns UNCHANGED
+  const { parent: _parent, ...def } = rec.def;          // declared: parent dropped
+  return { ...rec, def } as T;
+}
+```
+
+It strips only when `declared` is **true**. So:
+
+- **ad-hoc** — `parent` is persisted, and `rehydrateFromLedger` rebuilds `this.lineage` from it
+  (`AgentManager.ts:1229-1230`). Lineage IS durable.
+- **declared** — `parent` is deliberately dropped, so a Saved agent has no persisted parent by design.
+
+The in-memory `lineage`/`delegators` maps (`:888`, `:892`) are therefore a CACHE that is refilled from
+the ledger for ad-hoc rows, not the only copy.
+
+**There is consequently no "durable lineage" defect to fix**, and the first draft's phase 1 has no
+target. The honest statement is narrower: lineage durability is *asymmetric by design*, and the
+unified model has to decide whether that asymmetry survives — which is a question for the human, not
+a bug for an implementer.
 
 ### `declared` is a storage fact being used as an identity fact
 
@@ -115,10 +154,21 @@ SDD exists to reduce.
 
 ## What this measurement changes about the proposal
 
-1. The migration's first four steps ("create one internal spawn/start port", "adapt Temporary to it",
-   "adapt Saved to it") collapse: there is one port and both already use it.
-2. The real sequence starts one step later — at the definition/identity model.
-3. A new item the proposal does not list becomes phase-1 work, because it is the only user-visible
-   defect measured here: durable lineage.
-4. The governed creation door (the long requirement list in `t-5e1113`) is entirely new surface. It
-   is the largest genuinely-new piece of this task and carries all of the security weight.
+> Rewritten 2026-07-29 after the two corrections above.
+
+1. The migration's spawn-port steps **stay in scope**. There is one door for starting a named agent
+   and a second, parallel implementation in `commitFork`; converging them is real work, and fork is
+   the first place a unified Agent Instance breaks.
+2. The definition-store split (`declared` doing double duty as storage and identity) stands
+   unchanged — and `commitFork`'s hardcoded `declared: false` is the concrete instance of it.
+3. There is **no durable-lineage defect**. Lineage is durable for ad-hoc and deliberately dropped for
+   declared. What replaces that phase is a decision for the human: does the unified model keep that
+   asymmetry, and if not, which way does it resolve?
+4. The governed creation door is unchanged by all of this: entirely new surface, all of the security
+   weight, still severable.
+
+**Process note, kept deliberately.** Two of this document's measured claims were wrong, one of them
+inverted, and both were used to *delete* work rather than to add it — the direction of error that
+review is least likely to forgive and most likely to be flattered into accepting. They were caught by
+adversarial review reading the same code. The lesson recorded here for the next author: a measurement
+that conveniently shrinks the plan deserves the same scrutiny as one that grows it.

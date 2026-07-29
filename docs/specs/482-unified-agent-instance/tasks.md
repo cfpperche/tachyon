@@ -9,15 +9,23 @@ started; the boxes exist so the decomposition is reviewable alongside the archit
 
 - [x] Measure the current code and record it with citations (`notes.md`).
 - [x] Produce the ratifiable architecture (`spec.md`, `plan.md`).
-- [ ] Adversarial review by `claude-reviewer`.
+- [x] Adversarial review by `claude-reviewer` — returned BLOCKER on two measured claims; both
+      confirmed against the code and corrected (see `notes.md`, which keeps the errors visible).
+- [ ] Second adversarial pass on the corrected scope, including the creation-door threat model that
+      the first pass deliberately did not review.
 - [ ] Present only the real decisions to the human (`spec.md` § Open questions) and ratify.
 - [ ] Decompose into verifiable slices, each in an isolated worktree/Delivery.
 
-## Phase 1 — durable lineage (the measured defect)
+## Phase 1 — converge fork onto the spawn implementation
 
-- [ ] Persist the parent edge with the identity it belongs to; a Saved agent's parent stays stripped.
-- [ ] Prove it across an engine restart, including the gated-delegation case that has a `delegator`
-      and deliberately no runtime `parent`.
+_Replaces the first draft's "durable lineage" phase, which adversarial review showed was aimed at a
+non-problem (`notes.md`)._
+
+- [ ] `commitFork` stops building its own session; env merge, identity mint, session ownership and
+      admission happen once, in the shared implementation.
+- [ ] Equivalence proof before deleting the duplicate: same env, same minted identity, same admission,
+      same ownership — and fork's transcript sharing and per-runtime refusals (Codex, Grok) intact.
+- [ ] Forking a Saved agent stops forcing `declared: false`.
 
 ## Phase 2 — identity and lifetime as declared fields
 

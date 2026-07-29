@@ -4,14 +4,16 @@ _Drafted from `spec.md` on 2026-07-28. The approach, not the steps._
 
 ## Approach
 
-The measurement moved the starting line. The proposal's steps 1–4 ("define types", "create one
-internal spawn/start port", "adapt Temporary to it", "adapt Saved to it") are three-quarters done in
-the code already, so the plan starts where the duplication actually is.
+> **Revised 2026-07-29.** The first version deleted the proposal's spawn-port steps on a measurement
+> that adversarial review then falsified, and opened with a "durable lineage" phase aimed at a
+> non-problem. Both are corrected below; `notes.md` keeps the errors visible rather than erasing them.
 
-1. **Durable lineage** — the one measured defect with user-visible consequence. Parent survives an
-   engine restart the way identity already does; a Saved agent's parent stays stripped.
+1. **Converge fork onto the spawn implementation** — `commitFork` builds its own session and re-does
+   env merge, identity mint and admission. This is the proposal's spawn-port step, and fork is where
+   it actually bites, because it is the path that already diverges.
 2. **Split the overloaded boolean** — `identity` and `lifetime` become declared fields on the instance
-   record. `declared` remains as a storage detail nobody reads for policy, then stops being read at all.
+   record. `declared` remains a storage detail nobody reads for policy, then stops being read at all.
+   `commitFork`'s hardcoded `declared: false` is the first thing this fixes.
 3. **Converge the readers** — Fleet, Activity, Attention, Execution Graph, worktree, cleanup branch on
    declared policy instead of on provenance. No renderer or store is added.
 4. **The creation door** — capability, typed proposal, host validation through the existing Studio
@@ -20,12 +22,15 @@ the code already, so the plan starts where the duplication actually is.
 6. **Remove duplicates** — only against an equivalence proof.
 
 Phases 1–3 are reversible and independently valuable. Phase 4 is the one that adds new authority and
-is the natural place to stop if the human wants less.
+is the natural place to stop if the human wants less. Lineage asymmetry is a question for the human
+(`spec.md` § Open questions), not a phase.
 
 ## Key decisions
 
-- **Start at lineage, not at naming.** It is the only thing measurement showed to be broken rather
-  than merely duplicated. Rejected: renaming first, which is visible but empty.
+- **Start at fork, not at naming.** Fork is the measured duplicate implementation, so it is where a
+  unified Agent Instance is either true or decorative. Rejected: renaming first, which is visible but
+  empty; and rejected: starting at lineage, which the corrected measurement showed to be a
+  non-problem.
 - **Two fields, not one enum.** `identity` (Profile-backed or not) and `lifetime` (restartable or
   collected) vary independently — a Profile-backed agent may still be meant to be collected. One enum
   would re-create the overloaded boolean with more values.
@@ -52,9 +57,11 @@ is the natural place to stop if the human wants less.
 
 ## Risks
 
-- **Rehydration is load-bearing.** Lineage durability touches the path that restores agents after a
-  restart; a regression there loses agents, not just edges. Needs its own tests before anything else
-  moves.
+- **Fork carries behaviour the main path does not exercise.** Transcript sharing, `--fork-session`
+  semantics and per-runtime fork support (refused outright for Codex and Grok) all live in that
+  branch. Converging it must preserve each, so equivalence tests come before deletion.
+- **Rehydration is load-bearing.** It restores agents after a restart and rebuilds ad-hoc lineage from
+  the ledger; a regression there loses agents, not just edges.
 - **`declared` has readers beyond policy.** Removing it must be staged: stop reading it for policy,
   prove equivalence, then remove.
 - **The creation door is new authority.** Its threat model is in `spec.md` and each control needs a

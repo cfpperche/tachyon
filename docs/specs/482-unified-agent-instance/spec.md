@@ -9,17 +9,19 @@ _Created 2026-07-28._
 Make Saved and Temporary agents one governed thing with two lifetime policies, and add a governed
 door through which an agent may PROPOSE a Saved Agent without ever creating one.
 
-The measurement (`notes.md`) changed the shape of this before it was written, so the intent is
-narrower than the proposal that motivated it:
+The measurement (`notes.md`) shapes this, and two of its claims were **wrong in the first draft and
+corrected after adversarial review** — the corrections are recorded there rather than quietly folded
+in, because both errors deleted work:
 
-> The execution path is already unified. `AgentManager.spawn` is the only spawn door and every caller
-> already uses it. What is duplicated is the **definition store**, and what is broken is that
-> `declared: boolean` — a fact about *which store a definition came from* — is read as a fact about
-> *what kind of worker this is*.
+> There is one door for *starting a named agent* (`AgentManager.spawn`), and a **second, parallel
+> implementation in `commitFork`**, which builds its own session and re-does env merge, identity mint
+> and admission. Converging them is real work. Separately, `declared: boolean` — a fact about *which
+> store a definition came from* — is read as a fact about *what kind of worker this is*; `commitFork`
+> hardcoding `declared: false` means forking a Saved agent yields a row stored as ad-hoc.
 
-So this is not a merge of two pipelines. It is: split one overloaded boolean into two declared fields,
-give lineage the durability identity already has, and put a locked door where agents currently have
-no door at all.
+So this is: converge the spawn implementations (fork first, because it already diverges), split one
+overloaded boolean into two declared fields, and put a locked door where agents currently have no door
+at all.
 
 ## Acceptance criteria
 
@@ -39,15 +41,23 @@ _Observable outcomes. If every box can be ticked, the spec is delivered._
   - **Then** each reads one Agent Instance shape and branches only on declared policy — no parallel
     store, no parallel renderer, no `declared ? … : …` standing in for a capability question
 
-### B. The defect the measurement found
+### B. Fork joins the unified path
 
-- [ ] **Scenario: lineage survives an engine restart**
-  - **Given** a Temporary instance spawned by a parent, and an extension/engine restart
-  - **When** the fleet rehydrates
-  - **Then** the parent edge is still there, exactly as identity already is — and a Saved agent's
-    parent stays stripped, because that is deliberate and separately specified
-- [ ] Lineage durability ships with, or before, any renaming — it is the only user-visible defect this
-      design found, and a rename that shipped first would be pure churn.
+_The first draft had a "durable lineage" section here. It was aimed at a non-problem: lineage is
+durable for ad-hoc and deliberately stripped for declared (`notes.md`). This is what replaced it._
+
+- [ ] **Scenario: a fork is an Agent Instance like any other**
+  - **Given** a fork of a Saved or Temporary agent
+  - **When** it starts
+  - **Then** it goes through the same spawn implementation as every other instance — env merge,
+    identity mint, session ownership and admission happen once, in one place, not in a parallel copy
+- [ ] **Scenario: forking does not silently change what an agent IS**
+  - **Given** a fork of a Saved agent
+  - **When** the session row is written
+  - **Then** its identity is not forced to ad-hoc as a side effect of storage — today `commitFork`
+    hardcodes `declared: false`, which is invariant 5 being violated in production code
+- [ ] Fork equivalence is proved before the duplicate is deleted: same env, same identity minting,
+      same admission, same ownership, and the transcript-sharing behaviour fork exists for is intact.
 
 ### C. The governed creation door
 
@@ -173,3 +183,6 @@ Only decisions that are genuinely open — everything else is settled by measure
 3. **Lifetime policy vocabulary in the product**: `Saved Agent` / `Temporary Agent` are proposed. They
    are user-visible and hard to change later.
 4. **How long does a pending proposal live** before it expires, and does a restart preserve or void it?
+5. **Does lineage stay asymmetric?** Today a Temporary agent's parent survives a restart and a Saved
+   agent's is deliberately dropped. That is a real product choice, not a bug — but a unified Agent
+   Instance either keeps the asymmetry deliberately or resolves it, and the code cannot say which.
