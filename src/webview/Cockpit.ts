@@ -81,7 +81,6 @@ import {
   humanInboxMessage,
   humanInboxErrorMessage,
   humanInboxItemMessage,
-  humanInboxItemMissingMessage,
   type HumanInboxAction,
 } from "./human-inbox/messages.js";
 import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
@@ -1380,6 +1379,20 @@ export async function openCockpit(
       })(),
     });
 
+  /**
+   * t-e5e995 — a terminal Inbox decision removes the item from the pending projection, so its
+   * detail route ceases to identify an actionable resource. Commit the parent route and reload the
+   * shell + list as one navigation transaction. Callers invoke this only after their own typed
+   * mutation succeeds; failures deliberately leave the detail route mounted with its actionable
+   * error.
+   */
+  const returnToInbox = async () => {
+    await requestNavigate(routes.section("inbox"), live, async () => {
+      await sendModel();
+      await sendSectionModule();
+    });
+  };
+
   const sendInbox = async () => {
     if (panel !== live || !isSection(currentRoute, "inbox")) return;
     const epoch = navEpoch;
@@ -1425,7 +1438,14 @@ export async function openCockpit(
         load: makeInboxArtifactLoader(sources.approvalWs.workspaceRoot),
       });
       if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(item ? humanInboxItemMessage(item) : humanInboxItemMissingMessage(route.itemKind, route.itemId));
+      if (!item) {
+        // The host has authoritatively re-read the queue and confirmed that this pending resource no
+        // longer exists (for example, another window resolved it). Do not strand Control on a route
+        // whose identity is gone; the list is both the recovery path and the truthful current state.
+        await returnToInbox();
+        return;
+      }
+      live.webview.postMessage(humanInboxItemMessage(item));
     } catch (err) {
       if (panel !== live || navEpoch !== epoch) return;
       live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
@@ -2166,8 +2186,7 @@ export async function openCockpit(
       if (!wsHash) return true;
       try {
         await deps.approvals.resolve(wsHash, m.id, m.decision);
-        await sendInbox();
-        await sendInboxItem();
+        await returnToInbox();
       } catch (err) {
         live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
       }
@@ -2203,12 +2222,12 @@ export async function openCockpit(
           }
           if (!result.ok) {
             live.webview.postMessage(humanInboxErrorMessage(`${result.code}: ${result.reason}`));
+            return true;
           }
         } else {
           return true;
         }
-        await sendInbox();
-        await sendInboxItem();
+        await returnToInbox();
       } catch (err) {
         live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
       }
@@ -2230,8 +2249,12 @@ export async function openCockpit(
           return true;
         }
         deps.validations.onValidationsChanged();
-        await sendInbox();
-        await sendInboxItem();
+        if (m.type === "closeInboxValidation") {
+          await returnToInbox();
+        } else {
+          await sendInbox();
+          await sendInboxItem();
+        }
       } catch (err) {
         live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
       }

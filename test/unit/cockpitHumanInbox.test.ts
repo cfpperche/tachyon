@@ -7,6 +7,9 @@ import { openCockpit, type CockpitDeps, type CockpitMissionBoard } from "../../s
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
 import { buildApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
+import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
+import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore.js";
+import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Validation } from "../../src/validations/types.js";
 
@@ -68,6 +71,25 @@ function validationRecord(id: string, over: Partial<Validation> = {}): Validatio
     updatedAt: RECENT,
     ...over,
   } as Validation;
+}
+
+function pendingSavedAgentProposal(root: string, id = "sp-000001"): SavedAgentProposal {
+  const base = { configSha256: workspaceConfigSha256(root) };
+  const spec = { name: "grok-builder", runtimeAdapter: "grok" as const, rationale: "bounded implementation work" };
+  const proposal: SavedAgentProposal = {
+    id,
+    proposer: "codex-canonico",
+    proposerKind: "agent",
+    createdAt: new Date(Date.now() - 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    digest: computeSavedAgentProposalDigest({ proposer: "codex-canonico", spec, base }),
+    base,
+    spec,
+  };
+  const file = savedAgentProposalPath(root, id);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(proposal)}\n`);
+  return proposal;
 }
 
 interface Calls {
@@ -224,7 +246,7 @@ describe("Control → Human Inbox item route", () => {
     expect(vm?.artifacts?.[0]?.src).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("an item that is gone reports itself gone, not as an empty document", async () => {
+  it("an item that is gone returns to the refreshed Inbox list", async () => {
     const root = workspace();
     const { deps } = depsFor(root, []);
     await openCockpit(deps, { route: cockpitRoutes.inboxItem("ws-1", "validation", "v-vanished") });
@@ -232,7 +254,11 @@ describe("Control → Human Inbox item route", () => {
     await flush();
 
     expect(posted("humanInboxItem")).toHaveLength(0);
-    expect(posted("humanInboxItemMissing").at(-1)).toMatchObject({ kind: "validation", id: "v-vanished" });
+    expect(posted("humanInbox").at(-1)?.vm?.items).toEqual([]);
+    const model = posted("model").at(-1) as { model?: { activeRoute?: unknown; section?: string } } | undefined;
+    expect(model?.model?.activeRoute).toBeUndefined();
+    expect(model?.model?.section).toBe("inbox");
+    expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
   });
 
   it("keeps a missing artifact listed with its reason", async () => {
@@ -305,6 +331,99 @@ describe("Control → Human Inbox actions route to each kind's own path", () => 
 
     expect(calls.resolved).toEqual([{ wsHash: "ws-1", id: "a-000001", decision: "approved" }]);
     expect(calls.closed).toHaveLength(0);
+    expect((posted("model").at(-1) as { model?: { section?: string } } | undefined)?.model?.section).toBe("inbox");
+    expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
+  });
+
+  it("an approval failure stays on its detail route and posts an actionable error", async () => {
+    const root = workspace();
+    pendingApproval(root, "a-000001");
+    const { deps } = depsFor(root, []);
+    deps.approvals.resolve = async () => { throw new Error("approval store is unavailable"); };
+    await openCockpit(deps, { route: cockpitRoutes.inboxItem("ws-1", "approval", "a-000001") });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    __createdPanels[0].webview.__receive({ type: "resolveInboxApproval", id: "a-000001", decision: "denied" });
+    await flush();
+
+    expect(posted("humanInboxError").at(-1)?.message).toContain("approval store is unavailable");
+    expect((posted("model").at(-1) as { model?: { activeRoute?: unknown } } | undefined)?.model?.activeRoute)
+      .toEqual(cockpitRoutes.inboxItem("ws-1", "approval", "a-000001"));
+  });
+
+  it.each(["approve", "deny"] as const)("a Saved Agent proposal %s returns to the refreshed Inbox", async (decision) => {
+    const root = workspace();
+    const proposal = pendingSavedAgentProposal(root);
+    const { deps } = depsFor(root, []);
+    const approveCalls: string[] = [];
+    const withProposalCommit: CockpitDeps = {
+      ...deps,
+      approveSavedAgentProposal: async ({ proposalId }) => {
+        approveCalls.push(proposalId);
+        return {
+          ok: true,
+          receipt: {
+            digest: proposal.digest,
+            proposalId,
+            proposer: proposal.proposer,
+            approvedBy: "human",
+            agentName: "grok-builder",
+            approvedAt: new Date().toISOString(),
+            outcome: "committed",
+            operation: "create",
+          },
+        };
+      },
+    };
+    await openCockpit(withProposalCommit, {
+      route: cockpitRoutes.inboxItem("ws-1", "saved-agent-proposal", proposal.id),
+    });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    __createdPanels[0].webview.__receive({
+      type: "decideSavedAgentProposal",
+      id: proposal.id,
+      digest: proposal.digest,
+      decision,
+      ...(decision === "deny" ? { reason: "not needed" } : {}),
+    });
+    await flush();
+
+    expect(approveCalls).toEqual(decision === "approve" ? [proposal.id] : []);
+    expect((posted("model").at(-1) as { model?: { section?: string } } | undefined)?.model?.section).toBe("inbox");
+    expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
+  });
+
+  it("a refused Saved Agent proposal commit stays on the detail route with its refusal", async () => {
+    const root = workspace();
+    const proposal = pendingSavedAgentProposal(root);
+    const { deps } = depsFor(root, []);
+    await openCockpit({
+      ...deps,
+      approveSavedAgentProposal: async () => ({
+        ok: false,
+        code: "base_diverged",
+        reason: "workspace config changed",
+      }),
+    }, { route: cockpitRoutes.inboxItem("ws-1", "saved-agent-proposal", proposal.id) });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+    const pendingBeforeDecision = posted("routePending").length;
+
+    __createdPanels[0].webview.__receive({
+      type: "decideSavedAgentProposal",
+      id: proposal.id,
+      digest: proposal.digest,
+      decision: "approve",
+    });
+    await flush();
+
+    expect(posted("humanInboxError").at(-1)?.message).toContain("workspace config changed");
+    expect((posted("model").at(-1) as { model?: { activeRoute?: unknown } } | undefined)?.model?.activeRoute)
+      .toEqual(cockpitRoutes.inboxItem("ws-1", "saved-agent-proposal", proposal.id));
+    expect(posted("routePending")).toHaveLength(pendingBeforeDecision);
   });
 
   it("closing and assigning a validation go through the validation store, never the approval path", async () => {
@@ -327,6 +446,29 @@ describe("Control → Human Inbox actions route to each kind's own path", () => 
     // the load-bearing assertion of this whole surface: nothing a validation row can send reaches
     // the capability path. There is no wire shape for it, so there is nothing to guard at runtime.
     expect(calls.resolved).toHaveLength(0);
+  });
+
+  it("closing a validation returns to Inbox, while assigning keeps the detail route", async () => {
+    const root = workspace();
+    const { deps } = depsFor(root, [validationRecord("v-1")]);
+    await openCockpit(deps, { route: cockpitRoutes.inboxItem("ws-1", "validation", "v-1") });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    __createdPanels[0].webview.__receive({
+      type: "assignInboxValidation",
+      id: "v-1",
+      assignee: "human",
+      expect: { assignee: null, updatedAt: RECENT },
+    });
+    await flush();
+    expect((posted("model").at(-1) as { model?: { activeRoute?: unknown } } | undefined)?.model?.activeRoute)
+      .toEqual(cockpitRoutes.inboxItem("ws-1", "validation", "v-1"));
+
+    __createdPanels[0].webview.__receive({ type: "closeInboxValidation", id: "v-1", outcome: "passed", note: "done" });
+    await flush();
+    expect((posted("model").at(-1) as { model?: { section?: string } } | undefined)?.model?.section).toBe("inbox");
+    expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
   });
 
   it("opening a row navigates to the item route rather than resolving anything", async () => {
