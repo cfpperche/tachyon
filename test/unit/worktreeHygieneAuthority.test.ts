@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { resolveHygieneAuthority, type HygieneLineageSource } from "../../src/worktree/hygieneAuthority.js";
+import {
+  composeHygieneLineageSource,
+  resolveHygieneAuthority,
+  type HygieneLineageSource,
+} from "../../src/worktree/hygieneAuthority.js";
 import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
 
 /**
@@ -149,5 +153,72 @@ describe("hygiene authority (t-e74631)", () => {
       const decision = resolveHygieneAuthority(entry(), { kind: "agent", name: "nowhere" }, deep);
       expect(decision.allowed).toBe(false);
     });
+  });
+});
+
+/**
+ * t-ff0a7a — governed Saved Agents expose declaredOwner without a runtime parent. Hygiene must
+ * treat that declared owner as an authorized ancestor for CHANGE residue only.
+ */
+describe("hygiene authority + declaredOwner (t-ff0a7a)", () => {
+  const declaredOnly = composeHygieneLineageSource({
+    runtimeParentOf: () => undefined,
+    declaredOwnerOf: (name) => (name === "grok-builder" || name === "codex-builder" ? "codex-canonico" : undefined),
+  });
+
+  it("grants the declaredOwner of a Saved Agent so the coordinator can sweep its change worktrees", () => {
+    // Fail-before: parentOf was runtime-only, so "owner has no recorded parent" refused codex-canonico.
+    const decision = resolveHygieneAuthority(
+      entry({ createdBy: "grok-builder" }),
+      { kind: "agent", name: "codex-canonico" },
+      declaredOnly,
+    );
+    expect(decision).toMatchObject({
+      allowed: true,
+      relation: "ancestor",
+      actor: "codex-canonico",
+      owner: "grok-builder",
+      lineage: ["grok-builder", "codex-canonico"],
+    });
+  });
+
+  it("still refuses an agent with no runtime parent and no declaredOwner", () => {
+    const decision = resolveHygieneAuthority(
+      entry({ createdBy: "stranger-builder" }),
+      { kind: "agent", name: "codex-canonico" },
+      declaredOnly,
+    );
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) throw new Error("unreachable");
+    expect(decision.reason).toMatch(/no recorded parent|neither the owner/);
+  });
+
+  it("prefers runtime parent over declaredOwner when both exist", () => {
+    const both = composeHygieneLineageSource({
+      runtimeParentOf: (name) => (name === "worker" ? "session-parent" : undefined),
+      declaredOwnerOf: (name) => (name === "worker" ? "config-owner" : undefined),
+    });
+    const bySession = resolveHygieneAuthority(entry(), { kind: "agent", name: "session-parent" }, both);
+    const byConfig = resolveHygieneAuthority(entry(), { kind: "agent", name: "config-owner" }, both);
+    expect(bySession).toMatchObject({ allowed: true, relation: "ancestor", lineage: ["worker", "session-parent"] });
+    // Config owner is NOT on the walk once runtime parent is present — edges stay ordered, not unioned.
+    expect(byConfig.allowed).toBe(false);
+  });
+
+  it("still never extends declaredOwner authority to an agent worktree home", () => {
+    const home = entry({ id: "mw-agent-grok", kind: "agent", agent: "grok-builder", createdBy: "grok-builder" });
+    const decision = resolveHygieneAuthority(home, { kind: "agent", name: "codex-canonico" }, declaredOnly);
+    expect(decision.allowed).toBe(false);
+    if (decision.allowed) throw new Error("unreachable");
+    expect(decision.reason).toContain("agent worktree");
+  });
+
+  it("composeHygieneLineageSource ignores self-parent and empty declared values", () => {
+    const src = composeHygieneLineageSource({
+      runtimeParentOf: () => "self",
+      declaredOwnerOf: (name) => (name === "self" ? "self" : ""),
+    });
+    // runtime parent equals name is ignored; declaredOwner self/empty ignored → no parent.
+    expect(src.parentOf("self")).toBeUndefined();
   });
 });

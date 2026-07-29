@@ -9,11 +9,19 @@
    `min-width: 0` is load-bearing: without it a grid/flex child refuses to shrink below its content,
    so ONE long unbreakable string re-opens the horizontal scrollbar for the whole page. Every
    long-string carrier below repeats it for the same reason. */
-/* t-5564b4 — LEFT-aligned, not centred. The shell's breadcrumb sits at the left edge, so a centred
-   column detached the content from the only navigation on screen and left the wide gutter the report
-   calls "grande área vazia ao redor". A max-width still bounds the measure for reading; it just
-   starts where the header starts. */
-.td-root { max-width: 82ch; margin: 0; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); min-width: 0; }
+/* t-cf477f — centred reading column, same principle as Pin Detail (`pin-preview` main) and the
+   design-system `.ds-wrap`: max measure + auto horizontal margins + width:100% so narrow viewports
+   still fill. Breadcrumb lives in Control fullpage chrome OUTSIDE this root, so centering no longer
+   detaches navigation from content (supersedes the t-5564b4 left-align choice). Pin Detail's 880px
+   measure is the visual reference; page pad stays on --ds-page-pad-* tokens. */
+.td-root {
+  max-width: 880px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
+  box-sizing: border-box;
+  min-width: 0;
+}
 .td-root, .td-root * { min-width: 0; }
 
 /* Identity under the title: an id and a status are metadata, not part of the heading. */

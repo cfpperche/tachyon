@@ -259,6 +259,8 @@ describe("Control → Human Inbox item route", () => {
     expect(model?.model?.activeRoute).toBeUndefined();
     expect(model?.model?.section).toBe("inbox");
     expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
+    // t-00f4bc / t-e5e995 — host navigates; it does not leave the client on a missing-item tombstone.
+    expect(posted("humanInboxItemMissing")).toHaveLength(0);
   });
 
   it("keeps a missing artifact listed with its reason", async () => {
@@ -333,6 +335,8 @@ describe("Control → Human Inbox actions route to each kind's own path", () => 
     expect(calls.closed).toHaveLength(0);
     expect((posted("model").at(-1) as { model?: { section?: string } } | undefined)?.model?.section).toBe("inbox");
     expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
+    // t-00f4bc — normal completion must not render the "no longer waiting" tombstone wire.
+    expect(posted("humanInboxItemMissing")).toHaveLength(0);
   });
 
   it("an approval failure stays on its detail route and posts an actionable error", async () => {
@@ -469,6 +473,17 @@ describe("Control → Human Inbox actions route to each kind's own path", () => 
     await flush();
     expect((posted("model").at(-1) as { model?: { section?: string } } | undefined)?.model?.section).toBe("inbox");
     expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
+    // t-00f4bc — Validation close is a terminal decision; same navigation contract as Approval resolve.
+    expect(posted("humanInboxItemMissing")).toHaveLength(0);
+  });
+
+  it("t-00f4bc — host never posts the missing-item tombstone after a terminal decision", async () => {
+    // Static contract: Cockpit must not reintroduce humanInboxItemMissingMessage on the success path.
+    // The client may still understand the wire type for legacy reloads; the host must not emit it when
+    // the product itself completed the item (that was the dogfood bug: tombstone instead of list).
+    const host = fs.readFileSync(path.resolve(__dirname, "../../src/webview/Cockpit.ts"), "utf8");
+    expect(host).toContain("returnToInbox");
+    expect(host).not.toContain("humanInboxItemMissingMessage");
   });
 
   it("opening a row navigates to the item route rather than resolving anything", async () => {
