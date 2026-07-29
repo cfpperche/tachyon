@@ -162,14 +162,32 @@ describe("Saved Agent proposal store (SDD 482 phase 4B)", () => {
     expect(admitted.ok).toBe(true);
   });
 
-  it("sweeps expired files as housekeeping, leaving live ones alone", () => {
+  /**
+   * SDD 482 phase 5 — the sweep is WIRED into the one path that already writes here, so expired files
+   * do not accumulate forever and the function is not an export with no caller.
+   *
+   * It is still not a control. Every reader filters by expiry itself, which the test above proves by
+   * showing the ceiling admits again with nothing cleaned up; this one only proves the housekeeping
+   * actually runs.
+   */
+  it("sweeps expired files while recording, leaving live ones alone", () => {
     const ws = workspace();
     const stale = record(ws);
+    if (!stale.ok) throw new Error("fixture");
+    expect(listSavedAgentProposals(ws)).toHaveLength(1);
+
+    // Recording later is what triggers the sweep — no explicit call.
     const fresh = record(ws, { spec: spec({ name: "fresh" }), nowMs: NOW + SAVED_AGENT_PROPOSAL_TTL_MS });
-    if (!stale.ok || !fresh.ok) throw new Error("fixture");
-    const swept = sweepExpiredSavedAgentProposals(ws, NOW + SAVED_AGENT_PROPOSAL_TTL_MS);
-    expect(swept).toEqual([stale.proposal.id]);
+    if (!fresh.ok) throw new Error("fixture");
     expect(listSavedAgentProposals(ws).map((p) => p.id)).toEqual([fresh.proposal.id]);
+  });
+
+  it("sweeps directly too, for a caller that never records", () => {
+    const ws = workspace();
+    const stale = record(ws);
+    if (!stale.ok) throw new Error("fixture");
+    expect(sweepExpiredSavedAgentProposals(ws, NOW + SAVED_AGENT_PROPOSAL_TTL_MS)).toEqual([stale.proposal.id]);
+    expect(listSavedAgentProposals(ws)).toEqual([]);
   });
 
   /**

@@ -654,8 +654,12 @@ function strings(): CockpitStrings {
     devicesKindBrowser: t("Browser"),
     devicesKindMobile: t("Mobile"),
     devicesPairedAt: t("Paired"),
-    declared: t("declared"),
-    adhoc: t("ad-hoc"),
+    // SDD 482 phase 5 (`t-5e1113`) — the ratified product vocabulary. These two badges are the whole
+    // user-visible surface for the distinction, which is why the rename is a two-line change and not
+    // a sweep: the concept was already centralized here, and every OTHER occurrence of "declared" or
+    // "ad-hoc" in this build is a field name, a config key or a wire value that decision 7 freezes.
+    declared: t("Saved"),
+    adhoc: t("Temporary"),
     agent: t("agent"),
     change: t("change"),
     wtReadyTitle: t("Ready to remove"),

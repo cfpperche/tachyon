@@ -38,7 +38,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
     const src = SOURCE("src/bridge/tools.ts");
     expect(src).toMatch(/const canDismiss = isTemporaryInstance\(info\) && !info\.running;/);
     expect(src).toMatch(/if \(info && isTemporaryInstance\(info\) && !info\.running\)/);
-    expect(src).toMatch(/if \(!isTemporaryInstance\(info\)\) return fail/);
+    expect(src).toMatch(/if \(!isTemporaryInstance\(info\)\) \{/);
 
     // No remaining identity read of an entry row. `info.declared` may still appear as the REASON
     // string's input (it explains which store owns the row), which is what `declared` means.
@@ -47,12 +47,14 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   });
 
   /**
-   * The user-visible refusal wording is deliberately UNCHANGED. This slice's claim is that the
-   * question moved and the behaviour did not; renaming a Bridge-visible message inside it would make
-   * that claim untestable from the outside. The rename belongs to the terminology phase.
+   * Phase 3 deliberately left this wording alone; phase 5 renamed it — and KEPT the old term inside
+   * the new sentence. That is what a compatibility alias means for a message: an operator or agent
+   * grepping logs for the old phrase still lands here, instead of finding nothing and concluding the
+   * refusal was removed.
    */
-  it("does not rename the Bridge-visible refusal while claiming behaviour is unchanged", () => {
-    expect(SOURCE("src/bridge/tools.ts")).toContain("is declared in tachyon.yml and cannot be dismissed through the Bridge");
+  it("renames the refusal to the ratified vocabulary while keeping the old term findable", () => {
+    const source = SOURCE("src/bridge/tools.ts");
+    expect(source).toContain("is a Saved Agent (declared in tachyon.yml)");
   });
 
   /** Reader 2. Mission Control's live-Temporary filter, and its second guard which is NOT the same question. */

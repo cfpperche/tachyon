@@ -289,10 +289,30 @@ preconditions current, not future, which is why they are closed here.
       to the slice that can actually grant it.
 - [ ] Saving does not start the agent.
 
-## Phase 5 — terminology and removal
+## Phase 5 — terminology and removal (delivered)
 
-- [ ] `Saved Agent` / `Temporary Agent` / `Probe` with compatibility aliases.
-- [ ] Remove duplicate mechanisms only against the equivalence proofs from phase 3.
+- [x] `Saved` / `Temporary` in the Cockpit badges — the ONE user-visible surface for the distinction.
+      A two-line change rather than a sweep, because the concept was already centralized in the
+      strings table; every other `declared`/`adhoc` occurrence is a field name, a config key or a wire
+      value that decision 7 freezes. `Probe` was already named Probe.
+- [x] The Bridge refusal phase 3 deferred, renamed WITH the old term kept in the same sentence:
+      "is a Saved Agent (declared in tachyon.yml)". That is what a compatibility alias means for a
+      message — an operator grepping logs for the old phrase still lands here instead of concluding
+      the refusal was removed.
+- [x] Wired the expiry sweep into the one path that already writes to the proposal directory. It was
+      an exported function with no caller, which is its own debt; it is still NOT a control, and the
+      read-time filter test proves that independently.
+
+### What phase 5 did NOT remove, and why
+
+- [ ] The legacy `declared` fallback in `agentInstancePolicy` STAYS. It is the one duplicate the plan
+      pointed at, and removing it needs field evidence that no pre-phase-2 ledger row survives —
+      `legacyFallbackUsed` exists precisely to make that removal an observation rather than a guess.
+      Deleting the instrument before the measurement would be the opposite of the plan.
+- [ ] `declared` itself stays everywhere: decision 7 froze it on the wire, and phase 3 proved the
+      remaining reads are storage questions rather than policy. There is no proven duplication left to
+      delete — the honest finding is that phase 3 converged the READERS without creating a redundant
+      mechanism to remove.
 
 ## Verification
 

@@ -373,3 +373,26 @@ Two things I would flag to anyone reading this later:
   widened one. `agent-profile.studio-commit` is `.strict()`, so adding a field there would make a
   newer engine undecodable to an older shell — the shape that broke 0.56.110 D1. A new action is
   refused by name on an older engine and never sent by an older client.
+
+
+## Phase 5 was small, and that is the result rather than a shortfall (2026-07-29)
+
+The plan budgeted phase 5 for "terminology + remove duplicate mechanisms". Measured, both halves are
+much smaller than the phrasing suggests, and saying so is more useful than manufacturing work.
+
+TERMINOLOGY was two strings. `declared`/`ad-hoc` appear all over the build, but every other occurrence
+is a field name, a config key, or a wire value that ratified decision 7 freezes. The only place a
+human reads the distinction is the Cockpit badge pair, already centralized in the strings table. A
+sweep-and-rename would have churned dozens of identifiers to change nothing a user sees — and would
+have collided with the wire freeze.
+
+REMOVAL found nothing legitimately removable. The plan says "remove duplicates only against the
+equivalence proofs from phase 3", and the honest reading of those proofs is that phase 3 moved the
+READERS onto a resolver without leaving a redundant mechanism behind. The one candidate — the legacy
+`declared` fallback — cannot go without evidence that no pre-phase-2 ledger row survives, and
+`legacyFallbackUsed` was built to make that an observation. Deleting the instrument before taking the
+measurement would invert the plan.
+
+The only dead thing was mine: `sweepExpiredSavedAgentProposals`, exported in phase 4B and never
+called. Wired into the record path rather than deleted, since expiry housekeeping is real — but it
+remains explicitly NOT a control, and the read-time filter test proves that independently.

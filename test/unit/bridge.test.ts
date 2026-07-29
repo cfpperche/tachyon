@@ -1162,7 +1162,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const declared = await client.callTool({ name: "dismiss_agent", arguments: { name: "claude" } });
     expect(declared.isError).toBe(true);
-    expect(JSON.stringify(declared.content)).toContain("declared in tachyon.yml");
+    // SDD 482 phase 5 — new vocabulary, old term retained in the same sentence so this assertion (and
+    // anyone grepping logs) keeps working across the rename.
+    expect(JSON.stringify(declared.content)).toContain("Saved Agent (declared in tachyon.yml)");
 
     const missing = await client.callTool({ name: "dismiss_agent", arguments: { name: "missing" } });
     expect(missing.isError).toBe(true);

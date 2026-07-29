@@ -240,6 +240,12 @@ export function recordSavedAgentProposal(input: {
   /** Workspace roster for the spec 352 ownership check; absent REFUSES a proposal that wants ownership. */
   roster?: AgentOwnershipRosterV1;
 }): SavedAgentProposalAdmission {
+  // SDD 482 phase 5 — housekeeping runs HERE, on the one path that already writes to this directory,
+  // rather than from a projection that a render could call a hundred times. It is still not a control:
+  // every reader filters by expiry itself, so a workspace where this never ran behaves identically.
+  // Wiring it is what stops expired files accumulating forever — and stops this being an exported
+  // function with no caller, which is its own kind of debt.
+  sweepExpiredSavedAgentProposals(input.workspaceRoot, input.nowMs);
   const queue = readLiveSavedAgentProposalQueue(input.workspaceRoot, input.nowMs);
   const at = new Date(input.nowMs).toISOString();
 
