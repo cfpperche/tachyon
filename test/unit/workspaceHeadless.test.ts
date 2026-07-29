@@ -615,6 +615,18 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       confirmation: "maintainer",
     });
     expect(forgotten).toEqual({ schemaVersion: 1, kind: "forgotten", agentName: "maintainer", agentId: created.agentId });
+
+    // t-9464ac — the runtime backstop for the untyped boundary. TypeScript already refuses an
+    // unrouted variant at compile time (the `never` binding fails at the point of the omission), so
+    // this can only be reached by a caller that skipped schema validation. It must name the operation
+    // rather than complain about forget confirmation, which is what the old fall-through did and what
+    // sent the reviewer looking at the wrong branch.
+    await expect(ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "totally-unrouted",
+      agentName: "maintainer",
+      expectedRevision: "a".repeat(64),
+    } as never)).rejects.toThrow(/'totally-unrouted' is not routed/);
   } finally {
     ws.dispose();
   }

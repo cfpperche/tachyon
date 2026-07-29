@@ -5312,9 +5312,26 @@ export class Workspace {
       });
       return { schemaVersion: 1, kind: "snapshot", snapshot: projectAgentProfileStudioSnapshot(result.snapshot) };
     }
-    if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
-    const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
-    return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
+    if (mutation.operation === "forget") {
+      if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
+      const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
+      return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
+    }
+    // t-9464ac — this chain used to END on the forget body, reaching it by narrowing rather than by
+    // saying so. TypeScript did already refuse an unrouted variant (adding one and omitting its branch
+    // fails with "Property 'confirmation' does not exist on type …"), so the hole was never silent —
+    // but the code READ as "assume forget", which is a different and worse thing for a reader deciding
+    // whether that fall-through was deliberate.
+    //
+    // The `never` binding is the real guard: it makes exhaustiveness a COMPILE error at the point of
+    // the omission instead of an incidental property error inside someone else's branch. The throw
+    // below it is the runtime backstop for the untyped boundary — a mutation decoded from the webview
+    // is validated by schema, but a future caller that skips that step gets a refusal naming the
+    // unrouted operation rather than a misleading complaint about forget confirmation.
+    const unrouted: never = mutation;
+    throw new Error(
+      `canonical profile studio mutation '${(unrouted as { operation?: string }).operation ?? "unknown"}' is not routed`,
+    );
   }
 
   /**
