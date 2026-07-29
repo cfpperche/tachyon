@@ -389,7 +389,11 @@ export function createProfileFromStudioMutation(
     runtime: { ...parsed.editable.runtime },
     ...(parsed.editable.role ? { prompt: { role: parsed.editable.role } } : {}),
     lifecycle: {
-      enabled: false,
+      // t-ca9086 / SDD 482 decision 9 (revised 2026-07-29): human-authorized create writes ENABLED.
+      // "Saving is not starting" is enforced by absence of spawn/autostart — not by disabling the
+      // profile. Approve-and-create and Agent Studio save both land here; import/clone stay disabled
+      // on their own path (reauthorization).
+      enabled: true,
       ...(parsed.editable.lifecycle.autostart ? { autostart: true } : {}),
       ...(parsed.editable.lifecycle.restart !== "never" ? { restart: parsed.editable.lifecycle.restart } : {}),
       ...(!parsed.editable.lifecycle.attention ? { attention: { enabled: false } } : {}),

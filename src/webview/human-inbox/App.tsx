@@ -386,7 +386,9 @@ function SavedAgentProposalDetail({
       <div class="hi-proposal-affected">
         <h3>What approving writes</h3>
         <ul>{proposal.affected.map((entry) => <li key={entry}>{entry}</li>)}</ul>
-        <p class="hi-proposal-note">Saving does not start the agent — launching it stays a separate action.</p>
+        <p class="hi-proposal-note" data-testid="proposal-created-enabled-note">
+          Created enabled; not started — launching stays a separate action after approval.
+        </p>
       </div>
 
       <div class="hi-proposal-decide">

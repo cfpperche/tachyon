@@ -225,8 +225,9 @@ preconditions current, not future, which is why they are closed here.
       on the existing receipt and the transaction runs exactly once.
 - [x] Revocation is effective on a pending proposal: the proposer's grant is RE-READ at commit.
 - [x] Capability recursion refused at commit as well as at admission.
-- [x] Saving does not start the agent: no spawn, no port that could perform one, `lifecycle.enabled:
-      false` in the created profile — asserted three ways.
+- [x] Saving does not start the agent: no spawn, no port that could perform one. Originally pinned via
+      `lifecycle.enabled: false`; revised by `t-ca9086` to `enabled: true` + no autostart/spawn (see
+      amendment below).
 - [x] Approval is unreachable from the Bridge, asserted by absence of the wiring.
 - [x] Visual QA: two headless browser shots at 880px and 360px, each asserting no horizontal overflow,
       plus a DOM assertion that the secret VALUE never reaches the pane.
@@ -272,9 +273,9 @@ preconditions current, not future, which is why they are closed here.
       failed. Compensation covers a failure in-process; reconcile covers the process that died, and
       they are different halves.
 - [x] "Saving does not start the agent" re-pinned where it now LIVES: moving onto the canonical Studio
-      path handed `lifecycle.enabled: false` to `createProfileFromStudioMutation`, which left the
-      property unasserted from the proposal side — how a guarantee evaporates in a refactor that "only
-      moved things". Asserted through that helper with the exact editable the extension sends.
+      path handed enablement to `createProfileFromStudioMutation`. Asserted through that helper with
+      the exact editable the extension sends. (`t-ca9086` later revised the value to `enabled: true`
+      while keeping no-autostart / no-spawn.)
 - [x] Seam crossed by a NEW additive action, never a widened `.strict()` payload.
 
 - [x] `ownsSubagents` REVIEWED (CLEAN) and its recommendation implemented: requested ownership is now
@@ -283,9 +284,8 @@ preconditions current, not future, which is why they are closed here.
       `ownershipPatchFromStudioMutation` share one rule with identical wording — a test asserts the
       two produce the same message. An unavailable roster REFUSES rather than defers: "I could not
       check" and "it is fine" are different answers.
-- [x] Approve+save atomicity REVIEWED (CLEAN): `lifecycle.enabled: false` makes "saving does not
-      start" a property of the DATA rather than of this path's conduct, and the commit has no port
-      through which a launch could happen.
+- [x] Approve+save atomicity REVIEWED (CLEAN): "saving does not start" is a property of the DATA and
+      of path conduct (no spawn port); enablement revised by `t-ca9086` (see amendment).
 - [x] Human Inbox review: a third inbox kind with runtime, requested ownership, dangerous grants, what
       approving writes, and the digest. Environment renders as NAMES ONLY, asserted in the browser
       test that the value never reaches the DOM (`savedAgentProposalReview.test.ts`,
@@ -303,9 +303,24 @@ preconditions current, not future, which is why they are closed here.
       by name; the only edge an approval creates is proposer-owns-the-new-agent, validated at
       admission by the shared spec 352 rule (`assertOwnershipTargets`, one implementation, asserted to
       produce wording identical to a Studio edit).
-- [x] Saving does not start the agent — `lifecycle.enabled: false` written by the canonical create,
-      no spawn call, and no port through which a launch could happen. Asserted three ways, including
-      through the canonical helper that now owns the guarantee.
+- [x] Saving does not start the agent — no spawn call, and no port through which a launch could
+      happen. Enablement value revised by `t-ca9086` (see amendment).
+
+### Amendment — `t-ca9086` (2026-07-29): approve creates ENABLED
+
+Human decision after real dogfood on 0.56.116 (`sp-21a7eb` → `grok-builder` born disabled; start
+refused until a second Studio visit):
+
+- [x] `Approve and create` writes `lifecycle.enabled: true` via `createProfileFromStudioMutation`.
+- [x] Deny still writes no profile.
+- [x] Approval still does not start a session, create a running worktree, or assign a task
+      (`autostart` absent; no spawn port).
+- [x] Atomic ownership and no recursive `proposeSavedAgent` grant unchanged.
+- [x] Receipt carries `created: "enabled; not started"`; Human Inbox note and review `affected`
+      declare the same phrase.
+- [x] SDD decision 9 revised; tests that pinned `enabled: false` now pin enabled + no autostart.
+- [x] Other create ports audited: Agent Studio create shares this helper (same contract);
+      import/clone still write `enabled: false` (reauthorization intent — out of scope to change).
 
 ## Phase 5 — terminology and removal (delivered)
 

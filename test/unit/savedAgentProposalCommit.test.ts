@@ -93,6 +93,8 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, in the SAME
       // transaction — so both authority records carry `lifecycle-tx-1`.
       owner: "claude-runtime",
+      // t-ca9086: approval creates enabled; start stays separate.
+      created: "enabled; not started",
     });
     // ONE canonical transaction carrying both subjects.
     expect(p.calls).toEqual([
@@ -234,16 +236,15 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
    * pins that inheritance rather than a local copy of the rule.
    */
   /**
-   * "Saving does not start the agent" as a property of the DATA, pinned where it now lives.
+   * t-ca9086 — "created enabled; not started" as a property of the DATA, pinned where it lives.
    *
-   * `claude-reviewer` could not find `enabled: false` in this module and was right not to assume: it
-   * is no longer here. Moving the create onto the canonical Studio path handed that guarantee to
-   * `createProfileFromStudioMutation`, which writes it unconditionally. Better ownership — but it
-   * left the property unasserted from this side, which is exactly how a guarantee evaporates during a
-   * refactor that "only moved things".
+   * Human dogfood on 0.56.116: approve created `lifecycle.enabled=false`, so Fleet start was refused
+   * until a second Studio visit. Approval now authorizes existence AND enablement; start remains a
+   * separate action (no autostart written, no spawn port on this path).
    */
-  it("creates the agent DISABLED, asserted through the canonical helper that now writes it", async () => {
+  it("creates the agent ENABLED without autostart, asserted through the canonical helper (t-ca9086)", async () => {
     const { createProfileFromStudioMutation } = await import("../../src/config/agentProfileStudio.js");
+    // Exactly what the extension's port sends for Approve and create.
     const profile = createProfileFromStudioMutation({
       schemaVersion: 1,
       kind: "canonical",
@@ -253,15 +254,32 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
         runtime: { adapter: "claude", executable: "claude" },
         role: "",
         cwd: "",
-        // Exactly what the extension's port sends, including autostart false.
         lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
         worktree: { enabled: false, branch: "" },
         isolation: "",
         capabilities: { skills: [], mcp: [], hooks: [] },
       },
     } as never);
-    expect(profile.lifecycle?.enabled).toBe(false);
+    expect(profile.lifecycle?.enabled).toBe(true);
     expect(profile.lifecycle?.autostart).toBeUndefined(); // nothing starts it on the next load either
+  });
+
+  it("receipt declares created enabled; not started, and the create port never spawns (t-ca9086)", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws);
+    const p = ports();
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human", nowMs: NOW, ports: p,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.receipt.created).toBe("enabled; not started");
+    // Durable on disk so reload/replay cannot lose the declaration.
+    expect(readSavedAgentProposalReceipt(ws, proposal.digest)?.created).toBe("enabled; not started");
+    // The commit port only creates; there is no start/spawn call shape on this surface.
+    expect(p.calls.every((call) => call.kind === "create")).toBe(true);
+    expect(p.calls.some((call) => "spawn" in call || call.kind === "start")).toBe(false);
   });
 
   it("verifies the capability rule against the canonical helper, which now owns it", async () => {

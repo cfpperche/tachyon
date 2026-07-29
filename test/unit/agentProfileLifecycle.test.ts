@@ -11,7 +11,10 @@ import {
   type AgentProfileLifecycleConfigPort,
   type CommitAgentProfileLifecycleInput,
 } from "../../src/config/agentProfileLifecycle.js";
-import { proposeSavedAgentGrantPatchFromStudioMutation } from "../../src/config/agentProfileStudio.js";
+import {
+  createProfileFromStudioMutation,
+  proposeSavedAgentGrantPatchFromStudioMutation,
+} from "../../src/config/agentProfileStudio.js";
 import { readAgentProfileGrants } from "../../src/config/agentProfileGrants.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
@@ -259,6 +262,52 @@ describe("agent profile lifecycle kernel", () => {
     expect(authority.records.get("codex")?.canonicalSha256).toBe(committed.snapshot.provenance.canonical.sha256);
     expect(await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config })).toEqual(committed.snapshot);
     expect(fs.readdirSync(path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle"))).toEqual([]);
+  });
+
+  /**
+   * t-ca9086 — fail-before was `enabled: false` on create (start refused as "profile is disabled").
+   * Pass-after: the Studio/proposal create helper persists `enabled: true` without autostart, and a
+   * re-inspect (reload) still shows that — so a subsequent start is not blocked by disablement.
+   */
+  it("t-ca9086: approve/Studio create persists enabled without autostart across reload", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    // Exact editable the extension's saved-agent-create port sends.
+    const createProfile = createProfileFromStudioMutation({
+      schemaVersion: 1,
+      kind: "canonical",
+      agentName: "importer",
+      editable: {
+        displayName: "",
+        runtime: { adapter: "claude", executable: "claude" },
+        role: "",
+        cwd: "",
+        lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        worktree: { enabled: false, branch: "" },
+        isolation: "",
+        capabilities: { skills: [], mcp: [], hooks: [] },
+      },
+    } as never);
+
+    const committed = await commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "importer",
+      operation: "create",
+      createProfile,
+      authority,
+      config,
+    });
+    expect(committed.snapshot.profile.lifecycle?.enabled).toBe(true);
+    expect(committed.snapshot.profile.lifecycle?.autostart).toBeUndefined();
+
+    const reloaded = await inspectAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "importer", authority, config,
+    });
+    expect(reloaded.profile.lifecycle?.enabled).toBe(true);
+    expect(reloaded.profile.lifecycle?.autostart).toBeUndefined();
+    // AgentManager.assertProfileLifecycleEnabled refuses only when enabled === false.
+    expect(reloaded.profile.lifecycle?.enabled === false).toBe(false);
   });
 
   it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {

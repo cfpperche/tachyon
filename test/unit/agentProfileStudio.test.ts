@@ -124,14 +124,14 @@ describe("canonical Agent Studio projection", () => {
     });
   });
 
-  it("rejects unknown response fields and creates fresh profiles disabled", () => {
+  it("rejects unknown response fields and creates fresh profiles enabled (t-ca9086)", () => {
     const projected = projectAgentProfileStudioSnapshot(lifecycleSnapshot());
     expect(agentProfileStudioSnapshotSchemaV1.safeParse({ ...projected, secret: "leak" }).success).toBe(false);
     expect(createProfileFromStudioMutation(mutation())).toEqual({
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       prompt: { role: "tester" },
-      lifecycle: { enabled: false, watch: ["test/**"] },
+      lifecycle: { enabled: true, watch: ["test/**"] },
       workspace: { cwd: "apps/tester" },
       nativeConfig: {
         selectors: {

@@ -1476,8 +1476,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 runtime: { adapter: spec.runtimeAdapter, executable: spec.executable ?? spec.runtimeAdapter },
                 role: "",
                 cwd: "",
-                // Saving does not start the agent: the canonical create writes `enabled: false`, and
-                // autostart is never requested here.
+                // t-ca9086: canonical create writes `enabled: true`; autostart is never requested here,
+                // so approval does not start a session. Start remains a separate Fleet/Studio action.
                 lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
                 worktree: { enabled: false, branch: "" },
                 isolation: "",

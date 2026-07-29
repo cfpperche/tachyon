@@ -74,9 +74,10 @@ describe("Saved Agent proposal review (SDD 482 phase 4C)", () => {
   it("names the durable artifacts the approval would create", () => {
     const vm = review();
     expect(vm.affected).toEqual([
-      ".tachyon/agents/importer/agent.yml (new canonical profile)",
+      ".tachyon/agents/importer/agent.yml (new canonical profile, lifecycle.enabled=true)",
       ".tachyon/agents/importer/authority.json (new authority record)",
       "tachyon.yml → agents.importer (new roster pointer)",
+      "created enabled; not started (no session, no running worktree, no task assignment)",
     ]);
   });
 
