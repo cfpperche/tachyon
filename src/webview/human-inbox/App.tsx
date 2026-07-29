@@ -357,6 +357,17 @@ function SavedAgentProposalDetail({
       <dl class="hi-proposal-facts">
         <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
         <dt>Runtime</dt><dd>{proposal.runtime.adapter}{proposal.runtime.executable ? ` (${proposal.runtime.executable})` : ""}</dd>
+        {/* t-4071e4 — WHERE it runs is a fact the human decides on, not a footnote. It sits in the
+          * scannable list because the approval that broke this shipped an agent into the shared
+          * checkout with nothing on screen saying so. The detail (and the opt-out warning) is below. */}
+        <dt>Workspace</dt>
+        <dd data-testid="proposal-workspace">
+          {proposal.worktreeEnabled === "unknown"
+            ? "(unreadable)"
+            : proposal.worktreeEnabled
+              ? "Its own isolated git worktree"
+              : <>Shared workspace checkout <Badge tone="warn">not isolated</Badge></>}
+        </dd>
         <dt>Proposed by</dt><dd>{proposal.proposer} <Badge tone="info">Bridge-resolved</Badge></dd>
         <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
         <dt>Digest</dt><dd class="hi-proposal-digest">{proposal.digest.slice(0, 16)}…</dd>

@@ -126,6 +126,20 @@ function assertStudioNativeConfig(editable: AgentProfileStudioEditableV1): void 
 const studioAgentName = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
 
 /** Mirrors `agentProfileSchemaV1.ownership.subagents`; the roster is the same bound on both ends. */
+/**
+ * t-4071e4 — the isolation a NEWLY created agent gets when nothing has chosen for it.
+ *
+ * Isolated, because the only other default is "share the human's checkout", and an agent nobody has
+ * configured yet is exactly the one that should not be editing the tree the human works in. Every
+ * creation door reads this: Saved Agent Proposal approval, portable import/clone, and the Studio's
+ * blank new-agent form — the bug this constant exists to prevent is those three disagreeing.
+ *
+ * This is a CREATION default, not a projection default. `projectAgentProfileStudioSnapshot` still
+ * reports a missing `workspace.worktree` as OFF, because an existing profile without that key really
+ * is running in the shared checkout, and reporting it as isolated would be a lie about live agents.
+ */
+export const DEFAULT_NEW_AGENT_WORKTREE_ENABLED = true;
+
 export const AGENT_OWNERSHIP_MAX_SUBAGENTS = 128;
 
 export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion("operation", [

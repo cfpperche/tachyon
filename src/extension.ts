@@ -44,6 +44,7 @@ import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } fro
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
+import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
@@ -1594,25 +1595,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
             // two-transaction version: ownership is parent-side, so committing separately left a
             // window where the agent existed unowned.
-            return ws.createSavedAgentWithOwner({
-              schemaVersion: 1,
-              kind: "agent-instance",
-              agentName,
-              editable: {
-                displayName: spec.displayName ?? "",
-                runtime: { adapter: spec.runtimeAdapter, executable: spec.executable ?? spec.runtimeAdapter },
-                role: "",
-                cwd: "",
-                // t-ca9086: canonical create writes `enabled: true`; autostart is never requested here,
-                // so approval does not start a session. Start remains a separate Fleet/Studio action.
-                lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
-                worktree: { enabled: false, branch: "" },
-                isolation: "",
-                // Capability references are NOT carried: the canonical create refuses them before host
-                // authorization, and the review pane tells the human that approving does not grant them.
-                capabilities: { skills: [], mcp: [], hooks: [] },
-              },
-            }, owner);
+            // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
+            // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
+            // stays wiring only — the previous inline literal is what let the isolation bug hide.
+            return ws.createSavedAgentWithOwner(savedAgentCreateMutation(agentName, spec), owner);
           },
           // Re-read at commit time, which is what makes a revoked capability effective on a proposal
           // queued before the revocation.

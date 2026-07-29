@@ -2087,6 +2087,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         display_name: z.string().min(1).max(256).optional(),
         skills: z.array(z.string().min(1).max(128)).max(64).optional(),
         mcp_servers: z.array(z.string().min(1).max(128)).max(64).optional(),
+        // t-4071e4 — isolated or not, and nothing else. There is deliberately no path/branch/base
+        // parameter: the checkout location is governed by the workspace, and a proposer that could
+        // name it would be escaping the worktrees root rather than stating a preference. Omitted means
+        // ISOLATED — a proposed agent is born in its own worktree, and the human sees that at review.
+        isolated_worktree: z.boolean().optional().describe(
+          "run in its own isolated git worktree (default true). The path and branch are never yours to choose.",
+        ),
       },
     },
     async (input) => {
@@ -2109,6 +2116,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             rationale: input.rationale,
             ...(input.executable ? { executable: input.executable } : {}),
             ...(input.display_name ? { displayName: input.display_name } : {}),
+            ...(input.isolated_worktree !== undefined ? { workspace: { worktree: input.isolated_worktree } } : {}),
             ...(input.skills?.length || input.mcp_servers?.length
               ? {
                   capabilities: {

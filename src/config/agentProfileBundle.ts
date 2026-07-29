@@ -9,6 +9,7 @@ import {
 } from "./agentProfileLifecycle.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile } from "./agentProfileReader.js";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
+import { DEFAULT_NEW_AGENT_WORKTREE_ENABLED } from "./agentProfileStudio.js";
 import type { AgentProfileReferenceV1, AgentProfileV1 } from "./agentProfileSchema.js";
 
 export const PORTABLE_AGENT_PROFILE_BUNDLE_VERSION = 1 as const;
@@ -275,6 +276,12 @@ export async function importPortableAgentProfileBundle(input: BundleLifecycleDep
       runtime: { ...parsed.bundle.profile.runtime },
       ...(Object.keys(prompt).length > 0 ? { prompt } : {}),
       lifecycle: { enabled: false },
+      // t-4071e4 — a bundle carries no workspace posture by design (it is not portable), so import
+      // and clone must CHOOSE one, and the choice was silently "share the human's checkout". They
+      // now land on the same creation default as the other two doors. The import still arrives
+      // disabled, so a human passes through the Studio and can see and change this before it runs.
+      // Written conditionally so the off case stays absence, never an explicit `enabled: false`.
+      ...(DEFAULT_NEW_AGENT_WORKTREE_ENABLED ? { workspace: { worktree: { enabled: true } } } : {}),
     },
     ...(references.length > 0 ? { createProfileLocalReferences: references } : {}),
     ...(artifacts.length > 0 ? { artifacts } : {}),

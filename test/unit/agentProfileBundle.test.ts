@@ -159,6 +159,15 @@ describe("portable agent profile bundle", () => {
       expect(fs.readFileSync(path.join(fixture.root, ".tachyon", "agents", result.lifecycle.snapshot.agentName, "SOUL.md"), "utf8")).toBe(fixture.soul);
     }
     expect(cloned.bundleSha256).toBe(exported.sha256);
+    for (const result of [imported, cloned]) {
+      // t-4071e4 — the bundle carries no workspace posture (it is machine-local), so import and clone
+      // have to pick one, and they used to pick "share the human's checkout" by omission. Both doors
+      // now land on the same creation default as proposal approval and the Studio's new-agent form.
+      expect(result.lifecycle.snapshot.profile.workspace?.worktree?.enabled).toBe(true);
+      // Isolated, but never at a location the bundle chose: no path, no base, no branch travels.
+      expect(result.lifecycle.snapshot.profile.workspace?.worktree?.branch).toBeUndefined();
+      expect(result.lifecycle.snapshot.profile.workspace?.cwd).toBeUndefined();
+    }
     await expect(importPortableAgentProfileBundle({ ...dependencies, agentName: "imported", bundle: exported.bytes })).rejects.toThrow("already");
   });
 

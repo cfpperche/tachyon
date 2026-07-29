@@ -1,4 +1,5 @@
 import type { SavedAgentProposal } from "./savedAgentProposal.js";
+import { proposedWorktreeEnabled } from "./savedAgentProposal.js";
 import { savedAgentProposalIsExpired } from "./savedAgentProposal.js";
 
 /**
@@ -34,6 +35,17 @@ export interface SavedAgentProposalReview {
   expiresAt: string;
   expired: boolean;
   agentName: string;
+  /**
+   * t-4071e4 — whether the approved agent would get its own isolated worktree. A structured field as
+   * well as review prose, so a surface that renders a summary rather than the `dangerous` list still
+   * shows the decision instead of dropping it.
+   */
+  /**
+   * t-4071e4 — which checkout this proposal would run in. `"unknown"` exists because an unreadable
+   * proposal asserts NOTHING: rendering `false` there would state a workspace fact on the strength of
+   * a file that failed its digest check, which is the one thing the warned row must not do.
+   */
+  worktreeEnabled: boolean | "unknown";
   runtime: { adapter: string; executable?: string };
   displayName?: string;
   rationale: string;
@@ -103,8 +115,30 @@ export function buildSavedAgentProposalReview(input: {
     });
   }
 
+  /**
+   * t-4071e4 — the human must see the isolation decision before approving.
+   *
+   * Only the OPT-OUT goes in `dangerous`. Two existing tests caught the first version of this, and they
+   * were right: that list means "grants of authority", so putting the isolated DEFAULT in it would both
+   * break "a plain proposal lists nothing dangerous" and teach the reader that a safe default is a
+   * risk. Isolation-on is visible through `worktreeEnabled` and the `affected` list, where descriptions
+   * of what will happen belong; sharing the human's checkout is the widening, so that is what gets
+   * called out.
+   */
+  const worktreeEnabled = proposedWorktreeEnabled(spec);
+  if (!worktreeEnabled) {
+    dangerous.push({
+      label: "workspace",
+      detail:
+        "asked NOT to be isolated: it would run in the shared workspace checkout, so its edits and any "
+        + "branch switch land where your other work lives. An isolated worktree is the default — this "
+        + "proposal deliberately opted out.",
+    });
+  }
+
   return {
     id: proposal.id,
+    worktreeEnabled,
     proposer: proposal.proposer,
     proposerTrust: "bridge-resolved",
     digest: proposal.digest,
@@ -126,6 +160,9 @@ export function buildSavedAgentProposalReview(input: {
       `.tachyon/agents/${spec.name}/agent.yml (new canonical profile, lifecycle.enabled=true)`,
       `.tachyon/agents/${spec.name}/authority.json (new authority record)`,
       `tachyon.yml → agents.${spec.name} (new roster pointer)`,
+      worktreeEnabled
+        ? `runs in its OWN isolated git worktree under the governed worktrees root (path and branch not chosen by the proposer)`
+        : `runs in the SHARED workspace checkout — no isolated worktree`,
       `created enabled; not started (no session, no running worktree, no task assignment)`,
     ],
     baseConfigSha256: proposal.base.configSha256,

@@ -9,7 +9,7 @@ import type {
   AgentProfileStudioMutationV1,
   AgentProfileStudioSnapshotV1,
 } from "../../config/agentProfileStudio.js";
-import { AGENT_OWNERSHIP_MAX_SUBAGENTS, isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
+import { AGENT_OWNERSHIP_MAX_SUBAGENTS, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
 import { agentOwnershipViewSchemaV1, agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
 import {
   claudeScalarNativeConfigPolicy,
@@ -826,7 +826,10 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
   fields.attention = snapshot?.editable.lifecycle.attention ?? true;
   fields.watch = snapshot?.editable.lifecycle.watch.join("\n") ?? "";
-  fields.worktree = snapshot?.editable.worktree.enabled ?? false;
+  // t-4071e4 — `enabled` is a required boolean on a snapshot, so the fallback fires only for a NEW
+  // agent, where it must match every other creation door. Editing an existing agent still shows that
+  // agent's real posture.
+  fields.worktree = snapshot?.editable.worktree.enabled ?? DEFAULT_NEW_AGENT_WORKTREE_ENABLED;
   fields.branch = snapshot?.editable.worktree.branch ?? "";
   fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {

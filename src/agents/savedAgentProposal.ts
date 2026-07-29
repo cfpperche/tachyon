@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
-import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
+import { assertOwnershipTargets, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, type AgentOwnershipRosterV1, type AgentProfileStudioMutationV1 } from "../config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 (`t-5e1113`) — a Saved Agent proposal is INERT DATA.
@@ -60,6 +60,74 @@ export interface SavedAgentProposalSpec {
   };
   /** Authority requested. Present only so it can be REFUSED by name rather than silently dropped. */
   grants?: { proposeSavedAgent?: boolean };
+  /**
+   * t-4071e4 — the workspace isolation policy, and the ONLY workspace decision a proposer may express.
+   *
+   * Dogfood found the asymmetry this closes: hand-made Claude agents carry
+   * `workspace.worktree.enabled: true`, while `grok-builder` and `codex-builder` — both created
+   * through this door — were born with it false, because the contract could not carry the field at all
+   * and the approval path hardcoded `enabled: false`. The proposer could not ask for isolation and,
+   * worse, the human never saw the decision at review.
+   *
+   * `worktree` is a BOOLEAN and nothing else. `path`, `branch` and `base` are deliberately absent from
+   * this type: a proposer that could name a path would choose where the new agent's checkout lands,
+   * which is an escape from the governed worktree root rather than a workspace preference. Those keys
+   * are refused BY NAME at admission, on the same doctrine as `grants` and `ownsSubagents` — a request
+   * the proposer must learn was refused, never silently pruned.
+   *
+   * Absent means ON. Ratified 2026-07-29 (option b): every proposed Saved Agent is born isolated, the
+   * human sees it at review and may turn it off before approving. The default infers nothing from the
+   * agent's name or role — it is one declared policy for this door.
+   */
+  workspace?: { worktree?: boolean };
+}
+
+/**
+ * t-4071e4 — workspace keys a proposer may never express, refused by name.
+ *
+ * Kept as data rather than as `if` branches so the refusal message and the check cannot drift, and so
+ * adding a key is one edit. These are the fields that would let a proposal choose WHERE the checkout
+ * lands; `worktree` (whether it is isolated at all) is the only workspace question a proposer gets.
+ */
+export const REFUSED_PROPOSAL_WORKSPACE_KEYS = ["path", "branch", "base", "cwd", "worktreeBase"] as const;
+
+/** The isolation a proposal resolves to. Absent means ON — see `SavedAgentProposalSpec.workspace`. */
+export function proposedWorktreeEnabled(spec: Pick<SavedAgentProposalSpec, "workspace">): boolean {
+  return spec.workspace?.worktree ?? DEFAULT_NEW_AGENT_WORKTREE_ENABLED;
+}
+
+/**
+ * t-4071e4 — the create mutation an approved proposal commits, as a pure function.
+ *
+ * This lived inline in the approval closure in `extension.ts`, where no test could reach it, and that
+ * is precisely how it came to hardcode `worktree: { enabled: false }`: an agent born through the
+ * governed door came out LESS isolated than a hand-made one, and no assertion could notice. Extracted
+ * so the host wiring and the tests exercise the same authority.
+ *
+ * Every field a proposer does NOT get to influence is fixed here rather than read from the spec:
+ * `branch` and `cwd` stay empty (a proposal may say whether it is isolated, never where the checkout
+ * lands), `autostart` stays false (approving creates, it does not start), and `capabilities` stay empty
+ * (the canonical create refuses references before host authorization).
+ */
+export function savedAgentCreateMutation(
+  agentName: string,
+  spec: Pick<SavedAgentProposalSpec, "displayName" | "runtimeAdapter" | "executable" | "workspace">,
+): AgentProfileStudioMutationV1 {
+  return {
+    schemaVersion: 1,
+    kind: "agent-instance",
+    agentName,
+    editable: {
+      displayName: spec.displayName ?? "",
+      runtime: { adapter: spec.runtimeAdapter, executable: spec.executable ?? spec.runtimeAdapter },
+      role: "",
+      cwd: "",
+      lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+      worktree: { enabled: proposedWorktreeEnabled(spec), branch: "" },
+      isolation: "",
+      capabilities: { skills: [], mcp: [], hooks: [] },
+    },
+  };
 }
 
 /** The base state a proposal was computed against — the CAS half of the TOCTOU control. */
@@ -87,6 +155,8 @@ export type SavedAgentProposalRefusalCode =
   | "capability_recursion"
   | "pending_ceiling"
   | "ownership_conflict"
+  /** t-4071e4 — a workspace key the proposer may not choose (path/branch/base), refused by name. */
+  | "workspace_field_refused"
   | "invalid_spec";
 
 export type SavedAgentProposalAdmission =
@@ -195,6 +265,31 @@ export function admitSavedAgentProposal(input: {
         "a proposed Saved Agent may never carry 'grants.proposeSavedAgent': one approval would become a tree " +
         "of creators. Granting it stays a separate, visible human edit in Agent Studio",
     };
+  }
+
+  // t-4071e4 — a workspace key that would choose WHERE the checkout lands is refused by name, before
+  // anything reaches the queue. Silently dropping it would let a proposer believe it had been honored
+  // and would let a human approve a request that was quietly different from the one displayed.
+  const requestedWorkspace = input.spec.workspace as Record<string, unknown> | undefined;
+  if (requestedWorkspace) {
+    const refused = REFUSED_PROPOSAL_WORKSPACE_KEYS.filter((key) => key in requestedWorkspace);
+    if (refused.length > 0) {
+      return {
+        ok: false,
+        code: "workspace_field_refused",
+        reason:
+          `a proposal may not request workspace ${refused.map((key) => `'${key}'`).join(", ")}: the checkout `
+          + "location is governed by the workspace, not chosen by the proposer. Only 'worktree' (isolated or "
+          + "not) may be requested",
+      };
+    }
+    if (requestedWorkspace.worktree !== undefined && typeof requestedWorkspace.worktree !== "boolean") {
+      return {
+        ok: false,
+        code: "workspace_field_refused",
+        reason: "'workspace.worktree' must be a boolean: isolated or not is the only workspace choice a proposal carries",
+      };
+    }
   }
 
   if (!AGENT_NAME_RE.test(input.spec.name)) return invalid(`'${input.spec.name}' is not a valid agent name`);

@@ -14,7 +14,8 @@ import {
   recordSavedAgentProposal,
   savedAgentProposalPath,
 } from "../../src/agents/savedAgentProposalStore.js";
-import { SAVED_AGENT_PROPOSAL_TTL_MS } from "../../src/agents/savedAgentProposal.js";
+import {
+  savedAgentCreateMutation, SAVED_AGENT_PROPOSAL_TTL_MS } from "../../src/agents/savedAgentProposal.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — the commit path, which is the first thing in this whole
@@ -95,6 +96,10 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       owner: "claude-runtime",
       // t-ca9086: approval creates enabled; start stays separate.
       created: "enabled; not started",
+      // t-4071e4: the receipt records WHICH checkout was authorized. The commit deletes the proposal,
+      // so without this the durable record could not answer whether the human let this agent into
+      // their working tree.
+      workspace: "isolated worktree",
     });
     // ONE canonical transaction carrying both subjects.
     expect(p.calls).toEqual([
@@ -103,6 +108,21 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     // The proposal is consumed, and the witness records who approved it.
     expect(listSavedAgentProposals(ws)).toEqual([]);
     expect(readSavedAgentProposalWitness(ws).some((e) => e.kind === "committed")).toBe(true);
+  });
+
+  it("records the shared checkout in the receipt when the proposal opted out of isolation", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws, { workspace: { worktree: false } });
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human:cfpperche", nowMs: NOW, ports: ports(),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Read from the same predicate the review pane used, so the receipt cannot claim isolation the
+    // human was never shown — and cannot claim it for the one case where it did not happen.
+    expect(result.receipt.workspace).toBe("shared checkout");
   });
 
   /**
@@ -473,7 +493,12 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
   });
 
   it("asks for no capability references, leaving that refusal to the canonical validator", () => {
-    expect(extension).toMatch(/capabilities: \{ skills: \[\], mcp: \[\], hooks: \[\] \}/);
+    // t-4071e4 moved this mutation out of the approval closure and into `savedAgentCreateMutation`,
+    // so assert the value rather than the source text of `extension.ts`: the old grep would have
+    // passed on a commented-out literal and now says nothing about what is actually committed.
+    expect(savedAgentCreateMutation("importer", { runtimeAdapter: "claude" }).editable.capabilities)
+      .toEqual({ skills: [], mcp: [], hooks: [] });
+    expect(extension).toContain("savedAgentCreateMutation(agentName, spec)");
   });
 
   /**
