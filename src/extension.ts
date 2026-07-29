@@ -99,7 +99,7 @@ import {
 import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
 import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
 import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
-import { computeWorkspaceFolderOps, shouldActivateFolder } from "./workspace/workspaceFolderOps.js";
+import { computeWorkspaceFolderOps, revealableWorktrees, shouldActivateFolder, type WorkspaceWorktrees } from "./workspace/workspaceFolderOps.js";
 import type { ViewKind } from "./workspace/EngineHost.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
@@ -420,19 +420,27 @@ function agentProjection(ws: WorkspaceShellHandle, agent: string) {
   return ws.client.presentation.agents.items.find((row) => row.name === agent);
 }
 
+/** t-aaad95 — per-project `revealInWorkspace`; the rule itself lives in `revealableWorktrees`. */
 async function liveWorktreesAcrossWorkspaces(): Promise<{ path: string; agent: string }[]> {
-  const out: { path: string; agent: string }[] = [];
+  const perWorkspace: WorkspaceWorktrees[] = [];
   for (const ws of workspaces()) {
+    const worktrees: { path: string; agent: string }[] = [];
     const payload = jsonObject(await extensionQuery(ws, { action: "worktrees.list" }), "worktrees.list");
     for (const entry of jsonArray(payload.worktrees, "worktrees.list")) {
       const row = jsonObject(entry, "worktrees.list row");
       const record = jsonObject(row.record, "worktrees.list record");
       if (typeof row.agent === "string" && typeof record.path === "string") {
-        out.push({ path: record.path, agent: row.agent });
+        worktrees.push({ path: record.path, agent: row.agent });
       }
     }
+    perWorkspace.push({
+      ...(ws.config?.settings.worktree?.revealInWorkspace === undefined
+        ? {}
+        : { revealInWorkspace: ws.config.settings.worktree.revealInWorkspace }),
+      worktrees,
+    });
   }
-  return out;
+  return revealableWorktrees(perWorkspace);
 }
 
 // spec 210 — worktree.base is documented as global-only; the first workspace that configures
@@ -445,13 +453,8 @@ function currentWorktreesBase(): string {
 }
 
 async function applyWorktreeFolderReveal(): Promise<void> {
-  // t-aaad95 — `settings.worktree.revealInWorkspace` in each project's tachyon.yml replaced the
-  // window-scoped `tachyon.worktrees.revealInWorkspace` key. The reveal itself is one window-level
-  // operation over every folder's worktrees, so one project opting out must not silently opt the
-  // others out: reveal proceeds unless EVERY configured workspace said no. Default is on, so a
-  // workspace that says nothing counts as yes.
-  const reveal = workspaces().every((ws) => ws.config?.settings.worktree?.revealInWorkspace !== false);
-  if (!reveal) return;
+  // t-aaad95 — the per-project opt-out is applied inside `liveWorktreesAcrossWorkspaces`, not as a
+  // window-level gate; see the comment there for why a single yes/no was the wrong shape.
   // A single-folder window has no .code-workspace file: the FIRST updateWorkspaceFolders call
   // there would force the single→multi-root reload this feature is meant to avoid — skip it.
   if (vscode.workspace.workspaceFile === undefined) {
@@ -922,8 +925,12 @@ function importLegacyGlobalSettings(): void {
   const store = sharedGlobalSettings();
   const markerPath = path.join(path.dirname(store.file), SETTINGS_IMPORT_MARKER_FILENAME);
   if (settingsImportAlreadyRan(markerPath)) return;
+  // A document this build could not read is one a person may be mid-way through repairing, and it is
+  // also the documented recovery surface. Importing over it would destroy it. Leave the marker
+  // unwritten so a later, healthy activation still gets its one chance.
+  if (store.refusal()) return;
   try {
-    const patch = planGlobalImport(readLegacyVsCodeSettings(), store.current());
+    const patch = planGlobalImport(readLegacyVsCodeSettings(), store.authored());
     if (Object.keys(patch).length > 0) {
       store.update(patch);
       notify(vscode.l10n.t(
@@ -1023,8 +1030,40 @@ function proposalSchedule(schedule: ScheduleDef): Extract<ExtensionCommandV1, { 
 /** t-af3eef — control-flow marker for "this view did not ask for that slice". Never surfaced. */
 const SKIP_SLICE = Symbol("tachyon.collect.skip");
 
+/**
+ * t-aaad95 — the documented text-file recovery path for the global Tachyon settings.
+ *
+ * It CREATES the document when absent rather than failing on a missing file: this is the command a
+ * person reaches for when something is misconfigured, and "the file you were told to edit does not
+ * exist" is the least useful thing it could say at that moment. A REFUSED document is opened as-is
+ * and named — the person is here to repair it, and `update` would overwrite what they came to fix.
+ */
+function registerGlobalSettingsRecovery(context: vscode.ExtensionContext): void {
+  context.subscriptions.push(vscode.commands.registerCommand("tachyon.openGlobalSettings", async () => {
+    const store = sharedGlobalSettings();
+    try {
+      const refusal = store.refusal();
+      if (!refusal && !fs.existsSync(store.file)) store.update({});
+      const doc = await vscode.workspace.openTextDocument(store.file);
+      await vscode.window.showTextDocument(doc, { preview: false });
+      if (refusal) notify(vscode.l10n.t("Tachyon settings were refused and the last known good is in use: {0}", refusal.errors.join("; ")), "warn");
+    } catch (err) {
+      notify(vscode.l10n.t("Could not open Tachyon settings: {0}", err instanceof Error ? err.message : String(err)), "error");
+    }
+  }));
+}
+
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   initializeVsCodeNotifications();
+
+  // t-aaad95 — BEFORE any early return. The global settings file is per person, not per project:
+  // zero workspaces open is exactly when someone needs `agentPane.enabled` answered and the recovery
+  // command available. Registering it later left a contributed command with no handler in the one
+  // state it was most needed, and left the one-time import unrun for a machine that never opens a
+  // folder before upgrading.
+  registerGlobalSettingsRecovery(context);
+  importLegacyGlobalSettings();
+
   const folders = vscode.workspace.workspaceFolders ?? [];
   if (folders.length === 0) {
     // A fact about the installed extension, not any project — the check still runs with no
@@ -1040,9 +1079,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return;
   }
 
-  // t-aaad95 — before any reader runs, carry across whatever the person had under the retired
-  // `tachyon.*` VS Code keys. Once per machine and once per workspace, guarded by markers.
-  importLegacyGlobalSettings();
+  // t-aaad95 — the per-workspace half. The global half already ran above, before the early return.
   for (const folder of folders) importLegacyWorkspaceSettings(folder.uri.fsPath);
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
@@ -2614,25 +2651,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshAll();
       } catch (error) {
         notify(error instanceof Error ? error.message : String(error), "error");
-      }
-    }),
-    /**
-     * t-aaad95 — the documented text-file recovery path for the global Tachyon settings.
-     *
-     * It CREATES the document when absent rather than failing on a missing file: this is the command
-     * a person reaches for when something is misconfigured, and "the file you were told to edit does
-     * not exist" is the least useful thing it could say at that moment.
-     */
-    vscode.commands.registerCommand("tachyon.openGlobalSettings", async () => {
-      const store = sharedGlobalSettings();
-      try {
-        if (!fs.existsSync(store.file)) store.update({});
-        const doc = await vscode.workspace.openTextDocument(store.file);
-        await vscode.window.showTextDocument(doc, { preview: false });
-        const refusal = store.refusal();
-        if (refusal) notify(vscode.l10n.t("Tachyon settings were refused and the last known good is in use: {0}", refusal.errors.join("; ")), "warn");
-      } catch (err) {
-        notify(vscode.l10n.t("Could not open Tachyon settings: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
     }),
     vscode.commands.registerCommand("tachyon.openConfig", async (hash?: string) => {

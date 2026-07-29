@@ -18,7 +18,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { GlobalSettings } from "./globalSettings.js";
+import type { GlobalSettings, GlobalSettingsField } from "./globalSettings.js";
 
 /** Values as authored under the retired keys. `undefined` = the person never wrote that key. */
 export interface LegacySettingValues {
@@ -40,20 +40,30 @@ export interface LegacySettingValues {
 /**
  * What to write into the global Tachyon file.
  *
- * Only keys the person actually authored, and only when the destination is still at its default:
- * an import must never overwrite a choice already made in the new authority, or re-running it after
- * someone edits Control would silently revert them.
+ * Only keys the person actually authored under the old surface, and only where the new authority has
+ * not been AUTHORED yet — presence, not value. Comparing values would conflate "never mentioned" with
+ * "deliberately set to the same thing the default happens to be", and would then overwrite a real
+ * choice: someone who wrote `agentPane.enabled: true` in the new file would have a stale legacy
+ * `false` written over it, silently, during an upgrade.
+ *
+ * `authored` is empty for a REFUSED document, which is why the caller must refuse to import at all in
+ * that case rather than rely on this — see `importLegacyGlobalSettings`.
  */
-export function planGlobalImport(legacy: LegacySettingValues, current: GlobalSettings): Partial<GlobalSettings> {
+export function planGlobalImport(
+  legacy: LegacySettingValues,
+  authored: readonly GlobalSettingsField[],
+): Partial<GlobalSettings> {
   const patch: Partial<GlobalSettings> = {};
+  const alreadyAuthored = new Set<GlobalSettingsField>(authored);
+
   const theme = legacy.activityCodeTheme;
-  if ((theme === "auto" || theme === "dark" || theme === "light") && current.activityCodeTheme === "auto") {
+  if ((theme === "auto" || theme === "dark" || theme === "light") && !alreadyAuthored.has("activityCodeTheme")) {
     patch.activityCodeTheme = theme;
   }
-  if (typeof legacy.agentPaneEnabled === "boolean" && current.agentPaneEnabled === true) {
+  if (typeof legacy.agentPaneEnabled === "boolean" && !alreadyAuthored.has("agentPaneEnabled")) {
     patch.agentPaneEnabled = legacy.agentPaneEnabled;
   }
-  if (typeof legacy.gitPath === "string" && legacy.gitPath.trim() !== "" && current.gitPath === "") {
+  if (typeof legacy.gitPath === "string" && legacy.gitPath.trim() !== "" && !alreadyAuthored.has("gitPath")) {
     patch.gitPath = legacy.gitPath;
   }
   // The card template is carried across in its AUTHORED form — the same reason `GlobalSettings`
@@ -61,7 +71,7 @@ export function planGlobalImport(legacy: LegacySettingValues, current: GlobalSet
   const template = legacy.sidebarCardTemplate;
   const templateCleared = template === undefined || template === null
     || (typeof template === "object" && !Array.isArray(template) && Object.keys(template as object).length === 0);
-  if (!templateCleared && current.sidebarCardTemplate === undefined) {
+  if (!templateCleared && !alreadyAuthored.has("sidebarCardTemplate")) {
     patch.sidebarCardTemplate = template;
   }
   return patch;

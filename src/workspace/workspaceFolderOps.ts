@@ -52,6 +52,30 @@ export function shouldActivateFolder(hasConfig: boolean, folderPath: string, wor
   return hasConfig && !isUnderWorktreesBase(folderPath, worktreesBase);
 }
 
+/** One workspace's live worktrees plus whether that project wants them revealed. */
+export interface WorkspaceWorktrees {
+  /** `settings.worktree.revealInWorkspace`; `undefined` means the project never said, i.e. yes. */
+  revealInWorkspace?: boolean;
+  worktrees: LiveWorktree[];
+}
+
+/**
+ * t-aaad95 — apply `revealInWorkspace` PER OWNING PROJECT, which is what moving it out of a
+ * window-scoped VS Code key and into each project's `tachyon.yml` was for.
+ *
+ * A single window-level yes/no is wrong whichever way it is spelled: "reveal only if nobody objects"
+ * lets one project hide every other project's worktrees, and "reveal if anybody wants it" reveals the
+ * worktrees of a project that explicitly said not to. Filtering at the source gives each project
+ * exactly what it asked for — and because `computeWorkspaceFolderOps` removes any folder under the
+ * base that is not in the live set, a project that LATER opts out has its folders removed rather than
+ * left behind.
+ */
+export function revealableWorktrees(perWorkspace: readonly WorkspaceWorktrees[]): LiveWorktree[] {
+  return perWorkspace
+    .filter((ws) => ws.revealInWorkspace !== false)
+    .flatMap((ws) => ws.worktrees);
+}
+
 export function computeWorkspaceFolderOps(
   currentFolders: WorkspaceFolderLike[],
   liveWorktrees: LiveWorktree[],

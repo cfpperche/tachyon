@@ -88,9 +88,21 @@ export interface GlobalSettingsDocument {
   gitPath?: string;
 }
 
+/** The fields a document can author. Used to tell "unset" apart from "explicitly at the default". */
+export type GlobalSettingsField = keyof GlobalSettings;
+
 export interface GlobalSettingsParse {
   /** Present only when the WHOLE document is valid. */
   settings?: GlobalSettings;
+  /**
+   * Which fields the document actually WROTE, as opposed to which ones resolved to a value.
+   *
+   * Every field resolves to something — that is the point of `GlobalSettings`. But "the person never
+   * mentioned `agentPane.enabled`" and "the person deliberately wrote `true`" are different facts,
+   * and the one-time import has to tell them apart: without this it would overwrite a deliberate
+   * choice with a legacy value merely because the choice happened to equal the default.
+   */
+  authored?: GlobalSettingsField[];
   /** Named, human-actionable refusals. Non-empty means `settings` is absent. */
   errors: string[];
 }
@@ -124,6 +136,7 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
   }
 
   const settings: GlobalSettings = { ...DEFAULT_GLOBAL_SETTINGS };
+  const authored = new Set<GlobalSettingsField>();
 
   if (raw.activity !== undefined) {
     if (!isPlainObject(raw.activity)) {
@@ -138,6 +151,7 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
           errors.push(`${source}: activity.codeTheme: must be "auto", "dark", or "light"`);
         } else {
           settings.activityCodeTheme = theme;
+          authored.add("activityCodeTheme");
         }
       }
     }
@@ -153,7 +167,10 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
       const enabled = raw.agentPane.enabled;
       if (enabled !== undefined) {
         if (typeof enabled !== "boolean") errors.push(`${source}: agentPane.enabled: must be a boolean`);
-        else settings.agentPaneEnabled = enabled;
+        else {
+          settings.agentPaneEnabled = enabled;
+          authored.add("agentPaneEnabled");
+        }
       }
     }
   }
@@ -175,17 +192,23 @@ export function parseGlobalSettings(raw: unknown, source: string): GlobalSetting
         // failure SDD 479 phase 5 already exists to avoid.
         const parsed = parseCardTemplate(written, `${source}: sidebar.cardTemplate`);
         if (!parsed.config) errors.push(...parsed.errors);
-        else settings.sidebarCardTemplate = written; // authored form; see the field's comment
+        else {
+          settings.sidebarCardTemplate = written; // authored form; see the field's comment
+          authored.add("sidebarCardTemplate");
+        }
       }
     }
   }
 
   if (raw.gitPath !== undefined) {
     if (typeof raw.gitPath !== "string") errors.push(`${source}: gitPath: must be a string`);
-    else settings.gitPath = raw.gitPath;
+    else {
+      settings.gitPath = raw.gitPath;
+      authored.add("gitPath");
+    }
   }
 
-  return errors.length > 0 ? { errors } : { settings, errors: [] };
+  return errors.length > 0 ? { errors } : { settings, authored: [...authored], errors: [] };
 }
 
 /** Serialize resolved settings back to the authored shape (what `write` puts on disk). */
@@ -202,6 +225,8 @@ export function toGlobalSettingsDocument(settings: GlobalSettings): GlobalSettin
 export interface GlobalSettingsState {
   /** What every reader must use. Never partially applied. */
   settings: GlobalSettings;
+  /** Fields the document on disk actually wrote. Empty when it was refused or absent. */
+  authored: GlobalSettingsField[];
   /** Named errors when the document on disk was refused; absent when it parsed (or does not exist). */
   refusal?: { file: string; errors: string[] };
 }
@@ -212,10 +237,16 @@ export interface GlobalSettingsState {
  * `agentPaneEnabled` deliberately does NOT inherit: a refused document must never be able to leave
  * the pane disabled, because with VS Code settings gone the pane is part of the repair surface.
  */
-export function resolveGlobalSettings(lastKnownGood: GlobalSettings | undefined, refusal: { file: string; errors: string[] } | undefined): GlobalSettingsState {
+export function resolveGlobalSettings(
+  lastKnownGood: GlobalSettings | undefined,
+  refusal: { file: string; errors: string[] } | undefined,
+  authored: GlobalSettingsField[] = [],
+): GlobalSettingsState {
   const base = lastKnownGood ?? DEFAULT_GLOBAL_SETTINGS;
-  if (!refusal) return { settings: base };
-  return { settings: { ...base, agentPaneEnabled: true }, refusal };
+  if (!refusal) return { settings: base, authored };
+  // A refused document authored nothing this build can vouch for: `authored` is empty, so the
+  // one-time import cannot mistake a last-known-good value for a choice the current file makes.
+  return { settings: { ...base, agentPaneEnabled: true }, authored: [], refusal };
 }
 
 /**
@@ -227,7 +258,7 @@ export function resolveGlobalSettings(lastKnownGood: GlobalSettings | undefined,
  */
 export class GlobalSettingsStore {
   private lastKnownGood: GlobalSettings | undefined;
-  private state: GlobalSettingsState = { settings: DEFAULT_GLOBAL_SETTINGS };
+  private state: GlobalSettingsState = { settings: DEFAULT_GLOBAL_SETTINGS, authored: [] };
   /** mtime+size of the document `state` was built from; `null` records "the file was absent". */
   private stamp: string | null = null;
   readonly file: string;
@@ -265,7 +296,7 @@ export class GlobalSettingsStore {
         // Absent is not broken: a person who never configured anything gets the defaults, and
         // `agentPane.enabled` absent therefore also means enabled.
         this.lastKnownGood = undefined;
-        this.state = { settings: DEFAULT_GLOBAL_SETTINGS };
+        this.state = { settings: DEFAULT_GLOBAL_SETTINGS, authored: [] };
         return this.state;
       }
       this.state = resolveGlobalSettings(this.lastKnownGood, {
@@ -292,7 +323,7 @@ export class GlobalSettingsStore {
       return this.state;
     }
     this.lastKnownGood = parsed.settings;
-    this.state = { settings: parsed.settings };
+    this.state = { settings: parsed.settings, authored: parsed.authored ?? [] };
     return this.state;
   }
 
@@ -304,19 +335,28 @@ export class GlobalSettingsStore {
 
   current(): GlobalSettings { return this.read().settings; }
   refusal(): { file: string; errors: string[] } | undefined { return this.read().refusal; }
+  /** Fields the document on disk actually wrote; empty when refused or absent. */
+  authored(): GlobalSettingsField[] { return this.read().authored; }
 
   /**
    * Apply a partial edit and persist it. Validates the RESULT through the same parser a hand edit
    * goes through, so Control can never write a document that the loader would then refuse.
    */
   update(patch: Partial<GlobalSettings>): GlobalSettingsState {
+    // Refuse to write over a document this build could not read. `current()` is the last known good
+    // (or the defaults), so writing it back would DESTROY the very file a person is mid-way through
+    // repairing — and that file is the documented recovery surface. Fix it first, then edit.
+    const refusal = this.refusal();
+    if (refusal) {
+      throw new Error(`refusing to overwrite Tachyon settings that could not be read — fix ${this.file} first: ${refusal.errors.join("; ")}`);
+    }
     const next: GlobalSettings = { ...this.current(), ...patch };
     const document = toGlobalSettingsDocument(next);
     const check = parseGlobalSettings(document, this.file);
     if (!check.settings) throw new Error(`refusing to write invalid Tachyon settings: ${check.errors.join("; ")}`);
     writeGlobalSettingsFile(this.file, document);
     this.lastKnownGood = check.settings;
-    this.state = { settings: check.settings };
+    this.state = { settings: check.settings, authored: check.authored ?? [] };
     this.stamp = this.stampNow();
     return this.state;
   }

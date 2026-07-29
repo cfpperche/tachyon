@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { DEFAULT_GLOBAL_SETTINGS } from "../../src/config/globalSettings.js";
 import {
   planGlobalImport,
   planYmlImport,
@@ -54,9 +53,19 @@ describe("the import never overwrites a decision already made", () => {
       .toEqual([{ keyPath: ["agentMemoryMax"], value: "2G" }]);
   });
 
-  it("skips a global key already set in the new authority", () => {
-    const current = { ...DEFAULT_GLOBAL_SETTINGS, gitPath: "/chosen/git", activityCodeTheme: "dark" as const };
-    expect(planGlobalImport({ gitPath: "/legacy/git", activityCodeTheme: "light" }, current)).toEqual({});
+  it("skips a global key already authored in the new authority", () => {
+    expect(planGlobalImport(
+      { gitPath: "/legacy/git", activityCodeTheme: "light" },
+      ["gitPath", "activityCodeTheme"],
+    )).toEqual({});
+  });
+
+  // The bug this pins: comparing VALUES instead of PRESENCE conflates "never mentioned" with
+  // "deliberately set to what the default happens to be", and then overwrites the deliberate choice.
+  it("respects a new-authority value that was authored AT the default", () => {
+    expect(planGlobalImport({ agentPaneEnabled: false }, ["agentPaneEnabled"])).toEqual({});
+    expect(planGlobalImport({ activityCodeTheme: "dark" }, ["activityCodeTheme"])).toEqual({});
+    expect(planGlobalImport({ gitPath: "/legacy/git" }, ["gitPath"])).toEqual({});
   });
 
   it("is idempotent: a second pass over its own result writes nothing", () => {
@@ -78,21 +87,21 @@ describe("only values a person actually authored, and only valid ones", () => {
       activityCodeTheme: "neon",
       agentPaneEnabled: "true",
       gitPath: "   ",
-    }, DEFAULT_GLOBAL_SETTINGS)).toEqual({});
+    }, [])).toEqual({});
   });
 
   it("imports a disabled agent pane — the fail-toward-enabled rule guards refusals, not choices", () => {
-    expect(planGlobalImport({ agentPaneEnabled: false }, DEFAULT_GLOBAL_SETTINGS))
+    expect(planGlobalImport({ agentPaneEnabled: false }, []))
       .toEqual({ agentPaneEnabled: false });
   });
 
   it("carries the card template in its authored form", () => {
     const template = { version: 1, header: ["name"] };
-    expect(planGlobalImport({ sidebarCardTemplate: template }, DEFAULT_GLOBAL_SETTINGS))
+    expect(planGlobalImport({ sidebarCardTemplate: template }, []))
       .toEqual({ sidebarCardTemplate: template });
     // a cleared key is not a configuration
-    expect(planGlobalImport({ sidebarCardTemplate: {} }, DEFAULT_GLOBAL_SETTINGS)).toEqual({});
-    expect(planGlobalImport({ sidebarCardTemplate: null }, DEFAULT_GLOBAL_SETTINGS)).toEqual({});
+    expect(planGlobalImport({ sidebarCardTemplate: {} }, [])).toEqual({});
+    expect(planGlobalImport({ sidebarCardTemplate: null }, [])).toEqual({});
   });
 
   it("carries every task-notification key that was authored", () => {

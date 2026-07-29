@@ -175,6 +175,51 @@ describe("global settings store", () => {
     expect(() => store.update({ activityCodeTheme: "neon" as never })).toThrow(/refusing to write invalid/);
   });
 
+  /**
+   * The worst bug this file can have: `current()` answers with the LAST KNOWN GOOD when the document
+   * on disk was refused, so writing that back would silently DESTROY the broken file — which is the
+   * file the person is in the middle of repairing, and the documented recovery surface.
+   */
+  it("update() refuses to overwrite a document it could not read, leaving the person's text intact", () => {
+    const home = tempHome();
+    writeRaw(home, JSON.stringify({ version: 1, gitPath: "/good/git" }));
+    const store = new GlobalSettingsStore(home);
+
+    const broken = '{ "version": 1, "gitPath": /* half-typed */ }';
+    writeRaw(home, broken);
+    expect(store.refusal()).toBeDefined();
+    expect(() => store.update({ gitPath: "/anything" })).toThrow(/refusing to overwrite/);
+    expect(fs.readFileSync(globalSettingsPath(home), "utf8")).toBe(broken);
+  });
+});
+
+describe("authored fields — presence, not value", () => {
+  it("reports only the fields the document actually wrote", () => {
+    const parsed = parseGlobalSettings({ version: 1, gitPath: "" }, "settings.json");
+    // `gitPath: ""` IS the default value, and it IS authored. Those are different facts, and the
+    // one-time import overwrites a real choice if it cannot tell them apart.
+    expect(parsed.authored).toEqual(["gitPath"]);
+    expect(parsed.settings?.activityCodeTheme).toBe("auto");
+  });
+
+  it("an empty document authored nothing", () => {
+    expect(parseGlobalSettings({ version: 1 }, "settings.json").authored).toEqual([]);
+  });
+
+  it("a REFUSED document authors nothing, so the import cannot mistake a last-known-good for a choice", () => {
+    const lkg = { ...DEFAULT_GLOBAL_SETTINGS, gitPath: "/opt/git" };
+    const state = resolveGlobalSettings(lkg, { file: "settings.json", errors: ["boom"] }, ["gitPath"]);
+    expect(state.authored).toEqual([]);
+    expect(state.settings.gitPath).toBe("/opt/git");
+  });
+
+  it("the store surfaces them, and an absent file authors nothing", () => {
+    const home = tempHome();
+    expect(new GlobalSettingsStore(home).authored()).toEqual([]);
+    writeRaw(home, JSON.stringify({ version: 1, agentPane: { enabled: true } }));
+    expect(new GlobalSettingsStore(home).authored()).toEqual(["agentPaneEnabled"]);
+  });
+
   it("writeGlobalSettingsFile produces a document the parser accepts", () => {
     const home = tempHome();
     const file = globalSettingsPath(home);
