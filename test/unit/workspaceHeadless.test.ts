@@ -522,7 +522,8 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });
-    expect(created.enabled).toBe(false);
+    // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
+    expect(created.enabled).toBe(true);
     expect(created.editable.role).toBe("reviewer");
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
 
