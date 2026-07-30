@@ -3508,10 +3508,9 @@ export class Workspace {
         resolvedBy: "companion",
         ...approvalResolutionPorts({
           listEntries: () => this.manager.list(),
-          // t-8d190f — the submit receipt is deliberately NOT consumed here. Approval resolution owns
-          // its own best-effort policy for both channels (t-a77fe6 / t-7a306a); folding a new failure
-          // mode into it belongs to that contract, not this one.
-          sendSubmittedLine: async (session, text) => { await this.tmux.sendSubmittedLine(session, text); },
+          // t-d79534 — queue-aware delivery. A requester waiting on its own escalation is busy by
+          // construction, so the old raw submit typed into an occupied composer and reported success.
+          deliverNotice: (agent, line) => this.deliverNotice(agent, line),
         }),
         // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
         // and now reports the failure instead of discarding it; catching here first would put this
@@ -4279,7 +4278,11 @@ export class Workspace {
     }
   }
 
-  private async deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): Promise<NoticeDeliveryResult> {
+  /**
+   * t-d79534 — public because approval resolution reaches it from the editor path
+   * (`extensionOperationService`) too, not only from the in-class Companion wiring.
+   */
+  async deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): Promise<NoticeDeliveryResult> {
     const attention = this.monitor.stateOf(agent);
     const state = attention?.state;
     if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {

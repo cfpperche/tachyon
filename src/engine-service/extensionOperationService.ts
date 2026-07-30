@@ -304,8 +304,8 @@ export async function executeExtensionCommand(
         resolvedBy: "vscode",
         ...approvalResolutionPorts({
           listEntries: () => workspace.manager.list(),
-          // t-8d190f — receipt deliberately not consumed here; see the twin note in Workspace.ts.
-          sendSubmittedLine: async (session, text) => { await workspace.tmux.sendSubmittedLine(session, text); },
+          // t-d79534 — queue-aware delivery; see the twin note in Workspace.ts.
+          deliverNotice: (agent, line) => workspace.deliverNotice(agent, line),
         }),
         // Left as it was: this path lets a failing pin completion surface. See t-a77fe6 — the two
         // callers disagree about that and the disagreement is reported, not silently settled here.
