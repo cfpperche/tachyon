@@ -1,8 +1,8 @@
 # 393 — tasks
 
-**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/pluginGitHookRegistry.test.ts`  
-**Dogfood:** `npm run dogfood:dev-host -- fixture-new --slug ergonomics-smoke --intent focus && npm run dogfood:dev-host -- point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && npm run dogfood:dev-host -- point-status && npm run dogfood:dev-host -- point-clear`  
-**Human dogfood:** arm pointer → F5 Dev Host → `point-status` doctor lines → `point-clear`  
+**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/pluginGitHookRegistry.test.ts`
+**Dogfood:** `npm run dogfood -- dev-host -- fixture-new --slug ergonomics-smoke --intent focus && npm run dogfood -- dev-host -- point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
+**Human dogfood:** arm pointer → F5 Dev Host → `point-status` doctor lines → `point-clear`
 **Visual QA Opt-Out:** scripts/docs only
 
 ## P0 — harden mirror + status + docs

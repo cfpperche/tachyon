@@ -59,4 +59,4 @@ re-measurement rather than a mystery.
 <!-- appended by `/sdd dogfood --run` -->
 
 ### 2026-07-26T19:19:41Z — pass (1/1) — source: tasks.md — commit: 54f7b8ebf58d863b91058a4b313fbeb9b3138614
-- `npm run dogfood:codex-danger-optin` — pass
+- `npm run dogfood -- codex-danger-optin` — pass

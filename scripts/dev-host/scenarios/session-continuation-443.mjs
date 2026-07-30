@@ -5,7 +5,7 @@
  * 2) Module smoke: prepareContinueTask writes handoff under a temp root
  * 3) EDH: Open Control + Fleet for UI evidence (engine carries continue_task after this build)
  *
- *   npm run dogfood:dev-host -- point --worktree <wt> --fixture companion-track-dogfood --spec 443 --slug session-continuation
+ *   npm run dogfood -- dev-host -- point --worktree <wt> --fixture companion-track-dogfood --spec 443 --slug session-continuation
  *   TACHYON_ENGINE_CHANNEL=dev npm run build --prefix <wt>
  *   node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/session-continuation-443.mjs
  */

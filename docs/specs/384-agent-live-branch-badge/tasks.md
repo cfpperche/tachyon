@@ -3,7 +3,7 @@
 **Verify:** `npx vitest run test/unit/agentModel.test.ts test/unit/sidebarPrototype.test.ts`
 **Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
 **Dogfood:** `npx vitest run test/unit/agentLiveBranch.dogfood.test.ts`
-**Dogfood:** `npm run build && npm run dogfood:dev-host -- headless`
+**Dogfood:** `npm run build && npm run dogfood -- dev-host -- headless`
 **Human dogfood:** with ≥1 worktree agent and ≥1 shared agent, confirm first badge is live branch; checkout in worktree and confirm badge/drift after refresh.
 
 ## Tasks

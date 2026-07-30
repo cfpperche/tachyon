@@ -43,7 +43,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:claude-bypass-optin`
+**Dogfood:** `npm run dogfood -- claude-bypass-optin`
 
 **Human dogfood:** open Agent Studio on a canonical Claude agent, set Permissions to *Use global
 defaults*, confirm the authorization checkbox appears with its risk copy and is off; enable it, save,

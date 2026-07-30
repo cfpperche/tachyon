@@ -54,8 +54,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:probe-codex-model-proof`
-**Dogfood:** `npm run dogfood:probe-provenance-parity`
+**Dogfood:** `npm run dogfood -- probe-codex-model-proof`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
 
 **Human dogfood:** optional — open the probe inspector after a Codex probe with an explicit model and
 confirm the model cell reads the proven identifier with a tooltip naming the session record.

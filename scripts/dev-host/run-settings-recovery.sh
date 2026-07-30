@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # t-abde96 — Xvfb Extension Development Host dogfood for global Settings recovery.
 #
-# Uses the same launch class as `npm run dogfood:dev-host -- headless` (real code binary,
+# Uses the same launch class as `npm run dogfood -- dev-host -- headless` (real code binary,
 # extensionDevelopmentPath, extensionTestsPath, isolated user-data / tmux / settings home).
 # Not a package.json script: invoke as
 #   bash scripts/dev-host/run-settings-recovery.sh

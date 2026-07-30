@@ -11,7 +11,7 @@
  *
  * Runs on its own tmux socket and its own scratch dir — it never touches the fleet server.
  *
- * Run: npm run dogfood:claude-composer-suggestion
+ * Run: npm run dogfood -- claude-composer-suggestion
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

@@ -24,8 +24,8 @@ Extension Host `globalState`; begin by disabling both sources if either one is a
 To inspect the pointer without launching anything, run from the monorepo:
 
 ```bash
-npm run dogfood:dev-host -- point-status
+npm run dogfood -- dev-host -- point-status
 ```
 
 After the live verdict is recorded and the EDH window is closed, cleanup is coordinated separately with
-`npm run dogfood:dev-host -- point-clear`.
+`npm run dogfood -- dev-host -- point-clear`.

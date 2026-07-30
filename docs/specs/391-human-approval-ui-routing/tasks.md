@@ -35,7 +35,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:persistent-engine`
+**Dogfood:** `npm run dogfood -- persistent-engine`
 <!-- A representative command that exercises the shipped behavior end-to-end.
      `/sdd dogfood` previews by default and runs only with --run, then logs under
      notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace

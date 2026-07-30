@@ -191,7 +191,7 @@ _Historical pre-ratification questions are retained below; their resolutions fol
 - `npm run typecheck` — pass.
 - Focused provider preference/service, Claude capture/source, Codex source, session ownership, harness, agent manager and
   headless workspace suites — pass, 513/513 tests.
-- `npm run dogfood:runtime-observability` — pass with real installed Codex app-server acquisition, synthetic Claude
+- `npm run dogfood -- runtime-observability` — pass with real installed Codex app-server acquisition, synthetic Claude
   process capture, same-scope request coalescing and no raw status-line persistence.
 - `npm run verify:full:quiet` — pass; 339 files, 4,121 passed, 3 skipped.
 - Security regressions: a redirected `.tachyon/harness` root or child whose real path escapes through a symlink fails
@@ -210,16 +210,16 @@ _Historical pre-ratification questions are retained below; their resolutions fol
   inherited external homes reach the transport boundary and fail closed instead of being treated as `~/.claude`.
 - `npm run typecheck` — pass.
 - Nine focused provider/capture/lifecycle suites — pass, 520/520 tests.
-- `npm run dogfood:runtime-observability` — pass through the SDD dogfood runner.
+- `npm run dogfood -- runtime-observability` — pass through the SDD dogfood runner.
 - `npm run verify:full:quiet` — pass; 339 files, 4,128 passed, 3 skipped.
 
 ## Dogfood log
 
 ### 2026-07-14T22:14:58Z — pass (1/1) — source: tasks.md — commit: 46f181c6d7b3ade91e8570fa180494391e8539df
-- `npm run dogfood:runtime-observability` — pass
+- `npm run dogfood -- runtime-observability` — pass
 
 ### 2026-07-14T23:18:32Z — pass (1/1) — source: tasks.md — commit: dfa9137417c40e0e22cec26076ff86051d9606dd
-- `npm run dogfood:runtime-observability` — pass
+- `npm run dogfood -- runtime-observability` — pass
 
 ## T4 implementation log
 

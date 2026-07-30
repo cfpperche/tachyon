@@ -22,7 +22,7 @@ fixture and release with the matching owner. Report any abandoned lease rather t
 GUI/desktop activity requires an explicit coordinator-owned step; automated headless dogfood does not
 authorize it.
 
-Primary CLI: npm run dogfood:dev-host
-F5 pointer: npm run dogfood:dev-host -- point|point-status|point-clear
+Primary CLI: npm run dogfood -- dev-host
+F5 pointer: npm run dogfood -- dev-host -- point|point-status|point-clear
 Runbook: docs/runbooks/dev-host.md
 ```

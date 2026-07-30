@@ -13,7 +13,7 @@
  *                     whose `turn_context.payload.model` is the identity. The rollout below is the
  *                     measured shape, written to a real private home the real adapter then reads.
  *
- * Run: npm run dogfood:probe-provenance-parity
+ * Run: npm run dogfood -- probe-provenance-parity
  */
 import fs from "node:fs";
 import os from "node:os";

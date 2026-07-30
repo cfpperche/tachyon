@@ -56,7 +56,7 @@ for scene in "${SCENES[@]}"; do
       ;;
     fail-visible|edh)
       echo "shortlist: EDH fail-visible scene"
-      if npm run dogfood:dev-host -- headless; then
+      if npm run dogfood -- dev-host -- headless; then
         passed+=("fail-visible")
         # copy latest fail-visible png if present
         if [ -f "$REPO/.tachyon/evidence/dev-host/fail-visible.png" ]; then

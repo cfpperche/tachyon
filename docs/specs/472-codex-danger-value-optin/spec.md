@@ -7,7 +7,7 @@ _Created 2026-07-26._
 measured against `codex-cli 0.145.0`, the two dangerous values gated behind per-agent
 `authorize: [neverAskForApproval|dangerFullAccess]`, the SDD 471 authorization gate generalized
 per runtime, Agent Studio controls with localized risk copy, and fresh/restart/resume projection.
-Evidence: `npm run verify:full:quiet`, `npm run dogfood:codex-danger-optin` (7/7), and the Visual QA
+Evidence: `npm run verify:full:quiet`, `npm run dogfood -- codex-danger-optin` (7/7), and the Visual QA
 screenshots under `evidence/`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

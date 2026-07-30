@@ -9,7 +9,7 @@
  * Drives the real profile loader, the real Claude and Codex projectors and the real
  * `Workspace.markRuntimeConfigPending`. Only the process supervisor (tmux) is faked.
  *
- * Run: npm run dogfood:native-config-sources
+ * Run: npm run dogfood -- native-config-sources
  */
 import crypto from "node:crypto";
 import fs from "node:fs";

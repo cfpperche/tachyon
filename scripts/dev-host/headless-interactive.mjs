@@ -113,7 +113,7 @@ async function main() {
       ? path.join(slotRoot, "workspace")
       : path.join(ptr, "workspace"));
   if (!fs.existsSync(extensionDir)) {
-    throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood:dev-host -- point --worktree … --fixture …`);
+    throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood -- dev-host -- point --worktree … --fixture …`);
   }
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) {

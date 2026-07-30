@@ -29,7 +29,7 @@ _Generated from `plan.md` on 2026-07-27. Work top-to-bottom. Check boxes as task
 - [x] Fixtures from the captured bytes for every implemented runtime, plus negative cases for rate
       limit, quota, permission, network and invalid session — and the Claude-footer false positive.
 - [x] Real-runtime dogfood re-deriving every signal from credential-free homes, including OpenCode's
-      silence (`npm run dogfood:auth-required-parity`). Extended by `t-0338fc` to drive the OpenCode
+      silence (`npm run dogfood -- auth-required-parity`). Extended by `t-0338fc` to drive the OpenCode
       gate BOTH ways against the real CLI — a credential-free home refused, the operator's own home
       admitted — because a preflight that only ever refuses is an outage, not a gate.
 
@@ -50,7 +50,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:auth-required-parity`
+**Dogfood:** `npm run dogfood -- auth-required-parity`
 
 **Human dogfood:** optional — with a runtime logged out, confirm the sidebar shows the agent as
 needing a human and naming the action, and that its task is still assigned afterwards.

@@ -53,6 +53,6 @@ cd /home/goat/tachyon-worktrees/agent-live-resource-metrics && npm run build
 # fechar EDH
 export TACHYON_DEV_HOST_ID=metrics-386
 cd /home/goat/tachyon
-npm run dogfood:dev-host -- clean
-npm run dogfood:dev-host -- point-clear
+npm run dogfood -- dev-host -- clean
+npm run dogfood -- dev-host -- point-clear
 ```

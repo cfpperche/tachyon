@@ -41,7 +41,7 @@ Dev Host is the right isolation model (pointer F5, fixture workspace, never mono
 ### P1 — fixture contract + ergonomic arm
 
 - [x] **Scenario: fixture-new scaffolds a dogfood fixture**
-  - **Given** `npm run dogfood:dev-host -- fixture-new --slug <s> --spec <NNN>` (or equivalent)
+  - **Given** `npm run dogfood -- dev-host -- fixture-new --slug <s> --spec <NNN>` (or equivalent)
   - **When** the command completes
   - **Then** `test/fixtures/<s>-dogfood/` has `tachyon.yml`, README checklist, and seeded `.tachyon/` layout; README notes `git add -f` for ignored `.tachyon/`
 - [x] **Scenario: intent presets are documented**

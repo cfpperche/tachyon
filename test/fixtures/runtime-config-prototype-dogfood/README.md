@@ -60,7 +60,7 @@ git add test/fixtures/runtime-config-prototype-dogfood/tachyon.yml test/fixtures
 
 ```bash
 # from monorepo:
-npm run dogfood:dev-host -- point \
+npm run dogfood -- dev-host -- point \
   --worktree <worktree-or-repo> \
   --fixture runtime-config-prototype \
   --spec 442 --slug runtime-config-prototype

@@ -29,5 +29,5 @@
 ## Cleanup
 
 ```bash
-npm run dogfood:dev-host -- point-clear
+npm run dogfood -- dev-host -- point-clear
 ```

@@ -64,7 +64,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:dev-host -- point --fixture agent-soul-dogfood && npm run dogfood:dev-host -- point-status && npm run dogfood:dev-host -- point-clear`
+**Dogfood:** `npm run dogfood -- dev-host -- point --fixture agent-soul-dogfood && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
 
 <!-- The first declaration here was just `point-status`, which was wrong: on an unarmed checkout that
      exits 1 by design ("unarmed" is not success), so it only passed by accident when something

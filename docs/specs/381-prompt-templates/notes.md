@@ -26,7 +26,7 @@ _Created 2026-07-14._
 ## Dogfood log
 
 - 2026-07-14 — **Human dogfood PASS** (Dev Host F5, WSL).
-  - Armed: `npm run dogfood:dev-host -- point` → worktree `feat/prompt-templates`, fixture `prompt-templates-dogfood`.
+  - Armed: `npm run dogfood -- dev-host -- point` → worktree `feat/prompt-templates`, fixture `prompt-templates-dogfood`.
   - EDH: Bridge connected, agent `dogfood` running (bash).
   - Action: Inject Prompt Template → **Status + next step** → **Submit** → `dogfood`.
   - Evidence: toast `Prompt template 'Status + next step' submitted to 'dogfood'`; multi-line body visible in pane.

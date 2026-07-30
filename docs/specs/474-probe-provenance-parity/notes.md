@@ -65,4 +65,4 @@ None. The remaining gap is Codex's, measured and filed as `t-a10d31`; the probe-
 <!-- appended by `/sdd dogfood --run` -->
 
 ### 2026-07-26T20:06:28Z — pass (1/1) — source: tasks.md — commit: 990cf0fcf232846f6c1e0df5f85c33ddb8fee3b1
-- `npm run dogfood:probe-provenance-parity` — pass
+- `npm run dogfood -- probe-provenance-parity` — pass

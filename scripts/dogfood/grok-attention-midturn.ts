@@ -19,7 +19,7 @@
  * prompt that decision is BLANKET APPROVAL. This script never sends Enter at a modal; it answers
  * with an explicit digit.
  *
- * Run: npm run dogfood:grok-attention-midturn
+ * Run: npm run dogfood -- grok-attention-midturn
  */
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";

@@ -9,7 +9,7 @@
  * already materializes. No real credential is read, copied or modified, and nothing is written to the
  * operator's own runtime homes.
  *
- * Run: npm run dogfood:auth-required-parity
+ * Run: npm run dogfood -- auth-required-parity
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

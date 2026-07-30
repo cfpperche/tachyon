@@ -32,7 +32,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:probe-provenance-parity`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
 
 **Human dogfood:** run a real `probe_agent` with `runtime: grok` and an explicit `model`, then read
 the run's `metadata.json` and `read_probe_result` and confirm the effective identifier and verdict

@@ -10,7 +10,7 @@
  * Drives the real profile loader, the real Claude projector and the real HarnessManager against a
  * controlled HOME.
  *
- * Run: npm run dogfood:claude-bypass-optin
+ * Run: npm run dogfood -- claude-bypass-optin
  */
 import crypto from "node:crypto";
 import fs from "node:fs";

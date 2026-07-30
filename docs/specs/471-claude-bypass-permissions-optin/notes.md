@@ -73,4 +73,4 @@ None. The `authorize` storage shape was settled in `plan.md` with the rejected a
 <!-- appended by `/sdd dogfood --run` -->
 
 ### 2026-07-26T18:49:00Z — pass (1/1) — source: tasks.md — commit: 0c21d35ef5524b0b9318623c6476885e5d0ccf44
-- `npm run dogfood:claude-bypass-optin` — pass
+- `npm run dogfood -- claude-bypass-optin` — pass

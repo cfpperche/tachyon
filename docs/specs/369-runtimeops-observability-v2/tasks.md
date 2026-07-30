@@ -95,7 +95,7 @@ implementation until its ADR is accepted._
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:runtime-observability`
+**Dogfood:** `npm run dogfood -- runtime-observability`
 
 **Human dogfood:** From the monorepo window select **Tachyon: Dev Host** and press **F5**. The prepared pointer opens
 `test/fixtures/runtimeops-observability-dogfood`; do not package or install a VSIX. In the EDH window only:

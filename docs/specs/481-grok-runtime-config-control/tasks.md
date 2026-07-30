@@ -26,7 +26,7 @@ _Generated from `plan.md` on 2026-07-28. Work top-to-bottom._
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:grok-runtime-config`
+**Dogfood:** `npm run dogfood -- grok-runtime-config`
 
 Ele mede contra o `grok` instalado: escreve pelo adapter e pergunta ao próprio runtime, via
 `grok inspect --json`, o que ele descobriu. Sem binário instalado ele sai com código 2 e a

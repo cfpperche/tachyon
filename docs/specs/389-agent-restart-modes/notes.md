@@ -30,7 +30,7 @@ Human F5 EDH was blocked (UI hard to drive; bash loops correctly live under **Te
 
 ```bash
 cd /home/goat/tachyon-worktrees/agent-restart-modes
-npm run dogfood:restart-modes
+npm run dogfood -- restart-modes
 # → test/integration/restartModesDogfood.test.ts
 # → .tachyon/evidence/restart-modes-dogfood/latest.json
 ```

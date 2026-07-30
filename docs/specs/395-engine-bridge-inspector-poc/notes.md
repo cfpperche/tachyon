@@ -57,7 +57,7 @@ npm run preview:webview
 
 ```bash
 cd /home/goat/tachyon
-npm run dogfood:dev-host -- seed --fixture sample-workspace
+npm run dogfood -- dev-host -- seed --fixture sample-workspace
 # Run and Debug → "Tachyon: Dev Host" → F5
 # Palette / sidebar header: Tachyon: Open Control
 ```

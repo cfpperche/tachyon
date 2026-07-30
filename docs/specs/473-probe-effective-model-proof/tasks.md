@@ -37,7 +37,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:probe-model-proof`
+**Dogfood:** `npm run dogfood -- probe-model-proof`
 
 **Human dogfood:** run a real `probe_agent` with `model: claude-opus-5`, then read the run's
 `metadata.json` and the `read_probe_result` payload and confirm both name the requested model, the

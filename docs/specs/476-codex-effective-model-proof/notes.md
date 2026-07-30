@@ -109,5 +109,5 @@ not for isolation) and the evidence kind could move to `provider-usage`. Nothing
 ## Dogfood log
 
 ### 2026-07-26T22:42:40Z — pass (2/2) — source: tasks.md — commit: 2ec2dd66a1e1efc5c40d3c017db2c8e338d72797
-- `npm run dogfood:probe-codex-model-proof` — pass
-- `npm run dogfood:probe-provenance-parity` — pass
+- `npm run dogfood -- probe-codex-model-proof` — pass
+- `npm run dogfood -- probe-provenance-parity` — pass

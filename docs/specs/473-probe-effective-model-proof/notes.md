@@ -61,4 +61,4 @@ documented temporary exemption above, and belongs to those adapters rather than 
 <!-- appended by `/sdd dogfood --run` -->
 
 ### 2026-07-26T19:40:35Z — pass (1/1) — source: tasks.md — commit: bd8bac5d864e19749c94147003395a34ba8702e8
-- `npm run dogfood:probe-model-proof` — pass
+- `npm run dogfood -- probe-model-proof` — pass

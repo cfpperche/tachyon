@@ -10,7 +10,7 @@
  * ProbeRunner → codexAdapter → private CODEX_HOME → rollout correlation chain end to end, and fails
  * loudly if the CLI is absent rather than passing vacuously.
  *
- * Run: npm run dogfood:probe-codex-model-proof
+ * Run: npm run dogfood -- probe-codex-model-proof
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

@@ -202,6 +202,7 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
       why: "describes a DOOR or a label, not an instance: the admission door, a runbook label, a filter bucket",
       files: [
         "scripts/dogfood/adhoc-agent-boundary.ts",
+        "scripts/dogfood/run.mjs",
         "test/unit/agentRuntimeAdmission.test.ts",
         "test/unit/gatedCompletionMonitor.test.ts",
         "test/unit/loadPipeline.test.ts",

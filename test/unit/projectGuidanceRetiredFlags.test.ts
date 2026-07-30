@@ -37,7 +37,7 @@ import { RETIRED_FLAGS } from "../../scripts/dev-host/pointer.mjs";
 const repoRoot = process.cwd();
 
 /** The dev-host entry points a human is ever told to run. A command span is one that names one. */
-const DEV_HOST_COMMANDS = ["dogfood:dev-host", "dev-host/pointer.mjs"];
+const DEV_HOST_COMMANDS = ["dogfood:dev-host", "dogfood -- dev-host", "dev-host/pointer.mjs"];
 
 /** The banned set, derived — the ESM CLI has no .d.ts in the CJS typecheck graph, hence the cast. */
 const retiredFlags: string[] = Object.keys(RETIRED_FLAGS as Record<string, string>);
@@ -68,7 +68,7 @@ function transportedGuidanceFiles(): string[] {
 
 /**
  * Every code span in the document: fenced blocks first, then inline backtick spans (which may wrap
- * across lines — the shipped guidance's own `npm run dogfood:dev-host …` example does).
+ * across lines — the shipped guidance's own `npm run dogfood -- dev-host …` example does).
  *
  * This is deliberately the whole of the "parsing": commands in this document are written as code, so
  * a code span is the unit that separates "run this" from "this was removed". A command written as
@@ -94,7 +94,7 @@ export interface RetiredFlagInstruction {
  * Retired flags this text tells someone to RUN.
  *
  * A span counts only when it names a dev-host entry point, so `--owner` in a sentence about the
- * removal is invisible here while `npm run dogfood:dev-host -- point --owner me` is not. Whitespace
+ * removal is invisible here while `npm run dogfood -- dev-host -- point --owner me` is not. Whitespace
  * is normalized because a wrapped code span carries newlines and indentation from the Markdown.
  */
 export function retiredFlagInstructions(markdown: string): RetiredFlagInstruction[] {
@@ -141,7 +141,7 @@ describe("the transported project guidance never instructs a retired dev-host fl
 
   it("keeps `--worktree` usable — the guard bans the retired set, not dev-host flags in general", () => {
     expect(retiredFlags).not.toContain("--worktree");
-    expect(retiredFlagInstructions("arm another checkout with `npm run dogfood:dev-host -- point --worktree /wt/x --fixture s`")).toEqual([]);
+    expect(retiredFlagInstructions("arm another checkout with `npm run dogfood -- dev-host -- point --worktree /wt/x --fixture s`")).toEqual([]);
     // and the shipped guidance really does still offer it, so the check above is about live text
     const guidance = transportedGuidanceFiles()
       .map((file) => fs.readFileSync(path.join(repoRoot, ...file.split("/")), "utf8"))
@@ -152,12 +152,12 @@ describe("the transported project guidance never instructs a retired dev-host fl
 
 describe("an instruction is distinguished from a mention", () => {
   it("catches a retired flag inside a dev-host command — the regression this guards", () => {
-    const drifted = "cd to YOUR worktree and arm it with `npm run dogfood:dev-host -- point --owner me --fixture sample`.";
-    expect(retiredFlagInstructions(drifted)).toEqual([{ flag: "--owner", command: "npm run dogfood:dev-host -- point --owner me --fixture sample" }]);
+    const drifted = "cd to YOUR worktree and arm it with `npm run dogfood -- dev-host -- point --owner me --fixture sample`.";
+    expect(retiredFlagInstructions(drifted)).toEqual([{ flag: "--owner", command: "npm run dogfood -- dev-host -- point --owner me --fixture sample" }]);
   });
 
   it("catches one inside a fenced block too", () => {
-    const drifted = "```sh\nnpm run dogfood:dev-host -- point-clear --all\n```";
+    const drifted = "```sh\nnpm run dogfood -- dev-host -- point-clear --all\n```";
     expect(retiredFlagInstructions(drifted).map((o) => o.flag)).toEqual(["--all"]);
   });
 
@@ -170,15 +170,15 @@ describe("an instruction is distinguished from a mention", () => {
 
   it("ignores a retired flag in a command that is not a dev-host one", () => {
     // `--owner` is a live lease flag elsewhere (`lane.mjs`); this guard is about the dev-host pointer.
-    expect(retiredFlagInstructions("release it with `npm run dogfood:lane -- release --owner me`")).toEqual([]);
+    expect(retiredFlagInstructions("release it with `npm run dogfood -- lane -- release --owner me`")).toEqual([]);
   });
 
   it("does not fire on a flag that merely starts with a retired one", () => {
-    expect(retiredFlagInstructions("`npm run dogfood:dev-host -- point --allow-dirty`")).toEqual([]);
+    expect(retiredFlagInstructions("`npm run dogfood -- dev-host -- point --allow-dirty`")).toEqual([]);
   });
 
   it("reports every retired flag a single drifted command carries", () => {
-    const drifted = "`npm run dogfood:dev-host -- point --slot 2 --activate --require-owner`";
+    const drifted = "`npm run dogfood -- dev-host -- point --slot 2 --activate --require-owner`";
     expect(retiredFlagInstructions(drifted).map((o) => o.flag).sort()).toEqual(["--activate", "--require-owner", "--slot"]);
   });
 });

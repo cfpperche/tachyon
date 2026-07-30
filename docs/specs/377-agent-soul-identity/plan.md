@@ -690,7 +690,7 @@ Hermes native materialization is outside both checkpoints and remains a separate
 ### Headless dogfood
 
 Add a deterministic local capture executable under the test/dogfood area and expose a command such as
-`npm run dogfood:agent-soul`. It creates a temporary workspace with:
+`npm run dogfood -- agent-soul`. It creates a temporary workspace with:
 
 - agents `direct-a` and `direct-b`;
 - the same `role: reviewer` and persistent instructions;

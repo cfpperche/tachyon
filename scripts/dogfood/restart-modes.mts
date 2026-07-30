@@ -1,6 +1,6 @@
 /**
  * Spec 389 headless dogfood entry (wrapper).
- * Prefer: npm run dogfood:restart-modes
+ * Prefer: npm run dogfood -- restart-modes
  *
  * Runs real-tmux matrix: force+new, force+resume→new, graceful+new (cooperative + sticky
  * force-fallback), product default graceful+resume→new. Evidence under

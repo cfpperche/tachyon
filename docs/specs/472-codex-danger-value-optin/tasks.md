@@ -42,7 +42,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:codex-danger-optin`
+**Dogfood:** `npm run dogfood -- codex-danger-optin`
 
 **Human dogfood:** open Agent Studio on a canonical Codex agent, set Permissions to *Use global
 defaults*, confirm both authorization checkboxes appear with risk copy and are off; enable one,

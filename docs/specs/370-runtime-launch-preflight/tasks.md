@@ -51,7 +51,7 @@ _Implementation authorized after maintainer ratification on 2026-07-10._
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:runtime-launch-preflight`
+**Dogfood:** `npm run dogfood -- runtime-launch-preflight`
 
 The headless pilot uses bounded catalog fixtures and the EDH lane lease. It makes no live catalog or inference call;
 the delegated GUI launch below remains coordinator-owned after product integration.

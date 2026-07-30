@@ -33,7 +33,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. Check boxes as task
 
 1. From monorepo root, agent (or you) arms Dev Host:
    ```bash
-   npm run dogfood:dev-host -- point \
+   npm run dogfood -- dev-host -- point \
      --worktree /home/goat/tachyon-worktrees/prompt-templates \
      --workspace /home/goat/tachyon-worktrees/prompt-templates/test/fixtures/prompt-templates-dogfood \
      --spec 381 --slug prompt-templates
@@ -45,7 +45,7 @@ _Generated from `plan.md` on 2026-07-14. Work top-to-bottom. Check boxes as task
    - Pick a template → `dogfood` → **Stage in composer** → confirm body appears without Enter
    - Optional: overflow ⋯ on `dogfood` → Inject prompt template
    - Optional: start `claude`/`codex` if installed; try Submit idle vs busy refuse
-4. Close EDH. Optionally: `npm run dogfood:dev-host -- point-clear`
+4. Close EDH. Optionally: `npm run dogfood -- dev-host -- point-clear`
 5. Do **not** reload the monorepo fleet window for this dogfood.
 
 Fixture seeds: `test/fixtures/prompt-templates-dogfood/.tachyon/prompts/*.md`  

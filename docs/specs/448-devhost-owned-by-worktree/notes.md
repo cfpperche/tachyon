@@ -117,7 +117,7 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 ## Dogfood log
 
 ### 2026-07-24T21:58:20Z — fail (0/1) — source: tasks.md — commit: c5de8462a988919a4e65180f581088e0923c672e
-- `npm run dogfood:dev-host -- point-status` — fail
+- `npm run dogfood -- dev-host -- point-status` — fail
 
 ### 2026-07-24T21:58:49Z — pass (1/1) — source: tasks.md — commit: c5de8462a988919a4e65180f581088e0923c672e
-- `npm run dogfood:dev-host -- point --fixture agent-soul-dogfood && npm run dogfood:dev-host -- point-status && npm run dogfood:dev-host -- point-clear` — pass
+- `npm run dogfood -- dev-host -- point --fixture agent-soul-dogfood && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear` — pass

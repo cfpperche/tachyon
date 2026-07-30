@@ -13,7 +13,7 @@
  *  - It starts NO paid model call. The processes it spawns are `sleep` and `sh`, because the claim
  *    under test is about identity and attribution, not about anything a model would say.
  *
- * Run: npm run dogfood:execution-graph
+ * Run: npm run dogfood -- execution-graph
  */
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";

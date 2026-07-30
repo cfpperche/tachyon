@@ -21,7 +21,7 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Deviations
 
-- 2026-07-13 lane pilot: `npm run dogfood:runtime-launch-preflight` is now executable and deterministic. It exercises
+- 2026-07-13 lane pilot: `npm run dogfood -- runtime-launch-preflight` is now executable and deterministic. It exercises
   bounded supported/absent/malformed/timeout/non-zero/oversized fixtures plus lease cleanup; it deliberately does not
   claim T1/T2 product integration or perform a live catalog/inference request (preserving SDD 369's T0 boundary).
 - Live follow-up remains coordinator-owned: explicit-model spawn currently fails when the Codex catalog exceeds the
@@ -81,38 +81,38 @@ _Alternatives weighed mid-build. The chosen path + what was given up + why it wa
 ## Dogfood log
 
 ### 2026-07-13T21:08:15Z — pass (1/1) — source: tasks.md — commit: 23130cea1c1cf8046c1b09ac306de80d92c1bb0e
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-13T21:12:09Z — pass (1/1) — source: tasks.md — commit: 9ac4907217d689d8e2c14f058bcdf1b9dc8af30a
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 
 ### 2026-07-13T21:46:30Z — pass (1/1) — source: tasks.md — commit: adfc030fa32827deb8cb74c7b7edf8eaf2c5f174
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T00:20:38Z — pass (1/1) — source: tasks.md — commit: 7c5a3ced58ccaf2def95bad30da44d7ad4209998
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T00:38:47Z — pass (1/1) — source: tasks.md — commit: 7c5a3ced58ccaf2def95bad30da44d7ad4209998
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T00:40:55Z — pass (1/1) — source: tasks.md — commit: 7c5a3ced58ccaf2def95bad30da44d7ad4209998
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T15:51:14Z — pass (1/1) — source: tasks.md — commit: 7c5a3ced58ccaf2def95bad30da44d7ad4209998
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T15:55:08Z — pass (1/1) — source: tasks.md — commit: 95cc7d56269160548fa810c6b7432459c808dff6
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T15:58:02Z — pass (1/1) — source: tasks.md — commit: 62baa22f38d71bb0f4f57ad9f2db263ba3640cd3
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T16:03:43Z — pass (1/1) — source: tasks.md — commit: 002f7066c09d371e775a8efbc273bf8a76b0341a
-- `npm run dogfood:runtime-launch-preflight` — pass
+- `npm run dogfood -- runtime-launch-preflight` — pass
 
 ### 2026-07-14T16:04:20Z — main EDH product-path pass — commit: 002f7066c09d371e775a8efbc273bf8a76b0341a
-- `node scripts/dev-host/lane.mjs run --owner codex-budget --target main -- npm run dogfood:dev-host -- headless` — pass
+- `node scripts/dev-host/lane.mjs run --owner codex-budget --target main -- npm run dogfood -- dev-host -- headless` — pass
 - Native Extension Development Host S1 passed all eight checks: fail-visible frame, config failure, degraded and
   disk-backed roster, LKG visibility and spawn refusal, Doctor execution, and config recovery.
 - Screenshot: `.tachyon/evidence/dev-host/fail-visible.png`.

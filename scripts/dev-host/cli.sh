@@ -205,8 +205,8 @@ JSON
 Isolated dogfood workspace. Do **not** open the monorepo root for this scenario.
 
 - Runbook: \`docs/runbooks/dev-host.md\`
-- Break config: \`npm run dogfood:dev-host -- break\` (from monorepo)
-- Restore config: \`npm run dogfood:dev-host -- restore\`
+- Break config: \`npm run dogfood -- dev-host -- break\` (from monorepo)
+- Restore config: \`npm run dogfood -- dev-host -- restore\`
 - Fixture id: \`${ID}\`
 - Created: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
@@ -216,7 +216,7 @@ EOF
 }
 
 break_config() {
-  [ -d "$WS" ] || die "no fixture — run: npm run dogfood:dev-host -- seed"
+  [ -d "$WS" ] || die "no fixture — run: npm run dogfood -- dev-host -- seed"
   write_broken_config
   info "wrote BROKEN tachyon.yml (dangling subagents: [ghost])"
   info "In EDH only: Developer: Reload Window → expect fail-visible banner + degraded roster"
@@ -253,7 +253,7 @@ env -u ELECTRON_RUN_AS_NODE -u TACHYON_AGENT_BRIDGE_TOKEN -u TACHYON_AGENT_NAME 
 ---------------------------
 Record SHA: $(git -C "$REPO" rev-parse --short HEAD 2>/dev/null || echo unknown)
 Runbook:    docs/runbooks/dev-host.md
-Scenario:   S1 fail-visible → npm run dogfood:dev-host -- break
+Scenario:   S1 fail-visible → npm run dogfood -- dev-host -- break
 
 EOF
 }
@@ -307,10 +307,10 @@ dev-host: refusing GUI `launch` without explicit desktop intent (t-fe621b).
   focus steal — a second EDH still interrupts an active session / F5 dogfood.
 
 Safe routes:
-  • Automated / agent dogfood →  npm run dogfood:dev-host -- headless
-  • Human F5 (preferred GUI)  →  npm run dogfood:dev-host -- point … then F5
-  • Intentional secondary GUI →  npm run dogfood:dev-host -- launch --gui
-                                 or TACHYON_DEV_HOST_GUI=1 npm run dogfood:dev-host -- launch
+  • Automated / agent dogfood →  npm run dogfood -- dev-host -- headless
+  • Human F5 (preferred GUI)  →  npm run dogfood -- dev-host -- point … then F5
+  • Intentional secondary GUI →  npm run dogfood -- dev-host -- launch --gui
+                                 or TACHYON_DEV_HOST_GUI=1 npm run dogfood -- dev-host -- launch
 
 See docs/runbooks/dev-host.md § GUI launch consent.
 EOF
@@ -321,7 +321,7 @@ preflight_gui_launch() {
   # Never mutates F5 pointer or foreign fixtures; only warns / refuses ambiguity.
   if [ -n "${TACHYON_AGENT_NAME:-}" ]; then
     info "WARNING: agent-driven GUI launch (caller TACHYON_AGENT_NAME=${TACHYON_AGENT_NAME})."
-    info "This will open/focus a desktop window. Prefer: npm run dogfood:dev-host -- headless"
+    info "This will open/focus a desktop window. Prefer: npm run dogfood -- dev-host -- headless"
   fi
   local meta
   if meta="$(f5_pointer_meta)"; then
@@ -585,7 +585,7 @@ point_cmd() {
 
 help() {
   cat <<'EOF'
-Usage: npm run dogfood:dev-host -- <command>
+Usage: npm run dogfood -- dev-host -- <command>
 
 Preferred human path (F5 from monorepo window):
   point / point-status / point-clear / fixture-new
@@ -609,12 +609,12 @@ Commands:
   help         This text
 
 Examples:
-  npm run dogfood:dev-host -- point --worktree ~/tachyon-worktrees/foo \
+  npm run dogfood -- dev-host -- point --worktree ~/tachyon-worktrees/foo \
        --fixture foo --spec 381 --slug foo
-  npm run dogfood:dev-host -- fixture-new --slug demo --spec 393 --intent focus
-  npm run dogfood:dev-host -- headless
-  npm run dogfood:dev-host -- launch --gui   # secondary desktop EDH (steals focus!)
-  npm run dogfood:dev-host -- shortlist mermaid
+  npm run dogfood -- dev-host -- fixture-new --slug demo --spec 393 --intent focus
+  npm run dogfood -- dev-host -- headless
+  npm run dogfood -- dev-host -- launch --gui   # secondary desktop EDH (steals focus!)
+  npm run dogfood -- dev-host -- shortlist mermaid
 
 Env (new preferred; old still accepted):
   TACHYON_DEV_HOST_ID / TACHYON_EDH_PALLIATIVE_ID     fixture id (default: default)

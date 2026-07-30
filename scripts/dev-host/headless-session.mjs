@@ -161,7 +161,7 @@ async function up(opts) {
   }
   const slotRoot = resolvePointerSlotRoot();
   const extensionDir = path.join(slotRoot, "extension");
-  if (!fs.existsSync(extensionDir)) die(`Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood:dev-host -- point …`);
+  if (!fs.existsSync(extensionDir)) die(`Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood -- dev-host -- point …`);
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) die(`pointed extension has no dist/extension.js — build it (TACHYON_ENGINE_CHANNEL=dev npm run build)`);
   // Prefer real workspace mirror under the slot (same as F5).

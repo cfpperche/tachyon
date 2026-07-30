@@ -9,7 +9,7 @@
  *   node scripts/dev-host/pointer.mjs fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics] [--worktree PATH]
  *   node scripts/dev-host/pointer.mjs status
  *   node scripts/dev-host/pointer.mjs clear
- *   (CLI: npm run dogfood:dev-host -- point|point-status|point-clear|fixture-new)
+ *   (CLI: npm run dogfood -- dev-host -- point|point-status|point-clear|fixture-new)
  *
  * Layout under <repo>/.tachyon/dev-host/ (gitignored via .tachyon/):
  *   extension  → worktree root (symlink) — --extensionDevelopmentPath
@@ -670,7 +670,7 @@ git add test/fixtures/${dirName}/tachyon.yml test/fixtures/${dirName}/README.md
 
 \`\`\`bash
 # from monorepo:
-npm run dogfood:dev-host -- point \\
+npm run dogfood -- dev-host -- point \\
   --worktree <worktree-or-repo> \\
   --fixture ${dirName.replace(/-dogfood$/, "")} \\
   ${spec ? `--spec ${spec} ` : ""}--slug ${dirName.replace(/-dogfood$/, "")}
@@ -831,7 +831,7 @@ export function point(opts) {
       `Run and Debug → select "${multiRoot ? MULTI_ROOT_LAUNCH_CONFIG_NAME : LAUNCH_CONFIG_NAME}"`,
       "Press F5 (builds this checkout, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
-      "When done: npm run dogfood:dev-host -- point-clear",
+      "When done: npm run dogfood -- dev-host -- point-clear",
       "Other checkouts are untouched — each owns its own dev-host",
     ],
   };
@@ -848,7 +848,7 @@ export async function status(repoRoot, opts = {}) {
     return {
       armed: false,
       broken: true,
-      reason: "no meta.json — run: npm run dogfood:dev-host -- point …",
+      reason: "no meta.json — run: npm run dogfood -- dev-host -- point …",
       checkout: resolved,
       warnings: [],
     };
@@ -1210,11 +1210,11 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage (run from the checkout you want to dogfood):
-  npm run dogfood:dev-host -- point --fixture SLUG [--spec NNN] [--slug SLUG]
-  npm run dogfood:dev-host -- point --workspace PATH [--spec NNN] [--slug SLUG]
-  npm run dogfood:dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics]
-  npm run dogfood:dev-host -- point-status
-  npm run dogfood:dev-host -- point-clear
+  npm run dogfood -- dev-host -- point --fixture SLUG [--spec NNN] [--slug SLUG]
+  npm run dogfood -- dev-host -- point --workspace PATH [--spec NNN] [--slug SLUG]
+  npm run dogfood -- dev-host -- fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics]
+  npm run dogfood -- dev-host -- point-status
+  npm run dogfood -- dev-host -- point-clear
 
 spec 448: the dev-host belongs to the checkout it serves — <checkout>/.tachyon/dev-host/.
   Every checkout (monorepo or linked worktree) has exactly one, so there is no slot to pick and
@@ -1295,7 +1295,7 @@ Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary ch
     console.log(`${SELF}: fixture-new ${result.root}`);
     console.log(`  intent: ${result.intent}`);
     console.log(`  git add -f ${path.join(result.root, ".tachyon")}`);
-    console.log(`  then: npm run dogfood:dev-host -- point --worktree … --fixture ${result.slug.replace(/-dogfood$/, "")}`);
+    console.log(`  then: npm run dogfood -- dev-host -- point --worktree … --fixture ${result.slug.replace(/-dogfood$/, "")}`);
     return 0;
   }
 

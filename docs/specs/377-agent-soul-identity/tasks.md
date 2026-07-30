@@ -122,7 +122,7 @@ evidence; deferred bullets are not delivery claims._
       canonical profile/import-copy semantics, lifecycle, raw-byte/CRLF semantics, argv/retention
       exposure, future-persistence boundary, offered-vs-consumed channel state,
       prompt/prefill/native/unsupported matrix, wrapper limits, and the Hermes follow-up boundary.
-- **Deferred T19:** Add deterministic `npm run dogfood:agent-soul` coverage with two
+- **Deferred T19:** Add deterministic `npm run dogfood -- agent-soul` coverage with two
       same-role agents, distinct souls, real composition/shell delivery, no paid inference,
       metadata-only ledger assertions, and resume-vs-restart/re-anchor refresh proof.
 - [x] **T20-MVP. Run human dogfood and Visual QA.** Human dogfood confirmed distinct Soul delivery

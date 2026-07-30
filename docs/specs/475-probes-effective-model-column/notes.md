@@ -59,4 +59,4 @@ is the honest rendering of that state rather than a gap in this column.
 <!-- appended by `/sdd dogfood --run` -->
 
 ### 2026-07-26T20:32:26Z — pass (1/1) — source: tasks.md — commit: 8c9eaf4d3a66843d15a384fecf2403b3aa993b34
-- `npm run dogfood:probes-model-column` — pass
+- `npm run dogfood -- probes-model-column` — pass

@@ -29,4 +29,4 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 ## Dogfood log
 
 ### 2026-07-25T19:34:29Z — pass (1/1) — source: tasks.md — commit: d72b1b660540e1a1e2f9852d8633ec2a4d6df04a
-- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:dev-host -- headless` — pass
+- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless` — pass

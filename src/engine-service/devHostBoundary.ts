@@ -41,7 +41,7 @@ export function assertMarkedDevHostWorkspace(workspaceRoot: string): void {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new DevHostBoundaryError(
         "DEV_HOST_MARKER_MISSING",
-        "Tachyon development builds run only in a marked Dev Host workspace; arm it with npm run dogfood:dev-host -- point",
+        "Tachyon development builds run only in a marked Dev Host workspace; arm it with npm run dogfood -- dev-host -- point",
       );
     }
     throw error;

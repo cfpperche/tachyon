@@ -6,7 +6,7 @@
  * 3) Opens Control → Probes surface for UI evidence screenshot.
  *
  * Prereq:
- *   npm run dogfood:dev-host -- point --worktree <repo> --fixture companion-track-dogfood --spec 257 --slug probe-grok-runtime
+ *   npm run dogfood -- dev-host -- point --worktree <repo> --fixture companion-track-dogfood --spec 257 --slug probe-grok-runtime
  *   TACHYON_ENGINE_CHANNEL=dev npm run build
  *   node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/probe-grok-runtime.mjs
  *

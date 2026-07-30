@@ -97,7 +97,7 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   ambient real-home config and workspace source config from generated output, and confirms that
   Codex fork reports its native unsupported state.
 - Dev Host S1 headless smoke passed against this isolated worktree at `be3dc5d1` on 2026-07-25:
-  `node scripts/dev-host/lane.mjs run --owner codex --target worktree -- npm run dogfood:dev-host -- headless`.
+  `node scripts/dev-host/lane.mjs run --owner codex --target worktree -- npm run dogfood -- dev-host -- headless`.
   Report: `/tmp/tachyon-dev-host/default/headless-out/result.json`; screenshot was copied to
   `.tachyon/evidence/dev-host/fail-visible.png`. This proves the built extension cold-starts under
   its private Dev Host namespace; the lifecycle equivalence claim remains grounded in the
@@ -115,7 +115,7 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
 ## Dogfood log
 
 ### 2026-07-25T14:46:04Z — fail (0/1) — source: tasks.md — commit: be3dc5d103b457ab13f90009df7a0e74b8f095f2
-- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:dev-host -- headless` — fail
+- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless` — fail
 
 ### 2026-07-25T14:47:31Z — pass (1/1) — source: tasks.md — commit: be3dc5d103b457ab13f90009df7a0e74b8f095f2
-- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood:dev-host -- headless` — pass
+- `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless` — pass

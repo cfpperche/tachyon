@@ -1,7 +1,7 @@
 # 389 — tasks
 
 **Verify:** `npx vitest run test/unit/agentManager.test.ts -t "spec 389" test/unit/engineServiceProtocol.test.ts test/integration/restartModesDogfood.test.ts`
-**Dogfood:** `npm run dogfood:restart-modes` (real tmux, private `TMUX_TMPDIR`; evidence `.tachyon/evidence/restart-modes-dogfood/latest.json`)
+**Dogfood:** `npm run dogfood -- restart-modes` (real tmux, private `TMUX_TMPDIR`; evidence `.tachyon/evidence/restart-modes-dogfood/latest.json`)
 
 **Human dogfood (optional EDH):** fixture `test/fixtures/agent-restart-modes-dogfood` (`terminals:` bash loops); F5 Dev Host → **Terminals** tab → ⋯ Restart / Restart new section / Force restart.
 

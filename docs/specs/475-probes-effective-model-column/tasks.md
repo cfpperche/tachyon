@@ -31,7 +31,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood:probes-model-column`
+**Dogfood:** `npm run dogfood -- probes-model-column`
 
 **Human dogfood:** open Control → Probes after running probes with and without an explicit model and
 confirm the model column reads correctly for each, including a mismatch.
