@@ -60,11 +60,27 @@ describe("owned session creation is shared (SDD 482 phase 1)", () => {
     // able to forge or clear. t-fab832 added the post-cut attestation to that tail — same reason,
     // same position, and this assertion pins the full order rather than being relaxed to fit it.
     expect(body).toMatch(
-      /env:\s*\{\s*\.\.\.input\.env,\s*\.\.\.input\.minted\.env,\s*\[POST_CUT_SESSION_ATTESTATION_ENV\]:\s*POST_CUT_SESSION_ATTESTATION\s*\}/,
+      /env:\s*withPostCutAttestation\(\{\s*\.\.\.input\.env,\s*\.\.\.input\.minted\.env,?\s*\}\)/,
     );
     // And no caller may re-merge minted env itself, which would reintroduce the drift.
     expect(SOURCE).not.toMatch(/\.\.\.spawnBridge\.env,\s*\.\.\.minted\.env/);
     expect(SOURCE).not.toMatch(/\.\.\.forkBridge\.env,\s*\.\.\.forkMinted\.env/);
+  });
+
+  /**
+   * t-e73e54 — this file asserted the attestation was applied "in one place" while measuring only ONE
+   * door. `startSessionCommandUnlocked` was a second, and restart/resume went through it, so resumed
+   * Saved Agents came back unattested and `legacyFleetGate` refused to activate the workspace.
+   *
+   * The literal spread is gone: applying the attestation is now a named helper, so a new creation path
+   * either calls it or is visibly missing it. Behavioural coverage per path — spawn, respawn and the
+   * kill+new replacement — lives in agentManager.test.ts, asserted on observed tmux arguments.
+   */
+  it("the attestation is applied only through the shared helper", () => {
+    const inlineSpreads = SOURCE.match(/\[POST_CUT_SESSION_ATTESTATION_ENV\]\s*:/g) ?? [];
+    expect(inlineSpreads).toHaveLength(0);
+    // Both doors: the owned-session door and the create/replace helper restart reaches.
+    expect(SOURCE.match(/withPostCutAttestation\(/g) ?? []).toHaveLength(2);
   });
 
   it("Pi admission is applied by the shared door, not per caller", () => {

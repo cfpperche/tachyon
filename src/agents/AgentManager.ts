@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { POST_CUT_SESSION_ATTESTATION, POST_CUT_SESSION_ATTESTATION_ENV } from "./legacyFleetGate.js";
+import { withPostCutAttestation } from "./legacyFleetGate.js";
 import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -2285,11 +2285,12 @@ export class AgentManager {
       name: input.session,
       cmd: this.applyAgentMemoryScope(input.agent, input.ownedCmd),
       cwd: input.cwd,
-      // t-fab832 — the post-cut attestation is minted HERE, at the one door that creates an agent
-      // session (SDD 482 phase 1 made this the only one), so every session this build starts carries
-      // proof of which build started it. Merged LAST for the same reason the minted execution env is:
-      // a caller-supplied env must not be able to forge or clear it.
-      env: { ...input.env, ...input.minted.env, [POST_CUT_SESSION_ATTESTATION_ENV]: POST_CUT_SESSION_ATTESTATION },
+      // t-fab832 — every session this build starts carries proof of which build started it.
+      // t-e73e54 — the claim that used to sit here, that this was "the one door that creates an agent
+      // session", was false: `startSessionCommandUnlocked` was a second one. Both now go through
+      // `withPostCutAttestation`, which merges the proof LAST so a caller-supplied env cannot forge or
+      // clear it.
+      env: withPostCutAttestation({ ...input.env, ...input.minted.env }),
     });
     if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
     else await create();
@@ -3928,7 +3929,11 @@ export class AgentManager {
   }): Promise<"respawned" | "created"> {
     const agentName = agentFromSession(this.opts.wsHash, opts.session) ?? opts.session;
     const cmd = this.applyAgentMemoryScope(agentName, opts.cmd);
-    const { session, cwd, env } = opts;
+    const { session, cwd } = opts;
+    // t-e73e54 — restart/resume lands here, and it creates real agent sessions: a respawned pane and
+    // both `newSession` branches below. Attesting once at the top covers all three; doing it at each
+    // call site is how the previous divergence happened.
+    const env = withPostCutAttestation(opts.env);
     if (await this.opts.tmux.hasSession(session)) {
       try {
         opts.onReplacementAttempt?.();

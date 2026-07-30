@@ -88,6 +88,27 @@ export const POST_CUT_SESSION_ATTESTATION_ENV = "TACHYON_INSTANCE_CUT";
 export const POST_CUT_SESSION_ATTESTATION = "agent-instance-v5";
 
 /**
+ * t-e73e54 — the ONE place the attestation is applied to an environment.
+ *
+ * It used to be an inline spread at the spawn door, under a comment asserting that door was the only
+ * one that creates an agent session. It was not: restart/resume reached tmux through a second path
+ * that passed its env straight through, so a resumed Saved Agent came back unattested and this gate —
+ * correctly — refused to activate the workspace. The remedy the refusal names is "stop and restart the
+ * fleet", which went through that same unattested path, so the workspace had no way out of its own
+ * error message.
+ *
+ * A helper does not stop someone calling `tmux.newSession` directly, and it is not meant to: what it
+ * buys is that "apply the attestation" is a named thing a test can assert about EVERY creation path,
+ * instead of a spread someone has to notice and copy. `agentSessionAttestation.test.ts` walks the
+ * source and fails when a session-creating call is not covered.
+ *
+ * Merged LAST, deliberately: a caller-supplied env must not be able to forge or clear the proof.
+ */
+export function withPostCutAttestation(env?: Record<string, string>): Record<string, string> {
+  return { ...env, [POST_CUT_SESSION_ATTESTATION_ENV]: POST_CUT_SESSION_ATTESTATION };
+}
+
+/**
  * Does this tmux session belong to THIS workspace's Tachyon fleet?
  *
  * The prefix check is the negative control that matters most in practice: a developer's own

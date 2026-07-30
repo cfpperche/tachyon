@@ -15,6 +15,11 @@ import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
+import {
+  POST_CUT_SESSION_ATTESTATION,
+  POST_CUT_SESSION_ATTESTATION_ENV,
+  withPostCutAttestation,
+} from "../../src/agents/legacyFleetGate.js";
 import { HarnessManager, bridgeGrokHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
@@ -546,6 +551,60 @@ describe("AgentManager", () => {
     await manager.kill("a");
     expect(killed).toEqual(["a"]);
     expect(sessions.size).toBe(0);
+  });
+
+  /**
+   * t-e73e54 — the gate refuses to activate a workspace holding an agent session without this proof,
+   * and restart/resume used to produce exactly that. The remedy the refusal names is "restart the
+   * fleet", which went through the broken path — so the workspace could not escape its own error.
+   *
+   * Asserted on the tmux arguments actually observed, per path, because the bug was a creation path
+   * that never routed through the mint: exercising only the door we knew about is what missed it.
+   */
+  describe("t-e73e54 — every agent session creation carries the post-cut attestation", () => {
+    const ATTESTED = `${POST_CUT_SESSION_ATTESTATION_ENV}=${POST_CUT_SESSION_ATTESTATION}`;
+
+    it("mints on a fresh spawn", async () => {
+      const { manager, newSessionArgs } = makeManager("agents:\n  a:\n    cmd: x\n");
+
+      await manager.spawn("a");
+
+      expect(newSessionArgs.at(-1)).toContain(ATTESTED);
+    });
+
+    it("mints on a respawn-in-place restart", async () => {
+      // The path a live agent takes on an ordinary restart: the pane is reused, so the env has to be
+      // re-applied rather than inherited. Respawn carries env as `set-environment -t <target> KEY
+      // VALUE` — key and value as separate argv entries — not as the `-e KEY=VALUE` new-session uses.
+      const { manager, respawnArgs } = makeManager("agents:\n  a:\n    cmd: x\n");
+      await manager.spawn("a");
+
+      await manager.restart("a", { stop: "force", session: "new" });
+
+      expect(respawnArgs).not.toHaveLength(0);
+      const args = respawnArgs.flat();
+      const at = args.indexOf(POST_CUT_SESSION_ATTESTATION_ENV);
+      expect(at).toBeGreaterThan(-1);
+      expect(args[at + 1]).toBe(POST_CUT_SESSION_ATTESTATION);
+    });
+
+    it("mints on the kill+new replacement restart", async () => {
+      // The fallback when respawn fails — a genuinely new session, and the one that produced the
+      // unattested session observed in the field.
+      const { manager, newSessionArgs } = makeManager("agents:\n  a:\n    cmd: x\n", { failRespawn: true });
+      await manager.spawn("a");
+
+      await manager.restart("a", { stop: "force", session: "new" });
+
+      expect(newSessionArgs.at(-1)).toContain(ATTESTED);
+    });
+
+    it("a caller-supplied attestation cannot override the minted one", () => {
+      // Forging matters because the value is the protocol version: a session claiming an older cut
+      // would be read as proof by a build that accepts it.
+      expect(withPostCutAttestation({ [POST_CUT_SESSION_ATTESTATION_ENV]: "agent-instance-v4" }))
+        .toEqual({ [POST_CUT_SESSION_ATTESTATION_ENV]: POST_CUT_SESSION_ATTESTATION });
+    });
   });
 
   it("t-4d2630: restart falls back to kill+new (and onRestart) when respawn fails", async () => {
