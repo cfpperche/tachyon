@@ -90,7 +90,7 @@ export async function buildMissionVm(
   const declared = new Set(ws.declaredAgentNames());
   const { agents, status } = await lists.bounded(ws.wsHash, () => ws.listMissionControlAgents(), onTrailingRetry);
   const liveManaged = agents.filter((a) => a.kind === "agent" && a.running);
-  const liveAdhoc = liveManaged
+  const liveTemporary = liveManaged
     // SDD 482 phase 3 — "which live instances are Temporary?" `declared.has(name)` stays as the
     // second guard: it answers a different question (is this name owned by config right now?).
     .filter((a) => a.lifetime === "temporary" && !declared.has(a.name))
@@ -102,6 +102,6 @@ export async function buildMissionVm(
     // the workspace dropdown that mirrored the global scope, and shipping the options for a control
     // that must not exist is how that control comes back.
     agentLiveness: status,
-    snapshot: await ws.boardSnapshot(liveAdhoc),
+    snapshot: await ws.boardSnapshot(liveTemporary),
   };
 }

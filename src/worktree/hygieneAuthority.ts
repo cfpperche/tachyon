@@ -61,7 +61,7 @@ export interface HygieneLineageSource {
  *
  * Saved Agents created via the governed port are top-level managed entries: they expose
  * `declaredOwner` in list_agents / tachyon.yml but deliberately do NOT write a runtime `parent`
- * (sidebar stays flat; runtime lineage stays for ad-hoc children only). Hygiene is an AUTHORITY
+ * (sidebar stays flat; runtime lineage stays for Temporary children only). Hygiene is an AUTHORITY
  * question over CHANGE residue — the declared owner is an authorized ancestor for that purpose.
  *
  * Precedence matches the rest of the product (sidebar grouping): runtime parent first, then

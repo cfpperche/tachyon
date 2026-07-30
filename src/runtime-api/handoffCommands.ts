@@ -1,6 +1,6 @@
 import {
   MAX_HANDOFF_ADDITIONAL_INSTRUCTION,
-  MAX_HANDOFF_ADHOC_ARGS,
+  MAX_HANDOFF_TEMPORARY_ARGS,
   normalizeAdditionalInstruction,
   normalizeHandoffDistillArgs,
   resolveHandoffDistillProfile,
@@ -32,7 +32,7 @@ export function isHandoffDistillInputV1(value: unknown): value is HandoffDistill
     && (value.args === undefined
       || (typeof value.args === "string"
         && value.args.length > 0
-        && value.args.length <= MAX_HANDOFF_ADHOC_ARGS
+        && value.args.length <= MAX_HANDOFF_TEMPORARY_ARGS
         && normalizeHandoffDistillArgs(value.args) === value.args));
 }
 

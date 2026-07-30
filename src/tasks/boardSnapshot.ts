@@ -7,7 +7,7 @@ import type { ValidationCandidate } from "../validations/types.js";
 import { TaskDetailStore } from "./TaskDetailStore.js";
 
 /** spec 335 — one chip in the Mission Control header: a declared agent, the `human` queue, or a relevant
- *  ad-hoc agent (live, or still owning open work). */
+ *  Temporary instance (live, or still owning open work). */
 export type BoardChipSource = "declared" | "human" | "assignee";
 
 export interface BoardChip {
@@ -41,9 +41,9 @@ export interface BoardSnapshotInput {
   store: TaskStore;
   /** declared agent names from the workspace's agent config, in declaration order. */
   declaredAgents: string[];
-  /** ad-hoc agent names currently alive in the managed-entry ledger/sidebar. Declared agents are passed
+  /** Temporary instance names currently alive in the managed-entry ledger/sidebar. Declared agents are passed
    *  separately and remain listed even when stopped. */
-  liveAdhocAgents?: Iterable<string>;
+  liveTemporaryAgents?: Iterable<string>;
   /** bounded like `listViews` (default 500 — the store's own max clamp; see the scale-envelope criterion). */
   limit?: number;
   validationStore?: ValidationStore;
@@ -66,7 +66,7 @@ export function buildBoardSnapshot(input: BoardSnapshotInput): BoardSnapshot {
     allowedDropStatuses[task.id] = allowedTransitions(task.status);
   }
 
-  const chips = chipAgents(input.declaredAgents, tasks, input.liveAdhocAgents).map((entry) => ({
+  const chips = chipAgents(input.declaredAgents, tasks, input.liveTemporaryAgents).map((entry) => ({
     agent: entry.agent,
     source: entry.source,
     next: nextTask({ tasks, agent: entry.agent, derived }),
@@ -116,9 +116,9 @@ interface ChipAgent {
 
 const OPEN_TASK_STATUSES = new Set<TaskStatus>(["inbox", "triaged", "active"]);
 
-/** Union of declared agents (declaration order), `human`, and only relevant ad-hocs: currently live, or with
- *  at least one open task. Done/dropped-only dead ad-hocs stay visible on cards but do not bloat the filter. */
-function chipAgents(declaredAgents: string[], tasks: Task[], liveAdhocAgents: Iterable<string> | undefined): ChipAgent[] {
+/** Union of declared agents (declaration order), `human`, and only relevant Temporary instances: currently live, or with
+ *  at least one open task. Done/dropped-only dead Temporary instances stay visible on cards but do not bloat the filter. */
+function chipAgents(declaredAgents: string[], tasks: Task[], liveTemporaryAgents: Iterable<string> | undefined): ChipAgent[] {
   const seen = new Set<string>();
   const out: ChipAgent[] = [];
   const add = (agent: string, source: BoardChipSource): void => {
@@ -128,10 +128,10 @@ function chipAgents(declaredAgents: string[], tasks: Task[], liveAdhocAgents: It
   };
   for (const agent of declaredAgents) add(agent, "declared");
   add("human", "human");
-  const relevantAdhocs = new Set<string>(liveAdhocAgents ?? []);
+  const relevantTemporaries = new Set<string>(liveTemporaryAgents ?? []);
   for (const task of tasks) {
-    if (task.assignee && OPEN_TASK_STATUSES.has(task.status)) relevantAdhocs.add(task.assignee);
+    if (task.assignee && OPEN_TASK_STATUSES.has(task.status)) relevantTemporaries.add(task.assignee);
   }
-  for (const assignee of [...relevantAdhocs].sort()) add(assignee, "assignee");
+  for (const assignee of [...relevantTemporaries].sort()) add(assignee, "assignee");
   return out;
 }

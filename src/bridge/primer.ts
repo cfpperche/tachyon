@@ -30,7 +30,7 @@ export interface PrimerInput {
   agentName: string;
   /** Gated delegation's delegator (spec 363 T1's doorbell target), when this is a gated spawn. */
   delegator?: string;
-  /** Plain ad-hoc lineage parent, when this is an ungated ad-hoc child. */
+  /** Plain Temporary lineage parent, when this is an ungated Temporary child. */
   parent?: string;
   /** Present only for a gated delegation (spec 246 `gate`). */
   gate?: PrimerGate;
@@ -58,7 +58,7 @@ export const PRIMER_LINE_BUDGET = 34;
 export const BEFORE_FINISHING_LINE_BUDGET = 8;
 
 /** Single fact both sections key off — who the doorbell (`notify_agent`) targets. Gated wins
- *  (delegator is the Bridge-witnessed doorbell target per T1); falls back to the ad-hoc parent. */
+ *  (delegator is the Bridge-witnessed doorbell target per T1); falls back to the Temporary parent. */
 function spawnerOf(input: PrimerInput): string | undefined {
   const delegator = input.delegator?.trim();
   const parent = input.parent?.trim();

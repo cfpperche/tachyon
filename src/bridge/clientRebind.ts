@@ -106,7 +106,7 @@ export interface BridgeClientRebindDeps {
   /** Synchronous authority guard, called after awaited probes and immediately before teardown. */
   resumeDenied: (name: string, record: SessionRecord) => boolean;
   stopGracefully: (name: string) => Promise<void>;
-  /** Hard kill the tmux session WITHOUT wiping ledger/adhoc (unlike AgentManager.kill). */
+  /** Hard kill the tmux session WITHOUT wiping ledger/Temporary state (unlike AgentManager.kill). */
   hardKillSession: (name: string) => Promise<void>;
   /**
    * Resume via existing sidebar rules. MUST call resume (not cold spawn).

@@ -133,7 +133,7 @@ import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
-import { AdhocBackstopMonitor, idleNotifyThresholdMs } from "./AdhocBackstopMonitor.js";
+import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
 import {
   GatedCompletionMonitor,
   assignedCompletionFacts,
@@ -603,7 +603,7 @@ export class Workspace {
   /** Suppresses the duplicate factory/start warning for one unchanged quarantine set. */
   private deliveryAuthorityQuarantineNoticeKey?: string;
   readonly monitor: AttentionMonitor;
-  private readonly adhocBackstop: AdhocBackstopMonitor;
+  private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
@@ -1072,7 +1072,7 @@ export class Workspace {
           });
         }
         // t-ee5c05 — `profileFork` joins the gate for the same reason it does on the Claude branch: a
-        // fork is an ad-hoc sibling that deliberately does NOT inherit `profileLifecycle` authority,
+        // fork is an Temporary sibling that deliberately does NOT inherit `profileLifecycle` authority,
         // so keying only on that would hand the fork an unprojected home.
         if (adapter.runtime === "grok" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
           const home = this.harness.materializeBridgeMcpGrok(
@@ -1234,7 +1234,7 @@ export class Workspace {
         this.recordSpawnIncarnation(name);
         this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
-        this.adhocBackstop.reset(name);
+        this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
         const pending = this.runtimeConfigPending.get(name);
         if (pending) {
@@ -1256,7 +1256,7 @@ export class Workspace {
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
-        this.adhocBackstop.reset(name);
+        this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
@@ -1277,7 +1277,7 @@ export class Workspace {
         // every restarted agent look headless and a visible pane would never come back.
         this.surfaces.noteBeforeRelaunchClose(name, this.terminals.has(name));
         this.terminals.close(name);
-        this.adhocBackstop.reset(name);
+        this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
       },
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
@@ -1529,9 +1529,9 @@ export class Workspace {
         },
         settingsOf: (agent) => {
           const att = this.config?.agents[agent]?.attention;
-          // Ad-hoc agents (not declared): default attention ON for kind=agent, but OFF for
+          // Temporary instances (not saved): default attention ON for kind=agent, but OFF for
           // kind=terminal — a Bridge-spawned `sh`/shell shouldn't be monitored like an AI
-          // agent (F5: ad-hoc attention now respects the inferred kind, matching declared
+          // agent (F5: Temporary attention now respects the inferred kind, matching declared
           // terminals which already default attention off).
           if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
           return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns, this.t, (m, l) => this.host.notify(m, l)) };
@@ -1541,7 +1541,7 @@ export class Workspace {
         // on) can never enqueue a re-anchor and get injected into.
         cmdOf: (agent) => (this.manager.kindOf(agent) === "agent" ? (this.manager.defOf(agent)?.cmd ?? null) : null),
         // t-10771a v1 — derived prose-question handback is only for declared top-level agents:
-        // declared in tachyon.yml, AI-kind, and not a declared subagent. Ad-hoc children and
+        // declared in tachyon.yml, AI-kind, and not a declared subagent. Temporary children and
         // tachyon.yml subagents can still use the authored request_human_attention path.
         awaitingHumanOnIdle: (agent) =>
           this.manager.kindOf(agent) === "agent" &&
@@ -1639,7 +1639,7 @@ export class Workspace {
       },
     );
 
-    this.adhocBackstop = new AdhocBackstopMonitor(
+    this.temporaryBackstop = new TemporaryBackstopMonitor(
       {
         listEntries: () => this.manager.list(),
         attentionOf: (agent) => this.attentionOf(agent),
@@ -2303,7 +2303,7 @@ export class Workspace {
       resumeDenied: (name, record) => this.manager.rebindResumeDenied(name, record),
       stopGracefully: (name) => this.manager.stopGracefully(name),
       hardKillSession: async (name) => {
-        // Kill the tmux session only — do NOT call AgentManager.kill (that wipes ad-hoc ledger rows).
+        // Kill the tmux session only — do NOT call AgentManager.kill (that wipes Temporary ledger rows).
         const session = this.manager.session(name);
         await this.tmux.killSession(session);
       },
@@ -2458,7 +2458,7 @@ export class Workspace {
 
   /**
    * spec 230 — bind the pipeline executor's side effects to the real subsystems. A node is spawned as
-   * an ad-hoc agent named `pl-<runId>-<nodeId>` into the RUN's worktree (registered for the
+   * a Temporary instance named `pl-<runId>-<nodeId>` into the RUN's worktree (registered for the
    * resolveSpawnCwd override just before the spawn); the run worktree is `run-<id>`. The verify gate is
    * the worktree-scoped one (settings.worktree.verify) run in the run worktree; empty-diff staleness is
    * a follow (MVP returns stale:false). cmd-node exit-code wiring is a follow — agent nodes complete via
@@ -2520,17 +2520,17 @@ export class Workspace {
             throw err;
           }
         } else {
-          // an inline `cmd:` node — an ephemeral ad-hoc, dismissed when done. Deliver the task +
+          // an inline `cmd:` node — an ephemeral Temporary instance, dismissed when done. Deliver the task +
           // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
           //
-          // SDD 478 M9 — the manager no longer infers which arm an ad-hoc command lands on, so this
+          // SDD 478 M9 — the manager no longer infers which arm an Temporary command lands on, so this
           // door states it. t-c003e1 finished the migration: the kind is DECLARED by the node's own
           // `done` contract (loadPipeline's `nodeKindFromDone`) and validated there, so nothing here
           // reads the command text to decide what it is spawning.
           await this.manager.spawn(name, {
             cmd: def.cmd,
-            // Paired with `cmd`: the manager reads the kind only on the ad-hoc path, and a node
+            // Paired with `cmd`: the manager reads the kind only on the Temporary path, and a node
             // reaching here without a cmd already resolved as a declared entry, exactly as before.
             kind: def.kind,
             env,
@@ -4172,7 +4172,7 @@ export class Workspace {
   private silentPersistenceHookState?: Record<string, { active: boolean; updatedAt: string }>;
 
   /** spec 307 — automatic persistence nudges are for declared agents only in v1.
-   *  Ad-hoc rows (including fork/worktree-backed ones) stay quiet unless an explicit future opt-in exists. */
+   *  Temporary rows (including fork/worktree-backed ones) stay quiet unless an explicit future opt-in exists. */
   private automaticPersistenceNudgesAllowed(agent: string): boolean {
     return this.manager.kindOf(agent) === "agent" && !!this.config?.agents?.[agent];
   }
@@ -5053,7 +5053,7 @@ export class Workspace {
   }
 
   /**
-   * t-123143 — self-heal the append-only session-owner ledger: old ad-hoc agents dismissed before
+   * t-123143 — self-heal the append-only session-owner ledger: old Temporary instances dismissed before
    * removeSessionOwnerRows existed left ownership rows behind forever. Keep only agents still known by
    * one of the authoritative workspace sets: live tmux sessions, durable session ledger, or tachyon.yml.
    */
@@ -5550,7 +5550,7 @@ export class Workspace {
 
   /**
    * t-8354ae — LKG is render-only. Refuse spawn when the working-tree config is invalid AND the
-   * name is not known via live config or an in-memory ad-hoc def (i.e. it would only come from LKG).
+   * name is not known via live config or an in-memory Temporary def (i.e. it would only come from LKG).
    */
   assertNotLkgOnlySpawn(name: string): void {
     const lifecycleBlocked = agentProfileLifecycleBlocked(this.workspaceRoot, name);
@@ -5569,7 +5569,7 @@ export class Workspace {
     const inLive = !!this.config?.agents[name] || this.manager.defOf(name) !== undefined;
     const lkg = this.readConfigLkg();
     const inLkg = !!lkg?.agents.some((a) => a.name === name);
-    if (isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrAdhoc: inLive, nameInLkg: inLkg })) {
+    if (isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrTemporary: inLive, nameInLkg: inLkg })) {
       throw new Error(lkgSpawnRefusalMessage(name, this.configFailure.file));
     }
   }
@@ -5595,7 +5595,7 @@ export class Workspace {
       const cmd = this.manager.defOf(name)?.cmd ?? "";
       const runtime = this.ledger.get(name)?.resume?.runtime;
       const isGrok = binaryOf(cmd) === "grok" || runtime === "grok";
-      // Also cover ad-hoc / ledger-only rows where cmd is empty but the private home exists.
+      // Also cover Temporary / ledger-only rows where cmd is empty but the private home exists.
       if (!isGrok && !fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "bridge-mcp", `${name}.grok`, "auth.json"))) {
         return;
       }
@@ -5742,7 +5742,7 @@ export class Workspace {
     void this.commandRunner.tick();
     this.scheduler.tick(); // fires anything due (workspace-open scope)
     await this.monitor.tick();
-    await this.adhocBackstop.tick();
+    await this.temporaryBackstop.tick();
     await this.gatedCompletion.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.refreshAgentsViews();
@@ -6009,8 +6009,8 @@ export class Workspace {
     for (const name of liveSessions) {
       this.recordSpawnIncarnation(name);
     }
-    // Spec 211: rebuild ad-hoc defs + lineage from the ledger BEFORE planning resume,
-    // so a re-discovered ad-hoc agent is restartable and re-nests under its parent.
+    // Spec 211: rebuild Temporary defs + lineage from the ledger BEFORE planning resume,
+    // so a re-discovered Temporary instance is restartable and re-nests under its parent.
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
     await this.manager.rehydrateFromLedger();
 
@@ -6494,7 +6494,7 @@ export class Workspace {
 
   /**
    * Live rename across every subsystem: the tmux session follows (attached
-   * clients ride along), session-local memory rekeys (ad-hoc def, lineage,
+   * clients ride along), session-local memory rekeys (Temporary def, lineage,
    * resume ledger), the yml updates for declared agents, and an open editor
    * pane is reopened under the new name (terminal titles can't change in place).
    * Attention state self-heals on the next tick; watchers rebuild on reload.

@@ -1,7 +1,7 @@
 import { MAX_WORKING_STALL_MS, type AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 
-export const DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
+export const DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
 
 /**
  * t-585d5c — the ONE place the configured value becomes a window in milliseconds.
@@ -16,12 +16,12 @@ export const DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
  * Validation already happened at the config edge; a value that got here is one the loader accepted.
  */
 export function idleNotifyThresholdMs(configured: number | "never" | undefined): number | null {
-  if (configured === undefined) return DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS;
+  if (configured === undefined) return DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS;
   if (configured === "never") return null;
   return Math.round(configured * 60_000);
 }
 
-export interface AdhocBackstopDeps {
+export interface TemporaryBackstopDeps {
   listEntries(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   now(): number;
@@ -33,7 +33,7 @@ export interface AdhocBackstopDeps {
 
 type BackstopReason = "idle" | "working";
 
-export class AdhocBackstopMonitor {
+export class TemporaryBackstopMonitor {
   private readonly nudgedEpisode = new Map<string, string>();
 
   /**
@@ -48,8 +48,8 @@ export class AdhocBackstopMonitor {
    * only has to mean "no threshold", which `tick` reads as "nudge about nothing".
    */
   constructor(
-    private readonly deps: AdhocBackstopDeps,
-    private readonly threshold: number | null | (() => number | null) = DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS,
+    private readonly deps: TemporaryBackstopDeps,
+    private readonly threshold: number | null | (() => number | null) = DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS,
   ) {}
 
   /** The window in force for THIS pass, or null when the nudge is switched off. */

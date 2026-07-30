@@ -12,14 +12,14 @@ import {
   type ControlInspectorModel,
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
-import { DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS } from "../workspace/AdhocBackstopMonitor.js";
+import { DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS } from "../workspace/TemporaryBackstopMonitor.js";
 import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 
 /**
  * t-585d5c — the product default in the unit Settings speaks. DERIVED from the monitor's constant,
  * so the number the UI shows cannot drift from the number the monitor applies.
  */
-export const DEFAULT_IDLE_NOTIFY_MINUTES = DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS / 60_000;
+export const DEFAULT_IDLE_NOTIFY_MINUTES = DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS / 60_000;
 
 /**
  * Order = importance / frequency of use for a project sysadmin.

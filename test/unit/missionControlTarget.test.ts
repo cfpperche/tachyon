@@ -14,7 +14,7 @@ describe("Workspace Mission Control target", () => {
         projectedAgent("reviewer", { running: true, lifetime: "temporary" }),
       ]),
       query: async (query) => {
-        expect(query).toEqual({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
+        expect(query).toEqual({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: ["reviewer"] } });
         return workspaceMissionControlViewSuccessV1({
           schemaVersion: 1,
           board: {

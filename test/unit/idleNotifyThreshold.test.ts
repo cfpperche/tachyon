@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { type AgentAttention } from "../../src/attention/AttentionMonitor.js";
 import {
-  AdhocBackstopMonitor,
-  DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS,
+  TemporaryBackstopMonitor,
+  DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS,
   idleNotifyThresholdMs,
-} from "../../src/workspace/AdhocBackstopMonitor.js";
+} from "../../src/workspace/TemporaryBackstopMonitor.js";
 import { parseConfig, MAX_IDLE_NOTIFY_MINUTES } from "../../src/config/loadConfig.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
@@ -37,7 +37,7 @@ function fixture(threshold: number | null | (() => number | null)) {
   const entries: ManagedEntryInfo[] = [agent("parent"), agent("child", { parent: "parent" })];
   const attention = new Map<string, AgentAttention>([["child", att("idle", now)]]);
   const delivered: string[] = [];
-  const monitor = new AdhocBackstopMonitor(
+  const monitor = new TemporaryBackstopMonitor(
     {
       listEntries: async () => entries,
       attentionOf: (name) => attention.get(name),
@@ -53,8 +53,8 @@ describe("t-585d5c — converting the configured value into a window", () => {
   it("treats an unconfigured workspace as the shipped default", () => {
     // The default is the ABSENCE of config, not a number someone wrote. That is what makes the
     // upgrade invisible to a workspace that never touches the setting.
-    expect(idleNotifyThresholdMs(undefined)).toBe(DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS);
-    expect(DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS).toBe(10 * 60_000);
+    expect(idleNotifyThresholdMs(undefined)).toBe(DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS);
+    expect(DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS).toBe(10 * 60_000);
   });
 
   it("reads minutes as minutes", () => {
@@ -81,7 +81,7 @@ describe("t-585d5c — what the monitor does with it", () => {
     expect(f.delivered).toHaveLength(1);
     expect(f.delivered[0]).toContain("child");
     // The default would still be 7+ minutes away, so this could only have come from the config.
-    expect(150_000).toBeLessThan(DEFAULT_ADHOC_BACKSTOP_THRESHOLD_MS);
+    expect(150_000).toBeLessThan(DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS);
   });
 
   it("never notifies when the setting is `never`, however long the silence", async () => {

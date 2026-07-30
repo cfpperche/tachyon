@@ -876,7 +876,7 @@ async function deleteConfiguredAgent(
   }
   await stopAgentSessionForDelete(workspace.manager, agent);
   if (workspace.config?.agents[agent] === undefined) {
-    workspace.manager.dismissAdhoc(agent);
+    workspace.manager.dismissTemporary(agent);
     await workspace.forgetAgent(agent);
   } else {
     if (workspace.config.agents[agent]?.kind !== "terminal") {
@@ -920,7 +920,7 @@ async function promoteAgent(
   const definition = record?.def;
   if (!definition) throw new Error(`'${agent}' has no stored definition to save`);
   if (definition.kind !== "terminal") {
-    throw new Error("ad-hoc agents cannot be promoted; create a canonical agent in Agent Studio");
+    throw new Error("only a terminal instance can be saved to tachyon.yml; create an agent in Agent Studio instead");
   }
   if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
   const changed = workspace.mutateConfig(
@@ -942,7 +942,7 @@ async function promoteAgent(
     });
   }
   else workspace.ledger.remove(agent);
-  workspace.manager.forgetAdhoc(agent);
+  workspace.manager.forgetTemporary(agent);
   return json({ changed: true });
 }
 

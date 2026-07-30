@@ -685,12 +685,17 @@ function strings(): CockpitStrings {
     devicesKindBrowser: t("Browser"),
     devicesKindMobile: t("Mobile"),
     devicesPairedAt: t("Paired"),
-    // SDD 482 phase 5 (`t-5e1113`) — the ratified product vocabulary. These two badges are the whole
-    // user-visible surface for the distinction, which is why the rename is a two-line change and not
-    // a sweep: the concept was already centralized here, and every OTHER occurrence of "declared" or
-    // "ad-hoc" in this build is a field name, a config key or a wire value that decision 7 freezes.
-    declared: t("Saved"),
-    adhoc: t("Temporary"),
+    // SDD 482 phase 5 (`t-5e1113`) — the ratified product vocabulary; these two badges are the whole
+    // user-visible surface for the distinction.
+    //
+    // t-4cc561 updated the claim that used to sit here. It said every OTHER occurrence of "declared"
+    // or "ad-hoc" was a frozen field/config/wire value, so the rename was two lines and not a sweep.
+    // That stopped being true: the species names are now gone from identifiers, comments and copy
+    // across the shell and engine. What IS still frozen, deliberately, is the narrow set that crosses
+    // a boundary — the sidebar wire's `adhoc` flag, the `mode: "adhoc"` handoff discriminant, and the
+    // ledger's persisted shape. Those are renamed only with a protocol bump, never as nomenclature.
+    saved: t("Saved"),
+    temporary: t("Temporary"),
     agent: t("agent"),
     change: t("change"),
     wtReadyTitle: t("Ready to remove"),
@@ -2663,7 +2668,7 @@ export async function openCockpit(
           return;
         case "fleetAgentStudio":
           // t-610705 (Phase D, D1c) — same kind-routed dispatch as the sidebar's
-          // `tachyon.editAgentStudioItem` (extension.ts): an ad-hoc (undeclared) agent has no stored
+          // `tachyon.editAgentStudioItem` (extension.ts): an Temporary (undeclared) agent has no stored
           // definition to edit — the client already hides this button for those rows (`a.declared
           // !== false`), this re-checks authoritatively rather than trusting that client-side gate.
           if (typeof c.name === "string") {
@@ -2682,7 +2687,7 @@ export async function openCockpit(
                 await sendSectionModule();
               });
             } else if (ws) {
-              notify(`'${c.name}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)`, "warn");
+              notify(`'${c.name}' is not saved in tachyon.yml (a Temporary instance has no stored definition)`, "warn");
             }
           }
           return;

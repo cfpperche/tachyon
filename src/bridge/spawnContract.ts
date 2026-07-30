@@ -133,7 +133,7 @@ export function notifyParentGuidance(parent: string): string {
 
 /**
  * t-8605be part 3 — behavioral guidance so a delegated child doesn't block on an interactive prompt
- * (dueto: the fixPair case — an ad-hoc opened AskUserQuestion and sat in needs-input, unreachable
+ * (dueto: the fixPair case — an Temporary opened AskUserQuestion and sat in needs-input, unreachable
  * until a human noticed the badge, even though its own contract already contained the answer). Only
  * meaningful when there's a parent to route a decision fork to (same gate as notifyParentGuidance);
  * always appended in full by composeSpawnContractBrief, same treatment as notifyParentGuidance.

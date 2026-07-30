@@ -30,4 +30,4 @@ export type HandoffAction =
 export const refreshAction = (): HandoffAction => ({ type: "refresh" });
 export const openFileAction = (): HandoffAction => ({ type: "openFile" });
 export const distillExistingAction = (agent: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "existing", agent, instructions });
-export const distillAdhocAction = (profileId: string, args?: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "adhoc", profileId, args, instructions });
+export const distillTemporaryAction = (profileId: string, args?: string, instructions?: string): HandoffAction => ({ type: "distill", mode: "adhoc", profileId, args, instructions });

@@ -612,7 +612,7 @@ export function describeCardTemplateSource(source: CardTemplateSource): string {
  *
  * A key must name a runtime that can actually operate an Agent. That list is
  * `SUPPORTED_AGENT_RUNTIME_NAMES`, not the narrower attested four: a declared agent is attested,
- * but an ad-hoc one may be OpenCode/Gemini/Qwen/Hermes, and refusing `opencode:` would refuse an
+ * but an Temporary one may be OpenCode/Gemini/Qwen/Hermes, and refusing `opencode:` would refuse an
  * override for rows this product creates. It is still the product's own list, not one invented here.
  */
 function parseRuntimeOverrides(

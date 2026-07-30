@@ -117,7 +117,7 @@ export interface AgentVM {
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
   verifiable?: boolean; // has a declared verify gate
   forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
-  canDismiss?: boolean; // legacy capability bit: stopped ad-hoc postmortem row is removable without tachyon.yml edits
+  canDismiss?: boolean; // legacy capability bit: stopped Temporary postmortem row is removable without tachyon.yml edits
 }
 /**
  * SDD 478 M5 — the sidebar's one narrowing, mirroring `asAgent` in the config layer. Rows are not a

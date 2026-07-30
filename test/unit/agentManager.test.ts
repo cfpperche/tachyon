@@ -3981,7 +3981,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     // Stop keeps the row + listing (unlike an ordinary ad-hoc, which would vanish).
     expect(ledger.get("claude-fork-1")?.def?.fork).toBe(true);
     expect((await manager.list()).map((a) => a.name)).toContain("claude-fork-1");
-    manager.dismissAdhoc("claude-fork-1");
+    manager.dismissTemporary("claude-fork-1");
     expect(ledger.get("claude-fork-1")).toBeUndefined();
     expect((await manager.list()).map((a) => a.name)).not.toContain("claude-fork-1");
   });
@@ -4021,7 +4021,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.existsSync(logFile)).toBe(false); // ...and the log dies with it (was orphaned before this fix)
   });
 
-  it("dismissAdhoc deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
+  it("dismissTemporary deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");
     await manager.commitFork(await manager.planFork("claude")); // claude-fork-1 = an ad-hoc with a ledger row
@@ -4031,7 +4031,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const logFile = path.join(actDir, `${agentLogId("claude-fork-1")}.jsonl`);
     fs.writeFileSync(logFile, '{"schemaVersion":1}\n', "utf8");
     expect(fs.existsSync(logFile)).toBe(true);
-    manager.dismissAdhoc("claude-fork-1");
+    manager.dismissTemporary("claude-fork-1");
     expect(ledger.get("claude-fork-1")).toBeUndefined();
     expect(fs.existsSync(logFile)).toBe(false); // gone with the row — no unreachable orphan
   });
@@ -7605,27 +7605,27 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
       running: false,
       dead: false,
     });
-    reloaded.dismissAdhoc("review");
+    reloaded.dismissTemporary("review");
     expect(ledger.get("review")).toBeUndefined();
     expect((await reloaded.list()).find((a) => a.name === "review")).toBeUndefined();
   });
 
-  it("dismissAdhoc forgets a sessionless stopped ad-hoc — def, lineage AND ledger row", async () => {
+  it("dismissTemporary forgets a sessionless stopped ad-hoc — def, lineage AND ledger row", async () => {
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n");
     ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
     expect((await manager.list()).find((a) => a.name === "ghost")).toBeDefined();
-    manager.dismissAdhoc("ghost");
+    manager.dismissTemporary("ghost");
     expect(ledger.get("ghost")).toBeUndefined(); // won't rehydrate after reload
     expect((await manager.list()).find((a) => a.name === "ghost")).toBeUndefined(); // gone from the live listing
   });
 
-  it("dismissAdhoc emits the lifecycle callback so Bridge callers refresh the sidebar", async () => {
+  it("dismissTemporary emits the lifecycle callback so Bridge callers refresh the sidebar", async () => {
     const killed: string[] = [];
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n", { onKilled: (name) => killed.push(name) });
     ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
-    manager.dismissAdhoc("ghost");
+    manager.dismissTemporary("ghost");
     expect(killed).toEqual(["ghost"]);
   });
 
@@ -7717,11 +7717,11 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     expect(registry.isLive("a", SCOPE)).toBe(false);
   });
 
-  it("dismissAdhoc revokes the token too (idempotent if kill already revoked it)", async () => {
+  it("dismissTemporary revokes the token too (idempotent if kill already revoked it)", async () => {
     const { manager, registry } = registryBackedManager("agents:\n  a:\n    cmd: x\n");
     await manager.spawn("a", { cmd: "claude" });
     await manager.kill("a");
-    expect(() => manager.dismissAdhoc("a")).not.toThrow();
+    expect(() => manager.dismissTemporary("a")).not.toThrow();
     expect(registry.isLive("a", SCOPE)).toBe(false);
   });
 

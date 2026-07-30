@@ -216,7 +216,7 @@ export async function buildSidebarFleet(
         kind: "agent",
         // "Is this a Temporary Agent?" — asked of the ROSTER's resolved answer, not of the instance
         // policy directly. A Saved agent that has never been started has no ledger row and therefore no
-        // policy; asking the policy would render it as ad-hoc and offer to dismiss it.
+        // policy; asking the policy would render it as Temporary and offer to dismiss it.
         adhoc: agent.lifetime === "temporary",
         // The continuity pointer is part of the same injected hook set, so it asks the same
         // capability question rather than re-deriving from identity.

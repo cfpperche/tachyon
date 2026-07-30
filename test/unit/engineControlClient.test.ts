@@ -280,7 +280,7 @@ describe("EngineControlClient", () => {
     servers.push(server);
     const client = new EngineControlClient({ socketPath: f.socketPath, hello: f.hello });
     await client.attach();
-    expect(await client.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } }))
+    expect(await client.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: [] } }))
       .toMatchObject({
         method: "task.board",
         status: "ok",

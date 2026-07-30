@@ -139,7 +139,7 @@ export interface BoardModel {
   dropped: { count: number; cards: BoardCardVM[] };
   /** declared agents + `human` — bounded by workspace config, always rendered inline. */
   chips: BoardChipVM[];
-  /** ad-hoc assignee chips (dogfood round 1, #5) — NOT bounded (every string anyone ever typed into
+  /** Temporary assignee chips (dogfood round 1, #5) — NOT bounded (every string anyone ever typed into
    *  `assignee` gets one, forever), so the header renders these behind an overflow affordance instead of
    *  growing the inline row without limit. */
   chipOverflow: BoardChipVM[];
@@ -243,7 +243,7 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
     ...("empty" in chip.next ? { emptyReason: chip.next.reason } : {}),
     colorVar: colorTokenFor(chip.agent),
   }));
-  // dogfood round 1 (#5) — split the bounded set (declared agents + human) from the unbounded one (ad-hoc
+  // dogfood round 1 (#5) — split the bounded set (declared agents + human) from the unbounded one (Temporary
   // assignees) so the webview can render the latter behind an overflow affordance.
   const chips = allChips.filter((c) => c.source !== "assignee");
   const chipOverflow = allChips.filter((c) => c.source === "assignee");
@@ -295,7 +295,7 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
  *  is replaced entirely by ONE dropdown holding every filter option. `chips`/`chipOverflow` stay the model's
  *  bounded/unbounded split (still useful — e.g. for anything that wants only the declared set); this just
  *  flattens both into the single ordered list the dropdown renders: declared/human first in their existing
- *  order, then ad-hoc assignees alpha-sorted so a long unbounded tail stays scannable in a single select. */
+ *  order, then Temporary assignees alpha-sorted so a long unbounded tail stays scannable in a single select. */
 export function agentFilterOptions(model: Pick<BoardModel, "chips" | "chipOverflow">): BoardChipVM[] {
   return [...model.chips, ...model.chipOverflow.slice().sort((a, b) => a.agent.localeCompare(b.agent))];
 }

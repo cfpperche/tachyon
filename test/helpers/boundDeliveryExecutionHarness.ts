@@ -342,7 +342,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
 /**
  * T13 R3: ordinary declared-agent Delivery join must refresh bridgeClient to this
  * incarnation's wiring outcome without rewriting principal def/resume/worktree/cwd.
- * Forces preservesDeclaredLedger (mode declared + existing ledger row) while Bridge
+ * Forces preservesSavedLedger (mode declared + existing ledger row) while Bridge
  * wiring fails — the stale wired:true stamp must not survive.
  */
 export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<void> {

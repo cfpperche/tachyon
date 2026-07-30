@@ -76,7 +76,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
           Target
           <select value={mode} onChange={(e) => setMode((e.currentTarget as HTMLSelectElement).value as HandoffDistillMode)}>
             <option value="existing" disabled={!canUseExisting}>Declared / running agent</option>
-            <option value="adhoc">Ad-hoc agent</option>
+            <option value="adhoc">Temporary agent</option>
           </select>
         </label>
         {mode === "existing" ? (
@@ -101,7 +101,7 @@ function DistillBox({ vm, dispatch, onClose }: { vm: HandoffViewModel; dispatch:
             Runtime arguments
             <input value={args} placeholder="Optional, e.g. --model sonnet" onInput={(e) => setArgs((e.currentTarget as HTMLInputElement).value)} />
           </label>
-          <div class="command-preview" aria-label="Ad-hoc command preview">
+          <div class="command-preview" aria-label="Temporary agent command preview">
             <div>
               <span class="preview-label">Command preview</span>
               <code>{commandPreview}</code>

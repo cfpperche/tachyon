@@ -8,7 +8,7 @@ import { hasDeliveryMarker, isResumable, type SessionRecord } from "./SessionLed
  *
  *   reattach    — session is alive (VS-Code-only crash); leave it (single-writer).
  *   auto-resume — session gone + declared with autostart → respawn with --resume.
- *   offer       — session gone + ad-hoc or declared-without-autostart → surface a
+ *   offer       — session gone + Temporary or declared-without-autostart → surface a
  *                 one-click resume, don't act unprompted.
  *
  * Agents NOT in the ledger are not our concern here — declared-autostart ones with
@@ -46,11 +46,11 @@ export interface ResumeWorld {
 export function planResume(world: ResumeWorld): ResumePlanItem[] {
   const plan: ResumePlanItem[] = [];
   for (const [name, record] of world.ledger) {
-    // A clean-exited ad-hoc row is retained for explicit postmortem/dismiss, not activation.
+    // A clean-exited Temporary row is retained for explicit postmortem/dismiss, not activation.
     if (record.lifecycle?.state === "clean-exited") continue;
     // spec 230 — pipeline-owned node sessions are reconciled by their PipelineManager run, never by
     // the generic resume/offer path (codex S4 M4). (autostartPending is already safe — it only
-    // fresh-spawns DECLARED agents, and pipeline nodes are ad-hoc.)
+    // fresh-spawns SAVED agents, and pipeline nodes are Temporary.)
     if (record.def?.pipeline) continue;
     // SDD 368 T14 — valid or invalid Delivery markers are never generic auto-resume/offer.
     // Reload may rehydrate definition/lineage for visibility; holder recovery is Delivery-owned.
@@ -63,7 +63,7 @@ export function planResume(world: ResumeWorld): ResumePlanItem[] {
     if (world.liveSessions.has(name)) {
       plan.push({ name, action: "reattach", record });
     } else if (!isResumable(record)) {
-      // Spec 211: a def-only row (e.g. an `sh` ad-hoc) has no conversation to
+      // Spec 211: a def-only row (e.g. an `sh` Temporary instance) has no conversation to
       // resume — never auto-resume nor offer it. It is still restartable via the
       // rehydrated def; that is a separate, non-resume path.
       continue;

@@ -75,7 +75,7 @@ export const KNOWN_AI_CLIS: string[] = [...ATTESTED_RUNTIMES, ...UNATTESTED_AI_C
  * entity": that answer is declared and stored, and the persistence boundary reads it back rather
  * than re-deriving it (a change to `KNOWN_AI_CLIS` used to silently reclassify rows already on
  * disk). Never call it where the result is persisted or where an entity is created without a human
- * seeing and being able to override the choice; the remaining such call sites are the ad-hoc spawn
+ * seeing and being able to override the choice; the remaining such call sites are the Temporary spawn
  * door (M9) and the inline `agents:` kind default (M6), and they are meant to be visible.
  */
 export function suggestKindForCommand(cmd: string): EntryKind {
@@ -185,7 +185,7 @@ export interface AgentEntry extends ManagedEntryBase {
     canonicalSha256: string;
     authorityRevision: string;
   };
-  /** Internal marker for an ad-hoc fork rematerialized from a canonical profile snapshot. */
+  /** Internal marker for an Temporary fork rematerialized from a canonical profile snapshot. */
   profileFork?: true;
   /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
   profilePointer?: true;
@@ -216,7 +216,7 @@ export interface SelfEvolutionDef {
 /**
  * A managed entry is an Agent or a Terminal — never one struct with a discriminator and sixteen
  * optional properties. The discriminant is the STORED `kind` literal; no layer may re-derive it
- * from a command string (removing the remaining inference at the persistence and ad-hoc doors is
+ * from a command string (removing the remaining inference at the persistence and Temporary doors is
  * SDD 478 M4/M9).
  */
 export type ManagedEntryDef = AgentEntry | TerminalEntry;

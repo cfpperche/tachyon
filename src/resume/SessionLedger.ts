@@ -20,13 +20,13 @@ import { immutableEvolutionStartupSnapshot, isEvolutionStartupSnapshot, type Evo
  *
  * Spec 211 split the record into two concerns so a non-resumable row can't be
  * mistaken for a resumable one:
- *   - `def`    — how to RESTART the agent (every ad-hoc agent, incl. non-AI `sh`);
+ *   - `def`    — how to RESTART the agent (every Temporary instance, incl. non-AI `sh`);
  *                also carries lineage (`parent`). Drives rehydration after a restart.
  *   - `resume` — how to RESUME the CONVERSATION (adapter-backed runtimes only).
  * Use `isResumable(record)` — NEVER "the row exists" — to decide resume affordances.
  */
 
-/** How to reconstruct/restart an ad-hoc agent's definition after a host restart. */
+/** How to reconstruct/restart a Temporary instance's definition after a host restart. */
 export interface SessionDef {
   cmd: string; // the ORIGINAL spawn command (no minted-id injection)
   kind: EntryKind;
@@ -40,18 +40,18 @@ export interface SessionDef {
    *  used to only rebuild lineage from `parent`, orphaning a gated agent's sidebar nesting. */
   delegator?: string;
   /** env to re-apply on restart/resume (e.g. an ANTHROPIC_BASE_URL model-swap) — persisted so a
-   *  rehydrated ad-hoc/forked agent keeps it after a reload (spec 225 fork inherits the source's env). */
+   *  rehydrated Temporary/forked instance keeps it after a reload (spec 225 fork inherits the source's env). */
   env?: Record<string, string>;
-  /** spec 226/364 — persisted marker/config for isolated/ad-hoc harness agents, used during reload/rebind recovery. */
+  /** spec 226/364 — persisted marker/config for isolated/Temporary harness agents, used during reload/rebind recovery. */
   harness?: unknown;
   /**
-   * spec 225 — a forked sibling agent. PERSISTENT: unlike an ordinary ad-hoc agent, its ledger row +
+   * spec 225 — a forked sibling agent. PERSISTENT: unlike an ordinary Temporary instance, its ledger row +
    * in-memory def survive a Stop (so it stays listed and resumable) and are dropped only on an explicit
    * Dismiss. Durable (lives in the ledger), so the persistence holds across a window reload too.
    */
   fork?: boolean;
   /**
-   * spec 230 — set when this ad-hoc agent is a NODE of a pipeline run owned by a PipelineManager. The
+   * spec 230 — set when this Temporary instance is a NODE of a pipeline run owned by a PipelineManager. The
    * generic activation resume/offer path skips rows carrying this (the run reconciles its own nodes);
    * a TYPED field (not an untyped tag) so it survives `parseDef` across a reload (codex S4 M4).
    */
@@ -180,7 +180,7 @@ export interface AgentInstancePolicy {
 }
 
 export interface SessionRecord {
-  /** present for every ad-hoc agent; absent for a declared agent's resume-only row. */
+  /** present for every Temporary instance; absent for a declared agent's resume-only row. */
   def?: SessionDef;
   /** present only for adapter-backed runtimes. */
   resume?: SessionResume;
@@ -212,7 +212,7 @@ export interface SessionRecord {
   instance?: AgentInstancePolicy;
   /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
   evolution?: EvolutionStartupSnapshot;
-  /** Explicit terminal state for an ad-hoc row that remains visible until dismiss. */
+  /** Explicit terminal state for an Temporary row that remains visible until dismiss. */
   lifecycle?: SessionLifecycle;
   updatedAt: string;
 }

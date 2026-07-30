@@ -479,7 +479,7 @@ export type WorkspaceQueryV1 =
   | {
       schemaVersion: 1;
       method: "task.board";
-      input: { liveAdhocAgents: string[] };
+      input: { liveTemporaryAgents: string[] };
     }
   | {
       schemaVersion: 1;
@@ -861,11 +861,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && AGENT_NAME_RE.test(value.input.agent);
   }
   if (value.method === "task.board") {
-    return hasOnlyKeys(value.input, ["liveAdhocAgents"])
-      && Array.isArray(value.input.liveAdhocAgents)
-      && value.input.liveAdhocAgents.length <= 500
-      && value.input.liveAdhocAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
-      && new Set(value.input.liveAdhocAgents).size === value.input.liveAdhocAgents.length;
+    return hasOnlyKeys(value.input, ["liveTemporaryAgents"])
+      && Array.isArray(value.input.liveTemporaryAgents)
+      && value.input.liveTemporaryAgents.length <= 500
+      && value.input.liveTemporaryAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
+      && new Set(value.input.liveTemporaryAgents).size === value.input.liveTemporaryAgents.length;
   }
   if (value.method === "task.detail" || value.method === "task.studio") {
     return hasOnlyKeys(value.input, ["id"])

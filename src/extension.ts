@@ -82,7 +82,7 @@ import type {
   PipelineDefItem,
   PipelineNodeItem,
 } from "./presentation/items.js";
-import { isAdhocItem } from "./presentation/contextValue.js";
+import { isTemporaryItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
 import type { WorktreeRecord, WorktreeStatus } from "./worktree/WorktreeManager.js";
 import { previewBody } from "./prompts/injectFlow.js";
@@ -3145,7 +3145,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       const def = ws.config?.agents[item.agentName];
       if (!def) {
-        notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml (ad-hoc agents have no stored definition)", item.agentName), "warn");
+        notify(vscode.l10n.t("'{0}' is not saved in tachyon.yml (a Temporary instance has no stored definition)", item.agentName), "warn");
         return;
       }
       // t-610705 (Phase D, D1a/D1b) — both branches are Control routes now.
@@ -3176,7 +3176,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const adhoc = isAdhocItem(item.contextValue);
+      const temporary = isTemporaryItem(item.contextValue);
       const inspected = await agentInspection(ws, item.agentName);
       const hasSession = agentProjection(ws, item.agentName)?.running === true;
       const wtRec = inspected.worktree;
@@ -3191,7 +3191,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (outcome === "kept") return; // declined or failed worktree removal: destroy nothing else
         }
       } else if (!forceArg) {
-        const effects = adhoc
+        const effects = temporary
           ? (hasSession
             ? vscode.l10n.t("This kills its tmux session and deletes its saved state.")
             : vscode.l10n.t("This deletes its saved state."))
@@ -3364,7 +3364,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await injectPromptTemplateFlow(ws, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentItem) => {
-      // Spec 211: promote an ad-hoc (MCP-spawned) agent to a declared one in
+      // Spec 211: promote an Temporary (MCP-spawned) agent to a declared one in
       // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).
       const ws = wsOf(item);
       if (!ws) return;

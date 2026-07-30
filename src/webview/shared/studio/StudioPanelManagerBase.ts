@@ -331,5 +331,5 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
   }
 }
 
-/** re-exported for callers that only need to stamp the protocol version onto a bespoke ad-hoc test message. */
+/** re-exported for callers that only need to stamp the protocol version onto a bespoke Temporary test message. */
 export { STUDIO_PROTOCOL_VERSION };
