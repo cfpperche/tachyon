@@ -110,9 +110,9 @@ describe("Attention Stack headless dogfood (spec 415)", () => {
     // Stack lives inside the tab panel and fills it; the list remains the scroll surface.
     expect(css).toContain(".panel .attention-stack");
     expect(css).toMatch(/\.panel \.attention-stack[\s\S]*?overflow:\s*hidden/);
-    const listRule = css.split("\n").find((line) => line.includes(".attention-list {")) ?? "";
-    expect(listRule).toContain("overflow: auto");
-    expect(listRule).toContain("min-height: 0");
+    // t-c61e51 — list rule may be multi-line; assert the block, not a single-line declaration.
+    expect(css).toMatch(/\.attention-list\s*\{[\s\S]*?overflow:\s*auto/);
+    expect(css).toMatch(/\.attention-list\s*\{[\s\S]*?min-height:\s*0/);
   });
 
   it("restores only validated bounded rows and never restores executable callbacks", () => {
