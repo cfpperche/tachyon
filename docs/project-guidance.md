@@ -27,6 +27,32 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   and commit separately, and include the Task id when one exists.
 - Do not use the retired `agent-screen` or `agent-desktop` plugins.
 
+## Who else can reach this?
+
+Before adding behaviour to a mechanism, name every ACTOR × TRIGGER that can reach the same effect, and
+say what happens for each. Actors here are the Interface (a human in the UI), an Agent (through the
+Bridge), and Tachyon itself. Triggers matter as much as actors: create, restart, resume, fork and
+crash-recovery are the same actor arriving through different doors.
+
+This is not ceremony. On 2026-07-30 five defects landed with one shape between them — a mechanism
+built for one actor, reached later by another that skipped the logic:
+
+- `t-57a00a` assignee notice: built for Agent→Agent; the Interface writes straight to the store.
+- `t-d79534` approval wake-up: built for `notify_agent`; the human's decision took a rawer path.
+- `t-33ae3f` end-of-life cleanup: built for Temporary dismiss; Saved Agent forget ran a second machine.
+- `t-e73e54` session attestation: built for spawn; restart/resume is the SAME actor, other trigger.
+- `t-17d885` removal: took the roster entry, left the authority keyed by the same name.
+
+The last two are why "list the actors" alone is not enough. `t-e73e54` has one actor on both paths, and
+the residue in `t-17d885` was a different surface rather than a different caller — so ask "who else can
+reach this?", not "who is this for?". The second caller usually does not exist yet on the day of the
+plan; it arrives later, when nobody is re-reading the plan.
+
+What gives it teeth: the actor × trigger list becomes the TEST CASE list, named the same way. When a
+new door appears it either joins that list or is visibly uncovered. A comment claiming a mechanism has
+one entry point is worth nothing — `t-e73e54` had exactly that comment, and a source test asserting
+"in one place" that passed while the second door existed.
+
 ## Verification economy
 
 - During implementation, run focused fail-before/pass-after checks. Run one `npm run
