@@ -258,7 +258,7 @@ export interface ManagedEntryInfo {
   cleanExited?: boolean;
   /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
   kind: EntryKind;
-  /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
+  /** who spawned this instance; persisted uniformly for Saved and Temporary lifetimes */
   parent?: string;
   /** Bridge-resolved agent that requested a gated delegation; display metadata, not runtime lineage. */
   delegator?: string;
@@ -467,7 +467,7 @@ export interface SpawnOptions {
   cwd?: string;
   /** role prompt for ad-hoc agents — delivered via composeCommand like declared ones */
   instructions?: string;
-  /** lineage: the agent that requested this spawn (self-declared) */
+  /** explicit runtime lineage: the agent that requested this instance, regardless of lifetime */
   parent?: string;
   /** spec 362 — Bridge-resolved requester for a gated delegation. Separate from parent because gated agents spawn top-level. */
   delegator?: string;
@@ -984,8 +984,8 @@ export class AgentManager {
       .filter(([name, rec]) => !declared[name] && !!rec.def && isTemporaryInstance(rec))
       .map(([name]) => name);
   }
-  /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
-   * survive an extension restart, the genealogy does not (documented). */
+
+  /** child -> parent, the process-local projection of lineage persisted in the session ledger. */
   private lineage = new Map<string, string>();
   /** child -> delegator for gated delegations. Display-only; gated children intentionally have no runtime parent. */
   private delegators = new Map<string, string>();
@@ -1259,12 +1259,11 @@ export class AgentManager {
     if (readiness.state === "ready") this.readyAgents.add(name);
   }
 
-  /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
-   *  list()'s `parent` field), if any. Used by the death-poke wiring to find who to wake. t-384a3f:
-   *  falls back to the persisted ledger the same way liveDescendants does — a child's parent link can
-   *  survive only in the ledger after a reload (rehydrateFromLedger skips names that are currently
-   *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
-   *  miss must not read as "no parent" while the ledger still has one. */
+  /** spec 332 — the lineage parent recorded for this agent (live projection first, durable ledger
+   *  fallback), if any. Used by the death-poke wiring to find who to wake. t-384a3f:
+   *  falls back to the persisted ledger the same way liveDescendants does — during reload the durable
+   *  row can be visible before the process-local projection is rebuilt, and this is used for an
+   *  AUTHORIZATION decision (inWaitOutputScope), so an in-memory miss must not read as "no parent". */
   parentOf(name: string): string | undefined {
     return this.lineage.get(name) ?? this.ledgerParentOf(name);
   }
@@ -1302,10 +1301,8 @@ export class AgentManager {
    */
   async liveDescendants(name: string): Promise<string[]> {
     const running = new Set(await this.runningAgents());
-    // Union in-memory lineage with persisted ledger parents (review fix): a DECLARED child
-    // spawned with `parent` survives a reload but rehydrateFromLedger skips declared names,
-    // so its link lives only in the ledger — without this the guard would miss it and a
-    // running child's worktree/cwd could be yanked.
+    // Union the live projection with persisted ledger parents. The same durable source covers Saved
+    // and Temporary instances; without it the guard could miss a child during reload and yank its cwd.
     const ledgerParent = new Map<string, string>();
     if (this.opts.ledger) {
       for (const [c] of this.opts.ledger.all()) {
@@ -1333,11 +1330,9 @@ export class AgentManager {
   }
 
   /**
-   * Spec 211: after a host restart, rebuild the in-memory ad-hoc defs + lineage
-   * from the ledger so a re-discovered ad-hoc agent is restartable and re-nests.
-   * Only `def`-bearing rows whose name is NOT currently declared in config (config
-   * is authoritative) and not already live in memory; idempotent; self-parent links
-   * are dropped. Resume rows without a def (none today) are ignored.
+   * Spec 211 / t-d542ac: after a host restart, rebuild Temporary definitions where needed and
+   * runtime lineage for BOTH lifetimes from the ledger. Config remains authoritative only for a
+   * Saved definition; it does not own the instance lineage. Idempotent; self-parent links are dropped.
    */
   async rehydrateFromLedger(): Promise<void> {
     if (!this.opts.ledger) return;
@@ -2363,13 +2358,14 @@ export class AgentManager {
     // that the replacement brief could not be composed.
     const projectGuidance = this.projectGuidanceFor(def);
     const adhoc = !!opts?.cmd || !!forced?.ephemeral;
-    // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
-    // always a top-level managed entry; config subagents are exposed separately as
-    // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
-    const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    // t-d542ac — runtime lineage belongs to this instance, independent of whether its definition is
+    // Saved or Temporary. `declaredOwner` remains separate profile metadata and is never inferred
+    // into this edge; only the explicit spawn parent can create it. Gated delegations continue to
+    // carry `delegator` instead of runtime parent by their existing contract.
+    const parent = !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
     const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
-    // t-f660d8 — primer/doorbell identity for declared agents: honor spawn_agent `parent` or
-    // config `declaredOwner` without writing runtime lineage (sidebar stays top-level + declaredOwner).
+    // t-f660d8 / t-d542ac — primer/doorbell identity honors the explicit runtime parent first, then
+    // config `declaredOwner` only as presentation guidance when this spawn has no lineage.
     const primerParent = !opts?.gate
       ? ((opts?.parent && opts.parent !== name ? opts.parent : undefined)
         ?? (!adhoc ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
@@ -2497,7 +2493,8 @@ export class AgentManager {
       ].filter(Boolean).join("\n"),
       "spawn",
     );
-    // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
+    // `parent` is runtime lineage; `primerParent` contributes only the declaredOwner fallback when
+    // this instance has no explicit parent.
     const effectiveInstructions = this.effectiveInstructions(
       name,
       def,
@@ -2777,12 +2774,11 @@ export class AgentManager {
     }
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
-    // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
+    // `def` for every Temporary agent (drives restart, incl. non-AI `sh`);
     // a `resume` block only for adapter-backed runtimes.
-    // Record when ad-hoc (restart/lineage), adapter-backed (resume), running in a worktree,
-    // OR it has a parent — the worktree case covers a declared terminal/unknown-runtime
-    // agent, and `parent` persists a declared non-adapter sub-agent's lineage so the
-    // cleanup descendant-guard sees it after a reload (review fixes).
+    // Record when Temporary (restart), adapter-backed (resume), running in a worktree, OR it has a
+    // parent. The last clause is deliberately lifetime-agnostic: even a Saved non-adapter instance
+    // needs its lineage after reload so the cleanup descendant guard sees it.
     // A conventional Delivery join may use a declared principal that already has
     // durable resume state.  It receives a new session, not ownership of that row.
     const preservesDeclaredLedger = !!forced?.attempt && forced.attempt.mode === "declared" && !!this.opts.ledger?.get(name);
@@ -3183,15 +3179,10 @@ export class AgentManager {
   }
 
   /**
-   * Generation site (b) — the harness `XDG_CONFIG_HOME/opencode/opencode.json` path, for a
-   * `harness:`-declared opencode agent. Security review (782f1c6, MEDIUM): this is currently DEAD CODE —
-   * `delegated` (parent/delegator/gate-derived) and `def.harness` can never both be truthy today, because
-   * every path that produces a `delegated` lineage (spawn/restart/resume) requires an ad-hoc `def`, and an
-   * ad-hoc `def` never carries a `harness` key (`SpawnOptions` has no `harness` param). Every currently
-   * possible delegated opencode agent is non-harness-declared and is covered by generation site (a)
-   * (`applyDelegatedOpencodePermission` via `withRuntimeBridge`) instead. Left in place (not removed) so a
-   * future change that lets an ad-hoc/gated spawn carry a `harness:` block is covered without a second fix —
-   * but don't read "both sites covered" as true of the population that exists today.
+   * Generation site (b) — the harness `XDG_CONFIG_HOME/opencode/opencode.json` path. t-d542ac made
+   * explicit runtime lineage uniform across lifetimes, so a parented Saved opencode definition with
+   * `harness:` can now reach this path. Keep the same delegated permission hardening as generation
+   * site (a); storage origin must not change the security posture of the instance.
    */
   private applyDelegatedOpencodeHarnessPermission(
     def: Pick<AgentEntry, "cmd" | "harness"> | undefined,
