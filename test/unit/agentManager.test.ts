@@ -2432,6 +2432,29 @@ describe("AgentManager — session resume (spec 209)", () => {
     void ledger;
   });
 
+  it("releases only a stopped agent's own stale worktree occupancy for governed removal", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-wt-"));
+    dirs.push(root);
+    const wt = path.join(root, "wt");
+    fs.mkdirSync(wt, { recursive: true });
+    const { manager } = resumeHarness("agents: {}\n");
+    const internals = manager as unknown as {
+      canonicalWorktreeKey: (value: string) => string;
+      worktreeOccupancy: Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string; pid?: number }>;
+    };
+    const key = internals.canonicalWorktreeKey(wt);
+
+    internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt });
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).resolves.toBeUndefined();
+    await expect(manager.worktreeOccupant(wt)).resolves.toBeUndefined();
+
+    internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "reviewer", cwd: wt });
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/quarantined by.*reviewer/);
+
+    internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt, pid: process.pid });
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/live root process/);
+  });
+
   it.each([
     ["codex", "--sandbox read-only"],
     ["claude", "--permission-mode plan"],

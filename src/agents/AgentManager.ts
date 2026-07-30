@@ -2081,6 +2081,36 @@ export class AgentManager {
   }
 
   /**
+   * Release a stopped agent's own stale occupancy immediately before its governed worktree removal.
+   *
+   * A `dirty` occupancy normally remains quarantined until an explicit cleanup path proves it safe.
+   * Worktree removal is that path: it already stopped the agent and rejected live descendants. Keep
+   * the proof here, under the same occupancy lock, so ordinary callers cannot turn quarantine into
+   * an unguarded "clear" operation.
+   */
+  async releaseOwnedWorktreeForRemoval(agent: string, worktreePath: string): Promise<void> {
+    const key = this.canonicalWorktreeKey(worktreePath);
+    await this.withWorktreeLock(key, async () => {
+      await this.refreshWorktreeOccupancy(key, worktreePath);
+      const occ = this.worktreeOccupancy.get(key);
+      if (!occ) return;
+      if (occ.agentId !== agent) {
+        throw new Error(`worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agentId}' (cwd ${occ.cwd})`);
+      }
+      if (hasDeliveryMarker(this.opts.ledger?.get(agent))) {
+        throw new Error(`worktree for '${agent}' is Delivery-bound and cannot be released by agent removal`);
+      }
+      if ((await this.agentStates()).has(agent) || await this.opts.tmux.hasSession(this.session(agent))) {
+        throw new Error(`agent '${agent}' must be fully stopped before releasing its worktree`);
+      }
+      if (occ.pid !== undefined && isPidAlive(occ.pid)) {
+        throw new Error(`agent '${agent}' still has a live root process for its worktree`);
+      }
+      this.worktreeOccupancy.delete(key);
+    });
+  }
+
+  /**
    * t-815796 design point 2/3 — refresh a worktree's occupancy before granting: (a) with no tracked
    * occupant yet this process, close the owner-vs-occupant gap by scanning the ledger for ANY agent
    * whose recorded cwd is this worktree and who is currently alive (the original delegated owner may

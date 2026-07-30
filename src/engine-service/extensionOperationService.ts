@@ -984,6 +984,7 @@ async function removeAgentWorktree(workspace: Workspace, agent: string, deleteBr
       throw new Error(`could not stop '${agent}' before removing its worktree`);
     }
   }
+  await workspace.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
   const result = await workspace.worktrees.remove(record, deleteBranch);
   if (!result.removed) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
   workspace.ledger.clearWorktree(agent);
