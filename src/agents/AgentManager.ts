@@ -36,7 +36,8 @@ import { spawnContractCompletion, type DelegationGate, type SpawnContract } from
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
-import { ensurePaneTranscriptFile, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
+import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
+import { removeDerivedAgentFiles } from "./derivedFile.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
@@ -3691,7 +3692,22 @@ export class AgentManager {
     };
   }
 
-  /** Remove only captured projections; private runtime homes and external bindings are retained. */
+  /**
+   * Remove captured projections and generated per-agent files; private runtime homes and external
+   * bindings are retained (see the transaction's `retainedBindings`).
+   *
+   * t-33ae3f — the generated spawn brief / soul anchor and the durable pane transcript are removed
+   * here. `FORGET_AGENT_FOOTPRINTS` has always named them as end-of-life footprints, but only the
+   * Temporary dismiss path ran `forgetAgent()`; the Saved Agent forget left them behind while the
+   * journal's `retainedBindings` never claimed them, so they were neither cleaned nor declared —
+   * the one state an audit of a removal cannot classify. Six of seven committed forgets on this
+   * workspace had leaked them, 60 MB of transcripts. Nothing of audit value is lost: the profile is
+   * quarantined under `retired-agent-profiles/<agentId>/<txid>/`, and a forgotten agent has no
+   * postmortem reader left to serve.
+   *
+   * Both removals are idempotent (`force: true`), which `rollForward` requires — it may re-enter
+   * this phase after a crash.
+   */
   async convergeAgentProfileForget(
     name: string,
     agentId: string,
@@ -3708,6 +3724,8 @@ export class AgentManager {
       expected.activity,
       path.join(this.opts.workspaceRoot, ".tachyon", "retired-agent-profiles", agentId, txid, "runtime-projections"),
     );
+    removeDerivedAgentFiles(this.opts.workspaceRoot, name);
+    removePaneTranscript(this.opts.workspaceRoot, name);
     // `removeExactDigest` above took the ledger row, which is the definition — nothing else to drop.
     this.lineage.delete(name);
     this.delegators.delete(name);

@@ -2176,6 +2176,56 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
   });
 
+  it("t-33ae3f canonical forget removes the generated brief, soul anchor and pane transcript", async () => {
+    // These three were left behind by the Saved Agent forget while `retainedBindings` never claimed
+    // them: neither cleaned nor declared, which is the one state an audit of a removal cannot
+    // classify. Six of seven committed forgets on the dogfood workspace had leaked them.
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    const brief = briefFilePath(h.ws, "reviewer");
+    const anchor = path.join(h.ws, ".tachyon", "anchors", "reviewer.md");
+    const transcript = paneTranscriptPath(h.ws, "reviewer");
+    for (const file of [brief, anchor, transcript]) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, "residue");
+    }
+
+    await h.manager.spawn("reviewer");
+    await h.manager.kill("reviewer");
+    const snapshot = await h.manager.prepareAgentProfileForget("reviewer");
+    await h.manager.convergeAgentProfileForget("reviewer", "11111111-1111-4111-8111-111111111111", "tx-1", snapshot);
+
+    expect(fs.existsSync(brief)).toBe(false);
+    expect(fs.existsSync(anchor)).toBe(false);
+    expect(paneTranscriptExists(h.ws, "reviewer")).toBe(false);
+  });
+
+  it("t-33ae3f converge stays idempotent so rollForward can re-enter the phase", async () => {
+    // `rollForward` replays from the journal after a crash; a second pass must not throw on files the
+    // first pass already took.
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    await h.manager.kill("reviewer");
+    const snapshot = await h.manager.prepareAgentProfileForget("reviewer");
+    await h.manager.convergeAgentProfileForget("reviewer", "11111111-1111-4111-8111-111111111111", "tx-1", snapshot);
+
+    await expect(
+      h.manager.convergeAgentProfileForget("reviewer", "11111111-1111-4111-8111-111111111111", "tx-1", snapshot),
+    ).resolves.toBeUndefined();
+  });
+
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
     const prepared: string[] = [];
     const confirmed: string[] = [];

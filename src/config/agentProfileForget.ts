@@ -57,9 +57,26 @@ export interface AgentProfileForgetJournal {
   profileManifest: TreeEntry[];
   evolutionProfileId: string | null;
   liveSnapshot: AgentProfileForgetSnapshot;
+  /**
+   * What this transaction deliberately leaves on disk. It is the receipt an audit reads to tell a
+   * retained artifact from live residue, so it must stay EXHAUSTIVE: anything neither listed here nor
+   * removed by the transaction is unclassifiable, which is the t-33ae3f failure.
+   */
   retainedBindings: readonly string[];
   degradedReason?: string;
 }
+
+/**
+ * t-33ae3f — one list, so the declaration cannot drift from the behaviour. Whatever is added to the
+ * retention set belongs here; whatever the transaction removes must NOT.
+ */
+export const AGENT_PROFILE_FORGET_RETAINED_BINDINGS = [
+  "runtime homes",
+  "runtime secrets",
+  "worktrees",
+  "session-owner rows",
+  "continuity",
+] as const;
 
 export interface AgentProfileForgetConfigPort {
   read(): string;
@@ -384,7 +401,7 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       profileManifest,
       evolutionProfileId: evolutionProfileId ?? null,
       liveSnapshot,
-      retainedBindings: ["runtime homes", "runtime secrets", "worktrees", "session-owner rows", "continuity"],
+      retainedBindings: AGENT_PROFILE_FORGET_RETAINED_BINDINGS,
     };
     writeJournal(txDir, journal);
     input.onPhase?.("intent");
