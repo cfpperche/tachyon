@@ -3,6 +3,7 @@ import {
   DEFAULT_TASK_NOTIFICATION_SETTINGS,
   TaskNotificationDeduper,
   resolveTaskNotificationSettings,
+  taskAssigneeWakeFor,
   taskToastFor,
   type TaskNotificationSettings,
 } from "../../src/tasks/taskNotificationPolicy.js";
@@ -83,5 +84,66 @@ describe("task notification policy (t-bae005)", () => {
     expect(deduper.shouldNotify("key", 100, 1_100)).toBe(true);
     expect(deduper.shouldNotify("key", 0, 1_101)).toBe(true);
     expect(deduper.shouldNotify("key", 0, 1_102)).toBe(true);
+  });
+});
+
+/**
+ * t-57a00a — the human assigned a task in the UI, then moved it to active, and the agent got nothing.
+ *
+ * The wake-up line existed, but it hung off the Bridge's update_task handler, so agent→agent notified
+ * and human→agent (the common case) was silent. The decision now lives here, over before/after alone,
+ * so the store's mutation sink — the one point every writer crosses — can run it.
+ */
+describe("t-57a00a — assignee wake-up", () => {
+  const base: Task = { ...task, status: "triaged" };
+  const wake = (before: Partial<Task>, after: Partial<Task>, actor?: string) =>
+    taskAssigneeWakeFor({ before: { ...base, ...before }, after: { ...base, ...after }, ...(actor ? { actor } : {}) });
+
+  it("wakes the agent a task was just assigned to", () => {
+    const result = wake({}, { assignee: "ada" });
+
+    expect(result?.assignee).toBe("ada");
+    expect(result?.line).toContain("t-abc123");
+    expect(result?.line).toContain("assigned to you");
+    expect(result?.line).toContain('get_task("t-abc123")');
+  });
+
+  it("wakes the assignee when the task becomes active", () => {
+    // The half that was never answered by any path: assignment notified, activation never did — so
+    // "I moved it to active and nothing happened" was true even through the Bridge.
+    const result = wake({ assignee: "ada" }, { assignee: "ada", status: "active" });
+
+    expect(result?.assignee).toBe("ada");
+    expect(result?.line).toContain("now active and assigned to you");
+  });
+
+  it("fires once when a patch both assigns and activates", () => {
+    const result = wake({}, { assignee: "ada", status: "active" });
+
+    // One event, and it reads as the assignment — that is the news; startable is implied.
+    expect(result?.line).toContain("assigned to you");
+    expect(result?.line).not.toContain("now active");
+  });
+
+  it("does not wake an agent that assigned the task to itself", () => {
+    // spec 351 — picking up your own work is not news. This is what the Bridge handler knew and a
+    // store-level sink would otherwise lose.
+    expect(wake({}, { assignee: "ada" }, "ada")).toBeUndefined();
+  });
+
+  it("still wakes when another agent assigns", () => {
+    expect(wake({}, { assignee: "ada" }, "grace")?.assignee).toBe("ada");
+  });
+
+  it("stays silent on edits that change neither ownership nor executability", () => {
+    expect(wake({ assignee: "ada" }, { assignee: "ada", title: "renamed" })).toBeUndefined();
+    expect(wake({ assignee: "ada", status: "active" }, { assignee: "ada", status: "active", priority: 0 })).toBeUndefined();
+    // Already active, merely re-saved: activation must not re-fire.
+    expect(wake({ assignee: "ada", status: "active" }, { assignee: "ada", status: "active" })).toBeUndefined();
+  });
+
+  it("stays silent on an unassigned task, however it moves", () => {
+    expect(wake({}, { status: "active" })).toBeUndefined();
+    expect(wake({ assignee: "ada" }, {})).toBeUndefined();
   });
 });

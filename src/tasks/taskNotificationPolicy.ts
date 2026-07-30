@@ -131,3 +131,45 @@ export class TaskNotificationDeduper {
     return true;
   }
 }
+
+/**
+ * t-57a00a — WHAT the assignee agent should be woken about, decided from the mutation alone.
+ *
+ * The wake-up line already existed, but it hung off the Bridge's `update_task` handler, so an agent
+ * assigning to another agent notified and a human assigning in the UI did not — and the UI is the
+ * common case. Four writers reach `TaskStore.update` directly (TaskDetailTarget, MissionControlTarget,
+ * taskStudioService, engineService) and none of them passed through that handler.
+ *
+ * So the decision moves here, as a pure function over before/after, and the caller that runs it is the
+ * store's mutation sink — the one place every writer must cross. See t-b4a799: the durable fix for a
+ * two-path mechanism is to hang the behaviour where the paths converge, not to copy it into each one.
+ *
+ * TWO triggers, because the human's question had two halves and only one was ever answered:
+ *   - the task became yours (assignee changed to you)
+ *   - your task became executable (status moved to `active` while assigned to you)
+ * A task landing straight in `active` with an assignee fires once, not twice.
+ *
+ * `actor` keeps spec 351's self-assign suppression: picking up your own work is not news. It is
+ * optional because the UI has no agent caller — a human acting is never the assignee.
+ */
+export interface TaskAssigneeWake {
+  assignee: string;
+  line: string;
+}
+
+export function taskAssigneeWakeFor(
+  event: { before: Task; after: Task; actor?: string },
+  taskUrl: (id: string) => string = (id) => `get_task("${id}")`,
+): TaskAssigneeWake | undefined {
+  const assignee = event.after.assignee;
+  if (!assignee || assignee === event.actor) return undefined;
+  const becameMine = assignee !== event.before.assignee;
+  const becameActive = event.after.status === "active" && event.before.status !== "active";
+  if (!becameMine && !becameActive) return undefined;
+  // Assigned-and-activated in one patch is one event: the task is yours and it is startable.
+  const reason = becameMine ? "assigned to you" : "now active and assigned to you";
+  return {
+    assignee,
+    line: `[tachyon] task ${event.after.id} ${reason}: ${event.after.title}. Open it with ${taskUrl(event.after.id)} and begin it.`,
+  };
+}

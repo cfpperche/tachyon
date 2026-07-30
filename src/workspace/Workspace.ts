@@ -214,7 +214,8 @@ import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
-import { TaskStore } from "../tasks/TaskStore.js";
+import { TaskStore, type TaskMutationEvent } from "../tasks/TaskStore.js";
+import { taskAssigneeWakeFor } from "../tasks/taskNotificationPolicy.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
@@ -1776,7 +1777,13 @@ export class Workspace {
     });
     this.taskStore = new TaskStore(workspaceRoot, {
       evolutionCompletionFor: (event) => this.evolutionCoordinator.completionMarker(event),
-      onMutation: (event) => this.evolutionCoordinator.onTaskMutation(event),
+      onMutation: async (event) => {
+        await this.evolutionCoordinator.onTaskMutation(event);
+        // t-57a00a — the assignee's wake-up lives HERE, at the store's sink, because that is the only
+        // point every writer crosses. It used to hang off the Bridge's update_task handler, so an
+        // agent assigning notified and a human assigning in the UI did not.
+        await this.wakeTaskAssignee(event);
+      },
     });
     this.validationStore = new ValidationStore(workspaceRoot);
     this.continuityStore = new ContinuityStore(workspaceRoot);
@@ -4275,6 +4282,28 @@ export class Workspace {
       await this.maybeRemindHandoff(agent);
     } finally {
       this.recoveryInFlight.delete(agent);
+    }
+  }
+
+  /**
+   * t-57a00a — wake the assignee agent, from the store's mutation sink.
+   *
+   * Liveness gate matches notify_agent's: a terminal, an unknown name, or a stopped agent is silently
+   * skipped, because assignment must not depend on whether the assignee happens to be online. Delivery
+   * goes through `deliverNotice`, so a busy assignee is queued and flushed on idle rather than typed
+   * into an occupied composer — the t-d79534 lesson, applied here from the start.
+   *
+   * Best-effort by design: assigning a task must never fail because notifying the assignee did.
+   */
+  private async wakeTaskAssignee(event: TaskMutationEvent): Promise<void> {
+    try {
+      const wake = taskAssigneeWakeFor(event);
+      if (!wake) return;
+      if (this.manager.kindOf(wake.assignee) !== "agent") return;
+      if (!(await this.tmux.hasSession(this.manager.session(wake.assignee)))) return;
+      await this.deliverNotice(wake.assignee, wake.line);
+    } catch {
+      /* best-effort — a task mutation must never fail because a notice did */
     }
   }
 

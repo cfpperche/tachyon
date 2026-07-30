@@ -8,6 +8,7 @@ import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/Tmux
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
@@ -79,12 +80,20 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
   const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-actor-"));
   const pins = new PinStore(root);
-  const tasks = new TaskStore(root);
+  const taskNotices: Array<{ target: string; line: string }> = [];
+  // t-57a00a — the assignee wake-up moved off the Bridge handler to the store's mutation sink, so the
+  // end-to-end chain this test exercises (Bridge resolves the actor → store emits → policy decides) now
+  // needs that sink wired here, the way Workspace wires it in production.
+  const tasks = new TaskStore(root, {
+    onMutation: (event) => {
+      const wake = taskAssigneeWakeFor(event);
+      if (wake) taskNotices.push({ target: wake.assignee, line: wake.line });
+    },
+  });
   const validations = new ValidationStore(root);
   const continuity = new ContinuityStore(root);
   const handoff = new ProjectHandoffStore(root);
   const notifications: Array<{ message: string; level: string }> = [];
-  const taskNotices: Array<{ target: string; line: string }> = [];
   const registry = new CallerIdentityRegistry(Buffer.from("d".repeat(64), "hex"));
   const claudeToken = registry.mint("claude", SCOPE);
   const codexToken = registry.mint("codex", SCOPE);

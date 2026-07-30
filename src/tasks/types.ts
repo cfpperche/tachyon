@@ -133,6 +133,12 @@ export interface TaskUpdateInput {
   awaitingHuman?: TaskAwaitingHuman | null;
   expect?: TaskUpdateExpect;
   now?: string;
+  /**
+   * t-57a00a — who is making this change. NOT a field of the Task and never written to disk
+   * (`applyUpdate` copies field by field, so it cannot leak); it only rides along to the mutation
+   * event so a sink can tell "someone assigned this to you" from "you assigned it to yourself".
+   */
+  actor?: string;
 }
 
 export const TASK_ID_RE = /^t-[0-9a-f]{6}$/;

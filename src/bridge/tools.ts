@@ -4293,7 +4293,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // t-ea86e6 — capture the PRIOR assignee before the mutation so a no-op re-assign doesn't re-notify.
         const priorTask = ("assignee" in patch || "status" in patch) ? deps.tasks.get(id) : undefined;
         const priorAssignee = priorTask?.assignee;
-        const task = await deps.tasks.update(id, patch);
+        // t-57a00a / spec 351 — name the agent doing this so the store's sink can tell "someone gave
+        // you this" from "you picked up your own". Only an agent caller: a human is never the assignee.
+        const callerAgent = deps.caller?.kind === "agent" ? deps.caller.name : undefined;
+        const task = await deps.tasks.update(id, callerAgent ? { ...patch, actor: callerAgent } : patch);
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         const actor = taskNotificationActor(deps);
         if (assignee && assignee !== priorAssignee) {
@@ -4302,14 +4305,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (status && priorTask && status !== priorTask.status) {
           emitTaskNotification(deps, { type: "statusChanged", task, actor, from: priorTask.status, to: status });
         }
-        // spec 351 — self-assign suppression (closes 348's known limitation): the resolved caller assigning
-        // a task TO ITSELF fires no notification; assigning to anyone else still notifies. `assignee` stays
-        // a free SUBJECT field (F6) — no mismatch/denial here, only the notify decision reads the caller.
-        const caller = deps.caller ?? { kind: "legacy" as const };
-        const isSelfAssign = caller.kind === "agent" && assignee === caller.name;
-        if (assignee && assignee !== priorAssignee && !isSelfAssign) {
-          await notifyTaskAssignee(deps, assignee, task);
-        }
+        // t-57a00a — the assignee's pane notice is NOT fired here any more. It moved to the store's
+        // mutation sink, which every writer crosses; firing it here too would notify twice for a Bridge
+        // update and still leave the four UI writers silent. spec 351's self-assign suppression is
+        // preserved by the `actor` this handler puts on the patch (see the caller resolution above).
         return ok(JSON.stringify(task, null, 2));
       } catch (err) {
         return fail(err);

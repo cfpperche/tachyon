@@ -8,6 +8,7 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
@@ -110,7 +111,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
   const pinsRoot = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-pins-"));
   const pins = new PinStore(pinsRoot);
-  const tasks = new TaskStore(pinsRoot);
+  // t-57a00a — the assignee wake-up hangs off the store's mutation sink now, not off the Bridge's
+  // update_task handler, so the four UI writers get it too. In production Workspace wires this and the
+  // Bridge only receives the already-wired store; this harness builds its own, so it wires it the same
+  // way. `notifyAssignee` is assigned below, next to the deps that own delivery.
+  let notifyAssignee: ((target: string, line: string) => Promise<unknown>) | undefined;
+  const tasks = new TaskStore(pinsRoot, {
+    onMutation: async (event) => {
+      const wake = taskAssigneeWakeFor(event);
+      if (wake) await notifyAssignee?.(wake.assignee, wake.line);
+    },
+  });
   const validations = new ValidationStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
   const handoff = new ProjectHandoffStore(pinsRoot);
@@ -223,6 +234,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       return leaseWaitImpl(input, signal);
     },
   });
+  // t-57a00a — delivery for the store's sink, mirroring the deps' `deliverNotice` above: `queued` means
+  // the notice is held for idle, which for these tests is "the pane must not have received it".
+  notifyAssignee = async (target, line) => {
+    if (noticeMode === "queued") return;
+    // Same liveness gate Workspace applies: a stopped or unknown assignee is skipped. Without it the
+    // fake tmux's send-keys would MINT a session row for a name that never had one, and the suites
+    // that assert on session membership downstream would read that ghost as a live agent.
+    if (manager.kindOf(target) !== "agent") return;
+    if (!(await tmux.hasSession(manager.session(target)))) return;
+    await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
+  };
   let client: Client;
   let toolListChanged: Array<string[]> = [];
   let resolveToolListChanged: (() => void) | undefined;

@@ -53,6 +53,13 @@ export interface TaskListOptions {
 export interface TaskMutationEvent {
   before: Task;
   after: Task;
+  /**
+   * t-57a00a — who made this change, when the caller knows. Never persisted on the Task: it exists so
+   * a mutation sink can suppress notifying someone about their own action (spec 351's self-assign
+   * rule), which is the one thing the Bridge handler knew and a store-level sink otherwise would not.
+   * Absent for the UI writers, and correctly so — a human acting is never the assignee.
+   */
+  actor?: string;
 }
 
 export interface TaskStoreOptions {
@@ -219,7 +226,7 @@ export class TaskStore {
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
       this.writeTask(next);
-      this.emitMutation({ before: current, after: next });
+      this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
     });
   }
