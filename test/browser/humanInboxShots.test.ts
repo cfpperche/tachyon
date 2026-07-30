@@ -254,6 +254,18 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
     for (const w of WIDTHS) await shoot(`item-saved-agent-proposal-diverged-${w.id}`, html, w.px);
   }, 60_000);
 
+  it("renders a Saved Agent commit refusal on the detail route instead of making approve look inert", async () => {
+    const vm = vmOf([], [], [proposalReview()]);
+    const item = buildHumanInboxItemViewModel(vm, "saved-agent-proposal", "sp-4f1a2b");
+    const refusal =
+      "commit_failed: permissions.defaultMode value bypassPermissions must be authorized explicitly";
+    const html = renderStatic(ItemApp({ vm: item, dispatch: noopDispatch, error: refusal }));
+
+    expect(html).toContain('data-testid="inbox-saved-agent-error"');
+    expect(html).toContain(refusal);
+    expect(html).toContain('role="alert"');
+  });
+
   it("shoots an APPROVAL item — verbatim payload above the decision", async () => {
     const vm = vmOf([approval("a-4f1a2b")], []);
     const item = buildHumanInboxItemViewModel(vm, "approval", "a-4f1a2b");

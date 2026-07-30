@@ -2087,6 +2087,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         display_name: z.string().min(1).max(256).optional(),
         model: z.string().min(1).max(512).optional(),
         reasoning_effort: z.string().min(1).max(128).optional(),
+        permission_authorizations: z.array(z.string().min(1).max(128)).max(8).optional().describe(
+          "explicit runtime-native permission capabilities to authorize; validated against the selected runtime and shown to the human",
+        ),
         ownership: z.enum(["proposer", "top-level"]).optional().describe(
           "durable roster ownership (default proposer). top-level creates no declaredOwner edge.",
         ),
@@ -2126,6 +2129,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             ...(input.display_name ? { displayName: input.display_name } : {}),
             ...(input.model ? { model: input.model } : {}),
             ...(input.reasoning_effort ? { reasoningEffort: input.reasoning_effort } : {}),
+            ...(input.permission_authorizations?.length
+              ? { permissionAuthorizations: input.permission_authorizations }
+              : {}),
             ...(input.ownership ? { ownership: input.ownership } : {}),
             ...(input.grant_propose_saved_agent ? { grants: { proposeSavedAgent: true } } : {}),
             ...(input.isolated_worktree !== undefined ? { workspace: { worktree: input.isolated_worktree } } : {}),

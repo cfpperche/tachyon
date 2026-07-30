@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ValidationOutcome } from "../../validations/types";
 import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
@@ -346,13 +346,33 @@ function ValidationDetail({
 function SavedAgentProposalDetail({
   proposal,
   dispatch,
+  error,
 }: {
   proposal: SavedAgentProposalReview;
   dispatch: HumanInboxDispatch;
+  error?: string;
 }) {
   const [reason, setReason] = useState("");
+  const [pending, setPending] = useState<"approve" | "deny" | undefined>();
+  // A refusal is the host's acknowledgement of the attempted decision. Success navigates away and
+  // unmounts this component; failure keeps the human here and must re-enable the controls.
+  useEffect(() => {
+    if (error) setPending(undefined);
+  }, [error]);
+
+  const decide = (decision: "approve" | "deny"): void => {
+    if (pending) return;
+    setPending(decision);
+    dispatch.decideSavedAgentProposal(
+      proposal.id,
+      proposal.digest,
+      decision,
+      decision === "deny" ? reason.trim() : undefined,
+    );
+  };
   return (
     <div class="hi-proposal" data-testid="inbox-saved-agent-proposal">
+      {error ? <div class="hi-error" role="alert" data-testid="inbox-saved-agent-error">{error}</div> : null}
       <p class="hi-proposal-rationale">{proposal.rationale}</p>
       <dl class="hi-proposal-facts">
         <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
@@ -415,18 +435,18 @@ function SavedAgentProposalDetail({
         <Button
           variant="primary"
           data-testid="inbox-approve-saved-agent"
-          disabled={proposal.baseDiverged || proposal.expired}
-          onClick={() => dispatch.decideSavedAgentProposal(proposal.id, proposal.digest, "approve")}
+          disabled={proposal.baseDiverged || proposal.expired || Boolean(pending)}
+          onClick={() => decide("approve")}
         >
-          Approve and create
+          {pending === "approve" ? "Creating…" : "Approve and create"}
         </Button>
         <Button
           variant="default"
           data-testid="inbox-deny-saved-agent"
-          disabled={!reason.trim()}
-          onClick={() => dispatch.decideSavedAgentProposal(proposal.id, proposal.digest, "deny", reason.trim())}
+          disabled={!reason.trim() || Boolean(pending)}
+          onClick={() => decide("deny")}
         >
-          Deny
+          {pending === "deny" ? "Denying…" : "Deny"}
         </Button>
       </div>
     </div>
@@ -437,10 +457,12 @@ export function ItemApp({
   vm,
   missing,
   dispatch,
+  error,
 }: {
   vm?: HumanInboxItemViewModel;
   missing?: { kind: HumanInboxKind; id: string };
   dispatch: HumanInboxDispatch;
+  error?: string;
 }) {
   // Gone-while-you-were-reading is its own state, never a blank document: something else resolved or
   // closed this, and saying so is the difference between "handled" and "lost".
@@ -477,7 +499,7 @@ export function ItemApp({
       {item.detail.kind === "approval" ? (
         <ApprovalDetail item={item.detail.approval} dispatch={dispatch} />
       ) : item.detail.kind === "saved-agent-proposal" ? (
-        <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} />
+        <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
       ) : (
         <ValidationDetail item={item.detail.validation} dispatch={dispatch} />
       )}

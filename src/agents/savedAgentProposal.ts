@@ -4,6 +4,9 @@ import {
   defaultClaudeScalarNativeConfigPolicy,
   defaultCodexScalarNativeConfigPolicy,
   defaultGrokNativeConfigPolicy,
+  claudeScalarNativeConfigPolicy,
+  codexScalarNativeConfigPolicy,
+  grokScalarNativeConfigPolicy,
   claudeSelectorNativeConfigPolicy,
   codexSelectorNativeConfigPolicy,
   grokSelectorNativeConfigPolicy,
@@ -59,6 +62,12 @@ export interface SavedAgentProposalSpec {
   /** Typed runtime selectors. Both are digest-bound and shown before approval. */
   model?: string;
   reasoningEffort?: string;
+  /**
+   * Explicit, runtime-native permission capabilities the human is being asked to authorize.
+   * These are validated by the same closed projector policy as Agent Studio; a runtime cannot carry
+   * another runtime's authorization.
+   */
+  permissionAuthorizations?: readonly string[];
   /** Why this agent should exist. Shown to the human verbatim, never re-summarized. */
   rationale: string;
   /** Non-secret environment values only. A secret reference can never be requested (invariant 8). */
@@ -132,15 +141,31 @@ export function proposedWorktreeEnabled(spec: Pick<SavedAgentProposalSpec, "work
  */
 export function savedAgentCreateMutation(
   agentName: string,
-  spec: Pick<SavedAgentProposalSpec, "displayName" | "runtimeAdapter" | "executable" | "workspace" | "model" | "reasoningEffort">,
+  spec: Pick<SavedAgentProposalSpec,
+    "displayName" | "runtimeAdapter" | "executable" | "workspace" | "model" | "reasoningEffort"
+    | "permissionAuthorizations">,
 ): AgentProfileStudioMutationV1 {
-  const nativeConfig = spec.model || spec.reasoningEffort
+  const needsNativeConfig = Boolean(spec.model || spec.reasoningEffort || spec.permissionAuthorizations?.length);
+  const authorizations = [...(spec.permissionAuthorizations ?? [])];
+  const nativeConfig = needsNativeConfig
     ? spec.runtimeAdapter === "claude"
-      ? { ...defaultClaudeScalarNativeConfigPolicy(), selectors: claudeSelectorNativeConfigPolicy() }
+      ? {
+          ...defaultClaudeScalarNativeConfigPolicy(),
+          permissions: claudeScalarNativeConfigPolicy("global", authorizations),
+          ...(spec.model || spec.reasoningEffort ? { selectors: claudeSelectorNativeConfigPolicy() } : {}),
+        }
       : spec.runtimeAdapter === "codex"
-        ? { ...defaultCodexScalarNativeConfigPolicy(), selectors: codexSelectorNativeConfigPolicy() }
+        ? {
+            ...defaultCodexScalarNativeConfigPolicy(),
+            permissions: codexScalarNativeConfigPolicy("global", authorizations),
+            ...(spec.model || spec.reasoningEffort ? { selectors: codexSelectorNativeConfigPolicy() } : {}),
+          }
         : spec.runtimeAdapter === "grok"
-          ? { ...defaultGrokNativeConfigPolicy(), selectors: grokSelectorNativeConfigPolicy() }
+          ? {
+              ...defaultGrokNativeConfigPolicy(),
+              permissions: grokScalarNativeConfigPolicy("global", authorizations),
+              ...(spec.model || spec.reasoningEffort ? { selectors: grokSelectorNativeConfigPolicy() } : {}),
+            }
           : undefined
     : undefined;
   return {

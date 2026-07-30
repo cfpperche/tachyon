@@ -425,6 +425,7 @@ function CockpitRoot() {
         if (route?.kind === "inbox-item" && route.wsHash === vm.wsHash && route.itemKind === vm.item.kind && route.itemId === vm.item.id) {
           setInboxItemVm(vm);
           setInboxItemMissing(undefined);
+          setInboxError(undefined);
         }
       } else if (type === HUMAN_INBOX_ITEM_MISSING && typeof raw.id === "string") {
         const route = activeRouteRef.current;

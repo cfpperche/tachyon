@@ -105,6 +105,14 @@ describe("Saved Agent proposal admission (SDD 482 phase 4A)", () => {
     });
   });
 
+  it("binds an explicit Claude permission authorization into the canonical create mutation", () => {
+    const mutation = savedAgentCreateMutation("helper", {
+      runtimeAdapter: "claude",
+      permissionAuthorizations: ["bypassPermissions"],
+    });
+    expect(mutation.editable.nativeConfig?.permissions?.authorize).toEqual(["bypassPermissions"]);
+  });
+
   /**
    * The digest is what an approval binds to, and it covers the PROPOSER. Two agents asking for an
    * identical Saved Agent are two decisions — otherwise approving one silently authorizes the other.

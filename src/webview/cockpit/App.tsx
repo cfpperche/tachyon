@@ -1558,7 +1558,12 @@ export function App(p: CockpitAppProps) {
     body = (
       <div class="ck-embed-host" data-testid="control-inbox-item">
         <Suspense fallback={<SectionFallback />}>
-          <HumanInboxItemApp vm={p.inboxItemVm} missing={p.inboxItemMissing} dispatch={p.inboxDispatch} />
+          <HumanInboxItemApp
+            vm={p.inboxItemVm}
+            missing={p.inboxItemMissing}
+            dispatch={p.inboxDispatch}
+            error={p.inboxError}
+          />
         </Suspense>
       </div>
     );

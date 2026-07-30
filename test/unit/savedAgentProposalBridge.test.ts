@@ -133,6 +133,7 @@ describe("propose_saved_agent (SDD 482 phase 4B)", () => {
     const root = workspace();
     const keys = harness(root, { kind: "agent", name: "claude-runtime" }).schemaKeys("propose_saved_agent");
     expect(keys).toContain("grant_propose_saved_agent");
+    expect(keys).toContain("permission_authorizations");
     expect(keys).not.toContain("approve");
   });
 

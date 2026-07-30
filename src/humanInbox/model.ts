@@ -234,6 +234,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
           runtime: { adapter: "(unreadable)" },
           ownership: "proposer",
           requestedGrants: [],
+          permissionAuthorizations: [],
           rationale: untrusted.reason,
           environmentNames: [],
           requestedOwnership: [],

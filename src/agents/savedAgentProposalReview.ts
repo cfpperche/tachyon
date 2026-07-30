@@ -49,6 +49,7 @@ export interface SavedAgentProposalReview {
   runtime: { adapter: string; executable?: string; model?: string; reasoningEffort?: string };
   ownership: "proposer" | "top-level";
   requestedGrants: string[];
+  permissionAuthorizations: string[];
   displayName?: string;
   rationale: string;
   /** Environment variable NAMES the proposal asks for. Never values — see the rule above. */
@@ -124,6 +125,14 @@ export function buildSavedAgentProposalReview(input: {
         + "but every request would still require a separate human approval.",
     });
   }
+  if (spec.permissionAuthorizations?.length) {
+    dangerous.push({
+      label: "permission bypass authority",
+      detail:
+        `would authorize ${spec.permissionAuthorizations.join(", ")} for this agent. These capabilities can suppress `
+        + "runtime permission prompts and apply only to this approved profile.",
+    });
+  }
   if ((spec.ownership ?? "proposer") === "top-level") {
     dangerous.push({
       label: "top-level ownership",
@@ -170,6 +179,7 @@ export function buildSavedAgentProposalReview(input: {
     },
     ownership: spec.ownership ?? "proposer",
     requestedGrants: spec.grants?.proposeSavedAgent ? ["proposeSavedAgent"] : [],
+    permissionAuthorizations: [...(spec.permissionAuthorizations ?? [])],
     ...(spec.displayName ? { displayName: spec.displayName } : {}),
     rationale: spec.rationale,
     environmentNames: Object.keys(spec.environment ?? {}).sort(),
