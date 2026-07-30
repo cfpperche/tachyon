@@ -14,7 +14,7 @@ import { instructionsDeliverable, KNOWN_AI_CLIS } from "../../src/config/loadCon
 /**
  * SDD 478 M9 (`t-8f3f7d`) — Agent Instance admission stops inferring what it creates.
  * Agent Instance cut etapa 4 (`t-7ff13d`) — one runtime-capability door (not Temporary-only
- * `adhocAdmission` / `SUPPORTED_ADHOC_*`). legacy-absence-exempt: names the retired symbols it replaced (t-a5bd6b)
+ * `adhocAdmission` / `SUPPORTED_ADHOC_*`).
  *
  * Before M9, `spawn_agent` took any command and `suggestKindForCommand` decided the outcome: a name
  * in the authoring catalog became an Agent, everything else became a Terminal. So the Bridge could
@@ -111,7 +111,7 @@ describe("t-8f3f7d — what the runtime door refuses, and what the refusal says"
 
 describe("t-8f3f7d — the declaration is evidence, and cannot drift from it", () => {
   it("every supported runtime has the resume adapter the declaration claims", () => {
-    // Resume is the deliberate, measured support that makes an ad-hoc child survive as the same entity
+    // Resume is the deliberate, measured support that makes a Temporary child survive as the same entity
     // — which is what makes it safe to leave an assigned task with one.
     for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
       expect(RESUME_RUNTIMES).toContain(runtime);

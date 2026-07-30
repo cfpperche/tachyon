@@ -456,7 +456,7 @@ describe("SidebarPrototypeProvider", () => {
     expect(cmd?.args[0]).toMatchObject({ ws, agentName: "scratch", contextValue: "agent-running-ai-temporary" });
   });
 
-  it("does not show continuity badges for ad-hoc agents without Tachyon lifecycle hooks", async () => {
+  it("does not show continuity badges for Temporary agents without Tachyon lifecycle hooks", async () => {
     const ws = fakeWorkspace([], {
       agents: [
         // A RUNNING agent always has a ledger row, so the fixture carries the policy the row would:

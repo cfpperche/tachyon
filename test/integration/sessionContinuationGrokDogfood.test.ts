@@ -13,7 +13,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { gateCmdRuntimeChange } from "../../src/agents/cmdRuntimeGate.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 
 /** Seeded by the fixture setup below, then handed to every DogfoodHost this run builds. */
 let canonicalSecrets = new Map<string, string>();
@@ -126,9 +126,9 @@ describe.skipIf(!grokAvailable() || !grokCredentialAvailable() || !tmuxAvailable
       // SDD 478 M7 — a declared agent is a canonical profile pointer plus the host-custodied
       // authority that attests it; `agents:` no longer accepts an inline definition.
       const canonical = ["source", "dest"].map((name) =>
-        writeCanonicalAgent(workspace, name, { runtime: "grok", autostart: false, attention: { enabled: false } }));
-      canonicalSecrets = canonicalAgentSecrets(workspace, canonical);
-      const yaml = `settings:\n  maxAgents: 8\n${canonicalAgentsYaml(canonical)}`;
+        writeSavedAgent(workspace, name, { runtime: "grok", autostart: false, attention: { enabled: false } }));
+      canonicalSecrets = savedAgentSecrets(workspace, canonical);
+      const yaml = `settings:\n  maxAgents: 8\n${savedAgentsYaml(canonical)}`;
       fs.writeFileSync(path.join(workspace, "tachyon.yml"), yaml);
       // minimal git so worktree paths stay sane
       execFileSync("git", ["init", "-q", "-b", "main", workspace], { stdio: "ignore" });

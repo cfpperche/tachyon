@@ -7,7 +7,7 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { asAgent, validateTachyonConfigText } from "../../src/config/loadConfig.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml, type CanonicalAgentSpec } from "../helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 
 /**
  * t-099be8 — validate-before-save for agent/UI tachyon.yml edits + dangling subagents degradation.
@@ -85,17 +85,17 @@ afterEach(() => {
  */
 async function makeWs(
   yml: string,
-  canonical: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }> = [],
+  canonical: ReadonlyArray<{ name: string; spec?: SavedAgentSpec }> = [],
 ): Promise<{ ws: Workspace; root: string; host: FakeHost; roster: string }> {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tac-099be8-"));
   roots.push(root);
-  const fixtures = canonical.map((entry) => writeCanonicalAgent(root, entry.name, entry.spec ?? {}));
+  const fixtures = canonical.map((entry) => writeSavedAgent(root, entry.name, entry.spec ?? {}));
   // With canonical agents the caller passes only the roster TAIL; the pointer block is generated
   // from the profiles just written, so text and authority cannot drift apart.
-  const roster = fixtures.length > 0 ? canonicalAgentsYaml(fixtures) + yml : yml;
+  const roster = fixtures.length > 0 ? savedAgentsYaml(fixtures) + yml : yml;
   fs.writeFileSync(path.join(root, "tachyon.yml"), roster, "utf8");
   const host = new FakeHost(path.join(root, ".storage"));
-  for (const [key, value] of canonicalAgentSecrets(root, fixtures)) host.secrets.set(key, value);
+  for (const [key, value] of savedAgentSecrets(root, fixtures)) host.secrets.set(key, value);
   fs.mkdirSync(host.globalStoragePath(), { recursive: true });
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fakeTmux(), startBridge: false });
   return { ws, root, host, roster };

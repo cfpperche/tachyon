@@ -88,6 +88,21 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
       "MAX_HANDOFF_ADHOC_ARGS",
       "preservesDeclaredLedger",
       "stripDeclaredParent",
+      // t-a5bd6b — the TEST fixture vocabulary, which no guard reached: this file's word scan is
+      // `src`-only and the `canonicalprofile` needle never matched `canonicalAgentFixture`. These
+      // built a Saved agent (durable profile + host authority) while calling it canonical, so they
+      // follow their subject: writeSavedAgent / savedAgentSecrets / savedAgentsYaml in
+      // `test/helpers/savedAgentFixture.ts`.
+      "writeCanonicalAgent",
+      "canonicalAgentSecrets",
+      "canonicalAgentsYaml",
+      "CanonicalAgentSpec",
+      "CanonicalAgentFixture",
+      "enableCanonicalSelfEvolution",
+      "canonicalAgentFixture",
+      // NOT `canonicalSha256`: that is the live authority-record field for the sha of the
+      // authoritative document, the same homonym class as `canonicalRoot`/`canonicalize`. Banning it
+      // here would order a product field renamed on the strength of a word.
       // NOT `adhocAdmission`: t-eb4b30/t-7ff13d left provenance comments naming what they replaced,
       // in `agentRuntimeAdmission.ts` and its test. A comment that says "this replaces X" is how a
       // reader learns the history; banning the word would delete the explanation, not the species.
@@ -103,6 +118,21 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
     expect(grepFiles("canonicalprofile", ["src", "test", "scripts"])).toEqual([]);
   });
 
+  /**
+   * t-a5bd6b — why `test/` is NOT word-scanned, written down so it is a decision and not an omission.
+   *
+   * The test tree went from 191 occurrences of adhoc/ad-hoc to a residue that is entirely one of four
+   * PRESERVED senses. A word ban over `test/` would order every one of them renamed:
+   *   1. the `mode: "adhoc"` distill discriminant and its suites — the ratified homonym, which the
+   *      coordinator ruled must not move (it would force an unjustified protocol bump);
+   *   2. the row VM's `adhoc` capability flag — the `.strict()` wire field whose producers this file
+   *      already allowlists, so its tests must spell it the way the wire does;
+   *   3. arbitrary agent NAMES used as data (`some-ad-hoc-runner`, `live-ad-hoc`, `another-ad-hoc`),
+   *      where "ad-hoc assignee" means "not in the roster" — a different axis entirely;
+   *   4. `.gen.test.ts` files, which are container-generated and not hand-edited.
+   * What DID move is everything that called an instance ad-hoc: helper names, test titles, prose, and
+   * the comments left naming identifiers that t-eb4b30 and this task deleted.
+   */
   it("no user-facing string calls an instance ad-hoc", () => {
     expect(grepFiles("ad-hoc agent|adhoc agent", ["src", "l10n", "package.nls.json", "package.nls.pt-br.json"]))
       .toEqual([]);

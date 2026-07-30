@@ -19,7 +19,7 @@ import type { SessionRecord } from "../../src/resume/SessionLedger.js";
  * resolved answer — rather than the instance policy directly. That distinction is load-bearing and the
  * last two cases exist to keep it: a Saved agent with no ledger row (never started, or restored from
  * an LKG config snapshot) has NO instance policy, and asking the policy would classify it Temporary —
- * rendering it as ad-hoc and offering to dismiss it through the Bridge.
+ * rendering it as Temporary and offering to dismiss it through the Bridge.
  */
 const SOURCE = (rel: string): string => fs.readFileSync(path.resolve(__dirname, "../..", rel), "utf8");
 

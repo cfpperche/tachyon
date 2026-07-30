@@ -422,7 +422,6 @@ describe("declared subagents authoring (t-4c113c)", () => {
     expect(accepted.kind).toBe("agent-instance");
     expect(agentProfileStudioMutationSchemaV1.safeParse(accepted).success).toBe(true);
 
-    // legacy-absence-exempt: names the retired kind to prove the strict schema REFUSES it (t-a5bd6b)
     const retired = { ...accepted, kind: "canonical" };
     expect(agentProfileStudioMutationSchemaV1.safeParse(retired).success).toBe(false);
     // Not reinterpreted either: the refusal is at the contract, before any field is read.
@@ -431,7 +430,6 @@ describe("declared subagents authoring (t-4c113c)", () => {
     // The snapshot side states the same single contract.
     const snapshot = projectAgentProfileStudioSnapshot(lifecycleSnapshot());
     expect(snapshot.kind).toBe("agent-instance");
-    // legacy-absence-exempt: names the retired kind to prove the snapshot schema REFUSES it (t-a5bd6b)
     expect(agentProfileStudioSnapshotSchemaV1.safeParse({ ...snapshot, kind: "canonical" }).success).toBe(false);
   });
 });

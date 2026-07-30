@@ -22,7 +22,7 @@ import type { AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
  *
  * Before this, `Workspace.createForTest` set `allowLegacyAgentFixtures: true` unconditionally, so
  * every headless test ran against an inline `agents:` shape the product refuses. Removing that shim
- * means a test that needs an agent must build what an agent actually is: a canonical profile on disk
+ * means a test that needs an agent must build what an agent actually is: a Saved profile on disk
  * plus the host-custodied authority that attests it. This helper builds exactly that — it is not a
  * compatibility layer, it produces the same shape a real workspace has.
  *
@@ -42,11 +42,11 @@ function agentIdFor(name: string): string {
   return [hex.slice(0, 8), hex.slice(8, 12), `4${hex.slice(13, 16)}`, `8${hex.slice(17, 20)}`, hex.slice(20, 32)].join("-");
 }
 
-export interface CanonicalAgentSpec {
+export interface SavedAgentSpec {
   /** attested runtime; the executable always equals the adapter (the projection requires it). */
   runtime?: AttestedRuntime;
   /**
-   * Typed runtime selectors. This is how a canonical agent expresses "run this model at this
+   * Typed runtime selectors. This is how a Saved agent expresses "run this model at this
    * reasoning effort": NOT as argv. The profile carries the values, the launcher composes the
    * runtime's own flags (`--model`/`--effort` for claude, `-c model=…` for codex), and declaring
    * them requires the matching `nativeConfig.selectors` policy — which this helper writes.
@@ -68,7 +68,7 @@ export interface CanonicalAgentSpec {
   extra?: Record<string, unknown>;
 }
 
-export interface CanonicalAgentFixture {
+export interface SavedAgentFixture {
   name: string;
   agentId: string;
   profilePath: string;
@@ -79,7 +79,7 @@ export interface CanonicalAgentFixture {
 }
 
 /** Write `.tachyon/agents/<name>/agent.yml` and return the matching host authority record. */
-export function writeCanonicalAgent(root: string, name: string, spec: CanonicalAgentSpec = {}): CanonicalAgentFixture {
+export function writeSavedAgent(root: string, name: string, spec: SavedAgentSpec = {}): SavedAgentFixture {
   const runtime = spec.runtime ?? "codex";
   const agentId = agentIdFor(name);
   const profileDir = path.join(root, ".tachyon", "agents", name);
@@ -131,7 +131,7 @@ export function writeCanonicalAgent(root: string, name: string, spec: CanonicalA
 }
 
 /** The secrets backend a `SharedSecretHost` needs so the workspace can attest these agents. */
-export function canonicalAgentSecrets(root: string, agents: readonly CanonicalAgentFixture[]): Map<string, string> {
+export function savedAgentSecrets(root: string, agents: readonly SavedAgentFixture[]): Map<string, string> {
   const secrets = new Map<string, string>();
   secrets.set(
     agentProfileAuthoritiesSecretKey(workspaceHash(root)),
@@ -140,13 +140,13 @@ export function canonicalAgentSecrets(root: string, agents: readonly CanonicalAg
   return secrets;
 }
 
-/** `agents:` block for a set of canonical agents (pointers only). */
-export function canonicalAgentsYaml(agents: readonly CanonicalAgentFixture[]): string {
+/** `agents:` block for a set of Saved agents (pointers only). */
+export function savedAgentsYaml(agents: readonly SavedAgentFixture[]): string {
   return agents.length === 0 ? "agents: {}\n" : `agents:\n${agents.map((agent) => agent.pointerYaml).join("")}`;
 }
 
 /**
- * Turn on `selfEvolution` for an already-declared canonical agent.
+ * Turn on `selfEvolution` for an already-declared Saved agent.
  *
  * The projection only grants `selfEvolution: { enabled: true }` when the profile pins an
  * `evolution-selector.json` naming the SAME profileId the Evolution store already holds
@@ -159,7 +159,7 @@ export function canonicalAgentsYaml(agents: readonly CanonicalAgentFixture[]): s
  * Rewrites the profile and re-signs its authority; the caller must reload the workspace afterwards,
  * because the authority registry is read once at construction.
  */
-export function enableCanonicalSelfEvolution(
+export function enableSavedAgentSelfEvolution(
   root: string,
   name: string,
   profileId: string,
@@ -191,7 +191,7 @@ export function enableCanonicalSelfEvolution(
   const key = agentProfileAuthoritiesSecretKey(workspaceHash(root));
   const registry = parseAgentProfileAuthorityRegistry(secrets.get(key));
   const authority = registry.get(name);
-  if (!authority) throw new Error(`no authority for '${name}' — declare it with writeCanonicalAgent first`);
+  if (!authority) throw new Error(`no authority for '${name}' — declare it with writeSavedAgent first`);
   registry.set(name, {
     ...authority,
     revision: `${name}-r2`,

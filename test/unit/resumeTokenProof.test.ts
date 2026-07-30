@@ -7,7 +7,7 @@ import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/Eng
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 
 /**
  * spec 351 T6 — the resume-env integration proof. Two scenarios:
@@ -149,10 +149,10 @@ describe("resume env integration proof (spec 351 T6)", () => {
     const root = mkdir();
     // SDD 478 M7 — the token under proof is an AGENT's, so the agent is declared as one: a
     // canonical profile plus the host-custodied authority that attests it.
-    const canonical = [writeCanonicalAgent(root, "claude", { runtime: "claude" })];
-    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml(canonical), "utf8");
+    const canonical = [writeSavedAgent(root, "claude", { runtime: "claude" })];
+    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(canonical), "utf8");
     const stateMap = new Map<string, unknown>();
-    const secretsMap = new Map<string, string>(canonicalAgentSecrets(root, canonical));
+    const secretsMap = new Map<string, string>(savedAgentSecrets(root, canonical));
     const host = new SharedHost(mkdir(), stateMap, secretsMap);
     const { startCalls, tmux } = survivingTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
@@ -183,11 +183,11 @@ describe("resume env integration proof (spec 351 T6)", () => {
 
   it("stale-pane case: a tmux session surviving an extension-host reload keeps its PRE-reload token valid (does not silently strand)", async () => {
     const root = mkdir();
-    const canonical = [writeCanonicalAgent(root, "claude", { runtime: "claude" })];
-    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml(canonical), "utf8");
+    const canonical = [writeSavedAgent(root, "claude", { runtime: "claude" })];
+    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(canonical), "utf8");
     const stateMap = new Map<string, unknown>(); // shared across "reload" — simulates the SAME machine's workspaceState
     // shared across "reload" — simulates the SAME machine's SecretStorage, including the agent authority
-    const secretsMap = new Map<string, string>(canonicalAgentSecrets(root, canonical));
+    const secretsMap = new Map<string, string>(savedAgentSecrets(root, canonical));
     const { sessions, newSessionCalls, tmux } = survivingTmux(); // shared — the tmux SERVER survives the reload
 
     const host1 = new SharedHost(mkdir(), stateMap, secretsMap);

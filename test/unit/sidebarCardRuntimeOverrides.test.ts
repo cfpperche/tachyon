@@ -132,7 +132,7 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
   });
 
   it("accepts every runtime the product can run an agent on — including the non-attested ones", () => {
-    // Validated against SUPPORTED_AGENT_RUNTIME_NAMES, not the narrower attested four: an ad-hoc
+    // Validated against SUPPORTED_AGENT_RUNTIME_NAMES, not the narrower attested four: a Temporary
     // agent may be OpenCode/Gemini/Qwen/Hermes, and refusing those keys would refuse an override for
     // rows this product creates.
     for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {

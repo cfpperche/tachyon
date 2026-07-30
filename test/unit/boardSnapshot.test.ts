@@ -37,7 +37,7 @@ describe("buildBoardSnapshot", () => {
     expect(landedSnap.allowedDropStatuses[triaged.id]).toEqual(["done", "active", "triaged", "dropped"]);
   });
 
-  it("lists declared agents + human, and only relevant ad-hocs (live or with open work)", async () => {
+  it("lists declared agents + human, and only relevant Temporaries (live or with open work)", async () => {
     const t1 = await store.create({ title: "a", author: "human" });
     await store.update(t1.id, { status: "triaged", assignee: "active-runner" });
     await store.update(t1.id, { status: "active" });
@@ -61,7 +61,7 @@ describe("buildBoardSnapshot", () => {
     expect("liveAgents" in snap).toBe(false);
   });
 
-  it("omits a dead ad-hoc that appears only on landed/done/dropped tasks from filter chips", async () => {
+  it("omits a dead Temporary that appears only on landed/done/dropped tasks from filter chips", async () => {
     const landed = await store.create({ title: "landed", author: "human" });
     await store.update(landed.id, { status: "triaged", assignee: "landed-runner" });
     await store.update(landed.id, { status: "active" });

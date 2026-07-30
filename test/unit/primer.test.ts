@@ -51,7 +51,7 @@ const removedProjectPolicies = [
 ];
 
 describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
-  it("gated ad-hoc preserves identity, gate facts, real-target doorbell and sourced configured checks", () => {
+  it("gated Temporary preserves identity, gate facts, real-target doorbell and sourced configured checks", () => {
     const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
     expect(primer.startsWith(PRIMER_OPEN)).toBe(true);
     expect(primer.endsWith(PRIMER_CLOSE)).toBe(true);
@@ -129,7 +129,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(renderPrimer(gatedAdhoc).beforeFinishing.split("\n").filter((l) => l.includes("notify_agent"))).toHaveLength(1);
   });
 
-  it("plain ad-hoc identifies its parent as the doorbell target without gate text", () => {
+  it("plain Temporary identifies its parent as the doorbell target without gate text", () => {
     const { primer, beforeFinishing } = renderPrimer(plainAdhoc);
     expect(primer).toContain('spawned by "claude"');
     expect(primer).not.toContain("PROTOCOL IDENTIFIER");

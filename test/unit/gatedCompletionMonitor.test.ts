@@ -346,7 +346,7 @@ describe("assignedCompletionFacts selection (t-5e9bf8)", () => {
     expect(select({ entries: [row({ declaredOwner: "worker" })] })).toEqual([]);
   });
 
-  it("does not emit for an ad-hoc agent, a terminal, or a gated row", () => {
+  it("does not emit for a Temporary agent, a terminal, or a gated row", () => {
     expect(select({ declared: new Set<string>() }), "ad-hoc").toEqual([]);
     expect(select({ entries: [row({ kind: "terminal" })] }), "terminal").toEqual([]);
     // The delegation arm already owns gated rows; both sources emitting would double-notify.

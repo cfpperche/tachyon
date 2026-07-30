@@ -6,7 +6,7 @@ import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 import type { AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 
@@ -120,9 +120,9 @@ class SecretHost extends FakeHost {
  */
 async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude", selectors?: { model?: string; reasoningEffort?: string }) {
   const root = mkdir();
-  const fixture = writeCanonicalAgent(root, agent, { runtime, ...(selectors ? { selectors } : {}) });
-  const secrets = canonicalAgentSecrets(root, [fixture]);
-  fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml([fixture]), "utf8");
+  const fixture = writeSavedAgent(root, agent, { runtime, ...(selectors ? { selectors } : {}) });
+  const secrets = savedAgentSecrets(root, [fixture]);
+  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([fixture]), "utf8");
   const { tmux, sessions, sent } = capturingTmux();
   const ws = await Workspace.createForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
   await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
@@ -173,7 +173,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.length).toBe(0);
   });
 
-  it("spec 307: plain ad-hoc Codex and Claude children do not receive automatic cold-start continuity nudges", async () => {
+  it("spec 307: plain Temporary Codex and Claude children do not receive automatic cold-start continuity nudges", async () => {
     const { ws, sent } = await makeWs();
     await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
     await ws.manager.spawn("claude-child", { cmd: "claude", parent: "claude", reveal: false });
@@ -281,11 +281,11 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
 
   it("spec 316: persistence hook health treats stale or absent evidence conservatively", async () => {
     const root = mkdir();
-    const coldAgent = writeCanonicalAgent(root, "claude", { runtime: "claude" });
-    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml([coldAgent]), "utf8");
+    const coldAgent = writeSavedAgent(root, "claude", { runtime: "claude" });
+    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([coldAgent]), "utf8");
     const cold = await Workspace.createForTest(
       root,
-      { host: new SecretHost(mkdir(), canonicalAgentSecrets(root, [coldAgent])), onViewsChanged: () => {} },
+      { host: new SecretHost(mkdir(), savedAgentSecrets(root, [coldAgent])), onViewsChanged: () => {} },
       { tmux: capturingTmux().tmux, startBridge: false },
     );
     expect(cold.persistenceHookHealth("claude")).toMatchObject({ state: "unknown" });
@@ -316,7 +316,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.filter((s) => s.includes('set_continuity(agent: "claude"')).length).toBe(0);
   });
 
-  it("spec 307: fork/worktree ad-hoc rows are still default-off for automatic nudges", async () => {
+  it("spec 307: fork/worktree Temporary rows are still default-off for automatic nudges", async () => {
     const { ws, root, sent } = await makeWs();
     await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
     const rec = ws.ledger.get("codex-child")!;
@@ -335,7 +335,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     expect(sent.length).toBe(0);
   });
 
-  it("spec 307: UI-origin manual reinject is allowed for ad-hoc, generic manual calls are suppressed", async () => {
+  it("spec 307: UI-origin manual reinject is allowed for a Temporary, generic manual calls are suppressed", async () => {
     const { ws, sent } = await makeWs();
     await ws.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
 

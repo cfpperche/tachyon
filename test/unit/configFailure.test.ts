@@ -85,7 +85,7 @@ describe("degraded roster + LKG spawn gate", () => {
       existingNames: new Set(),
       ledger: [
         ["codex", ledgerRec({ instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true }, resume: { runtime: "codex", sessionId: "s1" } })],
-        ["ad-hoc-fix", ledgerRec({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, def: { cmd: "claude", kind: "agent" } })],
+        ["temporary-fix", ledgerRec({ instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false }, def: { cmd: "claude", kind: "agent" } })],
       ],
       lkg: {
         schemaVersion: 1,
@@ -99,7 +99,7 @@ describe("degraded roster + LKG spawn gate", () => {
     });
 
     const names = extras.map((e) => e.name).sort();
-    expect(names).toEqual(["ad-hoc-fix", "codex", "never-ran"]);
+    expect(names).toEqual(["codex", "never-ran", "temporary-fix"]);
     expect(extras.find((e) => e.name === "codex")?.source).toBe("ledger");
     expect(extras.find((e) => e.name === "codex")?.resumable).toBe(true);
     expect(extras.find((e) => e.name === "never-ran")?.source).toBe("lkg");
@@ -128,7 +128,7 @@ agents:
     expect(extras.find((e) => e.name === "codex")?.resumable).toBe(true);
   });
 
-  it("(c) with config invalid, spawn of LKG-only names is refused; live/adhoc names are not", () => {
+  it("(c) with config invalid, spawn of LKG-only names is refused; live/Temporary names are not", () => {
     expect(
       isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrTemporary: false, nameInLkg: true }),
     ).toBe(true);

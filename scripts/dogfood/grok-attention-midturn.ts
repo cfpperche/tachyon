@@ -29,7 +29,7 @@ import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
 import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml } from "../../test/helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../../test/helpers/savedAgentFixture.js";
 
 const AGENT = "grokProbe";
 const EVIDENCE_DIR = path.resolve(".tachyon/evidence/grok-attention-midturn");
@@ -87,10 +87,10 @@ process.env.TMUX_TMPDIR = path.join(base, "t");
 fs.mkdirSync(process.env.TMUX_TMPDIR, { recursive: true, mode: 0o700 });
 delete process.env.TMUX; delete process.env.TMUX_PANE;
 
-const fixture = writeCanonicalAgent(workspace, AGENT, { runtime: "grok", autostart: false, attention: { enabled: true } });
+const fixture = writeSavedAgent(workspace, AGENT, { runtime: "grok", autostart: false, attention: { enabled: true } });
 fs.writeFileSync(
   path.join(workspace, "tachyon.yml"),
-  `settings:\n  maxAgents: 4\n${canonicalAgentsYaml([fixture])}`,
+  `settings:\n  maxAgents: 4\n${savedAgentsYaml([fixture])}`,
 );
 execFileSync("git", ["init", "-q", "-b", "main", workspace], { stdio: "ignore" });
 execFileSync("git", ["-C", workspace, "commit", "-q", "--allow-empty", "-m", "root"], {
@@ -99,7 +99,7 @@ execFileSync("git", ["-C", workspace, "commit", "-q", "--allow-empty", "-m", "ro
 });
 
 const host = new Host(path.join(base, "storage"));
-for (const [k, v] of canonicalAgentSecrets(workspace, [fixture])) host.secrets.set(k, v);
+for (const [k, v] of savedAgentSecrets(workspace, [fixture])) host.secrets.set(k, v);
 
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 1, patterns: [] };
 const evidence: Record<string, unknown>[] = [];

@@ -28,7 +28,7 @@ import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
-import { writeCanonicalAgent, canonicalAgentSecrets, canonicalAgentsYaml, enableCanonicalSelfEvolution, type CanonicalAgentSpec } from "../helpers/canonicalAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 
 /**
@@ -239,19 +239,19 @@ afterEach(() => {
 });
 
 /**
- * SDD 478 M7 — declare canonical agents inside a root the case built itself, and return the host
+ * SDD 478 M7 — declare Saved agents inside a root the case built itself, and return the host
  * that attests them. Same shape `makeWorkspace({ canonical })` builds, for the many cases that need
  * to write their own `tachyon.yml` tail (settings, verify blocks) or their own Workspace deps.
  */
 function canonicalHost(
   root: string,
-  agents: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }>,
+  agents: ReadonlyArray<{ name: string; spec?: SavedAgentSpec }>,
   extraYaml = "",
   settings: Record<string, unknown> = {},
 ): { host: SharedSecretHost; secrets: Map<string, string> } {
-  const fixtures = agents.map((entry) => writeCanonicalAgent(root, entry.name, entry.spec ?? {}));
-  fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml(fixtures) + extraYaml, "utf8");
-  const secrets = canonicalAgentSecrets(root, fixtures);
+  const fixtures = agents.map((entry) => writeSavedAgent(root, entry.name, entry.spec ?? {}));
+  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + extraYaml, "utf8");
+  const secrets = savedAgentSecrets(root, fixtures);
   return { host: new SharedSecretHost(mkdir(), secrets, settings), secrets };
 }
 
@@ -271,7 +271,7 @@ function canonicalHost(
  * `projectDefinition` grants `selfEvolution` only when the profile pins an `evolution-selector.json`
  * naming a `profileId`. Nothing in `src/` ever wrote that file or that reference, so once `agents:`
  * narrowed to canonical pointers, no declared agent could enable Evolution by any product path —
- * only `enableCanonicalSelfEvolution` above, a TEST helper, could reach the enabled projection. A
+ * only `enableSavedAgentSelfEvolution` above, a TEST helper, could reach the enabled projection. A
  * capability that exists in the projection and nowhere a human can get to is not a capability.
  *
  * The ordering is forced, not stylistic: the Evolution store mints the `profileId`, never the author,
@@ -348,7 +348,7 @@ describe("t-d185e1 — enabling Evolution on a declared canonical agent", () => 
 
 async function createEvolvingWorkspace(
   names: readonly string[],
-  runtime: CanonicalAgentSpec["runtime"],
+  runtime: SavedAgentSpec["runtime"],
   fake: ReturnType<typeof fakeTmux>,
 ) {
   const root = mkdir();
@@ -358,7 +358,7 @@ async function createEvolvingWorkspace(
   // itself is about to spawn through.
   const seed = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
   for (const name of names) {
-    enableCanonicalSelfEvolution(root, name, (await seed.evolutionStore.ensureProfile(name)).profileId, secrets);
+    enableSavedAgentSelfEvolution(root, name, (await seed.evolutionStore.ensureProfile(name)).profileId, secrets);
   }
   seed.dispose();
   return { root, host, ws: await Workspace.createForTest(root, deps, { tmux: fake.tmux, startBridge: false }) };
@@ -368,9 +368,9 @@ async function makeWorkspace(
   onViewsChanged: (view: ViewKind) => void = () => {},
   opts: {
     /** make `b` a real agent on this runtime instead of a supervised shell. */
-    bRuntime?: CanonicalAgentSpec["runtime"];
+    bRuntime?: SavedAgentSpec["runtime"];
     tachyonYaml?: string;
-    canonical?: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }>;
+    canonical?: ReadonlyArray<{ name: string; spec?: SavedAgentSpec }>;
     extraYaml?: string;
   } = {},
 ) {
@@ -378,9 +378,9 @@ async function makeWorkspace(
   // SDD 478 M7 — a case that needs a real AGENT declares one: a canonical profile plus the
   // host-custodied authority that attests it. `agents:` no longer accepts a definition.
   if (opts.canonical) {
-    const fixtures = opts.canonical.map((entry) => writeCanonicalAgent(root, entry.name, entry.spec ?? {}));
-    fs.writeFileSync(path.join(root, "tachyon.yml"), canonicalAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
-    const host = new SharedSecretHost(mkdir(), canonicalAgentSecrets(root, fixtures));
+    const fixtures = opts.canonical.map((entry) => writeSavedAgent(root, entry.name, entry.spec ?? {}));
+    fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
+    const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
     const fake = fakeTmux();
     const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false });
     return { ws, host, ...fake };
@@ -391,9 +391,9 @@ async function makeWorkspace(
   // exercises an agent capability, so declaring them honestly costs the cases nothing. A case that
   // does need `b` to be an agent asks for `bRuntime`, which declares it canonically.
   const terminals = `terminals:\n  a:\n    cmd: sh\n    autostart: true\n${opts.bRuntime ? "" : "  b:\n    cmd: sh\n"}`;
-  const bAgent = opts.bRuntime ? [writeCanonicalAgent(root, "b", { runtime: opts.bRuntime })] : [];
-  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? canonicalAgentsYaml(bAgent) + terminals, "utf8");
-  const host = new SharedSecretHost(mkdir(), canonicalAgentSecrets(root, bAgent));
+  const bAgent = opts.bRuntime ? [writeSavedAgent(root, "b", { runtime: opts.bRuntime })] : [];
+  fs.writeFileSync(path.join(root, "tachyon.yml"), opts.tachyonYaml ?? savedAgentsYaml(bAgent) + terminals, "utf8");
+  const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, bAgent));
   const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
   // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
@@ -964,7 +964,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
   it("SDD 369 T3 composes the extension-global Claude capture into the existing per-spawn settings layer", async () => {
     const root = mkdir();
     // SDD 478 M7 — capture composition is a property of the Claude COMMAND LINE, and after the
-    // legacy shim an authored command line belongs to an ad-hoc agent: `agents:` takes a canonical
+    // legacy shim an authored command line belongs to a Temporary agent: `agents:` takes a Saved
     // profile pointer, whose runtime surface is typed selectors, not argv.
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
     const host = new FakeHost(mkdir());
@@ -987,7 +987,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
         workspaceRoot: root,
         agent: "claude",
         cwd: root,
-        // SDD 478 M7 — an ad-hoc Claude agent runs against its own per-agent harness home, not the
+        // SDD 478 M7 — a Temporary Claude agent runs against its own per-agent harness home, not the
         // ambient ~/.claude the retired inline shape used. Capture is materialized against the home
         // the agent will actually read, which is the whole point of passing it here.
         configHome: path.join(harnessRoot(root), "claude"),
@@ -2976,7 +2976,7 @@ describe("Workspace — declared top-level prose-question handback (t-10771a)", 
     ws.dispose();
   });
 
-  it("does not derive awaiting-human for declared subagents or ad-hoc children", async () => {
+  it("does not derive awaiting-human for declared subagents or Temporary children", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
     const { ws, host, panes } = await makeWorkspace(() => {}, {
@@ -3116,7 +3116,7 @@ describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
   const OWNER = "codexCanonico";
   const TEAM = ["claudeBuilder", "claudeReviewer", "claudeRuntime"];
 
-  async function ownedFleet(extra: ReadonlyArray<{ name: string; spec?: CanonicalAgentSpec }> = []) {
+  async function ownedFleet(extra: ReadonlyArray<{ name: string; spec?: SavedAgentSpec }> = []) {
     return makeWorkspace(() => {}, {
       canonical: [{ name: OWNER }, ...TEAM.map((name) => ({ name })), ...extra],
     });

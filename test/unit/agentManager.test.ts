@@ -453,7 +453,7 @@ describe("AgentManager", () => {
     }
   });
 
-  it("rejects spawning an unknown agent without an ad-hoc cmd, accepts with one", async () => {
+  it("rejects spawning an unknown agent without a Temporary cmd, accepts with one", async () => {
     const { manager, sessions } = makeManager("agents:\n  a:\n    cmd: x\n");
     await expect(manager.spawn("ghost")).rejects.toThrow("unknown agent");
     await manager.spawn("ghost", { cmd: "claude" });
@@ -467,7 +467,7 @@ describe("AgentManager", () => {
    * tmux, so the semantics are proven without a fake process standing in for a runtime.
    */
   describe("lineage (spec 197)", () => {
-    it("records the parent of an ad-hoc child and exposes it on both reads", async () => {
+    it("records the parent of a Temporary child and exposes it on both reads", async () => {
       const { manager, sessions } = makeManager("agents:\n  orchestrator:\n    cmd: codex\n");
       await manager.spawn("orchestrator");
       await manager.spawn("lineage-child", { cmd: "codex", parent: "orchestrator" });
@@ -603,7 +603,7 @@ describe("AgentManager", () => {
       expect(respawnArgs.length).toBe(1);
     });
 
-    it("graceful+new stops, times out, session-only hard-kills, then new-section (no ad-hoc wipe)", async () => {
+    it("graceful+new stops, times out, session-only hard-kills, then new-section (no Temporary wipe)", async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-restart-graceful-"));
       try {
         const { sessions, dead, panes, sentKeys, respawnArgs, newSessionArgs, tmux } = fakeTmux();
@@ -1256,7 +1256,7 @@ describe("AgentManager", () => {
     expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
   });
 
-  it("cannot restart a re-discovered ad-hoc agent (no stored definition)", async () => {
+  it("cannot restart a re-discovered Temporary agent (no stored definition)", async () => {
     const { sessions, tmux } = fakeTmux();
     sessions.add(`tachyon-${HASH}-orphan`); // survived a previous extension host
     const manager = new AgentManager({
@@ -1268,7 +1268,7 @@ describe("AgentManager", () => {
     await expect(manager.restart("orphan", { stop: "force", session: "new" })).rejects.toThrow("no stored definition");
   });
 
-  it("lists declared + running + ad-hoc agents merged", async () => {
+  it("lists declared + running + Temporary agents merged", async () => {
     const { manager } = makeManager("agents:\n  a:\n    cmd: x\n  b:\n    cmd: y\n");
     await manager.spawn("a");
     await manager.spawn("extra", { cmd: "sleep 1", kind: "terminal" });
@@ -1330,7 +1330,7 @@ describe("AgentManager", () => {
     expect(worker?.running).toBe(true);
     expect(worker?.parent).toBe("orchestrator"); // points at a gone agent — UI promotes to root
 
-    // killing the ad-hoc child removes it from the listing entirely (def + lineage cleared)
+    // killing the Temporary child removes it from the listing entirely (def + lineage cleared)
     await manager.kill("worker");
     expect((await manager.list()).find((a) => a.name === "worker")).toBeUndefined();
   });
@@ -1370,7 +1370,7 @@ describe("AgentManager", () => {
     return spawnArgs[spawnArgs.length - 1];
   };
 
-  it("ad-hoc child gets instructions + Bridge guidance appended (spec 216 Part B)", async () => {
+  it("Temporary child gets instructions + Bridge guidance appended (spec 216 Part B)", async () => {
     const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "revisor", { cmd: "claude", instructions: "review prs", parent: "a" });
     expect(cmd).toContain("review prs");
     expect(cmd).toContain("[Tachyon]"); // Bridge guidance (child has a parent)
@@ -1394,7 +1394,7 @@ describe("AgentManager", () => {
     expect(cmd).toBe("sh"); // sh has no instruction arg at all — nowhere for a primer to go either
   });
 
-  it("spec 363 T3 — a lineage-bearing ad-hoc child's spawn command carries the PRIMER + BEFORE FINISHING block", async () => {
+  it("spec 363 T3 — a lineage-bearing Temporary child's spawn command carries the PRIMER + BEFORE FINISHING block", async () => {
     const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\n", "revisor2", { cmd: "claude", instructions: "review prs", parent: "a" });
     expect(cmd).toContain("── TACHYON PRIMER ──");
     expect(cmd).toContain("── END PRIMER ──");
@@ -3237,10 +3237,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("codex")!.resume!.sessionId).toBe(""); // alias resolved as shared → skipped (capture stays empty)
   });
 
-  it("ad-hoc spawn records declared:false with a def (restartable) + resume", async () => {
+  it("Temporary spawn records declared:false with a def (restartable) + resume", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  decoy:\n    cmd: x\n", { newSessionId: () => "x" });
     await manager.spawn("scratch", { cmd: "claude" });
-    // claude name-mints (spec 220): the resume id is the deterministic name for the ad-hoc agent
+    // claude name-mints (spec 220): the resume id is the deterministic name for the Temporary agent
     const name = `tachyon-${path.basename(ws)}-scratch`;
     expect(ledger.get("scratch")).toMatchObject({ instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }, def: { cmd: "claude" }, resume: { sessionId: name } });
   });
@@ -3841,7 +3841,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   /**
    * t-5e1113 (SDD 482 phase 2) — the declared policy is WRITTEN by the real paths, not just parseable.
-   * `adhoc` comes from the caller supplying a command, which is a declaration; nothing here reads the
+   * `temporary` comes from the caller supplying a command, which is a declaration; nothing here reads the
    * name, the tmux session or `tachyon.yml` to decide.
    */
   it("t-5e1113: spawn and fork write the declared instance policy", async () => {
@@ -3978,7 +3978,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("claude");
     await manager.commitFork(await manager.planFork("claude"));
     await manager.kill("claude-fork-1");
-    // Stop keeps the row + listing (unlike an ordinary ad-hoc, which would vanish).
+    // Stop keeps the row + listing (unlike an ordinary Temporary, which would vanish).
     expect(ledger.get("claude-fork-1")?.def?.fork).toBe(true);
     expect((await manager.list()).map((a) => a.name)).toContain("claude-fork-1");
     manager.dismissTemporary("claude-fork-1");
@@ -4008,9 +4008,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(cmds.at(-1)).toMatch(/TASK: do the thing/);
   });
 
-  it("kill of an ad-hoc agent deletes its durable activity log (pin p-4dadd3 dogfood follow-up: kill→remove path)", async () => {
+  it("kill of a Temporary agent deletes its durable activity log (pin p-4dadd3 dogfood follow-up: kill→remove path)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {});
-    await manager.spawn("oneshot", { cmd: "opencode", parent: "main" }); // ad-hoc → gets a session + ledger row
+    await manager.spawn("oneshot", { cmd: "opencode", parent: "main" }); // Temporary → gets a session + ledger row
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("oneshot")}.jsonl`);
@@ -4024,7 +4024,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("dismissTemporary deletes the agent's durable activity log (pin p-4dadd3 (a): log dies with the row)", async () => {
     const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { resolveCurrentSession: async () => UUID });
     await manager.spawn("claude");
-    await manager.commitFork(await manager.planFork("claude")); // claude-fork-1 = an ad-hoc with a ledger row
+    await manager.commitFork(await manager.planFork("claude")); // claude-fork-1 = a Temporary with a ledger row
     // Seed a durable activity log as the writer would have.
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
@@ -4039,7 +4039,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   it("removeEphemeralFootprint routes through canonical forgetAgent cleanup, idempotently (spec 247)", async () => {
     const removedHomes: string[] = [];
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", { removeHarnessHome: (name) => removedHomes.push(name) });
-    await manager.spawn("eph", { cmd: "opencode", parent: "main" }); // ad-hoc → ledger row
+    await manager.spawn("eph", { cmd: "opencode", parent: "main" }); // Temporary → ledger row
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("eph")}.jsonl`);
@@ -4165,7 +4165,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
   it("kill of a DECLARED agent KEEPS its durable log (spec 247: footprint removal is ephemeral-only)", async () => {
     const { manager, ws } = resumeHarness("agents:\n  worker:\n    cmd: claude\n", {});
-    await manager.spawn("worker"); // declared → NOT in the adhoc map → kill's wasAdhoc is false
+    await manager.spawn("worker"); // declared → config owns the definition → kill's wasTemporary is false
     const actDir = path.join(ws, ".tachyon", "activity");
     fs.mkdirSync(actDir, { recursive: true });
     const logFile = path.join(actDir, `${agentLogId("worker")}.jsonl`);
@@ -4459,7 +4459,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     // proves materializeHomeOnly's OWN output is correct — it never touches applyHarness's
     // `{ ...env, ...mat.env }` merge (AgentManager.ts). This test drives a REAL spawn through the
     // production materializeHarness wiring shape (mirrors Workspace.ts: no `harness:` block, no
-    // `isolate:`, ad-hoc opencode → auto-injected `isolate: "transcript"` → materializeHomeOnly) with
+    // `isolate:`, Temporary opencode → auto-injected `isolate: "transcript"` → materializeHomeOnly) with
     // a REAL HarnessManager, so a future spread-order flip (`{ ...mat.env, ...env }`) or a short-
     // circuited merge for opencode would fail this test, not just the fs-level one.
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-h4-"));
@@ -4473,7 +4473,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     let harnessMgr: HarnessManager;
     const { manager, newSessionArgs, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
       // Mirrors Workspace.ts's materializeHarness wiring exactly (spec 226/298/357): a plain, non-
-      // `harness:`-declared opencode agent only gets private-home treatment via the ad-hoc
+      // `harness:`-declared opencode agent only gets private-home treatment via the Temporary
       // auto-injected `isolate: "transcript"` (AgentManager.spawnCore) — there is no opencode-runtime
       // default branch the way codex has one.
       materializeHarness: ({ name, def }) => {
@@ -4486,7 +4486,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     harnessMgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"), undefined, undefined, opencodeDataHome);
 
-    // A plain opencode agent — ad-hoc, no `harness:` block declared anywhere — spawned with a
+    // A plain opencode agent — Temporary, no `harness:` block declared anywhere — spawned with a
     // user-declared env trying to smuggle an attacker-controlled XDG_DATA_HOME into the process.
     await manager.spawn("reviewer", { cmd: "opencode", env: { XDG_DATA_HOME: "/attacker/path" } });
 
@@ -4518,7 +4518,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(envFromTmuxArgs(startArgs.at(-1)!).CLAUDE_CONFIG_DIR).toBe("/h/researcher");
   });
 
-  it("reload-safe: resume binds a legacy ad-hoc Claude session to its persisted private configHome", async () => {
+  it("reload-safe: resume binds a legacy Temporary Claude session to its persisted private configHome", async () => {
     const privateHome = "/persisted/private/reviewer";
     const sessionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const { manager, cmds, startArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
@@ -5288,9 +5288,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(envFromTmuxArgs(h.newSessionArgs.at(-1)!).GROK_HOME).toBe("/ws/.tachyon/bridge-mcp/grok.grok");
     });
 
-    // t-303f2b — gated/ad-hoc grok must use the Bridge private GROK_HOME (same as declared), not a
+    // t-303f2b — gated/Temporary grok must use the Bridge private GROK_HOME (same as declared), not a
     // second isolate:transcript harness home that races auth materialization.
-    it("t-303f2b: ad-hoc grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {
+    it("t-303f2b: Temporary grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {
       const calls: string[] = [];
       const matCalls: Array<{ name: string; isolate?: string }> = [];
       const WT = { path: "/wt/h/deliveryMechanismLeaseGrokR1", branch: "tachyon/deliveryMechanismLeaseGrokR1", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
@@ -5949,7 +5949,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       ]);
     });
 
-    it("codex ad-hoc: injects ownership-only SessionStart and bypasses hook trust for Tachyon's invocation", async () => {
+    it("codex Temporary: injects ownership-only SessionStart and bypasses hook trust for Tachyon's invocation", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const mats: Array<{ name: string; isolate?: string }> = [];
       const { manager, ledger, cmds, newSessionArgs, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -5971,7 +5971,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
-    it("codex ad-hoc: resume keeps ownership-only hooks and bypasses hook trust", async () => {
+    it("codex Temporary: resume keeps ownership-only hooks and bypasses hook trust", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
         materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
@@ -5992,7 +5992,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
-    it("codex ad-hoc: a user -c config flag is not mistaken for self-managed session state", async () => {
+    it("codex Temporary: a user -c config flag is not mistaken for self-managed session state", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
         materializeCodexSessionStartHookConfig: (name, opts?: { ownershipOnly?: boolean }) => {
@@ -6007,7 +6007,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
-    it("codex ad-hoc: prompt text mentioning the bypass flag still gets one real bypass argv", async () => {
+    it("codex Temporary: prompt text mentioning the bypass flag still gets one real bypass argv", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
         materializeCodexSessionStartHookConfig: () => "hooks.SessionStart=[{hooks=[]}]",
       });
@@ -6021,7 +6021,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmd.match(/--dangerously-bypass-hook-trust/g)).toHaveLength(2);
     });
 
-    it("claude ad-hoc: injects ownership-only settings by the same runtime-neutral convention", async () => {
+    it("claude Temporary: injects ownership-only settings by the same runtime-neutral convention", async () => {
       const calls: Array<{ name: string; ownershipOnly: boolean }> = [];
       const mats: Array<{ name: string; isolate?: string }> = [];
       const { manager, ledger, cmds, newSessionArgs, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
@@ -6087,7 +6087,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(details).toEqual([{ statusLineCapture: false }]);
     });
 
-    it("claude ad-hoc: does not override an explicit permission mode", async () => {
+    it("claude Temporary: does not override an explicit permission mode", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
       await manager.spawn("reviewer", { cmd: "claude --permission-mode manual", parent: "boss" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
@@ -6095,7 +6095,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).not.toContain("--permission-mode auto");
     });
 
-    it("t-4e286c: claude ad-hoc with bypassPermissions is born with Tachyon settings and no auto downgrade", async () => {
+    it("t-4e286c: claude Temporary with bypassPermissions is born with Tachyon settings and no auto downgrade", async () => {
       const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", OWN());
       await manager.spawn("reviewer", { cmd: "claude --permission-mode bypassPermissions", parent: "boss" });
       expect(cmds.at(-1)).toContain("--settings '/ws/.tachyon/spawn-settings/reviewer.json'");
@@ -6311,12 +6311,12 @@ describe("live rename (agent/terminal, running or not)", () => {
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
-  it("an ad-hoc agent keeps its definition across rename (restart still works)", async () => {
+  it("a Temporary agent keeps its definition across rename (restart still works)", async () => {
     // t-eb4b30 — this needs a LEDGER now, and that is the point rather than a fixture chore: a
     // Temporary's definition is its ledger row, so the rename carries it by moving the row's key
     // (`renameExact`) instead of by moving an entry between keys of a second in-memory map. The
     // behaviour asserted here is unchanged; what changed is that only one thing had to move.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-adhoc-rename-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-temporary-rename-"));
     try {
       const ledger = new SessionLedger(dir);
       const { tmux, sessions } = fakeTmux();
@@ -6362,7 +6362,7 @@ describe("live rename (agent/terminal, running or not)", () => {
   });
 });
 
-describe("AgentManager — ad-hoc persistence (spec 211)", () => {
+describe("AgentManager — Temporary persistence (spec 211)", () => {
   const dirs: string[] = [];
   afterEach(() => {
     for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
@@ -6414,7 +6414,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(h.ledger.get("oc-child")).toBeUndefined();
   });
 
-  it("t-8f3f7d refuses a generic ad-hoc AGENT at the manager, not only at the Bridge", async () => {
+  it("t-8f3f7d refuses a generic Temporary AGENT at the manager, not only at the Bridge", async () => {
     // Defence in depth: the Bridge produces the friendly refusal, but the manager serves several doors
     // and the invariant is the manager's, not any one door's discretion.
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
@@ -6443,7 +6443,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(asAgent(def)).toBeUndefined();
   });
 
-  it("t-8f3f7d reads an ad-hoc entry's kind back on restart instead of recomputing it", async () => {
+  it("t-8f3f7d reads a Temporary entry's kind back on restart instead of recomputing it", async () => {
     // The M4 property, now exercised through the M9 door: a stored terminal stays a terminal across a
     // relaunch even though its command would never be admitted as an agent.
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
@@ -6702,7 +6702,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(newSessionArgs[0]?.[cIdx + 1]).toBe(path.resolve(custom));
   });
 
-  it("t-f660d8: parented ad-hoc with explicit cwd fails closed", async () => {
+  it("t-f660d8: parented Temporary with explicit cwd fails closed", async () => {
     const { manager, ws } = harness("agents:\n  boss:\n    cmd: claude\n");
     await manager.spawn("boss");
     const other = path.join(ws, "other");
@@ -6735,7 +6735,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(seenWorktree).toBe(true);
   });
 
-  it("records the worktree for a declared NON-adapter agent (fix: was gated on adhoc||adapter)", async () => {
+  it("records the worktree for a declared NON-adapter agent (fix: was gated on temporary||adapter)", async () => {
     const REC = { path: "/wt/h/dev", branch: "tachyon/dev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, ledger } = harness("agents:\n  dev:\n    cmd: sh\n    kind: terminal\n", {
       resolveSpawnCwd: async () => ({ cwd: "/wt/h/dev", worktree: REC }),
@@ -6962,7 +6962,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     const { manager, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,
     });
-    // Parented ad-hoc children inherit the parent cwd — omit opts.cwd (product fails closed on explicit cwd).
+    // Parented Temporary children inherit the parent cwd — omit opts.cwd (product fails closed on explicit cwd).
     await manager.spawn("helper", { cmd: "opencode", parent: "boss" });
     expect(newSessionArgs).toHaveLength(1);
   });
@@ -7415,7 +7415,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(sessions.has(manager.session("reviewer"))).toBe(true);
   });
 
-  it("rehydrates a re-discovered ad-hoc agent so it is restartable + re-nested", async () => {
+  it("rehydrates a re-discovered Temporary agent so it is restartable + re-nested", async () => {
     const { manager, ledger, ws, cmds } = harness("agents:\n  claude:\n    cmd: claude\n");
     ledger.record("worker", { def: { cmd: "sh", kind: "terminal", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
@@ -7425,7 +7425,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(cmds.at(-1)).toBe("sh");
   });
 
-  it("does NOT rehydrate a name that is declared in config (no ad-hoc shadow)", async () => {
+  it("does NOT rehydrate a name that is declared in config (no Temporary shadow)", async () => {
     const { manager, ledger, ws } = harness("agents:\n  claude:\n    cmd: claude\n");
     ledger.record("claude", { def: { cmd: "sh", kind: "terminal" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // stale/odd
     await manager.rehydrateFromLedger();
@@ -7433,9 +7433,9 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(claude?.lifetime).toBe("saved"); // config wins, not the ledger shadow
   });
 
-  it("kill removes an ad-hoc agent's ledger row (no resurrection); keeps a declared one's", async () => {
+  it("kill removes a Temporary agent's ledger row (no resurrection); keeps a declared one's", async () => {
     const { manager, ledger } = harness("agents:\n  claude:\n    cmd: claude\n");
-    await manager.spawn("scratch", { cmd: "claude" }); // ad-hoc → recorded
+    await manager.spawn("scratch", { cmd: "claude" }); // Temporary → recorded
     expect(ledger.get("scratch")).toBeDefined();
     await manager.kill("scratch");
     expect(ledger.get("scratch")).toBeUndefined();
@@ -7576,7 +7576,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect(retained?.text).toContain("TACHYON_BRIDGE_TOKEN=[redacted]");
   });
 
-  it("retains a clean-exited ad-hoc postmortem across manager reload until explicit dismiss", async () => {
+  it("retains a clean-exited Temporary postmortem across manager reload until explicit dismiss", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-211f6-"));
     dirs.push(ws);
     const hash = workspaceHash(ws);
@@ -7610,7 +7610,7 @@ describe("AgentManager — ad-hoc persistence (spec 211)", () => {
     expect((await reloaded.list()).find((a) => a.name === "review")).toBeUndefined();
   });
 
-  it("dismissTemporary forgets a sessionless stopped ad-hoc — def, lineage AND ledger row", async () => {
+  it("dismissTemporary forgets a sessionless stopped Temporary — def, lineage AND ledger row", async () => {
     const { manager, ledger, ws } = harness("agents:\n  decoy:\n    cmd: x\n");
     ledger.record("ghost", { def: { cmd: "codex exec", kind: "agent", parent: "claude" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } });
     await manager.rehydrateFromLedger();
@@ -7659,7 +7659,7 @@ describe("newlyDeclaredAutostart — live tachyon.yml edit (dogfood p-5a2a83 fol
 });
 
 describe("AgentManager — spec 230 pipeline-node spawn", () => {
-  it("persists def.env (the node nonce) and def.pipeline for a pipeline-node ad-hoc spawn", async () => {
+  it("persists def.env (the node nonce) and def.pipeline for a pipeline-node Temporary spawn", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "am-pl-"));
     try {
       const { tmux } = fakeTmux();
@@ -7863,7 +7863,7 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
     return { manager, ledger, cmds, ws };
   }
 
-  it("refuses AI ad-hoc spawn when Bridge URL is set but MCP materialization fails", async () => {
+  it("refuses AI Temporary spawn when Bridge URL is set but MCP materialization fails", async () => {
     const { manager } = harness211("agents:\n  boss:\n    cmd: claude\n", {
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
       materializeBridgeMcp: () => undefined, // claude path cannot wire
@@ -7974,7 +7974,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
     expect(fs.existsSync(paneTranscriptPath(ws, "claude-fork-1"))).toBe(true);
   });
 
-  it("kill of an AD-HOC one-shot removes its durable transcript too (kill IS the forget for ad-hoc — spec 247 parity, not a new gap)", async () => {
+  it("kill of an AD-HOC one-shot removes its durable transcript too (kill IS the forget for Temporary — spec 247 parity, not a new gap)", async () => {
     const { manager, ws } = pipeTranscriptHarness("agents:\n  decoy:\n    cmd: x\n");
     await manager.spawn("oneshot", { cmd: "claude" });
     expect(paneTranscriptExists(ws, "oneshot")).toBe(true);
