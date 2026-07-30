@@ -6256,12 +6256,83 @@ describe("live rename (agent/terminal, running or not)", () => {
     expect(worker?.parent).toBe("ace");
   });
 
+  /**
+   * t-eb4b30 — spec 211 for the SWEEP, which never had it.
+   *
+   * `kill()` removes a Temporary's ledger row precisely so it does not come back as a permanent
+   * stopped entry. `killAll()` deleted the in-memory map entry and left the row, so the name vanished
+   * from `list()` and returned on the next activation. Measured on the pre-change tree, which is why
+   * this is a fix and not a consequence of collapsing the store: the collapse removed the mask.
+   */
+  it("killAll does not resurrect a Temporary agent on the next rehydrate (spec 211)", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-sweep-211-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      const { tmux } = fakeTmux();
+      const manager = new AgentManager({
+        tmux, wsHash: HASH, workspaceRoot: dir, ledger,
+        getConfig: () => configOf("agents:\n  keeper:\n    cmd: claude\n"),
+        launchPreflight: HERMETIC_PREFLIGHT,
+      });
+      await manager.spawn("temp1", { cmd: "claude" });
+      expect((await manager.list()).map((a) => a.name)).toEqual(["keeper", "temp1"]);
+
+      expect(await manager.killAll()).toEqual(["temp1"]);
+      // The durable half: the row goes with the sweep, exactly as `kill()` does it.
+      expect(ledger.get("temp1")).toBeUndefined();
+
+      await manager.rehydrateFromLedger();
+      // Before the fix this returned ["keeper", "temp1"] — the row survived and rehydrate read it back.
+      expect((await manager.list()).map((a) => a.name)).toEqual(["keeper"]);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  /** A fork is PERSISTENT (spec 225): the sweep must NOT take its row, same exception `kill()` makes. */
+  it("killAll keeps a forked sibling's row, so it stays listed and resumable", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-sweep-fork-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      const { tmux, sessions } = fakeTmux();
+      const manager = new AgentManager({
+        tmux, wsHash: HASH, workspaceRoot: dir, ledger,
+        getConfig: () => configOf("agents:\n  keeper:\n    cmd: claude\n"),
+        launchPreflight: HERMETIC_PREFLIGHT,
+      });
+      await manager.spawn("sibling", { cmd: "claude" });
+      const row = ledger.get("sibling")!;
+      ledger.record("sibling", { ...row, def: { ...row.def!, fork: true } });
+      sessions.add(manager.session("sibling"));
+
+      await manager.killAll();
+
+      expect(ledger.get("sibling")?.def?.fork).toBe(true);
+      await manager.rehydrateFromLedger();
+      expect((await manager.list()).map((a) => a.name)).toContain("sibling");
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it("an ad-hoc agent keeps its definition across rename (restart still works)", async () => {
-    const { manager, sessions } = makeManager("agents:\n  decoy:\n    cmd: x\n");
-    await manager.spawn("ghost", { cmd: "claude" });
-    await manager.rename("ghost", "spirit");
-    await manager.restart("spirit", { stop: "force", session: "new" }); // needs the moved ad-hoc definition
-    expect(sessions.has(`tachyon-${HASH}-spirit`)).toBe(true);
+    // t-eb4b30 — this needs a LEDGER now, and that is the point rather than a fixture chore: a
+    // Temporary's definition is its ledger row, so the rename carries it by moving the row's key
+    // (`renameExact`) instead of by moving an entry between keys of a second in-memory map. The
+    // behaviour asserted here is unchanged; what changed is that only one thing had to move.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-adhoc-rename-"));
+    try {
+      const ledger = new SessionLedger(dir);
+      const { tmux, sessions } = fakeTmux();
+      const manager = new AgentManager({
+        tmux,
+        wsHash: HASH,
+        workspaceRoot: dir,
+        getConfig: () => configOf("agents:\n  decoy:\n    cmd: x\n"),
+        ledger,
+        launchPreflight: HERMETIC_PREFLIGHT,
+      });
+      await manager.spawn("ghost", { cmd: "claude" });
+      await manager.rename("ghost", "spirit");
+      await manager.restart("spirit", { stop: "force", session: "new" }); // needs the moved definition
+      expect(sessions.has(`tachyon-${HASH}-spirit`)).toBe(true);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("moves the resume-ledger record to the new name", async () => {

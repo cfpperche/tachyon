@@ -29,7 +29,11 @@ import { makeTempDir } from "../helpers/tempDir.js";
  * real Bridge over loopback — only tmux itself is faked at the executor level.
  */
 
-const WS = "/repo";
+// t-eb4b30 — a REAL directory, because this suite's AgentManager now needs a working SessionLedger: a
+// Temporary agent's definition is its ledger row, so the ad-hoc spawn/dismiss/list tools below have
+// nowhere to read from without one. It used to be the string "/repo", which was enough only while a
+// private in-memory map held those definitions instead.
+const WS = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-ws-"));
 const HASH = workspaceHash(WS);
 
 function fakeTmuxExec() {
@@ -96,6 +100,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     tmux,
     wsHash: HASH,
     workspaceRoot: WS,
+    ledger: new SessionLedger(WS),
     getConfig: () => config,
     launchPreflight: {
       check: async (command) => command.model === "missing-model"
