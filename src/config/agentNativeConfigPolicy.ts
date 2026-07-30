@@ -117,6 +117,15 @@ export function defaultCodexScalarNativeConfigPolicy(): NonNullable<AgentProfile
   );
 }
 
+export function codexSelectorNativeConfigPolicy(): AgentNativeConfigPolicyV1 {
+  return {
+    source: "agent",
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: [...CODEX_NATIVE_CONFIG_LIFECYCLE],
+  };
+}
+
 export function claudeScalarNativeConfigPolicy(
   source: ClaudeScalarNativeConfigSource,
   authorize: readonly string[] = [],

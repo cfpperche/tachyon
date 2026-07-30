@@ -66,6 +66,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // it. Widening `agent-profile.studio-commit` instead would make a newer engine undecodable to an
   // older shell, because that payload is `.strict()`.
   "agent-profile.saved-agent-create",
+  "agent-profile.saved-agent-create-v2",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -157,6 +158,16 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     mutation: agentProfileStudioMutationSchemaV1,
     /** The proposer, recorded as the new agent's declared owner by the SAME transaction. */
     owner: name,
+  }).strict(),
+  z.object({
+    /**
+     * SDD 483 — additive v2 keeps the old strict payload decodable across engine/client skew while
+     * allowing a human-approved proposal to choose top-level ownership and one narrow grant.
+     */
+    action: z.literal("agent-profile.saved-agent-create-v2"),
+    mutation: agentProfileStudioMutationSchemaV1,
+    owner: name.optional(),
+    grants: z.object({ proposeSavedAgent: z.literal(true).optional() }).strict().optional(),
   }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),

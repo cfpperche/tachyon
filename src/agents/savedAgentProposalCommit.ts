@@ -84,7 +84,6 @@ export type SavedAgentCommitRefusalCode =
   | "digest_mismatch"
   | "expired"
   | "base_diverged"
-  | "capability_recursion"
   | "proposer_grant_revoked"
   | "commit_failed";
 
@@ -105,7 +104,8 @@ export interface SavedAgentCommitPorts {
   createSavedAgent(input: {
     agentName: string;
     spec: SavedAgentProposal["spec"];
-    owner: string;
+    owner?: string;
+    grants?: AgentProfileGrants;
   }): Promise<{ revision: string; txid: string }>;
   /** Re-read at commit time; this is what makes revocation effective on a pending proposal. */
   readProposerGrants(agentName: string): AgentProfileGrants | undefined;
@@ -193,14 +193,6 @@ export async function approveSavedAgentProposal(input: {
     };
   }
 
-  if (proposal.spec.grants?.proposeSavedAgent === true) {
-    return {
-      ok: false,
-      code: "capability_recursion",
-      reason: "a proposed Saved Agent may never carry 'grants.proposeSavedAgent' — refused at commit as well as at admission",
-    };
-  }
-
   if (input.ports.readProposerGrants(proposal.proposer)?.proposeSavedAgent !== true) {
     return {
       ok: false,
@@ -227,20 +219,21 @@ export async function approveSavedAgentProposal(input: {
   writeReceipt(input.workspaceRoot, base);
 
   try {
-    // RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, written by the SAME
-    // transaction. There is nothing to resume between two commits because there are not two commits;
-    // the lifecycle machine's own journal recovers a crash inside this one.
+    // SDD 483: ownership and the narrow proposal grant are digest-bound human decisions. The
+    // canonical lifecycle transaction applies exactly those approved values; starting remains a
+    // separate action.
     const created = await input.ports.createSavedAgent({
       agentName: proposal.spec.name,
       spec: proposal.spec,
-      owner: proposal.proposer,
+      ...((proposal.spec.ownership ?? "proposer") === "proposer" ? { owner: proposal.proposer } : {}),
+      ...(proposal.spec.grants?.proposeSavedAgent ? { grants: { proposeSavedAgent: true } } : {}),
     });
     const receipt: SavedAgentProposalReceipt = {
       ...base,
       outcome: "committed",
       revision: created.revision,
       txid: created.txid,
-      owner: proposal.proposer,
+      ...((proposal.spec.ownership ?? "proposer") === "proposer" ? { owner: proposal.proposer } : {}),
       created: "enabled; not started",
       workspace: proposedWorktreeEnabled(proposal.spec) ? "isolated worktree" : "shared checkout",
     };

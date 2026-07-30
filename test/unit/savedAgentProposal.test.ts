@@ -5,6 +5,7 @@ import {
   admitSavedAgentProposal,
   computeSavedAgentProposalDigest,
   mayProposeSavedAgent,
+  savedAgentCreateMutation,
   savedAgentProposalIsExpired,
   type SavedAgentProposal,
   type SavedAgentProposalSpec,
@@ -73,23 +74,35 @@ describe("Saved Agent proposal admission (SDD 482 phase 4A)", () => {
     expect(mayProposeSavedAgent(GRANTED)).toBe(true);
   });
 
-  /**
-   * Invariant 9. If an approved proposal could carry the proposing capability, ONE human approval
-   * becomes a tree of creators and the control changes from per-creation to per-principal — the
-   * alternative this SDD discards by name. The proposal must FAIL, not arrive silently pruned: a
-   * proposer that asked for this has to learn it was refused.
-   */
-  it("refuses a proposal that would make the new agent a creator too, instead of pruning it", () => {
-    const refused = admit({ spec: spec({ grants: { proposeSavedAgent: true } }) });
-    expect(refused.ok).toBe(false);
-    if (refused.ok) return;
-    expect(refused.code).toBe("capability_recursion");
-    expect(refused.reason).toContain("tree");
+  it("admits an explicit proposal for creation authority because the human reviews that exact grant", () => {
+    const admitted = admit({ spec: spec({ grants: { proposeSavedAgent: true } }) });
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    expect(admitted.proposal.spec.grants).toEqual({ proposeSavedAgent: true });
   });
 
   it("allows a proposal that explicitly asks for the capability to be absent", () => {
     const admitted = admit({ spec: spec({ grants: { proposeSavedAgent: false } }) });
     expect(admitted.ok).toBe(true);
+  });
+
+  it("admits a top-level proposal without requiring an ownership roster", () => {
+    const admitted = admit({ spec: spec({ ownership: "top-level" }), roster: undefined });
+    expect(admitted.ok).toBe(true);
+  });
+
+  it("builds runtime selectors through the same typed policy used by Agent Studio", () => {
+    const mutation = savedAgentCreateMutation("helper", {
+      runtimeAdapter: "claude",
+      model: "claude-opus-5",
+      reasoningEffort: "high",
+    });
+    expect(mutation.editable.runtime).toMatchObject({ model: "claude-opus-5", reasoningEffort: "high" });
+    expect(mutation.editable.nativeConfig?.selectors).toMatchObject({
+      source: "agent",
+      treatment: "overlay",
+      refresh: "every-launch",
+    });
   });
 
   /**

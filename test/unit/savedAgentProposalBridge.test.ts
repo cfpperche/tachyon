@@ -103,13 +103,14 @@ function harness(root: string, caller: BridgeDeps["caller"]) {
       tools.set(name, { config, handler });
     },
   };
-  // A manager is required now: every proposal creates one ownership edge (proposer owns the new
-  // agent), so the roster is always consulted. An empty roster is a real workspace state.
+  // The default proposal creates an ownership edge, so the roster remains available. Top-level
+  // proposals deliberately skip that edge.
   registerTools(mcp as never, {
     workspaceRoot: root, caller, manager: { list: async () => [] },
   } as unknown as BridgeDeps);
   return {
     schemaOf: (name: string) => JSON.stringify(tools.get(name)?.config.inputSchema ?? {}),
+    schemaKeys: (name: string) => Object.keys(tools.get(name)?.config.inputSchema ?? {}),
     call: async (name: string, args: Record<string, unknown> = {}) => {
       const entry = tools.get(name);
       if (!entry) throw new Error(`tool not registered: ${name}`);
@@ -123,21 +124,16 @@ const PROPOSAL = { name: "importer", runtime_adapter: "claude", rationale: "runs
 describe("propose_saved_agent (SDD 482 phase 4B)", () => {
   it("has no way to name the proposer — identity comes from the Bridge, not the arguments", () => {
     const root = workspace();
-    const schema = harness(root, { kind: "agent", name: "claude-runtime" }).schemaOf("propose_saved_agent");
-    expect(schema).not.toContain("proposer");
-    expect(schema).not.toContain("caller");
+    const keys = harness(root, { kind: "agent", name: "claude-runtime" }).schemaKeys("propose_saved_agent");
+    expect(keys).not.toContain("proposer");
+    expect(keys).not.toContain("caller");
   });
 
-  /**
-   * The tool cannot even EXPRESS the recursive request. Admission refuses it as well, and that
-   * belt-and-braces is deliberate: the schema stops today's callers, the admission check stops
-   * whatever calls the store next.
-   */
-  it("cannot express a request for the proposing capability itself", () => {
+  it("can request the narrow proposal grant without gaining any approval capability", () => {
     const root = workspace();
-    const schema = harness(root, { kind: "agent", name: "claude-runtime" }).schemaOf("propose_saved_agent");
-    expect(schema).not.toContain("grants");
-    expect(schema).not.toContain("proposeSavedAgent");
+    const keys = harness(root, { kind: "agent", name: "claude-runtime" }).schemaKeys("propose_saved_agent");
+    expect(keys).toContain("grant_propose_saved_agent");
+    expect(keys).not.toContain("approve");
   });
 
   it("refuses a caller the Bridge could not resolve to an agent", async () => {

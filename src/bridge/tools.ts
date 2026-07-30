@@ -2076,15 +2076,23 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Propose that a human create a Saved Agent (a durable agent profile in this workspace). This does NOT create " +
         "anything: it records a typed, digest-bound proposal for a human to review, and requires the caller's profile " +
-        "to hold the 'grants.proposeSavedAgent' capability — absence is refused by name. If a human approves, YOU become " +
-        "the new agent's declared owner; a proposal cannot declare or reparent other subagents. The proposed agent may " +
-        "never itself carry the proposing capability. Identical re-proposals collapse onto the live one; proposals expire after 24h.",
+        "to hold the 'grants.proposeSavedAgent' capability — absence is refused by name. Ownership, model, reasoning and " +
+        "requested grants are explicit, digest-bound and shown to the human. Nothing starts automatically. Identical " +
+        "re-proposals collapse onto the live one; proposals expire after 24h.",
       inputSchema: {
         name: AGENT_NAME.describe("roster name for the proposed Saved Agent"),
         runtime_adapter: z.string().min(1).max(64).describe("runtime adapter id, e.g. 'claude'"),
         rationale: z.string().min(1).max(4000).describe("why this agent should exist — shown to the human verbatim"),
         executable: z.string().min(1).max(256).optional(),
         display_name: z.string().min(1).max(256).optional(),
+        model: z.string().min(1).max(512).optional(),
+        reasoning_effort: z.string().min(1).max(128).optional(),
+        ownership: z.enum(["proposer", "top-level"]).optional().describe(
+          "durable roster ownership (default proposer). top-level creates no declaredOwner edge.",
+        ),
+        grant_propose_saved_agent: z.boolean().optional().describe(
+          "request authority to propose further Saved Agents; every future proposal still needs human approval",
+        ),
         skills: z.array(z.string().min(1).max(128)).max(64).optional(),
         mcp_servers: z.array(z.string().min(1).max(128)).max(64).optional(),
         // t-4071e4 — isolated or not, and nothing else. There is deliberately no path/branch/base
@@ -2116,6 +2124,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             rationale: input.rationale,
             ...(input.executable ? { executable: input.executable } : {}),
             ...(input.display_name ? { displayName: input.display_name } : {}),
+            ...(input.model ? { model: input.model } : {}),
+            ...(input.reasoning_effort ? { reasoningEffort: input.reasoning_effort } : {}),
+            ...(input.ownership ? { ownership: input.ownership } : {}),
+            ...(input.grant_propose_saved_agent ? { grants: { proposeSavedAgent: true } } : {}),
             ...(input.isolated_worktree !== undefined ? { workspace: { worktree: input.isolated_worktree } } : {}),
             ...(input.skills?.length || input.mcp_servers?.length
               ? {

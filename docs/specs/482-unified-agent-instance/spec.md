@@ -192,7 +192,7 @@ here.
 | Replay of an old approval | A revoked or expired proposal is committed later | Single-use digest, expiry, revocation, idempotent retry keyed on the digest |
 | Secret exfiltration through the review surface | Credentials rendered into the Inbox or the receipt | Diff and summary are content-free of secrets by construction, like the existing config surfaces |
 | Partial commit | An authority exists with no profile, or a roster entry with no authority | One atomic transaction; compensate on failure |
-| **Capability recursion** | One approval becomes a tree of creators: an agent created by proposal carries the propose capability and creates further agents, turning a per-creation control into a per-principal one — the alternative this design explicitly rejected | A created agent **never** carries the creation capability. It is refused at commit, not filtered in the UI, so a proposal that requests it fails rather than arriving quietly stripped. Granting it remains a human editing that profile in Studio, which is a separate, visible act |
+| **Capability recursion (v1)** | One approval becomes a tree of creators without an explicit decision | A created agent never inherits the creation capability. SDD 483 supersedes the v1 blanket refusal: the proposal may request the narrow grant, but it is digest-bound, shown in Human Inbox, and applied only by that proposal's independent human approval |
 | Approval fatigue | Human rubber-stamps because the diff is unreadable | The Inbox shows effective configuration and dangerous permissions explicitly, not raw YAML |
 | **Proposal flooding** | A confused or looping agent fills the Inbox; no single proposal is ever approved, but the queue stops being usable — a denial of the human's attention rather than of the system | Per-proposer pending-proposal ceiling, and identical re-proposals collapse on their digest instead of queueing twice. Refusal is by name, so the loop is visible rather than silent |
 
@@ -275,7 +275,8 @@ one changes measured behaviour, so it is called out rather than filed.
    separate, explicit action, and only the NEXT instance is born Saved. (This is what removed the
    need for a declared `authority` axis: the design refuses the hybrid state rather than modelling
    it. Hooks are still a RECORDED capability, never derived from identity.)
-8. **The proposer becomes the new agent's declared owner**, and v1 REFUSES any other ownership claim:
+8. **The v1 default makes the proposer the new agent's declared owner.** SDD 483 preserves that default
+   while allowing the human-reviewed proposal to choose top-level ownership:
    a proposal may not declare subagents or reparent an existing agent. Reparenting is a roster edit
    wearing a creation request — a different decision with a different blast radius, and one the human
    would be approving without having been asked about it.

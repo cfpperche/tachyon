@@ -196,6 +196,28 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     return { revision: value.revision, txid: value.txid };
   }
 
+  /** SDD 483 — governed create with optional durable owner and human-approved narrow grants. */
+  async createSavedAgent(
+    mutation: AgentProfileStudioMutationV1,
+    options: { owner?: string; grants?: { proposeSavedAgent?: true } },
+  ): Promise<{ revision: string; txid: string }> {
+    const result = await this.client.invoke(`saved-agent-create-v2:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.saved-agent-create-v2", mutation, ...options },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.saved-agent-create-v2") {
+      throw new Error("persistent engine returned a malformed Saved Agent creation result");
+    }
+    const value = result.value as { revision?: unknown; txid?: unknown };
+    if (typeof value?.revision !== "string" || typeof value?.txid !== "string") {
+      throw new Error("persistent engine returned a malformed Saved Agent creation result");
+    }
+    this.refreshConfig();
+    return { revision: value.revision, txid: value.txid };
+  }
+
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     const result = await this.client.invoke(`agent-profile-studio:${this.operationId()}`, {
       schemaVersion: 1,

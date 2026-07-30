@@ -46,7 +46,9 @@ export interface SavedAgentProposalReview {
    * a file that failed its digest check, which is the one thing the warned row must not do.
    */
   worktreeEnabled: boolean | "unknown";
-  runtime: { adapter: string; executable?: string };
+  runtime: { adapter: string; executable?: string; model?: string; reasoningEffort?: string };
+  ownership: "proposer" | "top-level";
+  requestedGrants: string[];
   displayName?: string;
   rationale: string;
   /** Environment variable NAMES the proposal asks for. Never values — see the rule above. */
@@ -114,6 +116,20 @@ export function buildSavedAgentProposalReview(input: {
       detail: `would launch \`${spec.executable}\`. Confirm this is the runtime you expect for adapter '${spec.runtimeAdapter}'.`,
     });
   }
+  if (spec.grants?.proposeSavedAgent) {
+    dangerous.push({
+      label: "agent creation authority",
+      detail:
+        "would grant 'proposeSavedAgent'. The new agent could ask you to create further Saved Agents, "
+        + "but every request would still require a separate human approval.",
+    });
+  }
+  if ((spec.ownership ?? "proposer") === "top-level") {
+    dangerous.push({
+      label: "top-level ownership",
+      detail: "creates no declaredOwner edge. The proposer will not own this Saved Agent in the sidebar roster.",
+    });
+  }
 
   /**
    * t-4071e4 — the human must see the isolation decision before approving.
@@ -146,7 +162,14 @@ export function buildSavedAgentProposalReview(input: {
     expiresAt: proposal.expiresAt,
     expired: savedAgentProposalIsExpired(proposal, input.nowMs),
     agentName: spec.name,
-    runtime: { adapter: spec.runtimeAdapter, ...(spec.executable ? { executable: spec.executable } : {}) },
+    runtime: {
+      adapter: spec.runtimeAdapter,
+      ...(spec.executable ? { executable: spec.executable } : {}),
+      ...(spec.model ? { model: spec.model } : {}),
+      ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort } : {}),
+    },
+    ownership: spec.ownership ?? "proposer",
+    requestedGrants: spec.grants?.proposeSavedAgent ? ["proposeSavedAgent"] : [],
     ...(spec.displayName ? { displayName: spec.displayName } : {}),
     rationale: spec.rationale,
     environmentNames: Object.keys(spec.environment ?? {}).sort(),
@@ -160,6 +183,9 @@ export function buildSavedAgentProposalReview(input: {
       `.tachyon/agents/${spec.name}/agent.yml (new canonical profile, lifecycle.enabled=true)`,
       `.tachyon/agents/${spec.name}/authority.json (new authority record)`,
       `tachyon.yml → agents.${spec.name} (new roster pointer)`,
+      (spec.ownership ?? "proposer") === "proposer"
+        ? `${proposal.proposer} → ownership.subagents adds ${spec.name}`
+        : `no declaredOwner edge (top-level Saved Agent)`,
       worktreeEnabled
         ? `runs in its OWN isolated git worktree under the governed worktrees root (path and branch not chosen by the proposer)`
         : `runs in the SHARED workspace checkout — no isolated worktree`,

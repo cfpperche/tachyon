@@ -1590,7 +1590,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         approvedBy: "human",
         nowMs: Date.now(),
         ports: {
-          createSavedAgent: async ({ agentName, spec, owner }) => {
+          createSavedAgent: async ({ agentName, spec, owner, grants }) => {
             // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
             // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
             // two-transaction version: ownership is parent-side, so committing separately left a
@@ -1598,7 +1598,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
             // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
             // stays wiring only — the previous inline literal is what let the isolation bug hide.
-            return ws.createSavedAgentWithOwner(savedAgentCreateMutation(agentName, spec), owner);
+            return ws.createSavedAgent(savedAgentCreateMutation(agentName, spec), {
+              ...(owner ? { owner } : {}),
+              ...(grants ? { grants: { proposeSavedAgent: true } } : {}),
+            });
           },
           // Re-read at commit time, which is what makes a revoked capability effective on a proposal
           // queued before the revocation.

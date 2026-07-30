@@ -386,6 +386,15 @@ export async function executeExtensionCommand(
       });
       return json({ revision: created.revision, txid: created.txid });
     }
+    case "agent-profile.saved-agent-create-v2": {
+      const profile = createProfileFromStudioMutation(command.mutation);
+      const created = await workspace.commitSavedAgentCreation({
+        agentName: command.mutation.agentName,
+        createProfile: command.grants ? { ...profile, grants: command.grants } : profile,
+        owner: command.owner,
+      });
+      return json({ revision: created.revision, txid: created.txid });
+    }
     case "agent-profile.studio-lifecycle":
       return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "agent-profile.studio-bundle-clone": {

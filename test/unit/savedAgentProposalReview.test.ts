@@ -77,6 +77,7 @@ describe("Saved Agent proposal review (SDD 482 phase 4C)", () => {
       ".tachyon/agents/importer/agent.yml (new canonical profile, lifecycle.enabled=true)",
       ".tachyon/agents/importer/authority.json (new authority record)",
       "tachyon.yml → agents.importer (new roster pointer)",
+      "claude-runtime → ownership.subagents adds importer",
       // t-4071e4 — where the agent would RUN belongs next to "not started": both describe the posture
       // the approval commits to, and an approval screen that omits it hides the whole impact.
       "runs in its OWN isolated git worktree under the governed worktrees root (path and branch not chosen by the proposer)",

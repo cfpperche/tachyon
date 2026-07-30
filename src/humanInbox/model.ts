@@ -232,6 +232,8 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
           expired: false,
           agentName: "(unreadable)",
           runtime: { adapter: "(unreadable)" },
+          ownership: "proposer",
+          requestedGrants: [],
           rationale: untrusted.reason,
           environmentNames: [],
           requestedOwnership: [],

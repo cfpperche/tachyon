@@ -16,6 +16,7 @@ import {
 } from "../../src/agents/savedAgentProposalStore.js";
 import {
   savedAgentCreateMutation, SAVED_AGENT_PROPOSAL_TTL_MS } from "../../src/agents/savedAgentProposal.js";
+import { extensionCommandSchema } from "../../src/runtime-api/extensionOperations.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — the commit path, which is the first thing in this whole
@@ -108,6 +109,23 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     // The proposal is consumed, and the witness records who approved it.
     expect(listSavedAgentProposals(ws)).toEqual([]);
     expect(readSavedAgentProposalWitness(ws).some((e) => e.kind === "committed")).toBe(true);
+  });
+
+  it("creates a top-level agent without writing an owner edge", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws, { ownership: "top-level" });
+    const p = ports();
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws,
+      proposalId: proposal.id,
+      approvedDigest: proposal.digest,
+      approvedBy: "human",
+      nowMs: NOW,
+      ports: p,
+    });
+    expect(result.ok).toBe(true);
+    expect(p.calls[0]).not.toHaveProperty("owner");
+    if (result.ok) expect(result.receipt).not.toHaveProperty("owner");
   });
 
   it("records the shared checkout in the receipt when the proposal opted out of isolation", async () => {
@@ -217,11 +235,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     expect(listSavedAgentProposals(ws)).toHaveLength(1);
   });
 
-  /**
-   * Invariant 9's SECOND enforcement point. Admission refuses the request; this refuses to honour one
-   * that reached the store by any other route — a file written directly, a future caller, a bug.
-   */
-  it("refuses at commit to create an agent that would itself be a creator", async () => {
+  it("passes the exact human-approved creation grant to the canonical transaction", async () => {
     const ws = workspace();
     const proposal = proposed(ws);
     // Write the recursive grant straight into the stored file and re-seal it, simulating a path that
@@ -238,9 +252,9 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       workspaceRoot: ws, proposalId: proposal.id, approvedDigest: digest,
       approvedBy: "human", nowMs: NOW, ports: p,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.code).toBe("capability_recursion");
-    expect(p.calls).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(p.calls).toHaveLength(1);
+    expect(p.calls[0]).toMatchObject({ grants: { proposeSavedAgent: true } });
   });
 
   /**
@@ -458,7 +472,8 @@ describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
  * deployment where the port was deliberately unsupplied, the other said the door opened with "no new
  * operation, no protocol bump". Both were true when written and both are false now — the port is
  * supplied, and the ratified single transaction added the additive action
- * `agent-profile.saved-agent-create`, because one transaction requires one crossing and two existing
+ * `agent-profile.saved-agent-create`; SDD 483 preserves that strict action and adds v2 rather than
+ * widening it, because one transaction requires one crossing and two existing
  * operations are two transactions by construction.
  *
  * The precise protocol position lives in `spec.md` § Where the creation door is open: no existing
@@ -473,7 +488,7 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
   });
 
   it("creates through the single canonical transaction, not two Studio calls", () => {
-    expect(extension).toContain("ws.createSavedAgentWithOwner(");
+    expect(extension).toContain("ws.createSavedAgent(");
     // The two-call version is gone: no separate set-subagents, no adopt step.
     expect(extension).not.toContain("operation: \"set-subagents\"");
     expect(extension).not.toContain("adoptSubagent");
@@ -487,9 +502,32 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
    */
   it("crosses the seam by a NEW action rather than a widened payload", () => {
     const operations = fs.readFileSync(path.resolve(__dirname, "../../src/runtime-api/extensionOperations.ts"), "utf8");
-    expect(operations).toContain('"agent-profile.saved-agent-create"');
+    expect(operations).toContain('"agent-profile.saved-agent-create-v2"');
     // The pre-existing create payload is untouched.
     expect(operations).toContain('z.object({ action: z.literal("agent-profile.studio-commit"), mutation: agentProfileStudioMutationSchemaV1 }).strict()');
+  });
+
+  it("keeps v1 strict while v2 carries only the approved owner and narrow grant", () => {
+    const mutation = savedAgentCreateMutation("coordinator", {
+      runtimeAdapter: "claude",
+      model: "claude-opus-5",
+    });
+    expect(extensionCommandSchema.safeParse({
+      action: "agent-profile.saved-agent-create",
+      mutation,
+      owner: "builder",
+      grants: { proposeSavedAgent: true },
+    }).success).toBe(false);
+    expect(extensionCommandSchema.safeParse({
+      action: "agent-profile.saved-agent-create-v2",
+      mutation,
+      grants: { proposeSavedAgent: true },
+    }).success).toBe(true);
+    expect(extensionCommandSchema.safeParse({
+      action: "agent-profile.saved-agent-create-v2",
+      mutation,
+      grants: { proposeSavedAgent: false },
+    }).success).toBe(false);
   });
 
   it("asks for no capability references, leaving that refusal to the canonical validator", () => {

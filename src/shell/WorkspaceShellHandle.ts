@@ -85,6 +85,12 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   createSavedAgentWithOwner(mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgentWithOwner"]>[0], owner: string) {
     return this.studio.createSavedAgentWithOwner(mutation, owner);
   }
+  createSavedAgent(
+    mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[0],
+    options: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[1],
+  ) {
+    return this.studio.createSavedAgent(mutation, options);
+  }
   commitAgentProfileStudioLifecycle(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudioLifecycle"]>[0]) {
     return this.studio.commitAgentProfileStudioLifecycle(mutation);
   }

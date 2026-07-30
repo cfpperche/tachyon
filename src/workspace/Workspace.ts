@@ -5263,9 +5263,16 @@ export class Workspace {
   async commitSavedAgentCreation(input: {
     agentName: string;
     createProfile: Parameters<typeof commitCanonicalAgentProfileLifecycle>[0]["createProfile"];
-    owner: string;
+    owner?: string;
   }): Promise<AgentProfileLifecycleCommitResult> {
     await this.assertAgentStoppedForProfileMutation(input.agentName);
+    if (!input.owner) {
+      return this.runAgentProfileLifecycleCommit({
+        agentName: input.agentName,
+        operation: "create",
+        createProfile: input.createProfile,
+      });
+    }
     const ownerSnapshot = await this.inspectAgentProfileLifecycle(input.owner);
     const subagents = [...new Set([...(ownerSnapshot.profile.ownership?.subagents ?? []), input.agentName])];
     // The same spec 352 gate a Studio edit passes, against a roster that already includes the agent

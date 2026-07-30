@@ -357,6 +357,10 @@ function SavedAgentProposalDetail({
       <dl class="hi-proposal-facts">
         <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
         <dt>Runtime</dt><dd>{proposal.runtime.adapter}{proposal.runtime.executable ? ` (${proposal.runtime.executable})` : ""}</dd>
+        <dt>Model</dt><dd>{proposal.runtime.model ?? "Runtime default"}</dd>
+        <dt>Reasoning</dt><dd>{proposal.runtime.reasoningEffort ?? "Runtime default"}</dd>
+        <dt>Ownership</dt><dd>{proposal.ownership === "top-level" ? "Top-level (no declared owner)" : `Owned by ${proposal.proposer}`}</dd>
+        <dt>Grants</dt><dd>{proposal.requestedGrants.length ? proposal.requestedGrants.join(", ") : "None"}</dd>
         {/* t-4071e4 — WHERE it runs is a fact the human decides on, not a footnote. It sits in the
           * scannable list because the approval that broke this shipped an agent into the shared
           * checkout with nothing on screen saying so. The detail (and the opt-out warning) is below. */}
@@ -384,7 +388,7 @@ function SavedAgentProposalDetail({
         </div>
       ) : (
         <p class="hi-proposal-plain" data-testid="proposal-dangerous-none">
-          This proposal requests no ownership, MCP servers, hooks or environment.
+          This proposal requests no additional authority, shared checkout, ownership, hooks or environment.
         </p>
       )}
 

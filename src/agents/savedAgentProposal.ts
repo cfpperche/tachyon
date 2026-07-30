@@ -1,6 +1,20 @@
 import crypto from "node:crypto";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
-import { assertOwnershipTargets, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, type AgentOwnershipRosterV1, type AgentProfileStudioMutationV1 } from "../config/agentProfileStudio.js";
+import {
+  defaultClaudeScalarNativeConfigPolicy,
+  defaultCodexScalarNativeConfigPolicy,
+  defaultGrokNativeConfigPolicy,
+  claudeSelectorNativeConfigPolicy,
+  codexSelectorNativeConfigPolicy,
+  grokSelectorNativeConfigPolicy,
+} from "../config/agentNativeConfigPolicy.js";
+import {
+  assertOwnershipTargets,
+  createProfileFromStudioMutation,
+  DEFAULT_NEW_AGENT_WORKTREE_ENABLED,
+  type AgentOwnershipRosterV1,
+  type AgentProfileStudioMutationV1,
+} from "../config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 (`t-5e1113`) — a Saved Agent proposal is INERT DATA.
@@ -42,14 +56,16 @@ export interface SavedAgentProposalSpec {
   /** Optional single executable token, matching `runtimeSchema.executable` rules. */
   executable?: string;
   displayName?: string;
+  /** Typed runtime selectors. Both are digest-bound and shown before approval. */
+  model?: string;
+  reasoningEffort?: string;
   /** Why this agent should exist. Shown to the human verbatim, never re-summarized. */
   rationale: string;
   /** Non-secret environment values only. A secret reference can never be requested (invariant 8). */
   environment?: Readonly<Record<string, string>>;
   /**
-   * REFUSED IN v1. Kept in the type only so a request can be refused BY NAME rather than silently
-   * dropped — the same reason `grants` is representable. Ratified 2026-07-29: the proposer becomes the
-   * new agent's declared owner, and a proposal may not reparent anyone else.
+   * A proposal may not reparent existing agents. Kept in the type so that request is refused BY NAME
+   * rather than silently dropped.
    */
   ownsSubagents?: readonly string[];
   /** Resource capabilities requested — skills / MCP / hooks by id. */
@@ -58,8 +74,13 @@ export interface SavedAgentProposalSpec {
     mcp?: readonly string[];
     hooks?: readonly string[];
   };
-  /** Authority requested. Present only so it can be REFUSED by name rather than silently dropped. */
+  /** Authority requested. Human approval is the only path that can grant it. */
   grants?: { proposeSavedAgent?: boolean };
+  /**
+   * Durable roster ownership created with the profile. Absent preserves the v1 behavior.
+   * `top-level` creates no declaredOwner edge; it does not imply operational independence or lineage.
+   */
+  ownership?: "proposer" | "top-level";
   /**
    * t-4071e4 — the workspace isolation policy, and the ONLY workspace decision a proposer may express.
    *
@@ -111,20 +132,35 @@ export function proposedWorktreeEnabled(spec: Pick<SavedAgentProposalSpec, "work
  */
 export function savedAgentCreateMutation(
   agentName: string,
-  spec: Pick<SavedAgentProposalSpec, "displayName" | "runtimeAdapter" | "executable" | "workspace">,
+  spec: Pick<SavedAgentProposalSpec, "displayName" | "runtimeAdapter" | "executable" | "workspace" | "model" | "reasoningEffort">,
 ): AgentProfileStudioMutationV1 {
+  const nativeConfig = spec.model || spec.reasoningEffort
+    ? spec.runtimeAdapter === "claude"
+      ? { ...defaultClaudeScalarNativeConfigPolicy(), selectors: claudeSelectorNativeConfigPolicy() }
+      : spec.runtimeAdapter === "codex"
+        ? { ...defaultCodexScalarNativeConfigPolicy(), selectors: codexSelectorNativeConfigPolicy() }
+        : spec.runtimeAdapter === "grok"
+          ? { ...defaultGrokNativeConfigPolicy(), selectors: grokSelectorNativeConfigPolicy() }
+          : undefined
+    : undefined;
   return {
     schemaVersion: 1,
     kind: "agent-instance",
     agentName,
     editable: {
       displayName: spec.displayName ?? "",
-      runtime: { adapter: spec.runtimeAdapter, executable: spec.executable ?? spec.runtimeAdapter },
+      runtime: {
+        adapter: spec.runtimeAdapter,
+        executable: spec.executable ?? spec.runtimeAdapter,
+        ...(spec.model ? { model: spec.model } : {}),
+        ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort } : {}),
+      },
       role: "",
       cwd: "",
       lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
       worktree: { enabled: proposedWorktreeEnabled(spec), branch: "" },
       isolation: "",
+      ...(nativeConfig ? { nativeConfig } : {}),
       capabilities: { skills: [], mcp: [], hooks: [] },
     },
   };
@@ -152,7 +188,6 @@ export interface SavedAgentProposal {
 
 export type SavedAgentProposalRefusalCode =
   | "capability_absent"
-  | "capability_recursion"
   | "pending_ceiling"
   | "ownership_conflict"
   /** t-4071e4 — a workspace key the proposer may not choose (path/branch/base), refused by name. */
@@ -252,20 +287,8 @@ export function admitSavedAgentProposal(input: {
     };
   }
 
-  // 2. Capability recursion (invariant 9). If an approved proposal could itself carry the proposing
-  //    capability, one human approval becomes a TREE of creators and the control silently changes
-  //    from per-creation to per-principal — which is the alternative this SDD discards by name. The
-  //    refusal is here AND at commit, and the proposal FAILS rather than being quietly pruned: a
-  //    proposer that asked for this must learn it was refused, not receive a stripped agent.
-  if (input.spec.grants?.proposeSavedAgent === true) {
-    return {
-      ok: false,
-      code: "capability_recursion",
-      reason:
-        "a proposed Saved Agent may never carry 'grants.proposeSavedAgent': one approval would become a tree " +
-        "of creators. Granting it stays a separate, visible human edit in Agent Studio",
-    };
-  }
+  // A recursive grant is no longer rejected here: it is inert proposal data, digest-bound and shown
+  // as high-risk authority. It can become durable only through the host-only human approval path.
 
   // t-4071e4 — a workspace key that would choose WHERE the checkout lands is refused by name, before
   // anything reaches the queue. Silently dropping it would let a proposer believe it had been honored
@@ -293,16 +316,13 @@ export function admitSavedAgentProposal(input: {
   }
 
   if (!AGENT_NAME_RE.test(input.spec.name)) return invalid(`'${input.spec.name}' is not a valid agent name`);
+  try {
+    createProfileFromStudioMutation(savedAgentCreateMutation(input.spec.name, input.spec));
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
+  }
 
-  // 3. Requested ownership, checked against the SAME spec 352 rules a Studio edit obeys, and with the
-  //    same wording. Without this the conflict surfaces only after a human has already approved: the
-  //    config loader is fail-closed, so the reload the transaction activates would throw and the
-  //    commit would roll back with an opaque config error. Fail-closed is not the same as
-  //    well-behaved — the human would have consented to something that then quietly undid itself.
-  //    Refusing here is the same doctrine already applied to capability recursion: the proposer
-  //    learns why, and nothing reaches the queue.
-  // 3. Ownership. RATIFIED 2026-07-29: the proposer becomes the new agent's declared owner, and v1
-  //    refuses any other ownership claim. A proposal that reparents an existing agent is a roster
+  // 3. Ownership. A proposal that reparents an existing agent is a roster
   //    edit wearing a creation request — a different decision, with a different blast radius, and one
   //    the human would be approving without it being the thing they were asked about.
   if (input.spec.ownsSubagents?.length) {
@@ -318,7 +338,7 @@ export function admitSavedAgentProposal(input: {
   // The edge that WILL be written — proposer owns the new agent — is validated here too, against the
   // same spec 352 rules a Studio edit obeys, so the conflict surfaces before a human approves rather
   // than as an opaque config rollback afterwards. Fail-closed is not the same as well-behaved.
-  if (!input.roster) {
+  if ((input.spec.ownership ?? "proposer") === "proposer" && !input.roster) {
     return {
       ok: false,
       code: "ownership_conflict",
@@ -327,14 +347,15 @@ export function admitSavedAgentProposal(input: {
         "refusing rather than deferring the check to after a human approves",
     };
   }
-  try {
+  if ((input.spec.ownership ?? "proposer") === "proposer") try {
+    const ownershipRoster = input.roster!;
     // The synthetic entry stands in for the agent that does not exist yet — appended ONLY when the
     // name is free. Appending unconditionally would shadow a REAL entry of the same name (a later
     // key wins in the Map), which would turn a name collision with an owned agent or a terminal into
     // a silent pass — the check defeating itself.
-    const roster = input.roster.some((entry) => entry.name === input.spec.name)
-      ? input.roster
-      : [...input.roster, { name: input.spec.name, kind: "agent" as const, subagents: [] }];
+    const roster = ownershipRoster.some((entry) => entry.name === input.spec.name)
+      ? ownershipRoster
+      : [...ownershipRoster, { name: input.spec.name, kind: "agent" as const, subagents: [] }];
     assertOwnershipTargets(input.proposer, [input.spec.name], roster);
   } catch (error) {
     return { ok: false, code: "ownership_conflict", reason: error instanceof Error ? error.message : String(error) };
