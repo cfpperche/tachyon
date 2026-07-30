@@ -485,9 +485,19 @@ function assertExpect(task: Task, expect?: TaskUpdateExpect): void {
   if (expect.updatedAt !== undefined && task.updatedAt !== expect.updatedAt) throw new Error("precondition-failed: updatedAt did not match");
 }
 
+/**
+ * t-57a00a — the keys of `TaskUpdateInput` that are CALL METADATA, not fields of the task.
+ *
+ * `assertTransition` counts everything else as a field edit, so a key added here without being listed
+ * silently turns every update on a terminal task into a refusal. That is not hypothetical: adding
+ * `actor` broke `landed -> done` for every agent caller, because the Bridge now attaches it to the
+ * patch and the counter read it as "you are editing a landed task".
+ */
+const TASK_UPDATE_METADATA_KEYS: ReadonlySet<keyof TaskUpdateInput> = new Set(["now", "expect", "status", "actor"]);
+
 function assertTransition(current: Task, next: Task, input: TaskUpdateInput): void {
   const mutable = new Set<TaskStatus>(["inbox", "triaged", "active"]);
-  const changedFields = Object.keys(input).filter((key) => key !== "now" && key !== "expect" && key !== "status");
+  const changedFields = Object.keys(input).filter((key) => !TASK_UPDATE_METADATA_KEYS.has(key as keyof TaskUpdateInput));
   if (changedFields.length && !mutable.has(current.status)) throw new Error(`task fields are immutable while status is '${current.status}'`);
   if ("assignee" in input && next.status !== "triaged" && next.status !== "active") throw new Error("assignee is mutable only in triaged/active tasks");
   if (next.status === "active" && !next.assignee) throw new Error("active tasks require assignee");

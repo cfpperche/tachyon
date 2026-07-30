@@ -388,3 +388,34 @@ describe("allowedTransitions parity with assertTransition", () => {
     }
   });
 });
+
+/**
+ * t-57a00a — `actor` is call metadata, not a field of the task.
+ *
+ * `assertTransition` refuses any FIELD edit on a terminal task by counting the input's keys. When
+ * `actor` was added for the assignee wake-up, it landed in that count, and every agent-issued
+ * `landed -> done` started failing with "task fields are immutable while status is 'landed'" — a
+ * status-only transition rejected as a field edit. Caught in production, not by a test, which is why
+ * this one exists.
+ */
+describe("t-57a00a — call metadata does not count as a field edit", () => {
+  it("closes a landed task when the caller attaches an actor", async () => {
+    const task = await store.create({ title: "shipped", author: "human" });
+    await store.update(task.id, { status: "triaged" });
+    await store.update(task.id, { assignee: "ada", status: "active" });
+    await store.update(task.id, { status: "landed" });
+
+    await expect(store.update(task.id, { status: "done", actor: "ada" })).resolves.toMatchObject({ status: "done" });
+  });
+
+  it("still refuses a real field edit on a terminal task, actor or not", async () => {
+    // The guard must keep its teeth: metadata is exempt, content is not.
+    const task = await store.create({ title: "shipped", author: "human" });
+    await store.update(task.id, { status: "triaged" });
+    await store.update(task.id, { assignee: "ada", status: "active" });
+    await store.update(task.id, { status: "landed" });
+
+    await expect(store.update(task.id, { title: "renamed", actor: "ada" }))
+      .rejects.toThrow("task fields are immutable while status is 'landed'");
+  });
+});
