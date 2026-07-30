@@ -78,7 +78,12 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
       "isAdhocItem",
       "isAdhocAiAgent",
       "startAdhocAgent",
-      "liveAdhocAgents",
+      // `liveAdhocAgents` is NOT here, and the reason is the correction this guard needed: it was a
+      // WIRE field (`task.board` input, validated by hasOnlyKeys), not an internal identifier. I
+      // renamed it as if it were, with no protocol bump — a new shell would have had its board query
+      // rejected by a protocol-5 engine. It is renamed now WITH the 5 -> 6 bump, and its skew
+      // behaviour is pinned by boardQueryProtocolSkew.test.ts and engineReleaseCompatibility.test.ts,
+      // which is where a wire name belongs. Listing it as a plain retired symbol is what hid the bug.
       "nameInLiveConfigOrAdhoc",
       "MAX_HANDOFF_ADHOC_ARGS",
       "preservesDeclaredLedger",
@@ -89,6 +94,13 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
     ]) {
       expect(grepFiles(`\\b${id}\\b`, ["src", "test", "scripts"]), `${id} came back`).toEqual([]);
     }
+  });
+
+  it("the species-derived profile naming is gone (t-4cc561: CanonicalProfile -> AgentProfile/SavedAgentProfile)", () => {
+    // Renameable in one cut because these types cross extension<->webview, and BOTH sides ship in the
+    // same VSIX from the same dist/. That is the opposite of the engine wire, where the peer can be a
+    // different build — which is why one family moved freely and the other needed a protocol bump.
+    expect(grepFiles("canonicalprofile", ["src", "test", "scripts"])).toEqual([]);
   });
 
   it("no user-facing string calls an instance ad-hoc", () => {

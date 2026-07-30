@@ -278,7 +278,7 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     const ctx = { ...fakeCtx(), entityId: "Ada" };
 
     handleAgentStudioDomainMessage(target, ctx, envelope({
-      type: "setCanonicalProfileSubagents" as const,
+      type: "setAgentProfileSubagents" as const,
       agent: "Ada",
       expectedRevision: "a".repeat(64),
       subagents: ["Bea"],
@@ -287,24 +287,24 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
 
     expect(mutations).toEqual([expect.objectContaining({ operation: "set-subagents", agentName: "Ada", subagents: ["Bea"] })]);
     // The snapshot carries the NEXT CAS revision; the ownership message carries what the form draws.
-    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1)).toMatchObject({
+    expect(findType(ctx.posted, "agentProfileSnapshot").at(-1)).toMatchObject({
       action: "set-subagents", snapshot: { revision: "c".repeat(64) },
     });
-    expect(findType(ctx.posted, "canonicalProfileOwnership").at(-1)).toMatchObject({
+    expect(findType(ctx.posted, "agentProfileOwnership").at(-1)).toMatchObject({
       agent: "Ada", ownership: { subagents: ["Bea"] },
     });
     expect(views).toEqual(["Ada"]);
 
     // Cross-agent tampering is refused by the same binding guard as every other profile action.
     handleAgentStudioDomainMessage(target, ctx, envelope({
-      type: "setCanonicalProfileSubagents" as const,
+      type: "setAgentProfileSubagents" as const,
       agent: "Bea",
       expectedRevision: "a".repeat(64),
       subagents: ["Ada"],
     }));
     await flush();
     expect(mutations).toHaveLength(1);
-    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({ agent: "Ada" });
+    expect(findType(ctx.posted, "agentProfileError").at(-1)).toMatchObject({ agent: "Ada" });
   });
 
   it("t-3bde32: dispatches the Saved Agent proposal grant, and refuses cross-agent tampering", async () => {
@@ -319,7 +319,7 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
 
     for (const granted of [true, false]) {
       handleAgentStudioDomainMessage(target, ctx, envelope({
-        type: "setCanonicalProfileProposeGrant" as const,
+        type: "setAgentProfileProposeGrant" as const,
         agent: "Ada",
         expectedRevision: "a".repeat(64),
         granted,
@@ -330,20 +330,20 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
       expect.objectContaining({ operation: "set-propose-saved-agent-grant", agentName: "Ada", granted: true }),
       expect.objectContaining({ operation: "set-propose-saved-agent-grant", agentName: "Ada", granted: false }),
     ]);
-    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1))
+    expect(findType(ctx.posted, "agentProfileSnapshot").at(-1))
       .toMatchObject({ action: "set-propose-saved-agent-grant" });
 
     // An authority change for ANOTHER agent must not ride this binding — same guard as every other
     // profile action, and the one that matters most on a grant.
     handleAgentStudioDomainMessage(target, ctx, envelope({
-      type: "setCanonicalProfileProposeGrant" as const,
+      type: "setAgentProfileProposeGrant" as const,
       agent: "Bea",
       expectedRevision: "a".repeat(64),
       granted: true,
     }));
     await flush();
     expect(mutations).toHaveLength(2);
-    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({ agent: "Ada" });
+    expect(findType(ctx.posted, "agentProfileError").at(-1)).toMatchObject({ agent: "Ada" });
   });
 
   it("dispatches revisioned lifecycle actions and refreshes a redacted snapshot after a stale conflict", async () => {
@@ -359,23 +359,23 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     const ctx = { ...fakeCtx(), entityId: "Ada" };
 
     handleAgentStudioDomainMessage(target, ctx, envelope({
-      type: "setCanonicalProfileEnabled" as const,
+      type: "setAgentProfileEnabled" as const,
       agent: "Ada",
       expectedRevision: "a".repeat(64),
       enabled: true,
     }));
     await flush();
     expect(mutations).toEqual([expect.objectContaining({ operation: "set-enabled", agentName: "Ada", enabled: true })]);
-    expect(findType(ctx.posted, "canonicalProfileError").at(-1)).toMatchObject({
+    expect(findType(ctx.posted, "agentProfileError").at(-1)).toMatchObject({
       agent: "Ada",
       code: "agent-profile/revision-conflict",
       conflict: true,
     });
-    expect(JSON.stringify(findType(ctx.posted, "canonicalProfileError").at(-1))).not.toContain("/private/path");
-    expect(findType(ctx.posted, "canonicalProfileSnapshot").at(-1)).toMatchObject({ action: "refresh", snapshot: { revision: "b".repeat(64) } });
+    expect(JSON.stringify(findType(ctx.posted, "agentProfileError").at(-1))).not.toContain("/private/path");
+    expect(findType(ctx.posted, "agentProfileSnapshot").at(-1)).toMatchObject({ action: "refresh", snapshot: { revision: "b".repeat(64) } });
 
     handleAgentStudioDomainMessage(target, ctx, envelope({
-      type: "forgetCanonicalProfile" as const,
+      type: "forgetAgentProfile" as const,
       agent: "Ada",
       expectedRevision: "b".repeat(64),
       confirmation: "Bea",

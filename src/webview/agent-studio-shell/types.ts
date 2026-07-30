@@ -32,13 +32,13 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "evolutionCandidateDetail"; agent: string; detail: AgentEvolutionCandidateDetailMessage }>
   | StudioDomainMessage<{ type: "evolutionActionResult"; agent: string; candidateId: string; status: "approved" | "rejected"; activeVersion: number }>
   | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>
-  | StudioDomainMessage<{ type: "canonicalProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
-  | StudioDomainMessage<{ type: "canonicalProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
-  | StudioDomainMessage<{ type: "canonicalProfileForgotten"; agent: string; agentId: string }>
-  | StudioDomainMessage<{ type: "canonicalProfileError"; agent: string; code: string; message: string; conflict: boolean }>
-  | StudioDomainMessage<{ type: "canonicalProfileBundleExport"; result: AgentProfileStudioBundleExportResultV1 }>
-  | StudioDomainMessage<{ type: "canonicalProfileBundleCreated"; result: AgentProfileStudioBundleCreatedResultV1 }>
-  | StudioDomainMessage<{ type: "canonicalProfileBundleError"; agent: string; code: string; message: string; conflict: boolean }>;
+  | StudioDomainMessage<{ type: "agentProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
+  | StudioDomainMessage<{ type: "agentProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
+  | StudioDomainMessage<{ type: "agentProfileForgotten"; agent: string; agentId: string }>
+  | StudioDomainMessage<{ type: "agentProfileError"; agent: string; code: string; message: string; conflict: boolean }>
+  | StudioDomainMessage<{ type: "agentProfileBundleExport"; result: AgentProfileStudioBundleExportResultV1 }>
+  | StudioDomainMessage<{ type: "agentProfileBundleCreated"; result: AgentProfileStudioBundleCreatedResultV1 }>
+  | StudioDomainMessage<{ type: "agentProfileBundleError"; agent: string; code: string; message: string; conflict: boolean }>;
 
 /** Webview -> host messages this surface sends. */
 export type AgentStudioWebviewMessage =
@@ -63,11 +63,11 @@ export type AgentStudioWebviewMessage =
       expectedActiveVersion: number;
       expectedTargetDigest?: string;
     }>
-  | StudioDomainMessage<{ type: "refreshCanonicalProfile"; agent: string }>
-  | StudioDomainMessage<{ type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }>
-  | StudioDomainMessage<{ type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }>
-  | StudioDomainMessage<{ type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string }>
-  | StudioDomainMessage<{ type: "setCanonicalProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }>
-  | StudioDomainMessage<{ type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }>
-  | StudioDomainMessage<{ type: "cloneCanonicalProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }>
-  | StudioDomainMessage<{ type: "importCanonicalProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string }>;
+  | StudioDomainMessage<{ type: "refreshAgentProfile"; agent: string }>
+  | StudioDomainMessage<{ type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }>
+  | StudioDomainMessage<{ type: "renameAgentProfile"; agent: string; expectedRevision: string; newName: string }>
+  | StudioDomainMessage<{ type: "forgetAgentProfile"; agent: string; expectedRevision: string; confirmation: string }>
+  | StudioDomainMessage<{ type: "setAgentProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }>
+  | StudioDomainMessage<{ type: "exportSavedAgentProfileBundle"; agent: string; expectedRevision: string }>
+  | StudioDomainMessage<{ type: "cloneSavedAgentProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }>
+  | StudioDomainMessage<{ type: "importSavedAgentProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string }>;

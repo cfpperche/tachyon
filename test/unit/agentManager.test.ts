@@ -4726,7 +4726,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager } = resumeHarness(HARNESS_YML, stubHarness());
     await manager.spawn("researcher");
     await expect(manager.rename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
-    await expect(manager.prepareCanonicalProfileRename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
+    await expect(manager.prepareAgentProfileRename("researcher", "researcher2")).rejects.toThrow("isolated-harness agent isn't supported yet");
   });
 
   it("phase 2: renaming a managed Pi agent is refused while its private session home is name-keyed", async () => {
@@ -4736,7 +4736,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("pi");
     await expect(manager.rename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
-    await expect(manager.prepareCanonicalProfileRename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
+    await expect(manager.prepareAgentProfileRename("pi", "pi2")).rejects.toThrow("managed Pi session isn't supported yet");
   });
 
   // spec 236 — the Bridge reaches EVERY Tachyon-spawned agent via withRuntimeBridge (one shared step).
@@ -6195,11 +6195,11 @@ describe("live rename (agent/terminal, running or not)", () => {
         getConfig: () => configOf("agents:\n  reviewer:\n    cmd: codex\n"),
       });
       await manager.rehydrateFromLedger();
-      const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+      const snapshot = await manager.prepareAgentProfileRename("reviewer", "maintainer");
       fs.appendFileSync(path.join(activityDir, `${agentLogId("reviewer")}.jsonl`), "late event\n");
 
-      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
-      await manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot);
+      await manager.convergeAgentProfileRename("reviewer", "maintainer", snapshot);
+      await manager.convergeAgentProfileRename("reviewer", "maintainer", snapshot);
 
       expect(fake.sessions.has(`tachyon-${hash}-reviewer`)).toBe(false);
       expect(fake.sessions.has(`tachyon-${hash}-maintainer`)).toBe(true);
@@ -6217,7 +6217,7 @@ describe("live rename (agent/terminal, running or not)", () => {
   it("acknowledges tmux rename success when the command result is lost", async () => {
     const { manager, sessions } = makeManager("agents:\n  reviewer:\n    cmd: codex\n");
     await manager.spawn("reviewer");
-    const snapshot = await manager.prepareCanonicalProfileRename("reviewer", "maintainer");
+    const snapshot = await manager.prepareAgentProfileRename("reviewer", "maintainer");
     const oldSession = manager.session("reviewer");
     const newSession = manager.session("maintainer");
     vi.spyOn((manager as unknown as { opts: { tmux: TmuxService } }).opts.tmux, "renameSession").mockImplementationOnce(async () => {
@@ -6225,7 +6225,7 @@ describe("live rename (agent/terminal, running or not)", () => {
       sessions.add(newSession);
       throw new Error("lost result");
     });
-    await expect(manager.convergeCanonicalProfileRename("reviewer", "maintainer", snapshot)).resolves.toBeUndefined();
+    await expect(manager.convergeAgentProfileRename("reviewer", "maintainer", snapshot)).resolves.toBeUndefined();
     expect(sessions.has(oldSession)).toBe(false);
     expect(sessions.has(newSession)).toBe(true);
   });

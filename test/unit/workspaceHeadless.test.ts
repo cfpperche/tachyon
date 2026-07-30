@@ -747,7 +747,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
     fs.mkdirSync(runtimeHome, { recursive: true });
     fs.writeFileSync(path.join(runtimeHome, "credentials.json"), "preserve\n");
 
-    const result = await ws.forgetCanonicalProfileAgent("reviewer");
+    const result = await ws.forgetAgentProfileAgent("reviewer");
     await ws.start(); // startup GC must honor the durable retirement receipt
 
     expect(result.agentId).toBe(created.snapshot.agentId);
@@ -788,7 +788,7 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
     await ws.manager.spawn("reviewer");
-    await expect(ws.forgetCanonicalProfileAgent("reviewer")).rejects.toThrow("fully stopped");
+    await expect(ws.forgetAgentProfileAgent("reviewer")).rejects.toThrow("fully stopped");
     expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle).toBeDefined();
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
   } finally {

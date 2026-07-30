@@ -355,8 +355,8 @@ export async function executeExtensionCommand(
       return json({ ok: true, hadSession: result.hadSession });
     }
     case "config.agent.clone": {
-      if (workspace.isCanonicalProfileAgent(command.agent)) {
-        await workspace.cloneCanonicalProfileAgent(command.agent, command.newName);
+      if (workspace.isAgentProfileAgent(command.agent)) {
+        await workspace.cloneAgentProfileAgent(command.agent, command.newName);
         onViewsChanged("agents");
         return json({ changed: true });
       }
@@ -868,9 +868,9 @@ async function deleteConfiguredAgent(
     throw new Error(`agent '${agent}' still owns a worktree; remove it before deleting the agent`);
   }
   if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
-  if (workspace.isCanonicalProfileAgent(agent)) {
+  if (workspace.isAgentProfileAgent(agent)) {
     await stopAgentSessionForDelete(workspace.manager, agent);
-    await workspace.forgetCanonicalProfileAgent(agent);
+    await workspace.forgetAgentProfileAgent(agent);
     onViewsChanged("agents");
     return json({ changed: true });
   }

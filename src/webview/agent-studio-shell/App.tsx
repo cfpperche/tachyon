@@ -44,15 +44,15 @@ import {
   replaceSoulMessage,
   refreshSoulMessage,
   refreshEvolutionMessage,
-  refreshCanonicalProfileMessage,
-  setCanonicalProfileEnabledMessage,
-  renameCanonicalProfileMessage,
-  forgetCanonicalProfileMessage,
-  setCanonicalProfileSubagentsMessage,
-  setCanonicalProfileProposeGrantMessage,
-  exportCanonicalProfileBundleMessage,
-  cloneCanonicalProfileBundleMessage,
-  importCanonicalProfileBundleMessage,
+  refreshAgentProfileMessage,
+  setAgentProfileEnabledMessage,
+  renameAgentProfileMessage,
+  forgetAgentProfileMessage,
+  setAgentProfileSubagentsMessage,
+  setAgentProfileProposeGrantMessage,
+  exportSavedAgentProfileBundleMessage,
+  cloneSavedAgentProfileBundleMessage,
+  importSavedAgentProfileBundleMessage,
   rejectEvolutionCandidateMessage,
   saveMessage,
 } from "./messages";
@@ -451,7 +451,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEvolutionBusy(undefined);
       if (d.conflict) setEvolutionDetail(undefined);
       setEvolutionNotice({ kind: "error", text: d.message });
-    } else if (d.type === "canonicalProfileSnapshot") {
+    } else if (d.type === "agentProfileSnapshot") {
       const current = entityRef.current;
       if (!current || current.storage !== "canonical") return;
       const renamed = d.action === "rename" && current.name !== d.snapshot.agentName;
@@ -479,31 +479,31 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 : "Saved Agent proposals revoked.")
               : d.snapshot.enabled ? "Agent enabled." : "Agent disabled.",
       });
-    } else if (d.type === "canonicalProfileOwnership") {
+    } else if (d.type === "agentProfileOwnership") {
       if (entityRef.current?.name !== d.agent) return;
       setOwnership(d.ownership);
       setOwnershipDraft([...d.ownership.subagents]);
-    } else if (d.type === "canonicalProfileForgotten") {
+    } else if (d.type === "agentProfileForgotten") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(undefined);
       setForgetConfirmOpen(false);
       setProfileRetired(true);
       setProfileNotice({ kind: "success", text: "Agent forgotten. Its recoverable retirement record was kept." });
-    } else if (d.type === "canonicalProfileError") {
+    } else if (d.type === "agentProfileError") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
       setProfileConflict(d.conflict);
       setProfileNotice({ kind: "error", text: d.message });
-    } else if (d.type === "canonicalProfileBundleExport") {
+    } else if (d.type === "agentProfileBundleExport") {
       if (entityRef.current?.name !== d.result.agentName) return;
       const bytes = Uint8Array.from(atob(d.result.contentBase64), (char) => char.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: "application/json" }));
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = d.result.fileName; anchor.click(); URL.revokeObjectURL(url);
       setProfileBusy(undefined); setProfileNotice({ kind: "success", text: `Exported ${d.result.byteSize} bytes · SHA-256 ${d.result.sha256.slice(0, 12)}… · ${d.result.requiresReauthorization.length} reauthorization item(s).` });
-    } else if (d.type === "canonicalProfileBundleCreated") {
+    } else if (d.type === "agentProfileBundleCreated") {
       setProfileBusy(undefined); setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
       setProfileNotice({ kind: "success", text: `${d.result.operation === "clone" ? "Cloned" : "Imported"} ${d.result.snapshot.agentName} disabled · SHA-256 ${d.result.bundleSha256.slice(0, 12)}… · ${d.result.requiresReauthorization.length} reauthorization item(s).` });
-    } else if (d.type === "canonicalProfileBundleError") {
+    } else if (d.type === "agentProfileBundleError") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined); setProfileConflict(d.conflict); setProfileNotice({ kind: "error", text: d.message });
     }
@@ -725,12 +725,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     disabled={canonicalLifecycleDisabled}
                     onClick={() => canonicalSnapshot && runCanonicalLifecycle(
                       canonicalSnapshot.enabled ? "Disabling agent" : "Enabling agent",
-                      setCanonicalProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
+                      setAgentProfileEnabledMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, !canonicalSnapshot.enabled),
                     )}
                   >{canonicalSnapshot?.enabled ? profileLabels.disableAgent : profileLabels.enableAgent}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle(
                     "Refreshing profile",
-                    refreshCanonicalProfileMessage(canonicalSnapshot.agentName),
+                    refreshAgentProfileMessage(canonicalSnapshot.agentName),
                   )}>{profileLabels.refresh}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => {
                     setRenameValue(canonicalSnapshot?.agentName ?? "");
@@ -742,7 +742,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     setForgetConfirmOpen(true);
                     setRenameConfirmOpen(false);
                   }}>{profileLabels.forget}</Button>
-                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
+                  <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("import"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.import}</Button>
                 </div>
@@ -802,7 +802,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                                 disabled={canonicalLifecycleDisabled || !ownershipDirty}
                                 onClick={() => runCanonicalLifecycle(
                                   "Saving declared subagents",
-                                  setCanonicalProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])]),
+                                  setAgentProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])]),
                                 )}
                               >{profileLabels.ownershipApply}</Button>
                             </div>
@@ -824,7 +824,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                           (event.currentTarget as HTMLInputElement).checked
                             ? "Granting Saved Agent proposals"
                             : "Revoking Saved Agent proposals",
-                          setCanonicalProfileProposeGrantMessage(
+                          setAgentProfileProposeGrantMessage(
                             canonicalSnapshot.agentName,
                             canonicalSnapshot.revision,
                             (event.currentTarget as HTMLInputElement).checked,
@@ -851,7 +851,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       <Button ref={renameCancelButtonRef} onClick={() => setRenameConfirmOpen(false)}>Cancel</Button>
                       <Button variant="primary" disabled={renameValue === canonicalSnapshot.agentName || !/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(renameValue)} onClick={() => runCanonicalLifecycle(
                         "Renaming agent",
-                        renameCanonicalProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
+                        renameAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, renameValue),
                       )}>Rename agent</Button>
                     </div>
                   </div>
@@ -865,7 +865,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       <Button ref={forgetCancelButtonRef} onClick={() => setForgetConfirmOpen(false)}>Cancel</Button>
                       <Button variant="danger" disabled={forgetValue !== canonicalSnapshot.agentName} onClick={() => runCanonicalLifecycle(
                         "Forgetting agent",
-                        forgetCanonicalProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, forgetValue),
+                        forgetAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, forgetValue),
                       )}>Forget agent</Button>
                     </div>
                   </div>
@@ -884,8 +884,8 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       <Button variant="primary" disabled={!/^[A-Za-z][A-Za-z0-9_-]{0,127}$/.test(bundleDestination)} onClick={() => runCanonicalLifecycle(
                         bundleAction === "clone" ? "Cloning profile" : "Importing profile",
                         bundleAction === "clone"
-                          ? cloneCanonicalProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
-                          : importCanonicalProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
+                          ? cloneSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, bundleDestination)
+                          : importSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, bundleDestination, bundleImportBase64!),
                       )}>{bundleAction === "clone" ? "Clone agent" : "Import agent"}</Button>
                     </div>
                   </div>
@@ -895,7 +895,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     {profileBusy ? `${profileBusy}…` : profileNotice?.text}
                     {profileNotice?.kind === "error" && canonicalSnapshot && !profileBusy && <Button onClick={() => runCanonicalLifecycle(
                       "Refreshing profile",
-                      refreshCanonicalProfileMessage(canonicalSnapshot.agentName),
+                      refreshAgentProfileMessage(canonicalSnapshot.agentName),
                     )}>{profileLabels.retryRefresh}</Button>}
                   </div>
                 )}

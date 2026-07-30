@@ -25,14 +25,14 @@ import {
   refreshSoulMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
-  forgetCanonicalProfileMessage,
-  renameCanonicalProfileMessage,
-  setCanonicalProfileEnabledMessage,
-  exportCanonicalProfileBundleMessage,
-  cloneCanonicalProfileBundleMessage,
-  importCanonicalProfileBundleMessage,
-  canonicalProfileOwnershipMessage,
-  setCanonicalProfileSubagentsMessage,
+  forgetAgentProfileMessage,
+  renameAgentProfileMessage,
+  setAgentProfileEnabledMessage,
+  exportSavedAgentProfileBundleMessage,
+  cloneSavedAgentProfileBundleMessage,
+  importSavedAgentProfileBundleMessage,
+  agentProfileOwnershipMessage,
+  setAgentProfileSubagentsMessage,
 } from "../../src/webview/agent-studio-shell/messages.js";
 import { agentProfileStudioSnapshotSchemaV1 } from "../../src/config/agentProfileStudio.js";
 import { assertNoDomainNameCollision, decodeStudioMessage } from "../../src/webview/shared/studio/protocol.js";
@@ -113,19 +113,19 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
       "soulProfileError",
       "browse",
       "cwd",
-      "refreshCanonicalProfile",
-      "setCanonicalProfileEnabled",
-      "renameCanonicalProfile",
-      "forgetCanonicalProfile",
-      "canonicalProfileSnapshot",
-      "canonicalProfileForgotten",
-      "canonicalProfileError",
-      "exportCanonicalProfileBundle",
-      "cloneCanonicalProfileBundle",
-      "importCanonicalProfileBundle",
-      "canonicalProfileBundleExport",
-      "canonicalProfileBundleCreated",
-      "canonicalProfileBundleError",
+      "refreshAgentProfile",
+      "setAgentProfileEnabled",
+      "renameAgentProfile",
+      "forgetAgentProfile",
+      "agentProfileSnapshot",
+      "agentProfileForgotten",
+      "agentProfileError",
+      "exportSavedAgentProfileBundle",
+      "cloneSavedAgentProfileBundle",
+      "importSavedAgentProfileBundle",
+      "agentProfileBundleExport",
+      "agentProfileBundleCreated",
+      "agentProfileBundleError",
     ]));
     expect(() => assertNoDomainNameCollision(AGENT_STUDIO_DOMAIN_MESSAGE_NAMES)).not.toThrow();
     for (const name of AGENT_STUDIO_DOMAIN_MESSAGE_NAMES) {
@@ -222,19 +222,19 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(decodeStudioMessage(status, AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).ok).toBe(false);
 
     const revision = "a".repeat(64);
-    const enabled = setCanonicalProfileEnabledMessage("Ada", revision, true);
-    expect(validateAgentStudioInboundMessage(enabled)).toEqual({ type: "setCanonicalProfileEnabled", agent: "Ada", expectedRevision: revision, enabled: true });
+    const enabled = setAgentProfileEnabledMessage("Ada", revision, true);
+    expect(validateAgentStudioInboundMessage(enabled)).toEqual({ type: "setAgentProfileEnabled", agent: "Ada", expectedRevision: revision, enabled: true });
     expect(validateAgentStudioInboundMessage({ ...enabled, editable: {} })).toBeUndefined();
-    const rename = renameCanonicalProfileMessage("Ada", revision, "Bea");
-    expect(validateAgentStudioInboundMessage(rename)).toEqual({ type: "renameCanonicalProfile", agent: "Ada", expectedRevision: revision, newName: "Bea" });
+    const rename = renameAgentProfileMessage("Ada", revision, "Bea");
+    expect(validateAgentStudioInboundMessage(rename)).toEqual({ type: "renameAgentProfile", agent: "Ada", expectedRevision: revision, newName: "Bea" });
     expect(validateAgentStudioInboundMessage({ ...rename, newName: "../Bea" })).toBeUndefined();
-    const forget = forgetCanonicalProfileMessage("Ada", revision, "Ada");
-    expect(validateAgentStudioInboundMessage(forget)).toEqual({ type: "forgetCanonicalProfile", agent: "Ada", expectedRevision: revision, confirmation: "Ada" });
+    const forget = forgetAgentProfileMessage("Ada", revision, "Ada");
+    expect(validateAgentStudioInboundMessage(forget)).toEqual({ type: "forgetAgentProfile", agent: "Ada", expectedRevision: revision, confirmation: "Ada" });
     expect(validateAgentStudioInboundMessage({ ...forget, expectedRevision: "stale" })).toBeUndefined();
-    expect(validateAgentStudioInboundMessage(exportCanonicalProfileBundleMessage("Ada", revision))).toMatchObject({ type: "exportCanonicalProfileBundle", expectedRevision: revision });
-    expect(validateAgentStudioInboundMessage(cloneCanonicalProfileBundleMessage("Ada", revision, "Bea"))).toMatchObject({ type: "cloneCanonicalProfileBundle", destinationAgentName: "Bea" });
-    const portable = importCanonicalProfileBundleMessage("Ada", "Bea", Buffer.from("{}\n").toString("base64"));
-    expect(validateAgentStudioInboundMessage(portable)).toMatchObject({ type: "importCanonicalProfileBundle", destinationAgentName: "Bea" });
+    expect(validateAgentStudioInboundMessage(exportSavedAgentProfileBundleMessage("Ada", revision))).toMatchObject({ type: "exportSavedAgentProfileBundle", expectedRevision: revision });
+    expect(validateAgentStudioInboundMessage(cloneSavedAgentProfileBundleMessage("Ada", revision, "Bea"))).toMatchObject({ type: "cloneSavedAgentProfileBundle", destinationAgentName: "Bea" });
+    const portable = importSavedAgentProfileBundleMessage("Ada", "Bea", Buffer.from("{}\n").toString("base64"));
+    expect(validateAgentStudioInboundMessage(portable)).toMatchObject({ type: "importSavedAgentProfileBundle", destinationAgentName: "Bea" });
     expect(validateAgentStudioInboundMessage({ ...portable, contentBase64: "not base64" })).toBeUndefined();
   });
 
@@ -312,14 +312,14 @@ describe("declared subagents protocol (t-4c113c)", () => {
   const revision = "a".repeat(64);
 
   it("decodes a bounded, revisioned list and refuses everything shaped almost like it", () => {
-    const message = setCanonicalProfileSubagentsMessage("Ada", revision, ["Bea", "Cleo"]);
-    expect(AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).toContain("setCanonicalProfileSubagents");
+    const message = setAgentProfileSubagentsMessage("Ada", revision, ["Bea", "Cleo"]);
+    expect(AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).toContain("setAgentProfileSubagents");
     expect(decodeStudioMessage(message, AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES).ok).toBe(true);
     expect(validateAgentStudioInboundMessage(message)).toEqual({
-      type: "setCanonicalProfileSubagents", agent: "Ada", expectedRevision: revision, subagents: ["Bea", "Cleo"],
+      type: "setAgentProfileSubagents", agent: "Ada", expectedRevision: revision, subagents: ["Bea", "Cleo"],
     });
     // An empty list is the removal, so it must decode rather than be treated as a missing field.
-    expect(validateAgentStudioInboundMessage(setCanonicalProfileSubagentsMessage("Ada", revision, [])))
+    expect(validateAgentStudioInboundMessage(setAgentProfileSubagentsMessage("Ada", revision, [])))
       .toMatchObject({ subagents: [] });
     for (const forged of [
       { ...message, subagents: ["not a name"] },
@@ -327,17 +327,17 @@ describe("declared subagents protocol (t-4c113c)", () => {
       { ...message, subagents: "Bea" },
       { ...message, expectedRevision: "stale" },
       { ...message, extra: true },
-      { type: "setCanonicalProfileSubagents", agent: "Ada", expectedRevision: revision },
+      { type: "setAgentProfileSubagents", agent: "Ada", expectedRevision: revision },
       { ...message, subagents: Array.from({ length: 129 }, (_, index) => `a${index}`) },
     ]) expect(validateAgentStudioInboundMessage(forged)).toBeUndefined();
   });
 
   it("carries the roster view on its own host message so the engine snapshot stays byte-compatible", () => {
     const ownership = { subagents: ["Bea"], candidates: ["Bea", "Cleo"] };
-    expect(AGENT_STUDIO_HOST_MESSAGE_NAMES).toContain("canonicalProfileOwnership");
-    expect(validateAgentStudioHostDomainMessage(canonicalProfileOwnershipMessage("Ada", ownership))).toBe(true);
-    expect(validateAgentStudioHostDomainMessage({ type: "canonicalProfileOwnership", agent: "Ada", ownership: { subagents: ["Bea"] } })).toBe(false);
-    expect(validateAgentStudioHostDomainMessage({ type: "canonicalProfileOwnership", agent: "Ada", ownership: { ...ownership, extra: 1 } })).toBe(false);
+    expect(AGENT_STUDIO_HOST_MESSAGE_NAMES).toContain("agentProfileOwnership");
+    expect(validateAgentStudioHostDomainMessage(agentProfileOwnershipMessage("Ada", ownership))).toBe(true);
+    expect(validateAgentStudioHostDomainMessage({ type: "agentProfileOwnership", agent: "Ada", ownership: { subagents: ["Bea"] } })).toBe(false);
+    expect(validateAgentStudioHostDomainMessage({ type: "agentProfileOwnership", agent: "Ada", ownership: { ...ownership, extra: 1 } })).toBe(false);
     // The snapshot schema is an engine↔shell payload: widening it would make this engine undecodable
     // to the previous shell, which is exactly the 0.56.110 D1 failure. It must stay untouched.
     expect(agentProfileStudioSnapshotSchemaV1.shape).not.toHaveProperty("ownership");
@@ -345,7 +345,7 @@ describe("declared subagents protocol (t-4c113c)", () => {
 
   it("renders the picker from the entity's ownership view and posts the whole list on apply", () => {
     const source = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
-    expect(source).toContain("setCanonicalProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])])");
+    expect(source).toContain("setAgentProfileSubagentsMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, [...(ownershipDraft ?? [])])");
     expect(source).toContain("profileLabels.ownershipOwnedBy");
     // The apply button is gated by the same freeze/dirty/conflict rule as every other lifecycle action.
     expect(source).toContain("disabled={canonicalLifecycleDisabled || !ownershipDirty}");

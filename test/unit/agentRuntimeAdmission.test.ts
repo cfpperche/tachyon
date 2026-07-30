@@ -145,7 +145,7 @@ describe("t-8f3f7d — the declaration is evidence, and cannot drift from it", (
     const temporaryOnly = SUPPORTED_AGENT_RUNTIME_NAMES.filter((runtime) => !isAttestedRuntime(runtime));
     expect(temporaryOnly).toEqual(["opencode", "hermes", "gemini", "qwen"]);
     for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
-      expect(SUPPORTED_AGENT_RUNTIMES[runtime].canonicalProfile).toBe(isAttestedRuntime(runtime));
+      expect(SUPPORTED_AGENT_RUNTIMES[runtime].savedAgentProfile).toBe(isAttestedRuntime(runtime));
     }
   });
 

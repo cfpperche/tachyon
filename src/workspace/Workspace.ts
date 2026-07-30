@@ -3201,8 +3201,8 @@ export class Workspace {
           rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
         },
         live: {
-          prepare: (oldAgentName, newAgentName) => ws.manager.prepareCanonicalProfileRename(oldAgentName, newAgentName),
-          converge: (oldAgentName, newAgentName, snapshot) => ws.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+          prepare: (oldAgentName, newAgentName) => ws.manager.prepareAgentProfileRename(oldAgentName, newAgentName),
+          converge: (oldAgentName, newAgentName, snapshot) => ws.manager.convergeAgentProfileRename(oldAgentName, newAgentName, snapshot),
         },
         activateState: () => {
           if (!ws.reloadConfig()) throw new Error("trusted profile rename activation failed");
@@ -3220,8 +3220,8 @@ export class Workspace {
           retire: (agentName, expectedProfileId) => ws.evolutionStore.retireAgent(agentName, expectedProfileId),
         },
         live: {
-          prepare: (agentName) => ws.manager.prepareCanonicalProfileForget(agentName),
-          converge: (agentName, agentId, txid, snapshot) => ws.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+          prepare: (agentName) => ws.manager.prepareAgentProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => ws.manager.convergeAgentProfileForget(agentName, agentId, txid, snapshot),
         },
         activateState: () => {
           if (!ws.reloadConfig()) throw new Error("trusted profile forget activation failed");
@@ -4061,12 +4061,12 @@ export class Workspace {
     this.removeContinuity(name);
   }
 
-  isCanonicalProfileAgent(name: string): boolean {
+  isAgentProfileAgent(name: string): boolean {
     return asAgent(this.config?.agents[name])?.profileLifecycle !== undefined;
   }
 
   /** Recoverable retirement for a profile-backed declared agent. */
-  async forgetCanonicalProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
+  async forgetAgentProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
     const lifecycle = asAgent(this.config?.agents[name])?.profileLifecycle;
     if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const inspected = await this.inspectAgentProfileLifecycle(name);
@@ -4087,8 +4087,8 @@ export class Workspace {
           retire: (agentName, expectedProfileId) => this.evolutionStore.retireAgent(agentName, expectedProfileId),
         },
         live: {
-          prepare: (agentName) => this.manager.prepareCanonicalProfileForget(agentName),
-          converge: (agentName, agentId, txid, snapshot) => this.manager.convergeCanonicalProfileForget(agentName, agentId, txid, snapshot),
+          prepare: (agentName) => this.manager.prepareAgentProfileForget(agentName),
+          converge: (agentName, agentId, txid, snapshot) => this.manager.convergeAgentProfileForget(agentName, agentId, txid, snapshot),
         },
         activateState: () => {
           if (!this.reloadConfig()) throw new Error("trusted profile forget activation failed");
@@ -5331,7 +5331,7 @@ export class Workspace {
     }
     if (mutation.operation === "forget") {
       if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
-      const result = await this.forgetCanonicalProfileAgent(mutation.agentName, mutation.expectedRevision);
+      const result = await this.forgetAgentProfileAgent(mutation.agentName, mutation.expectedRevision);
       return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
     }
     // t-9464ac — this chain used to END on the forget body, reaching it by narrowing rather than by
@@ -5491,7 +5491,7 @@ export class Workspace {
     return result;
   }
 
-  async cloneCanonicalProfileAgent(sourceAgentName: string, destinationAgentName: string): Promise<ImportPortableAgentProfileResult> {
+  async cloneAgentProfileAgent(sourceAgentName: string, destinationAgentName: string): Promise<ImportPortableAgentProfileResult> {
     const source = await this.inspectAgentProfileLifecycle(sourceAgentName);
     await this.assertAgentStoppedForProfileMutation(destinationAgentName);
     const result = await clonePortableAgentProfile({
@@ -6506,7 +6506,7 @@ export class Workspace {
       if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
         throw new Error(`agent '${oldName}' profile revision conflict`);
       }
-      const liveSnapshot = await this.manager.prepareCanonicalProfileRename(oldName, newName);
+      const liveSnapshot = await this.manager.prepareAgentProfileRename(oldName, newName);
       const wasOpen = this.terminals.has(oldName);
       if (wasOpen) this.terminals.close(oldName);
       try {
@@ -6523,7 +6523,7 @@ export class Workspace {
         },
         live: {
           prepare: async () => liveSnapshot,
-          converge: (oldAgentName, newAgentName, snapshot) => this.manager.convergeCanonicalProfileRename(oldAgentName, newAgentName, snapshot),
+          converge: (oldAgentName, newAgentName, snapshot) => this.manager.convergeAgentProfileRename(oldAgentName, newAgentName, snapshot),
         },
         activateState: () => {
           if (!this.reloadConfig()) throw new Error("trusted profile rename activation failed");

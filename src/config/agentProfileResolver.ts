@@ -358,7 +358,7 @@ function provenanceFor(
   return leaves(value).map((field) => ({ field, sourceKind, source, ...(digest ? { sha256: digest } : {}) }));
 }
 
-function parseCanonicalProfile(source: CanonicalAgentProfileSource): { profile?: AgentProfileV1; errors: AgentProfileDiagnostic[] } {
+function parseAgentProfile(source: CanonicalAgentProfileSource): { profile?: AgentProfileV1; errors: AgentProfileDiagnostic[] } {
   const document = parseDocument(source.text, { prettyErrors: false, uniqueKeys: true });
   if (document.errors.length > 0) {
     return {
@@ -1201,7 +1201,7 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
       return { ok: true, value: finalize("legacy", input, source, sourceDigest, definition, provenance, []), warnings };
     }
 
-    const parsed = parseCanonicalProfile(canonical!);
+    const parsed = parseAgentProfile(canonical!);
     if (!parsed.profile) return failure(parsed.errors, warnings);
     const profile = parsed.profile;
     const definition = canonicalDefinition(profile);

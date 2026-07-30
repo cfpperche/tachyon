@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import type { CanonicalProfileForgetSnapshot } from "../../src/agents/AgentManager.js";
+import type { AgentProfileForgetSnapshot } from "../../src/agents/AgentManager.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import {
   agentProfileForgetBlocked,
@@ -86,14 +86,14 @@ async function fixture() {
   fs.writeFileSync(path.join(home, "evolution", "profile.json"), '{"profileId":"evolution-1"}\n');
   fs.mkdirSync(path.join(home, "plugins", "future-plugin"), { recursive: true });
   fs.writeFileSync(path.join(home, "plugins", "future-plugin", "plugin.json"), "{}\n");
-  const liveSnapshot: CanonicalProfileForgetSnapshot = {
+  const liveSnapshot: AgentProfileForgetSnapshot = {
     ledgerSha256: null,
     activity: { jsonlSha256: null, stateSha256: null },
   };
   const converged: string[] = [];
   const live = {
     prepare: async () => structuredClone(liveSnapshot),
-    converge: async (_name: string, agentId: string, txid: string, snapshot: CanonicalProfileForgetSnapshot) => {
+    converge: async (_name: string, agentId: string, txid: string, snapshot: AgentProfileForgetSnapshot) => {
       expect(snapshot).toEqual(liveSnapshot);
       converged.push(`${agentId}:${txid}`);
     },

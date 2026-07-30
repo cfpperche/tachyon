@@ -18,8 +18,8 @@ import {
   acquireAgentProfileRecoveryLocks,
   agentProfileTransactionsRoot,
   currentProfileDigest,
-  publishCanonicalProfile,
-  removeCanonicalProfileIfExact,
+  publishAgentProfile,
+  removeAgentProfileIfExact,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
@@ -367,7 +367,7 @@ function removeCreateArtifactsExact(workspaceRoot: string, agentName: string, ar
   } finally { closeCanonicalAgentProfile(source); }
 }
 
-function canonicalProfile(workspaceRoot: string, agentName: string): { profile: AgentProfileV1; text: string; sha256: string } | undefined {
+function savedAgentProfile(workspaceRoot: string, agentName: string): { profile: AgentProfileV1; text: string; sha256: string } | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
   try {
@@ -399,7 +399,7 @@ function addPointer(configText: string, agentName: string): string {
   return text;
 }
 
-function replaceCanonicalProfileExact(workspaceRoot: string, agentName: string, expectedSha256: string, text: string): void {
+function replaceAgentProfileExact(workspaceRoot: string, agentName: string, expectedSha256: string, text: string): void {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) throw new Error(`canonical profile for '${agentName}' is missing`);
   try {
@@ -417,7 +417,7 @@ export async function inspectAgentProfileLifecycle(input: {
   authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
 }): Promise<AgentProfileLifecycleSnapshot> {
-  const canonical = canonicalProfile(input.workspaceRoot, input.agentName);
+  const canonical = savedAgentProfile(input.workspaceRoot, input.agentName);
   if (!canonical) throw new Error(`canonical profile for '${input.agentName}' is missing`);
   const authority = await input.authority.read(input.agentName);
   if (!authority || authority.agentId !== canonical.profile.agentId || authority.canonicalSha256 !== canonical.sha256) {
@@ -545,7 +545,7 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
       if (companionSha === c.targetProfileSha256) {
         const backup = readPrivateFile(path.join(txDir, COMPANION_BACKUP));
         if (digest(backup) !== c.priorProfileSha256) throw new Error("companion profile backup digest mismatch");
-        replaceCanonicalProfileExact(input.workspaceRoot, c.agentName, c.targetProfileSha256, backup.toString("utf8"));
+        replaceAgentProfileExact(input.workspaceRoot, c.agentName, c.targetProfileSha256, backup.toString("utf8"));
       } else if (companionSha !== c.priorProfileSha256) {
         throw new Error("companion profile changed outside lifecycle transaction");
       }
@@ -560,7 +560,7 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
     if (profileSha === journal.targetProfileSha256) {
       if (journal.priorProfileSha256 === null) {
         removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
-        removeCanonicalProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
+        removeAgentProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
       }
       else {
         // t-d185e1 — an EDIT can publish an artifact too, and it is new by construction (`writeNew`
@@ -569,7 +569,7 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
         removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
         const backup = readPrivateFile(path.join(txDir, BACKUP));
         if (digest(backup) !== journal.priorProfileSha256) throw new Error("profile backup digest mismatch");
-        replaceCanonicalProfileExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256, backup.toString("utf8"));
+        replaceAgentProfileExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256, backup.toString("utf8"));
       }
     } else if (profileSha !== journal.priorProfileSha256) throw new Error("profile changed outside lifecycle transaction");
 
@@ -615,7 +615,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
   let txDir: string | undefined;
   try {
     const configBefore = input.config.read();
-    const canonical = canonicalProfile(input.workspaceRoot, input.agentName);
+    const canonical = savedAgentProfile(input.workspaceRoot, input.agentName);
     const priorAuthority = await input.authority.read(input.agentName);
     if (input.operation === "create") {
       if (canonical) throw new Error(`agent '${input.agentName}' already has canonical state`);
@@ -652,7 +652,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     if (input.companion) {
       if (!isValidAgentName(input.companion.agentName)) throw new Error("invalid companion agent name");
       if (input.companion.agentName === input.agentName) throw new Error("companion must be a different agent");
-      const companionCanonical = canonicalProfile(input.workspaceRoot, input.companion.agentName);
+      const companionCanonical = savedAgentProfile(input.workspaceRoot, input.companion.agentName);
       const companionPriorAuthority = await input.authority.read(input.companion.agentName);
       if (!companionCanonical || !companionPriorAuthority) {
         throw new Error(`agent '${input.companion.agentName}' has incomplete canonical state`);
@@ -713,11 +713,11 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     writeJournal(txDir, journal);
     try {
       journal = transition(txDir, journal, "staged", input.onPhase);
-      if (canonical) replaceCanonicalProfileExact(input.workspaceRoot, input.agentName, canonical.sha256, profileText);
-      else publishCanonicalProfile(input.workspaceRoot, input.agentName, profileText);
+      if (canonical) replaceAgentProfileExact(input.workspaceRoot, input.agentName, canonical.sha256, profileText);
+      else publishAgentProfile(input.workspaceRoot, input.agentName, profileText);
       publishCreateArtifacts(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
       // The phase covers BOTH subjects, so compensation at this phase already knows to restore both.
-      if (companion) replaceCanonicalProfileExact(input.workspaceRoot, companion.agentName, companion.priorSha, companion.text);
+      if (companion) replaceAgentProfileExact(input.workspaceRoot, companion.agentName, companion.priorSha, companion.text);
       journal = transition(txDir, journal, "profile-published", input.onPhase);
       if (priorAuthority) await input.authority.replace(targetAuthority, priorAuthority);
       else await input.authority.publish(targetAuthority, undefined);

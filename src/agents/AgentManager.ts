@@ -129,7 +129,7 @@ export interface CanonicalLiveRenameSnapshot {
   activity: ActivityRenameSnapshot;
 }
 
-export interface CanonicalProfileForgetSnapshot {
+export interface AgentProfileForgetSnapshot {
   ledgerSha256: string | null;
   activity: ActivityRenameSnapshot;
 }
@@ -3616,7 +3616,7 @@ export class AgentManager {
   }
 
   /** Capture the exact durable/live bindings before canonical profile authority commits. */
-  async prepareCanonicalProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
+  async prepareAgentProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
     if (oldName === newName) throw new Error("canonical live rename source and destination must differ");
     if (this.agentDefinitionOf(oldName)?.harness) {
       throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
@@ -3642,7 +3642,7 @@ export class AgentManager {
   }
 
   /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
-  async prepareCanonicalProfileForget(name: string): Promise<CanonicalProfileForgetSnapshot> {
+  async prepareAgentProfileForget(name: string): Promise<AgentProfileForgetSnapshot> {
     if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)
       || this.provisionalAgents.has(name) || this.soulReservations.has(name)) {
       throw new Error(`agent '${name}' must be fully stopped before canonical forget`);
@@ -3657,11 +3657,11 @@ export class AgentManager {
   }
 
   /** Remove only captured projections; private runtime homes and external bindings are retained. */
-  async convergeCanonicalProfileForget(
+  async convergeAgentProfileForget(
     name: string,
     agentId: string,
     txid: string,
-    expected: CanonicalProfileForgetSnapshot,
+    expected: AgentProfileForgetSnapshot,
   ): Promise<void> {
     if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)) {
       throw new Error(`canonical forget found a live or indeterminate session for '${name}'`);
@@ -3686,7 +3686,7 @@ export class AgentManager {
   }
 
   /** Idempotently converge captured live bindings after canonical profile authority commits. */
-  async convergeCanonicalProfileRename(
+  async convergeAgentProfileRename(
     oldName: string,
     newName: string,
     expected: CanonicalLiveRenameSnapshot,
