@@ -52,10 +52,10 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 14 | **Runtime Config (Control)** | Runtime has a measured Control adapter for its native global/workspace source. It is listed in the Runtime Config selector **only** for the exact operations marked compatible in §3.1.2; detection of a binary alone never qualifies. |
 | 15 | **Runtime-managed native memory** | Adapter inventories the exact runtime/version's persistent learned-context mechanism and behaviorally verifies disable/enable, injection, mutation, isolation and lifecycle semantics. A written setting without behavioral proof is at most `~`; plugin memory is separate from the built-in runtime mark. |
 | 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs a **turn-attached** signal measured on a stated version AND consumed by Tachyon — turn-attached is what makes it work mid-run as well as at launch. `~` means measured but not yet consumed, OR consumed only at the launch boundary because the runtime emits nothing during a turn (`t-0338fc`). `✗` means the runtime gives no reliable signal anywhere. Inferring auth state from silence or exit code alone never qualifies. |
-| 17 | **Ad-hoc Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter ad-hoc path — no canonical profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from canonical attestation — see §3.6.1. |
+| 17 | **Temporary Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter Temporary path — no durable Agent Profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from Agent Profile attestation — see §3.6.1. |
 | 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research](../research/runtime-internal-checklist-capabilities.md). |
 
-For the Codex marks in rows 7, 9, and 12, **✓** is scoped to canonical profiles: Tachyon regenerates
+For the Codex marks in rows 7, 9, and 12, **✓** is scoped to durable Agent Profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
 resume. It does not claim to impose that policy on arbitrary legacy `cmd: codex …` definitions.
 
@@ -123,7 +123,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 14 Runtime Config (Control) | ✓¶ | ✓¶ | ✗ | ✓¶ | ✗ | **✗** |
 | 15 Runtime-managed native memory | ~ | ~ | ✗ | ~ | ✗ | **✗** |
 | 16 Auth-required detection | ✓ | ✓ | ~‖ | ✓ | ~ | **✗** |
-| 17 Ad-hoc Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
+| 17 Temporary Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
 | 18 Internal checklist telemetry | ~ | ~ | ~ | ~ | ✗ | **✗** / **~**¶ |
 
 ¶ **Internal checklist telemetry (2026-07-28, `t-c2209d`):** this row distinguishes
@@ -138,7 +138,7 @@ is `✗`. No mark implies that Tachyon may mutate the list or that checklist com
 Board Task/Delivery complete. Evidence and lifecycle limits:
 [`runtime-internal-checklist-capabilities.md`](../research/runtime-internal-checklist-capabilities.md).
 
-ⁿ **Grok fork** is native for legacy/ad-hoc agents and, since `t-ee5c05`, covered for a CANONICAL profile
+ⁿ **Grok fork** is native for legacy/Temporary instances and, since `t-ee5c05`, covered for a durable Agent Profile
 too: the fork gets its own projected `bridge-mcp/<fork>.grok` with `HOME` co-bound under exact trust, and
 the source **session directory** is seeded into it — not just the file `transcriptPath` names, because
 `summary.json` + `updates.jsonl` are what make a Grok session resolvable.
