@@ -3364,7 +3364,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await injectPromptTemplateFlow(ws, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentItem) => {
-      // Spec 211: promote an Temporary (MCP-spawned) agent to a declared one in
+      // Spec 211: promote a Temporary (MCP-spawned) agent to a declared one in
       // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).
       const ws = wsOf(item);
       if (!ws) return;

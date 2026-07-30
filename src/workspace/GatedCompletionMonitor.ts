@@ -132,7 +132,7 @@ export interface AssignedTaskFact {
 
 export interface AssignedCompletionInput {
   entries: readonly Pick<ManagedEntryInfo, "name" | "kind" | "delegator" | "declaredOwner" | "parent">[];
-  /** names present in `agents:` — declared only, so an Temporary sibling can never arm. */
+  /** names present in `agents:` — declared only, so a Temporary sibling can never arm. */
   declared: ReadonlySet<string>;
   tasks: readonly AssignedTaskFact[];
   /** worktree path and base for this exact agent+task, resolved from host-owned records. */

@@ -551,7 +551,7 @@ export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, cont
 
 /**
  * RULING (t-ef19a1): a tachyon.yml-declared agent's author already has full extension trust — a
- * different tier than an Temporary delegated spawn — so a declared opencode agent with no `harness:`
+ * different tier than a Temporary delegated spawn — so a declared opencode agent with no `harness:`
  * block is INTENTIONALLY allowed to run without isolation. It is, however, a footgun: without
  * `harness: {}` (or an isolated worktree) it shares the global `~/.local/share` opencode
  * config/auth/session state with every other non-isolated opencode agent. This never changes the

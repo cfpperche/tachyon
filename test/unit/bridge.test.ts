@@ -1017,7 +1017,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       arguments: { name: "claude", gate: { behavior_test: "declared behavior" } },
     });
     expect(declaredGate.isError).toBe(true);
-    expect(JSON.stringify(declaredGate.content)).toContain("gate is only supported for an ad-hoc AI sub-agent");
+    expect(JSON.stringify(declaredGate.content)).toContain("gate is only supported for a Temporary AI sub-agent");
 
     // a too-short skip reason is rejected (D6)
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });

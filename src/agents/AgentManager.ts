@@ -459,7 +459,7 @@ export interface SpawnOptions {
   cmd?: string;
   /**
    * SDD 478 M9 — what the caller is asking to create. Required alongside `cmd`, because the manager
-   * no longer infers it: which entity an Temporary command produces is a decision belonging to the door
+   * no longer infers it: which entity a Temporary command produces is a decision belonging to the door
    * that took the request, and this manager serves several. An `agent` request is admitted only for
    * a supported agent runtime (`admitAgentRuntimeCommand`); a `terminal` request has no agent fields to carry.
    */
@@ -1838,7 +1838,7 @@ export class AgentManager {
     return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
-  /** Spawns a declared agent, or an Temporary one when `opts.cmd` is given. */
+  /** Spawns a declared agent, or a Temporary one when `opts.cmd` is given. */
   async spawn(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     const prior = this.spawnLocks.get(name) ?? Promise.resolve();
     const run = prior.then(() => this.spawnUnlocked(name, opts), () => this.spawnUnlocked(name, opts));
@@ -1854,7 +1854,7 @@ export class AgentManager {
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-      // An explicit cmd creates an Temporary identity only when the name is not already declared.
+      // An explicit cmd creates a Temporary identity only when the name is not already declared.
       const declared = this.opts.getConfig()?.agents[name];
       if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
       this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
@@ -2283,7 +2283,7 @@ export class AgentManager {
         attention: { enabled: true, silenceSec: 8, patterns: [] },
         restart: "never" as const,
       };
-      // SDD 478 M2 — an Temporary entry is built on ONE arm, so a generic command cannot carry
+      // SDD 478 M2 — a Temporary entry is built on ONE arm, so a generic command cannot carry
       // `instructions` or a worktree request: both are Agent capabilities, and until now this door
       // handed them to whatever it spawned.
       //
@@ -2812,7 +2812,7 @@ export class AgentManager {
       // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `temporary` is set by the
       // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
       // from the name, the tmux session or `tachyon.yml`. A declared start is a Saved instance that
-      // may be restarted; an Temporary start is a Temporary one collected when its work ends.
+      // may be restarted; a Temporary start is a Temporary one collected when its work ends.
       // `lifecycleHooks` mirrors what `withSessionOwnership` was actually told above
       // (`lifecycleHooks: !temporary` → `ownershipOnly`), recorded as a capability of THIS instance rather
       // than left to be re-derived from identity by every reader.
@@ -3778,7 +3778,7 @@ export class AgentManager {
    */
   dismissTemporary(name: string): void {
     this.forgetTemporary(name); // in-memory def + lineage
-    // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for an Temporary one-shot — the clean-exit dead pane
+    // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for a Temporary one-shot — the clean-exit dead pane
     // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable
     // log must survive until here, then be dropped with the row (it becomes unreachable: no row, no pane).
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
@@ -4840,7 +4840,7 @@ export class AgentManager {
       ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
       ...(src.env ? { env: src.env } : {}),
-      // A canonical fork is still an Temporary sibling, so it must not inherit profileLifecycle
+      // A canonical fork is still a Temporary sibling, so it must not inherit profileLifecycle
       // authority. This internal marker retains canonical private-home materialization even when
       // the source selected no optional native/capability families.
       ...(sourceDefinition?.profileLifecycle ? { profileFork: true as const } : {}),

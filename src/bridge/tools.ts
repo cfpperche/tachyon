@@ -1672,11 +1672,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
-        "pass cmd to spawn an Temporary sub-agent (e.g. a fresh AI CLI for a delegated task). " +
+        "pass cmd to spawn a Temporary sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         `cmd MUST name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
         "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
-        "DELEGATION CONTRACT (spec 246): when you spawn an Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
+        "DELEGATION CONTRACT (spec 246): when you spawn a Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
@@ -1707,7 +1707,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
             // Temporary AI agent. "Ignored" and "refused" are different promises to a caller, and only
             // one of them was true.
-            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for an Temporary AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for a Temporary AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
           ),
         gate: z
           .object({
@@ -1734,7 +1734,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           })
           .optional()
           .describe("Join an existing canonical Delivery in its one worktree. Occupied/unavailable Deliveries refuse; no fallback worktree is created."),
-        // spec 246 — the delegation contract (required for an Temporary AI agent unless skip_contract_reason is given).
+        // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
         constraints: z.string().optional().describe("what NOT to do; scope guardrails; budgets; style"),
@@ -1783,7 +1783,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
-        // spec 246 — the contract gate fires only for an Temporary AI-agent spawn (the genuine "delegate a fresh
+        // spec 246 — the contract gate fires only for a Temporary AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) is not gated.
         // Enforced HERE at the agent-facing Bridge surface so it is runtime-neutral across the attested
         // runtimes and never re-fires on restart/resume/fork.
@@ -1796,7 +1796,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const isTemporaryAiAgent = !!cmd || isBoundDeliveryExecution;
         if (isTemporaryAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
-            "spawn_agent worktree:true is not a tracked-change lifecycle for an Temporary AI agent; use gate with a behavior_test and owned paths",
+            "spawn_agent worktree:true is not a tracked-change lifecycle for a Temporary AI agent; use gate with a behavior_test and owned paths",
           ));
         }
         const suppliedTaskBrief = !!normalizeField(instructions);
@@ -1860,7 +1860,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
         } else if (gate !== undefined) {
-          return fail(new Error("spawn_agent gate is only supported for an Temporary AI sub-agent with a delegation contract"));
+          return fail(new Error("spawn_agent gate is only supported for a Temporary AI sub-agent with a delegation contract"));
         }
         if (delegationGate) deps.assertLegacyDeliveryRetired?.();
         if (delivery_join) {

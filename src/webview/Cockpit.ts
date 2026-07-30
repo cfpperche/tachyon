@@ -2668,7 +2668,7 @@ export async function openCockpit(
           return;
         case "fleetAgentStudio":
           // t-610705 (Phase D, D1c) — same kind-routed dispatch as the sidebar's
-          // `tachyon.editAgentStudioItem` (extension.ts): an Temporary (undeclared) agent has no stored
+          // `tachyon.editAgentStudioItem` (extension.ts): a Temporary (undeclared) agent has no stored
           // definition to edit — the client already hides this button for those rows (`a.declared
           // !== false`), this re-checks authoritatively rather than trusting that client-side gate.
           if (typeof c.name === "string") {

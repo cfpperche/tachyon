@@ -212,7 +212,7 @@ export interface SessionRecord {
   instance?: AgentInstancePolicy;
   /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
   evolution?: EvolutionStartupSnapshot;
-  /** Explicit terminal state for an Temporary row that remains visible until dismiss. */
+  /** Explicit terminal state for a Temporary row that remains visible until dismiss. */
   lifecycle?: SessionLifecycle;
   updatedAt: string;
 }

@@ -1072,7 +1072,7 @@ export class Workspace {
           });
         }
         // t-ee5c05 — `profileFork` joins the gate for the same reason it does on the Claude branch: a
-        // fork is an Temporary sibling that deliberately does NOT inherit `profileLifecycle` authority,
+        // fork is a Temporary sibling that deliberately does NOT inherit `profileLifecycle` authority,
         // so keying only on that would hand the fork an unprojected home.
         if (adapter.runtime === "grok" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
           const home = this.harness.materializeBridgeMcpGrok(
@@ -2524,7 +2524,7 @@ export class Workspace {
           // complete_node protocol ONLY for an interactive signal-based LLM (e.g. `cmd: codex` with the
           // workspace default config); an exit-based one-shot (sh / codex exec) runs its command as-is.
           //
-          // SDD 478 M9 — the manager no longer infers which arm an Temporary command lands on, so this
+          // SDD 478 M9 — the manager no longer infers which arm a Temporary command lands on, so this
           // door states it. t-c003e1 finished the migration: the kind is DECLARED by the node's own
           // `done` contract (loadPipeline's `nodeKindFromDone`) and validated there, so nothing here
           // reads the command text to decide what it is spawning.

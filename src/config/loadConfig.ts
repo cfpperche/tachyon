@@ -185,7 +185,7 @@ export interface AgentEntry extends ManagedEntryBase {
     canonicalSha256: string;
     authorityRevision: string;
   };
-  /** Internal marker for an Temporary fork rematerialized from a canonical profile snapshot. */
+  /** Internal marker for a Temporary fork rematerialized from a canonical profile snapshot. */
   profileFork?: true;
   /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
   profilePointer?: true;

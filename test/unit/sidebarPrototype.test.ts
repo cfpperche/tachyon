@@ -453,7 +453,7 @@ describe("SidebarPrototypeProvider", () => {
 
     const cmd = __getExecutedCommands().at(-1);
     expect(cmd?.command).toBe("tachyon.deleteAgentItem");
-    expect(cmd?.args[0]).toMatchObject({ ws, agentName: "scratch", contextValue: "agent-running-ai-adhoc" });
+    expect(cmd?.args[0]).toMatchObject({ ws, agentName: "scratch", contextValue: "agent-running-ai-temporary" });
   });
 
   it("does not show continuity badges for ad-hoc agents without Tachyon lifecycle hooks", async () => {
