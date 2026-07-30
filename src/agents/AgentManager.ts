@@ -3409,6 +3409,11 @@ export class AgentManager {
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
+    // Readiness belongs to the process instance, not to the durable Saved Agent.
+    // Keeping either marker after the tmux session is gone makes a stopped agent
+    // fail the canonical Forget precondition forever.
+    this.readyAgents.delete(name);
+    this.provisionalAgents.delete(name);
     const wasTemporary = this.isTemporary(name);
     // spec 225 — a forked sibling is PERSISTENT: keep its in-memory def AND ledger row across a Stop
     // (so it stays listed + resumable), dropping them only on an explicit Dismiss. The marker is

@@ -2159,6 +2159,23 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(h.newSessionArgs).toEqual([]);
   });
 
+  it("allows canonical forget preparation after killing a provisional Saved Agent", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    await h.manager.kill("reviewer");
+
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
+      ledgerSha256: expect.any(String),
+    });
+  });
+
   it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
     const prepared: string[] = [];
     const confirmed: string[] = [];
