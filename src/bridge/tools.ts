@@ -1675,7 +1675,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "pass cmd to spawn a Temporary sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         `cmd MUST name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
-        "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
+        "For a Temporary delegated agent, pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it>; " +
+        "when starting a declared Saved Agent, omit parent because ownership comes only from the saved roster. " +
         "DELEGATION CONTRACT (spec 246): when you spawn a Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
@@ -1698,7 +1699,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .optional()
           .describe("extra free-form prose appended AFTER the delegation contract in the child's brief (optional)"),
         parent: AGENT_NAME.optional().describe(
-          "YOUR agent name — records who spawned this agent (lineage). It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+          "Temporary agents only: YOUR agent name, recording runtime lineage. Omit for a declared Saved Agent; its ownership comes from the roster.",
         ),
         worktree: z
           .boolean()
@@ -1748,6 +1749,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, cmd, cwd, instructions, parent, worktree, gate, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
+        const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
+        const isTemporaryAiAgent = !!cmd || isBoundDeliveryExecution;
+        // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
+        // authenticated caller may request the activation, but must not become runtime lineage or
+        // ownership merely by making that request. Saved ownership is read exclusively from the
+        // roster (`declaredOwner`). Temporary agents still resolve and authenticate their parent.
+        if (!isTemporaryAiAgent && parent !== undefined) {
+          return fail(new Error(
+            "spawn_agent parent is only valid for a Temporary delegated agent; omit parent when starting a declared Saved Agent because ownership comes from the roster",
+          ));
+        }
         // t-6fe04b — refuse the incompatible pair at the ENTRY, before a delegation contract is
         // composed and before lineage is resolved.
         //
@@ -1762,11 +1774,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (parent && cwd) {
           return fail(new Error(PARENT_CWD_REFUSAL));
         }
-        // spec 351 — resolved caller wins: omitted parent -> the caller itself; a lineage lie is a
-        // structured mismatch, closing t-d7b3a9's "guessed parent mis-rooting lineage" damage.
-        const parentActor = resolveDeclaredActor(deps, parent);
-        if (!parentActor.ok) return fail(new Error(parentActor.message));
-        parent = parentActor.name;
+        // spec 351 — Temporary delegation resolves omitted parent to the caller itself; a lineage
+        // lie is a structured mismatch. Saved activation deliberately preserves parent=undefined.
+        if (isTemporaryAiAgent) {
+          const parentActor = resolveDeclaredActor(deps, parent);
+          if (!parentActor.ok) return fail(new Error(parentActor.message));
+          parent = parentActor.name;
+        }
         if (delivery_join && (gate || worktree)) {
           return fail(new Error("spawn_agent cannot combine delivery_join with gate or worktree:true — a Delivery already owns its worktree"));
         }
@@ -1790,10 +1804,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         //
         // M9 collapsed what this used to compute: an accepted `cmd` is an attested runtime by
         // construction now, so there is no longer a terminal child to exempt — the kind is not inferred.
-        const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
         if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
         if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        const isTemporaryAiAgent = !!cmd || isBoundDeliveryExecution;
         if (isTemporaryAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
             "spawn_agent worktree:true is not a tracked-change lifecycle for a Temporary AI agent; use gate with a behavior_test and owned paths",

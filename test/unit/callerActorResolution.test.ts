@@ -63,7 +63,18 @@ function fakeTmuxExec() {
 
 describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
   const { exec } = fakeTmuxExec();
-  const config = parseConfig("agents:\n  claude:\n    cmd: claude\n  codex:\n    cmd: codex\n").config;
+  const config = parseConfig(
+    "agents:\n" +
+    "  claude:\n" +
+    "    cmd: claude\n" +
+    "    subagents: [owned]\n" +
+    "  codex:\n" +
+    "    cmd: codex\n" +
+    "  saved:\n" +
+    "    cmd: claude\n" +
+    "  owned:\n" +
+    "    cmd: claude\n",
+  ).config;
   const tmux = new TmuxService(exec);
   const manager = new AgentManager({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => config });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-actor-"));
@@ -138,6 +149,27 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
     expect(JSON.stringify(wrong.content)).toContain("caller_mismatch");
     expect(JSON.stringify(wrong.content)).toContain("claude");
     expect(JSON.stringify(wrong.content)).toContain("codex");
+  });
+
+  it("spawn_agent: Saved activation never turns the caller into runtime lineage", async () => {
+    const topLevel = await claudeClient.callTool({ name: "spawn_agent", arguments: { name: "saved" } });
+    expect(topLevel.isError).toBeFalsy();
+    expect(manager.parentOf("saved")).toBeUndefined();
+
+    const owned = await claudeClient.callTool({ name: "spawn_agent", arguments: { name: "owned" } });
+    expect(owned.isError).toBeFalsy();
+    expect(manager.parentOf("owned")).toBeUndefined();
+    expect((await manager.list()).find((entry) => entry.name === "owned")?.declaredOwner).toBe("claude");
+
+    const explicit = await claudeClient.callTool({
+      name: "spawn_agent",
+      arguments: { name: "saved", parent: "claude" },
+    });
+    expect(explicit.isError).toBe(true);
+    expect(JSON.stringify(explicit.content)).toContain("parent is only valid for a Temporary delegated agent");
+
+    await claudeClient.callTool({ name: "kill_agent", arguments: { name: "saved" } });
+    await claudeClient.callTool({ name: "kill_agent", arguments: { name: "owned" } });
   });
 
   it("notify_agent: sender is the resolved caller, not whatever the call declares", async () => {
