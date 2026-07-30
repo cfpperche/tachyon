@@ -306,7 +306,7 @@ export function App({ vm, lastError, dispatch, pendingTaskId }: {
   };
 
   // dogfood round 2 (#5) — maintainer decision: the chip row + "+N more" overflow toggle (round 1, #5) is
-  // replaced entirely by ONE dropdown holding every filter option (declared, human, ad-hoc), dots/colors
+  // replaced entirely by ONE dropdown holding every filter option (saved, human, Temporary), dots/colors
   // preserved via inline option styling — see agentFilterOptions in boardModel.ts for the ordering.
   const filterOptions = agentFilterOptions(model);
   // t-2ab324 — the toolbar filter scopes the board's columns + dropped bucket down to awaiting-human cards

@@ -1,9 +1,9 @@
 /**
  * THE single source of truth for an agent's `contextValue` — both the BUILDER (the webview provider's
  * ctxOf, which reconstructs the duck-typed item for command routing) and the PARSERS (extension.ts command
- * handlers, e.g. isAdhocItem) live here, so producer and consumers can't drift. The markers are appended as
- * SEGMENTS — e.g. `agent-stopped-ai-adhoc-worktree-forkable` — so NONE is guaranteed to be the suffix.
- * Detection must match the segment, never `endsWith("-adhoc")` / `/-adhoc$/` (those missed an ad-hoc agent
+ * handlers, e.g. isTemporaryItem) live here, so producer and consumers can't drift. The markers are appended as
+ * SEGMENTS — e.g. `agent-stopped-ai-temporary-worktree-forkable` — so NONE is guaranteed to be the suffix.
+ * Detection must match the segment, never `endsWith("-temporary")` / `/-temporary$/` (those missed a Temporary agent
  * that ALSO has a worktree — a stopped fork — and mis-routed its Delete to the tachyon.yml path, erroring
  * "does not exist"; dogfood 2026-06-16). (The native tree's `when`-regex consumer was retired in spec 237;
  * the webview gates actions via the capability matrix in src/sidebar/actions.ts.)
@@ -15,8 +15,8 @@ export interface AgentContextParts {
   state: AgentItemStateName;
   /** AI agent (vs a terminal) — gates AI-only actions (re-anchor, fork). */
   ai: boolean;
-  /** ad-hoc: not declared in tachyon.yml (MCP-spawned or a forked sibling). */
-  adhoc: boolean;
+  /** temporary: not saved in tachyon.yml (MCP-spawned or a forked sibling). */
+  temporary: boolean;
   /** runs in its own git worktree. */
   worktree: boolean;
   /** declares a verify gate (worktree agent). */
@@ -32,7 +32,7 @@ export function agentContextValue(p: AgentContextParts): string {
   return (
     `agent-${p.state}` +
     (p.ai ? "-ai" : "") +
-    (p.adhoc ? "-adhoc" : "") +
+    (p.temporary ? "-temporary" : "") +
     (p.worktree ? "-worktree" : "") +
     (p.verifiable ? "-verifiable" : "") +
     (p.forkable ? "-forkable" : "") +
@@ -40,7 +40,7 @@ export function agentContextValue(p: AgentContextParts): string {
   );
 }
 
-/** True when the item is an ad-hoc agent (MCP-spawned / forked sibling — not declared in tachyon.yml). */
-export function isAdhocItem(contextValue: string | undefined): boolean {
-  return !!contextValue && /-adhoc(?:-|$)/.test(contextValue);
+/** True when the item is a Temporary instance (MCP-spawned / forked sibling — not declared in tachyon.yml). */
+export function isTemporaryItem(contextValue: string | undefined): boolean {
+  return !!contextValue && /-temporary(?:-|$)/.test(contextValue);
 }

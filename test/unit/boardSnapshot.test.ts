@@ -45,7 +45,7 @@ describe("buildBoardSnapshot", () => {
     const t2 = await store.create({ title: "b", author: "human" });
     await store.update(t2.id, { status: "triaged", assignee: "open-runner" });
 
-    const snap = buildBoardSnapshot({ store, declaredAgents: ["claude", "codex"], liveAdhocAgents: ["live-runner"] });
+    const snap = buildBoardSnapshot({ store, declaredAgents: ["claude", "codex"], liveTemporaryAgents: ["live-runner"] });
     expect(snap.chips.map((c) => c.agent)).toEqual(["claude", "codex", "human", "live-runner", "open-runner"]);
     expect(snap.chips.map((c) => c.source)).toEqual(["declared", "declared", "human", "assignee", "assignee"]);
   });
@@ -54,7 +54,7 @@ describe("buildBoardSnapshot", () => {
     const snap = buildBoardSnapshot({
       store,
       declaredAgents: ["codex"],
-      liveAdhocAgents: ["live-runner"],
+      liveTemporaryAgents: ["live-runner"],
     });
 
     expect(snap.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-runner"]);

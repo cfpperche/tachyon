@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { CanonicalProfileForgetSnapshot } from "../agents/AgentManager.js";
+import type { AgentProfileForgetSnapshot } from "../agents/AgentManager.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
 import {
@@ -56,7 +56,7 @@ export interface AgentProfileForgetJournal {
   sourceStanzaSha256: string;
   profileManifest: TreeEntry[];
   evolutionProfileId: string | null;
-  liveSnapshot: CanonicalProfileForgetSnapshot;
+  liveSnapshot: AgentProfileForgetSnapshot;
   retainedBindings: readonly string[];
   degradedReason?: string;
 }
@@ -79,8 +79,8 @@ export interface CommitAgentProfileForgetInput {
   config: AgentProfileForgetConfigPort;
   evolution: AgentProfileForgetEvolutionPort;
   live: {
-    prepare(agentName: string): Promise<CanonicalProfileForgetSnapshot>;
-    converge(agentName: string, agentId: string, txid: string, snapshot: CanonicalProfileForgetSnapshot): Promise<void>;
+    prepare(agentName: string): Promise<AgentProfileForgetSnapshot>;
+    converge(agentName: string, agentId: string, txid: string, snapshot: AgentProfileForgetSnapshot): Promise<void>;
   };
   activateState: () => void;
   onPhase?: (phase: AgentProfileForgetPhase) => void;

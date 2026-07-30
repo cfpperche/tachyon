@@ -13,7 +13,7 @@ export type ActionId =
   // t-4662e9 — no `rename`. Renaming a canonical agent is the Agent Form's operation (it carries the
   // profile lifecycle: authority re-signing, digest, retirement of the old name). The sidebar's action
   // called a different one, `config.agent.rename`, which only rewrites the tachyon.yml entry — a second,
-  // divergent surface for the same word. It was also pushed unconditionally, so an ad-hoc row offered a
+  // divergent surface for the same word. It was also pushed unconditionally, so a Temporary row offered a
   // rename for an entity that does not exist to be renamed.
   | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "remove";
 

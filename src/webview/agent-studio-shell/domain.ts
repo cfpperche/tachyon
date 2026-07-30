@@ -71,15 +71,15 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "loadEvolutionCandidate",
   "approveEvolutionCandidate",
   "rejectEvolutionCandidate",
-  "refreshCanonicalProfile",
-  "setCanonicalProfileEnabled",
-  "renameCanonicalProfile",
-  "forgetCanonicalProfile",
-  "setCanonicalProfileSubagents",
-  "setCanonicalProfileProposeGrant",
-  "exportCanonicalProfileBundle",
-  "cloneCanonicalProfileBundle",
-  "importCanonicalProfileBundle",
+  "refreshAgentProfile",
+  "setAgentProfileEnabled",
+  "renameAgentProfile",
+  "forgetAgentProfile",
+  "setAgentProfileSubagents",
+  "setAgentProfileProposeGrant",
+  "exportSavedAgentProfileBundle",
+  "cloneSavedAgentProfileBundle",
+  "importSavedAgentProfileBundle",
 ] as const;
 
 export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
@@ -91,13 +91,13 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "evolutionCandidateDetail",
   "evolutionActionResult",
   "evolutionError",
-  "canonicalProfileSnapshot",
-  "canonicalProfileForgotten",
-  "canonicalProfileOwnership",
-  "canonicalProfileError",
-  "canonicalProfileBundleExport",
-  "canonicalProfileBundleCreated",
-  "canonicalProfileBundleError",
+  "agentProfileSnapshot",
+  "agentProfileForgotten",
+  "agentProfileOwnership",
+  "agentProfileError",
+  "agentProfileBundleExport",
+  "agentProfileBundleCreated",
+  "agentProfileBundleError",
 ] as const;
 
 /** Complete surface vocabulary for collision checks only; boundary decoders use the directional lists. */
@@ -156,19 +156,19 @@ export type AgentStudioEvolutionActionMessage =
     };
 
 export type AgentStudioLifecycleActionMessage =
-  | { type: "refreshCanonicalProfile"; agent: string }
-  | { type: "setCanonicalProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
-  | { type: "renameCanonicalProfile"; agent: string; expectedRevision: string; newName: string }
-  | { type: "forgetCanonicalProfile"; agent: string; expectedRevision: string; confirmation: string }
+  | { type: "refreshAgentProfile"; agent: string }
+  | { type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
+  | { type: "renameAgentProfile"; agent: string; expectedRevision: string; newName: string }
+  | { type: "forgetAgentProfile"; agent: string; expectedRevision: string; confirmation: string }
   /** t-4c113c — the owner's full declared-subagents list; an empty list clears the declaration. */
-  | { type: "setCanonicalProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }
+  | { type: "setAgentProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }
   /** t-3bde32 — grant or revoke this agent's authority to PROPOSE Saved Agents for human review. */
-  | { type: "setCanonicalProfileProposeGrant"; agent: string; expectedRevision: string; granted: boolean };
+  | { type: "setAgentProfileProposeGrant"; agent: string; expectedRevision: string; granted: boolean };
 
 export type AgentStudioBundleActionMessage =
-  | { type: "exportCanonicalProfileBundle"; agent: string; expectedRevision: string }
-  | { type: "cloneCanonicalProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
-  | { type: "importCanonicalProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
+  | { type: "exportSavedAgentProfileBundle"; agent: string; expectedRevision: string }
+  | { type: "cloneSavedAgentProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
+  | { type: "importSavedAgentProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
 
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
@@ -189,69 +189,69 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   if (!raw || typeof raw !== "object") return undefined;
   const value = raw as Record<string, unknown>;
   if (value.type === "browse") return exactKeys(value, ["type"]) ? { type: "browse" } : undefined;
-  if (value.type === "refreshCanonicalProfile") {
+  if (value.type === "refreshAgentProfile") {
     return exactKeys(value, ["type", "agent"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
-      ? { type: "refreshCanonicalProfile", agent: value.agent }
+      ? { type: "refreshAgentProfile", agent: value.agent }
       : undefined;
   }
-  if (value.type === "exportCanonicalProfileBundle") {
+  if (value.type === "exportSavedAgentProfileBundle") {
     return exactKeys(value, ["type", "agent", "expectedRevision"]) && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
-      ? { type: "exportCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision } : undefined;
+      ? { type: "exportSavedAgentProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision } : undefined;
   }
-  if (value.type === "cloneCanonicalProfileBundle") {
+  if (value.type === "cloneSavedAgentProfileBundle") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "destinationAgentName"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
-      ? { type: "cloneCanonicalProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision, destinationAgentName: value.destinationAgentName } : undefined;
+      ? { type: "cloneSavedAgentProfileBundle", agent: value.agent, expectedRevision: value.expectedRevision, destinationAgentName: value.destinationAgentName } : undefined;
   }
-  if (value.type === "importCanonicalProfileBundle") {
+  if (value.type === "importSavedAgentProfileBundle") {
     return exactKeys(value, ["type", "agent", "destinationAgentName", "contentBase64"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.destinationAgentName === "string" && AGENT_NAME_RE.test(value.destinationAgentName)
       && typeof value.contentBase64 === "string" && value.contentBase64.length > 0 && value.contentBase64.length <= 350_000 && BASE64_RE.test(value.contentBase64)
-      ? { type: "importCanonicalProfileBundle", agent: value.agent, destinationAgentName: value.destinationAgentName, contentBase64: value.contentBase64 } : undefined;
+      ? { type: "importSavedAgentProfileBundle", agent: value.agent, destinationAgentName: value.destinationAgentName, contentBase64: value.contentBase64 } : undefined;
   }
-  if (value.type === "setCanonicalProfileEnabled") {
+  if (value.type === "setAgentProfileEnabled") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "enabled"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       && typeof value.enabled === "boolean"
-      ? { type: "setCanonicalProfileEnabled", agent: value.agent, expectedRevision: value.expectedRevision, enabled: value.enabled }
+      ? { type: "setAgentProfileEnabled", agent: value.agent, expectedRevision: value.expectedRevision, enabled: value.enabled }
       : undefined;
   }
-  if (value.type === "renameCanonicalProfile") {
+  if (value.type === "renameAgentProfile") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "newName"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.newName === "string" && AGENT_NAME_RE.test(value.newName)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
-      ? { type: "renameCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, newName: value.newName }
+      ? { type: "renameAgentProfile", agent: value.agent, expectedRevision: value.expectedRevision, newName: value.newName }
       : undefined;
   }
-  if (value.type === "forgetCanonicalProfile") {
+  if (value.type === "forgetAgentProfile") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "confirmation"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.confirmation === "string" && AGENT_NAME_RE.test(value.confirmation)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
-      ? { type: "forgetCanonicalProfile", agent: value.agent, expectedRevision: value.expectedRevision, confirmation: value.confirmation }
+      ? { type: "forgetAgentProfile", agent: value.agent, expectedRevision: value.expectedRevision, confirmation: value.confirmation }
       : undefined;
   }
-  if (value.type === "setCanonicalProfileSubagents") {
+  if (value.type === "setAgentProfileSubagents") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "subagents"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       && Array.isArray(value.subagents) && value.subagents.length <= AGENT_OWNERSHIP_MAX_SUBAGENTS
       && value.subagents.every((child) => typeof child === "string" && AGENT_NAME_RE.test(child))
-      ? { type: "setCanonicalProfileSubagents", agent: value.agent, expectedRevision: value.expectedRevision, subagents: [...value.subagents as string[]] }
+      ? { type: "setAgentProfileSubagents", agent: value.agent, expectedRevision: value.expectedRevision, subagents: [...value.subagents as string[]] }
       : undefined;
   }
-  if (value.type === "setCanonicalProfileProposeGrant") {
+  if (value.type === "setAgentProfileProposeGrant") {
     return exactKeys(value, ["type", "agent", "expectedRevision", "granted"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       && typeof value.granted === "boolean"
-      ? { type: "setCanonicalProfileProposeGrant", agent: value.agent, expectedRevision: value.expectedRevision, granted: value.granted }
+      ? { type: "setAgentProfileProposeGrant", agent: value.agent, expectedRevision: value.expectedRevision, granted: value.granted }
       : undefined;
   }
   if (value.type === "refreshEvolution") {
@@ -410,30 +410,30 @@ function isEvolutionCandidateDetail(raw: unknown): raw is AgentEvolutionCandidat
 export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
   if (!raw || typeof raw !== "object") return false;
   const value = raw as Record<string, unknown>;
-  if (value.type === "canonicalProfileSnapshot") {
+  if (value.type === "agentProfileSnapshot") {
     return exactKeys(value, ["type", "action", "snapshot"])
       && ["refresh", "set-enabled", "rename", "set-subagents", "set-propose-saved-agent-grant"].includes(String(value.action))
       && isAgentProfileStudioSnapshotV1(value.snapshot);
   }
-  if (value.type === "canonicalProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
-  if (value.type === "canonicalProfileBundleCreated") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleCreatedResultSchemaV1.safeParse(value.result).success;
-  if (value.type === "canonicalProfileBundleError") {
+  if (value.type === "agentProfileBundleExport") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleExportResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "agentProfileBundleCreated") return exactKeys(value, ["type", "result"]) && agentProfileStudioBundleCreatedResultSchemaV1.safeParse(value.result).success;
+  if (value.type === "agentProfileBundleError") {
     return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
       && typeof value.message === "string" && value.message.length <= 2_000 && typeof value.conflict === "boolean";
   }
-  if (value.type === "canonicalProfileOwnership") {
+  if (value.type === "agentProfileOwnership") {
     return exactKeys(value, ["type", "agent", "ownership"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && agentOwnershipViewSchemaV1.safeParse(value.ownership).success;
   }
-  if (value.type === "canonicalProfileForgotten") {
+  if (value.type === "agentProfileForgotten") {
     return exactKeys(value, ["type", "agent", "agentId"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.agentId === "string" && PROFILE_ID_RE.test(value.agentId);
   }
-  if (value.type === "canonicalProfileError") {
+  if (value.type === "agentProfileError") {
     return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)

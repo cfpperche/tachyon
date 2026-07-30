@@ -1672,11 +1672,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Compatibility name: start a managed entry in this workspace. With only a name, spawns the entry declared in tachyon.yml; " +
-        "pass cmd to spawn an ad-hoc sub-agent (e.g. a fresh AI CLI for a delegated task). " +
+        "pass cmd to spawn a Temporary sub-agent (e.g. a fresh AI CLI for a delegated task). " +
         `cmd MUST name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}) — a generic process ` +
         "(shell, server, build) is refused here and belongs to spawn_terminal, which starts it with no task, lineage, brief or worktree. " +
         "ALWAYS pass parent=<your own agent name — find it in your $TACHYON_AGENT_NAME env var, never guess it> so the sidebar shows lineage. " +
-        "DELEGATION CONTRACT (spec 246): when you spawn an ad-hoc AI agent (cmd is an AI CLI), you MUST hand it a " +
+        "DELEGATION CONTRACT (spec 246): when you spawn a Temporary AI agent (cmd is an AI CLI), you MUST hand it a " +
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
@@ -1690,8 +1690,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .string()
           .min(1)
           .optional()
-          .describe(`command for an ad-hoc agent — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
-        cwd: z.string().optional().describe("working directory for an ad-hoc agent"),
+          .describe(`command for a Temporary instance — must name a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}); omit to use tachyon.yml`),
+        cwd: z.string().optional().describe("working directory for a Temporary instance"),
         instructions: z
           .string()
           .max(2000)
@@ -1705,9 +1705,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .optional()
           .describe(
             // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
-            // ad-hoc AI agent. "Ignored" and "refused" are different promises to a caller, and only
+            // Temporary AI agent. "Ignored" and "refused" are different promises to a caller, and only
             // one of them was true.
-            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for an ad-hoc AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for a Temporary AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
           ),
         gate: z
           .object({
@@ -1734,7 +1734,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           })
           .optional()
           .describe("Join an existing canonical Delivery in its one worktree. Occupied/unavailable Deliveries refuse; no fallback worktree is created."),
-        // spec 246 — the delegation contract (required for an ad-hoc AI agent unless skip_contract_reason is given).
+        // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
         constraints: z.string().optional().describe("what NOT to do; scope guardrails; budgets; style"),
@@ -1770,12 +1770,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (delivery_join && (gate || worktree)) {
           return fail(new Error("spawn_agent cannot combine delivery_join with gate or worktree:true — a Delivery already owns its worktree"));
         }
-        // SDD 478 M9 — attestation runs BEFORE every other ad-hoc check, including the delegation
+        // SDD 478 M9 — attestation runs BEFORE every other Temporary check, including the delegation
         // contract. A command that may not be an agent at all must hear WHY and which operation to use;
         // being told first that its delegation contract is incomplete would send the caller to fill in
         // a brief for an entity this door is never going to create.
         //
-        // Scoped to the genuine ad-hoc door: a `delivery_join` execution is a DIFFERENT door with its
+        // Scoped to the genuine Temporary door: a `delivery_join` execution is a DIFFERENT door with its
         // own contract (an immutable Delivery, an owned subset, an expected HEAD) and its own measured
         // policy for an unrecognized reviewer runtime — SDD 368 T10 deliberately runs one and advises
         // rather than refusing. M9 was told to enforce a boundary, not to withdraw that.
@@ -1783,7 +1783,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
-        // spec 246 — the contract gate fires only for an ad-hoc AI-agent spawn (the genuine "delegate a fresh
+        // spec 246 — the contract gate fires only for a Temporary AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) is not gated.
         // Enforced HERE at the agent-facing Bridge surface so it is runtime-neutral across the attested
         // runtimes and never re-fires on restart/resume/fork.
@@ -1793,17 +1793,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
         if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
         if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        const isAdhocAiAgent = !!cmd || isBoundDeliveryExecution;
-        if (isAdhocAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
+        const isTemporaryAiAgent = !!cmd || isBoundDeliveryExecution;
+        if (isTemporaryAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
           return fail(new Error(
-            "spawn_agent worktree:true is not a tracked-change lifecycle for an ad-hoc AI agent; use gate with a behavior_test and owned paths",
+            "spawn_agent worktree:true is not a tracked-change lifecycle for a Temporary AI agent; use gate with a behavior_test and owned paths",
           ));
         }
         const suppliedTaskBrief = !!normalizeField(instructions);
         let brief = instructions;
         let contract: SpawnContract | undefined;
         let delegationGate: DelegationGate | undefined;
-        if (isAdhocAiAgent) {
+        if (isTemporaryAiAgent) {
           if (skip_contract_reason !== undefined) {
             if (gate !== undefined) {
               return fail(new Error("spawn_agent cannot combine gate with skip_contract_reason; a gated delegation requires a full delegation contract"));
@@ -1860,7 +1860,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
         } else if (gate !== undefined) {
-          return fail(new Error("spawn_agent gate is only supported for an ad-hoc AI sub-agent with a delegation contract"));
+          return fail(new Error("spawn_agent gate is only supported for a Temporary AI sub-agent with a delegation contract"));
         }
         if (delegationGate) deps.assertLegacyDeliveryRetired?.();
         if (delivery_join) {
@@ -1884,10 +1884,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           cwd,
           // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
           // Keep it in the instructions layer so the startup manifest truthfully reports no task.
-          instructions: isAdhocAiAgent
+          instructions: isTemporaryAiAgent
             ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? brief : undefined)
             : brief,
-          taskBrief: isAdhocAiAgent
+          taskBrief: isTemporaryAiAgent
             ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? undefined : brief)
             : undefined,
           parent,
@@ -1927,7 +1927,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "the Agent/Terminal boundary (SDD 478): a terminal is a process, not an entity. It has no task, no lineage, no " +
         "brief, no delegation contract, no worktree, no soul, no memory and no model — those are agent capabilities, and " +
         `there are no parameters here to carry them. Use spawn_agent for a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}). ` +
-        "Stop it with kill_agent and remove the stopped row with dismiss_agent, exactly like any other ad-hoc entry.",
+        "Stop it with kill_agent and remove the stopped row with dismiss_agent, exactly like any other Temporary entry.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
         cmd: z.string().min(1).describe("the command to run, verbatim — Tachyon does not interpret it"),
@@ -1959,7 +1959,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       } catch (err) {
         const info = await managedEntry(deps, name);
         if (info && info.lifetime === "temporary" && !info.running) {
-          return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped ad-hoc entry`));
+          return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped Temporary entry`));
         }
         return fail(err);
       }
@@ -1970,9 +1970,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     "dismiss_agent",
     {
       description:
-        "Dismiss a stopped ad-hoc managed entry from this workspace. This removes the ephemeral row and its durable " +
-        "ad-hoc footprint; it is only valid for ad-hoc entries that are no longer running. Use kill_agent first for " +
-        "a running ad-hoc agent. Declared tachyon.yml agents cannot be dismissed through the Bridge.",
+        "Dismiss a stopped Temporary managed entry from this workspace. This removes the ephemeral row and its durable " +
+        "Temporary footprint; it is only valid for Temporary entries that are no longer running. Use kill_agent first for " +
+        "a running Temporary instance. Declared tachyon.yml agents cannot be dismissed through the Bridge.",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {
@@ -1994,7 +1994,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           await deps.manager.kill(name);
           return ok(`agent '${name}' dismissed`);
         }
-        deps.manager.dismissAdhoc(name);
+        deps.manager.dismissTemporary(name);
         return ok(`agent '${name}' dismissed`);
       } catch (err) {
         return fail(err);
@@ -2007,7 +2007,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Restart a managed entry (spec 389). stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
-        "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses ad-hoc). " +
+        "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses a Temporary instance). " +
         "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally.",
       inputSchema: {
         name: AGENT_NAME,
@@ -2220,7 +2220,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Compatibility name: list this workspace's managed entries: agents and terminals declared in tachyon.yml and/or currently running. " +
-        "Rows include runtime parent lineage plus declaredOwner ownership metadata from tachyon.yml subagents, advisory capabilities for output reading, and stopped ad-hoc dismissal; action tools still re-check state.",
+        "Rows include runtime parent lineage plus declaredOwner ownership metadata from tachyon.yml subagents, advisory capabilities for output reading, and stopped Temporary dismissal; action tools still re-check state.",
       inputSchema: {},
     },
     async () => {

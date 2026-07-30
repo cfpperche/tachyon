@@ -77,7 +77,7 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     // Prospective-home materialization now precedes token minting so preflight sees the exact
     // environment. A materializer failure therefore has no new token to revoke and must preserve
     // the principal's prior transient, lineage, durable row/home, and callback history.
-    const internals = manager as unknown as { readyAgents: Set<string>; lineage: Map<string, string>; adhoc: Map<string, unknown> };
+    const internals = manager as unknown as { readyAgents: Set<string>; lineage: Map<string, string> };
     internals.readyAgents.add("reviewer");
     internals.lineage.set("reviewer", "incumbent");
     const beforeMaterializerFailure = { callbacks: [...callbacks], revoked: [...revoked], principal: structuredClone(ledger.get("reviewer")), home: fs.readFileSync(path.join(home("reviewer"), "marker")) };
@@ -137,7 +137,8 @@ export async function exerciseBoundDeliveryExecution(): Promise<void> {
     expect(failed).toEqual([...beforeCmdFailure.failed, "failed-cmd"]);
     expect(ledger.get("failed-cmd")).toBeUndefined();
     expect(fs.existsSync(home("failed-cmd"))).toBe(false);
-    expect(internals.adhoc.has("failed-cmd")).toBe(false);
+    // t-eb4b30 — the definition half of "left no trace" is the ledger assertion above: a Temporary's
+    // definition lives in its row, so there is no separate in-memory map left to check.
     expect(internals.lineage.has("failed-cmd")).toBe(false);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
@@ -247,8 +248,11 @@ export const boundDeliveryPreReservationRefusals = [
   "terminal declared source",
   "same execution name",
   "configured execution-name collision",
-  "ad-hoc execution-name collision",
-  "ledger execution-name collision",
+  // t-eb4b30 — there used to be a separate "ad-hoc execution-name collision" vector, seeded by
+  // writing into AgentManager's private map. The map is gone, so a Temporary's name being taken IS a
+  // ledger row with `lifetime: "temporary"` — which is exactly what the case below already seeded.
+  // The vectors merged because the stores did; keeping both would have asserted the same thing twice.
+  "ledger execution-name collision (Temporary)",
   "live tmux execution-name collision",
   "dead tmux execution-name collision",
   "reserved token in declared source",
@@ -307,7 +311,6 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
       onSpawned: () => { counters.onSpawned++; },
       onKilled: () => { counters.onKilled++; },
     });
-    const internals = manager as unknown as { adhoc: Map<string, unknown> };
     const name = "execution";
     const join: DeliveryJoinRequest = { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "head", operationId: `b2-${kind}`, declaredAgent: "reviewer" };
     let options: Parameters<AgentManager["spawn"]>[1] = { deliveryJoin: join };
@@ -316,8 +319,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
       case "terminal declared source": config.agents.reviewer!.kind = "terminal"; break;
       case "same execution name": join.declaredAgent = name; break;
       case "configured execution-name collision": config.agents[name] = completeDef(); break;
-      case "ad-hoc execution-name collision": internals.adhoc.set(name, completeDef()); break;
-      case "ledger execution-name collision": originalRecord(name, { def: completeDef(), cwd: root, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } }); break;
+      case "ledger execution-name collision (Temporary)": originalRecord(name, { def: completeDef(), cwd: root, instance: { lifetime: "temporary", resumePolicy: "collected", lifecycleHooks: false } }); break;
       case "live tmux execution-name collision": sessions.add(manager.session(name)); break;
       case "dead tmux execution-name collision": sessions.add(manager.session(name)); dead.add(manager.session(name)); break;
       case "reserved token in declared source": config.agents.reviewer!.env = { TACHYON_AGENT_BRIDGE_TOKEN: "forbidden" }; break;
@@ -340,7 +342,7 @@ export async function exerciseBoundDeliveryPreReservationRefusal(kind: BoundDeli
 /**
  * T13 R3: ordinary declared-agent Delivery join must refresh bridgeClient to this
  * incarnation's wiring outcome without rewriting principal def/resume/worktree/cwd.
- * Forces preservesDeclaredLedger (mode declared + existing ledger row) while Bridge
+ * Forces preservesSavedLedger (mode declared + existing ledger row) while Bridge
  * wiring fails — the stale wired:true stamp must not survive.
  */
 export async function exerciseDeclaredDeliveryJoinBridgeStampRefresh(): Promise<void> {

@@ -129,7 +129,7 @@ export interface CanonicalLiveRenameSnapshot {
   activity: ActivityRenameSnapshot;
 }
 
-export interface CanonicalProfileForgetSnapshot {
+export interface AgentProfileForgetSnapshot {
   ledgerSha256: string | null;
   activity: ActivityRenameSnapshot;
 }
@@ -239,7 +239,7 @@ export interface ManagedEntryInfo {
   /**
    * t-04052d — the SECOND axis, resolved the same way and carried beside the first because the two do
    * not imply each other. A FORK is `temporary` + `restartable`: no durable Profile, but it owns a
-   * resume block. A reader that has only `lifetime` cannot tell it apart from a plain ad-hoc, and any
+   * resume block. A reader that has only `lifetime` cannot tell it apart from a plain Temporary instance, and any
    * rule that tries collapses the axes this cut exists to keep apart.
    */
   resumePolicy: AgentInstanceResumePolicy;
@@ -258,7 +258,7 @@ export interface ManagedEntryInfo {
   cleanExited?: boolean;
   /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
   kind: EntryKind;
-  /** who spawned it (self-declared via spawn_agent's parent param; session-local memory) */
+  /** who spawned this instance; persisted uniformly for Saved and Temporary lifetimes */
   parent?: string;
   /** Bridge-resolved agent that requested a gated delegation; display metadata, not runtime lineage. */
   delegator?: string;
@@ -291,7 +291,7 @@ export interface DeliveryJoinRequest {
 /** A receipt is deliberately local to one Delivery launch.  A name is not cleanup authority. */
 interface DeliveryLaunchAttempt {
   /** Closed at acquisition: cleanup must never re-infer ownership from mutable maps. */
-  readonly mode: "bound-ephemeral" | "cmd-adhoc-ephemeral" | "declared";
+  readonly mode: "bound-ephemeral" | "cmd-temporary-ephemeral" | "saved";
   acquired: boolean;
   token: boolean;
   materialized: "not-started" | "attempted" | "completed";
@@ -455,34 +455,34 @@ function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
 export type SpawnReveal = "reveal" | "preserve" | "silent";
 
 export interface SpawnOptions {
-  /** present = ad-hoc agent (not declared in tachyon.yml) */
+  /** present = Temporary instance (not declared in tachyon.yml) */
   cmd?: string;
   /**
    * SDD 478 M9 — what the caller is asking to create. Required alongside `cmd`, because the manager
-   * no longer infers it: which entity an ad-hoc command produces is a decision belonging to the door
+   * no longer infers it: which entity a Temporary command produces is a decision belonging to the door
    * that took the request, and this manager serves several. An `agent` request is admitted only for
    * a supported agent runtime (`admitAgentRuntimeCommand`); a `terminal` request has no agent fields to carry.
    */
   kind?: EntryKind;
   cwd?: string;
-  /** role prompt for ad-hoc agents — delivered via composeCommand like declared ones */
+  /** role prompt for Temporary instances — delivered via composeCommand like Saved ones */
   instructions?: string;
-  /** lineage: the agent that requested this spawn (self-declared) */
+  /** explicit runtime lineage: the agent that requested this instance, regardless of lifetime */
   parent?: string;
   /** spec 362 — Bridge-resolved requester for a gated delegation. Separate from parent because gated agents spawn top-level. */
   delegator?: string;
   /** open + focus the editor terminal on spawn (default true). The Bridge passes false
    *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
   reveal?: boolean;
-  /** spec 210 — opt this ad-hoc spawn into git-worktree isolation, including parented spawns. */
+  /** spec 210 — opt this Temporary spawn into git-worktree isolation, including parented spawns. */
   worktree?: boolean;
-  /** spec 230 — extra env merged into this ad-hoc spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
+  /** spec 230 — extra env merged into this Temporary spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
   env?: Record<string, string>;
-  /** spec 230 — tag this ad-hoc spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
+  /** spec 230 — tag this Temporary spawn as a pipeline-run node; persisted to SessionDef.pipeline so the generic resume/offer path skips it (the run owns it). */
   pipeline?: { runId: string; nodeId: string };
   /** spec 230 — extra instructions appended to the agent's composed prompt (a pipeline node's task, added AFTER a declared agent's role/instructions so the specialist config is preserved). */
   taskBrief?: string;
-  /** spec 246 — the validated delegation contract this ad-hoc AI child was spawned under (Bridge spawn-contract
+  /** spec 246 — the validated delegation contract this Temporary AI child was spawned under (Bridge spawn-contract
    *  gate); persisted as structured metadata on the ledger def (D8). The brief itself rides in `instructions`. */
   contract?: SpawnContract;
   /** spec 246 — set when the spawner bypassed the contract gate (`skip_contract_reason`); recorded for audit. */
@@ -571,7 +571,7 @@ export interface AgentManagerOptions {
   notify?: (message: string, level: "warn") => void;
   /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
-  onSpawned?: (name: string, reveal: SpawnReveal, context?: { worktree?: WorktreeRecord; adhoc: boolean }) => void;
+  onSpawned?: (name: string, reveal: SpawnReveal, context?: { worktree?: WorktreeRecord; temporary: boolean }) => void;
   onStopping?: (name: string) => void;
   onKilled?: (name: string) => unknown;
   /**
@@ -742,8 +742,8 @@ export interface SpawnCwdContext {
   parent?: string;
   /** Authenticated coordinator for a gated top-level delegation. */
   delegator?: string;
-  /** ad-hoc (MCP-spawned) vs declared */
-  adhoc: boolean;
+  /** Temporary (MCP-spawned) vs Saved */
+  temporary: boolean;
   /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
   isRestart: boolean;
   /** spec 362 — present only when spawn_agent requested a verification gate; must fail closed without a worktree. */
@@ -819,9 +819,36 @@ function launchCompensationError(primary: unknown, outcome: LaunchCompensation, 
 
 /**
  * Lifecycle orchestration over TmuxService. tmux is the source of truth for what's
- * running; the only in-memory state is the definition of ad-hoc (MCP-spawned) agents,
+ * running; the only in-memory state is the definition of Temporary (MCP-spawned) agents,
  * which does not survive an extension restart by design.
  */
+/**
+ * t-eb4b30 — a Temporary Agent's definition, rebuilt from its ledger row.
+ *
+ * This was inline in `rehydrateFromLedger`, which is what made a second store look necessary: only the
+ * rehydrate path could produce an `AgentDef` from a row, so everything else read a map. It is total
+ * rather than lossy because a Temporary's lifecycle buttons are CONSTANTS, not authored data — nobody
+ * can give one an autostart, a watch list or a restart policy, so there is nothing about it to lose.
+ * The row carries the only authored parts: cmd, instructions, role, soul, env and kind.
+ */
+function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktree: SessionRecord["worktree"]): AgentDef {
+  return {
+    cmd: def.cmd,
+    instructions: def.instructions,
+    ...(def.role ? { role: def.role } : {}),
+    ...(def.soul ? { soul: true } : {}),
+    ...(def.env ? { env: def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
+    autostart: false,
+    watch: [],
+    attention: { enabled: true, silenceSec: 8, patterns: [] },
+    restart: "never",
+    kind: def.kind,
+    // spec 210 — a row with a worktree record means this agent runs in a worktree; restore the flag so
+    // restart reuses it instead of falling back to the root.
+    worktree: !!worktree,
+  };
+}
+
 export class AgentManager {
   private readonly soulReservations = new Map<string, string>();
 
@@ -917,9 +944,48 @@ export class AgentManager {
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
   static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
-  private adhoc = new Map<string, AgentDef>();
-  /** child -> parent. Like adhoc defs, lineage is session-local memory: tmux sessions
-   * survive an extension restart, the genealogy does not (documented). */
+  /**
+   * t-eb4b30 — there is no second definition store.
+   *
+   * A Temporary Agent's definition used to live in `private temporary = new Map<string, AgentDef>()`, a
+   * parallel machine beside `config.agents`, and 29 sites branched on membership in it to mean "is this
+   * Temporary?". The map held nothing the ledger did not: `rehydrateFromLedger` already rebuilt the
+   * whole `AgentDef` from `rec.def` + `rec.worktree` on every activation, and that reconstruction is
+   * total because a Temporary's lifecycle buttons are CONSTANTS. So the map was a cache of the ledger,
+   * and membership in it was a proxy for the declared lifetime that t-04052d made readable directly.
+   *
+   * Consequence, stated because it is a real narrowing: a Temporary now REQUIRES a ledger, since that
+   * is where its definition is. Production has one construction site and it always passes one
+   * (`Workspace.ts`); a manager built without a ledger simply has no Temporary agents, which is the
+   * fail-closed reading rather than a silent second store.
+   */
+  private temporaryRow(name: string): { def: NonNullable<SessionRecord["def"]>; worktree?: SessionRecord["worktree"] } | undefined {
+    if (this.opts.getConfig()?.agents[name]) return undefined; // a Saved definition wins; see `definitionOf`
+    const rec = this.opts.ledger?.get(name);
+    if (!rec?.def || !isTemporaryInstance(rec)) return undefined;
+    return { def: rec.def, ...(rec.worktree ? { worktree: rec.worktree } : {}) };
+  }
+
+  /** Whether this name is a Temporary Agent — the declared lifetime, never which store holds it. */
+  private isTemporary(name: string): boolean {
+    return this.temporaryRow(name) !== undefined;
+  }
+
+  /**
+   * Every Temporary Agent this workspace knows about, from the one store that holds them.
+   *
+   * Takes an optional snapshot because `SessionLedger.all()` reads and parses the file on every call
+   * and `get()` is `all()` behind one key. A caller that already holds a snapshot — `list()` does, and
+   * it runs on every UI refresh — must not pay for another read per name.
+   */
+  private temporaryNames(rows?: ReadonlyMap<string, SessionRecord>): string[] {
+    const declared = this.opts.getConfig()?.agents ?? {};
+    return [...(rows ?? this.opts.ledger?.all() ?? [])]
+      .filter(([name, rec]) => !declared[name] && !!rec.def && isTemporaryInstance(rec))
+      .map(([name]) => name);
+  }
+
+  /** child -> parent, the process-local projection of lineage persisted in the session ledger. */
   private lineage = new Map<string, string>();
   /** child -> delegator for gated delegations. Display-only; gated children intentionally have no runtime parent. */
   private delegators = new Map<string, string>();
@@ -1000,7 +1066,10 @@ export class AgentManager {
   }
 
   private definitionOf(name: string): AgentDef | undefined {
-    return this.opts.getConfig()?.agents[name] ?? this.adhoc.get(name);
+    const saved = this.opts.getConfig()?.agents[name];
+    if (saved) return saved;
+    const row = this.temporaryRow(name);
+    return row ? temporaryDefinitionFrom(row.def, row.worktree) : undefined;
   }
 
   /** SDD 478 — the Agent arm of a declared entry, or undefined for a terminal. Every agent-only
@@ -1049,7 +1118,7 @@ export class AgentManager {
     if (result.state === "unverifiable" && parsed.model && failClosedUnverifiable) throw new RuntimeLaunchPreflightError(result);
   }
 
-  /** Public read of an agent's definition (declared config wins, then ad-hoc) — spec 216 needs
+  /** Public read of an agent's definition (the saved config wins, then a Temporary definition) — spec 216 needs
    *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
   defOf(name: string): AgentDef | undefined {
     return this.definitionOf(name);
@@ -1082,8 +1151,8 @@ export class AgentManager {
     return chosen.soul;
   }
 
-  /** An agent's kind (config wins, then ad-hoc def, else infer from a running session's
-   *  command). Used to give ad-hoc TERMINALS terminal defaults (e.g. attention off) — F5. */
+  /** An agent's kind (config wins, then Temporary def, else infer from a running session's
+   *  command). Used to give Temporary TERMINALS terminal defaults (e.g. attention off) — F5. */
   kindOf(name: string): EntryKind {
     return this.definitionOf(name)?.kind ?? "agent";
   }
@@ -1190,12 +1259,11 @@ export class AgentManager {
     if (readiness.state === "ready") this.readyAgents.add(name);
   }
 
-  /** spec 332 — the lineage parent recorded for this agent (session-local memory, same source as
-   *  list()'s `parent` field), if any. Used by the death-poke wiring to find who to wake. t-384a3f:
-   *  falls back to the persisted ledger the same way liveDescendants does — a child's parent link can
-   *  survive only in the ledger after a reload (rehydrateFromLedger skips names that are currently
-   *  declared), and this is now used for an AUTHORIZATION decision (inWaitOutputScope), so an in-memory
-   *  miss must not read as "no parent" while the ledger still has one. */
+  /** spec 332 — the lineage parent recorded for this agent (live projection first, durable ledger
+   *  fallback), if any. Used by the death-poke wiring to find who to wake. t-384a3f:
+   *  falls back to the persisted ledger the same way liveDescendants does — during reload the durable
+   *  row can be visible before the process-local projection is rebuilt, and this is used for an
+   *  AUTHORIZATION decision (inWaitOutputScope), so an in-memory miss must not read as "no parent". */
   parentOf(name: string): string | undefined {
     return this.lineage.get(name) ?? this.ledgerParentOf(name);
   }
@@ -1233,10 +1301,8 @@ export class AgentManager {
    */
   async liveDescendants(name: string): Promise<string[]> {
     const running = new Set(await this.runningAgents());
-    // Union in-memory lineage with persisted ledger parents (review fix): a DECLARED child
-    // spawned with `parent` survives a reload but rehydrateFromLedger skips declared names,
-    // so its link lives only in the ledger — without this the guard would miss it and a
-    // running child's worktree/cwd could be yanked.
+    // Union the live projection with persisted ledger parents. The same durable source covers Saved
+    // and Temporary instances; without it the guard could miss a child during reload and yank its cwd.
     const ledgerParent = new Map<string, string>();
     if (this.opts.ledger) {
       for (const [c] of this.opts.ledger.all()) {
@@ -1264,11 +1330,9 @@ export class AgentManager {
   }
 
   /**
-   * Spec 211: after a host restart, rebuild the in-memory ad-hoc defs + lineage
-   * from the ledger so a re-discovered ad-hoc agent is restartable and re-nests.
-   * Only `def`-bearing rows whose name is NOT currently declared in config (config
-   * is authoritative) and not already live in memory; idempotent; self-parent links
-   * are dropped. Resume rows without a def (none today) are ignored.
+   * Spec 211 / t-d542ac: after a host restart, rebuild Temporary definitions where needed and
+   * runtime lineage for BOTH lifetimes from the ledger. Config remains authoritative only for a
+   * Saved definition; it does not own the instance lineage. Idempotent; self-parent links are dropped.
    */
   async rehydrateFromLedger(): Promise<void> {
     if (!this.opts.ledger) return;
@@ -1280,24 +1344,10 @@ export class AgentManager {
       // have changed nothing on its own: the row was never read back. Only the DEFINITION is config's
       // to own; the execution lineage below is the ledger's, for Saved and Temporary alike.
       const configOwned = !isTemporaryInstance(rec) || declared.has(name);
-      if (!configOwned && !this.adhoc.has(name)) {
-        this.adhoc.set(name, {
-          cmd: rec.def.cmd,
-          instructions: rec.def.instructions,
-          ...(rec.def.role ? { role: rec.def.role } : {}),
-          ...(rec.def.soul ? { soul: true } : {}),
-          ...(rec.def.env ? { env: rec.def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
-          autostart: false,
-          watch: [],
-          attention: { enabled: true, silenceSec: 8, patterns: [] },
-          restart: "never",
-          kind: rec.def.kind,
-          // spec 210 — a row with a worktree record means this agent runs in a worktree;
-          // restore the flag so restart reuses it instead of falling back to the root
-          // (review fix: rehydrated ad-hoc worktree agents lost worktree:true).
-          worktree: !!rec.worktree,
-        });
-      }
+      // t-eb4b30 — no definition is copied into memory here any more. This loop used to rebuild the
+      // `AgentDef` into a second map; `definitionOf` now derives it from this same row on demand, via
+      // the same `temporaryDefinitionFrom`. What remains below is what only the ledger can answer:
+      // lineage, delegator and clean-exit, for Saved and Temporary alike.
       // The instance bound: only adopt a ledger parent for an instance this process did not start.
       // If we started it, its lineage was settled at spawn — including deliberately having none.
       if (rec.def.parent && rec.def.parent !== name && !this.lineage.has(name) && !this.startedHere.has(name)) {
@@ -1433,7 +1483,14 @@ export class AgentManager {
     const states = await this.agentStates();
     const config = this.opts.getConfig();
     const declared = Object.keys(config?.agents ?? {});
-    const all = new Set([...declared, ...states.keys(), ...this.adhoc.keys(), ...this.cleanExited]);
+    // t-eb4b30 — Temporary names come from the ledger, which is where their definitions are. The old
+    // map was repopulated from these same rows on every activation, so in steady state this is the same
+    // set; it differs only on the paths where the map and the row disagreed, and those were bugs.
+    // ONE ledger snapshot for the whole listing. `definitionOf` would otherwise re-read and re-parse
+    // the file once per name below — `get()` is `all()` behind a single key — turning a UI refresh into
+    // N disk reads. The old in-memory map made that free; the fix is to read once, not to keep a cache.
+    const rows = this.opts.ledger?.all();
+    const all = new Set([...declared, ...states.keys(), ...this.temporaryNames(rows), ...this.cleanExited]);
     const now = Date.now();
     const infos = [...all].sort().map((name) => {
       const state = states.get(name);
@@ -1490,7 +1547,9 @@ export class AgentManager {
         crashed: (state?.dead ?? false) && state?.exitCode !== 0,
         exitCode: state?.exitCode,
         ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
-        kind: this.definitionOf(name)?.kind ?? "agent",
+        // Same answer as `definitionOf(name)?.kind`, read from the snapshot above: a Saved definition
+        // wins, else the Temporary's row, else the default arm.
+        kind: config?.agents[name]?.kind ?? rows?.get(name)?.def?.kind ?? "agent",
         parent: this.lineage.get(name),
         delegator: this.delegators.get(name),
         declaredOwner: config?.declaredOwner[name],
@@ -1779,7 +1838,7 @@ export class AgentManager {
     return { ...resume, configHome: keep ? resume.configHome : this.runtimeConfigHome(resume.runtime, name, def) };
   }
 
-  /** Spawns a declared agent, or an ad-hoc one when `opts.cmd` is given. */
+  /** Spawns a declared agent, or a Temporary one when `opts.cmd` is given. */
   async spawn(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     const prior = this.spawnLocks.get(name) ?? Promise.resolve();
     const run = prior.then(() => this.spawnUnlocked(name, opts), () => this.spawnUnlocked(name, opts));
@@ -1795,7 +1854,7 @@ export class AgentManager {
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-      // An explicit cmd creates an ad-hoc identity only when the name is not already declared.
+      // An explicit cmd creates a Temporary identity only when the name is not already declared.
       const declared = this.opts.getConfig()?.agents[name];
       if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
       this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
@@ -1865,7 +1924,7 @@ export class AgentManager {
       const source = asAgent(declared);
       if (!source) throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
       if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
-      if (config?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
+      if (config?.agents[name] || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
       definition = deliveryDefinitionSnapshot(source);
       request = { ...request, principal: bound };
     }
@@ -1893,8 +1952,8 @@ export class AgentManager {
     const mode: DeliveryLaunchAttempt["mode"] = bound
       ? "bound-ephemeral"
       : opts.cmd
-        ? "cmd-adhoc-ephemeral"
-        : "declared";
+        ? "cmd-temporary-ephemeral"
+        : "saved";
     const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
     const prepared = await this.opts.prepareDeliveryJoin(name, request);
     try {
@@ -1903,7 +1962,7 @@ export class AgentManager {
         worktree: prepared.worktree,
         commandOverride,
         definition,
-        ephemeral: mode !== "declared",
+        ephemeral: mode !== "saved",
         preliminaryPreflight,
         attempt,
         resolvedSoul,
@@ -1967,8 +2026,8 @@ export class AgentManager {
       // No session was completed, so only a freshly acquired ephemeral execution
       // can discard the materialization it owns.  A declared principal retains
       // all transient, durable, and callback state from its prior lifetime.
-      if (attempt.mode !== "declared" && (attempt.materialized !== "not-started" || attempt.ledger)) {
-        try { this.forgetAdhoc(name); } catch (error) { phase("in-memory cleanup failed", error); }
+      if (attempt.mode !== "saved" && (attempt.materialized !== "not-started" || attempt.ledger)) {
+        try { this.forgetTemporary(name); } catch (error) { phase("in-memory cleanup failed", error); }
         try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
       }
       return errors;
@@ -1984,8 +2043,8 @@ export class AgentManager {
       () => this.postmortemOutput.delete(name),
     ];
     for (const clear of transient) try { clear(); } catch (error) { phase("in-memory cleanup failed", error); }
-    if (attempt.mode !== "declared" && (attempt.materialized !== "not-started" || attempt.ledger)) {
-      try { this.forgetAdhoc(name); } catch (error) { phase("in-memory cleanup failed", error); }
+    if (attempt.mode !== "saved" && (attempt.materialized !== "not-started" || attempt.ledger)) {
+      try { this.forgetTemporary(name); } catch (error) { phase("in-memory cleanup failed", error); }
       try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
     }
     try { this.opts.onKilled?.(name); } catch (error) { phase("killed callback failed", error); }
@@ -2224,7 +2283,7 @@ export class AgentManager {
         attention: { enabled: true, silenceSec: 8, patterns: [] },
         restart: "never" as const,
       };
-      // SDD 478 M2 — an ad-hoc entry is built on ONE arm, so a generic command cannot carry
+      // SDD 478 M2 — a Temporary entry is built on ONE arm, so a generic command cannot carry
       // `instructions` or a worktree request: both are Agent capabilities, and until now this door
       // handed them to whatever it spawned.
       //
@@ -2271,8 +2330,8 @@ export class AgentManager {
       // This is the true Delivery acquisition boundary.  Do not inherit ordinary
       // spawn's dead-pane replacement behavior: either kind of racing occupant is
       // another execution and carries no cleanup authority for this receipt.
-      const incumbentIdentity = forced.attempt.mode !== "declared"
-        && (this.opts.getConfig()?.agents[name] || this.adhoc.has(name) || this.opts.ledger?.get(name));
+      const incumbentIdentity = forced.attempt.mode !== "saved"
+        && (this.opts.getConfig()?.agents[name] || this.opts.ledger?.get(name));
       if (incumbentIdentity || await this.opts.tmux.hasSession(session)) {
         throw new Error(`delivery_join execution name '${name}' is already in use`);
       }
@@ -2298,17 +2357,18 @@ export class AgentManager {
     // worktree. A bad opt-in must fail this launch atomically, never kill a dead pane and then reveal
     // that the replacement brief could not be composed.
     const projectGuidance = this.projectGuidanceFor(def);
-    const adhoc = !!opts?.cmd || !!forced?.ephemeral;
-    // Runtime lineage is only for ad-hoc children. A tachyon.yml-declared name is
-    // always a top-level managed entry; config subagents are exposed separately as
-    // declaredOwner metadata and must not inherit stale ad-hoc-era parents.
-    const parent = adhoc && !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    const temporary = !!opts?.cmd || !!forced?.ephemeral;
+    // t-d542ac — runtime lineage belongs to this instance, independent of whether its definition is
+    // Saved or Temporary. `declaredOwner` remains separate profile metadata and is never inferred
+    // into this edge; only the explicit spawn parent can create it. Gated delegations continue to
+    // carry `delegator` instead of runtime parent by their existing contract.
+    const parent = !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
     const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
-    // t-f660d8 — primer/doorbell identity for declared agents: honor spawn_agent `parent` or
-    // config `declaredOwner` without writing runtime lineage (sidebar stays top-level + declaredOwner).
+    // t-f660d8 / t-d542ac — primer/doorbell identity honors the explicit runtime parent first, then
+    // config `declaredOwner` only as presentation guidance when this spawn has no lineage.
     const primerParent = !opts?.gate
       ? ((opts?.parent && opts.parent !== name ? opts.parent : undefined)
-        ?? (!adhoc ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
+        ?? (!temporary ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
       : undefined;
     // `{}` is an intentional snapshot of "no verifier configured". Leaving it undefined would be
     // indistinguishable from an omitted snapshot and verify_task could later adopt newly-added commands.
@@ -2351,7 +2411,7 @@ export class AgentManager {
         def,
         parent,
         delegator,
-        adhoc,
+        temporary,
         isRestart: false,
         gate: opts?.gate,
         verifySettings: verifySettingsSnapshot,
@@ -2371,7 +2431,7 @@ export class AgentManager {
       throw new Error("gated delegation requires an isolated worktree; worktree creation was unavailable");
     }
     // t-f660d8 — explicit spawn_agent cwd: honor or fail closed (never silently ignore).
-    // Parented ad-hoc children inherit the parent's cwd via resolveWorktreeCwd — refuse opts.cwd
+    // Parented Temporary children inherit the parent's cwd via resolveWorktreeCwd — refuse opts.cwd
     // so callers never think a custom path was applied. Declared agents without a worktree may
     // run in an explicit managed checkout (e.g. a Delivery worktree path).
     if (!forced && opts?.cwd) {
@@ -2433,7 +2493,8 @@ export class AgentManager {
       ].filter(Boolean).join("\n"),
       "spawn",
     );
-    // primerParent (declared owner/spawn parent) only for primer/guidance — not runtime lineage.
+    // `parent` is runtime lineage; `primerParent` contributes only the declaredOwner fallback when
+    // this instance has no explicit parent.
     const effectiveInstructions = this.effectiveInstructions(
       name,
       def,
@@ -2448,7 +2509,7 @@ export class AgentManager {
     );
     // Session-resume bookkeeping (spec 209): mint a session id for runtimes that
     // accept one (claude/gemini). The ORIGINAL cmd is kept for the ledger def +
-    // adhoc map; the injected one is only what we spawn.
+    // temporary map; the injected one is only what we spawn.
     const originalCmd = def.cmd;
     // A self-resuming cmd (the user already passed --resume/--continue/--session-id) is run verbatim:
     // we neither mint our own id (claude exits 1 on --session-id + --resume without --fork-session)
@@ -2457,8 +2518,8 @@ export class AgentManager {
     const injected = this.injectResumeId(name, def);
     def = injected.def;
     const { adapter, resumeId, selfManaged } = injected;
-    const adhocAgent = asAgent(def);
-    if (adhoc && adapter?.harness && !selfManaged && adhocAgent && !adhocAgent.harness && adhocAgent.isolate === undefined) {
+    const temporaryAgent = asAgent(def);
+    if (temporary && adapter?.harness && !selfManaged && temporaryAgent && !temporaryAgent.harness && temporaryAgent.isolate === undefined) {
       // t-303f2b — grok non-harness already gets a private GROK_HOME via materializeBridgeMcpGrok
       // (same path as declared agents). Auto isolate:transcript would materialize a *second* private
       // home under .tachyon/harness/ and race GROK_HOME with withRuntimeBridge; cold dual-homes have
@@ -2467,20 +2528,20 @@ export class AgentManager {
         (adapter.runtime === "grok" && !!this.opts.materializeBridgeMcpGrok) ||
         (adapter.runtime === "hermes" && !!this.opts.materializeBridgeMcpHermes);
       if (!usesBridgePrivateHome) {
-        def = { ...adhocAgent, isolate: "transcript" };
+        def = { ...temporaryAgent, isolate: "transcript" };
       }
     }
     const isolatedWorktree = !!worktree;
     // t-ef19a1 — anti-footgun only, never a trust/allow change: a tachyon.yml-declared opencode
     // agent with no harness/worktree isolation is intentionally allowed (its author already has
     // full extension trust), but it shares the global ~/.local/share opencode state, so warn once
-    // at spawn time. Ad-hoc opencode is unaffected — it auto-gets isolate:"transcript" above.
-    if (!adhoc) {
+    // at spawn time. A Temporary opencode instance is unaffected — it auto-gets isolate:"transcript" above.
+    if (!temporary) {
       const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!asAgent(def)?.harness, isolatedWorktree });
       if (footgun) this.opts.notify?.(footgun, "warn");
     }
-    if (parent && adhocAgent && !adhocAgent.harness) {
-      assertVerifiedTranscriptIsolation(adhocAgent.cmd, { name, isolatedWorktree, parented: true });
+    if (parent && temporaryAgent && !temporaryAgent.harness) {
+      assertVerifiedTranscriptIsolation(temporaryAgent.cmd, { name, isolatedWorktree, parented: true });
     }
     // Security review (782f1c6, HIGH): gate on `isolatedWorktree` too, not just lineage — an ungated,
     // shared-cwd delegation (t-e2ebe3) is `parent`-truthy but not worktree-contained, and `bash:"allow"`
@@ -2491,7 +2552,7 @@ export class AgentManager {
       : undefined;
 
     // spec 230 — per-spawn env (a pipeline node's TACHYON_* nonce) is merged LAST so it reaches a
-    // DECLARED agent too (not just the ad-hoc cmd path) and wins on any collision (codex B1).
+    // DECLARED agent too (not just the Temporary cmd path) and wins on any collision (codex B1).
     // Evaluate the extra environment before minting.  A bridge/env failure must not
     // revoke a durable declared token that this attempt never minted.
     const extraEnv = this.opts.getExtraEnv?.();
@@ -2507,7 +2568,7 @@ export class AgentManager {
         name,
         def.cmd,
         { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...(preparedRuntimeHarness?.env ?? {}) },
-        adhoc && !!asAgent(def),
+        temporary && !!asAgent(def),
         cwd,
       );
     }
@@ -2553,7 +2614,7 @@ export class AgentManager {
     // Ownership materialization can write files. Complete it before replacing a dead incumbent so
     // every fallible launch-preparation step preserves the old postmortem pane on failure.
     const ownedSpawnCmd = this.withSessionOwnership(name, def, spawnBridge.cmd, {
-      lifecycleHooks: !adhoc,
+      lifecycleHooks: !temporary,
       cwd,
       configHome: spawnBuild.env.CLAUDE_CONFIG_DIR,
     });
@@ -2713,15 +2774,14 @@ export class AgentManager {
     }
 
     // Persist ONLY after a successful spawn (spec 211: no phantom rows). Record a
-    // `def` for every ad-hoc agent (drives restart + lineage, incl. non-AI `sh`);
+    // `def` for every Temporary agent (drives restart, incl. non-AI `sh`);
     // a `resume` block only for adapter-backed runtimes.
-    // Record when ad-hoc (restart/lineage), adapter-backed (resume), running in a worktree,
-    // OR it has a parent — the worktree case covers a declared terminal/unknown-runtime
-    // agent, and `parent` persists a declared non-adapter sub-agent's lineage so the
-    // cleanup descendant-guard sees it after a reload (review fixes).
+    // Record when Temporary (restart), adapter-backed (resume), running in a worktree, OR it has a
+    // parent. The last clause is deliberately lifetime-agnostic: even a Saved non-adapter instance
+    // needs its lineage after reload so the cleanup descendant guard sees it.
     // A conventional Delivery join may use a declared principal that already has
     // durable resume state.  It receives a new session, not ownership of that row.
-    const preservesDeclaredLedger = !!forced?.attempt && forced.attempt.mode === "declared" && !!this.opts.ledger?.get(name);
+    const preservesSavedLedger = !!forced?.attempt && forced.attempt.mode === "saved" && !!this.opts.ledger?.get(name);
     const defBlock = {
       cmd: originalCmd,
       kind: def.kind,
@@ -2739,7 +2799,7 @@ export class AgentManager {
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
     const promptCapability = openingPromptCapability(def.cmd);
     const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
-    const shouldPersistLaunch = !!this.opts.ledger && !preservesDeclaredLedger && !!(adhoc || adapter || worktree || parent || resolvedEvolution);
+    const shouldPersistLaunch = !!this.opts.ledger && !preservesSavedLedger && !!(temporary || adapter || worktree || parent || resolvedEvolution);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
     // stays fail-closed even if canonical persistence and every subsequent cleanup write all fail.
@@ -2749,14 +2809,14 @@ export class AgentManager {
       resume: resumeBlock,
       worktree,
       cwd,
-      // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `adhoc` is set by the
+      // SDD 482 phase 2 — DECLARED here, from what this call was asked to do: `temporary` is set by the
       // caller supplying a command (or an explicitly ephemeral Delivery execution), never derived
       // from the name, the tmux session or `tachyon.yml`. A declared start is a Saved instance that
-      // may be restarted; an ad-hoc start is a Temporary one collected when its work ends.
+      // may be restarted; a Temporary start is a Temporary one collected when its work ends.
       // `lifecycleHooks` mirrors what `withSessionOwnership` was actually told above
-      // (`lifecycleHooks: !adhoc` → `ownershipOnly`), recorded as a capability of THIS instance rather
+      // (`lifecycleHooks: !temporary` → `ownershipOnly`), recorded as a capability of THIS instance rather
       // than left to be re-derived from identity by every reader.
-      instance: adhoc
+      instance: temporary
         ? { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }
         : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
@@ -2769,7 +2829,7 @@ export class AgentManager {
         if (forced?.attempt) forced.attempt.ledger = true;
       }
       // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
-      // Always stamp: preservesDeclaredLedger only protects principal def/resume/worktree/cwd
+      // Always stamp: preservesSavedLedger only protects principal def/resume/worktree/cwd
       // from ledger.record; stampBridgeClientBinding merges bridgeClient alone and must
       // reflect this incarnation's wiring (T13 R3 / t-0b5723).
       this.stampBridgeClientBinding(name, spawnBridge.wired);
@@ -2911,11 +2971,12 @@ export class AgentManager {
         }
       }
     }
-    if (adhoc) this.adhoc.set(name, { ...def, cmd: originalCmd });
+    // t-eb4b30 — no second write. The launch row above already persisted this definition
+    // (`defBlock`, with `cmd: originalCmd`), and `definitionOf` reads it from there.
     this.startedHere.add(name);
     if (parent) this.lineage.set(name, parent);
     if (delegator) this.delegators.set(name, delegator);
-    this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, adhoc });
+    this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, temporary });
     await this.attachPaneTranscript(session);
     return canonicalReceipt;
   }
@@ -3118,15 +3179,10 @@ export class AgentManager {
   }
 
   /**
-   * Generation site (b) — the harness `XDG_CONFIG_HOME/opencode/opencode.json` path, for a
-   * `harness:`-declared opencode agent. Security review (782f1c6, MEDIUM): this is currently DEAD CODE —
-   * `delegated` (parent/delegator/gate-derived) and `def.harness` can never both be truthy today, because
-   * every path that produces a `delegated` lineage (spawn/restart/resume) requires an ad-hoc `def`, and an
-   * ad-hoc `def` never carries a `harness` key (`SpawnOptions` has no `harness` param). Every currently
-   * possible delegated opencode agent is non-harness-declared and is covered by generation site (a)
-   * (`applyDelegatedOpencodePermission` via `withRuntimeBridge`) instead. Left in place (not removed) so a
-   * future change that lets an ad-hoc/gated spawn carry a `harness:` block is covered without a second fix —
-   * but don't read "both sites covered" as true of the population that exists today.
+   * Generation site (b) — the harness `XDG_CONFIG_HOME/opencode/opencode.json` path. t-d542ac made
+   * explicit runtime lineage uniform across lifetimes, so a parented Saved opencode definition with
+   * `harness:` can now reach this path. Keep the same delegated permission hardening as generation
+   * site (a); storage origin must not change the security posture of the instance.
    */
   private applyDelegatedOpencodeHarnessPermission(
     def: Pick<AgentEntry, "cmd" | "harness"> | undefined,
@@ -3142,7 +3198,7 @@ export class AgentManager {
   /**
    * spec 243/303 — inject per-spawn lifecycle hooks so a
    * `/clear`/`/resume` rotation is recorded positively and Activity keeps following it on a shared cwd.
-   * Ad-hoc agents are persistence-off by convention, but still receive the ownership-only SessionStart hook
+   * Temporary instances are persistence-off by convention, but still receive the ownership-only SessionStart hook
    * so Activity can be attributed without enabling handoff/continuity/stop behavior. Skips:
    *   - self-managed sessions (the user's own `--resume`/`--continue` agents — left untouched, like injectId);
    *   - non-supported runtimes;
@@ -3323,18 +3379,18 @@ export class AgentManager {
     await this.refreshOwnership(name); // A3: capture an in-TUI /resume before the session ends
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
-    const wasAdhoc = this.adhoc.has(name);
+    const wasTemporary = this.isTemporary(name);
     // spec 225 — a forked sibling is PERSISTENT: keep its in-memory def AND ledger row across a Stop
     // (so it stays listed + resumable), dropping them only on an explicit Dismiss. The marker is
     // durable (ledger def.fork), so this holds after a window reload too.
     const persistent = this.opts.ledger?.get(name)?.def?.fork === true;
     this.lineage.delete(name); // children of a killed parent are promoted at render time
     if (!persistent) {
-      this.adhoc.delete(name); // a killed ad-hoc agent leaves the listing entirely
-      // Spec 211: an ad-hoc agent's ledger row must go too, or it resurrects as a
-      // permanent stopped entry on the next activation. Declared agents keep their
-      // row (still resumable later).
-      if (wasAdhoc) {
+      // Spec 211: a Temporary agent's ledger row must go, or it resurrects as a permanent stopped
+      // entry on the next activation. Since t-eb4b30 the row IS the listing — there is no in-memory
+      // map whose deletion could hide a surviving row — so this removal is the whole operation rather
+      // than the durable half of two. Declared agents keep their row (still resumable later).
+      if (wasTemporary) {
         // pin p-4dadd3 (dogfood follow-up): kill removes the row AND leaves no pane (killSession, not a
         // remain-on-exit clean-exit dead pane), so the durable log is unreachable — it dies with the row.
         // spec 247: the row+log pair is one named operation now, so this can no longer drift apart.
@@ -3401,7 +3457,11 @@ export class AgentManager {
     if (!state?.dead || state.exitCode !== 0) return false;
     await this.capturePostmortemOutput(name, session);
     const rec = this.opts.ledger?.get(name);
-    if (rec && isTemporaryInstance(rec) && this.adhoc.has(name)) {
+    // t-eb4b30 — this was `... && this.adhoc.has(name)`. The config check replaces that conjunct rather
+    // than dropping it: `isTemporaryInstance` alone is TRUE for a policy-less row (it fails closed), so
+    // without it a declared agent whose row predates the cut would start getting marked here. The
+    // activation gate makes that row unreachable, and this keeps the condition honest anyway.
+    if (rec && isTemporaryInstance(rec) && !this.opts.getConfig()?.agents[name]) {
       this.opts.ledger!.record(name, {
         ...rec,
         lifecycle: {
@@ -3489,9 +3549,9 @@ export class AgentManager {
   /**
    * Live rename: moves the tmux session (alive or dead pane — attached clients
    * follow it) plus every piece of session-local memory keyed by the old name:
-   * ad-hoc definition, lineage (its own parent AND children pointing at it),
+   * Temporary definition, lineage (its own parent AND children pointing at it),
    * and the resume-ledger record. The yml definition is the caller's job
-   * (declared agents only — ad-hoc ones have nothing in the config).
+   * (declared agents only — Temporary ones have nothing in the config).
    */
   async rename(oldName: string, newName: string): Promise<void> {
     if (oldName === newName) return;
@@ -3510,11 +3570,9 @@ export class AgentManager {
       await this.opts.tmux.renameSession(this.session(oldName), this.session(newName));
     }
 
-    const def = this.adhoc.get(oldName);
-    if (def) {
-      this.adhoc.delete(oldName);
-      this.adhoc.set(newName, def);
-    }
+    // t-eb4b30 — a Temporary's definition used to be moved between keys of the in-memory map here.
+    // It lives in the ledger row, and the row's key is moved by the `renameExact` below, so the rename
+    // no longer has a definition step of its own. That collapse is the point of the step.
     const parent = this.lineage.get(oldName);
     if (parent) {
       this.lineage.delete(oldName);
@@ -3558,7 +3616,7 @@ export class AgentManager {
   }
 
   /** Capture the exact durable/live bindings before canonical profile authority commits. */
-  async prepareCanonicalProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
+  async prepareAgentProfileRename(oldName: string, newName: string): Promise<CanonicalLiveRenameSnapshot> {
     if (oldName === newName) throw new Error("canonical live rename source and destination must differ");
     if (this.agentDefinitionOf(oldName)?.harness) {
       throw new Error(`cannot rename '${oldName}': renaming an isolated-harness agent isn't supported yet (v1)`);
@@ -3584,7 +3642,7 @@ export class AgentManager {
   }
 
   /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
-  async prepareCanonicalProfileForget(name: string): Promise<CanonicalProfileForgetSnapshot> {
+  async prepareAgentProfileForget(name: string): Promise<AgentProfileForgetSnapshot> {
     if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)
       || this.provisionalAgents.has(name) || this.soulReservations.has(name)) {
       throw new Error(`agent '${name}' must be fully stopped before canonical forget`);
@@ -3599,11 +3657,11 @@ export class AgentManager {
   }
 
   /** Remove only captured projections; private runtime homes and external bindings are retained. */
-  async convergeCanonicalProfileForget(
+  async convergeAgentProfileForget(
     name: string,
     agentId: string,
     txid: string,
-    expected: CanonicalProfileForgetSnapshot,
+    expected: AgentProfileForgetSnapshot,
   ): Promise<void> {
     if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)) {
       throw new Error(`canonical forget found a live or indeterminate session for '${name}'`);
@@ -3615,7 +3673,7 @@ export class AgentManager {
       expected.activity,
       path.join(this.opts.workspaceRoot, ".tachyon", "retired-agent-profiles", agentId, txid, "runtime-projections"),
     );
-    this.adhoc.delete(name);
+    // `removeExactDigest` above took the ledger row, which is the definition — nothing else to drop.
     this.lineage.delete(name);
     this.delegators.delete(name);
     this.readyAgents.delete(name);
@@ -3628,7 +3686,7 @@ export class AgentManager {
   }
 
   /** Idempotently converge captured live bindings after canonical profile authority commits. */
-  async convergeCanonicalProfileRename(
+  async convergeAgentProfileRename(
     oldName: string,
     newName: string,
     expected: CanonicalLiveRenameSnapshot,
@@ -3654,12 +3712,8 @@ export class AgentManager {
     this.opts.ledger?.renameExact(oldName, newName, expected.ledgerRecord);
     convergeActivityRename(this.activityDir(), oldName, newName, expected.activity);
 
-    const def = this.adhoc.get(oldName);
-    if (def) {
-      if (this.adhoc.has(newName)) throw new Error("canonical live rename found conflicting ad-hoc state");
-      this.adhoc.delete(oldName);
-      this.adhoc.set(newName, def);
-    }
+    // t-eb4b30 — `renameExact` above moved the ledger row, which carries the definition. The
+    // conflicting-state check went with it: the ledger owns that key, so it cannot hold two.
     const parent = this.lineage.get(oldName);
     if (parent) {
       const targetParent = this.lineage.get(newName);
@@ -3677,10 +3731,15 @@ export class AgentManager {
     }
   }
 
-  /** Drop an ad-hoc agent's in-memory def + lineage (spec 211: after promotion to
-   *  tachyon.yml, config is authoritative — no lingering ad-hoc shadow). */
-  forgetAdhoc(name: string): void {
-    this.adhoc.delete(name);
+  /**
+   * Drop a promoted agent's runtime lineage (spec 211: after promotion to tachyon.yml, config is
+   * authoritative — no lingering Temporary shadow).
+   *
+   * t-eb4b30 — the definition half of this is now automatic and needs no call: promotion rewrites the
+   * row to `lifetime: "saved"`, and `definitionOf` gives the config definition precedence anyway, so
+   * there is no shadow left to forget. Only the lineage is still this method's to clear.
+   */
+  forgetTemporary(name: string): void {
     this.lineage.delete(name);
     this.delegators.delete(name);
   }
@@ -3693,12 +3752,12 @@ export class AgentManager {
   /**
    * Remove an EPHEMERAL agent's durable footprint through the canonical forgetAgent()
    * cleanup: ledger row, activity log/state, session-owner rows, private harness/session homes,
-   * and per-spawn settings. This is the on-disk counterpart of forgetAdhoc()'s in-memory
-   * def+lineage drop — call both for a full forget.
+   * and per-spawn settings. t-eb4b30 — since the row IS the definition, this is no longer the on-disk
+   * half of a two-place forget: it is the whole one. `forgetTemporary` now only clears lineage.
    *
    * EPHEMERAL ONLY: never call for an agent whose log must survive — a declared agent
    * being merely stopped, or a postmortem-viewable clean-exit dead pane (spec 239 keeps
-   * those until an explicit dismiss). Callers gate; this helper never inspects `this.adhoc`.
+   * those until an explicit dismiss). Callers gate; this helper never reads the instance policy.
    * Idempotent (ledger.remove on a missing key + force-rm of missing files).
    */
   removeEphemeralFootprint(name: string): void {
@@ -3711,19 +3770,19 @@ export class AgentManager {
   }
 
   /**
-   * Fully forget an ad-hoc agent — in-memory def + lineage AND its persisted
+   * Fully forget a Temporary instance — in-memory def + lineage AND its persisted
    * ledger row — so a sessionless/finished one won't rehydrate after a reload.
    * (The live dead-pane clean-exit case is auto-handled by list(); this is the
    * explicit user "dismiss" for a stopped row, or a one-shot whose pane vanished
    * before list() observed its exit.) Idempotent.
    */
-  dismissAdhoc(name: string): void {
-    this.forgetAdhoc(name); // in-memory def + lineage
-    // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for an ad-hoc one-shot — the clean-exit dead pane
+  dismissTemporary(name: string): void {
+    this.forgetTemporary(name); // in-memory def + lineage
+    // pin p-4dadd3 (a): dismiss is the TRUE end-of-life for a Temporary one-shot — the clean-exit dead pane
     // (remain-on-exit) keeps offering "Activity" in postmortem until the user dismisses it, so the durable
     // log must survive until here, then be dropped with the row (it becomes unreachable: no row, no pane).
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
-    // forgetAdhoc (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
+    // forgetTemporary (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
     this.cleanExited.delete(name);
     this.postmortemOutput.delete(name);
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
@@ -3951,7 +4010,7 @@ export class AgentManager {
   }
 
   /**
-   * Kill the tmux session only — never AgentManager.kill (that wipes ad-hoc ledger rows).
+   * Kill the tmux session only — never AgentManager.kill (that wipes Temporary ledger rows).
    * Used when graceful stop times out during a restart.
    */
   private async hardKillSessionOnly(name: string): Promise<void> {
@@ -3991,7 +4050,7 @@ export class AgentManager {
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
-        `cannot restart '${name}': no stored definition (re-discovered ad-hoc agents lose their definition across extension restarts — kill and re-spawn instead)`,
+        `cannot restart '${name}': no stored definition (a re-discovered Temporary instance loses its definition across extension restarts — kill and re-spawn instead)`,
       );
     }
     // Project guidance is part of the replacement command. Load it before even transient restart
@@ -4014,7 +4073,7 @@ export class AgentManager {
     // Resolve the exact reused cwd/private home before any live-pane or transient-state mutation.
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     if (this.opts.resolveSpawnCwd) {
-      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: restartParent, adhoc: this.adhoc.has(name), isRestart: true });
+      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: restartParent, temporary: this.isTemporary(name), isRestart: true });
       if (resolved) {
         cwd = resolved.cwd;
         worktree = resolved.worktree;
@@ -4026,7 +4085,7 @@ export class AgentManager {
       name,
       def.cmd,
       { ...this.opts.getExtraEnv?.(), ...def.env, ...(restartHarness?.env ?? {}) },
-      this.adhoc.has(name),
+      this.isTemporary(name),
       cwd,
     );
     // `effectiveInstructions` includes long-brief persistence. It must succeed before cache changes,
@@ -4104,7 +4163,7 @@ export class AgentManager {
       restartBuild.env.GROK_HOME,
     );
     const restartOwnedCmd = this.withSessionOwnership(name, def, restartBridge.cmd, {
-      lifecycleHooks: !this.adhoc.has(name),
+      lifecycleHooks: !this.isTemporary(name),
       cwd,
       configHome: restartBuild.env.CLAUDE_CONFIG_DIR,
     });
@@ -4147,7 +4206,7 @@ export class AgentManager {
       // policy, from what a restart actually is: it is `restartable` by definition — that is the
       // operation in progress — and its lifetime follows the same source restart already uses to
       // decide hook injection two dozen lines above, so the two cannot disagree.
-      const restartTemporary = this.adhoc.has(name);
+      const restartTemporary = this.isTemporary(name);
       const { lifecycle: _terminalLifecycle, ...restartable } = existing ?? {
         instance: restartTemporary
           ? { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false }
@@ -4481,7 +4540,7 @@ export class AgentManager {
 
     // Re-apply the declared agent's env on resume (spec 211 review fix) — spawn/restart include
     // def.env, but resume previously injected only bridge env, silently dropping e.g. an
-    // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or adhoc def. spec 226 (H3):
+    // ANTHROPIC_BASE_URL model-swap. definitionOf = config (declared) or temporary def. spec 226 (H3):
     // also re-apply the isolated-harness wiring so a resumed harness agent stays scoped.
     const resumeDef = this.agentDefinitionOf(name);
     // Security review (782f1c6): mirror restart's fuller delegated-check (`record.def?.parent` alone
@@ -4492,7 +4551,7 @@ export class AgentManager {
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, record.worktree) }
       : undefined;
     // spec 380 — transcript lookup already treats resume.configHome as authoritative (spec 240), so
-    // the replacement process must use that same home.  A rehydrated ad-hoc Claude row can lack the
+    // the replacement process must use that same home.  A rehydrated Temporary Claude row can lack the
     // transient `isolate` definition that originally caused applyHarness to set CLAUDE_CONFIG_DIR.
     // Do not set the env for Claude's real default home: an explicit CLAUDE_CONFIG_DIR changes where
     // Claude looks for its top-level .claude.json, so default-home behavior must stay byte-compatible.
@@ -4522,7 +4581,7 @@ export class AgentManager {
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
     // spec 236 (BLOCKER fix) — resume rebuilds the command, so it must re-inject the Bridge or a resumed
     // agent silently loses it. Classify the binary from the ACTUALLY-resumed `cmd` (record.def.cmd) so an
-    // ad-hoc agent that's no longer in the config still gets it; harness routing comes from the config
+    // Temporary instance that's no longer in the config still gets it; harness routing comes from the config
     // overlay (resumeDef) so a harness agent folds the Bridge into its --strict file instead.
     const resumeBridge = this.withRuntimeBridge(
       name,
@@ -4580,12 +4639,12 @@ export class AgentManager {
     await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
   }
 
-  /** All names that already exist anywhere (config / ledger / ad-hoc memory / live tmux) — for fork-name uniqueness. */
+  /** All names that already exist anywhere (config / ledger / Temporary memory / live tmux) — for fork-name uniqueness. */
   private async allKnownNames(): Promise<Set<string>> {
     const names = new Set<string>();
     for (const n of Object.keys(this.opts.getConfig()?.agents ?? {})) names.add(n);
     for (const n of this.opts.ledger?.all().keys() ?? []) names.add(n);
-    for (const n of this.adhoc.keys()) names.add(n);
+    for (const n of this.temporaryNames()) names.add(n);
     for (const n of (await this.agentStates()).keys()) names.add(n);
     return names;
   }
@@ -4781,7 +4840,7 @@ export class AgentManager {
       ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
       ...(src.env ? { env: src.env } : {}),
-      // A canonical fork is still an ad-hoc sibling, so it must not inherit profileLifecycle
+      // A canonical fork is still a Temporary sibling, so it must not inherit profileLifecycle
       // authority. This internal marker retains canonical private-home materialization even when
       // the source selected no optional native/capability families.
       ...(sourceDefinition?.profileLifecycle ? { profileFork: true as const } : {}),
@@ -4984,12 +5043,10 @@ export class AgentManager {
       if (runtimeMayBeLive) {
         try { this.opts.ledger?.record(forkName, forkRecord()); }
         catch (error) { failures.push(new Error(`failed to persist fork recovery handle for '${forkName}'`, { cause: error })); }
-        this.adhoc.set(forkName, { ...forkDefinition, worktree: !!worktree });
         failures.push(new Error(`fork recovery session may still be live and remains recorded as '${forkName}'`));
       } else {
         try { this.opts.ledger?.remove(forkName); }
         catch (error) { failures.push(new Error(`failed to remove fork recovery ledger row for '${forkName}'`, { cause: error })); }
-        this.adhoc.delete(forkName);
       }
       if (tokenMinted) {
         try { this.opts.revokeAgentToken?.(forkName); }
@@ -5014,7 +5071,7 @@ export class AgentManager {
         { cause: primary },
       );
     }
-    this.adhoc.set(forkName, { ...forkDefinition, worktree: !!worktree });
+    // t-eb4b30 — the fork's row (recorded above) is its definition; there is no map to also write.
     this.opts.onSpawned?.(forkName, "reveal"); // a fork is a new agent someone asked for — nothing to preserve
     await this.attachPaneTranscript(this.session(forkName));
     return forkName;
@@ -5039,7 +5096,19 @@ export class AgentManager {
         if (name === null) return;
         await this.detachPaneTranscript(session);
         this.lineage.delete(name);
-        this.adhoc.delete(name);
+        // t-eb4b30 — spec 211 applies to the SWEEP too, and it did not before.
+        //
+        // This used to delete the in-memory map entry and leave the ledger row, so the name dropped
+        // out of `list()` until the next activation and then came back as a permanent stopped entry —
+        // the exact resurrection `kill()` calls `removeEphemeralFootprint` to prevent. Measured on the
+        // pre-change tree: spawn a Temporary, `killAll()`, `rehydrateFromLedger()`, and it is listed
+        // again. Collapsing the store did not create that bug, it removed the mask.
+        //
+        // A fork is PERSISTENT (spec 225): its row survives a Stop and is dropped only by an explicit
+        // Dismiss, which is the same exception `kill()` makes.
+        if (this.opts.ledger?.get(name)?.def?.fork !== true && this.isTemporary(name)) {
+          this.removeEphemeralFootprint(name);
+        }
         this.opts.onKilled?.(name);
         killedAgents.push(name);
       },

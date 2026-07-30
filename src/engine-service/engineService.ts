@@ -398,7 +398,7 @@ async function executeWorkspaceQuery(
       board: projectMissionControlBoard(buildBoardSnapshot({
         store: workspace.taskStore,
         declaredAgents: Object.keys(workspace.config?.agents ?? {}),
-        liveAdhocAgents: query.input.liveAdhocAgents,
+        liveTemporaryAgents: query.input.liveTemporaryAgents,
         validationStore: workspace.validationStore,
         workspaceRoot: workspace.workspaceRoot,
       })),

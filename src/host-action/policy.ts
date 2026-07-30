@@ -63,7 +63,7 @@ export class StaticHostActionPolicy implements HostActionPolicySnapshot {
     if (input.caller.kind !== "agent" || !input.caller.name) {
       return { ok: false, reason: "caller is not granted this host action" };
     }
-    // "*" = any resolved agent principal (declared or ad-hoc with identity).
+    // "*" = any resolved agent principal (declared or Temporary with identity).
     // Explicit names remain available for tests and tighter pins.
     if (this.allowedAgents.has("*") || this.allowedAgents.has(input.caller.name)) {
       return { ok: true };

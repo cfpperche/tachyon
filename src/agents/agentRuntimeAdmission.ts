@@ -47,7 +47,7 @@ export interface AgentRuntimeSupport {
   /** How a delegation brief is delivered, or null when the runtime has no channel for one. */
   brief: string | null;
   /** True when this runtime may ALSO back a Saved Profile (`ATTESTED_RUNTIMES`). */
-  canonicalProfile: boolean;
+  savedAgentProfile: boolean;
   /** What makes this a runtime Tachyon operates rather than a process it starts. */
   evidence: string;
   /** A declared shortfall against the delegation contract, and the task that owns closing it. */
@@ -64,50 +64,50 @@ const DECLARED = {
   claude: {
     bridge: "--mcp-config with a materialized Bridge server file",
     brief: "startup argument",
-    canonicalProfile: true,
+    savedAgentProfile: true,
     evidence: "resume adapter with minted session ids, private CLAUDE_CONFIG_DIR harness, fork, activity normalizer, attention manifest",
   },
   codex: {
     bridge: "-c mcp_servers.tachyon_bridge config override",
     brief: "startup argument",
-    canonicalProfile: true,
+    savedAgentProfile: true,
     evidence: "resume adapter (captured ids), private CODEX_HOME harness, activity normalizer, attention manifest",
   },
   grok: {
     bridge: "private GROK_HOME carrying the Bridge MCP",
     brief: "startup argument",
-    canonicalProfile: true,
+    savedAgentProfile: true,
     evidence: "resume adapter with minted ids and a measured transcript path, GROK_HOME harness, fork, activity normalizer, attention manifest",
   },
   pi: {
     bridge: "staged Pi Bridge extension in a private session dir",
     brief: "startup argument",
-    canonicalProfile: true,
+    savedAgentProfile: true,
     evidence: "resume adapter with minted ids and native fork, private session dirs, activity normalizer, attention manifest",
   },
   opencode: {
     bridge: "OPENCODE_CONFIG pointing at a materialized Bridge MCP config",
     brief: "TUI prefill (--prompt)",
-    canonicalProfile: false,
+    savedAgentProfile: false,
     evidence: "resume adapter with native fork, private XDG config/data/state harness with seeded auth, activity normalizer, attention manifest, measured credential preflight (t-0338fc)",
   },
   hermes: {
     bridge: "private HERMES_HOME carrying the Bridge MCP",
     brief: "HERMES_TUI_QUERY environment channel",
-    canonicalProfile: false,
+    savedAgentProfile: false,
     evidence: "resume adapter over its state.db, private HERMES_HOME harness, activity normalizer with an observed-model reader",
   },
   gemini: {
     bridge: null,
     brief: "startup argument (-i)",
-    canonicalProfile: false,
+    savedAgentProfile: false,
     evidence: "resume adapter with minted session ids (--session-id / --resume)",
     gap: "no Bridge wiring, so a delegated child cannot call notify_agent or the task tools — the contract reaches it but its answer cannot come back (t-59f67c)",
   },
   qwen: {
     bridge: null,
     brief: null,
-    canonicalProfile: false,
+    savedAgentProfile: false,
     evidence: "resume adapter scoped to the cwd (--continue / --resume), measured around QwenLM/qwen-code#2603",
     gap: "no Bridge wiring and no opening-brief channel, so a delegated child receives neither the contract nor a way to report on it (t-59f67c)",
   },

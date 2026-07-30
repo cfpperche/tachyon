@@ -307,8 +307,8 @@ export interface CockpitStrings {
   devicesKindBrowser: string;
   devicesKindMobile: string;
   devicesPairedAt: string;
-  declared: string;
-  adhoc: string;
+  saved: string;
+  temporary: string;
   agent: string;
   change: string;
   /** spec 444 — Worktrees hygiene groups + actions. */

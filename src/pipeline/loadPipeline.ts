@@ -87,7 +87,7 @@ export interface PipelineParseResult {
 /**
  * spec 230 — the tmux/ledger name a node spawns under. An `agent:` node IS the declared specialist
  * agent (so it persists in the tree and is stopped — not destroyed — when done); a `cmd:` node is an
- * ephemeral ad-hoc spawn `pl-<runId>-<nodeId>` (dismissed when done).
+ * ephemeral Temporary spawn `pl-<runId>-<nodeId>` (dismissed when done).
  */
 export const nodeSpawnName = (runId: string, nodeId: string, def: Pick<NodeDef, "agent">): string => def.agent ?? `pl-${runId}-${nodeId}`;
 
@@ -193,7 +193,7 @@ function parseNode(
   // protocol + nonce, signals when done, then is dismissed). spec 230.
   //
   // `t-c003e1` — and because that choice IS the node's kind, a signal-based inline node faces the same
-  // admission the ad-hoc door applies: Tachyon must be able to name the runtime it would operate.
+  // admission the Temporary door applies: Tachyon must be able to name the runtime it would operate.
   // Refused here, at load, where the author can see which line to change — not at spawn, three states
   // into a run.
   if (hasCmd && typeof done === "string" && !EXIT_DONE.has(done as DoneKind)) {

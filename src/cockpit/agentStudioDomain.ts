@@ -29,13 +29,13 @@ import {
   evolutionCandidatesMessage,
   evolutionErrorMessage,
   evolutionSummaryMessage,
-  canonicalProfileErrorMessage,
-  canonicalProfileForgottenMessage,
-  canonicalProfileOwnershipMessage,
-  canonicalProfileSnapshotMessage,
-  canonicalProfileBundleCreatedMessage,
-  canonicalProfileBundleErrorMessage,
-  canonicalProfileBundleExportMessage,
+  agentProfileErrorMessage,
+  agentProfileForgottenMessage,
+  agentProfileOwnershipMessage,
+  agentProfileSnapshotMessage,
+  agentProfileBundleCreatedMessage,
+  agentProfileBundleErrorMessage,
+  agentProfileBundleExportMessage,
   soulProfileErrorMessage,
   soulProfileStatusMessage,
 } from "../webview/agent-studio-shell/messages.js";
@@ -45,8 +45,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   const m = validateAgentStudioInboundMessage(message);
   if (!m) {
     const type = typeof message.type === "string" ? message.type : "";
-    if (type.toLowerCase().includes("canonicalprofile")) {
-      postCanonicalProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed canonical profile message"));
+    if (type.toLowerCase().includes("agentprofile")) {
+      postAgentProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed canonical profile message"));
     } else if (type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Evolution message"));
     } else {
@@ -60,8 +60,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   }
   const agent = ctx.entityId;
   if (!agent || m.agent !== agent) {
-    if (m.type.toLowerCase().includes("canonicalprofile")) {
-      postCanonicalProfileError(ctx, agent ?? "Agent", new Error("Canonical profile action does not match this Agent Studio entity"));
+    if (m.type.toLowerCase().includes("agentprofile")) {
+      postAgentProfileError(ctx, agent ?? "Agent", new Error("Canonical profile action does not match this Agent Studio entity"));
     } else if (m.type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, agent ?? "Agent", new Error("Evolution action does not match this saved Agent Studio entity"));
     } else {
@@ -69,17 +69,17 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     }
     return;
   }
-  if (m.type === "refreshCanonicalProfile") { void refreshCanonicalProfile(ws, ctx, agent); return; }
-  if (m.type === "exportCanonicalProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.exportAgentProfileStudioBundle(agent, m.expectedRevision)); return; }
-  if (m.type === "cloneCanonicalProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.cloneAgentProfileStudioBundle(agent, m.expectedRevision, m.destinationAgentName)); return; }
-  if (m.type === "importCanonicalProfileBundle") {
+  if (m.type === "refreshAgentProfile") { void refreshAgentProfile(ws, ctx, agent); return; }
+  if (m.type === "exportSavedAgentProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.exportAgentProfileStudioBundle(agent, m.expectedRevision)); return; }
+  if (m.type === "cloneSavedAgentProfileBundle") { void runBundleAction(ws, ctx, agent, () => ws.cloneAgentProfileStudioBundle(agent, m.expectedRevision, m.destinationAgentName)); return; }
+  if (m.type === "importSavedAgentProfileBundle") {
     const bytes = Buffer.from(m.contentBase64, "base64");
     if (bytes.toString("base64") !== m.contentBase64) { postBundleError(ctx, agent, new Error("invalid bundle bytes")); return; }
     void runBundleAction(ws, ctx, agent, () => ws.importAgentProfileStudioBundle(m.destinationAgentName, bytes));
     return;
   }
-  if (m.type === "setCanonicalProfileEnabled") {
-    void runCanonicalProfileAction(ws, ctx, {
+  if (m.type === "setAgentProfileEnabled") {
+    void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
       operation: "set-enabled",
       agentName: agent,
@@ -88,8 +88,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
-  if (m.type === "renameCanonicalProfile") {
-    void runCanonicalProfileAction(ws, ctx, {
+  if (m.type === "renameAgentProfile") {
+    void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
       operation: "rename",
       agentName: agent,
@@ -98,8 +98,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
-  if (m.type === "setCanonicalProfileSubagents") {
-    void runCanonicalProfileAction(ws, ctx, {
+  if (m.type === "setAgentProfileSubagents") {
+    void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
       operation: "set-subagents",
       agentName: agent,
@@ -108,8 +108,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
-  if (m.type === "setCanonicalProfileProposeGrant") {
-    void runCanonicalProfileAction(ws, ctx, {
+  if (m.type === "setAgentProfileProposeGrant") {
+    void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
       operation: "set-propose-saved-agent-grant",
       agentName: agent,
@@ -118,8 +118,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
-  if (m.type === "forgetCanonicalProfile") {
-    void runCanonicalProfileAction(ws, ctx, {
+  if (m.type === "forgetAgentProfile") {
+    void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
       operation: "forget",
       agentName: agent,
@@ -151,27 +151,27 @@ async function runBundleAction(
 ): Promise<void> {
   try {
     const result = await run();
-    if ("contentBase64" in result) ctx.post(canonicalProfileBundleExportMessage(result));
-    else ctx.post(canonicalProfileBundleCreatedMessage(result));
+    if ("contentBase64" in result) ctx.post(agentProfileBundleExportMessage(result));
+    else ctx.post(agentProfileBundleCreatedMessage(result));
   } catch (error) {
     postBundleError(ctx, agent, error);
-    if (isRevisionConflict(error)) await refreshCanonicalProfile(ws, ctx, agent);
+    if (isRevisionConflict(error)) await refreshAgentProfile(ws, ctx, agent);
   }
 }
 
 function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown): void {
   const conflict = isRevisionConflict(error);
-  ctx.post(canonicalProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
+  ctx.post(agentProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
     ? "This profile changed. The latest profile was loaded; review it before trying again."
     : "The portable profile action could not be completed.", conflict));
 }
 
-async function refreshCanonicalProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
+async function refreshAgentProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
   try {
-    ctx.post(canonicalProfileSnapshotMessage("refresh", await ws.inspectAgentProfileStudio(agent)));
+    ctx.post(agentProfileSnapshotMessage("refresh", await ws.inspectAgentProfileStudio(agent)));
     await postOwnership(ws, ctx, agent);
   } catch (error) {
-    postCanonicalProfileError(ctx, agent, error);
+    postAgentProfileError(ctx, agent, error);
   }
 }
 
@@ -182,10 +182,10 @@ async function refreshCanonicalProfile(ws: WorkspaceAgentStudioTarget, ctx: Stud
  * extension↔webview pair, which always ships as one bundle.
  */
 async function postOwnership(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
-  ctx.post(canonicalProfileOwnershipMessage(agent, await ws.agentOwnershipView(agent)));
+  ctx.post(agentProfileOwnershipMessage(agent, await ws.agentOwnershipView(agent)));
 }
 
-async function runCanonicalProfileAction(
+async function runAgentProfileAction(
   ws: WorkspaceAgentStudioTarget,
   ctx: StudioDomainContext,
   mutation: Parameters<WorkspaceAgentStudioTarget["commitAgentProfileStudioLifecycle"]>[0],
@@ -193,14 +193,14 @@ async function runCanonicalProfileAction(
   try {
     const result = await ws.commitAgentProfileStudioLifecycle(mutation);
     if (result.kind === "forgotten") {
-      ctx.post(canonicalProfileForgottenMessage(result.agentName, result.agentId));
+      ctx.post(agentProfileForgottenMessage(result.agentName, result.agentId));
       return;
     }
-    ctx.post(canonicalProfileSnapshotMessage(mutation.operation === "forget" ? "refresh" : mutation.operation, result.snapshot));
+    ctx.post(agentProfileSnapshotMessage(mutation.operation === "forget" ? "refresh" : mutation.operation, result.snapshot));
     if (mutation.operation === "set-subagents") await postOwnership(ws, ctx, mutation.agentName);
   } catch (error) {
-    postCanonicalProfileError(ctx, mutation.agentName, error);
-    if (isRevisionConflict(error)) await refreshCanonicalProfile(ws, ctx, mutation.agentName);
+    postAgentProfileError(ctx, mutation.agentName, error);
+    if (isRevisionConflict(error)) await refreshAgentProfile(ws, ctx, mutation.agentName);
   }
 }
 
@@ -209,9 +209,9 @@ function isRevisionConflict(error: unknown): boolean {
     && (error.message.toLowerCase().includes("conflict") || error.message.toLowerCase().includes("changed"));
 }
 
-function postCanonicalProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
+function postAgentProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
   const conflict = isRevisionConflict(error);
-  ctx.post(canonicalProfileErrorMessage(
+  ctx.post(agentProfileErrorMessage(
     agent,
     conflict ? "agent-profile/revision-conflict" : "agent-profile/lifecycle-failed",
     conflict

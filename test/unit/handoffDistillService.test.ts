@@ -88,13 +88,13 @@ describe("handoff distillation service", () => {
     }, { now: () => 255 });
 
     expect(result).toEqual({ mode: "adhoc", agent: "handoff-codex-73-2" });
-    expect(operations.startAdhocAgent).toHaveBeenCalledTimes(1);
-    expect(operations.startAdhocAgent).toHaveBeenCalledWith(
+    expect(operations.startTemporaryAgent).toHaveBeenCalledTimes(1);
+    expect(operations.startTemporaryAgent).toHaveBeenCalledWith(
       "handoff-codex-73-2",
       "codex --model gpt-5.6",
       expect.stringContaining("Do not call `set_project_handoff` immediately"),
     );
-    expect(vi.mocked(operations.startAdhocAgent).mock.calls[0]?.[2]).toContain("Prefer architecture decisions");
+    expect(vi.mocked(operations.startTemporaryAgent).mock.calls[0]?.[2]).toContain("Prefer architecture decisions");
     expect(operations.sendAgentInput).not.toHaveBeenCalled();
   });
 
@@ -118,7 +118,7 @@ function fakeOperations(rows: ManagedEntryInfo[], resumable = new Set<string>())
     resumableAgentNames: vi.fn(() => new Set(resumable)),
     startDeclaredAgent: vi.fn(async () => undefined),
     resumeAgent: vi.fn(async () => undefined),
-    startAdhocAgent: vi.fn(async () => undefined),
+    startTemporaryAgent: vi.fn(async () => undefined),
     sendAgentInput: vi.fn(async () => undefined),
   };
 }

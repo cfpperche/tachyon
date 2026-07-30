@@ -393,7 +393,7 @@ function readNativeConfigTextAt(root: string, segments: string[]): { text?: stri
   }
 }
 
-function parseCanonicalProfile(workspaceRoot: string, agentName: string): { profile?: AgentProfileV1; errors: string[] } {
+function parseAgentProfile(workspaceRoot: string, agentName: string): { profile?: AgentProfileV1; errors: string[] } {
   let source: CanonicalAgentProfileSource | undefined;
   try {
     source = readCanonicalAgentProfile(workspaceRoot, agentName);
@@ -685,7 +685,7 @@ function projectDefinition(
 }
 
 export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): ProjectAgentProfileResult {
-  const parsed = parseCanonicalProfile(input.workspaceRoot, input.agentName);
+  const parsed = parseAgentProfile(input.workspaceRoot, input.agentName);
   if (!parsed.profile) return { ok: false, errors: parsed.errors };
   if (parsed.profile.agentId !== input.authority.agentId || input.authority.agentName !== input.agentName) {
     return { ok: false, errors: ["profile/authority-boundary: authority identity does not match canonical profile"] };

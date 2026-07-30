@@ -28,7 +28,7 @@ export interface HandoffDistillOperations {
   resumableAgentNames(): ReadonlySet<string>;
   startDeclaredAgent(agent: string): Promise<void>;
   resumeAgent(agent: string): Promise<void>;
-  startAdhocAgent(agent: string, command: string, prompt: string): Promise<void>;
+  startTemporaryAgent(agent: string, command: string, prompt: string): Promise<void>;
   sendAgentInput(agent: string, prompt: string): Promise<void>;
 }
 
@@ -61,7 +61,7 @@ export function workspaceHandoffDistillOperations(
     },
     startDeclaredAgent: async (agent) => { await source.manager.spawn(agent, { reveal: options.reveal }); },
     resumeAgent: (agent) => source.resumeAgent(agent),
-    startAdhocAgent: async (agent, command, prompt) => {
+    startTemporaryAgent: async (agent, command, prompt) => {
       await source.manager.spawn(agent, {
         cmd: command,
         instructions: prompt,
@@ -74,7 +74,7 @@ export function workspaceHandoffDistillOperations(
   };
 }
 
-/** Declared agents in any state plus live ad-hoc AI agents, using one authority-owned list. */
+/** Declared agents in any state plus live Temporary AI agents, using one authority-owned list. */
 export async function listHandoffDistillTargets(
   operations: Pick<HandoffDistillOperations, "listAgents" | "resumableAgentNames">,
 ): Promise<HandoffDistillTargetRow[]> {
@@ -100,7 +100,7 @@ export async function startHandoffDistillation(
   const profile = resolveHandoffDistillProfile(input.profileId);
   if (!profile) throw new Error(`unsupported handoff distillation profile '${input.profileId}'`);
   const agent = await uniqueDistillAgentName(operations, profile.runtime, options);
-  await operations.startAdhocAgent(agent, buildHandoffDistillCommand(profile, input.args), prompt);
+  await operations.startTemporaryAgent(agent, buildHandoffDistillCommand(profile, input.args), prompt);
   return { mode: input.mode, agent };
 }
 

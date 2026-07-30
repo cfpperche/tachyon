@@ -957,7 +957,10 @@ function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => vo
  * Lives only on the Attentions tab (never stacked above Agents). Same store/actions as before.
  *
  * t-28fddf — the tab strip already owns the title + open count (icon + badge). The panel must not
- * repeat "Attentions"/badge; it starts with Clear (when needed) and the list.
+ * repeat "Attentions"/badge.
+ *
+ * t-c61e51 — Clear lives in the shared `.sec` header row (same slot Agents uses for filter/sort),
+ * not a second full-width toolbar. This stack is list-or-empty only.
  */
 function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Dispatch }) {
   const rows = useMemo(() => attentionRows(fleets), [fleets]);
@@ -970,21 +973,6 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
   }
   return (
     <section class="attention-stack" aria-label="Attentions" data-testid="attention-stack">
-      <div class="attention-toolbar" data-testid="attention-toolbar">
-        <Button class="attention-clear"
-          title="Dismiss all attention items"
-          data-testid="attention-clear"
-          onClick={() => {
-            for (const f of fleets) {
-              if ((f.notices ?? []).some((n) => !n.read)) {
-                dispatch?.section("notice:markAllRead", "all", undefined, f.folder?.hash);
-              }
-            }
-          }}
-        >
-          Clear
-        </Button>
-      </div>
       <div class="attention-list" role="list">
         {rows.map(({ n, hash, folder }) => {
           const { body, author } = splitNoticeAuthor(n.message);
@@ -1029,6 +1017,15 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
       </div>
     </section>
   );
+}
+
+/** t-c61e51 — Clear all open attentions (same markAllRead path the old in-panel toolbar used). */
+function clearAllAttentions(fleets: FleetVM[], dispatch?: Dispatch): void {
+  for (const f of fleets) {
+    if ((f.notices ?? []).some((n) => !n.read)) {
+      dispatch?.section("notice:markAllRead", "all", undefined, f.folder?.hash);
+    }
+  }
 }
 
 export function App({
@@ -1289,7 +1286,21 @@ export function App({
             </span>
           </>;
         })()}
-        {tab !== "Agents" && tab !== "Terminals" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
+        {/* t-c61e51 — Clear sits on the section header row with ATTENTIONS (Agents' sec-actions slot),
+            not a second full-width toolbar that orphaned the label and dominated the panel. */}
+        {tab === "Attentions" && openAttentionCount > 0 && (
+          <span class="sec-actions">
+            <Button
+              class="attention-clear"
+              title="Dismiss all attention items"
+              data-testid="attention-clear"
+              onClick={() => clearAllAttentions(fleets, dispatch)}
+            >
+              Clear
+            </Button>
+          </span>
+        )}
+        {tab !== "Agents" && tab !== "Terminals" && tab !== "Attentions" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
         {tab === "Pins" && (
           <span class="sec-actions pin-filter">
             {pinTags.length > 0 && (

@@ -21,7 +21,7 @@ export interface MissionControlAgentRow {
 export interface WorkspaceMissionControlTarget extends WorkspacePresentationTarget {
   declaredAgentNames(): string[];
   listMissionControlAgents(): Promise<MissionControlAgentRow[]>;
-  boardSnapshot(liveAdhocAgents: string[]): Promise<BoardSnapshot>;
+  boardSnapshot(liveTemporaryAgents: string[]): Promise<BoardSnapshot>;
   updateTask(id: string, patch: MissionControlTaskPatchV1): Promise<void>;
   reorderLane(status: TaskStatus, priority: TaskPriority | undefined, input: Pick<ReorderLaneInput, "orderedIds" | "expect">): Promise<void>;
   closeValidation(id: string, input: Pick<ValidationCloseInput, "outcome"> & { result_note: string }): Promise<void>;
@@ -50,10 +50,10 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     folderName: source.folderName,
     declaredAgentNames: () => Object.keys(source.config?.agents ?? {}),
     listMissionControlAgents: () => source.manager.list() as Promise<MissionControlAgentRow[]>,
-    boardSnapshot: async (liveAdhocAgents) => buildBoardSnapshot({
+    boardSnapshot: async (liveTemporaryAgents) => buildBoardSnapshot({
       store: source.taskStore,
       declaredAgents: Object.keys(source.config?.agents ?? {}),
-      liveAdhocAgents,
+      liveTemporaryAgents,
       validationStore: source.validationStore,
       workspaceRoot: source.workspaceRoot,
     }),
@@ -99,8 +99,8 @@ export function workspaceMissionControlTarget(client: WorkspaceClient): Workspac
         lifetime: agent.lifetime,
       }));
     },
-    boardSnapshot: async (liveAdhocAgents) => {
-      const result = await client.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents } });
+    boardSnapshot: async (liveTemporaryAgents) => {
+      const result = await client.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents } });
       if (result.status === "error") throw new Error(result.message);
       if (result.method !== "task.board") throw new Error("Mission Control query returned the wrong view");
       return missionControlBoardSnapshot(result.view.board);

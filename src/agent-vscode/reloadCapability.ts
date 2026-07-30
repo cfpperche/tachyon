@@ -13,7 +13,7 @@ export function vscodeReloadWindowDescriptorHash(): string {
   return descriptorHash(VSCODE_RELOAD_WINDOW_CAPABILITY);
 }
 
-// Agent grant: "*" = any Bridge-resolved agent principal (claude/codex/grok/… + ad-hoc
+// Agent grant: "*" = any Bridge-resolved agent principal (claude/codex/grok/… + Temporary
 // with identity). Spec 359 non-goal deferred per-agent scoping; the Claude-only pin was a
 // mistake that blocked capability parity. Human authorization is the pinned policy itself
 // (out-of-workspace, hash-checked, fail-closed) — not a hardcoded runtime name.

@@ -471,7 +471,7 @@ async function syncDirectory(dir: string): Promise<void> {
   }
 }
 
-async function assertCanonicalProfileDir(workspaceRoot: string, name: string): Promise<string> {
+async function assertAgentProfileDir(workspaceRoot: string, name: string): Promise<string> {
   const root = path.resolve(workspaceRoot);
   const rootReal = await realpath(root);
   const components = [path.join(root, ".tachyon"), path.join(root, ".tachyon", "agents"), agentProfileDir(root, name)];
@@ -485,7 +485,7 @@ async function assertCanonicalProfileDir(workspaceRoot: string, name: string): P
   return components.at(-1)!;
 }
 
-async function ensureCanonicalProfileDir(workspaceRoot: string, name: string): Promise<string> {
+async function ensureAgentProfileDir(workspaceRoot: string, name: string): Promise<string> {
   const root = path.resolve(workspaceRoot);
   const rootReal = await realpath(root);
   const components = [path.join(root, ".tachyon"), path.join(root, ".tachyon", "agents"), agentProfileDir(root, name)];
@@ -502,7 +502,7 @@ async function ensureCanonicalProfileDir(workspaceRoot: string, name: string): P
       throw new SoulError("soul/outside-workspace", `Soul profile parent escapes workspace: ${component}`);
     }
   }
-  return assertCanonicalProfileDir(workspaceRoot, name);
+  return assertAgentProfileDir(workspaceRoot, name);
 }
 
 function decodeSoul(bytes: Buffer): { body: string; chars: number } {
@@ -528,7 +528,7 @@ function decodeSoul(bytes: Buffer): { body: string; chars: number } {
 export async function resolveSoul(workspaceRoot: string, name: string, expectedAgentId?: string): Promise<ResolvedSoul> {
   const source = agentSoulPath(workspaceRoot, name);
   try {
-    await assertCanonicalProfileDir(workspaceRoot, name);
+    await assertAgentProfileDir(workspaceRoot, name);
     const manifest = await readPrivateManifest(agentSoulManifestPath(workspaceRoot, name), name);
     if (expectedAgentId !== undefined && (manifest.schemaVersion !== SOUL_PROFILE_SCHEMA_VERSION_V2 || manifest.agentId !== expectedAgentId)) {
       throw new SoulError("soul/profile-adoption-required", `Soul profile for '${name}' is not bound to agentId '${expectedAgentId}'`);
@@ -573,7 +573,7 @@ async function importSoulProfileUnlocked(workspaceRoot: string, name: string, im
     await sourceHandle?.close().catch(() => undefined);
   }
   const { chars } = decodeSoul(bytes);
-  const dir = await ensureCanonicalProfileDir(workspaceRoot, name);
+  const dir = await ensureAgentProfileDir(workspaceRoot, name);
   const destination = agentSoulPath(workspaceRoot, name);
   const profileId = randomUUID();
   const manifest: SoulProfileManifest = { schemaVersion: 1, profileId, owner: name, state: "active" };
@@ -644,7 +644,7 @@ export interface SoulProfileStatus {
 export async function readSoulManifestAnyState(workspaceRoot: string, name: string): Promise<SoulProfileManifest> {
   validateSoulAgentName(name);
   try {
-    await assertCanonicalProfileDir(workspaceRoot, name);
+    await assertAgentProfileDir(workspaceRoot, name);
   } catch (error) {
     if (error instanceof SoulError) throw error;
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -661,7 +661,7 @@ export async function readCanonicalSoulManifestBytes(workspaceRoot: string, name
   const source = agentSoulManifestPath(workspaceRoot, name);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    await assertCanonicalProfileDir(workspaceRoot, name);
+    await assertAgentProfileDir(workspaceRoot, name);
     handle = await openNoFollow(source);
     const { bytes } = await readStableHandle(handle, source);
     return bytes;
@@ -737,7 +737,7 @@ export async function readCanonicalSoulBytes(workspaceRoot: string, name: string
   const source = agentSoulPath(workspaceRoot, name);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    await assertCanonicalProfileDir(workspaceRoot, name);
+    await assertAgentProfileDir(workspaceRoot, name);
     handle = await openNoFollow(source);
     const { bytes } = await readStableHandle(handle, source);
     return bytes;
@@ -883,7 +883,7 @@ export async function publishCanonicalSoulFiles(
     throw new SoulError("soul/path-invalid", `Manifest owner '${manifest.owner}' does not match agent '${name}'`);
   }
   const { chars } = decodeSoul(bytes);
-  const dir = await ensureCanonicalProfileDir(workspaceRoot, name);
+  const dir = await ensureAgentProfileDir(workspaceRoot, name);
   const destination = agentSoulPath(workspaceRoot, name);
   const manifestPath = agentSoulManifestPath(workspaceRoot, name);
   const soulStage = path.join(dir, `.SOUL.md.${randomUUID()}.stage`);
@@ -926,7 +926,7 @@ export async function writeSoulManifestState(
   if (manifest.owner !== name) {
     throw new SoulError("soul/path-invalid", `Manifest owner '${manifest.owner}' does not match agent '${name}'`);
   }
-  const dir = await ensureCanonicalProfileDir(workspaceRoot, name);
+  const dir = await ensureAgentProfileDir(workspaceRoot, name);
   const manifestPath = agentSoulManifestPath(workspaceRoot, name);
   const stage = path.join(dir, `.profile.json.${randomUUID()}.stage`);
   let identity: FileIdentity | undefined;

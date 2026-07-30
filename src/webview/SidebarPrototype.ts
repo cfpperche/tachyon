@@ -548,7 +548,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
 function ctxOf(a: AgentVM): string {
   const state = a.status === "crashed" ? "crashed" : a.status === "stopped" ? "stopped" : "running";
-  return agentContextValue({ state, ai: isAgentRow(a), adhoc: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
+  return agentContextValue({ state, ai: isAgentRow(a), temporary: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
 }
 
 export function pinDocPreview(doc: TiptapJSON | null): string {

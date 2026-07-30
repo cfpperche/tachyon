@@ -431,10 +431,10 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandV1({ ...reorder, input: { ...reorder.input, orderedIds: ["t-abc123", "t-abc123"] } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...close, input: { ...close.input, result_note: " " } })).toBe(false);
 
-    const query = { schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } } as const;
+    const query = { schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: ["reviewer"] } } as const;
     expect(isWorkspaceQueryV1(query)).toBe(true);
-    expect(isWorkspaceQueryV1({ ...query, input: { liveAdhocAgents: ["reviewer", "reviewer"] } })).toBe(false);
-    expect(isWorkspaceQueryV1({ ...query, input: { liveAdhocAgents: ["../escape"] } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { liveTemporaryAgents: ["reviewer", "reviewer"] } })).toBe(false);
+    expect(isWorkspaceQueryV1({ ...query, input: { liveTemporaryAgents: ["../escape"] } })).toBe(false);
     const result = workspaceMissionControlViewSuccessV1({
       schemaVersion: 1,
       board: { schemaVersion: 1, views: [], allowedDropStatuses: {}, chips: [] },

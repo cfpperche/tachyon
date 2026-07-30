@@ -431,7 +431,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       verified: true,
       verifiedAt: "2026-07-08",
       notes:
-        "Grok has native -w/--worktree support. Canonical profiles additionally regenerate a private GROK_HOME and HOME, but legacy/ad-hoc Grok commands remain project-scoped, so runtime-wide transcript isolation is not yet declared.",
+        "Grok has native -w/--worktree support. Canonical profiles additionally regenerate a private GROK_HOME and HOME, but legacy/Temporary Grok commands remain project-scoped, so runtime-wide transcript isolation is not yet declared.",
     },
     permission: {
       modes: ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"],
@@ -551,7 +551,7 @@ export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, cont
 
 /**
  * RULING (t-ef19a1): a tachyon.yml-declared agent's author already has full extension trust — a
- * different tier than an ad-hoc delegated spawn — so a declared opencode agent with no `harness:`
+ * different tier than a Temporary delegated spawn — so a declared opencode agent with no `harness:`
  * block is INTENTIONALLY allowed to run without isolation. It is, however, a footgun: without
  * `harness: {}` (or an isolated worktree) it shares the global `~/.local/share` opencode
  * config/auth/session state with every other non-isolated opencode agent. This never changes the

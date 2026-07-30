@@ -69,7 +69,7 @@ import {
   refreshAction as refreshHandoffAction,
   openFileAction as openHandoffFileAction,
   distillExistingAction,
-  distillAdhocAction,
+  distillTemporaryAction,
 } from "../handoff/messages";
 import {
   SNAPSHOT,
@@ -585,7 +585,7 @@ function CockpitRoot() {
       refresh: () => post(refreshHandoffAction()),
       openFile: () => post(openHandoffFileAction()),
       distillExisting: (agent: string, instructions?: string) => post(distillExistingAction(agent, instructions)),
-      distillAdhoc: (profileId: string, args?: string, instructions?: string) => post(distillAdhocAction(profileId, args, instructions)),
+      distillAdhoc: (profileId: string, args?: string, instructions?: string) => post(distillTemporaryAction(profileId, args, instructions)),
     }),
     [],
   );

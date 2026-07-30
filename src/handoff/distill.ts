@@ -15,7 +15,7 @@ export const HANDOFF_DISTILL_PROFILES: HandoffDistillProfileVM[] = [
 ];
 
 export const MAX_HANDOFF_ADDITIONAL_INSTRUCTION = 2000;
-export const MAX_HANDOFF_ADHOC_ARGS = 500;
+export const MAX_HANDOFF_TEMPORARY_ARGS = 500;
 
 export function normalizeAdditionalInstruction(raw: unknown): string {
   if (typeof raw !== "string") return "";
@@ -26,7 +26,7 @@ export function normalizeHandoffDistillArgs(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const trimmed = raw.trim();
   if (!trimmed || /[\0\r\n]/.test(trimmed)) return "";
-  return trimmed.slice(0, MAX_HANDOFF_ADHOC_ARGS).trim();
+  return trimmed.slice(0, MAX_HANDOFF_TEMPORARY_ARGS).trim();
 }
 
 export function buildHandoffDistillCommand(profile: HandoffDistillProfileVM, args?: unknown): string {
@@ -82,7 +82,7 @@ export interface HandoffDistillTargetRow {
    * The second axis, and it is load-bearing for eligibility rather than decorative.
    *
    * The rule is "a Temporary is a legal destination while its definition is still there". For a plain
-   * ad-hoc that means WHILE RUNNING — its definition dies with the session. A FORK is also
+   * Temporary that means WHILE RUNNING — its definition dies with the session. A FORK is also
    * `temporary`, but it is `restartable`: it owns a resume block, and phase 2 was required to keep its
    * definition reloading. Refusing it would collapse `lifetime` back into resume capability, which is
    * the whole defect this cut removes.
@@ -127,7 +127,7 @@ export function buildDistillTargets(
     // fork: no durable Profile, but its own resume block, whose reload phase 2 was obliged to preserve.
     //
     // NOT expressible as "is it in `resumable`": that set is every row carrying a resume block, and
-    // spawnCore writes one for EVERY adapter-backed start, ad-hoc included. Gating on it would make
+    // spawnCore writes one for EVERY adapter-backed start, Temporary included. Gating on it would make
     // every stopped Temporary a handoff target and erase the refusal this rule exists to be.
     const temporary = a.lifetime === "temporary";
     if (temporary && !live && a.resumePolicy !== "restartable") continue;

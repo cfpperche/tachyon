@@ -75,23 +75,23 @@ export const rejectEvolutionCandidateMessage = (
   ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
 });
 
-export const refreshCanonicalProfileMessage = (agent: string) =>
-  envelope({ type: "refreshCanonicalProfile" as const, agent });
-export const setCanonicalProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
-  envelope({ type: "setCanonicalProfileEnabled" as const, agent, expectedRevision, enabled });
-export const renameCanonicalProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
-  envelope({ type: "renameCanonicalProfile" as const, agent, expectedRevision, newName });
-export const forgetCanonicalProfileMessage = (agent: string, expectedRevision: string, confirmation: string) =>
-  envelope({ type: "forgetCanonicalProfile" as const, agent, expectedRevision, confirmation });
+export const refreshAgentProfileMessage = (agent: string) =>
+  envelope({ type: "refreshAgentProfile" as const, agent });
+export const setAgentProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
+  envelope({ type: "setAgentProfileEnabled" as const, agent, expectedRevision, enabled });
+export const renameAgentProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
+  envelope({ type: "renameAgentProfile" as const, agent, expectedRevision, newName });
+export const forgetAgentProfileMessage = (agent: string, expectedRevision: string, confirmation: string) =>
+  envelope({ type: "forgetAgentProfile" as const, agent, expectedRevision, confirmation });
 /** t-4c113c — webview → host: replace the owner's whole declared-subagents list under its CAS revision. */
-export const setCanonicalProfileSubagentsMessage = (agent: string, expectedRevision: string, subagents: string[]) =>
-  envelope({ type: "setCanonicalProfileSubagents" as const, agent, expectedRevision, subagents });
+export const setAgentProfileSubagentsMessage = (agent: string, expectedRevision: string, subagents: string[]) =>
+  envelope({ type: "setAgentProfileSubagents" as const, agent, expectedRevision, subagents });
 /** t-3bde32 — webview → host: grant or revoke this agent's Saved Agent PROPOSAL authority. */
-export const setCanonicalProfileProposeGrantMessage = (agent: string, expectedRevision: string, granted: boolean) =>
-  envelope({ type: "setCanonicalProfileProposeGrant" as const, agent, expectedRevision, granted });
-export const exportCanonicalProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportCanonicalProfileBundle" as const, agent, expectedRevision });
-export const cloneCanonicalProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneCanonicalProfileBundle" as const, agent, expectedRevision, destinationAgentName });
-export const importCanonicalProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importCanonicalProfileBundle" as const, agent, destinationAgentName, contentBase64 });
+export const setAgentProfileProposeGrantMessage = (agent: string, expectedRevision: string, granted: boolean) =>
+  envelope({ type: "setAgentProfileProposeGrant" as const, agent, expectedRevision, granted });
+export const exportSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportSavedAgentProfileBundle" as const, agent, expectedRevision });
+export const cloneSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneSavedAgentProfileBundle" as const, agent, expectedRevision, destinationAgentName });
+export const importSavedAgentProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importSavedAgentProfileBundle" as const, agent, destinationAgentName, contentBase64 });
 
 /** Host → webview: profile status / preview reply. */
 export const soulProfileStatusMessage = (status: SoulProfileStatusMessage) =>
@@ -116,16 +116,16 @@ export const evolutionActionResultMessage = (
 export const evolutionErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
   envelope({ type: "evolutionError" as const, agent, code, message, conflict });
 
-export const canonicalProfileSnapshotMessage = (
+export const agentProfileSnapshotMessage = (
   action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant",
   snapshot: AgentProfileStudioSnapshotV1,
-) => envelope({ type: "canonicalProfileSnapshot" as const, action, snapshot });
-export const canonicalProfileOwnershipMessage = (agent: string, ownership: AgentOwnershipViewV1) =>
-  envelope({ type: "canonicalProfileOwnership" as const, agent, ownership });
-export const canonicalProfileForgottenMessage = (agent: string, agentId: string) =>
-  envelope({ type: "canonicalProfileForgotten" as const, agent, agentId });
-export const canonicalProfileErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
-  envelope({ type: "canonicalProfileError" as const, agent, code, message, conflict });
-export const canonicalProfileBundleExportMessage = (result: AgentProfileStudioBundleExportResultV1) => envelope({ type: "canonicalProfileBundleExport" as const, result });
-export const canonicalProfileBundleCreatedMessage = (result: AgentProfileStudioBundleCreatedResultV1) => envelope({ type: "canonicalProfileBundleCreated" as const, result });
-export const canonicalProfileBundleErrorMessage = (agent: string, code: string, message: string, conflict: boolean) => envelope({ type: "canonicalProfileBundleError" as const, agent, code, message, conflict });
+) => envelope({ type: "agentProfileSnapshot" as const, action, snapshot });
+export const agentProfileOwnershipMessage = (agent: string, ownership: AgentOwnershipViewV1) =>
+  envelope({ type: "agentProfileOwnership" as const, agent, ownership });
+export const agentProfileForgottenMessage = (agent: string, agentId: string) =>
+  envelope({ type: "agentProfileForgotten" as const, agent, agentId });
+export const agentProfileErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
+  envelope({ type: "agentProfileError" as const, agent, code, message, conflict });
+export const agentProfileBundleExportMessage = (result: AgentProfileStudioBundleExportResultV1) => envelope({ type: "agentProfileBundleExport" as const, result });
+export const agentProfileBundleCreatedMessage = (result: AgentProfileStudioBundleCreatedResultV1) => envelope({ type: "agentProfileBundleCreated" as const, result });
+export const agentProfileBundleErrorMessage = (agent: string, code: string, message: string, conflict: boolean) => envelope({ type: "agentProfileBundleError" as const, agent, code, message, conflict });

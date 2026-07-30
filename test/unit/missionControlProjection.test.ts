@@ -54,7 +54,7 @@ describe("Mission Control wire projection", () => {
     const source = buildBoardSnapshot({
       store: taskStore,
       declaredAgents: ["codex"],
-      liveAdhocAgents: ["reviewer"],
+      liveTemporaryAgents: ["reviewer"],
       validationStore,
       workspaceRoot: root,
     });

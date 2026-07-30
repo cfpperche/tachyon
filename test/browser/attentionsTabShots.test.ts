@@ -116,5 +116,38 @@ describe("t-37f554 Attentions tab headless Visual QA", () => {
     expect(attentionsHtml).toContain('data-testid="attention-stack"');
     expect(emptyHtml).toContain('data-testid="attention-stack-empty"');
     expect(emptyHtml).not.toContain('data-testid="attention-card"');
+
+    // t-c61e51 — geometric contract at narrow + normal: Clear shares the section header row
+    // with ATTENTIONS; no second toolbar band. Fails if the orphan toolbar returns.
+    for (const w of [WIDTHS[0]!, WIDTHS[1]!]) {
+      await page.setViewport({ width: w.px, height: 720, deviceScaleFactor: 1 });
+      await page.setContent(pageHtml(attentionsHtml), { waitUntil: "domcontentloaded" });
+      const geom = await page.evaluate(() => {
+        const sec = document.querySelector(".sec");
+        const clear = document.querySelector('[data-testid="attention-clear"]');
+        const label = sec?.querySelector("b");
+        const toolbar = document.querySelector('[data-testid="attention-toolbar"]');
+        if (!sec || !clear || !label) return { ok: false as const, reason: "missing nodes" };
+        const sr = sec.getBoundingClientRect();
+        const cr = clear.getBoundingClientRect();
+        const lr = label.getBoundingClientRect();
+        return {
+          ok: true as const,
+          sameRow: Math.abs(cr.top - lr.top) < 8,
+          clearInSec: cr.top >= sr.top - 2 && cr.bottom <= sr.bottom + 2,
+          noToolbar: !toolbar,
+          secHeight: Math.round(sr.height),
+          width: window.innerWidth,
+        };
+      });
+      expect(geom.ok, `t-c61e51 geometry at ${w.px}: ${JSON.stringify(geom)}`).toBe(true);
+      if (geom.ok) {
+        expect(geom.sameRow, `Clear must share ATTENTIONS row at ${w.px}px`).toBe(true);
+        expect(geom.clearInSec, `Clear must live inside .sec at ${w.px}px`).toBe(true);
+        expect(geom.noToolbar, `orphan attention-toolbar must be gone at ${w.px}px`).toBe(true);
+        // Agents-like density: section header is a single compact band, not a tall toolbar stack.
+        expect(geom.secHeight, `.sec height at ${w.px}`).toBeLessThanOrEqual(40);
+      }
+    }
   }, 120_000);
 });

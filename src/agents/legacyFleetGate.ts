@@ -5,7 +5,7 @@ import { legacyFallbackUsed, type InstancePolicySource } from "./agentInstancePo
  *
  * ## Why a gate instead of a migration
  *
- * The cut removes the canonical / ad-hoc / declared species outright: no dual-read, no grandfathering,
+ * The cut removes the canonical / Temporary / declared species outright: no dual-read, no grandfathering,
  * no alias layer. That choice makes migration code unnecessary and makes THIS necessary instead —
  * because state written by the old species can still be on disk, and a build that no longer
  * understands it must not silently reinterpret it. Refusing to activate is the honest answer: the

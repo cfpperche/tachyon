@@ -121,15 +121,15 @@ export function degradedRosterExtras(input: DegradedRosterInput): DegradedRoster
 
 /**
  * True when a spawn/autostart would be drawing from LKG rather than a live valid config.
- * Callers pass whether the name is known via live config/adhoc (allowed) or only LKG (refused).
+ * Callers pass whether the name is known via live config or a Temporary definition (allowed) or only LKG (refused).
  */
 export function isLkgOnlySpawn(opts: {
   configValid: boolean;
-  nameInLiveConfigOrAdhoc: boolean;
+  nameInLiveConfigOrTemporary: boolean;
   nameInLkg: boolean;
 }): boolean {
   if (opts.configValid) return false;
-  if (opts.nameInLiveConfigOrAdhoc) return false;
+  if (opts.nameInLiveConfigOrTemporary) return false;
   return opts.nameInLkg;
 }
 

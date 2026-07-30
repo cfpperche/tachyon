@@ -1,0 +1,103 @@
+{
+  "ok": true,
+  "scenario": "scripts/dev-host/scenarios/t-c61e51-attentions-layout.mjs",
+  "startedAt": "2026-07-30T00:10:53.355Z",
+  "asserts": [
+    {
+      "id": "sidebar-frame",
+      "ok": true,
+      "detail": "found Tachyon sidebar webview"
+    },
+    {
+      "id": "attentions-tab-narrow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "geom-no-toolbar-narrow",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-stack-narrow",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-clear-same-row-narrow",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-clear-in-sec-narrow",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-sec-compact-narrow",
+      "ok": true,
+      "detail": "secHeight=39"
+    },
+    {
+      "id": "agents-tab-narrow",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "agents-sec-narrow",
+      "ok": true,
+      "detail": "{\"label\":\"Agents\",\"secHeight\":33,\"hasSecActions\":true}"
+    },
+    {
+      "id": "sec-density-parity-narrow",
+      "ok": true,
+      "detail": "att=39 agents=33"
+    },
+    {
+      "id": "attentions-tab-normal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "geom-no-toolbar-normal",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-stack-normal",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-clear-same-row-normal",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-clear-in-sec-normal",
+      "ok": true,
+      "detail": "{\"ok\":true,\"noToolbar\":true,\"hasBadge\":true,\"hasStack\":true,\"activeLabel\":\"Attentions, 1 open\",\"secText\":\"Attentions\",\"secHeight\":39,\"hasClear\":true,\"sameRow\":true,\"clearInSec\":true}"
+    },
+    {
+      "id": "geom-sec-compact-normal",
+      "ok": true,
+      "detail": "secHeight=39"
+    },
+    {
+      "id": "agents-tab-normal",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "id": "agents-sec-normal",
+      "ok": true,
+      "detail": "{\"label\":\"Agents\",\"secHeight\":33,\"hasSecActions\":true}"
+    },
+    {
+      "id": "sec-density-parity-normal",
+      "ok": true,
+      "detail": "att=39 agents=33"
+    }
+  ],
+  "finishedAt": "2026-07-30T00:11:19.654Z"
+}

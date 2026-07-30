@@ -1810,7 +1810,7 @@ export function App(p: CockpitAppProps) {
                   <>
                     <span class="name">{a.name}</span>
                     <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
-                    {a.lifetime === "temporary" ? <Badge tone="info">{s.adhoc}</Badge> : <Badge>{s.declared}</Badge>}
+                    {a.lifetime === "temporary" ? <Badge tone="info">{s.temporary}</Badge> : <Badge>{s.saved}</Badge>}
                     {a.kind ? <Badge>{a.kind}</Badge> : null}
                   </>
                 }
@@ -2347,7 +2347,7 @@ export function App(p: CockpitAppProps) {
       {continuePick && m ? (() => {
         const from = continuePick.fromName;
         const wsHash = continuePick.wsHash;
-        // Same workspace only when scoped; exclude source, terminal, ad-hoc.
+        // Same workspace only when scoped; exclude source, terminal, Temporary.
         const candidates = m.fleet
           .filter((row) => row.name !== from)
           .filter((row) => !wsHash || row.wsHash === wsHash)

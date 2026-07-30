@@ -5,7 +5,7 @@
  * (The live `status` reorder mode was dropped — only the two alphabetical directions remain.)
  *
  * spec 304 — this module also holds `groupByParent`, a separate post-sort step that groups a spawned
- * (ad-hoc) agent's row next to its parent. `sortRows` itself stays name-only and parent-unaware; only the
+ * (Temporary) agent's row next to its parent. `sortRows` itself stays name-only and parent-unaware; only the
  * Agents list composes the two (Terminals has no `parent` concept).
  */
 

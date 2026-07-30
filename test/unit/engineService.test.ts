@@ -310,7 +310,7 @@ describe("daemon engine service", () => {
       view: { handoff: { exists: true, updatedBy: "human", revision: expect.stringMatching(/^[a-f0-9]{16}$/) } },
     });
 
-    const initialBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: ["reviewer"] } });
+    const initialBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: ["reviewer"] } });
     expect(initialBoard).toMatchObject({
       method: "task.board",
       status: "ok",
@@ -535,7 +535,7 @@ describe("daemon engine service", () => {
     const updatedTask = await first.invoke("operation-task-update-0001", updateTask);
     expect(updatedTask).toEqual({ schemaVersion: 1, method: "task.update", status: "ok" });
     expect(await first.invoke("operation-task-update-0001", updateTask)).toEqual(updatedTask);
-    const updatedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } });
+    const updatedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: [] } });
     if (updatedBoard.status !== "ok" || updatedBoard.method !== "task.board") throw new Error("unexpected board result");
     const updatedAt = updatedBoard.view.board.views[0]?.task.updatedAt;
     expect(updatedBoard.view.board.views[0]?.task.status).toBe("triaged");
@@ -550,7 +550,7 @@ describe("daemon engine service", () => {
       method: "validation.close",
       input: { id: seedValidation.id, outcome: "passed", result_note: "installed dogfood passed" },
     })).toMatchObject({ status: "ok", method: "validation.close" });
-    const closedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveAdhocAgents: [] } });
+    const closedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: [] } });
     expect(closedBoard).toMatchObject({ status: "ok", view: { board: { validations: { pendingCount: 0, items: [] } } } });
 
     const beforeInvalidStudio = fs.readFileSync(configPath, "utf8");

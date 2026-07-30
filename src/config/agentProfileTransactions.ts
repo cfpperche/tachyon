@@ -330,7 +330,7 @@ export function currentProfileDigest(workspaceRoot: string, agentName: string): 
   }
 }
 
-export function publishCanonicalProfile(workspaceRoot: string, agentName: string, profileText: string): void {
+export function publishAgentProfile(workspaceRoot: string, agentName: string, profileText: string): void {
   const tachyon = path.join(workspaceRoot, ".tachyon");
   const agents = path.join(tachyon, "agents");
   const principal = path.join(agents, agentName);
@@ -350,7 +350,7 @@ export function publishCanonicalProfile(workspaceRoot: string, agentName: string
   }
 }
 
-export function removeCanonicalProfileIfExact(
+export function removeAgentProfileIfExact(
   workspaceRoot: string,
   agentName: string,
   expectedSha256: string,

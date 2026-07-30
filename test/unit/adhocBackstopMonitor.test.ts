@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { MAX_WORKING_STALL_MS, type AgentAttention } from "../../src/attention/AttentionMonitor.js";
-import { AdhocBackstopMonitor } from "../../src/workspace/AdhocBackstopMonitor.js";
+import { TemporaryBackstopMonitor } from "../../src/workspace/TemporaryBackstopMonitor.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
 const agent = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntryInfo => ({
@@ -35,7 +35,7 @@ function fixture(opts: { completionHinted?: (name: string) => boolean } = {}) {
   ]);
   const attention = new Map<string, AgentAttention>();
   const delivered: Array<{ parent: string; line: string }> = [];
-  const monitor = new AdhocBackstopMonitor(
+  const monitor = new TemporaryBackstopMonitor(
     {
       listEntries: async () => [...entries.values()],
       attentionOf: (name) => attention.get(name),
@@ -50,7 +50,7 @@ function fixture(opts: { completionHinted?: (name: string) => boolean } = {}) {
   return { monitor, entries, attention, delivered, setNow: (n: number) => { now = n; } };
 }
 
-describe("AdhocBackstopMonitor", () => {
+describe("TemporaryBackstopMonitor", () => {
   it("pokes once for a live child agent with a live parent after idle output is stable past threshold", async () => {
     const f = fixture();
     f.attention.set("child", att("idle", 1_000_000, "idle-1"));

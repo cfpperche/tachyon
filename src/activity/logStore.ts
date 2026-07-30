@@ -32,7 +32,7 @@ export function agentLogId(name: string): string {
 }
 
 /** Delete an agent's durable activity log + its writer-state sidecar. Called when an agent is removed
- *  from the ledger as a by-design NON-PERSISTENT one (a clean-exit ad-hoc one-shot, or an inline pipeline
+ *  from the ledger as a by-design NON-PERSISTENT one (a clean-exit Temporary one-shot, or an inline pipeline
  *  `cmd:` node): spec 239's log is the durable archive OF A DURABLE AGENT, keyed by the tachyon agent, so a
  *  reaped ephemeral must not leave an orphaned, unreachable `.jsonl` growing under `.tachyon/activity/` (the
  *  Activity panel only opens per LIVE sidebar row, so the file is invisible once the row is gone) — pin

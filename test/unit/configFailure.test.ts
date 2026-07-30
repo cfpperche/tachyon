@@ -130,13 +130,13 @@ agents:
 
   it("(c) with config invalid, spawn of LKG-only names is refused; live/adhoc names are not", () => {
     expect(
-      isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrAdhoc: false, nameInLkg: true }),
+      isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrTemporary: false, nameInLkg: true }),
     ).toBe(true);
     expect(
-      isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrAdhoc: true, nameInLkg: true }),
+      isLkgOnlySpawn({ configValid: false, nameInLiveConfigOrTemporary: true, nameInLkg: true }),
     ).toBe(false);
     expect(
-      isLkgOnlySpawn({ configValid: true, nameInLiveConfigOrAdhoc: false, nameInLkg: true }),
+      isLkgOnlySpawn({ configValid: true, nameInLiveConfigOrTemporary: false, nameInLkg: true }),
     ).toBe(false);
     expect(lkgSpawnRefusalMessage("reviewer", "tachyon.yml")).toMatch(/render-only/);
   });

@@ -106,7 +106,16 @@ export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 //
 // Bumped in the SAME commit as the gate it describes. A behaviour change on an unchanged protocol is
 // the 0.56.110 D1 failure mode with different bytes — the peer has no way to know the rules moved.
-export const ENGINE_SHELL_PROTOCOL = 5 as const;
+//
+// `t-4cc561` — 5 → 6 for a payload-shape break: the `task.board` query input renamed
+// `liveAdhocAgents` to `liveTemporaryAgents`. Its validator below is `hasOnlyKeys`, so the rename is
+// not cosmetic in either direction — a protocol-5 engine REFUSES an input carrying the new key, and a
+// protocol-6 engine refuses the old one. Exact `min === max` negotiation turns that into a refusal at
+// handshake instead of a rejected query mid-session.
+//
+// Bumped in the same change as the rename, for the reason the 4 → 5 note gives: a peer has no way to
+// discover that a field moved, and a silent wire-shape change is the 0.56.110 failure with new bytes.
+export const ENGINE_SHELL_PROTOCOL = 6 as const;
 export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {
@@ -479,7 +488,7 @@ export type WorkspaceQueryV1 =
   | {
       schemaVersion: 1;
       method: "task.board";
-      input: { liveAdhocAgents: string[] };
+      input: { liveTemporaryAgents: string[] };
     }
   | {
       schemaVersion: 1;
@@ -861,11 +870,11 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && AGENT_NAME_RE.test(value.input.agent);
   }
   if (value.method === "task.board") {
-    return hasOnlyKeys(value.input, ["liveAdhocAgents"])
-      && Array.isArray(value.input.liveAdhocAgents)
-      && value.input.liveAdhocAgents.length <= 500
-      && value.input.liveAdhocAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
-      && new Set(value.input.liveAdhocAgents).size === value.input.liveAdhocAgents.length;
+    return hasOnlyKeys(value.input, ["liveTemporaryAgents"])
+      && Array.isArray(value.input.liveTemporaryAgents)
+      && value.input.liveTemporaryAgents.length <= 500
+      && value.input.liveTemporaryAgents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
+      && new Set(value.input.liveTemporaryAgents).size === value.input.liveTemporaryAgents.length;
   }
   if (value.method === "task.detail" || value.method === "task.studio") {
     return hasOnlyKeys(value.input, ["id"])

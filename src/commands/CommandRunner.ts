@@ -11,7 +11,7 @@ import type { TachyonConfig, CommandDef } from "../config/loadConfig.js";
  *
  * remain-on-exit (F2 infra) keeps the finished pane: exit code via
  * pane_dead_status and the output frozen for inspection. Run history is
- * session-local memory (like lineage/ad-hoc defs — documented).
+ * session-local memory (like lineage/Temporary defs — documented).
  */
 
 export interface CommandRun {
