@@ -138,3 +138,94 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
       .toEqual([]);
   });
 });
+
+/**
+ * t-a95ae8 — the audit, made executable.
+ *
+ * Prose saying "the rest is fine" is not a proof of absence; a future reader cannot check it and a
+ * future change cannot fail it. So every remaining `adhoc`/`ad-hoc` line in test/ and scripts/ is
+ * bucketed here BY WHY IT SURVIVES, and the total is pinned. A new occurrence outside these buckets
+ * fails; a bucket emptying out fails too, so a stale exemption cannot outlive its subject.
+ */
+describe("test/ and scripts/ residue is classified, not merely tolerated", () => {
+  const CATEGORIES: Array<{ why: string; files: string[] }> = [
+    {
+      why: "subjects the PRESERVED wire: the `mode: \"adhoc\"` distill discriminant, or the row VM's `adhoc` flag",
+      files: [
+        "test/fixtures/sidebar/agentCardFixtures.ts",
+        "test/unit/agentInstanceReaderConvergence.test.ts",
+        "test/unit/engineServiceProtocol.test.ts",
+        "test/unit/failVisibleConfigSidebar.test.ts",
+        "test/unit/fakeWorkspaceClient.test.ts",
+        "test/unit/handoffDistill.test.ts",
+        "test/unit/handoffDistillService.test.ts",
+        "test/unit/handoffTarget.test.ts",
+        "test/unit/sidebarActions.test.ts",
+      ],
+    },
+    {
+      why: "uses the words as an arbitrary agent NAME or an assignee outside the roster — a different axis",
+      files: [
+        "scripts/webview-preview/fixtures/cockpit.ts",
+        "test/unit/boardModel.test.ts",
+        "test/unit/harness.test.ts",
+        "test/unit/missionVm.test.ts",
+      ],
+    },
+    {
+      // `lineageUniformityInventory.test.ts` belongs here by nature but is NOT listed: it is already
+      // in ABSENCE_GUARDS, and a file excused twice is a file whose exemption nobody can retire.
+      why: "provenance: names what a prior stage REMOVED, or a dated repro. Deleting the word deletes the explanation",
+      files: [
+        "test/helpers/boundDeliveryExecutionHarness.ts",
+        "test/unit/agentProfileStudio.test.ts",
+        "test/unit/deliveryJoinFaultInjectionB3B4.test.ts",
+        "test/unit/ocGhostBehavior.gen.test.ts",
+        "test/unit/ocGhostQBehavior.gen.test.ts",
+        "test/unit/ocHarnessBehavior.gen.test.ts",
+        "test/unit/snWaitHardenBehavior.gen.test.ts",
+        "test/unit/workspaceHeadless.test.ts",
+      ],
+    },
+    {
+      why: "a HISTORICAL fixture key (`ad-hoc-contract`) that three files must match byte for byte, or a dated dogfood",
+      files: [
+        "scripts/capture-agent-soul-legacy.mjs",
+        "scripts/dogfood/grok-attention-midturn.ts",
+        "test/fixtures/agent-focus-line-dogfood/.tachyon/sessions.json",
+        "test/fixtures/agent-focus-line-dogfood/README.md",
+        "test/fixtures/agent-soul-legacy/prompt-command-cases.json",
+        "test/unit/agentSoulLegacyParity.test.ts",
+      ],
+    },
+    {
+      why: "describes a DOOR or a label, not an instance: the admission door, a runbook label, a filter bucket",
+      files: [
+        "scripts/dogfood/adhoc-agent-boundary.ts",
+        "test/unit/agentRuntimeAdmission.test.ts",
+        "test/unit/gatedCompletionMonitor.test.ts",
+        "test/unit/loadPipeline.test.ts",
+        "test/unit/runbooks.test.ts",
+      ],
+    },
+    {
+      why: "developer-facing test titles still using the old word for an instance — the honest remainder, harmless but not yet moved",
+      files: [
+        "test/unit/agentManager.test.ts",
+        "test/unit/agentModel.test.ts",
+        "test/unit/attention.test.ts",
+        "test/unit/bridge.test.ts",
+        "test/unit/cockpitFleetActions.test.ts",
+        "test/unit/pipelineDurability.test.ts",
+      ],
+    },
+  ];
+
+  it("every residue file is classified, and every classification still has a subject", () => {
+    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["test", "scripts"]);
+    const classified = CATEGORIES.flatMap((c) => c.files).sort();
+    expect(new Set(classified).size, "a file is listed under two categories").toBe(classified.length);
+    expect(actual.filter((f) => !classified.includes(f)), "unclassified residue — put it in a bucket or remove it").toEqual([]);
+    expect(classified.filter((f) => !actual.includes(f)), "stale exemption: the residue it excused is gone").toEqual([]);
+  });
+});

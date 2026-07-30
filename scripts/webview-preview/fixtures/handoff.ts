@@ -31,7 +31,7 @@ const cold: HandoffViewModel = { folder: "tachyon", exists: false, body: "", sta
 
 const stale: HandoffViewModel = { ...populated, staleness: "possibly_stale", updatedAt: "2026-06-20T00:00:00.000Z" };
 
-/** t-4eb7c0 shortlist — Distill target list with declared + ad-hoc labels (UI dogfood). */
+/** t-4eb7c0 shortlist — Distill target list with Saved + Temporary labels (UI dogfood). */
 const distillList: HandoffViewModel = {
   ...populated,
   staleness: "needs_distill",
@@ -40,7 +40,7 @@ const distillList: HandoffViewModel = {
     { name: "codex", description: "declared · running" },
     { name: "grok", description: "declared · running" },
     { name: "claude", description: "declared · idle" },
-    { name: "distill-helper", description: "ad-hoc · running" },
+    { name: "distill-helper", description: "temporary · running" },
   ],
   notes: [
     ...populated.notes,

@@ -1,5 +1,5 @@
 /**
- * SDD 478 M9 / `t-8f3f7d` — real-runtime dogfood for the ad-hoc Agent/Terminal door.
+ * SDD 478 M9 / `t-8f3f7d` — real-runtime dogfood for the Temporary Agent/Terminal door.
  *
  * The admission rule itself is pure string logic and unit tests pin it. What unit tests cannot check is
  * whether the DECLARATION is still true of the machine: `SUPPORTED_AGENT_RUNTIMES` claims each
@@ -61,7 +61,7 @@ for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
   const version = run(runtime, ["--version"]);
   const admission = admitAgentRuntimeCommand(runtime);
   checks.push(report(
-    `${runtime}: answers --version and is admitted as an ad-hoc agent runtime`,
+    `${runtime}: answers --version and is admitted as a Temporary agent runtime`,
     version.ok && admission.ok,
     { version: version.text.replace(/\s+/g, " ").trim().slice(0, 60), admitted: admission.ok },
   ));
