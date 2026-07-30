@@ -3,6 +3,17 @@
 Repository-local rules transported through `settings.projectGuidance.files`. They are not Tachyon
 product policy and must not be imposed on consuming projects.
 
+## Nothing here is permanent
+
+Every rule below is a current decision, not a law. A better proposal — argued, with evidence — is
+always welcome and changes the file. The same holds one level up: a Tachyon product decision is a
+position taken for stated reasons, and reasons can be revisited. "The product already decided this"
+is the beginning of a review, never the end of one.
+
+What is not acceptable is quietly routing around a rule. Follow it, or argue it down and rewrite it.
+When a repository convention and the product protocol disagree, say so and name which one you think
+is wrong — a stuck agent is a symptom worth reading, not a rule to work around.
+
 ## Work
 
 - Work from the checkout root. Run `npm ci` only when dependencies are absent.
@@ -25,8 +36,16 @@ product policy and must not be imposed on consuming projects.
   `scripts/verify-full.mjs` owns reuse; `TACHYON_VERIFY_FORCE=1` forces execution, and `node
   scripts/verify-record.mjs check HEAD` inspects the record. Report the verified tree and never claim
   a check that did not run.
-- Integrate `main` once at the end inside the change worktree, verify that combined tree, then
-  fast-forward `main` to that exact commit. If `main` moves again, re-integrate and reverify.
+- Integrate `main` once at the end inside the change worktree, verify that combined tree, and deliver
+  there. If `main` moves again, re-integrate and reverify.
+- Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. Two product
+  facts put it there: an agent is isolated to its own worktree, and the integrate door is
+  record-only — it proves containment and records the fact, and never runs a main-mutating Git
+  command. There is also a mechanical reason: while the primary checkout sits on `main`, advancing
+  the ref from outside leaves its index and working tree inconsistent with the new HEAD, so the only
+  safe place to fast-forward is that checkout itself. An agent that has verified its tree reports the
+  commit and stops; it does not reach across. Closing this loop inside the product — a governed land
+  door in the shape of Forget, where the agent prepares and the human executes — is `t-7cb971`.
 - Use `npm run dogfood -- <scenario>`; list scenarios with `npm run dogfood -- --list`. Dogfood must
   use existing harnesses rather than add one-off package scripts.
 - Dev Host is checkout-local: `npm run dogfood -- dev-host -- point --fixture <slug>`; `--worktree`
