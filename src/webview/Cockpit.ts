@@ -2259,8 +2259,12 @@ export async function openCockpit(
      * could reach is not an approval.
      */
     if (m.type === "decideSavedAgentProposal" && typeof m.id === "string" && typeof m.digest === "string") {
-      const sources = inboxSources();
-      if (!sources) return true;
+      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : undefined;
+      const sources = inboxSources(wsHash);
+      if (!sources) {
+        live.webview.postMessage(humanInboxErrorMessage("Saved Agent proposals are not available for this workspace."));
+        return true;
+      }
       const workspaceRoot = sources.approvalWs.workspaceRoot;
       try {
         if (m.decision === "deny") {

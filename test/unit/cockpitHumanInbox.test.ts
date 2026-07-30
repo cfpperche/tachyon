@@ -400,6 +400,52 @@ describe("Control → Human Inbox actions route to each kind's own path", () => 
     expect((posted("routePending").at(-1) as { routeKey?: string } | undefined)?.routeKey).toBe("section:inbox");
   });
 
+  it("commits a Saved Agent proposal against the workspace named by its detail route", async () => {
+    const firstRoot = workspace();
+    const proposalRoot = workspace();
+    const proposal = pendingSavedAgentProposal(proposalRoot);
+    const { deps } = depsFor(firstRoot, []);
+    const committedRoots: string[] = [];
+    await openCockpit({
+      ...deps,
+      approvals: {
+        ...deps.approvals,
+        getWorkspaces: () => [
+          { workspaceRoot: firstRoot, wsHash: "ws-1", folderName: "first" },
+          { workspaceRoot: proposalRoot, wsHash: "ws-2", folderName: "second" },
+        ],
+      },
+      approveSavedAgentProposal: async ({ workspaceRoot }) => {
+        committedRoots.push(workspaceRoot);
+        return {
+          ok: true,
+          receipt: {
+            digest: proposal.digest,
+            proposalId: proposal.id,
+            proposer: proposal.proposer,
+            approvedBy: "human",
+            agentName: proposal.spec.name,
+            approvedAt: new Date().toISOString(),
+            outcome: "committed",
+            operation: "create",
+          },
+        };
+      },
+    }, { route: cockpitRoutes.inboxItem("ws-2", "saved-agent-proposal", proposal.id) });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+
+    __createdPanels[0].webview.__receive({
+      type: "decideSavedAgentProposal",
+      id: proposal.id,
+      digest: proposal.digest,
+      decision: "approve",
+    });
+    await flush();
+
+    expect(committedRoots).toEqual([proposalRoot]);
+  });
+
   it("a refused Saved Agent proposal commit stays on the detail route with its refusal", async () => {
     const root = workspace();
     const proposal = pendingSavedAgentProposal(root);
