@@ -367,6 +367,39 @@ export function cloneAgent(text: string, source: string, newName: string): EditR
   return { text: String(doc), warnings: [] };
 }
 
+/**
+ * t-17d885 — settings lists that grant authority BY AGENT NAME.
+ *
+ * `canMutateLinkedGitDelivery` decides by `principals.includes(caller.name)`, so a name left here
+ * after its agent is gone is a grant waiting for a homonym: create an agent with that exact name
+ * later — through the governed door, innocently — and it silently inherits an authority nobody gave
+ * it. Removing the `agents:` stanza alone never closed that, which is how this workspace ended up
+ * listing three principals (`hermes`, `codex`, `codex-canonico`) that no longer exist.
+ *
+ * Add any future name-keyed settings allowlist here rather than at its own call site.
+ */
+const AGENT_PRINCIPAL_LISTS: ReadonlyArray<readonly [string, string]> = [
+  ["gitDelivery", "prunePrincipals"],
+  ["gitDelivery", "integratePrincipals"],
+];
+
+/** Drop `name` from every name-keyed principal list, or rewrite it when `to` is given. */
+function reconcileAgentPrincipals(doc: ReturnType<typeof parseDocument>, name: string, to?: string): void {
+  for (const [block, key] of AGENT_PRINCIPAL_LISTS) {
+    const seq = doc.getIn(["settings", block, key], true);
+    if (!(seq instanceof YAMLSeq)) continue;
+    // Rebuild from plain values: the list is a flat scalar allowlist, so preserving node identity
+    // buys nothing and `createNode` keeps the file's existing flow/block style.
+    const current = seq.items.map((item) => String((item as { toJSON?: () => unknown }).toJSON?.() ?? item));
+    const next = to === undefined
+      ? current.filter((principal) => principal !== name)
+      // Dedupe: renaming onto a name already present must not list it twice.
+      : [...new Set(current.map((principal) => (principal === name ? to : principal)))];
+    if (next.length === current.length && next.every((principal, index) => principal === current[index])) continue;
+    doc.setIn(["settings", block, key], doc.createNode(next));
+  }
+}
+
 export function deleteAgent(text: string, name: string): EditResult {
   const doc = load(text);
   const section = sectionOf(doc, name);
@@ -379,6 +412,7 @@ export function deleteAgent(text: string, name: string): EditResult {
   doc.deleteIn([section, name]);
   // Drop a now-empty block so we never leave a bare `terminals: {}` / `agents: {}` behind.
   if (mapOf(doc, section)?.items.length === 0) doc.deleteIn([section]);
+  reconcileAgentPrincipals(doc, name);
 
   // spec 234 — layout-ref cleanup removed (layouts feature retired).
   const warnings: string[] = [];
@@ -396,6 +430,9 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
   const plain = (node as { toJSON?: () => unknown }).toJSON?.() ?? node;
   doc.deleteIn([section, oldName]);
   doc.setIn([section, newName], doc.createNode(plain));
+  // t-17d885 — the grant follows the agent. Leaving the old name would strand it for a homonym AND
+  // silently strip the renamed agent of an authority it had a second ago.
+  reconcileAgentPrincipals(doc, oldName, newName);
 
   // spec 234 — layout-ref update removed (layouts feature retired).
   const warnings: string[] = [];
