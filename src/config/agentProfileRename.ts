@@ -6,9 +6,9 @@ import { parseDocument } from "yaml";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentProfileAuthorityFor, inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
 import {
-  canonicalProfileDigest,
+  profileDigest,
   ownershipProfileMutation,
-  replaceCanonicalProfileExact,
+  replaceProfileExact,
 } from "./agentProfileOwnership.js";
 import type { CanonicalLiveRenameSnapshot } from "../agents/AgentManager.js";
 import {
@@ -347,7 +347,7 @@ async function authorityState(authority: AgentProfileAuthorityPort, journal: Age
 async function convergeOwnership(input: CommitAgentProfileRenameInput, journal: AgentProfileRenameJournal): Promise<void> {
   const companion = journal.ownership;
   if (!companion) return;
-  const currentProfileSha = canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName);
+  const currentProfileSha = profileDigest(input.workspaceRoot, companion.ownerAgentName);
   const currentAuthority = await input.authority.read(companion.ownerAgentName);
   const profileState = currentProfileSha === companion.priorProfileSha256
     ? "source"
@@ -368,7 +368,7 @@ async function convergeOwnership(input: CommitAgentProfileRenameInput, journal: 
     if (mutation.priorSha256 !== companion.priorProfileSha256 || mutation.targetSha256 !== companion.targetProfileSha256) {
       throw new Error("ownership profile target changed outside the rename transaction");
     }
-    replaceCanonicalProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
+    replaceProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
   }
   if (authorityState === "source") {
     try {
@@ -377,7 +377,7 @@ async function convergeOwnership(input: CommitAgentProfileRenameInput, journal: 
       if (!isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) throw error;
     }
   }
-  if (canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
+  if (profileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
     || !isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) {
     throw new Error("ownership rename did not converge");
   }

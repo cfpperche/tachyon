@@ -6,9 +6,9 @@ import type { AgentProfileForgetSnapshot } from "../agents/AgentManager.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentProfileAuthorityFor, inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
 import {
-  canonicalProfileDigest,
+  profileDigest,
   ownershipProfileMutation,
-  replaceCanonicalProfileExact,
+  replaceProfileExact,
 } from "./agentProfileOwnership.js";
 import {
   acquireAgentProfileRecoveryLocks,
@@ -315,7 +315,7 @@ async function convergeOwnership(
 ): Promise<void> {
   const companion = journal.ownership;
   if (!companion) return;
-  const currentProfileSha = canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName);
+  const currentProfileSha = profileDigest(input.workspaceRoot, companion.ownerAgentName);
   const currentAuthority = await input.authority.read(companion.ownerAgentName);
   const profileState = currentProfileSha === companion.priorProfileSha256
     ? "source"
@@ -331,7 +331,7 @@ async function convergeOwnership(
     if (mutation.priorSha256 !== companion.priorProfileSha256 || mutation.targetSha256 !== companion.targetProfileSha256) {
       throw new CustodyError("ownership profile target changed outside the forget transaction");
     }
-    replaceCanonicalProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
+    replaceProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
   }
   if (authorityState === "source") {
     try {
@@ -340,7 +340,7 @@ async function convergeOwnership(
       if (!isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) throw error;
     }
   }
-  if (canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
+  if (profileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
     || !isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) {
     throw new Error("ownership forget did not converge");
   }

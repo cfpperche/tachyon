@@ -88,7 +88,7 @@ export function ownershipProfileMutation(
   }
 }
 
-export function canonicalProfileDigest(workspaceRoot: string, agentName: string): string | undefined {
+export function profileDigest(workspaceRoot: string, agentName: string): string | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
   try { return source.sha256; }
@@ -96,7 +96,7 @@ export function canonicalProfileDigest(workspaceRoot: string, agentName: string)
 }
 
 /** Replace one canonical profile with a digest-guarded, descriptor-relative write. */
-export function replaceCanonicalProfileExact(
+export function replaceProfileExact(
   workspaceRoot: string,
   agentName: string,
   expectedSha256: string,
