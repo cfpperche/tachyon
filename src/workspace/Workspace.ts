@@ -1156,7 +1156,26 @@ export class Workspace {
         opts?.ownershipOnly ? undefined : this.handoffStore.canonicalPath,
         {
           silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
-          skipDangerousModePermissionPrompt: !!opts?.ownershipOnly,
+          /**
+           * t-084b28 — this used to be `!!opts?.ownershipOnly`, which is exactly backwards.
+           *
+           * `ownershipOnly` is `!lifecycleHooks`, and `lifecycleHooks` is `!temporary`. So a Temporary
+           * agent got the flag and a SAVED agent did not — while the Saved agent is the one whose
+           * profile carries an explicit `authorize: [bypassPermissions]` (SDD 471). Measured on
+           * 0.56.126/0.56.127: the bypass disclaimer reappeared on every resume of this workspace's
+           * Saved coordinator, leaving it parked at a prompt until a human pressed a key.
+           *
+           * The projected `permissions.defaultMode` in the private home does NOT answer this: the CLI
+           * resolves this gate from `skipDangerousModePermissionPrompt` (or a previously accepted
+           * `bypassPermissionsModeAccepted`), which is a different key on a different read path.
+           *
+           * Written unconditionally, and that is safe rather than lazy: the CLI consults it ONLY when
+           * the effective mode is already dangerous, and Tachyon only reaches that mode through the
+           * profile's explicit authorization. Suppressing a disclaimer about a posture the human
+           * authored is not a policy decision — it is not asking the same question twice, of a
+           * non-interactive process that cannot meaningfully answer it.
+           */
+          skipDangerousModePermissionPrompt: true,
           statusLine: opts?.statusLineCapture === false
             ? undefined
             : this.deps.claudeStatusLineCapture?.materialize({
