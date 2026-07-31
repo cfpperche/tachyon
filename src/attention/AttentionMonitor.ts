@@ -2,7 +2,7 @@ import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile } from "../runtime/runtimeProfile.js";
-import { isChangeConfinedToComposer, isComposerOccupied, stripAnsi } from "../runtime/composerRegion.js";
+import { findComposerRegion, isChangeConfinedToComposer, isComposerOccupied, stripAnsi } from "../runtime/composerRegion.js";
 import { AUTH_SIGNAL_TAIL_LINES, classifyAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
@@ -805,15 +805,27 @@ export class AttentionMonitor {
     if (composer.ansiEmptyContentStyle && this.io.capturePaneEscaped) {
       try {
         const styledContent = (await this.io.capturePaneEscaped(agent, composer.tailLines)).replace(/\s+$/, "");
+        const occupied = isComposerOccupied(styledContent, composer);
         return {
-          composerOccupied: isComposerOccupied(styledContent, composer),
-          composerEvidence: /\x1b\[[0-?]*[ -/]*[@-~]/.test(styledContent),
+          composerOccupied: occupied,
+          // A colored status line elsewhere in the tail is not proof that a prompt-shaped history
+          // line is a live draft. Scope the ANSI evidence to an occupied composer line itself.
+          composerEvidence: occupied && this.composerHasAnsiEvidence(styledContent, composer),
         };
       } catch {
         return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: false };
       }
     }
     return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: !composer.ansiEmptyContentStyle };
+  }
+
+  private composerHasAnsiEvidence(content: string, composer: NonNullable<ReturnType<typeof runtimeProfile>>["composer"]): boolean {
+    if (!composer) return false;
+    const lines = content.split("\n");
+    const region = findComposerRegion(lines, composer);
+    if (!region) return false;
+    const ansi = /\x1b\[[0-?]*[ -/]*[@-~]/;
+    return lines.slice(region.start, region.end).some((line) => composer.occupiedLine.test(stripAnsi(line)) && ansi.test(line));
   }
 }
 
