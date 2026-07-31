@@ -6,10 +6,11 @@ import {
   revokeWorkspaceSkill,
   skillReferenceIdFor,
   type SkillAuthorizationState,
+  type SkillOrigin,
 } from "../../src/config/agentSkillAuthorization.js";
 
 /**
- * t-5498a6 — authorizing a workspace skill, which nobody could do before.
+ * t-5498a6 — authorizing a skill, which nobody could do before.
  *
  * The profile model already refused every selection that was not host-authorized, and no door existed
  * to authorize anything — so every profile in this workspace grants zero skills by unreachability
@@ -20,21 +21,42 @@ const DIGEST_B = "b".repeat(64);
 
 const empty: SkillAuthorizationState = { references: [], grants: [] };
 
-function visualQa(overrides: Partial<{ path: string; sha256: string; owner: string }> = {}) {
-  return {
-    adapter: "claude",
-    skill: {
-      path: ".claude/skills/visual-qa",
-      sha256: DIGEST_A,
-      owner: "plugin:visual-qa",
-      ...overrides,
-    },
-  };
-}
+const pluginOrigin = (overrides: Partial<Extract<SkillOrigin, { kind: "plugin" }>> = {}): SkillOrigin => ({
+  kind: "plugin",
+  plugin: "visual-qa",
+  skill: "visual-qa",
+  version: "0.3.1",
+  runtimes: ["claude", "codex"],
+  ...overrides,
+});
 
 describe("t-5498a6 — authorizing is granting the RIGHT to select, never the selection", () => {
-  it("produces a pinned project reference and its matching grant", () => {
-    const result = authorizeWorkspaceSkill(empty, visualQa());
+  it("returns ONLY grant state — a caller cannot accidentally receive a selection from here", () => {
+    // The split is the whole governance model: "may have" and "has" are separate facts, decided at
+    // separate moments. A result carrying `capabilities.skills` would let one call do both.
+    const result = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+
+    expect(result.ok && Object.keys(result.state).sort()).toEqual(["grants", "references"]);
+  });
+
+  it("derives the id from the skill itself, so two humans authorize the SAME thing once", () => {
+    // A caller-chosen id would let the same skill accumulate duplicate grants under different handles,
+    // and then "already authorized" silently stops detecting anything.
+    expect(skillReferenceIdFor(pluginOrigin())).toBe("visual-qa");
+    expect(skillReferenceIdFor({ kind: "workspace", path: ".claude/skills/dep-audit/" })).toBe("dep-audit");
+    expect(skillReferenceIdFor({ kind: "runtime-home", runtime: "claude", name: "imagine", profileRelativePath: "skills/imagine" })).toBe("imagine");
+  });
+});
+
+/**
+ * The three origins are not interchangeable. Each pins a different thing and fails differently, and
+ * collapsing them is how a plugin upgrade would surface as an unexplained content change.
+ */
+describe("t-5498a6 — a plugin skill is pinned at its SOURCE, not at the copy the installer wrote", () => {
+  it("points the reference at the plugin tree and carries the plugin version", () => {
+    // `.claude/skills/visual-qa` is a byte-identical COPY the installer produced. Pinning the copy
+    // would make the reference describe a derivative and lose the version entirely.
+    const result = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
 
     expect(result.ok && result.outcome).toBe("authorized");
     expect(result.ok && result.state.references[0]).toEqual({
@@ -42,9 +64,10 @@ describe("t-5498a6 — authorizing is granting the RIGHT to select, never the se
       kind: "skill",
       scope: "project",
       owner: "plugin:visual-qa",
-      path: ".claude/skills/visual-qa",
+      path: ".tachyon/plugins/visual-qa/skills/visual-qa",
       mode: "pinned",
       sha256: DIGEST_A,
+      version: "0.3.1",
     });
     expect(result.ok && result.state.grants[0]).toEqual({
       referenceId: "visual-qa",
@@ -54,28 +77,117 @@ describe("t-5498a6 — authorizing is granting the RIGHT to select, never the se
     });
   });
 
-  it("returns ONLY grant state — a caller cannot accidentally receive a selection from here", () => {
-    // The split is the whole governance model: "may have" and "has" are separate facts, decided at
-    // separate moments. A result carrying `capabilities.skills` would let one call do both.
-    const result = authorizeWorkspaceSkill(empty, visualQa());
+  it("refuses a runtime the plugin's manifest does not install for, and names what it does install for", () => {
+    // Measured: product-foundation declares runtimes:[claude] and genuinely has no .agents/skills copy.
+    // Authorizing it for codex would grant a capability the installer would never deliver.
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "codex",
+      origin: pluginOrigin({ plugin: "product-foundation", skill: "product-foundation", version: "0.1.1", runtimes: ["claude"] }),
+      sha256: DIGEST_A,
+    });
 
-    expect(result.ok && Object.keys(result.state).sort()).toEqual(["grants", "references"]);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain("does not declare runtime 'codex'");
+    expect(!result.ok && result.error).toContain("claude");
   });
 
-  it("derives the id from the skill directory, so two humans authorize the SAME thing once", () => {
-    // A caller-chosen id would let the same skill accumulate duplicate grants under different handles,
-    // and then "already authorized" silently stops detecting anything.
-    expect(skillReferenceIdFor(".claude/skills/visual-qa")).toBe("visual-qa");
-    expect(skillReferenceIdFor(".agents/skills/dep-audit/")).toBe("dep-audit");
+  it("treats a plugin version bump as a change needing a decision, even at the same digest", () => {
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+    const bumped = authorizeWorkspaceSkill(first.ok ? first.state : empty, {
+      adapter: "claude",
+      origin: pluginOrigin({ version: "0.4.0" }),
+      sha256: DIGEST_A,
+    });
+
+    expect(bumped.ok && bumped.outcome).toBe("digest-changed");
+    expect(bumped.ok && bumped.state.references[0]?.version).toBe("0.3.1");
+  });
+});
+
+describe("t-5498a6 — a hand-written workspace skill carries its provenance in the digest alone", () => {
+  it("is project-scoped with no version, because there is no upstream to name", () => {
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "claude",
+      origin: { kind: "workspace", path: ".claude/skills/house-style" },
+      sha256: DIGEST_A,
+    });
+
+    expect(result.ok && result.state.references[0]).toEqual({
+      id: "house-style",
+      kind: "skill",
+      scope: "project",
+      owner: "workspace",
+      path: ".claude/skills/house-style",
+      mode: "pinned",
+      sha256: DIGEST_A,
+    });
+  });
+});
+
+describe("t-5498a6 — a skill from the user's runtime home is pinned as a COPY, never in place", () => {
+  it("is profile-scoped and owned by the agent, which is what the schema demands", () => {
+    // Measured: `scope: "project"` resolves against the workspace root and nothing resolves against a
+    // user home, so a global skill cannot be referenced where it lives. Copying and pinning is also
+    // the safer fact: a skill in ~/.grok/skills can change without Tachyon ever seeing it.
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "claude",
+      agentId: "claude-validador",
+      origin: { kind: "runtime-home", runtime: "grok", name: "imagine", profileRelativePath: "skills/imagine" },
+      sha256: DIGEST_A,
+    });
+
+    expect(result.ok && result.state.references[0]).toEqual({
+      id: "imagine",
+      kind: "skill",
+      scope: "profile",
+      owner: "claude-validador",
+      path: "skills/imagine",
+      mode: "pinned",
+      sha256: DIGEST_A,
+    });
+  });
+
+  it("refuses without an agentId instead of writing an owner the schema would reject", () => {
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "claude",
+      origin: { kind: "runtime-home", runtime: "grok", name: "imagine", profileRelativePath: "skills/imagine" },
+      sha256: DIGEST_A,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain("agentId");
+  });
+
+  it("tells the caller to delete the orphaned copy when the authorization is withdrawn", () => {
+    // Nothing else would ever remove it: the tree lives in the profile directory because Tachyon put
+    // it there, so revoking the record without the copy leaves content nobody accounts for.
+    const first = authorizeWorkspaceSkill(empty, {
+      adapter: "claude",
+      agentId: "claude-validador",
+      origin: { kind: "runtime-home", runtime: "grok", name: "imagine", profileRelativePath: "skills/imagine" },
+      sha256: DIGEST_A,
+    });
+    const revoked = revokeWorkspaceSkill(first.ok ? first.state : empty, "imagine");
+
+    expect(revoked.removed).toBe(true);
+    expect(revoked.removedCopy).toBe("skills/imagine");
+  });
+
+  it("does not report a copy to delete for a project-scoped reference Tachyon never placed", () => {
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+    const revoked = revokeWorkspaceSkill(first.ok ? first.state : empty, "visual-qa");
+
+    expect(revoked.removed).toBe(true);
+    expect(revoked.removedCopy).toBeUndefined();
   });
 });
 
 describe("t-5498a6 — a pinned capability cannot change underneath the person who approved it", () => {
   it("is idempotent at the same digest", () => {
-    const first = authorizeWorkspaceSkill(empty, visualQa());
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
     expect(first.ok).toBe(true);
 
-    const again = authorizeWorkspaceSkill(first.ok ? first.state : empty, visualQa());
+    const again = authorizeWorkspaceSkill(first.ok ? first.state : empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
 
     expect(again.ok && again.outcome).toBe("unchanged");
     expect(again.ok && again.state).toEqual(first.ok && first.state);
@@ -84,15 +196,15 @@ describe("t-5498a6 — a pinned capability cannot change underneath the person w
   it("REFUSES to re-pin a changed skill silently, and writes nothing until told to", () => {
     // The load-bearing case. `visual-qa` at a new digest is not the skill that was approved; the pin
     // exists exactly so it cannot quietly become something else between approval and run.
-    const first = authorizeWorkspaceSkill(empty, visualQa());
-    const changed = authorizeWorkspaceSkill(first.ok ? first.state : empty, visualQa({ sha256: DIGEST_B }));
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+    const changed = authorizeWorkspaceSkill(first.ok ? first.state : empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_B });
 
     expect(changed.ok && changed.outcome).toBe("digest-changed");
     expect(changed.ok && changed.state.references[0]?.sha256).toBe(DIGEST_A);
 
     const accepted = authorizeWorkspaceSkill(
       first.ok ? first.state : empty,
-      visualQa({ sha256: DIGEST_B }),
+      { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_B },
       { reauthorize: true },
     );
     expect(accepted.ok && accepted.outcome).toBe("reauthorized");
@@ -102,11 +214,14 @@ describe("t-5498a6 — a pinned capability cannot change underneath the person w
   });
 
   it("refuses to move an approved handle onto a different source", () => {
-    const first = authorizeWorkspaceSkill(empty, visualQa());
-    const moved = authorizeWorkspaceSkill(
-      first.ok ? first.state : empty,
-      visualQa({ path: ".agents/skills/visual-qa" }),
-    );
+    // The same skill NAME reached by a different origin is a different source. Silently repointing
+    // would move a human's approval onto content they never saw.
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+    const moved = authorizeWorkspaceSkill(first.ok ? first.state : empty, {
+      adapter: "claude",
+      origin: { kind: "workspace", path: ".claude/skills/visual-qa" },
+      sha256: DIGEST_A,
+    });
 
     expect(moved.ok).toBe(false);
     expect(!moved.ok && moved.error).toContain("already points at");
@@ -118,7 +233,7 @@ describe("t-5498a6 — an unsupported runtime refuses LOUDLY instead of granting
     // The failure this shape prevents is the one t-62f599 was: a policy expressible for some runtimes
     // and silently inert for another. Grok is absent from the grant enum; that must be a stated
     // refusal at the door, not an opaque validation error further down.
-    const result = authorizeWorkspaceSkill(empty, { ...visualQa(), adapter: "grok" });
+    const result = authorizeWorkspaceSkill(empty, { adapter: "grok", origin: pluginOrigin(), sha256: DIGEST_A });
 
     expect(result.ok).toBe(false);
     expect(!result.ok && result.error).toContain("grok");
@@ -126,30 +241,30 @@ describe("t-5498a6 — an unsupported runtime refuses LOUDLY instead of granting
   });
 
   it("refuses to re-grant an existing reference to a different runtime", () => {
-    const first = authorizeWorkspaceSkill(empty, visualQa());
-    const swapped = authorizeWorkspaceSkill(first.ok ? first.state : empty, { ...visualQa(), adapter: "codex" });
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
+    const swapped = authorizeWorkspaceSkill(first.ok ? first.state : empty, { adapter: "codex", origin: pluginOrigin(), sha256: DIGEST_A });
 
     expect(swapped.ok).toBe(false);
     expect(!swapped.ok && swapped.error).toContain("already granted for 'claude'");
   });
 });
 
-describe("t-5498a6 — the inputs a workspace path must never carry", () => {
+describe("t-5498a6 — the inputs a custody path must never carry", () => {
   it("refuses escaping, absolute and malformed paths", () => {
     for (const bad of ["../outside/skill", "/etc/skill", "~/skills/x", ".claude/skills/../../etc", ""]) {
-      const result = authorizeWorkspaceSkill(empty, visualQa({ path: bad }));
+      const result = authorizeWorkspaceSkill(empty, {
+        adapter: "claude",
+        origin: { kind: "workspace", path: bad },
+        sha256: DIGEST_A,
+      });
       expect(result.ok, `accepted ${JSON.stringify(bad)}`).toBe(false);
     }
   });
 
   it("refuses a digest that is not a lowercase SHA-256", () => {
     for (const bad of ["", "A".repeat(64), "abc", `${DIGEST_A}0`]) {
-      expect(authorizeWorkspaceSkill(empty, visualQa({ sha256: bad })).ok).toBe(false);
+      expect(authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: bad }).ok).toBe(false);
     }
-  });
-
-  it("requires provenance, because a reference exists to say where content came from", () => {
-    expect(authorizeWorkspaceSkill(empty, visualQa({ owner: "   " })).ok).toBe(false);
   });
 });
 
@@ -157,7 +272,7 @@ describe("t-5498a6 — revoking has to take the selection with it", () => {
   it("names the ids the caller must also deselect, instead of leaving an invalid profile", () => {
     // A revoked grant while `capabilities.skills` still lists it produces a profile the Studio itself
     // rejects. Naming that here beats a caller finding out from a validation failure.
-    const first = authorizeWorkspaceSkill(empty, visualQa());
+    const first = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
     const revoked = revokeWorkspaceSkill(first.ok ? first.state : empty, "visual-qa", ["visual-qa", "sdd"]);
 
     expect(revoked.removed).toBe(true);
@@ -189,12 +304,27 @@ describe("t-5498a6 — emitted records match the persisted schemas", () => {
     // The refusal above is only honest while grok is genuinely absent from the enum.
     expect(adapters![1]).not.toContain('"grok"');
 
-    const result = authorizeWorkspaceSkill(empty, visualQa());
+    const result = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
     const grantKinds = /kind: z\.enum\(\[([^\]]*)\]\)/.exec(authority);
     expect(grantKinds![1]).toContain(`"${result.ok ? result.state.grants[0]!.kind : ""}"`);
 
     const schema = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileSchema.ts"), "utf8");
     expect(schema).toContain('scope: z.enum(["profile", "project", "product"])');
     expect(schema).toContain('mode: z.enum(["pinned", "floating"])');
+  });
+
+  it("honours the schema rule that a profile-scoped reference is owned by its own agent", () => {
+    // agentProfileSchema.ts refines: scope === "profile" requires owner === profile.agentId. A copied
+    // runtime-home skill is the only origin that lands there, so the rule is enforced at this door.
+    const schema = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileSchema.ts"), "utf8");
+    expect(schema).toContain('reference.scope === "profile" && reference.owner !== profile.agentId');
+
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "claude",
+      agentId: "claude-builder",
+      origin: { kind: "runtime-home", runtime: "grok", name: "imagine", profileRelativePath: "skills/imagine" },
+      sha256: DIGEST_A,
+    });
+    expect(result.ok && result.state.references[0]!.owner).toBe("claude-builder");
   });
 });
