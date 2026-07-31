@@ -4,7 +4,12 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { parseDocument } from "yaml";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
-import { inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
+import { agentProfileAuthorityFor, inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
+import {
+  canonicalProfileDigest,
+  ownershipProfileMutation,
+  replaceCanonicalProfileExact,
+} from "./agentProfileOwnership.js";
 import type { CanonicalLiveRenameSnapshot } from "../agents/AgentManager.js";
 import {
   acquireAgentProfileRecoveryLocks,
@@ -52,6 +57,14 @@ export interface AgentProfileRenameJournal {
   targetStanzaSha256: string;
   evolutionProfileId: string | null;
   liveSnapshot: CanonicalLiveRenameSnapshot | null;
+  /** Parent-side ownership edge updated in the same transaction as the child rename. */
+  ownership?: {
+    ownerAgentName: string;
+    priorProfileSha256: string;
+    targetProfileSha256: string;
+    priorAuthority: AgentProfileAuthorityRecord;
+    targetAuthority: AgentProfileAuthorityRecord;
+  };
   degradedReason?: string;
 }
 
@@ -70,6 +83,8 @@ export interface CommitAgentProfileRenameInput {
   oldAgentName: string;
   newAgentName: string;
   expectedRevision: string;
+  /** Current declared owner, when the child is listed in another canonical profile. */
+  ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
   config: AgentProfileRenameConfigPort;
   evolution: AgentProfileRenameEvolutionPort;
@@ -329,6 +344,45 @@ async function authorityState(authority: AgentProfileAuthorityPort, journal: Age
   return "conflict";
 }
 
+async function convergeOwnership(input: CommitAgentProfileRenameInput, journal: AgentProfileRenameJournal): Promise<void> {
+  const companion = journal.ownership;
+  if (!companion) return;
+  const currentProfileSha = canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName);
+  const currentAuthority = await input.authority.read(companion.ownerAgentName);
+  const profileState = currentProfileSha === companion.priorProfileSha256
+    ? "source"
+    : currentProfileSha === companion.targetProfileSha256 ? "target" : "conflict";
+  const authorityState = isDeepStrictEqual(currentAuthority, companion.priorAuthority)
+    ? "source"
+    : isDeepStrictEqual(currentAuthority, companion.targetAuthority) ? "target" : "conflict";
+  if (profileState === "conflict" || authorityState === "conflict") {
+    throw new Error("ownership profile or authority changed outside the rename transaction");
+  }
+  if (profileState === "source") {
+    const mutation = ownershipProfileMutation(
+      input.workspaceRoot,
+      companion.ownerAgentName,
+      journal.oldAgentName,
+      journal.newAgentName,
+    );
+    if (mutation.priorSha256 !== companion.priorProfileSha256 || mutation.targetSha256 !== companion.targetProfileSha256) {
+      throw new Error("ownership profile target changed outside the rename transaction");
+    }
+    replaceCanonicalProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
+  }
+  if (authorityState === "source") {
+    try {
+      await input.authority.replace(companion.targetAuthority, companion.priorAuthority);
+    } catch (error) {
+      if (!isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) throw error;
+    }
+  }
+  if (canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
+    || !isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) {
+    throw new Error("ownership rename did not converge");
+  }
+}
+
 async function rollForward(input: CommitAgentProfileRenameInput, txDir: string, journal: AgentProfileRenameJournal): Promise<AgentProfileRenameJournal> {
   const oldRoot = profileRoot(input.workspaceRoot, journal.oldAgentName);
   const newRoot = profileRoot(input.workspaceRoot, journal.newAgentName);
@@ -342,6 +396,7 @@ async function rollForward(input: CommitAgentProfileRenameInput, txDir: string, 
   if (journal.phase !== "evolution-moved" && journal.phase !== "live-converged" && journal.phase !== "activated" && journal.phase !== "committed") {
     journal = transition(txDir, journal, "evolution-moved", input.onPhase);
   }
+  await convergeOwnership(input, journal);
   if (exists(oldRoot)) {
     if (fs.readdirSync(oldRoot).length !== 0) throw new Error("profile rename source home retained unexpected data");
     fs.rmdirSync(oldRoot);
@@ -389,8 +444,18 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
   assertValidAgentName(input.newAgentName);
   if (input.oldAgentName === input.newAgentName) throw new Error("profile rename source and destination must differ");
   if (!input.authority.move) throw new Error("profile authority does not support atomic rename");
+  if (input.ownerAgentName !== undefined) {
+    assertValidAgentName(input.ownerAgentName);
+    if (input.ownerAgentName === input.oldAgentName || input.ownerAgentName === input.newAgentName) {
+      throw new Error("ownership owner must be distinct from the renamed agent");
+    }
+  }
   const txid = crypto.randomUUID();
-  const release = acquireAgentProfileTransactionLocks(input.workspaceRoot, [input.oldAgentName, input.newAgentName], txid);
+  const release = acquireAgentProfileTransactionLocks(
+    input.workspaceRoot,
+    [input.oldAgentName, input.newAgentName, ...(input.ownerAgentName ? [input.ownerAgentName] : [])],
+    txid,
+  );
   let txDir: string | undefined;
   try {
     const snapshot = await inspectAgentProfileLifecycle({
@@ -415,6 +480,22 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
     const profileManifest = treeManifest(oldRoot);
     const liveSnapshot = input.live ? await input.live.prepare(input.oldAgentName, input.newAgentName) : null;
     const targetAuthority = { ...sourceAuthority, agentName: input.newAgentName };
+    let ownership: AgentProfileRenameJournal["ownership"];
+    if (input.ownerAgentName) {
+      const mutation = ownershipProfileMutation(input.workspaceRoot, input.ownerAgentName, input.oldAgentName, input.newAgentName);
+      const priorAuthority = await input.authority.read(input.ownerAgentName);
+      if (!priorAuthority || priorAuthority.agentId !== mutation.priorProfile.agentId
+        || priorAuthority.canonicalSha256 !== mutation.priorSha256) {
+        throw new Error(`canonical authority for ownership owner '${input.ownerAgentName}' is missing or stale`);
+      }
+      ownership = {
+        ownerAgentName: input.ownerAgentName,
+        priorProfileSha256: mutation.priorSha256,
+        targetProfileSha256: mutation.targetSha256,
+        priorAuthority,
+        targetAuthority: agentProfileAuthorityFor(input.ownerAgentName, mutation.targetProfile, mutation.targetSha256, priorAuthority, txid),
+      };
+    }
     const root = ensureRenameRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
     fs.mkdirSync(txDir, { mode: 0o700 });
@@ -433,6 +514,7 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       targetStanzaSha256: configTarget.targetSha,
       evolutionProfileId: oldEvolution ?? null,
       liveSnapshot,
+      ...(ownership ? { ownership } : {}),
     };
     writeJournal(txDir, journal);
     input.onPhase?.("intent");
@@ -486,7 +568,11 @@ export async function reconcileAgentProfileRenames(input: Omit<CommitAgentProfil
       requireSafeDirectory(input.workspaceRoot, txDir);
       let journal = readJournal(txDir);
       if (journal.phase === "degraded") { degraded.push(entry); continue; }
-      const release = acquireAgentProfileRecoveryLocks(input.workspaceRoot, [journal.oldAgentName, journal.newAgentName], journal.txid);
+      const release = acquireAgentProfileRecoveryLocks(
+        input.workspaceRoot,
+        [journal.oldAgentName, journal.newAgentName, ...(journal.ownership ? [journal.ownership.ownerAgentName] : [])],
+        journal.txid,
+      );
       try {
         const state = await authorityState(input.authority, journal);
         if (state === "source") {

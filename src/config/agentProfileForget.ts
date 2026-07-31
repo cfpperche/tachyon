@@ -4,10 +4,16 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { AgentProfileForgetSnapshot } from "../agents/AgentManager.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
-import { inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
+import { agentProfileAuthorityFor, inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
+import {
+  canonicalProfileDigest,
+  ownershipProfileMutation,
+  replaceCanonicalProfileExact,
+} from "./agentProfileOwnership.js";
 import {
   acquireAgentProfileRecoveryLocks,
   acquireAgentProfileTransactionLock,
+  acquireAgentProfileTransactionLocks,
   agentProfileTransactionsRoot,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
@@ -63,6 +69,14 @@ export interface AgentProfileForgetJournal {
    * removed by the transaction is unclassifiable, which is the t-33ae3f failure.
    */
   retainedBindings: readonly string[];
+  /** Parent-side ownership edge removed in the same transaction as the child forget. */
+  ownership?: {
+    ownerAgentName: string;
+    priorProfileSha256: string;
+    targetProfileSha256: string;
+    priorAuthority: AgentProfileAuthorityRecord;
+    targetAuthority: AgentProfileAuthorityRecord;
+  };
   degradedReason?: string;
 }
 
@@ -92,6 +106,8 @@ export interface CommitAgentProfileForgetInput {
   workspaceRoot: string;
   agentName: string;
   expectedRevision: string;
+  /** Current declared owner, when the child is listed in another canonical profile. */
+  ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
   config: AgentProfileForgetConfigPort;
   evolution: AgentProfileForgetEvolutionPort;
@@ -293,6 +309,43 @@ async function retireAuthority(authority: AgentProfileAuthorityPort, journal: Ag
   if (await authority.read(journal.agentName) !== undefined) throw new Error("canonical profile authority retirement did not converge");
 }
 
+async function convergeOwnership(
+  input: Omit<CommitAgentProfileForgetInput, "expectedRevision">,
+  journal: AgentProfileForgetJournal,
+): Promise<void> {
+  const companion = journal.ownership;
+  if (!companion) return;
+  const currentProfileSha = canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName);
+  const currentAuthority = await input.authority.read(companion.ownerAgentName);
+  const profileState = currentProfileSha === companion.priorProfileSha256
+    ? "source"
+    : currentProfileSha === companion.targetProfileSha256 ? "target" : "conflict";
+  const authorityState = isDeepStrictEqual(currentAuthority, companion.priorAuthority)
+    ? "source"
+    : isDeepStrictEqual(currentAuthority, companion.targetAuthority) ? "target" : "conflict";
+  if (profileState === "conflict" || authorityState === "conflict") {
+    throw new CustodyError("ownership profile or authority changed outside the forget transaction");
+  }
+  if (profileState === "source") {
+    const mutation = ownershipProfileMutation(input.workspaceRoot, companion.ownerAgentName, journal.agentName, undefined);
+    if (mutation.priorSha256 !== companion.priorProfileSha256 || mutation.targetSha256 !== companion.targetProfileSha256) {
+      throw new CustodyError("ownership profile target changed outside the forget transaction");
+    }
+    replaceCanonicalProfileExact(input.workspaceRoot, companion.ownerAgentName, companion.priorProfileSha256, mutation.targetText);
+  }
+  if (authorityState === "source") {
+    try {
+      await input.authority.replace(companion.targetAuthority, companion.priorAuthority);
+    } catch (error) {
+      if (!isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) throw error;
+    }
+  }
+  if (canonicalProfileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
+    || !isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) {
+    throw new Error("ownership forget did not converge");
+  }
+}
+
 async function retireEvolution(evolution: AgentProfileForgetEvolutionPort, journal: AgentProfileForgetJournal): Promise<void> {
   try {
     await evolution.retire(journal.agentName, journal.evolutionProfileId);
@@ -337,6 +390,7 @@ async function rollForward(
     journal = transition(txDir, journal, "authority-retired", input.onPhase);
   }
   if (journal.phase === "authority-retired") {
+    await convergeOwnership(input, journal);
     removeLocator(input.config, journal);
     journal = transition(txDir, journal, "locator-removed", input.onPhase);
   }
@@ -358,8 +412,14 @@ async function rollForward(
 
 export async function commitAgentProfileForget(input: CommitAgentProfileForgetInput): Promise<AgentProfileForgetResult> {
   assertValidAgentName(input.agentName);
+  if (input.ownerAgentName !== undefined) {
+    assertValidAgentName(input.ownerAgentName);
+    if (input.ownerAgentName === input.agentName) throw new Error("ownership owner must be distinct from the forgotten agent");
+  }
   const txid = crypto.randomUUID();
-  const release = acquireAgentProfileTransactionLock(input.workspaceRoot, input.agentName, txid);
+  const release = input.ownerAgentName
+    ? acquireAgentProfileTransactionLocks(input.workspaceRoot, [input.agentName, input.ownerAgentName], txid)
+    : acquireAgentProfileTransactionLock(input.workspaceRoot, input.agentName, txid);
   let txDir: string | undefined;
   try {
     const snapshot = await inspectAgentProfileLifecycle({
@@ -382,6 +442,22 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
     if ((evolutionProfileId === undefined) !== !hasEvolutionProfile) {
       throw new Error("Agent Evolution profile storage is incomplete");
     }
+    let ownership: AgentProfileForgetJournal["ownership"];
+    if (input.ownerAgentName) {
+      const mutation = ownershipProfileMutation(input.workspaceRoot, input.ownerAgentName, input.agentName, undefined);
+      const priorAuthority = await input.authority.read(input.ownerAgentName);
+      if (!priorAuthority || priorAuthority.agentId !== mutation.priorProfile.agentId
+        || priorAuthority.canonicalSha256 !== mutation.priorSha256) {
+        throw new Error(`canonical authority for ownership owner '${input.ownerAgentName}' is missing or stale`);
+      }
+      ownership = {
+        ownerAgentName: input.ownerAgentName,
+        priorProfileSha256: mutation.priorSha256,
+        targetProfileSha256: mutation.targetSha256,
+        priorAuthority,
+        targetAuthority: agentProfileAuthorityFor(input.ownerAgentName, mutation.targetProfile, mutation.targetSha256, priorAuthority, txid),
+      };
+    }
     const liveSnapshot = await input.live.prepare(input.agentName);
     const root = ensureForgetRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
@@ -402,6 +478,7 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       evolutionProfileId: evolutionProfileId ?? null,
       liveSnapshot,
       retainedBindings: AGENT_PROFILE_FORGET_RETAINED_BINDINGS,
+      ...(ownership ? { ownership } : {}),
     };
     writeJournal(txDir, journal);
     input.onPhase?.("intent");
@@ -442,7 +519,11 @@ export async function reconcileAgentProfileForgets(input: Omit<CommitAgentProfil
       const journal = readJournal(txDir);
       if (journal.phase === "committed") continue;
       if (journal.phase === "degraded") { degraded.push(entry); continue; }
-      const release = acquireAgentProfileRecoveryLocks(input.workspaceRoot, [journal.agentName], journal.txid);
+      const release = acquireAgentProfileRecoveryLocks(
+        input.workspaceRoot,
+        [journal.agentName, ...(journal.ownership ? [journal.ownership.ownerAgentName] : [])],
+        journal.txid,
+      );
       try {
         if (journal.phase === "intent") {
           fs.rmSync(txDir, { recursive: true, force: true });

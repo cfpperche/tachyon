@@ -4106,6 +4106,7 @@ export class Workspace {
       const result = await commitAgentProfileForget({
         workspaceRoot: this.workspaceRoot,
         agentName: name,
+        ownerAgentName: this.config?.declaredOwner?.[name],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
         config: this.agentProfileLifecycleConfigPort(),
@@ -6609,6 +6610,7 @@ export class Workspace {
         workspaceRoot: this.workspaceRoot,
         oldAgentName: oldName,
         newAgentName: newName,
+        ownerAgentName: this.config?.declaredOwner?.[oldName],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
         config: this.agentProfileLifecycleConfigPort(),

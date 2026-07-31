@@ -172,6 +172,7 @@ describe("classifyAttentionTail — stall detection (t-d65be2)", () => {
 
 interface FakeAgent {
   content: string;
+  escaped?: string;
   cpu: number | null;
   settings: AttentionSettings;
   cmd?: string;
@@ -185,6 +186,7 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
     {
       runningAgents: async () => Object.keys(agents),
       capturePane: async (a) => agents[a].content,
+      capturePaneEscaped: async (a) => agents[a].escaped ?? agents[a].content,
       cpuTicks: async (a) => agents[a].cpu,
       settingsOf: (a) => agents[a].settings,
       cmdOf: (a) => agents[a].cmd ?? null,
@@ -384,6 +386,23 @@ describe("AttentionMonitor", () => {
     await f.advance(1000);
     expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", composerOccupied: false });
     expect(f.events.at(-1)).toMatchObject({ agent: "claude", state: "idle", notify: false });
+  });
+
+  it("does not let a residual shell counter hide an unsubmitted Claude draft (t-2b5db1)", async () => {
+    const f = makeMonitor({
+      claude: {
+        content: "⏵⏵ accept edits on · 1 shell · ← for agents\n❯ instrução pendente",
+        escaped: "\x1b[39m⏵⏵ accept edits on · 1 shell · ← for agents\n\x1b[39m❯ instrução pendente\x1b[0m",
+        cpu: 10,
+        settings: SETTINGS,
+        cmd: "claude",
+      },
+    });
+    await f.advance(0);
+    await f.advance(9000); // stable silence establishes the CPU baseline
+    await f.advance(1000); // residual shell is still present, but the human draft owns the composer
+
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", composerOccupied: true });
   });
 
   it("output changes above the runtime composer still mark the agent working (t-f30324)", async () => {

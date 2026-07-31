@@ -141,6 +141,98 @@ describe("canonical agent profile forget", () => {
     expect(fs.existsSync(retired)).toBe(true);
   });
 
+  it("removes the parent-side ownership edge in the same transaction (t-a35572)", async () => {
+    const input = await fixture();
+    const owner = await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "edit",
+      expectedRevision: owner.revision,
+      patch: { ownership: { subagents: ["reviewer"] } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+
+    const result = await commitAgentProfileForget({
+      workspaceRoot: input.root,
+      agentName: "reviewer",
+      ownerAgentName: "boss",
+      expectedRevision: input.created.revision,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      live: input.live,
+      activateState: () => undefined,
+    });
+
+    const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }));
+    expect(ownerAfter.profile.ownership).toBeUndefined();
+    expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
+  });
+
+  it("rolls the parent-side ownership edge forward after an interrupted forget", async () => {
+    const input = await fixture();
+    const owner = await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "edit",
+      expectedRevision: owner.revision,
+      patch: { ownership: { subagents: ["reviewer"] } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+
+    await expect(commitAgentProfileForget({
+      workspaceRoot: input.root,
+      agentName: "reviewer",
+      ownerAgentName: "boss",
+      expectedRevision: input.created.revision,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      live: input.live,
+      activateState: () => undefined,
+      onPhase: (phase) => { if (phase === "authority-retired") throw new Error("interrupt"); },
+    })).rejects.toThrow("interrupt");
+
+    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      .toEqual(["reviewer"]);
+
+    await expect(reconcileAgentProfileForgets({
+      workspaceRoot: input.root,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      live: input.live,
+      activateState: () => undefined,
+    })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
+    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership)
+      .toBeUndefined();
+  });
+
   it("publishes admission intent before the stopped recheck and abandons safely on a race", async () => {
     const input = await fixture();
     let prepares = 0;

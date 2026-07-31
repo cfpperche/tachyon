@@ -182,6 +182,8 @@ interface Snapshot {
   lastCaptureAt: number;
   /** t-f45313 — profile-backed guard for a human-owned composer draft. */
   composerOccupied: boolean;
+  /** Whether the composer draft decision had the runtime's measured ANSI evidence available. */
+  composerEvidence: boolean;
 }
 
 export class AttentionMonitor {
@@ -430,7 +432,7 @@ export class AttentionMonitor {
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
           lastCaptureAt: now,
-          composerOccupied: await this.isComposerOccupied(agent, content),
+          ...await this.composerSnapshot(agent, content),
         };
         this.snaps.set(agent, snap);
         continue;
@@ -458,7 +460,9 @@ export class AttentionMonitor {
         // accounting carries over (a stuck agent stays stuck even while a human drafts input).
         const wasComposerOccupied = snap.composerOccupied;
         snap.content = content;
-        snap.composerOccupied = await this.isComposerOccupied(agent, content);
+        const composer = await this.composerSnapshot(agent, content);
+        snap.composerOccupied = composer.composerOccupied;
+        snap.composerEvidence = composer.composerEvidence;
         this.evaluateStall(agent, snap, now);
         if (wasComposerOccupied && !snap.composerOccupied) {
           this.onChange?.(agent, this.toAttention(agent, snap), false);
@@ -477,7 +481,9 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
-        snap.composerOccupied = await this.isComposerOccupied(agent, content);
+        const composer = await this.composerSnapshot(agent, content);
+        snap.composerOccupied = composer.composerOccupied;
+        snap.composerEvidence = composer.composerEvidence;
       }
 
       // t-5bfb72 — track how long the runtime's own "you are not authenticated" line has been sitting
@@ -581,7 +587,7 @@ export class AttentionMonitor {
         // it is plainly mid-flight — the sidebar then shows a whole fleet as stopped. This is the
         // runtime's own measured statement, bounded to the bottom of the pane; it is not CPU
         // (t-285503's flap) and not process existence.
-        if (this.hasActivitySignal(agent, snap.content)) {
+        if (this.hasActivitySignal(agent, snap.content, snap.composerOccupied && snap.composerEvidence)) {
           this.transition(agent, snap, "working", now);
           continue;
         }
@@ -757,7 +763,13 @@ export class AttentionMonitor {
    * t-30ff0d — does the pane itself say work is still in flight? Bounded to the runtime's declared
    * tail so the same claim, once scrolled into transcript history, cannot pin the agent forever.
    */
-  private hasActivitySignal(agent: string, content: string): boolean {
+  private hasActivitySignal(agent: string, content: string, composerOccupied: boolean): boolean {
+    // t-2b5db1 — a human-owned, unsubmitted composer is an intervention boundary. A residual
+    // shell counter may survive the turn that left the draft behind, but treating that counter as
+    // active work pins the agent at `working` forever and suppresses the idle/backstop notice that
+    // tells the owner the instruction was never submitted. Keep the orthogonal signal visible via
+    // `composerOccupied`; do not auto-submit or discard the human's text.
+    if (composerOccupied) return false;
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
     const activity = runtime ? runtimeProfile(runtime)?.activity : undefined;
@@ -785,20 +797,23 @@ export class AttentionMonitor {
     return composer ? isChangeConfinedToComposer(previous, next, composer) : false;
   }
 
-  private async isComposerOccupied(agent: string, content: string): Promise<boolean> {
+  private async composerSnapshot(agent: string, content: string): Promise<{ composerOccupied: boolean; composerEvidence: boolean }> {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
     const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
-    if (!composer) return false;
+    if (!composer) return { composerOccupied: false, composerEvidence: false };
     if (composer.ansiEmptyContentStyle && this.io.capturePaneEscaped) {
       try {
         const styledContent = (await this.io.capturePaneEscaped(agent, composer.tailLines)).replace(/\s+$/, "");
-        return isComposerOccupied(styledContent, composer);
+        return {
+          composerOccupied: isComposerOccupied(styledContent, composer),
+          composerEvidence: /\x1b\[[0-?]*[ -/]*[@-~]/.test(styledContent),
+        };
       } catch {
-        return isComposerOccupied(content, composer);
+        return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: false };
       }
     }
-    return isComposerOccupied(content, composer);
+    return { composerOccupied: isComposerOccupied(content, composer), composerEvidence: !composer.ansiEmptyContentStyle };
   }
 }
 

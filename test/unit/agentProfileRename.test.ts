@@ -149,6 +149,102 @@ describe("canonical agent profile rename", () => {
     expect(input.evolution.profiles.get("maintainer")).toBe("profile-1");
   });
 
+  it("renames the parent-side ownership edge in the same transaction (t-a35572)", async () => {
+    const input = await fixture();
+    const owner = await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "edit",
+      expectedRevision: owner.revision,
+      patch: { ownership: { subagents: ["reviewer"] } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+
+    const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority, config: input.config }));
+
+    const result = await commitAgentProfileRename({
+      workspaceRoot: input.root,
+      oldAgentName: "reviewer",
+      newAgentName: "maintainer",
+      ownerAgentName: "boss",
+      expectedRevision: reviewer.revision,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      activateState: () => undefined,
+    });
+
+    const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }));
+    expect(ownerAfter.profile.ownership?.subagents).toEqual(["maintainer"]);
+    expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
+  });
+
+  it("rolls the parent-side ownership edge forward after an interrupted rename", async () => {
+    const input = await fixture();
+    const owner = await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "create",
+      createProfile: { runtime: { adapter: "claude", executable: "claude" } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+    await commitAgentProfileLifecycle({
+      workspaceRoot: input.root,
+      agentName: "boss",
+      operation: "edit",
+      expectedRevision: owner.revision,
+      patch: { ownership: { subagents: ["reviewer"] } },
+      authority: input.authority,
+      config: input.config,
+      activateState: () => undefined,
+    });
+    const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority, config: input.config }));
+
+    await expect(commitAgentProfileRename({
+      workspaceRoot: input.root,
+      oldAgentName: "reviewer",
+      newAgentName: "maintainer",
+      ownerAgentName: "boss",
+      expectedRevision: reviewer.revision,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      activateState: () => undefined,
+      onPhase: (phase) => { if (phase === "authority-moved") throw new Error("interrupt"); },
+    })).rejects.toThrow("interrupt");
+
+    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      .toEqual(["reviewer"]);
+
+    await expect(reconcileAgentProfileRenames({
+      workspaceRoot: input.root,
+      authority: input.authority,
+      config: input.config,
+      evolution: input.evolution,
+      activateState: () => undefined,
+    })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
+    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      .toEqual(["maintainer"]);
+  });
+
   it("compensates an interruption before the authority commit", async () => {
     const input = await fixture();
     await expect(commitAgentProfileRename({

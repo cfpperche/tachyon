@@ -482,7 +482,8 @@ function targetProfile(input: CommitAgentProfileLifecycleInput, current?: AgentP
   return target;
 }
 
-function authorityFor(agentName: string, profile: AgentProfileV1, sha256: string, prior: AgentProfileAuthorityRecord | undefined, txid: string): AgentProfileAuthorityRecord {
+/** Build the authority record for a canonical profile mutation under the transaction's txid. */
+export function agentProfileAuthorityFor(agentName: string, profile: AgentProfileV1, sha256: string, prior: AgentProfileAuthorityRecord | undefined, txid: string): AgentProfileAuthorityRecord {
   const inspector = profileRuntimeInspectorFor(profile.runtime.adapter);
   if (!prior && !inspector) throw new Error(`unsupported profile runtime adapter '${profile.runtime.adapter}'`);
   // t-26f508 (review) — preserving the prior inspector is what keeps an edit from silently
@@ -630,7 +631,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     const profile = targetProfile(input, canonical?.profile);
     const profileText = stringify(profile);
     const targetSha = digest(profileText);
-    const targetAuthority = authorityFor(
+    const targetAuthority = agentProfileAuthorityFor(
       input.agentName,
       profile,
       targetSha,
@@ -670,7 +671,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
         targetSha: companionSha,
         priorAuthority: companionPriorAuthority,
         // Same txid, so both records carry `revision: lifecycle-<txid>` — ratified 2026-07-29.
-        targetAuthority: authorityFor(input.companion.agentName, companionProfile, companionSha, companionPriorAuthority, txid),
+        targetAuthority: agentProfileAuthorityFor(input.companion.agentName, companionProfile, companionSha, companionPriorAuthority, txid),
       };
     }
     const configTarget = input.operation === "create" ? addPointer(configBefore, input.agentName) : configBefore;
