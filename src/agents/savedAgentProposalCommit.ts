@@ -75,6 +75,14 @@ export interface SavedAgentProposalReceipt {
    * commit has already deleted.
    */
   workspace?: "isolated worktree" | "shared checkout";
+  /**
+   * t-5498a6 — the skills the human ticked that were authorized and selected for the new agent, and
+   * the ones that were refused with why. Refusals are recorded rather than thrown: the agent's
+   * creation is a decision that already landed, and a capability that could not be granted must not
+   * undo it. Absent from the receipt means the human ticked nothing.
+   */
+  authorizedSkills?: string[];
+  refusedSkills?: string[];
   /** Present when `outcome === "failed"`. */
   reason?: string;
 }
@@ -109,6 +117,19 @@ export interface SavedAgentCommitPorts {
   }): Promise<{ revision: string; txid: string }>;
   /** Re-read at commit time; this is what makes revocation effective on a pending proposal. */
   readProposerGrants(agentName: string): AgentProfileGrants | undefined;
+  /**
+   * t-5498a6 — CALLER A: authorize one skill the human ticked on the review screen, and select it.
+   *
+   * Injected rather than imported for the same reason `createSavedAgent` is: this module must not
+   * become a second write path. It reaches the SAME function the Studio reaches, so the rules about
+   * pinning, digests and unsupported runtimes cannot drift between the two doors.
+   *
+   * It runs AFTER the create, as its own transaction, and that ordering is deliberate. The canonical
+   * create refuses to select capability references before host authorization, so the agent has to
+   * exist before anything can be granted to it. The failure direction is the safe one: if this dies
+   * mid-way the agent exists WITHOUT the capability, never with one nobody authorized.
+   */
+  authorizeSkill(input: { agentName: string; skillName: string }): Promise<{ ok: boolean; error?: string }>;
   /** Live config digest for the CAS check. */
   currentConfigSha256(): string;
 }
@@ -153,6 +174,13 @@ export async function approveSavedAgentProposal(input: {
   approvedDigest: string;
   approvedBy: string;
   nowMs: number;
+  /**
+   * t-5498a6 — the skills the human ticked on the review screen. A proposal's `capabilities.skills`
+   * is a REQUEST and grants nothing; this is the human's answer to it, and only what appears here is
+   * authorized. Omitting it approves the agent with no capabilities, which is what every approval did
+   * before this existed.
+   */
+  authorizeSkills?: readonly string[];
   ports: SavedAgentCommitPorts;
 }): Promise<SavedAgentCommitResult> {
   // Idempotency first: a retry after a crash, a double-click, or a re-delivered host event must
@@ -228,11 +256,24 @@ export async function approveSavedAgentProposal(input: {
       ...((proposal.spec.ownership ?? "proposer") === "proposer" ? { owner: proposal.proposer } : {}),
       ...(proposal.spec.grants?.proposeSavedAgent ? { grants: { proposeSavedAgent: true } } : {}),
     });
+    // The skills the human ticked, authorized one by one against the agent that now exists. A refusal
+    // is RECORDED rather than thrown: the agent was created by a decision that already landed, and
+    // discarding that because one capability could not be granted would undo an approval the human
+    // made. The receipt names what did not land so it is a fact on disk, not a silent absence.
+    const authorizedSkills: string[] = [];
+    const refusedSkills: string[] = [];
+    for (const skillName of input.authorizeSkills ?? []) {
+      const granted = await input.ports.authorizeSkill({ agentName: proposal.spec.name, skillName });
+      if (granted.ok) authorizedSkills.push(skillName);
+      else refusedSkills.push(`${skillName}: ${granted.error ?? "refused"}`);
+    }
     const receipt: SavedAgentProposalReceipt = {
       ...base,
       outcome: "committed",
       revision: created.revision,
       txid: created.txid,
+      ...(authorizedSkills.length > 0 ? { authorizedSkills } : {}),
+      ...(refusedSkills.length > 0 ? { refusedSkills } : {}),
       ...((proposal.spec.ownership ?? "proposer") === "proposer" ? { owner: proposal.proposer } : {}),
       created: "enabled; not started",
       workspace: proposedWorktreeEnabled(proposal.spec) ? "isolated worktree" : "shared checkout",

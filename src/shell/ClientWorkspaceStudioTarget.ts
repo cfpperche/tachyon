@@ -218,6 +218,36 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     return { revision: value.revision, txid: value.txid };
   }
 
+  /**
+   * t-5498a6 — authorize a workspace skill for an agent that already exists.
+   *
+   * The engine answers refusals as VALUES (`{ ok: false, error }`), so a "this plugin does not
+   * install for codex" reaches the human as itself instead of as a transport error. Only a genuine
+   * engine failure throws.
+   */
+  async authorizeAgentSkill(
+    agentName: string,
+    skillName: string,
+    options: { reauthorize?: boolean } = {},
+  ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }> {
+    const result = await this.client.invoke(`authorize-skill:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.authorize-skill", agentName, skillName, ...options },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-skill") {
+      throw new Error("persistent engine returned a malformed skill authorization result");
+    }
+    const value = result.value as { ok?: unknown; error?: unknown; outcome?: unknown; referenceId?: unknown };
+    if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
+    if (value?.ok !== true || typeof value.outcome !== "string" || typeof value.referenceId !== "string") {
+      throw new Error("persistent engine returned a malformed skill authorization result");
+    }
+    this.refreshConfig();
+    return { ok: true, outcome: value.outcome, referenceId: value.referenceId };
+  }
+
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     const result = await this.client.invoke(`agent-profile-studio:${this.operationId()}`, {
       schemaVersion: 1,

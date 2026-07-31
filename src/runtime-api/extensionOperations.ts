@@ -67,6 +67,9 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // older shell, because that payload is `.strict()`.
   "agent-profile.saved-agent-create",
   "agent-profile.saved-agent-create-v2",
+  // t-5498a6 — authorizing a skill is its own action for the same skew reason: an older engine
+  // refuses it by name instead of silently decoding it as something else.
+  "agent-profile.authorize-skill",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -172,6 +175,12 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     mutation: agentProfileStudioMutationSchemaV1,
     owner: name.optional(),
     grants: z.object({ proposeSavedAgent: z.literal(true).optional() }).strict().optional(),
+  }).strict(),
+  z.object({
+    action: z.literal("agent-profile.authorize-skill"),
+    agentName: name,
+    skillName: text(128, 1),
+    reauthorize: z.boolean().optional(),
   }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),

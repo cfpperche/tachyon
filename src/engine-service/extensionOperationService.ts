@@ -397,6 +397,15 @@ export async function executeExtensionCommand(
       });
       return json({ revision: created.revision, txid: created.txid });
     }
+    case "agent-profile.authorize-skill": {
+      // t-5498a6 — a refusal is a RESULT, not a thrown error. "this plugin does not install for
+      // codex" is an answer the human needs to read, and turning it into an exception would surface
+      // it as an engine failure with no way to tell it from a broken transaction.
+      const authorized = await workspace.authorizeAgentSkill(command.agentName, command.skillName, {
+        ...(command.reauthorize ? { reauthorize: true } : {}),
+      });
+      return json(authorized);
+    }
     case "agent-profile.studio-lifecycle":
       return json(await workspace.commitAgentProfileStudioLifecycle(command.mutation));
     case "agent-profile.studio-bundle-clone": {

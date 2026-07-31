@@ -85,6 +85,11 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   createSavedAgentWithOwner(mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgentWithOwner"]>[0], owner: string) {
     return this.studio.createSavedAgentWithOwner(mutation, owner);
   }
+  /** t-5498a6 — the shared authorization door, reached from the proposal approval and the Studio. */
+  authorizeAgentSkill(agentName: string, skillName: string, options: { reauthorize?: boolean } = {}) {
+    return this.studio.authorizeAgentSkill(agentName, skillName, options);
+  }
+
   createSavedAgent(
     mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[0],
     options: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[1],

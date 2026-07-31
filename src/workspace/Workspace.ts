@@ -31,6 +31,12 @@ import {
   type CommitAgentProfileLifecycleInput,
 } from "../config/agentProfileLifecycle.js";
 import {
+  authorizeAgentSkill,
+  revokeAgentSkill,
+  skillOriginFor,
+  type SkillAuthorizationPorts,
+} from "../config/agentSkillAuthorizationService.js";
+import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
   reconcileAgentProfileRenames,
@@ -5568,6 +5574,67 @@ export class Workspace {
         sha256: createHash("sha256").update(selector).digest("hex"),
       }],
     });
+  }
+
+  /**
+   * t-5498a6 — CALLER B: authorize a skill for an agent that already exists.
+   *
+   * This is the one that unblocks the agents in this workspace. `claude`, `claude-validador` and
+   * `codex` never went through a proposal, so the approval path (caller A) would never reach them and
+   * they would stay at zero capabilities forever.
+   *
+   * Authorizing does not select. The Studio's tooling checkboxes are the second gesture, and keeping
+   * them separate is the whole point: "may have" and "has" are different facts.
+   */
+  async authorizeAgentSkill(agentName: string, skillName: string, options: { reauthorize?: boolean } = {}) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    const origin = skillOriginFor(this.workspaceRoot, skillName, snapshot.profile.runtime.adapter);
+    if (!origin) {
+      return { ok: false as const, error: `no skill named '${skillName}' is installed by a plugin or present in this workspace` };
+    }
+    return authorizeAgentSkill({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      origin,
+      reauthorize: options.reauthorize,
+      ports: this.skillAuthorizationPorts(snapshot.revision),
+    });
+  }
+
+  /** t-5498a6 — withdraw an authorization, dropping the selection in the same transaction. */
+  async revokeAgentSkill(agentName: string, referenceId: string) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return revokeAgentSkill({ agentName, referenceId, ports: this.skillAuthorizationPorts(snapshot.revision) });
+  }
+
+  /**
+   * The ports both callers share. `expectedRevision` is carried in so the commit is a compare-and-set
+   * against the profile the decision was computed from — without it, two concurrent authorizations
+   * would each write a grant set that silently discarded the other's.
+   */
+  private skillAuthorizationPorts(expectedRevision: string): SkillAuthorizationPorts {
+    return {
+      read: async (agentName) => {
+        const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+        const authority = await this.profileAuthorityPort().read(agentName);
+        return { profile: snapshot.profile, grants: authority?.capabilityGrants ?? [] };
+      },
+      commit: async ({ agentName, references, capabilityGrants, selectedSkills }) => {
+        const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+        await this.commitAgentProfileLifecycle({
+          agentName,
+          operation: "edit",
+          expectedRevision,
+          patch: {
+            references: [...references],
+            ...(selectedSkills
+              ? { capabilities: { ...(snapshot.profile.capabilities ?? {}), skills: [...selectedSkills] } }
+              : {}),
+          },
+          capabilityGrants,
+        });
+      },
+    };
   }
 
   private async assertAgentStoppedForProfileMutation(agentName: string): Promise<void> {
