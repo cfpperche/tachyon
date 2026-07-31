@@ -188,3 +188,53 @@ export function describeHook(event: string, command: string): InspectedHook {
     ? { event, command, purpose: known.purpose, writes: known.writes }
     : { event, command };
 }
+
+/**
+ * t-0c963d — pull hooks out of the nested `{ Event: [{ matcher, hooks: [{ command }] }] }` shape.
+ *
+ * This lives in the pure layer because the SHAPE is shared even though the source is not: Claude
+ * keeps it in a JSON settings file, Codex passes it as a TOML fragment on the argv, and both parse
+ * into exactly this structure. Measured on a live Codex session — the four hooks come out identical
+ * to Claude's. Duplicating the walk per reader would be the two-path defect on a fact about data.
+ */
+export function hooksFromConfig(config: Record<string, unknown> | undefined): InspectedHook[] {
+  const hooks = config?.hooks;
+  if (!hooks || typeof hooks !== "object") return [];
+  const out: InspectedHook[] = [];
+  for (const [event, matchers] of Object.entries(hooks as Record<string, unknown>)) {
+    if (!Array.isArray(matchers)) continue;
+    for (const matcher of matchers) {
+      const inner = (matcher as { hooks?: unknown })?.hooks;
+      if (!Array.isArray(inner)) continue;
+      for (const entry of inner) {
+        const command = (entry as { command?: unknown })?.command;
+        if (typeof command === "string") out.push(describeHook(event, command));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Flatten a nested config into dotted paths, because that is how a runtime's allowlist names its
+ * keys: Codex's family list carries `tui.status_line`, not `tui`. Without this every nested key would
+ * classify as "not delivered to this agent" — the single most misleading row this panel can show.
+ *
+ * Arrays and empty tables are leaves: `tui.status_line` is a list of widgets, and descending into it
+ * would produce `tui.status_line.0` rows that mean nothing to anyone.
+ */
+export function flattenConfig(
+  value: Record<string, unknown>,
+  prefix = "",
+): Array<{ key: string; value: unknown }> {
+  const out: Array<{ key: string; value: unknown }> = [];
+  for (const [key, inner] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const nested = inner && typeof inner === "object" && !Array.isArray(inner)
+      ? inner as Record<string, unknown>
+      : undefined;
+    if (nested && Object.keys(nested).length > 0) out.push(...flattenConfig(nested, path));
+    else out.push({ key: path, value: inner });
+  }
+  return out;
+}

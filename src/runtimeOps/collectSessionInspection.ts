@@ -8,6 +8,7 @@ import {
   type InspectedSetting,
 } from "./sessionInspection.js";
 import { claudeSessionReader } from "./claudeSessionReader.js";
+import { codexSessionReader } from "./codexSessionReader.js";
 import type { RuntimeSessionReader } from "./sessionSources.js";
 
 /**
@@ -39,6 +40,7 @@ export interface SessionInspectionPorts {
  */
 const RUNTIME_READERS: Readonly<Record<string, RuntimeSessionReader>> = {
   claude: claudeSessionReader,
+  codex: codexSessionReader,
 };
 
 /** Objects are summarized rather than dumped: the panel answers "what is set", not "paste the JSON". */

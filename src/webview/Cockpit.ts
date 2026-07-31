@@ -1508,7 +1508,15 @@ export async function openCockpit(
         // The host has authoritatively re-read the queue and confirmed that this pending resource no
         // longer exists (for example, another window resolved it). Do not strand Control on a route
         // whose identity is gone; the list is both the recovery path and the truthful current state.
+        //
+        // t-d16698 — say so. A person who clicked "Review" in a notification and silently landed on
+        // the list cannot tell "it was already resolved" from "the deep-link is broken", and neither
+        // could I: that ambiguity is exactly what stalled the investigation. Naming the item both
+        // answers the person and makes the next report diagnostic.
         await returnToInbox();
+        live.webview.postMessage(humanInboxErrorMessage(
+          `${route.itemKind} ${route.itemId} is no longer pending — showing the current queue instead.`,
+        ));
         return;
       }
       live.webview.postMessage(humanInboxItemMessage(item));

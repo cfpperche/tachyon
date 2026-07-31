@@ -9,7 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { describeHook, type InspectedHook } from "./sessionInspection.js";
+import { hooksFromConfig } from "./sessionInspection.js";
 import type {
   FoundSetting,
   RuntimeSessionReader,
@@ -25,24 +25,6 @@ export function readJson(file: string): Record<string, unknown> | undefined {
   } catch {
     return undefined;
   }
-}
-
-function hooksFrom(settings: Record<string, unknown> | undefined): InspectedHook[] {
-  const hooks = settings?.hooks;
-  if (!hooks || typeof hooks !== "object") return [];
-  const out: InspectedHook[] = [];
-  for (const [event, matchers] of Object.entries(hooks as Record<string, unknown>)) {
-    if (!Array.isArray(matchers)) continue;
-    for (const matcher of matchers) {
-      const inner = (matcher as { hooks?: unknown })?.hooks;
-      if (!Array.isArray(inner)) continue;
-      for (const entry of inner) {
-        const command = (entry as { command?: unknown })?.command;
-        if (typeof command === "string") out.push(describeHook(event, command));
-      }
-    }
-  }
-  return out;
 }
 
 /** The wrapper records the command it wraps; that record is what makes it composition, not override. */
@@ -93,7 +75,7 @@ export const claudeSessionReader: RuntimeSessionReader = {
       globalKeys,
       // Claude's hooks live in a FILE, so they stay readable with no live process — unlike Codex,
       // whose hooks ride the argv and vanish with the session.
-      hooks: hooksFrom(host),
+      hooks: hooksFromConfig(host),
       mcpServers: [...new Set([...mcp, ...bridge])].sort(),
       wrappedStatusLine: priorStatusLineCommand(statusLine?.command),
       notExposed: [],
