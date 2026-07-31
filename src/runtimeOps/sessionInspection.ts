@@ -98,6 +98,39 @@ export function redactCommand(argv: readonly string[], secrets: readonly string[
 }
 
 /**
+ * An argv entry this long WITH line breaks is prose, not a flag or a path. Both bounds matter: a long
+ * path has no newlines, and a short multi-line value is not a brief.
+ */
+const PROSE_ARGUMENT_MIN_LENGTH = 400;
+
+export function isProseArgument(arg: string): boolean {
+  return arg.length >= PROSE_ARGUMENT_MIN_LENGTH && arg.includes("\n");
+}
+
+/**
+ * Fold the opening brief out of a launch command so the flags stay readable.
+ *
+ * Both Claude and Codex take the primer + brief summary as a POSITIONAL argument — measured, ~7.9 KB
+ * on a fresh start. Printed verbatim it buries `--settings`, `--model` and `--strict-mcp-config`
+ * under a wall of prose, which are exactly what a person opens this panel to read. That failure has
+ * the same shape as the one the panel exists to end: everything is present and nobody can read it.
+ *
+ * The text is not lost — it is already on disk under `.tachyon/briefs/spawn/<agent>.md`, and the
+ * pane shows it. What is summarized is SAID to be summarized, never silently dropped.
+ */
+export function foldProseArguments(argv: readonly string[]): { command: string[]; folded: number } {
+  let folded = 0;
+  const command = argv.map((arg) => {
+    if (!isProseArgument(arg)) return arg;
+    folded++;
+    // TextEncoder, not Buffer: this module is pure domain and the webview imports its types.
+    const bytes = new TextEncoder().encode(arg).length;
+    return `[opening brief — ${bytes} bytes, ${arg.split("\n").length} lines, not shown here]`;
+  });
+  return { command, folded };
+}
+
+/**
  * Where a settings key stands, given what the profile projects and what the host injects.
  *
  * The `not-projected` case is the one worth the whole function. A key sitting in the person's global

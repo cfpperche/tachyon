@@ -1,5 +1,6 @@
 import {
   classifySetting,
+  foldProseArguments,
   foldWrappedStatusLine,
   inspectEnv,
   redactCommand,
@@ -92,11 +93,14 @@ export async function collectSessionInspection(input: {
     .filter(([key]) => key.toUpperCase().includes("TOKEN") || key.toUpperCase().includes("SECRET"))
     .map(([, value]) => value);
 
+  // Redact BEFORE folding: a secret must never depend on a length heuristic to stay hidden.
+  const launch = foldProseArguments(argv ? redactCommand(argv, secrets) : []);
+
   return {
     agent,
     runtime,
     state: argv ? "live" : "last-known",
-    command: argv ? redactCommand(argv, secrets) : [],
+    command: launch.command,
     hooks: found?.hooks ?? [],
     settings: foldWrappedStatusLine(settings, found?.wrappedStatusLine),
     mcpServers: found?.mcpServers ?? [],
@@ -104,6 +108,11 @@ export async function collectSessionInspection(input: {
     env: inspectEnv(env ?? {}, config?.extraEnvKeys ?? []),
     notExposed: [
       ...(found?.notExposed ?? []),
+      // Summarized, and SAID to be summarized. The full text is in .tachyon/briefs/spawn/<agent>.md
+      // and the agent's own pane; what this panel owes is the flags, legibly.
+      ...(launch.folded > 0
+        ? ["the opening brief is passed on the command line and is summarized above, not printed"]
+        : []),
       ...(reader ? [] : [`Tachyon does not yet describe what it injects into '${runtime}' sessions`]),
       ...(argv ? [] : ["no live process — showing what is on disk from the last launch"]),
     ],

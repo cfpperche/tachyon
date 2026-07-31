@@ -3,6 +3,7 @@ import {
   REDACTED,
   classifySetting,
   describeHook,
+  foldProseArguments,
   foldWrappedStatusLine,
   inspectEnv,
   isSecretEnvKey,
@@ -58,6 +59,45 @@ describe("t-283149 — secrets never leave the inspector in the clear", () => {
     // A one-or-two character "secret" would match everywhere and destroy the very thing this view is
     // for. Short values are left alone rather than turning the argv into dots.
     expect(redactCommand(["claude", "--model", "opus"], ["o"])).toEqual(["claude", "--model", "opus"]);
+  });
+});
+
+/**
+ * t-283149 — the opening brief rides the argv, and printing it verbatim buries the flags.
+ *
+ * Measured on a fresh `claude-validador` start: the primer + brief summary is positional argument 4,
+ * 7905 bytes. Codex does the same. It did not show up earlier because every sample available was a
+ * `--resume` session, which has no opening prompt — the same shape as the Codex hooks mistake, where
+ * the only evidence to hand was not representative.
+ */
+describe("t-283149 — the launch command stays readable on a fresh session", () => {
+  const BRIEF = `── TACHYON PRIMER ──\nIdentity: you are agent "x".\n${"detail line\n".repeat(60)}── END PRIMER ──`;
+
+  it("folds a multi-line prose argument into a marker that states its size", () => {
+    const { command, folded } = foldProseArguments(["claude", "-n", "session", BRIEF, "--model", "opus"]);
+
+    expect(folded).toBe(1);
+    expect(command[3]).toMatch(/^\[opening brief — \d+ bytes, \d+ lines, not shown here\]$/);
+    // The point of the fold: the flags a person came to read survive.
+    expect(command.slice(4)).toEqual(["--model", "opus"]);
+  });
+
+  it("leaves a long PATH alone, because a path has no line breaks", () => {
+    const longPath = `/home/goat/${"nested/".repeat(80)}settings.json`;
+    expect(longPath.length).toBeGreaterThan(400);
+
+    expect(foldProseArguments(["claude", "--settings", longPath]).folded).toBe(0);
+  });
+
+  it("leaves a short multi-line value alone, because a brief is not short", () => {
+    expect(foldProseArguments(["codex", "-c", 'hooks.Stop=[\n{type="command"}\n]']).folded).toBe(0);
+  });
+
+  it("does not depend on the fold to hide a secret", () => {
+    // Redaction runs first in the collector. Asserting the ordering here as well would be theatre;
+    // what matters is that the fold NEVER sees an unredacted secret as its only protection.
+    const secret = "fake-token-for-tests-000000000000";
+    expect(redactCommand(["claude", "--token", secret], [secret])[2]).toBe(REDACTED);
   });
 });
 

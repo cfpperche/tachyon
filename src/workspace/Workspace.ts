@@ -390,6 +390,8 @@ export interface WorkspaceDeps {
   onViewsChanged: (view: ViewKind) => void;
   /** host-side UI affordance for newly recorded human-approval requests. */
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
+  /** t-8e9b5e — a Saved Agent proposal needs a human, exactly like an approval does. */
+  onSavedAgentProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
   /**
    * t-e76acc — the same affordance for a validation that lands on a human. Symmetric with the
    * approval hook above in EVERYTHING except authority: it carries a self-declared author (that is
@@ -2177,6 +2179,7 @@ export class Workspace {
           this.monitor.flagUnseen(agent);
         },
         onPinsChanged: () => deps.onViewsChanged("pins"),
+        onSavedAgentProposed: (proposal) => deps.onSavedAgentProposed?.(this, proposal),
         onApprovalRequested: (request) => {
           deps.onApprovalRequested?.(this, request);
           // Companion side panel: push so Approvals tab can refresh without polling.
