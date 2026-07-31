@@ -16,6 +16,7 @@ import {
   NOTICE_INBOX_STATE_KEY,
   noticeDedupeKey,
   restoreNoticeInbox,
+  restoreNoticeRoute,
   type NoticeInboxEntry,
 } from "./noticeInbox.js";
 
@@ -122,7 +123,11 @@ export class DaemonEngineHost implements EngineHost {
     const publicActions = actions.map((action) => {
       const actionId = randomUUID();
       registered.set(actionId, action.run);
-      return { id: actionId, label: action.label };
+      // t-ee2f19 — a route is recorded only if it passes the same check a RESTORED one must pass.
+      // Writing through a laxer door than the one guarding the way back would make the allowlist
+      // decorative, and this is the write that produces the file the restore has to trust.
+      const route = restoreNoticeRoute(action.route);
+      return { id: actionId, label: action.label, ...(route ? { route } : {}) };
     });
     if (registered.size > 0) this.noticeActions.set(id, registered);
     const event: Extract<DaemonHostEvent, { kind: "notice" }> = {
@@ -176,8 +181,7 @@ export class DaemonEngineHost implements EngineHost {
 
   async invokeNoticeAction(noticeId: string, actionId: string): Promise<void> {
     this.assertActive();
-    const actions = this.noticeActions.get(noticeId);
-    const action = actions?.get(actionId);
+    const action = this.noticeActions.get(noticeId)?.get(actionId) ?? this.routedAction(noticeId, actionId);
     if (!action) throw new Error("notice action is missing or already consumed");
     this.noticeActions.delete(noticeId);
     // Invoking dismisses the inbox row.
@@ -186,6 +190,24 @@ export class DaemonEngineHost implements EngineHost {
     this.persistNoticeInbox();
     this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
     await action();
+  }
+
+  /**
+   * t-ee2f19 — rebuild the action from its persisted route when the closure is gone.
+   *
+   * This is the whole point of the route: after an extension-host reload the in-memory map is empty,
+   * but the notice row and its destination survived, and the item it names is still waiting. The
+   * route was validated on the way in and again on the way out of `restoreNoticeInbox`; going through
+   * `executeCommand` keeps it on the one door the engine already has for reaching the editor.
+   */
+  private routedAction(noticeId: string, actionId: string): (() => Promise<void>) | undefined {
+    const route = this.noticeInbox
+      .find((row) => row.id === noticeId)?.actions
+      .find((action) => action.id === actionId)?.route;
+    if (!route) return undefined;
+    return async () => {
+      await this.executeCommand(route.command, ...route.args);
+    };
   }
 
   focusPrimaryView(): void {

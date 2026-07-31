@@ -23,13 +23,35 @@ export interface WatchEvents {
 }
 
 /**
+ * t-ee2f19 — a notice action's destination, expressed as DATA so it can outlive the process.
+ *
+ * `run` below is a closure, and a closure dies with the engine instance that made it. The notice row
+ * itself is persisted, so every extension-host reload used to leave rows whose text still said
+ * something needed you and whose only button read "Open unavailable" — pointing at items that were
+ * perfectly reachable by every other route.
+ *
+ * A route restores what the closure cannot. Nothing here is free-form: `command` must be one of
+ * `DURABLE_NOTICE_COMMANDS`, checked again on the way back IN, so a persisted notice can never become
+ * a way to run something arbitrary that was written into state.json.
+ */
+export interface NoticeActionRoute {
+  command: string;
+  args: readonly unknown[];
+}
+
+/**
  * An optional action offered alongside a notice. The engine supplies a label + what to DO; the shell
  * decides how to surface it (a toast button, a log line, nothing) and invokes `run` if the user picks it.
  * The engine never opens a window — it hands off a fact + the operations the user could take.
+ *
+ * `route` is optional on purpose: an action whose effect is NOT a navigation (restart this agent, open
+ * this pane, resume the fleet) has nothing durable to record, and must keep rendering as unavailable
+ * after a restart rather than being guessed at.
  */
 export interface NoticeAction {
   label: string;
   run: () => void | Promise<void>;
+  route?: NoticeActionRoute;
 }
 
 export interface EngineHost {
