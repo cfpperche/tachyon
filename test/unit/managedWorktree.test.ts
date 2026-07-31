@@ -217,11 +217,14 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     const bin = path.join(entry.path, ".tachyon", "bin");
     expect(fs.lstatSync(bin).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(path.join(bin, "_tachyon-tool"))).toBe(true);
-    expect(fs.readFileSync(path.join(entry.path, ".claude", "skills", "demo", "SKILL.md"), "utf8")).toContain("# demo");
     // one binary on disk, not two
     expect(fs.realpathSync(bin)).toBe(fs.realpathSync(path.join(repo, ".tachyon", "bin")));
     // the pins stay in the authority alone
     expect(fs.existsSync(path.join(entry.path, ".tachyon", "plugins.lock.json"))).toBe(false);
+    // t-62f599 — and NEITHER do the workspace's skills. The launcher is inert: something has to name
+    // it. A skill tree is not — the runtime discovers it and offers it unasked, which is the whole
+    // reason inheritance had to become opt-in.
+    expect(fs.existsSync(path.join(entry.path, ".claude", "skills"))).toBe(false);
   });
 
   it("remove refuses peer; human owner soft-removes clean tree and drops registry", async () => {
