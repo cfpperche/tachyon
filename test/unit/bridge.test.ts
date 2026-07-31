@@ -8,7 +8,7 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
+import { wakeTaskAssignee } from "../../src/tasks/taskNotificationPolicy.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
@@ -117,10 +117,13 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // way. `notifyAssignee` is assigned below, next to the deps that own delivery.
   let notifyAssignee: ((target: string, line: string) => Promise<unknown>) | undefined;
   const tasks = new TaskStore(pinsRoot, {
-    onMutation: async (event) => {
-      const wake = taskAssigneeWakeFor(event);
-      if (wake) await notifyAssignee?.(wake.assignee, wake.line);
-    },
+    onMutation: async (event) => { await wakeTaskAssignee(event, {
+      // t-c3c0c2 — the liveness gate is no longer re-typed here. This harness used to carry its own
+      // copy, and the first version omitted the has-session check: the fake tmux then MINTED a session
+      // row for a name that never had one, and eighteen later scenarios read that ghost as a live agent.
+      isLiveAgent: async (name) => manager.kindOf(name) === "agent" && tmux.hasSession(manager.session(name)),
+      deliver: (target, line) => notifyAssignee?.(target, line) ?? Promise.resolve(),
+    }); },
   });
   const validations = new ValidationStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
@@ -236,13 +239,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
   // t-57a00a — delivery for the store's sink, mirroring the deps' `deliverNotice` above: `queued` means
   // the notice is held for idle, which for these tests is "the pane must not have received it".
+  // t-c3c0c2 — delivery ONLY; the liveness gate moved into the composed effect and is no longer
+  // this harness's to get right. `queued` means the notice is held for idle, which for these tests is
+  // "the pane must not have received it".
   notifyAssignee = async (target, line) => {
     if (noticeMode === "queued") return;
-    // Same liveness gate Workspace applies: a stopped or unknown assignee is skipped. Without it the
-    // fake tmux's send-keys would MINT a session row for a name that never had one, and the suites
-    // that assert on session membership downstream would read that ghost as a live agent.
-    if (manager.kindOf(target) !== "agent") return;
-    if (!(await tmux.hasSession(manager.session(target)))) return;
     await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
   };
   let client: Client;

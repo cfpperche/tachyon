@@ -173,3 +173,41 @@ export function taskAssigneeWakeFor(
     line: `[tachyon] task ${event.after.id} ${reason}: ${event.after.title}. Open it with ${taskUrl(event.after.id)} and begin it.`,
   };
 }
+
+/**
+ * t-c3c0c2 — decision AND liveness gate AND delivery, composed once.
+ *
+ * `taskAssigneeWakeFor` above answers WHAT to send. Sending it also needs a gate — is this name an
+ * agent, is its session alive — and that gate lived at the Workspace call site, far from the decision
+ * it protects. The cost showed up immediately: a test harness that wired the sink had to reimplement
+ * the gate, and the copy that omitted it minted phantom tmux sessions that later suites read as live
+ * agents. A gate that callers re-type is how the two-path defect of t-b4a799 starts.
+ *
+ * So the whole effect composes here and callers supply PORTS, not logic. What a caller can still get
+ * wrong is which manager or tmux to hand over — not whether the dead-session check happens.
+ *
+ * Best-effort by contract: a task mutation must never fail because a notice did. The catch is inside
+ * for the same reason the gate is — leaving it to callers means one caller eventually omits it and a
+ * failed delivery starts rejecting `update_task`.
+ */
+export interface TaskAssigneeWakePorts {
+  /** Is this name a live agent? Both halves matter: a terminal is not an agent, a stopped one is not live. */
+  isLiveAgent: (name: string) => Promise<boolean>;
+  /** Queue-aware delivery — a busy assignee is queued and flushed on idle, never typed over. */
+  deliver: (agent: string, line: string) => Promise<unknown>;
+}
+
+export async function wakeTaskAssignee(
+  event: { before: Task; after: Task; actor?: string },
+  ports: TaskAssigneeWakePorts,
+): Promise<TaskAssigneeWake | undefined> {
+  try {
+    const wake = taskAssigneeWakeFor(event);
+    if (!wake) return undefined;
+    if (!(await ports.isLiveAgent(wake.assignee))) return undefined;
+    await ports.deliver(wake.assignee, wake.line);
+    return wake;
+  } catch {
+    return undefined;
+  }
+}

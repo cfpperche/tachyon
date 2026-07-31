@@ -214,8 +214,8 @@ import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
-import { TaskStore, type TaskMutationEvent } from "../tasks/TaskStore.js";
-import { taskAssigneeWakeFor } from "../tasks/taskNotificationPolicy.js";
+import { TaskStore } from "../tasks/TaskStore.js";
+import { wakeTaskAssignee, type TaskAssigneeWakePorts } from "../tasks/taskNotificationPolicy.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
@@ -1801,7 +1801,7 @@ export class Workspace {
         // t-57a00a — the assignee's wake-up lives HERE, at the store's sink, because that is the only
         // point every writer crosses. It used to hang off the Bridge's update_task handler, so an
         // agent assigning notified and a human assigning in the UI did not.
-        await this.wakeTaskAssignee(event);
+        await wakeTaskAssignee(event, this.taskAssigneeWakePorts());
       },
     });
     this.validationStore = new ValidationStore(workspaceRoot);
@@ -4305,25 +4305,20 @@ export class Workspace {
   }
 
   /**
-   * t-57a00a — wake the assignee agent, from the store's mutation sink.
+   * t-c3c0c2 — the PORTS the assignee wake-up needs; the effect itself is composed in
+   * `taskNotificationPolicy`. This used to be the whole effect written out here, and the gate ended up
+   * far from the decision it protects — which is how a test harness came to reimplement it and omit
+   * the dead-session check.
    *
-   * Liveness gate matches notify_agent's: a terminal, an unknown name, or a stopped agent is silently
-   * skipped, because assignment must not depend on whether the assignee happens to be online. Delivery
-   * goes through `deliverNotice`, so a busy assignee is queued and flushed on idle rather than typed
-   * into an occupied composer — the t-d79534 lesson, applied here from the start.
-   *
-   * Best-effort by design: assigning a task must never fail because notifying the assignee did.
+   * Liveness matches notify_agent's: a terminal is not an agent and a stopped agent is not live, and
+   * both are skipped silently, because assignment must not depend on whether the assignee is online.
    */
-  private async wakeTaskAssignee(event: TaskMutationEvent): Promise<void> {
-    try {
-      const wake = taskAssigneeWakeFor(event);
-      if (!wake) return;
-      if (this.manager.kindOf(wake.assignee) !== "agent") return;
-      if (!(await this.tmux.hasSession(this.manager.session(wake.assignee)))) return;
-      await this.deliverNotice(wake.assignee, wake.line);
-    } catch {
-      /* best-effort — a task mutation must never fail because a notice did */
-    }
+  private taskAssigneeWakePorts(): TaskAssigneeWakePorts {
+    return {
+      isLiveAgent: async (name) =>
+        this.manager.kindOf(name) === "agent" && (await this.tmux.hasSession(this.manager.session(name))),
+      deliver: (agent, line) => this.deliverNotice(agent, line),
+    };
   }
 
   /**

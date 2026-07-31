@@ -8,7 +8,7 @@ import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/Tmux
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
+import { wakeTaskAssignee } from "../../src/tasks/taskNotificationPolicy.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
@@ -85,10 +85,12 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
   // end-to-end chain this test exercises (Bridge resolves the actor → store emits → policy decides) now
   // needs that sink wired here, the way Workspace wires it in production.
   const tasks = new TaskStore(root, {
-    onMutation: (event) => {
-      const wake = taskAssigneeWakeFor(event);
-      if (wake) taskNotices.push({ target: wake.assignee, line: wake.line });
-    },
+    onMutation: async (event) => { await wakeTaskAssignee(event, {
+      // Both fixtures are declared, live agents in this suite; the gate is exercised for real in
+      // bridge.test.ts. What this suite proves is the chain Bridge → store → policy, actor included.
+      isLiveAgent: async () => true,
+      deliver: async (target, line) => { taskNotices.push({ target, line }); },
+    }); },
   });
   const validations = new ValidationStore(root);
   const continuity = new ContinuityStore(root);
