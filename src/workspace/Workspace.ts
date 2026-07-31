@@ -215,6 +215,8 @@ import { Scheduler } from "../schedule/Scheduler.js";
 import { ProposalStore } from "../schedule/ProposalStore.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
+import { collectSessionInspection } from "../runtimeOps/collectSessionInspection.js";
+import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { wakeTaskAssignee, type TaskAssigneeWakePorts } from "../tasks/taskNotificationPolicy.js";
 import { EvolutionStore } from "../evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
@@ -5427,6 +5429,46 @@ export class Workspace {
     return agentOwnershipView(agentName, this.agentOwnershipRoster());
   }
 
+  /**
+   * t-283149 — what Tachyon actually handed this agent's runtime: hooks it injected, settings with the
+   * layer each came from, MCP wiring, minted env and the launch argv.
+   *
+   * Read-only by construction. Editing lives in Agent Studio and Runtime Config; a panel that both
+   * shows the delivered session and edits the declared profile would blur the very distinction this
+   * exists to make visible.
+   *
+   * `/proc` reads are Linux-shaped and best-effort. When the process is gone — or unreadable because it
+   * belongs to another user — the projection falls back to what the last launch left on disk and SAYS
+   * so, rather than presenting stale files as a live session.
+   */
+  async inspectAgentSession(agentName: string): Promise<InspectedSession> {
+    const runtime = adapterFor(asAgent(this.config?.agents[agentName])?.cmd ?? "")?.runtime
+      ?? this.ledger.get(agentName)?.resume?.runtime
+      ?? "unknown";
+    return collectSessionInspection({
+      workspaceRoot: this.workspaceRoot,
+      agent: agentName,
+      runtime,
+      ports: {
+        panePid: async () => {
+          try { return await this.tmux.panePid(this.manager.session(agentName)); }
+          catch { return undefined; }
+        },
+        processArgv: (pid) => readProcFile(pid, "cmdline")?.split("\0").filter(Boolean),
+        processEnv: (pid) => {
+          const raw = readProcFile(pid, "environ");
+          if (raw === undefined) return undefined;
+          const env: Record<string, string> = {};
+          for (const entry of raw.split("\0")) {
+            const at = entry.indexOf("=");
+            if (at > 0) env[entry.slice(0, at)] = entry.slice(at + 1);
+          }
+          return env;
+        },
+      },
+    });
+  }
+
   async commitAgentProfileLifecycle(
     input: Omit<CommitAgentProfileLifecycleInput, "workspaceRoot" | "authority" | "config" | "activateState">,
   ): Promise<AgentProfileLifecycleCommitResult> {
@@ -6685,4 +6727,13 @@ export class Workspace {
     this.waiters.dispose();
     await Promise.allSettled([this.bridge.dispose(), this.engine.dispose()]);
   }
+}
+
+/**
+ * t-283149 — a best-effort `/proc` read. Absent, unreadable or non-Linux all mean the same thing to the
+ * caller: we could not observe the live process, so say so instead of inventing one.
+ */
+function readProcFile(pid: number, file: "cmdline" | "environ"): string | undefined {
+  try { return fs.readFileSync(`/proc/${pid}/${file}`, "utf8"); }
+  catch { return undefined; }
 }

@@ -33,7 +33,7 @@ const schedule = z.union([
 
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
-  "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.fork-preview", "prompt.catalog", "worktree.review",
+  "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "evolution.overview", "evolution.candidate",
@@ -91,6 +91,10 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("companion.status") }).strict(),
   z.object({ action: z.literal("agent.inspect"), agent: name }).strict(),
+  /** t-283149 — what Tachyon actually handed this agent's runtime. Additive for the same reason
+   *  `agent-profile.studio-ownership` is: an engine that predates it refuses the unknown action
+   *  outright instead of decoding a changed payload. Read-only; editing lives in Agent Studio. */
+  z.object({ action: z.literal("agent.session-inspection"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
   z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
   z.object({ action: z.literal("evolution.overview"), agent: name }).strict(),

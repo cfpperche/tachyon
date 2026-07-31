@@ -161,6 +161,8 @@ export async function executeExtensionQuery(
     }
     case "agent.inspect":
       return inspectAgent(workspace, query.agent);
+    case "agent.session-inspection":
+      return json(await workspace.inspectAgentSession(query.agent));
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
     case "soul.profile.status":
