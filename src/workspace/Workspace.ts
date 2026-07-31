@@ -6144,6 +6144,11 @@ export class Workspace {
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
     await this.manager.rehydrateFromLedger();
 
+    // t-62f599 — reproject every registered worktree, BEFORE the configOk branch below returns early.
+    // Withdrawing inherited config is a policy decision, and a policy that only reaches agents somebody
+    // restarts is not in force. This is the one hook that runs on a plain reload of a live fleet.
+    await this.managedWorktrees.reprojectRegisteredWorktrees();
+
     if (!configOk) {
       // t-8354ae — fail VISIBLE, not silent wipe: rehydrate + surface views, but never
       // autostart/auto-resume from LKG or a missing live config.

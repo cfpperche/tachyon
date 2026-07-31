@@ -325,6 +325,30 @@ export class ManagedWorktreeService {
     }
   }
 
+  /**
+   * t-62f599 — reproject EVERY registered worktree, on workspace activation.
+   *
+   * The gap this closes was measured on this workspace and it is the whole reason the method exists:
+   * `syncAgentRecord` fires on spawn, fork and dismiss, and a reload with agents already alive does
+   * none of those. It re-DISCOVERS them. So a policy change that withdraws something from a worktree
+   * reached only agents somebody happened to restart afterwards — and the live fleet, which is the
+   * population the policy was written for, kept what the change was meant to take away.
+   *
+   * Idempotent and best-effort, like the per-worktree call it wraps. A worktree whose path is gone is
+   * skipped rather than reported: the store reconciles those separately, and a missing checkout is not
+   * a projection failure.
+   */
+  async reprojectRegisteredWorktrees(): Promise<void> {
+    for (const entry of this.list()) {
+      if (!fs.existsSync(entry.path)) continue;
+      try {
+        await this.projectPluginTooling(entry.path);
+      } catch {
+        // per-worktree failure is already surfaced by projectPluginTooling's own notify
+      }
+    }
+  }
+
   /** Upsert from WorktreeManager agent ensure/fork/remove (path already validated by manager). */
   syncAgentRecord(agent: string, rec: WorktreeRecord | null, createdBy?: string): void {
     if (!rec) {
