@@ -30,6 +30,7 @@ import {
   evolutionErrorMessage,
   evolutionSummaryMessage,
   agentProfileErrorMessage,
+  authorizableCapabilitiesMessage,
   agentProfileForgottenMessage,
   agentProfileOwnershipMessage,
   agentProfileSnapshotMessage,
@@ -132,6 +133,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "loadEvolutionCandidate") { void loadEvolutionCandidate(ws, ctx, agent, m.candidateId); return; }
   if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") { void resolveEvolutionCandidate(ws, ctx, agent, m); return; }
   if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName); return; }
+  if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName); return; }
+  if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
   if (m.type === "createSoul") { void runProfileAction(ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
   if (m.type === "importSoul") { void importSoul(ws, ctx, agent, m.contentBase64); return; }
   if (m.type === "replaceSoul") { void replaceSoul(ws, ctx, agent, m.contentBase64, m.expectedDigest); return; }
@@ -196,6 +199,46 @@ async function authorizeSkill(
       return;
     }
     await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
+}
+
+/**
+ * t-5498a6 — authorize everything a plugin exposes for this runtime.
+ *
+ * The all-or-nothing rule is enforced one layer down: a plugin that also installs a `settings-hook`
+ * or a `view` is refused WHOLE, because authorizing only its skills would report success while half
+ * the plugin never reached the agent.
+ */
+async function authorizePlugin(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  pluginName: string,
+): Promise<void> {
+  try {
+    const result = await ws.authorizeAgentPlugin(agent, pluginName);
+    if (!result.ok) {
+      ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
+      return;
+    }
+    await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
+}
+
+/** t-5498a6 — candidate lists, re-queried after every authorization so the two selectors shrink. */
+async function refreshCandidates(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+): Promise<void> {
+  try {
+    ctx.post(authorizableCapabilitiesMessage(agent, await ws.authorizableCapabilitiesFor(agent)));
   } catch (error) {
     postAgentProfileError(ctx, agent, error);
   }

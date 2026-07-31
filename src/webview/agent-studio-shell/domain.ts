@@ -60,6 +60,8 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   // t-5498a6 — authorize a workspace skill so this profile MAY select it. Selecting stays the
   // separate gesture on the Runtime tooling checkboxes.
   "authorizeSkill",
+  "authorizePlugin",
+  "refreshAuthorizableCapabilities",
   "createSoul",
   "importSoul",
   "replaceSoul",
@@ -98,6 +100,7 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "agentProfileForgotten",
   "agentProfileOwnership",
   "agentProfileError",
+  "authorizableCapabilities",
   "agentProfileBundleExport",
   "agentProfileBundleCreated",
   "agentProfileBundleError",
@@ -177,10 +180,14 @@ export type AgentStudioBundleActionMessage =
 
 /** t-5498a6 — authorize one workspace skill for a profile; selecting it stays a separate gesture. */
 export type AgentStudioAuthorizeSkillMessage = { type: "authorizeSkill"; agent: string; skillName: string };
+export type AgentStudioAuthorizePluginMessage = { type: "authorizePlugin"; agent: string; pluginName: string };
+export type AgentStudioRefreshCandidatesMessage = { type: "refreshAuthorizableCapabilities"; agent: string };
 
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
   | AgentStudioAuthorizeSkillMessage
+  | AgentStudioAuthorizePluginMessage
+  | AgentStudioRefreshCandidatesMessage
   | AgentStudioSoulActionMessage
   | AgentStudioEvolutionActionMessage
   | AgentStudioLifecycleActionMessage
@@ -292,6 +299,15 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   }
   if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
     || value.type === "browse" || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return undefined;
+  if (value.type === "authorizePlugin") {
+    if (!exactKeys(value, ["type", "agent", "pluginName"]) || typeof value.pluginName !== "string"
+      || !SKILL_NAME_RE.test(value.pluginName)) return undefined;
+    return { type: "authorizePlugin", agent: value.agent, pluginName: value.pluginName };
+  }
+  if (value.type === "refreshAuthorizableCapabilities") {
+    if (!exactKeys(value, ["type", "agent"])) return undefined;
+    return { type: "refreshAuthorizableCapabilities", agent: value.agent };
+  }
   if (value.type === "authorizeSkill") {
     // Bounded and shaped like the reference id it becomes; a name that cannot be a reference id can
     // never authorize anything, so refusing here beats failing deeper with a schema message.

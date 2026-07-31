@@ -31,11 +31,13 @@ import {
   type CommitAgentProfileLifecycleInput,
 } from "../config/agentProfileLifecycle.js";
 import {
+  authorizeAgentPlugin,
   authorizeAgentSkill,
   revokeAgentSkill,
   skillOriginFor,
   type SkillAuthorizationPorts,
 } from "../config/agentSkillAuthorizationService.js";
+import { listAuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
@@ -5597,6 +5599,36 @@ export class Workspace {
       agentName,
       origin,
       reauthorize: options.reauthorize,
+      ports: this.skillAuthorizationPorts(snapshot.revision),
+    });
+  }
+
+  /**
+   * t-5498a6 — what this agent's runtime could be given, in two lists.
+   *
+   * A QUERY rather than a field on the profile snapshot: that snapshot is revisioned and the Studio
+   * uses the revision as a CAS token, but installing a plugin changes none of it. Candidates carried
+   * there would go stale while still claiming to be current.
+   */
+  async authorizableCapabilitiesFor(agentName: string) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return listAuthorizableCapabilities(this.workspaceRoot, snapshot.profile.runtime.adapter);
+  }
+
+  /**
+   * t-5498a6 — authorize a whole plugin: everything it exposes for this agent's runtime.
+   *
+   * Ratified with the user. A plugin exposing something no capability grant can carry is refused
+   * WHOLE rather than partially — half a plugin reported as success is the failure this ends.
+   */
+  async authorizeAgentPlugin(agentName: string, pluginName: string, options: { reauthorize?: boolean } = {}) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return authorizeAgentPlugin({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      pluginName,
+      adapter: snapshot.profile.runtime.adapter,
+      ...(options.reauthorize ? { reauthorize: true } : {}),
       ports: this.skillAuthorizationPorts(snapshot.revision),
     });
   }

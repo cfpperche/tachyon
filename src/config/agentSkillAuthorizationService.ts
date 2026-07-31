@@ -25,6 +25,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AgentCapabilitySourceError, inspectCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
+import { listAuthorizableCapabilities, readPluginLock } from "./agentCapabilityCandidates.js";
 import {
   authorizeWorkspaceSkill,
   revokeWorkspaceSkill,
@@ -236,29 +237,52 @@ export function skillOriginFor(workspaceRoot: string, skillName: string, adapter
   return fs.existsSync(path.join(workspaceRoot, rel)) ? { kind: "workspace", path: rel } : undefined;
 }
 
-interface LockedPlugin { name: string; version: string; runtimes: string[]; targets: { kind: string; file: string }[] }
+/**
+ * t-5498a6 — authorize a whole plugin: everything it exposes for this agent's runtime.
+ *
+ * Ratified with the user. The unit of choice for plugin-sourced capability is the PLUGIN, not one
+ * skill inside it — "inject this plugin" is the gesture, and the grants underneath stay per skill
+ * because that is what the schema carries. No new grant semantics, one decision.
+ *
+ * The consequence is the refusal. A plugin exposing something no capability grant can carry —
+ * `settings-hook`, `view` — is refused WHOLE. Authorizing its skills and quietly dropping the rest
+ * would report success while half the plugin never reached the agent, which is exactly the
+ * expressible-for-some/inert-for-others failure this slice exists to end.
+ *
+ * All-or-nothing on write too: if the second skill of a plugin fails, the first is left authorized
+ * and the caller is told which landed. Nothing here can roll back a committed transaction, so it
+ * reports the truth instead of implying atomicity it does not have.
+ */
+export async function authorizeAgentPlugin(input: {
+  workspaceRoot: string;
+  agentName: string;
+  pluginName: string;
+  adapter: string;
+  ports: SkillAuthorizationPorts;
+  reauthorize?: boolean;
+  select?: boolean;
+}): Promise<{ ok: true; authorized: string[]; outcomes: SkillAuthorizationOutcome[] } | { ok: false; error: string; authorized?: string[] }> {
+  const candidate = listAuthorizableCapabilities(input.workspaceRoot, input.adapter)
+    .plugins.find((plugin) => plugin.name === input.pluginName);
+  if (!candidate) return { ok: false, error: `no plugin named '${input.pluginName}' is installed in this workspace` };
+  if (!candidate.authorizable) {
+    return { ok: false, error: `plugin '${candidate.name}@${candidate.version}' cannot be authorized for ${input.adapter}: ${candidate.reason}` };
+  }
 
-function readPluginLock(workspaceRoot: string): LockedPlugin[] {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(fs.readFileSync(path.join(workspaceRoot, ".tachyon/plugins.lock.json"), "utf8"));
-  } catch {
-    return [];
-  }
-  const plugins = (raw as { plugins?: Record<string, unknown> } | null)?.plugins;
-  if (!plugins || typeof plugins !== "object") return [];
-  const parsed: LockedPlugin[] = [];
-  for (const value of Object.values(plugins)) {
-    const entry = value as Partial<LockedPlugin>;
-    if (typeof entry?.name !== "string" || typeof entry.version !== "string") continue;
-    parsed.push({
-      name: entry.name,
-      version: entry.version,
-      runtimes: Array.isArray(entry.runtimes) ? entry.runtimes.filter((r): r is string => typeof r === "string") : [],
-      targets: Array.isArray(entry.targets)
-        ? entry.targets.filter((t): t is { kind: string; file: string } => typeof (t as { kind?: unknown })?.kind === "string" && typeof (t as { file?: unknown })?.file === "string")
-        : [],
+  const authorized: string[] = [];
+  const outcomes: SkillAuthorizationOutcome[] = [];
+  for (const skill of candidate.skills) {
+    const result = await authorizeAgentSkill({
+      workspaceRoot: input.workspaceRoot,
+      agentName: input.agentName,
+      origin: { kind: "plugin", plugin: candidate.name, skill, version: candidate.version, runtimes: candidate.runtimes },
+      ports: input.ports,
+      ...(input.reauthorize ? { reauthorize: true } : {}),
+      ...(input.select ? { select: true } : {}),
     });
+    if (!result.ok) return { ok: false, error: `plugin '${candidate.name}': ${result.error}`, authorized };
+    authorized.push(skill);
+    outcomes.push(result.outcome);
   }
-  return parsed;
+  return { ok: true, authorized, outcomes };
 }

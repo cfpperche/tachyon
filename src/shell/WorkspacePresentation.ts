@@ -10,6 +10,7 @@ import type {
   EvolutionStudioCandidateDetail,
   EvolutionStudioOverview,
 } from "../evolution/studioProjection.js";
+import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
@@ -58,6 +59,13 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
     agent: string,
     skillName: string,
   ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }>;
+  /** t-5498a6 — candidate lists, queried fresh: a plugin install changes no profile revision. */
+  authorizableCapabilitiesFor(agent: string): Promise<AuthorizableCapabilities>;
+  /** t-5498a6 — authorize everything a plugin exposes for this runtime, or refuse it whole. */
+  authorizeAgentPlugin(
+    agent: string,
+    pluginName: string,
+  ): Promise<{ ok: true; authorized: string[] } | { ok: false; error: string }>;
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;

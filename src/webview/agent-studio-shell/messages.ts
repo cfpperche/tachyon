@@ -25,6 +25,19 @@ export const browseMessage = () => envelope({ type: "browse" as const });
 /** t-5498a6 — ask the host to authorize one workspace skill for this profile. */
 export const authorizeSkillMessage = (agent: string, skillName: string) =>
   envelope({ type: "authorizeSkill" as const, agent, skillName });
+
+/** t-5498a6 — authorize everything a plugin exposes for this runtime, or refuse it whole. */
+export const authorizePluginMessage = (agent: string, pluginName: string) =>
+  envelope({ type: "authorizePlugin" as const, agent, pluginName });
+
+export const refreshAuthorizableCapabilitiesMessage = (agent: string) =>
+  envelope({ type: "refreshAuthorizableCapabilities" as const, agent });
+
+/** Host → webview: the two candidate lists, queried fresh rather than read off the snapshot. */
+export const authorizableCapabilitiesMessage = (
+  agent: string,
+  capabilities: import("../../config/agentCapabilityCandidates.js").AuthorizableCapabilities,
+) => envelope({ type: "authorizableCapabilities" as const, agent, capabilities });
 export const createSoulMessage = (agent: string) => envelope({ type: "createSoul" as const, agent });
 /** Webview → host: import exact bytes selected by the in-Studio picker; no local path crosses the boundary. */
 export const importSoulMessage = (agent: string, contentBase64: string) =>

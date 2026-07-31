@@ -90,6 +90,14 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
     return this.studio.authorizeAgentSkill(agentName, skillName, options);
   }
 
+  authorizableCapabilitiesFor(agent: string) {
+    return this.studio.authorizableCapabilitiesFor(agent);
+  }
+
+  authorizeAgentPlugin(agentName: string, pluginName: string, options: { reauthorize?: boolean } = {}) {
+    return this.studio.authorizeAgentPlugin(agentName, pluginName, options);
+  }
+
   createSavedAgent(
     mutation: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[0],
     options: Parameters<ClientWorkspaceStudioTarget["createSavedAgent"]>[1],

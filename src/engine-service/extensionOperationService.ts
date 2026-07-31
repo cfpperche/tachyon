@@ -99,6 +99,8 @@ export async function executeExtensionQuery(
       return json(await workspace.inspectAgentProfileStudio(query.agent));
     case "agent-profile.studio-ownership":
       return json(await workspace.agentOwnershipView(query.agent));
+    case "agent-profile.authorizable-capabilities":
+      return json(await workspace.authorizableCapabilitiesFor(query.agent));
     case "agent-profile.studio-bundle-export": {
       const exported = await workspace.exportAgentProfileStudioBundle(query.agent, query.expectedRevision);
       return json({
@@ -402,6 +404,14 @@ export async function executeExtensionCommand(
       // codex" is an answer the human needs to read, and turning it into an exception would surface
       // it as an engine failure with no way to tell it from a broken transaction.
       const authorized = await workspace.authorizeAgentSkill(command.agentName, command.skillName, {
+        ...(command.reauthorize ? { reauthorize: true } : {}),
+      });
+      return json(authorized);
+    }
+    case "agent-profile.authorize-plugin": {
+      // Whole-plugin authorization: a refusal is a RESULT here too, for the same reason as the skill
+      // door — "also installs settings-hook, which no capability grant can carry yet" is the answer.
+      const authorized = await workspace.authorizeAgentPlugin(command.agentName, command.pluginName, {
         ...(command.reauthorize ? { reauthorize: true } : {}),
       });
       return json(authorized);

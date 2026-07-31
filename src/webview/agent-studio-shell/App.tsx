@@ -28,7 +28,9 @@ import {
 } from "./domain";
 import {
   adoptSoulProfileMessage,
+  authorizePluginMessage,
   authorizeSkillMessage,
+  refreshAuthorizableCapabilitiesMessage,
   browseMessage,
   cancelMessage,
   createSoulMessage,
@@ -70,6 +72,7 @@ import type {
   SoulProfileStatusMessage,
 } from "./types";
 import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
+import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -211,9 +214,10 @@ function SoulImportPicker({ onCancel, onSelect }: {
 }
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: AgentStudioAppProps) {
-  // t-5498a6 — transient UI state, deliberately NOT part of `fields`: a half-typed skill name is
-  // not a profile edit and must not mark the form dirty.
-  const [authorizeSkillName, setAuthorizeSkillName] = useState("");
+  // t-5498a6 — candidate lists live outside `fields`: they are workspace state, not a profile edit,
+  // and must never mark the form dirty. `undefined` means "not asked yet", which renders as Loading
+  // rather than as an empty workspace — those are different facts.
+  const [candidates, setCandidates] = useState<AuthorizableCapabilities | undefined>();
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<AgentStudioEntity | undefined>(undefined);
@@ -493,6 +497,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setForgetConfirmOpen(false);
       setProfileRetired(true);
       setProfileNotice({ kind: "success", text: "Agent forgotten. Its recoverable retirement record was kept." });
+    } else if (d.type === "authorizableCapabilities") {
+      if (entityRef.current?.name !== d.agent) return;
+      setCandidates(d.capabilities);
     } else if (d.type === "agentProfileError") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
@@ -521,6 +528,16 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     post(patchMessage(serializeAgentPatch(fields, true)!, editRevisionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields, frozen]);
+
+  // t-5498a6 — ask for candidates once the canonical profile is bound. Not folded into the profile
+  // snapshot: that snapshot is revisioned and the Studio uses the revision as a CAS token, while
+  // installing a plugin changes no revision at all. Candidates are workspace state.
+  useEffect(() => {
+    const name = entityRef.current?.name;
+    if (!name || !entityRef.current?.profile) return;
+    post(refreshAuthorizableCapabilitiesMessage(name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityRef.current?.name, entityRef.current?.profile?.revision]);
 
   useEffect(() => {
     if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
@@ -962,33 +979,41 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     </label>;
                   }))}
                   {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
-                  {/* t-5498a6 — the door that was missing. Everything above renders what was already
-                    * authorized, and nothing could ever authorize anything: the Studio refuses to
-                    * author a reference and an agent must never reach one. So every profile granted
-                    * zero capabilities — not a decision anybody made, just the only reachable state.
-                    *
-                    * Authorizing does NOT tick the box. It adds the skill to what this profile MAY
-                    * select; choosing it is the checkbox above, and keeping the two apart is the
-                    * whole governance model. */}
-                  <div class="ash-row" style="margin-top:8px">
-                    <Input
-                      id="ash-authorize-skill"
-                      value={authorizeSkillName}
-                      placeholder="skill name — e.g. visual-qa"
-                      disabled={mutationDisabled}
-                      onInput={(e) => setAuthorizeSkillName((e.currentTarget as HTMLInputElement).value)}
-                    />
-                    <Button
-                      disabled={mutationDisabled || !authorizeSkillName.trim()}
-                      onClick={() => {
-                        const skillName = authorizeSkillName.trim();
-                        if (!skillName || !entity.name) return;
-                        post(authorizeSkillMessage(entity.name, skillName));
-                        setAuthorizeSkillName("");
-                      }}
-                    >Authorize</Button>
-                  </div>
-                  <div class="hint">Authorizing lets this profile select the skill; it does not enable it. A plugin skill is pinned at its plugin version, a hand-written one at its content.</div>
+                  {/* t-5498a6 — the two selectors. Kept separate because a skill installed by a
+                    * Tachyon plugin and one written by hand here are different things: the plugin is
+                    * versioned and pinned at its own tree, the hand-written one has only its content.
+                    * The discriminator is the plugin LOCKFILE, never a content comparison — a plugin
+                    * skill edited by hand diverges and is still the plugin's. */}
+                  <div class="ash-label" style="margin-top:12px">Workspace skills (not from a plugin)</div>
+                  {candidates === undefined
+                    ? <div class="ash-native-config-empty">Loading…</div>
+                    : candidates.workspaceSkills.length === 0
+                      ? <div class="ash-native-config-empty">No hand-written skills in this workspace for this runtime.</div>
+                      : candidates.workspaceSkills.map((skill) => (
+                        <div class="ash-native-config-row" key={`ws:${skill.name}`}>
+                          <code>{skill.name}</code>
+                          <span class="hint">{skill.path}</span>
+                          <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name))}>Authorize</Button>
+                        </div>
+                      ))}
+
+                  <div class="ash-label" style="margin-top:12px">Tachyon plugins</div>
+                  <div class="hint">Authorizing a plugin authorizes everything it exposes for this runtime. A plugin that also installs something no capability grant can carry is refused whole — half a plugin reported as success would be worse than a refusal.</div>
+                  {candidates === undefined
+                    ? <div class="ash-native-config-empty">Loading…</div>
+                    : candidates.plugins.length === 0
+                      ? <div class="ash-native-config-empty">No Tachyon plugins are installed in this workspace.</div>
+                      : candidates.plugins.map((plugin) => (
+                        <div class="ash-native-config-row" key={`plugin:${plugin.name}`}>
+                          <code>{plugin.name}@{plugin.version}</code>
+                          <span class="hint">{plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}</span>
+                          {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
+                            * hidden option is indistinguishable from one that is not installed. */}
+                          {plugin.authorizable
+                            ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name))}>Authorize</Button>
+                            : <span class="hint" title={plugin.reason}>{plugin.reason}</span>}
+                        </div>
+                      ))}
                 </div>
               </section>
             )}
