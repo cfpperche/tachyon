@@ -216,6 +216,24 @@ export function inspectLegacyFleet(input: {
 }
 
 /** The refusal an operator reads. Separate from the inspection so the message is testable on its own. */
+/**
+ * t-1129e1 — is this refusal one that can clear ITSELF, without anyone doing anything?
+ *
+ * A live tmux session is the only offender kind that can: a process from the previous build exits
+ * moments after an extension-host reload, and the fleet becomes clean on its own. A ledger row and a
+ * roster entry are persisted state — they are exactly as present a minute later, so waiting on them
+ * would only delay a refusal the operator has to act on.
+ *
+ * Measured (t-1129e1 journal, 19:08-19:09): the gate refused on a pre-cut `claude` session, that
+ * session exited cleanly seconds later, and the replacement was born attested. The workspace was fine
+ * and the red card stayed on screen naming a fact that had stopped being true.
+ */
+export function isTransientLegacyRefusal(result: LegacyFleetGateResult): boolean {
+  return !result.ok
+    && result.offenders.length > 0
+    && result.offenders.every((offender) => offender.kind === "live-agent-session");
+}
+
 export function describeLegacyFleetRefusal(result: LegacyFleetGateResult): string {
   if (result.ok) return "";
   const byKind = new Map<LegacyOffenderKind, string[]>();

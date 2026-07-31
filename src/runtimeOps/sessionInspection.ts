@@ -98,6 +98,39 @@ export function redactCommand(argv: readonly string[], secrets: readonly string[
 }
 
 /**
+ * An argv entry this long WITH line breaks is prose, not a flag or a path. Both bounds matter: a long
+ * path has no newlines, and a short multi-line value is not a brief.
+ */
+const PROSE_ARGUMENT_MIN_LENGTH = 400;
+
+export function isProseArgument(arg: string): boolean {
+  return arg.length >= PROSE_ARGUMENT_MIN_LENGTH && arg.includes("\n");
+}
+
+/**
+ * Fold the opening brief out of a launch command so the flags stay readable.
+ *
+ * Both Claude and Codex take the primer + brief summary as a POSITIONAL argument — measured, ~7.9 KB
+ * on a fresh start. Printed verbatim it buries `--settings`, `--model` and `--strict-mcp-config`
+ * under a wall of prose, which are exactly what a person opens this panel to read. That failure has
+ * the same shape as the one the panel exists to end: everything is present and nobody can read it.
+ *
+ * The text is not lost — it is already on disk under `.tachyon/briefs/spawn/<agent>.md`, and the
+ * pane shows it. What is summarized is SAID to be summarized, never silently dropped.
+ */
+export function foldProseArguments(argv: readonly string[]): { command: string[]; folded: number } {
+  let folded = 0;
+  const command = argv.map((arg) => {
+    if (!isProseArgument(arg)) return arg;
+    folded++;
+    // TextEncoder, not Buffer: this module is pure domain and the webview imports its types.
+    const bytes = new TextEncoder().encode(arg).length;
+    return `[opening brief — ${bytes} bytes, ${arg.split("\n").length} lines, not shown here]`;
+  });
+  return { command, folded };
+}
+
+/**
  * Where a settings key stands, given what the profile projects and what the host injects.
  *
  * The `not-projected` case is the one worth the whole function. A key sitting in the person's global
@@ -154,4 +187,54 @@ export function describeHook(event: string, command: string): InspectedHook {
   return known
     ? { event, command, purpose: known.purpose, writes: known.writes }
     : { event, command };
+}
+
+/**
+ * t-0c963d — pull hooks out of the nested `{ Event: [{ matcher, hooks: [{ command }] }] }` shape.
+ *
+ * This lives in the pure layer because the SHAPE is shared even though the source is not: Claude
+ * keeps it in a JSON settings file, Codex passes it as a TOML fragment on the argv, and both parse
+ * into exactly this structure. Measured on a live Codex session — the four hooks come out identical
+ * to Claude's. Duplicating the walk per reader would be the two-path defect on a fact about data.
+ */
+export function hooksFromConfig(config: Record<string, unknown> | undefined): InspectedHook[] {
+  const hooks = config?.hooks;
+  if (!hooks || typeof hooks !== "object") return [];
+  const out: InspectedHook[] = [];
+  for (const [event, matchers] of Object.entries(hooks as Record<string, unknown>)) {
+    if (!Array.isArray(matchers)) continue;
+    for (const matcher of matchers) {
+      const inner = (matcher as { hooks?: unknown })?.hooks;
+      if (!Array.isArray(inner)) continue;
+      for (const entry of inner) {
+        const command = (entry as { command?: unknown })?.command;
+        if (typeof command === "string") out.push(describeHook(event, command));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Flatten a nested config into dotted paths, because that is how a runtime's allowlist names its
+ * keys: Codex's family list carries `tui.status_line`, not `tui`. Without this every nested key would
+ * classify as "not delivered to this agent" — the single most misleading row this panel can show.
+ *
+ * Arrays and empty tables are leaves: `tui.status_line` is a list of widgets, and descending into it
+ * would produce `tui.status_line.0` rows that mean nothing to anyone.
+ */
+export function flattenConfig(
+  value: Record<string, unknown>,
+  prefix = "",
+): Array<{ key: string; value: unknown }> {
+  const out: Array<{ key: string; value: unknown }> = [];
+  for (const [key, inner] of Object.entries(value)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const nested = inner && typeof inner === "object" && !Array.isArray(inner)
+      ? inner as Record<string, unknown>
+      : undefined;
+    if (nested && Object.keys(nested).length > 0) out.push(...flattenConfig(nested, path));
+    else out.push({ key: path, value: inner });
+  }
+  return out;
 }

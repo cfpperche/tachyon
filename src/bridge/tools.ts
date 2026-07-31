@@ -379,6 +379,12 @@ export interface BridgeDeps {
   onPinsChanged?: () => void;
   /** Fired after a human approval request is recorded, so the host can show the approval view. */
   onApprovalRequested?: (request: { id: string; requester: string }) => void;
+  /**
+   * t-8e9b5e — fired after a Saved Agent proposal is recorded. Without this the proposal was a
+   * first-class Human Inbox item that rang nothing, and it expires in 24h — so one nobody saw did
+   * not wait, it died.
+   */
+  onSavedAgentProposed?: (proposal: { id: string; name: string; proposer: string }) => void;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
   onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
   /** Human-facing task mutation event sink. Best-effort; separate from assignee pane notices. */
@@ -2165,6 +2171,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           roster: await workspaceOwnershipRoster(deps),
         });
         if (!admission.ok) return fail(new Error(`${admission.code}: ${admission.reason}`));
+        // t-8e9b5e — ring the doorbell. Best-effort: a notification that fails must never turn a
+        // recorded proposal into a failed call, because the proposal IS the durable outcome.
+        if (!admission.collapsedOnto) {
+          try {
+            deps.onSavedAgentProposed?.({
+              id: admission.proposal.id,
+              name: input.name,
+              proposer,
+            });
+          } catch { /* observation only */ }
+        }
         return ok(JSON.stringify({
           id: admission.proposal.id,
           digest: admission.proposal.digest,

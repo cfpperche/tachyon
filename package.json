@@ -2,7 +2,7 @@
   "name": "tachyon",
   "displayName": "Tachyon",
   "description": "A local, multi-runtime Agentic Development Environment powered by a persistent orchestration engine, with a VS Code shell, native terminals and an MCP control plane.",
-  "version": "0.56.130",
+  "version": "0.56.133",
   "publisher": "cfpperche",
   "license": "GPL-3.0-or-later",
   "sponsor": {

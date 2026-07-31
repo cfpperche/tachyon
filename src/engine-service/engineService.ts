@@ -64,6 +64,7 @@ import { startEngineControlServer, type RunningEngineControlServer } from "./con
 import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { EngineEventJournal } from "./eventJournal.js";
 import { StagedPayloadStore } from "./stagedPayloadStore.js";
+import type { HumanInboxKind } from "../humanInbox/model.js";
 import { GlobalTmuxWatchdog } from "./tmuxAuthority.js";
 import {
   ENGINE_SHELL_PROTOCOL,
@@ -122,21 +123,97 @@ export interface RunningDaemonEngineService {
 }
 
 /** Routes a persisted approval request to the editor shell without carrying any decision authority. */
+/**
+ * t-8e9b5e — where "Review" takes a human, per Inbox kind.
+ *
+ * A `Record` over `HumanInboxKind` rather than a switch, so a FOURTH kind added to
+ * `HUMAN_INBOX_KINDS` does not compile until it declares where its doorbell leads. That is the whole
+ * guard: the defect this replaced was a kind that existed in the Inbox and rang nothing, and no test
+ * would have caught it because nothing claimed to enumerate the kinds.
+ *
+ * Approval keeps its own destination deliberately: it predates the unified Inbox and opens the
+ * Approvals section. That is a real difference in where a person should land, not a duplicated path.
+ */
+const INBOX_REVIEW_TARGET: Record<HumanInboxKind, (workspaceHash: string, id: string) => [string, ...unknown[]]> = {
+  approval: (workspaceHash) => ["tachyon.openApprovals", workspaceHash],
+  validation: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "validation", id }],
+  "saved-agent-proposal": (workspaceHash, id) =>
+    ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-proposal", id }],
+};
+
+/**
+ * t-8e9b5e — one doorbell for every Human Inbox kind.
+ *
+ * There were two near-identical routers, one per kind, and a third kind with none: a Saved Agent
+ * proposal landed in the Inbox as a first-class item (`HUMAN_INBOX_KINDS` lists it) and rang nothing.
+ * A human only found it by going to look, and proposals expire in 24h — so one nobody saw did not
+ * wait, it died.
+ *
+ * The shape is t-b4a799's: two paths to the same product effect ("a human must decide something"),
+ * one of them missing. The fix is not a third copy — it is the one thing all three share.
+ */
+export function routeHumanInboxItem(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  item: { kind: HumanInboxKind; id: string; message: string },
+): void {
+  const [command, ...args] = INBOX_REVIEW_TARGET[item.kind](workspaceHash, item.id);
+  host.notify(item.message, "info", [{
+    label: host.t("Review"),
+    run: async () => {
+      // t-5ca73a — a Review that cannot open its window must SAY so.
+      //
+      // Invoking dismisses the notice before the action runs, so a silent failure costs the human the
+      // only pointer they had: the attention vanishes, no screen opens, and the sole record is an
+      // `ui-unavailable` line in the engine journal. That silence is what turned a one-line deadlock
+      // into hours of measuring — the deadlock itself is fixed in WorkspaceClient, but a shell can
+      // still be absent or closing, and then this is the difference between a dead end and a fact.
+      try {
+        await host.executeCommand(command, ...args);
+      } catch (error) {
+        host.notify(
+          host.t(
+            "Could not open '{0}' — the editor did not respond. It is still waiting for you in the Inbox: {1} {2}",
+            command,
+            item.kind,
+            item.id,
+          ),
+          "error",
+        );
+        throw error;
+      }
+    },
+  }]);
+}
+
 export function routeHumanApprovalRequest(
   host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
   workspaceHash: string,
   request: { id: string; requester: string },
 ): void {
-  host.notify(
-    host.t("Approval request {0} from '{1}'", request.id, request.requester),
-    "info",
-    [{
-      label: host.t("Review"),
-      run: async () => {
-        await host.executeCommand("tachyon.openApprovals", workspaceHash);
-      },
-    }],
-  );
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "approval",
+    id: request.id,
+    message: host.t("Approval request {0} from '{1}'", request.id, request.requester),
+  });
+}
+
+/** t-8e9b5e — the third kind, which had no doorbell at all until this. */
+export function routeSavedAgentProposal(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  proposal: { id: string; name: string; proposer: string },
+): void {
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "saved-agent-proposal",
+    id: proposal.id,
+    message: host.t(
+      "Saved Agent proposal {0} — '{1}' proposed by '{2}'",
+      proposal.id,
+      proposal.name,
+      proposal.proposer,
+    ),
+  });
 }
 
 /**
@@ -154,19 +231,16 @@ export function routeHumanValidationPending(
   workspaceHash: string,
   validation: { id: string; title: string; author: string },
 ): void {
-  host.notify(
-    host.t("Validation {0} needs a human — '{1}' (from '{2}')", validation.id, validation.title, validation.author),
-    "info",
-    [{
-      label: host.t("Review"),
-      run: async () => {
-        await host.executeCommand("tachyon.openHumanInbox", workspaceHash, {
-          kind: "validation",
-          id: validation.id,
-        });
-      },
-    }],
-  );
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "validation",
+    id: validation.id,
+    message: host.t(
+      "Validation {0} needs a human — '{1}' (from '{2}')",
+      validation.id,
+      validation.title,
+      validation.author,
+    ),
+  });
 }
 
 /**
@@ -245,6 +319,9 @@ export async function startDaemonEngineService(
       onViewsChanged: (view) => host.onViewsChanged(view),
       onApprovalRequested: (approvalWorkspace, request) => {
         routeHumanApprovalRequest(host, approvalWorkspace.wsHash, request);
+      },
+      onSavedAgentProposed: (proposalWorkspace, proposal) => {
+        routeSavedAgentProposal(host, proposalWorkspace.wsHash, proposal);
       },
       onHumanValidationPending: (validationWorkspace, validation) => {
         routeHumanValidationPending(host, validationWorkspace.wsHash, validation);
