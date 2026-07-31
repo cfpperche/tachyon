@@ -28,10 +28,21 @@ Studio must say so as **Reauthorize**, with the version delta, before a spawn di
 EOF
 
 # A real update rewrites the materialized copies too. The digest that decides Reauthorize is taken
-# over the plugin payload, but leaving these at v1 would make the fixture lie about what an update
-# looks like on disk.
-cp .tachyon/plugins/demo-drifty/skills/demo-drifty/SKILL.md .claude/skills/demo-drifty/SKILL.md
-cp .tachyon/plugins/demo-drifty/skills/demo-drifty/SKILL.md .agents/skills/demo-drifty/SKILL.md
+# over the plugin payload above, but leaving these at v1 would make the fixture lie about what an
+# update looks like on disk.
+#
+# Only where the mirror actually owns them. `point` copies `.tachyon`, `.claude` and `.codex` for
+# real and SYMLINKS every other child back into the tracked fixture — so a blind `cp` into
+# `.agents/` would write straight through into test/fixtures/, which is the source this script
+# refuses to touch three lines up. Skip it out loud rather than corrupt the repo quietly.
+for rel in .claude/skills/demo-drifty .agents/skills/demo-drifty; do
+  root="${rel%%/*}"
+  if [ -L "$root" ]; then
+    echo "drift.sh: skipped $rel — the mirror symlinks $root/ back to the tracked fixture."
+    continue
+  fi
+  cp .tachyon/plugins/demo-drifty/skills/demo-drifty/SKILL.md "$rel/SKILL.md"
+done
 
 # Bump ONLY demo-drifty's version: the line right after its own "name" key. A blanket replace would
 # move demo-stable too, and the control would stop being a control.

@@ -17,11 +17,17 @@ legitimately has neither):
 
 ## Run it
 
+Arm from **the checkout whose VS Code window you will press F5 in** — `launch.json` reads
+`${workspaceFolder}/.tachyon/dev-host`, so a window opened on a worktree uses that worktree's arm and
+never the monorepo's. Arming the wrong one launches a stale fixture with no error anywhere:
+
 ```sh
+cd <the checkout you have open>
 npm run dogfood -- dev-host -- point --worktree <worktree> --fixture agent-capability-reauth
+npm run dogfood -- dev-host -- point-status   # "fixture source:" must name this fixture
 ```
 
-Then F5 → **Tachyon: Dev Host** from the checkout that owns the dev-host.
+Then F5 → **Tachyon: Dev Host**.
 
 1. Create an agent in Agent Studio (the roster starts empty on purpose).
 2. Authorize both plugins → both read **Authorized**.
