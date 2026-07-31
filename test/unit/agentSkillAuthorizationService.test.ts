@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   authorizeAgentSkill,
+  authorizedSkillStates,
   revokeAgentSkill,
   skillOriginFor,
   type SkillAuthorizationPorts,
@@ -310,5 +311,65 @@ describe("t-5498a6 — the digest is the one delivery will verify", () => {
     const pinned = state.profile.references![0]!.sha256!;
 
     expect(() => captureCapabilitySourceAtRoot(root, ".claude/skills/house-style", pinned)).not.toThrow();
+  });
+});
+
+/**
+ * t-4a2a6f — the drift detector. It must agree with delivery, because it PREDICTS delivery: a
+ * `stale: false` that delivery then refuses would put a "Authorized" label on a broken agent.
+ */
+describe("t-4a2a6f — classifying what the agent already holds", () => {
+  it("agrees with the reader delivery uses, in both directions", async () => {
+    const { captureCapabilitySourceAtRoot } = await import("../../src/config/agentCapabilitySource.js");
+    const root = workspace();
+    writeSkill(root, ".claude/skills/house-style", "# v1\n");
+    const { port, state } = ports(profile());
+
+    await authorizeAgentSkill({
+      workspaceRoot: root,
+      agentName: "claude",
+      origin: { kind: "workspace", path: ".claude/skills/house-style" },
+      ports: port,
+    });
+    const references = state.profile.references!;
+
+    expect(authorizedSkillStates(root, references).get("house-style")).toEqual({ stale: false });
+    expect(() => captureCapabilitySourceAtRoot(root, ".claude/skills/house-style", references[0]!.sha256!)).not.toThrow();
+
+    // the plugin update: same path, new bytes
+    fs.writeFileSync(path.join(root, ".claude/skills/house-style/SKILL.md"), "# v2\n");
+
+    expect(authorizedSkillStates(root, references).get("house-style")).toEqual({ stale: true });
+    expect(() => captureCapabilitySourceAtRoot(root, ".claude/skills/house-style", references[0]!.sha256!)).toThrow();
+  });
+
+  it("counts a vanished tree as stale — delivery refuses that too, and the repair is the same gesture", () => {
+    const root = workspace();
+    const references = [{
+      id: "gone", kind: "skill" as const, scope: "project" as const, owner: "workspace",
+      path: ".claude/skills/gone", mode: "pinned" as const, sha256: "a".repeat(64),
+    }];
+
+    expect(authorizedSkillStates(root, references).get("gone")).toEqual({ stale: true });
+  });
+
+  it("carries the version forward so the refusal can name the delta instead of two digests", () => {
+    const root = workspace();
+    writeSkill(root, ".tachyon/plugins/p/skills/p", "# v1\n");
+    const references = [{
+      id: "p", kind: "skill" as const, scope: "project" as const, owner: "plugin:p",
+      path: ".tachyon/plugins/p/skills/p", mode: "pinned" as const, sha256: "a".repeat(64), version: "2.1.2",
+    }];
+
+    expect(authorizedSkillStates(root, references).get("p")).toEqual({ version: "2.1.2", stale: true });
+  });
+
+  it("ignores references that are not pinned skills — an mcp or hook reference has no tree to compare", () => {
+    const root = workspace();
+    const references = [
+      { id: "some-mcp", kind: "mcp" as const, scope: "project" as const, owner: "workspace", path: "x", mode: "pinned" as const, sha256: "a".repeat(64) },
+    ];
+
+    expect(authorizedSkillStates(root, references as never).size).toBe(0);
   });
 });

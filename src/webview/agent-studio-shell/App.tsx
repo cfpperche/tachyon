@@ -993,8 +993,15 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       : candidates.workspaceSkills.map((skill) => (
                         <div class="ash-native-config-row" key={`ws:${skill.name}`}>
                           <code>{skill.name}</code>
-                          <span class="hint">{skill.path}</span>
-                          <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name))}>Authorize</Button>
+                          <span class="hint">{skill.path}{skill.authorized?.stale ? " · content changed since you authorized it" : ""}</span>
+                          {/* t-4a2a6f — three states, three renders. An already-authorized skill used
+                            * to render exactly like a new one, so the only control offered was the one
+                            * the core correctly refuses to honour silently. */}
+                          {skill.authorized === undefined
+                            ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, false))}>Authorize</Button>
+                            : skill.authorized.stale
+                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, true))}>Reauthorize</Button>
+                              : <span class="hint">Authorized</span>}
                         </div>
                       ))}
 
@@ -1007,12 +1014,26 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       : candidates.plugins.map((plugin) => (
                         <div class="ash-native-config-row" key={`plugin:${plugin.name}`}>
                           <code>{plugin.name}@{plugin.version}</code>
-                          <span class="hint">{plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}</span>
+                          {/* t-4a2a6f — the version delta, not two digests. "authorized at 2.1.2, now
+                            * 3.0.0" is the sentence that connects the refusal to the plugin update
+                            * that caused it; `expected e468…, consumed 6f27…` never did. */}
+                          <span class="hint">
+                            {plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}
+                            {plugin.authorized?.stale
+                              ? plugin.authorized.version && plugin.authorized.version !== plugin.version
+                                ? ` · authorized at ${plugin.authorized.version}, now ${plugin.version}`
+                                : " · content changed since you authorized it"
+                              : ""}
+                          </span>
                           {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
                             * hidden option is indistinguishable from one that is not installed. */}
-                          {plugin.authorizable
-                            ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name))}>Authorize</Button>
-                            : <span class="hint" title={plugin.reason}>{plugin.reason}</span>}
+                          {!plugin.authorizable
+                            ? <span class="hint" title={plugin.reason}>{plugin.reason}</span>
+                            : plugin.authorized === undefined
+                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, false))}>Authorize</Button>
+                              : plugin.authorized.stale
+                                ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
+                                : <span class="hint">Authorized</span>}
                         </div>
                       ))}
                   {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`

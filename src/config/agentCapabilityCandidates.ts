@@ -25,10 +25,26 @@ const SKILLS_REL: Record<string, string> = {
   codex: ".agents/skills",
 };
 
+/**
+ * t-4a2a6f — what this agent already holds for a candidate, when it holds anything.
+ *
+ * `stale` means the tree was authorized once and its bytes have changed since — a plugin update, or a
+ * hand edit. The pin is doing its job by refusing the new content; what was missing is a name for that
+ * state before delivery fails, and a control that repairs it. Without this the only signal is a
+ * `profile/digest-mismatch` at spawn, two hashes deep and disconnected from the update that caused it.
+ */
+export interface AuthorizedState {
+  /** The version recorded when it was authorized. Absent for a hand-written skill, which has none. */
+  version?: string;
+  /** The tree changed since authorization; delivery WILL refuse it until a human reauthorizes. */
+  stale: boolean;
+}
+
 export interface AuthorizableWorkspaceSkill {
   name: string;
   /** Workspace-relative path of the skill directory, under the agent runtime's own skills dir. */
   path: string;
+  authorized?: AuthorizedState;
 }
 
 export interface AuthorizablePlugin {
@@ -46,6 +62,12 @@ export interface AuthorizablePlugin {
   /** False when this plugin cannot be authorized for this agent; `reason` says why. */
   authorizable: boolean;
   reason?: string;
+  /**
+   * t-4a2a6f — present when this agent already authorized the plugin. `stale` is true when ANY of
+   * its skills drifted: a plugin is authorized whole, so it is stale whole, and repairing one skill
+   * while another stays pinned at content that no longer exists would leave delivery still refusing.
+   */
+  authorized?: AuthorizedState;
 }
 
 export interface AuthorizableCapabilities {
@@ -112,6 +134,46 @@ export function listAuthorizableCapabilities(workspaceRoot: string, adapter: str
     workspaceSkills: workspaceSkills.sort((left, right) => left.name.localeCompare(right.name)),
     plugins,
     checkoutOnlyPlugins,
+  };
+}
+
+/**
+ * t-4a2a6f — fold what the agent already holds into the candidate lists.
+ *
+ * Kept separate from `listAuthorizableCapabilities` on purpose: that function reads workspace state
+ * and nothing else, which is why its result can be cached against the workspace rather than the
+ * profile revision. This one takes the per-skill verdict the caller computed (it owns the profile and
+ * the digest reader) and only arranges it, so the roll-up rule is testable without a filesystem.
+ *
+ * `bySkill` is keyed by skill name — the reference id. A skill the agent never authorized is simply
+ * absent, which is why the annotation is optional rather than a three-valued flag.
+ */
+export function annotateAuthorized(
+  capabilities: AuthorizableCapabilities,
+  bySkill: ReadonlyMap<string, AuthorizedState>,
+): AuthorizableCapabilities {
+  return {
+    ...capabilities,
+    workspaceSkills: capabilities.workspaceSkills.map((skill) => {
+      const held = bySkill.get(skill.name);
+      return held ? { ...skill, authorized: held } : skill;
+    }),
+    plugins: capabilities.plugins.map((plugin) => {
+      const held = plugin.skills.map((skill) => bySkill.get(skill)).filter((state): state is AuthorizedState => state !== undefined);
+      if (held.length === 0) return plugin;
+      // A plugin is authorized WHOLE, so it is stale whole. Repairing one skill while a sibling stays
+      // pinned at bytes that no longer exist would leave delivery refusing the plugin anyway, and the
+      // human would have clicked a control that reported success and fixed nothing.
+      return {
+        ...plugin,
+        authorized: {
+          ...(held.find((state) => state.version !== undefined)?.version !== undefined
+            ? { version: held.find((state) => state.version !== undefined)!.version }
+            : {}),
+          stale: held.some((state) => state.stale) || held.length < plugin.skills.length,
+        },
+      };
+    }),
   };
 }
 

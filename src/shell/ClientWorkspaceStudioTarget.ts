@@ -276,7 +276,7 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     agentName: string,
     pluginName: string,
     options: { reauthorize?: boolean } = {},
-  ): Promise<{ ok: true; authorized: string[] } | { ok: false; error: string }> {
+  ): Promise<{ ok: true; authorized: string[]; outcomes: string[] } | { ok: false; error: string }> {
     const result = await this.client.invoke(`authorize-plugin:${this.operationId()}`, {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -286,13 +286,17 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-plugin") {
       throw new Error("persistent engine returned a malformed plugin authorization result");
     }
-    const value = result.value as { ok?: unknown; error?: unknown; authorized?: unknown };
+    const value = result.value as { ok?: unknown; error?: unknown; authorized?: unknown; outcomes?: unknown };
     if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
-    if (value?.ok !== true || !Array.isArray(value.authorized)) {
+    // t-4a2a6f — `outcomes` must be present AND aligned with `authorized`. The caller reads them by
+    // index to say which skills were written and which were held back, so a short or missing array
+    // would silently reclassify a refused skill as an authorized one.
+    if (value?.ok !== true || !Array.isArray(value.authorized) || !Array.isArray(value.outcomes)
+      || value.outcomes.length !== value.authorized.length) {
       throw new Error("persistent engine returned a malformed plugin authorization result");
     }
     this.refreshConfig();
-    return { ok: true, authorized: value.authorized as string[] };
+    return { ok: true, authorized: value.authorized as string[], outcomes: value.outcomes as string[] };
   }
 
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {

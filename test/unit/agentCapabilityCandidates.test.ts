@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { listAuthorizableCapabilities } from "../../src/config/agentCapabilityCandidates.js";
+import { annotateAuthorized, listAuthorizableCapabilities, type AuthorizableCapabilities, type AuthorizedState } from "../../src/config/agentCapabilityCandidates.js";
 
 /**
  * t-5498a6 — the two candidate lists a human chooses from.
@@ -159,5 +159,58 @@ describe("t-5498a6 — an unreadable or absent lockfile is an empty plugin list,
 
     expect(result.plugins).toEqual([]);
     expect(result.workspaceSkills.map((skill) => skill.name)).toEqual(["house-style"]);
+  });
+});
+
+/**
+ * t-4a2a6f — folding "what the agent already holds" into the candidate lists.
+ *
+ * The roll-up rule is the whole point: a plugin is authorized WHOLE, so one drifted skill makes the
+ * plugin stale. Getting this wrong renders a plain Authorize button on an entry the core will refuse
+ * to write, which is exactly the silent no-op this closes.
+ */
+describe("t-4a2a6f — annotating candidates with what the agent already holds", () => {
+  const base = (): AuthorizableCapabilities => ({
+    workspaceSkills: [{ name: "house-style", path: ".claude/skills/house-style" }],
+    plugins: [{
+      name: "multi", version: "2.0.0", runtimes: ["claude"],
+      skills: ["alpha", "beta"], ungrantableKinds: [], authorizable: true,
+    }],
+    checkoutOnlyPlugins: [],
+  });
+  const held = (entries: Record<string, AuthorizedState>) => new Map(Object.entries(entries));
+
+  it("leaves an unheld candidate unannotated — absent is not the same as current", () => {
+    const result = annotateAuthorized(base(), held({}));
+    expect(result.workspaceSkills[0]!.authorized).toBeUndefined();
+    expect(result.plugins[0]!.authorized).toBeUndefined();
+  });
+
+  it("marks a plugin stale when ANY of its skills drifted", () => {
+    const result = annotateAuthorized(base(), held({
+      alpha: { version: "1.0.0", stale: false },
+      beta: { version: "1.0.0", stale: true },
+    }));
+    expect(result.plugins[0]!.authorized).toEqual({ version: "1.0.0", stale: true });
+  });
+
+  it("reports a fully-current plugin as authorized and not stale", () => {
+    const result = annotateAuthorized(base(), held({
+      alpha: { version: "2.0.0", stale: false },
+      beta: { version: "2.0.0", stale: false },
+    }));
+    expect(result.plugins[0]!.authorized).toEqual({ version: "2.0.0", stale: false });
+  });
+
+  it("treats a plugin that GAINED a skill as stale — half a plugin is the failure the whole-plugin rule exists to stop", () => {
+    // The agent authorized `alpha` when that was all the plugin had; the update added `beta`. Nothing
+    // drifted, yet the agent holds half. Reauthorizing is the gesture that makes it whole again.
+    const result = annotateAuthorized(base(), held({ alpha: { version: "1.0.0", stale: false } }));
+    expect(result.plugins[0]!.authorized).toEqual({ version: "1.0.0", stale: true });
+  });
+
+  it("annotates a hand-written skill, which carries no version", () => {
+    const result = annotateAuthorized(base(), held({ "house-style": { stale: true } }));
+    expect(result.workspaceSkills[0]!.authorized).toEqual({ stale: true });
   });
 });

@@ -132,8 +132,8 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "refreshEvolution") { void refreshEvolution(ws, ctx, agent); return; }
   if (m.type === "loadEvolutionCandidate") { void loadEvolutionCandidate(ws, ctx, agent, m.candidateId); return; }
   if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") { void resolveEvolutionCandidate(ws, ctx, agent, m); return; }
-  if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName); return; }
-  if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName); return; }
+  if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
+  if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
   if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
   if (m.type === "createSoul") { void runProfileAction(ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
   if (m.type === "importSoul") { void importSoul(ws, ctx, agent, m.contentBase64); return; }
@@ -186,9 +186,23 @@ async function authorizeSkill(
   ctx: StudioDomainContext,
   agent: string,
   skillName: string,
+  reauthorize: boolean,
 ): Promise<void> {
   try {
-    const result = await ws.authorizeAgentSkill(agent, skillName);
+    const result = await ws.authorizeAgentSkill(agent, skillName, { reauthorize });
+    // t-4a2a6f — `digest-changed` is `ok: true` and writes NOTHING. Treating it as success is how the
+    // screen came to report a repair it never performed. It reaches the human as a refusal naming the
+    // gesture that resolves it, because that is what it is: a decision handed back, not a failure.
+    if (result.ok && result.outcome === "digest-changed") {
+      ctx.post(agentProfileErrorMessage(
+        agent,
+        "agent-profile/skill-authorization-refused",
+        `skill '${skillName}' was authorized at content that has since changed — nothing was written. Use Reauthorize to accept the new content.`,
+        false,
+      ));
+      await refreshCandidates(ws, ctx, agent);
+      return;
+    }
     if (!result.ok) {
       // Posted DIRECTLY rather than through `postAgentProfileError`, which flattens every message to
       // "the profile lifecycle action could not be completed". That sanitising is right for an
@@ -217,12 +231,25 @@ async function authorizePlugin(
   ctx: StudioDomainContext,
   agent: string,
   pluginName: string,
+  reauthorize: boolean,
 ): Promise<void> {
   try {
-    const result = await ws.authorizeAgentPlugin(agent, pluginName);
+    const result = await ws.authorizeAgentPlugin(agent, pluginName, { reauthorize });
     if (!result.ok) {
       ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
       return;
+    }
+    // t-4a2a6f — same rule as the skill door, and it matters more here: a plugin authorizes several
+    // skills, so a partial `digest-changed` means some landed and some did not. Naming the ones that
+    // did not is the only way the human can tell a finished repair from a half one.
+    const stale = result.authorized.filter((_, index) => result.outcomes[index] === "digest-changed");
+    if (stale.length > 0) {
+      ctx.post(agentProfileErrorMessage(
+        agent,
+        "agent-profile/skill-authorization-refused",
+        `plugin '${pluginName}': ${stale.join(", ")} ${stale.length === 1 ? "was" : "were"} authorized at content that has since changed — nothing was written for ${stale.length === 1 ? "it" : "them"}. Use Reauthorize to accept the new content.`,
+        false,
+      ));
     }
     await refreshAgentProfile(ws, ctx, agent);
     await refreshCandidates(ws, ctx, agent);

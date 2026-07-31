@@ -58,14 +58,22 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   authorizeAgentSkill(
     agent: string,
     skillName: string,
+    options?: { reauthorize?: boolean },
   ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }>;
   /** t-5498a6 — candidate lists, queried fresh: a plugin install changes no profile revision. */
   authorizableCapabilitiesFor(agent: string): Promise<AuthorizableCapabilities>;
-  /** t-5498a6 — authorize everything a plugin exposes for this runtime, or refuse it whole. */
+  /**
+   * t-5498a6 — authorize everything a plugin exposes for this runtime, or refuse it whole.
+   *
+   * t-4a2a6f — `outcomes` is parallel to `authorized` and load-bearing, not diagnostic: a
+   * `digest-changed` entry means that skill was NOT written. Dropping it at any hop turns a partial
+   * repair into a reported success, which is the defect this carries the data to prevent.
+   */
   authorizeAgentPlugin(
     agent: string,
     pluginName: string,
-  ): Promise<{ ok: true; authorized: string[] } | { ok: false; error: string }>;
+    options?: { reauthorize?: boolean },
+  ): Promise<{ ok: true; authorized: string[]; outcomes: string[] } | { ok: false; error: string }>;
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;

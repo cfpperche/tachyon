@@ -33,11 +33,12 @@ import {
 import {
   authorizeAgentPlugin,
   authorizeAgentSkill,
+  authorizedSkillStates,
   revokeAgentSkill,
   skillOriginFor,
   type SkillAuthorizationPorts,
 } from "../config/agentSkillAuthorizationService.js";
-import { listAuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import { annotateAuthorized, listAuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
@@ -5202,8 +5203,15 @@ export class Workspace {
       this.blockProfileSpawnsFromLiveConfig();
       return false;
     }
-    const { config, errors, warnings } = this.parseTrustedConfigText(text);
-    if (errors.length > 0) {
+    const { config, errors, warnings, profileErrors } = this.parseTrustedConfigText(text);
+    // t-588644 — a broken profile is ONE agent's problem. Before this, every error went into one
+    // bucket and any of them took the whole roster down: measured with two agents, the healthy one
+    // produced no error and still did not load. The loader now says which errors belong to a single
+    // agent; when that is all of them, the healthy agents load and the refused ones are named in the
+    // durable failure banner. `configValid` stays false — the file DOES have a problem — which is the
+    // invariant `workspaceProjection` enforces between the two, and which keeps this loud.
+    const isolatable = errors.length > 0 && profileErrors.length === errors.length && config !== undefined;
+    if (errors.length > 0 && !isolatable) {
       // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
       // Do NOT clear a previously-loaded in-memory config: live sessions keep working until
       // the human fixes the file. Cold start leaves config undefined (never loaded).
@@ -5219,8 +5227,21 @@ export class Workspace {
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
-    this.configFailure = undefined;
+    // t-588644 — the refused agents are ABSENT from the config we just accepted, so this banner is
+    // the only thing standing between "that agent was refused, here is why" and an agent that
+    // silently stopped existing. Trading a loud whole-roster failure for a quiet partial one would
+    // be the worse bug, so the failure surface is set BEFORE anything reads the new roster.
+    this.configFailure = isolatable
+      ? { path: file, file: path.basename(file), errors: [...profileErrors], at: new Date().toISOString() }
+      : undefined;
     this.profileSpawnBlocked.clear();
+    if (isolatable) {
+      this.blockProfileSpawnsFromLiveConfig();
+      this.host.notify(
+        this.t("{0}: {1}{2}", path.basename(file), profileErrors[0], profileErrors.length > 1 ? this.t(" (+{0} more)", profileErrors.length - 1) : ""),
+        "error",
+      );
+    }
     // SDD 414 — human toggle settings.companion.tabTools changes the Bridge tool catalog.
     // Close MCP sessions + announce list_changed so runtimes re-discover (pair alone does not).
     const nextCompanionTabTools = config?.settings.companion?.tabTools === true;
@@ -5620,9 +5641,20 @@ export class Workspace {
    * uses the revision as a CAS token, but installing a plugin changes none of it. Candidates carried
    * there would go stale while still claiming to be current.
    */
+  /**
+   * t-5498a6 — what this agent could be given. t-4a2a6f — annotated with what it already holds.
+   *
+   * The annotation is the whole repair path for a plugin update: without it an already-authorized
+   * plugin is indistinguishable in this list from one the agent never saw, so the human clicks
+   * "Authorize", the core correctly refuses to accept changed content silently, and the screen
+   * reports success while nothing moved.
+   */
   async authorizableCapabilitiesFor(agentName: string) {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
-    return listAuthorizableCapabilities(this.workspaceRoot, snapshot.profile.runtime.adapter);
+    return annotateAuthorized(
+      listAuthorizableCapabilities(this.workspaceRoot, snapshot.profile.runtime.adapter),
+      authorizedSkillStates(this.workspaceRoot, snapshot.profile.references ?? []),
+    );
   }
 
   /**

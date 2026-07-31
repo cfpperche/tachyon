@@ -25,7 +25,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { AgentCapabilitySourceError, inspectCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
-import { listAuthorizableCapabilities, readPluginLock } from "./agentCapabilityCandidates.js";
+import { listAuthorizableCapabilities, readPluginLock, type AuthorizedState } from "./agentCapabilityCandidates.js";
 import {
   authorizeWorkspaceSkill,
   revokeWorkspaceSkill,
@@ -222,6 +222,37 @@ function mergeGrants(
   const byId = new Map(skills.map((grant) => [grant.referenceId, grant as PersistedGrant]));
   const kept = existing.filter((grant) => !(grant.kind === "skill" && byId.has(grant.referenceId)));
   return [...kept, ...byId.values()].sort((left, right) => left.referenceId.localeCompare(right.referenceId));
+}
+
+/**
+ * t-4a2a6f — for each skill this agent already authorized, whether its tree still matches the pin.
+ *
+ * Read with the SAME reader delivery uses, so a `stale: false` here means delivery will resolve and a
+ * `stale: true` means it will refuse — no second opinion that could disagree with the thing it
+ * predicts. A reference whose path has vanished counts as stale: delivery refuses that too, and the
+ * repair is the same gesture.
+ *
+ * Cost is bounded by what the agent HOLDS, not by what is installed — typically a handful of trees.
+ * Measured on this workspace: 0.2 ms for agent-browser and sdd, 13 ms for product-foundation (585
+ * files, 6.2 MB), which is why this compares real digests instead of guessing from version strings.
+ * A version heuristic would call a hand-edited tree current and then let delivery refuse it.
+ */
+export function authorizedSkillStates(
+  workspaceRoot: string,
+  references: readonly AgentProfileReferenceV1[],
+): Map<string, AuthorizedState> {
+  const states = new Map<string, AuthorizedState>();
+  for (const reference of references) {
+    if (!isAuthorizedSkillShape(reference) || reference.scope !== "project") continue;
+    let stale: boolean;
+    try {
+      stale = inspectCapabilitySourceAtRoot(workspaceRoot, reference.path).sha256 !== reference.sha256;
+    } catch {
+      stale = true;
+    }
+    states.set(reference.id, { ...(reference.version ? { version: reference.version } : {}), stale });
+  }
+  return states;
 }
 
 /** Resolve a skill NAME to its origin by consulting the plugin lockfile, which is the only honest
