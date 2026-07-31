@@ -10,6 +10,9 @@ import type {
   RuntimeOpsUsageV1,
   RuntimeOpsValue,
 } from "../../runtimeOps/types";
+import type { ComponentChildren } from "preact";
+import type { InspectedHook, InspectedSetting, SettingsOrigin } from "../../runtimeOps/sessionInspection";
+import type { SessionInspectionState } from "./messages";
 import { Button, EmptyState, PageChrome } from "../shared/ui";
 
 const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshot["summary"]; label: string }> = [
@@ -20,13 +23,20 @@ const SUMMARY: Array<{ key: keyof RuntimeOpsSnapshot["summary"]; label: string }
   { key: "bridgeIssues", label: "Bridge issues" },
 ];
 
+export interface AppProps {
+  snapshot: RuntimeOpsSnapshot | undefined;
+  onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+  /** t-283149 — keyed by agent `key` (`<wsHash>:<name>`); only expanded rows appear. */
+  sessionInspections?: Record<string, SessionInspectionState>;
+  onToggleSessionInspection?: (workspaceKey: string, agent: string, open: boolean) => void;
+}
+
 export function App({
   snapshot,
   onSetProviderObservation,
-}: {
-  snapshot: RuntimeOpsSnapshot | undefined;
-  onSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
-}) {
+  sessionInspections = {},
+  onToggleSessionInspection,
+}: AppProps) {
   if (!snapshot) {
     return (
       <main class="runtime-ops" aria-busy="true">
@@ -78,7 +88,14 @@ export function App({
             <strong>No supported runtimes found.</strong>
             <span>PATH detection and managed session ledgers returned no runtime inventory.</span>
           </div>
-        ) : snapshot.runtimes.map((runtime) => <RuntimeRow runtime={runtime} key={runtime.key} />)}
+        ) : snapshot.runtimes.map((runtime) => (
+          <RuntimeRow
+            runtime={runtime}
+            key={runtime.key}
+            sessionInspections={sessionInspections}
+            onToggleSessionInspection={onToggleSessionInspection}
+          />
+        ))}
       </section>
     </main>
   );
@@ -187,7 +204,15 @@ function QuotaWindow({ window }: { window: RuntimeOpsProviderQuotaWindowV2 }) {
   );
 }
 
-function RuntimeRow({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
+function RuntimeRow({
+  runtime,
+  sessionInspections,
+  onToggleSessionInspection,
+}: {
+  runtime: RuntimeOpsRuntimeV1;
+  sessionInspections: Record<string, SessionInspectionState>;
+  onToggleSessionInspection?: (workspaceKey: string, agent: string, open: boolean) => void;
+}) {
   const workspaceLabels = runtime.workspaces.map((workspace) => workspace.label).join(", ");
   return (
     <div class="runtime-ops-runtime-group" role="rowgroup">
@@ -216,28 +241,226 @@ function RuntimeRow({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
           <div class="runtime-ops-agent-header" role="row" aria-hidden="true">
             <span role="columnheader">Agent</span><span role="columnheader">Attention</span><span role="columnheader">Model</span><span role="columnheader">Resources</span><span role="columnheader">Context pressure</span><span role="columnheader">Resume</span><span role="columnheader">Bridge</span>
           </div>
-          {runtime.agents.map((agent) => <AgentRow agent={agent} workspaces={runtime.workspaces} key={agent.key} />)}
+          {runtime.agents.map((agent) => (
+            <AgentRow
+              agent={agent}
+              workspaces={runtime.workspaces}
+              key={agent.key}
+              inspection={sessionInspections[agent.key]}
+              onToggleInspection={onToggleSessionInspection}
+            />
+          ))}
         </details>
       )}
     </div>
   );
 }
 
-function AgentRow({ agent, workspaces }: { agent: RuntimeOpsAgentRefV1; workspaces: RuntimeOpsRuntimeV1["workspaces"] }) {
+function AgentRow({
+  agent,
+  workspaces,
+  inspection,
+  onToggleInspection,
+}: {
+  agent: RuntimeOpsAgentRefV1;
+  workspaces: RuntimeOpsRuntimeV1["workspaces"];
+  inspection?: SessionInspectionState;
+  onToggleInspection?: (workspaceKey: string, agent: string, open: boolean) => void;
+}) {
   const workspace = workspaces.find((item) => item.key === agent.workspaceKey)?.label ?? "Unknown workspace";
   const attention = attentionCopy(agent);
   const bridge = bridgeCopy(agent);
+  const open = inspection !== undefined;
+  const panelId = `session-inspection-${agent.key.replace(/[^A-Za-z0-9_-]/g, "-")}`;
   return (
-    <div class="runtime-ops-agent-row" role="row" data-agent-key={agent.key}>
-      <div class="runtime-ops-cell" data-label="Agent" role="cell"><strong>{agent.name}</strong><span>{workspace} · {agent.status}</span></div>
-      <div class="runtime-ops-cell" data-label="Attention" role="cell"><strong>{attention.primary}</strong><span>{attention.detail}</span></div>
-      <div class="runtime-ops-cell" data-label="Model" role="cell"><Model value={agent.model} /></div>
-      <div class="runtime-ops-cell" data-label="Resources" role="cell"><AgentResources value={agent.resources} /></div>
-      <div class="runtime-ops-cell" data-label="Context pressure" role="cell"><ContextPressure value={agent.contextPressure} /></div>
-      <div class="runtime-ops-cell" data-label="Resume" role="cell"><strong>{resumeLabel(agent.resume.state)}</strong><span>{resumeDetail(agent.resume.state)}</span></div>
-      <div class="runtime-ops-cell" data-label="Bridge" role="cell"><strong class={`runtime-ops-bridge ${agent.bridge.state}`}>{bridge.label}</strong><span>{bridge.detail}</span></div>
+    <>
+      <div class="runtime-ops-agent-row" role="row" data-agent-key={agent.key}>
+        <div class="runtime-ops-cell" data-label="Agent" role="cell">
+          {onToggleInspection ? (
+            <button
+              type="button"
+              class="runtime-ops-inspect-toggle"
+              aria-expanded={open}
+              aria-controls={open ? panelId : undefined}
+              onClick={() => onToggleInspection(agent.workspaceKey, agent.name, !open)}
+            >
+              <span aria-hidden="true">{open ? "▾" : "▸"}</span>
+              <strong>{agent.name}</strong>
+            </button>
+          ) : <strong>{agent.name}</strong>}
+          <span>{workspace} · {agent.status}</span>
+        </div>
+        <div class="runtime-ops-cell" data-label="Attention" role="cell"><strong>{attention.primary}</strong><span>{attention.detail}</span></div>
+        <div class="runtime-ops-cell" data-label="Model" role="cell"><Model value={agent.model} /></div>
+        <div class="runtime-ops-cell" data-label="Resources" role="cell"><AgentResources value={agent.resources} /></div>
+        <div class="runtime-ops-cell" data-label="Context pressure" role="cell"><ContextPressure value={agent.contextPressure} /></div>
+        <div class="runtime-ops-cell" data-label="Resume" role="cell"><strong>{resumeLabel(agent.resume.state)}</strong><span>{resumeDetail(agent.resume.state)}</span></div>
+        <div class="runtime-ops-cell" data-label="Bridge" role="cell"><strong class={`runtime-ops-bridge ${agent.bridge.state}`}>{bridge.label}</strong><span>{bridge.detail}</span></div>
+      </div>
+      {inspection && <SessionInspection id={panelId} agent={agent.name} state={inspection} />}
+    </>
+  );
+}
+
+/**
+ * t-283149 — what Tachyon handed this agent's runtime.
+ *
+ * Tachyon injects code into someone's runtime: lifecycle hooks that run commands and write files, a
+ * status-line wrapper, MCP wiring, minted environment. Until this panel there was no surface that
+ * showed any of it — and asking the runtime itself does not work: Claude's own `/hooks` answered "No
+ * hooks configured for this event" while four Tachyon hooks were running.
+ */
+function SessionInspection({ id, agent, state }: { id: string; agent: string; state: SessionInspectionState }) {
+  if (state.status === "loading") {
+    return (
+      <div class="runtime-ops-session" id={id} aria-busy="true">
+        <span class="runtime-ops-session-status">Reading what {agent} was launched with…</span>
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div class="runtime-ops-session error" id={id} role="status">
+        <strong>Session inspection unavailable</strong>
+        <span>{state.message}</span>
+      </div>
+    );
+  }
+  const session = state.inspection;
+  return (
+    <div class="runtime-ops-session" id={id}>
+      <header class="runtime-ops-session-header">
+        <strong>{session.runtime} session</strong>
+        <span class={`runtime-ops-session-state ${session.state}`}>
+          {session.state === "live"
+            ? "Read from the running process"
+            : "No live process — showing the last recorded launch"}
+        </span>
+      </header>
+
+      <SessionSection title="Hooks" count={session.hooks.length} empty="No hooks are injected into this session.">
+        {session.hooks.map((hook, index) => <HookRow hook={hook} key={`${hook.event}-${index}`} />)}
+      </SessionSection>
+
+      <SessionSection title="Settings" count={session.settings.length} empty="No settings were resolved for this session.">
+        {session.settings.map((setting, index) => <SettingRow setting={setting} key={`${setting.key}-${index}`} />)}
+      </SessionSection>
+
+      <SessionSection title="MCP servers" count={session.mcpServers.length} empty="No MCP servers are wired into this session.">
+        <p class="runtime-ops-session-note">
+          {session.strictMcp
+            ? "Strict MCP: the runtime was told to ignore any ambient MCP config, so this list is exhaustive."
+            : "Ambient MCP config is NOT excluded — the runtime may also load servers from outside Tachyon."}
+        </p>
+        <ul class="runtime-ops-session-list">
+          {session.mcpServers.map((server) => <li key={server}><code>{server}</code></li>)}
+        </ul>
+      </SessionSection>
+
+      <SessionSection title="Environment" count={session.env.length} empty="Tachyon minted no environment for this session.">
+        <dl class="runtime-ops-session-kv">
+          {session.env.map((entry) => (
+            <div key={entry.key}>
+              <dt><code>{entry.key}</code></dt>
+              <dd><code>{entry.value}</code></dd>
+            </div>
+          ))}
+        </dl>
+      </SessionSection>
+
+      {session.command.length > 0 && (
+        <SessionSection title="Launch command" count={undefined} empty="">
+          <pre class="runtime-ops-session-command"><code>{session.command.join(" ")}</code></pre>
+        </SessionSection>
+      )}
+
+      {session.notExposed.length > 0 && (
+        <SessionSection title="Not shown here" count={undefined} empty="">
+          {/* parity.md's rule: what a runtime does not expose is STATED, never silently omitted —
+              a blank section reads as "nothing there", which is a different claim. */}
+          <ul class="runtime-ops-session-list">
+            {session.notExposed.map((note) => <li key={note}>{note}</li>)}
+          </ul>
+        </SessionSection>
+      )}
     </div>
   );
+}
+
+function SessionSection({
+  title,
+  count,
+  empty,
+  children,
+}: {
+  title: string;
+  count: number | undefined;
+  empty: string;
+  children: ComponentChildren;
+}) {
+  return (
+    <section class="runtime-ops-session-section" aria-label={title}>
+      <h3>{title}{count !== undefined && count > 0 ? ` (${count})` : ""}</h3>
+      {count === 0 ? <p class="runtime-ops-session-note">{empty}</p> : children}
+    </section>
+  );
+}
+
+function HookRow({ hook }: { hook: InspectedHook }) {
+  return (
+    <div class="runtime-ops-session-hook">
+      <strong>{hook.event}</strong>
+      {/* A hook Tachyon did not author gets no purpose line rather than an invented one — the
+          person's own hooks are theirs, and describing them would be the panel guessing. */}
+      <span>{hook.purpose ?? "Not injected by Tachyon; purpose not described."}</span>
+      <code>{hook.command}</code>
+      {hook.writes && <span class="runtime-ops-session-note">Writes {hook.writes}</span>}
+    </div>
+  );
+}
+
+function SettingRow({ setting }: { setting: InspectedSetting }) {
+  return (
+    <div class={`runtime-ops-session-setting ${setting.origin}`}>
+      <code>{setting.key}</code>
+      <span class="runtime-ops-session-origin">{originLabel(setting.origin)}</span>
+      <span class="runtime-ops-session-value">
+        {setting.wraps ? `wraps ${setting.wraps}` : setting.value}
+      </span>
+      <span class="runtime-ops-session-note">{originDetail(setting.origin)}</span>
+    </div>
+  );
+}
+
+function originLabel(origin: SettingsOrigin): string {
+  switch (origin) {
+    case "projected":
+      return "Projected";
+    case "not-projected":
+      return "NOT delivered";
+    case "agent-owned":
+      return "Agent profile";
+    case "host":
+    default:
+      return "Tachyon";
+  }
+}
+
+function originDetail(origin: SettingsOrigin): string {
+  switch (origin) {
+    case "projected":
+      return "Carried from your global runtime config by this profile's family allowlist.";
+    case "not-projected":
+      // The row the whole panel is for. A key in the person's global config that the allowlist does
+      // not carry never reaches the agent — no error, no warning, it is simply inert. That is exactly
+      // how t-084b28 survived three releases.
+      return "Present in your global config but NOT carried by the allowlist — it never reaches this agent.";
+    case "agent-owned":
+      return "Authored by the agent profile itself.";
+    case "host":
+    default:
+      return "Injected by Tachyon.";
+  }
 }
 
 function AgentResources({ value }: { value: RuntimeOpsAgentRefV1["resources"] }) {

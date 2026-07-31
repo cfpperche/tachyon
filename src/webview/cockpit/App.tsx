@@ -51,6 +51,7 @@ import type { HumanInboxDispatch } from "../human-inbox/App";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
 import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
+import type { SessionInspectionState } from "../runtime-ops/messages";
 import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
@@ -350,6 +351,9 @@ export interface CockpitAppProps {
   validationsDispatch: ValidationsDispatch;
   runtimeSnapshot?: RuntimeOpsSnapshot;
   onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
+  /** t-283149 — keyed by `<wsHash>:<agent>`; only expanded rows appear. */
+  sessionInspections: Record<string, SessionInspectionState>;
+  onToggleSessionInspection: (workspaceKey: string, agent: string, open: boolean) => void;
   runtimeConfigSnapshot?: RuntimeConfigControlSnapshot;
   runtimeConfigUnavailable?: boolean;
   onOpenRuntimeConfigSource: (path: string) => void;
@@ -2026,7 +2030,12 @@ export function App(p: CockpitAppProps) {
     body = (
       <div class="ck-embed-host" data-testid="control-runtime-ops">
         <Suspense fallback={<SectionFallback />}>
-          <RuntimeOpsApp snapshot={p.runtimeSnapshot} onSetProviderObservation={p.onRuntimeSetProviderObservation} />
+          <RuntimeOpsApp
+            snapshot={p.runtimeSnapshot}
+            onSetProviderObservation={p.onRuntimeSetProviderObservation}
+            sessionInspections={p.sessionInspections}
+            onToggleSessionInspection={p.onToggleSessionInspection}
+          />
         </Suspense>
       </div>
     );

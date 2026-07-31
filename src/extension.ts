@@ -111,6 +111,7 @@ import { detectInstalledClis } from "./webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
+import type { InspectedSession } from "./runtimeOps/sessionInspection.js";
 import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
 import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
@@ -1638,6 +1639,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
           ),
         );
+      },
+      // t-283149 — the panel's agent rows carry `workspaceKey`, which IS the wsHash the snapshot was
+      // built from (runtimeOps/snapshotService.ts), so the row addresses its own workspace directly
+      // rather than this fanning out and guessing which reply belongs to the row.
+      inspectAgentSession: async (workspaceKey, agent) => {
+        const ws = byHash(workspaceKey);
+        if (!ws) throw new Error(`Workspace '${workspaceKey}' is no longer open.`);
+        return jsonObject(
+          await extensionQuery(ws, { action: "agent.session-inspection", agent }),
+          "agent.session-inspection",
+        ) as unknown as InspectedSession;
       },
     },
     runtimeConfig: {

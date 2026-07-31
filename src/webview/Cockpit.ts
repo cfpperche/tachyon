@@ -97,9 +97,12 @@ import type { ApprovalDecision } from "../bridge/approvalRequest.js";
 import {
   runtimeOpsSnapshotMessage,
   runtimeOpsSnapshotUnavailableMessage,
+  runtimeOpsSessionInspectionMessage,
   isRuntimeOpsSetProviderObservationAction,
+  isRuntimeOpsInspectSessionAction,
 } from "./runtime-ops/messages.js";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/types.js";
+import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
 import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
 import {
@@ -203,6 +206,12 @@ export interface CockpitProbes {
 export interface CockpitRuntimeOps {
   buildSnapshot: () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
   configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
+  /**
+   * t-283149 — what Tachyon handed one agent's runtime. Optional: an engine that predates the
+   * `agent.session-inspection` action refuses it by name, and the panel says so on that row rather
+   * than the whole section failing.
+   */
+  inspectAgentSession?: (workspaceKey: string, agent: string) => Promise<InspectedSession>;
 }
 
 /** Read-only native runtime-config inventory. Editing is intentionally deferred to SDD 446 B. */
@@ -2450,6 +2459,25 @@ export async function openCockpit(
           /* next snapshot wins */
         }
         await sendRuntime();
+        return;
+      }
+
+      if (isRuntimeOpsInspectSessionAction(msg)) {
+        // t-283149 — no navEpoch guard: the reply is addressed to an agentKey, so a row that is gone
+        // simply has nowhere to land. Dropping it on nav would instead leave a row spinning forever.
+        const agentKey = `${msg.workspaceKey}:${msg.agent}`;
+        try {
+          const inspect = deps.runtimeOps.inspectAgentSession;
+          if (!inspect) throw new Error("This engine does not expose session inspection.");
+          const inspection = await inspect(msg.workspaceKey, msg.agent);
+          if (panel === live) live.webview.postMessage(runtimeOpsSessionInspectionMessage(agentKey, { inspection }));
+        } catch (error) {
+          if (panel === live) {
+            live.webview.postMessage(
+              runtimeOpsSessionInspectionMessage(agentKey, { error: error instanceof Error ? error.message : String(error) }),
+            );
+          }
+        }
         return;
       }
 

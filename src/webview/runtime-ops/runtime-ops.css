@@ -328,3 +328,119 @@
   .runtime-ops-agent-header { display: none; }
   .runtime-ops-agent-row { display: flex; flex-direction: column; gap: 0; padding: 0; }
 }
+
+/* t-283149 — the session inspector: what Tachyon handed one agent's runtime. */
+
+.runtime-ops-inspect-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.runtime-ops-inspect-toggle:hover strong { text-decoration: underline; }
+
+.runtime-ops-inspect-toggle:focus-visible {
+  outline: 2px solid var(--ds-focus);
+  outline-offset: 2px;
+}
+
+.runtime-ops-session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-3);
+  padding: var(--ds-3);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 55%, transparent);
+  background: color-mix(in srgb, var(--ds-fg) 6%, transparent);
+}
+
+.runtime-ops-session.error strong { color: var(--ds-err); }
+
+.runtime-ops-session-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ds-2);
+}
+
+.runtime-ops-session-status,
+.runtime-ops-session-note,
+.runtime-ops-session-state {
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+}
+
+/* A projection built from files alone is a different claim than a reading of a live process, and the
+   panel must not let the two look alike. */
+.runtime-ops-session-state.last-known { color: var(--ds-warn); }
+
+.runtime-ops-session-section { display: flex; flex-direction: column; gap: var(--ds-2); }
+
+.runtime-ops-session-section h3 {
+  margin: 0;
+  color: var(--ds-muted);
+  font-size: var(--ds-micro);
+  font-weight: var(--tachyon-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tachyon-tracking-label);
+}
+
+.runtime-ops-session-hook {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  padding: var(--ds-2);
+  border-left: 2px solid var(--ds-border);
+}
+
+.runtime-ops-session-hook code,
+.runtime-ops-session-setting code,
+.runtime-ops-session-kv code {
+  font-size: var(--ds-small);
+  overflow-wrap: anywhere;
+}
+
+.runtime-ops-session-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .7fr) minmax(0, 1.6fr);
+  gap: var(--ds-1) var(--ds-3);
+  padding: var(--ds-2);
+  border-top: 1px solid color-mix(in srgb, var(--ds-border) 45%, transparent);
+}
+
+.runtime-ops-session-setting .runtime-ops-session-note { grid-column: 1 / -1; }
+.runtime-ops-session-value { overflow-wrap: anywhere; }
+
+.runtime-ops-session-origin { font-size: var(--ds-small); }
+.runtime-ops-session-setting.projected .runtime-ops-session-origin { color: var(--ds-ok); }
+.runtime-ops-session-setting.host .runtime-ops-session-origin { color: var(--ds-link); }
+.runtime-ops-session-setting.agent-owned .runtime-ops-session-origin { color: var(--ds-muted); }
+/* The one row a person opens this panel to find: present in their config, inert for this agent. */
+.runtime-ops-session-setting.not-projected .runtime-ops-session-origin { color: var(--ds-warn); }
+
+.runtime-ops-session-list { margin: 0; padding-left: var(--ds-4); }
+.runtime-ops-session-list li { overflow-wrap: anywhere; }
+
+.runtime-ops-session-kv { display: flex; flex-direction: column; gap: var(--ds-1); margin: 0; }
+.runtime-ops-session-kv > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--ds-3); }
+.runtime-ops-session-kv dt, .runtime-ops-session-kv dd { margin: 0; min-width: 0; }
+
+.runtime-ops-session-command {
+  margin: 0;
+  padding: var(--ds-2);
+  background: color-mix(in srgb, var(--ds-fg) 6%, transparent);
+  font-size: var(--ds-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .runtime-ops-session-setting { grid-template-columns: 1fr; }
+  .runtime-ops-session-kv > div { grid-template-columns: 1fr; }
+}
