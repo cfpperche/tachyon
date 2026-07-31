@@ -91,7 +91,11 @@ describe("t-5498a6 — the reference and the grant land together, at the digest 
     expect((state.grants[0] as { sourceSha256: string }).sourceSha256).toBe(reference.sha256);
   });
 
-  it("authorizing does NOT select — the Studio's checkbox stays the second gesture", async () => {
+  it("never selects on its own — selection is the caller's explicit flag, never a side effect", async () => {
+    // t-5498a6 — the split lives HERE, not in the number of clicks a human makes. Both product
+    // callers now pass `select: true`, because in both the human's gesture already means "give this
+    // agent the skill". What must stay impossible is a caller receiving a selection it did not ask
+    // for: that is what would let some future path enable a capability nobody chose.
     const root = workspace();
     writeSkill(root, ".claude/skills/house-style", "# house\n");
     const { port, state } = ports(profile());

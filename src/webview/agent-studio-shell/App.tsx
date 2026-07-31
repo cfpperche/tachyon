@@ -985,6 +985,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     * The discriminator is the plugin LOCKFILE, never a content comparison — a plugin
                     * skill edited by hand diverges and is still the plugin's. */}
                   <div class="ash-label" style="margin-top:12px">Workspace skills (not from a plugin)</div>
+                  <div class="hint">Authorize gives this agent the skill and enables it. Untick it above to turn it off without withdrawing the authorization — the pinned digest survives, so turning it back on needs no fresh approval.</div>
                   {candidates === undefined
                     ? <div class="ash-native-config-empty">Loading…</div>
                     : candidates.workspaceSkills.length === 0
@@ -998,7 +999,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                       ))}
 
                   <div class="ash-label" style="margin-top:12px">Tachyon plugins</div>
-                  <div class="hint">Authorizing a plugin authorizes everything it exposes for this runtime. A plugin that also installs something no capability grant can carry is refused whole — half a plugin reported as success would be worse than a refusal.</div>
+                  <div class="hint">Authorize gives this agent everything the plugin exposes for this runtime, enabled. A plugin that also installs something no capability grant can carry is refused whole — half a plugin reported as success would be worse than a refusal.</div>
                   {candidates === undefined
                     ? <div class="ash-native-config-empty">Loading…</div>
                     : candidates.plugins.length === 0

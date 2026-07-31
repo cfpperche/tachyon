@@ -5599,6 +5599,16 @@ export class Workspace {
       agentName,
       origin,
       reauthorize: options.reauthorize,
+      // t-5498a6 — one click. The AUTHORIZE/SELECT split carries weight when the two acts belong to
+      // different actors or different moments: an agent asks, a human answers. Here it is the same
+      // person, in the same form, seconds apart — the second click carries no information. The
+      // protection was never the second click either; it is the validation that refuses a selection
+      // without a matching grant, and clicking Authorize IS the host authorization.
+      //
+      // The checkbox keeps the role that IS load-bearing: turning a capability off without revoking,
+      // which preserves the digest pin so re-enabling needs no fresh approval. Revoking and
+      // re-authorizing would re-pin whatever the content is by then.
+      select: true,
       ports: this.skillAuthorizationPorts(snapshot.revision),
     });
   }
@@ -5629,6 +5639,7 @@ export class Workspace {
       pluginName,
       adapter: snapshot.profile.runtime.adapter,
       ...(options.reauthorize ? { reauthorize: true } : {}),
+      select: true,
       ports: this.skillAuthorizationPorts(snapshot.revision),
     });
   }
