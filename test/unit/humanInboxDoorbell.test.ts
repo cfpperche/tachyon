@@ -20,8 +20,8 @@ import { HUMAN_INBOX_KINDS } from "../../src/humanInbox/model.js";
  * The shape is t-b4a799's: two paths to the same product effect ("a human must decide something"),
  * one of them missing. So these tests hold the SHARED door, not three copies of one assertion.
  */
-function recordingHost() {
-  const notices: Array<{ message: string; actions: Array<{ label: string; run: () => Promise<void> }> }> = [];
+function recordingHost(options: { failWith?: Error } = {}) {
+  const notices: Array<{ message: string; level?: string; actions: Array<{ label: string; run: () => Promise<void> }> }> = [];
   const commands: Array<[string, ...unknown[]]> = [];
   return {
     notices,
@@ -29,11 +29,12 @@ function recordingHost() {
     host: {
       t: (template: string, ...args: unknown[]) =>
         template.replace(/\{(\d+)\}/g, (_match, index: string) => String(args[Number(index)] ?? "")),
-      notify: (message: string, _level?: string, actions?: Array<{ label: string; run: () => Promise<void> }>) => {
-        notices.push({ message, actions: actions ?? [] });
+      notify: (message: string, level?: string, actions?: Array<{ label: string; run: () => Promise<void> }>) => {
+        notices.push({ message, level, actions: actions ?? [] });
       },
       executeCommand: async (command: string, ...args: unknown[]) => {
         commands.push([command, ...args]);
+        if (options.failWith) throw options.failWith;
       },
     },
   };
@@ -97,6 +98,45 @@ describe("t-8e9b5e — a proposal rings the same doorbell an approval does", () 
       void notices[0].actions[0].run();
       expect(commands[0]?.[0], `${kind} opened nothing`).toMatch(/^tachyon\./);
     }
+  });
+});
+
+/**
+ * t-5ca73a — what the human is told when Review cannot open its window.
+ *
+ * Invoking dismisses the notice before the action runs. So a Review that fails silently costs the
+ * person the only pointer they had: the attention disappears, nothing opens, and the sole trace is an
+ * `ui-unavailable` line in the engine journal that nobody reads. That silence is what made this defect
+ * expensive — the deadlock behind it took hours to localize precisely because the UI said nothing.
+ */
+describe("t-5ca73a — a Review that cannot open says so", () => {
+  it("raises an error notice naming the command AND where the item still is", () => {
+    const { host, notices } = recordingHost({ failWith: new Error("editor UI operation timed out") });
+
+    routeSavedAgentProposal(host, "b349073a", { id: "sp-4ea3d2", name: "grok-probe", proposer: "claude" });
+    // The action rethrows so the caller's own failure path still sees it; the human-facing part is the
+    // notice, and it must exist regardless.
+    void notices[0].actions[0].run().catch(() => undefined);
+
+    return Promise.resolve().then(() => {
+      const failure = notices.find((notice) => notice.level === "error");
+      expect(failure, "a failed Review told the human nothing").toBeDefined();
+      expect(failure!.message).toContain("tachyon.openHumanInbox");
+      // Naming the item is the load-bearing half: the notice that carried it is already gone.
+      expect(failure!.message).toContain("sp-4ea3d2");
+      expect(failure!.message).toContain("saved-agent-proposal");
+    });
+  });
+
+  it("stays silent when the window opens, which is the overwhelmingly common case", () => {
+    const { host, notices } = recordingHost();
+
+    routeHumanApprovalRequest(host, "b349073a", { id: "a-3c5de6", requester: "codex" });
+    void notices[0].actions[0].run();
+
+    return Promise.resolve().then(() => {
+      expect(notices.filter((notice) => notice.level === "error")).toHaveLength(0);
+    });
   });
 });
 

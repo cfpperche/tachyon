@@ -161,7 +161,27 @@ export function routeHumanInboxItem(
   host.notify(item.message, "info", [{
     label: host.t("Review"),
     run: async () => {
-      await host.executeCommand(command, ...args);
+      // t-5ca73a — a Review that cannot open its window must SAY so.
+      //
+      // Invoking dismisses the notice before the action runs, so a silent failure costs the human the
+      // only pointer they had: the attention vanishes, no screen opens, and the sole record is an
+      // `ui-unavailable` line in the engine journal. That silence is what turned a one-line deadlock
+      // into hours of measuring — the deadlock itself is fixed in WorkspaceClient, but a shell can
+      // still be absent or closing, and then this is the difference between a dead end and a fact.
+      try {
+        await host.executeCommand(command, ...args);
+      } catch (error) {
+        host.notify(
+          host.t(
+            "Could not open '{0}' — the editor did not respond. It is still waiting for you in the Inbox: {1} {2}",
+            command,
+            item.kind,
+            item.id,
+          ),
+          "error",
+        );
+        throw error;
+      }
     },
   }]);
 }

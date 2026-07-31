@@ -181,6 +181,20 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   private currentPresentation!: WorkspacePresentationSnapshotV1;
   private stagedPayloads!: StagedPayloadStore;
   private tail: Promise<void> = Promise.resolve();
+  /**
+   * t-5ca73a — servicing engine UI requests has its OWN chain, and that separation is the fix.
+   *
+   * `tail` orders sync/query/invoke against each other. Servicing UI requests used to ride it too,
+   * which meant the shell could not claim a request while any control call was in flight — including
+   * the control call that RAISED it. Every notice whose action awaited a window ("Review" on an
+   * approval, a validation, a Saved Agent proposal) deadlocked against itself until the broker's 10s
+   * timeout, and the journal recorded `ui-unavailable` for a request that was never wrong.
+   *
+   * Its own chain keeps the one property that mattered — one claim/complete cycle at a time — while
+   * dropping the one that never should have been coupled. The transport allows it: every control
+   * request opens its own connection (`requestEngineControl`), so nothing is multiplexed.
+   */
+  private uiTail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closeRequested = false;
 
@@ -310,6 +324,10 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       return Promise.reject(new RemoteWorkspaceClientError("INVALID_SYNC_LIMIT", "event sync limit must be between 1 and 200"));
     }
     if (this.closeRequested) return Promise.reject(new RemoteWorkspaceClientError("CLIENT_CLOSED", "workspace client is closed"));
+    // t-5ca73a — kick the UI service off its own chain BEFORE queueing the event read. The poll is
+    // still the only driver, but the part of it that unblocks a waiting engine no longer waits behind
+    // whatever else is on `tail`. Deliberately not awaited: a sync must not fail because a window did.
+    this.serviceUiRequests();
     const result = this.tail.then(() => this.syncOnce(limit));
     this.tail = result.then(() => undefined, () => undefined);
     return result;
@@ -363,7 +381,10 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closeRequested = true;
-    this.closePromise = this.tail.then(async () => {
+    // t-5ca73a — detach only after BOTH chains are quiet. An in-flight claim/complete cycle holds the
+    // control session it is completing against; detaching under it would fail the completion and leave
+    // the engine believing a shell is still going to answer.
+    this.closePromise = Promise.all([this.tail, this.uiTail]).then(async () => {
       this.listeners.clear();
       try { await this.control.detach(); }
       catch (error) {
@@ -386,7 +407,6 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
 
   private async syncOnce(limit: number): Promise<WorkspaceClientSyncResult> {
     try {
-      await this.serviceUiRequest();
       const batch = await this.control.events(limit);
       if (batch.events.length === 0 && !batch.resyncRequired) {
         return this.result([], false, false);
@@ -401,13 +421,38 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
     }
   }
 
-  private async serviceUiRequest(): Promise<void> {
+  /**
+   * t-5ca73a — queue one drain of the engine's pending UI requests on the UI chain.
+   *
+   * Fire-and-forget by design: the caller is `sync()`, and a window that failed to open must never
+   * turn into a failed sync. Whatever went wrong is already recorded by the engine as `ui-unavailable`
+   * and, since this task, told to the human by the notice action itself.
+   */
+  private serviceUiRequests(): void {
+    if (!this.uiHandler || this.closeRequested) return;
+    const drained = this.uiTail.then(() => this.drainUiRequests());
+    this.uiTail = drained.then(() => undefined, () => undefined);
+  }
+
+  /**
+   * Drains rather than claiming ONE per poll. An engine blocked on a UI request is blocked NOW, and
+   * more than one can be waiting — an approval doorbell and a validation doorbell clicked in the same
+   * second. Serving one per second would leave the second one to expire against a 10s window while a
+   * capable shell sat right there.
+   *
+   * `MAX` bounds a pathological loop (a handler whose side effect raises another request) into a
+   * finite drain instead of a hang; the next poll picks up anything left.
+   */
+  private async drainUiRequests(): Promise<void> {
     const uiHandler = this.uiHandler;
     if (!uiHandler) return;
-    const control = this.control;
-    const request = await control.claimUiRequest();
-    if (!request) return;
-    await this.executeAndCompleteUiRequest(control, request, uiHandler);
+    const MAX = 16;
+    for (let served = 0; served < MAX && !this.closeRequested; served++) {
+      const control = this.control;
+      const request = await control.claimUiRequest();
+      if (!request) return;
+      await this.executeAndCompleteUiRequest(control, request, uiHandler);
+    }
   }
 
   private async executeAndCompleteUiRequest(
