@@ -151,7 +151,37 @@ describe("t-283149 — collecting what a session was given", () => {
 });
 
 /**
- * t-283149 — the collector carries a copy of the projection's family allowlist, and a copy is a thing
+ * t-0c963d — the rules file must not learn where any runtime keeps its files.
+ *
+ * The split exists so a rule fixed once is fixed for every runtime. It survives only while
+ * `collectSessionInspection.ts` holds no path knowledge: the moment someone adds `if (runtime ===
+ * "codex")` and a filename there, Codex has a second path to the same effect and Claude's rules stop
+ * being the only rules — the shape t-b4a799 catalogued after five instances in one day.
+ *
+ * A comment asking for the discipline is what t-e73e54 proved worthless, so this asserts it.
+ */
+describe("t-0c963d — the collector holds rules, and readers hold paths", () => {
+  // Comments MUST be stripped: this file's own doc comment names `config.toml` to explain why Codex
+  // gets its own reader, and that sentence is the opposite of the violation. A guard that reads prose
+  // measures prose.
+  const RULES = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/collectSessionInspection.ts"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+
+  it("names no runtime's config location", () => {
+    for (const marker of ["spawn-settings", "harness", "bridge-mcp", "settings.json", "config.toml", "mcp.json"]) {
+      expect(RULES).not.toContain(marker);
+    }
+  });
+
+  it("branches on no runtime by name", () => {
+    // Dispatch is the reader registry. A named branch here is the same defect wearing a switch.
+    expect(RULES).not.toMatch(/runtime\s*===\s*["']/);
+  });
+});
+
+/**
+ * t-283149 — the reader carries a copy of the projection's family allowlist, and a copy is a thing
  * that drifts. `FAMILY_KEYS` is the authority; this fails when the two disagree, so a key added there
  * cannot silently start showing as "not delivered to this agent" here.
  */
@@ -162,8 +192,8 @@ describe("t-283149 — the projectable-key list matches the projector", () => {
     expect(block).toBeTruthy();
     const projected = new Set([...block![1].matchAll(/"([a-zA-Z]+)"/g)].map((match) => match[1]));
 
-    const collector = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/collectSessionInspection.ts"), "utf8");
-    const listed = /projectableKeys:\s*\[([\s\S]*?)\]/.exec(collector);
+    const reader = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/claudeSessionReader.ts"), "utf8");
+    const listed = /projectableKeys:\s*\[([\s\S]*?)\]/.exec(reader);
     expect(listed).toBeTruthy();
     const mirrored = new Set([...listed![1].matchAll(/"([a-zA-Z]+)"/g)].map((match) => match[1]));
 

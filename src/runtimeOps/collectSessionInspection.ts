@@ -1,23 +1,25 @@
-import fs from "node:fs";
-import path from "node:path";
 import {
   classifySetting,
-  describeHook,
   foldWrappedStatusLine,
   inspectEnv,
   redactCommand,
-  type InspectedHook,
   type InspectedSession,
   type InspectedSetting,
 } from "./sessionInspection.js";
+import { claudeSessionReader } from "./claudeSessionReader.js";
+import type { RuntimeSessionReader } from "./sessionSources.js";
 
 /**
- * t-283149 — read what a live session was actually given, and hand it to the pure projection.
+ * t-283149 / t-0c963d — read what a live session was actually given, and hand it to the pure projection.
  *
- * All I/O lives here so `sessionInspection.ts` stays a total function over found values. Every read is
- * best-effort: a missing file means "we could not see this", never a thrown error, because an
- * inspector that fails closed teaches nothing. What it must never do is guess — an absent value is
- * reported absent (`notExposed`), following parity.md's rule that code wins over prose.
+ * This file holds the RULES and nothing else: classify each key's origin, redact secrets, fold a
+ * wrapped status line, and state what could not be seen. Where a runtime keeps its config is a reader's
+ * job (`sessionSources.ts`), so a rule fixed here is fixed for every runtime — the alternative, one
+ * collector per runtime, is the two-path defect class t-b4a799 catalogued.
+ *
+ * Every read is best-effort: a missing file means "we could not see this", never a thrown error,
+ * because an inspector that fails closed teaches nothing. What it must never do is guess — an absent
+ * value is reported absent (`notExposed`), following parity.md's rule that code wins over prose.
  */
 
 export interface SessionInspectionPorts {
@@ -29,47 +31,14 @@ export interface SessionInspectionPorts {
   processEnv: (pid: number) => Record<string, string> | undefined;
 }
 
-/** Which settings keys the profile family allowlist can carry, per runtime. Empty = we do not know. */
-export interface SessionInspectionConfig {
-  projectableKeys: readonly string[];
-  /** Keys Tachyon writes itself, in the host layer. */
-  hostKeys: readonly string[];
-  /** Keys the agent profile owns directly (selectors). */
-  agentOwnedKeys: readonly string[];
-  /** Env keys worth showing beyond `TACHYON_*` — a runtime's config home, typically. */
-  extraEnvKeys: readonly string[];
-  /** What this runtime does not expose, stated rather than silently missing. */
-  notExposed: readonly string[];
-}
-
 /**
- * Only Claude is described today, and that is deliberate: Codex and Grok have a different shape (one
- * regenerated `config.toml`, no `--settings`) and get their own tasks rather than being forced into
- * this one's mould. A runtime with no entry reports what it can and names the rest as unknown.
+ * A runtime with no reader reports what the process itself shows and names the rest as unknown. Codex
+ * and Grok have a different shape (one regenerated `config.toml`, no `--settings`) and get their own
+ * readers rather than being forced into Claude's mould.
  */
-const RUNTIME_CONFIG: Readonly<Record<string, SessionInspectionConfig>> = {
-  claude: {
-    // Mirrors FAMILY_KEYS in claudeNativeConfigProjection.ts. Kept as data here, and pinned by a test
-    // that fails when the two drift — a comment saying "keep in sync" is what t-e73e54 proved worthless.
-    projectableKeys: [
-      "permissions", "theme", "prefersReducedMotion", "spinnerTipsEnabled",
-      "showTurnDuration", "terminalProgressBarEnabled", "statusLine", "alwaysThinkingEnabled",
-    ],
-    hostKeys: ["hooks", "skipDangerousModePermissionPrompt", "autoMemoryEnabled"],
-    agentOwnedKeys: [],
-    extraEnvKeys: ["CLAUDE_CONFIG_DIR"],
-    notExposed: [],
-  },
+const RUNTIME_READERS: Readonly<Record<string, RuntimeSessionReader>> = {
+  claude: claudeSessionReader,
 };
-
-function readJson(file: string): Record<string, unknown> | undefined {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as unknown;
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Objects are summarized rather than dumped: the panel answers "what is set", not "paste the JSON". */
 function renderValue(value: unknown): string {
@@ -82,33 +51,6 @@ function renderValue(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-function hooksFrom(settings: Record<string, unknown> | undefined): InspectedHook[] {
-  const hooks = settings?.hooks;
-  if (!hooks || typeof hooks !== "object") return [];
-  const out: InspectedHook[] = [];
-  for (const [event, matchers] of Object.entries(hooks as Record<string, unknown>)) {
-    if (!Array.isArray(matchers)) continue;
-    for (const matcher of matchers) {
-      const inner = (matcher as { hooks?: unknown })?.hooks;
-      if (!Array.isArray(inner)) continue;
-      for (const entry of inner) {
-        const command = (entry as { command?: unknown })?.command;
-        if (typeof command === "string") out.push(describeHook(event, command));
-      }
-    }
-  }
-  return out;
-}
-
-/** The status-line wrapper records the command it wraps; that is what makes it composition, not override. */
-function priorStatusLineCommand(relayCommand: string | undefined): string | undefined {
-  if (!relayCommand) return undefined;
-  const match = /'([^']+\.relay\.json)'/.exec(relayCommand);
-  if (!match) return undefined;
-  const relay = readJson(match[1]);
-  return typeof relay?.priorCommand === "string" ? relay.priorCommand : undefined;
-}
-
 export async function collectSessionInspection(input: {
   workspaceRoot: string;
   agent: string;
@@ -116,40 +58,27 @@ export async function collectSessionInspection(input: {
   ports: SessionInspectionPorts;
 }): Promise<InspectedSession> {
   const { workspaceRoot, agent, runtime, ports } = input;
-  const config = RUNTIME_CONFIG[runtime];
-  const dot = (...segments: string[]) => path.join(workspaceRoot, ".tachyon", ...segments);
+  const reader = RUNTIME_READERS[runtime];
 
   const pid = await ports.panePid(agent).catch(() => undefined);
   const env = pid === undefined ? undefined : ports.processEnv(pid);
   const argv = pid === undefined ? undefined : ports.processArgv(pid);
 
-  const projected = readJson(dot("harness", agent, "settings.json"));
-  const host = readJson(dot("spawn-settings", `${agent}.json`));
-  const globalKeys = new Set<string>();
-  const home = env?.HOME ?? process.env.HOME;
-  if (runtime === "claude" && home) {
-    for (const key of Object.keys(readJson(path.join(home, ".claude", "settings.json")) ?? {})) globalKeys.add(key);
-  }
+  const found = reader?.read({ workspaceRoot, agent, env, argv });
+  const config = reader?.config;
+  const globalKeys = new Set(found?.globalKeys ?? []);
 
-  const settings: InspectedSetting[] = [];
-  const push = (source: Record<string, unknown> | undefined, hostLayer: boolean) => {
-    for (const [key, value] of Object.entries(source ?? {})) {
-      if (key === "hooks") continue; // hooks get their own section — listing them twice helps nobody
-      settings.push({
-        key,
-        value: renderValue(value),
-        origin: hostLayer
-          ? "host"
-          : classifySetting(key, {
-            projectable: config?.projectableKeys ?? [],
-            hostInjected: config?.hostKeys ?? [],
-            agentOwned: config?.agentOwnedKeys ?? [],
-          }, globalKeys.has(key)),
-      });
-    }
-  };
-  push(projected, false);
-  push(host, true);
+  const settings: InspectedSetting[] = (found?.settings ?? []).map((entry) => ({
+    key: entry.key,
+    value: renderValue(entry.value),
+    origin: entry.hostAuthored
+      ? "host"
+      : classifySetting(entry.key, {
+        projectable: config?.projectableKeys ?? [],
+        hostInjected: config?.hostKeys ?? [],
+        agentOwned: config?.agentOwnedKeys ?? [],
+      }, globalKeys.has(entry.key)),
+  }));
 
   // A global key that is NOT projectable never reaches the agent. Surfacing it is the single most
   // useful row here: it is the shape of defect that took three releases to find in t-084b28.
@@ -159,9 +88,6 @@ export async function collectSessionInspection(input: {
     settings.push({ key, value: "(not delivered to this agent)", origin: "not-projected" });
   }
 
-  const statusLine = host?.statusLine as { command?: string } | undefined;
-  const mcpServers = Object.keys((readJson(dot("harness", agent, "mcp.json"))?.mcpServers as Record<string, unknown>) ?? {});
-  const bridgeMcp = Object.keys((readJson(dot("bridge-mcp", `${agent}.json`))?.mcpServers as Record<string, unknown>) ?? {});
   const secrets = Object.entries(env ?? {})
     .filter(([key]) => key.toUpperCase().includes("TOKEN") || key.toUpperCase().includes("SECRET"))
     .map(([, value]) => value);
@@ -171,14 +97,14 @@ export async function collectSessionInspection(input: {
     runtime,
     state: argv ? "live" : "last-known",
     command: argv ? redactCommand(argv, secrets) : [],
-    hooks: hooksFrom(host),
-    settings: foldWrappedStatusLine(settings, priorStatusLineCommand(statusLine?.command)),
-    mcpServers: [...new Set([...mcpServers, ...bridgeMcp])].sort(),
+    hooks: found?.hooks ?? [],
+    settings: foldWrappedStatusLine(settings, found?.wrappedStatusLine),
+    mcpServers: found?.mcpServers ?? [],
     strictMcp: (argv ?? []).includes("--strict-mcp-config"),
     env: inspectEnv(env ?? {}, config?.extraEnvKeys ?? []),
     notExposed: [
-      ...(config?.notExposed ?? []),
-      ...(config ? [] : [`Tachyon does not yet describe what it injects into '${runtime}' sessions`]),
+      ...(found?.notExposed ?? []),
+      ...(reader ? [] : [`Tachyon does not yet describe what it injects into '${runtime}' sessions`]),
       ...(argv ? [] : ["no live process — showing what is on disk from the last launch"]),
     ],
   };
