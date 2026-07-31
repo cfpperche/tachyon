@@ -66,7 +66,12 @@ import {
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
 import { composeAgentPrompt } from "../agents/promptLayers.js";
-import { POST_CUT_SESSION_ATTESTATION_ENV, describeLegacyFleetRefusal, inspectLegacyFleet } from "../agents/legacyFleetGate.js";
+import {
+  POST_CUT_SESSION_ATTESTATION_ENV,
+  describeLegacyFleetRefusal,
+  inspectLegacyFleet,
+  isTransientLegacyRefusal,
+} from "../agents/legacyFleetGate.js";
 import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -285,6 +290,14 @@ import { hostActionTouchesHostUi } from "../externalTools/filters.js";
 import type { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
 
 const ATTENTION_POLL_MS = 3000;
+
+/**
+ * t-1129e1 — how long a SELF-CLEARING legacy-fleet refusal is given before it is reported. Measured on
+ * the reload that produced the task: the pre-cut session exited and its attested replacement was up
+ * within ~40 seconds. Bounded on purpose — this changes WHEN a refusal is reported, never WHETHER.
+ */
+const LEGACY_FLEET_RECHECK_ATTEMPTS = 15;
+const LEGACY_FLEET_RECHECK_INTERVAL_MS = 4_000;
 
 /**
  * spec 214 — internal label a verify run uses with the runbook executor. MUST be tmux-safe:
@@ -6055,7 +6068,7 @@ export class Workspace {
     // Re-discover sessions that survived a VSCode restart, then resume agents whose
     // process died (crash/reboot), then spawn the remaining pending autostarts.
     // Survivors are NOT auto-opened as tabs (hidden-tab attach renders blank).
-    const surviving = await this.tmux.listSessions(`${SESSION_PREFIX}-${this.wsHash}-`);
+    let surviving = await this.tmux.listSessions(`${SESSION_PREFIX}-${this.wsHash}-`);
 
     // t-fab832 — the Agent Instance cut's activation gate, BEFORE anything reads or resumes state.
     //
@@ -6072,7 +6085,7 @@ export class Workspace {
     const profilePointers = scanAgentProfilePointers(
       (() => { try { return fs.readFileSync(this.configPath() ?? "", "utf8"); } catch { return ""; } })(),
     ).pointers;
-    const legacy = inspectLegacyFleet({
+    const evaluateLegacyFleet = async () => inspectLegacyFleet({
       wsHash: this.wsHash,
       ledger: [...this.ledger.all()].map(([name, row]) => [name, row] as const),
       rosterEntries: Object.keys(this.config?.agents ?? {}).map((name) => ({
@@ -6092,6 +6105,25 @@ export class Workspace {
         };
       })),
     });
+
+    // t-1129e1 — give a SELF-CLEARING refusal a bounded chance to clear before reporting it.
+    //
+    // On every extension-host reload the previous build's agent processes are still alive for a moment
+    // and then exit; the product recreates them attested. The gate ran once in that window, refused
+    // truthfully, and nothing ever re-evaluated — so the operator got a red "cannot activate" card on
+    // EVERY reload, describing a fact that had already stopped being true, asking them to stop a fleet
+    // that had already stopped itself.
+    //
+    // Only `live-agent-session` offenders are waited on (`isTransientLegacyRefusal`): a ledger row or a
+    // roster entry is persisted state that will be just as present later, so waiting would delay a
+    // refusal the operator genuinely has to act on. The wait is bounded and the refusal still happens
+    // if it does not clear — this changes WHEN we report, never WHETHER.
+    let legacy = await evaluateLegacyFleet();
+    for (let attempt = 0; attempt < LEGACY_FLEET_RECHECK_ATTEMPTS && isTransientLegacyRefusal(legacy); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, LEGACY_FLEET_RECHECK_INTERVAL_MS));
+      surviving = await this.tmux.listSessions(`${SESSION_PREFIX}-${this.wsHash}-`);
+      legacy = await evaluateLegacyFleet();
+    }
     if (!legacy.ok) {
       this.host.notify(describeLegacyFleetRefusal(legacy), "error");
       return;
