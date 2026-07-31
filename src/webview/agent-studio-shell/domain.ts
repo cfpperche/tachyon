@@ -57,6 +57,9 @@ import { isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
  */
 export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "browse",
+  // t-5498a6 — authorize a workspace skill so this profile MAY select it. Selecting stays the
+  // separate gesture on the Runtime tooling checkboxes.
+  "authorizeSkill",
   "createSoul",
   "importSoul",
   "replaceSoul",
@@ -110,6 +113,8 @@ export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_N
 
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
+/** t-5498a6 — same shape the profile schema enforces for a reference id. */
+const SKILL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -170,8 +175,12 @@ export type AgentStudioBundleActionMessage =
   | { type: "cloneSavedAgentProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
   | { type: "importSavedAgentProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
 
+/** t-5498a6 — authorize one workspace skill for a profile; selecting it stays a separate gesture. */
+export type AgentStudioAuthorizeSkillMessage = { type: "authorizeSkill"; agent: string; skillName: string };
+
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
+  | AgentStudioAuthorizeSkillMessage
   | AgentStudioSoulActionMessage
   | AgentStudioEvolutionActionMessage
   | AgentStudioLifecycleActionMessage
@@ -283,6 +292,13 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   }
   if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
     || value.type === "browse" || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return undefined;
+  if (value.type === "authorizeSkill") {
+    // Bounded and shaped like the reference id it becomes; a name that cannot be a reference id can
+    // never authorize anything, so refusing here beats failing deeper with a schema message.
+    if (!exactKeys(value, ["type", "agent", "skillName"]) || typeof value.skillName !== "string"
+      || !SKILL_NAME_RE.test(value.skillName)) return undefined;
+    return { type: "authorizeSkill", agent: value.agent, skillName: value.skillName };
+  }
   if (value.type === "adoptSoulProfile") {
     if (!exactKeys(value, ["type", "agent", "expectedDigest"]) || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
     return { type: "adoptSoulProfile", agent: value.agent, expectedDigest: value.expectedDigest };

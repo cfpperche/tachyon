@@ -99,6 +99,54 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     expect(JSON.stringify(status)).not.toContain("canonicalPath");
   });
 
+  /**
+   * t-5498a6 — the authorization door reached from the Studio. Authorizing does NOT select; the
+   * refresh that follows is the success signal, because the profile then answers for itself.
+   */
+  it("authorizes a skill and refreshes so the new reference renders from the profile itself", async () => {
+    const calls: Array<{ agent: string; skill: string }> = [];
+    const target = ws({
+      authorizeAgentSkill: async (agent: string, skillName: string) => {
+        calls.push({ agent, skill: skillName });
+        return { ok: true as const, outcome: "authorized", referenceId: skillName };
+      },
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "visual-qa" }));
+    await flush();
+
+    expect(calls).toEqual([{ agent: "Ada", skill: "visual-qa" }]);
+    expect(findType(ctx.posted, "agentProfileSnapshot").at(-1)).toBeTruthy();
+  });
+
+  it("surfaces a REFUSAL as itself rather than as a generic failure", async () => {
+    // "this plugin does not install for codex" is an answer the human has to read; the engine returns
+    // it as a value precisely so it cannot be flattened into a transport error.
+    const target = ws({
+      authorizeAgentSkill: async () => ({ ok: false as const, error: "plugin 'product-foundation@0.1.1' does not declare runtime 'codex'" }),
+      inspectAgentProfileStudio: async () => { throw new Error("must not refresh after a refusal"); },
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "product-foundation" }));
+    await flush();
+
+    expect(JSON.stringify(ctx.posted)).toContain("does not declare runtime 'codex'");
+  });
+
+  it("refuses a skill name that could never BE a reference id, before it reaches the host", async () => {
+    let called = 0;
+    const target = ws({ authorizeAgentSkill: async () => { called += 1; return { ok: true as const, outcome: "authorized", referenceId: "x" }; } } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "../../etc/passwd" }));
+    await flush();
+
+    expect(called).toBe(0);
+  });
+
   it("rejects profile actions when the binding has no entityId (an unsaved new-agent route)", async () => {
     let creates = 0;
     const target = ws({ createSoulProfile: async () => { creates += 1; throw new Error("must not run"); } } as never);

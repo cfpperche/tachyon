@@ -50,6 +50,14 @@ export interface SoulProfileMutationTargetResult {
 /** Agent Studio's operational identity mutations remain daemon-owned after the shell cutover. */
 export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1>;
+  /**
+   * t-5498a6 — authorize a workspace skill for this profile. A refusal is a RESULT, not a throw:
+   * "this plugin does not install for codex" is an answer the human needs to read.
+   */
+  authorizeAgentSkill(
+    agent: string,
+    skillName: string,
+  ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }>;
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;

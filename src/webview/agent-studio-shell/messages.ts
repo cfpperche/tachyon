@@ -22,6 +22,9 @@ export const cancelMessage = () => envelope({ type: "cancel" as const });
 export const browseMessage = () => envelope({ type: "browse" as const });
 
 /** Webview → host: create minimal canonical SOUL.md under a journaled transaction. */
+/** t-5498a6 — ask the host to authorize one workspace skill for this profile. */
+export const authorizeSkillMessage = (agent: string, skillName: string) =>
+  envelope({ type: "authorizeSkill" as const, agent, skillName });
 export const createSoulMessage = (agent: string) => envelope({ type: "createSoul" as const, agent });
 /** Webview → host: import exact bytes selected by the in-Studio picker; no local path crosses the boundary. */
 export const importSoulMessage = (agent: string, contentBase64: string) =>

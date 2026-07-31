@@ -457,6 +457,17 @@ export function patchProfileFromStudioMutation(
     enabled: parsed.editable.worktree.enabled,
     branch: parsed.editable.worktree.branch || undefined,
   };
+  // t-da80ed — an isolated agent's working directory IS its worktree. `AgentManager` already
+  // overwrites the resolved cwd with the worktree path unconditionally, so accepting both here would
+  // persist a field the runtime discards: the human types a path, saves without error, and nothing
+  // happens. Refuse at WRITE only. The read path keeps tolerating the pair (worktree wins, as it
+  // always has) because a refusal there would turn an existing profile that carries both into one
+  // that cannot load, breaking the agent this is meant to protect.
+  if (parsed.editable.cwd && parsed.editable.worktree.enabled) {
+    throw new Error(
+      "a working directory cannot be set for an agent that runs in its own git worktree — the worktree IS its working directory; clear one of the two",
+    );
+  }
   const workspace = {
     ...(current.profile.workspace ?? {}),
     cwd: parsed.editable.cwd || undefined,

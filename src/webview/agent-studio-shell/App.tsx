@@ -28,6 +28,7 @@ import {
 } from "./domain";
 import {
   adoptSoulProfileMessage,
+  authorizeSkillMessage,
   browseMessage,
   cancelMessage,
   createSoulMessage,
@@ -210,6 +211,9 @@ function SoulImportPicker({ onCancel, onSelect }: {
 }
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: AgentStudioAppProps) {
+  // t-5498a6 — transient UI state, deliberately NOT part of `fields`: a half-typed skill name is
+  // not a profile edit and must not mark the form dirty.
+  const [authorizeSkillName, setAuthorizeSkillName] = useState("");
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<AgentStudioEntity | undefined>(undefined);
@@ -958,6 +962,33 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     </label>;
                   }))}
                   {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
+                  {/* t-5498a6 — the door that was missing. Everything above renders what was already
+                    * authorized, and nothing could ever authorize anything: the Studio refuses to
+                    * author a reference and an agent must never reach one. So every profile granted
+                    * zero capabilities — not a decision anybody made, just the only reachable state.
+                    *
+                    * Authorizing does NOT tick the box. It adds the skill to what this profile MAY
+                    * select; choosing it is the checkbox above, and keeping the two apart is the
+                    * whole governance model. */}
+                  <div class="ash-row" style="margin-top:8px">
+                    <Input
+                      id="ash-authorize-skill"
+                      value={authorizeSkillName}
+                      placeholder="skill name — e.g. visual-qa"
+                      disabled={mutationDisabled}
+                      onInput={(e) => setAuthorizeSkillName((e.currentTarget as HTMLInputElement).value)}
+                    />
+                    <Button
+                      disabled={mutationDisabled || !authorizeSkillName.trim()}
+                      onClick={() => {
+                        const skillName = authorizeSkillName.trim();
+                        if (!skillName || !entity.name) return;
+                        post(authorizeSkillMessage(entity.name, skillName));
+                        setAuthorizeSkillName("");
+                      }}
+                    >Authorize</Button>
+                  </div>
+                  <div class="hint">Authorizing lets this profile select the skill; it does not enable it. A plugin skill is pinned at its plugin version, a hand-written one at its content.</div>
                 </div>
               </section>
             )}
@@ -1367,12 +1398,23 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               <Textarea id="ash-watch" rows={2} value={fields.watch} placeholder="src/** · package.json (one per line)" onInput={(e) => set("watch", (e.currentTarget as HTMLTextAreaElement).value)} />
             </div>
 
+            {/* t-da80ed — an isolated agent's working directory IS its worktree, and the runtime
+             * already overwrites this field's value with the worktree path. Leaving it editable let a
+             * human type a path, save without error, and get nothing. Disabled, and the placeholder
+             * states the directory that will actually be used instead of the workspace root. */}
             <div class="ash-group">
               <label class="ash-label" for="ash-cwd">Working directory</label>
               <div class="ash-row">
-                <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
-                <Button onClick={() => post(browseMessage())}>Browse</Button>
+                <Input
+                  id="ash-cwd"
+                  disabled={fields.worktree}
+                  value={fields.worktree ? "" : fields.cwd}
+                  placeholder={fields.worktree ? "(its own git worktree — see below)" : `(workspace root: ${entity.defaultCwd})`}
+                  onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)}
+                />
+                <Button disabled={fields.worktree} onClick={() => post(browseMessage())}>Browse</Button>
               </div>
+              {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the isolation off below to choose a directory.</div>}
               {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
             </div>
 
@@ -1382,7 +1424,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             <section class="ash-static-section" aria-labelledby="ash-worktree-title">
               <div class="ash-label" id="ash-worktree-title">Git worktree isolation</div>
               <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup and verification.</div>
-              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>
+              {/* t-da80ed — turning isolation ON clears the working directory in the same gesture.
+                * Without this, a profile that already carried a cwd would disable the field while
+                * keeping its value, and the save would then refuse over something the human can
+                * neither see nor edit. */}
+              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => {
+                const enabled = (e.currentTarget as HTMLInputElement).checked;
+                updateFields((current) => ({ ...current, worktree: enabled, ...(enabled ? { cwd: "" } : {}) }));
+              }} /> Run in its own git worktree + branch</label>
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
               <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>

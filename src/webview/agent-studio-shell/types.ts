@@ -44,6 +44,7 @@ export type AgentStudioHostMessage =
 export type AgentStudioWebviewMessage =
   | StudioWebviewCoreMessage<AgentStudioPatch>
   | StudioDomainMessage<{ type: "browse" }>
+  | StudioDomainMessage<{ type: "authorizeSkill"; agent: string; skillName: string }>
   | StudioDomainMessage<{ type: "createSoul"; agent: string }>
   | StudioDomainMessage<{ type: "importSoul"; agent: string; contentBase64: string }>
   | StudioDomainMessage<{ type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }>

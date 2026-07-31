@@ -131,6 +131,7 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "refreshEvolution") { void refreshEvolution(ws, ctx, agent); return; }
   if (m.type === "loadEvolutionCandidate") { void loadEvolutionCandidate(ws, ctx, agent, m.candidateId); return; }
   if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") { void resolveEvolutionCandidate(ws, ctx, agent, m); return; }
+  if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName); return; }
   if (m.type === "createSoul") { void runProfileAction(ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
   if (m.type === "importSoul") { void importSoul(ws, ctx, agent, m.contentBase64); return; }
   if (m.type === "replaceSoul") { void replaceSoul(ws, ctx, agent, m.contentBase64, m.expectedDigest); return; }
@@ -164,6 +165,40 @@ function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown
   ctx.post(agentProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
     ? "This profile changed. The latest profile was loaded; review it before trying again."
     : "The portable profile action could not be completed.", conflict));
+}
+
+/**
+ * t-5498a6 — authorize one workspace skill, then refresh so the profile answers for itself.
+ *
+ * The refresh IS the success signal: a newly authorized skill appears as a checkbox in Runtime
+ * tooling, unticked. That is the honest render of what happened — the profile may now select it and
+ * has not. A separate "authorized!" toast would claim the same thing while the list still showed
+ * nothing, which is how a UI ends up disagreeing with the state it is displaying.
+ *
+ * A refusal ("this plugin does not install for codex") arrives as a VALUE, not an exception, so it
+ * reaches the human as itself rather than as a generic save failure.
+ */
+async function authorizeSkill(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  skillName: string,
+): Promise<void> {
+  try {
+    const result = await ws.authorizeAgentSkill(agent, skillName);
+    if (!result.ok) {
+      // Posted DIRECTLY rather than through `postAgentProfileError`, which flattens every message to
+      // "the profile lifecycle action could not be completed". That sanitising is right for an
+      // internal failure and wrong here: this text is the ANSWER — which plugin, which runtime, why —
+      // and returning it as a value only to discard it at the last hop would leave the human staring
+      // at a button that does nothing for no stated reason.
+      ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
+      return;
+    }
+    await refreshAgentProfile(ws, ctx, agent);
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
 }
 
 async function refreshAgentProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
