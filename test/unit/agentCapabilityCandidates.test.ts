@@ -104,16 +104,38 @@ describe("t-5498a6 — a plugin that cannot be authorized is SHOWN with the reas
     expect(plugin.reason).toContain("half the plugin");
   });
 
-  it("refuses a plugin that installs nothing for this runtime", () => {
+  it("OMITS a git-hook-only plugin from the selector and names it as a checkout fact", () => {
+    // t-c01f91 — measured: `core.hooksPath` is repository-level config, shared by every worktree, so
+    // verify-gate already applies to every agent and there is nothing to authorize. Listing it as
+    // "installs nothing for claude" is technically true and semantically false — it reads as absence
+    // while the gate is working. Dropping it silently would be the other half of the same lie.
     const root = workspace();
     writeLock(root, {
-      "verify-gate": { name: "verify-gate", version: "1.0.2", runtimes: ["claude"], targets: [] },
+      "verify-gate": { name: "verify-gate", version: "1.0.2", runtimes: [], targets: [] },
+      "visual-qa": visualQa,
     });
 
-    const plugin = listAuthorizableCapabilities(root, "claude").plugins[0]!;
+    const result = listAuthorizableCapabilities(root, "claude");
 
-    expect(plugin.authorizable).toBe(false);
-    expect(plugin.reason).toContain("installs nothing");
+    expect(result.plugins.map((plugin) => plugin.name)).toEqual(["visual-qa"]);
+    expect(result.checkoutOnlyPlugins).toEqual(["verify-gate"]);
+  });
+
+  it("keeps a plugin that installs for ANOTHER runtime in the list, with the reason", () => {
+    // Distinct from the case above: this one IS a capability, just not for this agent. Omitting it
+    // would make "installs only for codex" indistinguishable from "not installed".
+    const root = workspace();
+    writeLock(root, {
+      "product-foundation": {
+        name: "product-foundation", version: "0.1.1", runtimes: ["codex"],
+        targets: [{ runtime: "codex", kind: "skill-dir", file: ".agents/skills/product-foundation" }],
+      },
+    });
+
+    const result = listAuthorizableCapabilities(root, "claude");
+
+    expect(result.plugins).toHaveLength(1);
+    expect(result.checkoutOnlyPlugins).toEqual([]);
   });
 
   it("authorizes a plugin whose every target for this runtime is a skill", () => {

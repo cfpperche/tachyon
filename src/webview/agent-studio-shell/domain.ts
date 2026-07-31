@@ -474,6 +474,10 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
     const capabilities = value.capabilities as { workspaceSkills?: unknown; plugins?: unknown } | null;
     if (!capabilities || typeof capabilities !== "object") return false;
     if (!Array.isArray(capabilities.workspaceSkills) || !Array.isArray(capabilities.plugins)) return false;
+    const checkoutOnly = (capabilities as { checkoutOnlyPlugins?: unknown }).checkoutOnlyPlugins;
+    if (checkoutOnly !== undefined
+      && (!Array.isArray(checkoutOnly) || checkoutOnly.length > 256
+        || !checkoutOnly.every((name) => typeof name === "string" && SKILL_NAME_RE.test(name)))) return false;
     if (capabilities.workspaceSkills.length > 256 || capabilities.plugins.length > 256) return false;
     const okSkill = (entry: unknown): boolean => {
       const skill = entry as { name?: unknown; path?: unknown };

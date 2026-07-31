@@ -1015,6 +1015,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                             : <span class="hint" title={plugin.reason}>{plugin.reason}</span>}
                         </div>
                       ))}
+                  {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`
+                    * is repository-level and shared by every worktree, so they already apply and
+                    * there is nothing to authorize. Named rather than dropped silently — listing one
+                    * as "installs nothing" would read as absence while the gate is working. */}
+                  {candidates && candidates.checkoutOnlyPlugins.length > 0 && (
+                    <div class="hint">Already active on this checkout via git hooks, not agent capabilities: {candidates.checkoutOnlyPlugins.join(", ")}.</div>
+                  )}
                 </div>
               </section>
             )}

@@ -264,7 +264,11 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     if (!Array.isArray(value?.workspaceSkills) || !Array.isArray(value?.plugins)) {
       throw new Error("persistent engine returned a malformed capability candidate result");
     }
-    return { workspaceSkills: value.workspaceSkills, plugins: value.plugins };
+    return {
+      workspaceSkills: value.workspaceSkills,
+      plugins: value.plugins,
+      checkoutOnlyPlugins: Array.isArray(value.checkoutOnlyPlugins) ? value.checkoutOnlyPlugins : [],
+    };
   }
 
   /** t-5498a6 — authorize a whole plugin; a refusal arrives as a value, never as a transport error. */

@@ -51,6 +51,16 @@ export interface AuthorizablePlugin {
 export interface AuthorizableCapabilities {
   workspaceSkills: AuthorizableWorkspaceSkill[];
   plugins: AuthorizablePlugin[];
+  /**
+   * t-c01f91 — plugins that act on the CHECKOUT through git hooks and install nothing a capability
+   * grant could carry (`verify-gate`). They are omitted from `plugins` because they are not agent
+   * capabilities at all: `core.hooksPath` is repository-level config, shared by every worktree, so
+   * they already apply and there is nothing to authorize.
+   *
+   * Named here rather than dropped silently. Listing one as "installs nothing for claude" would be
+   * technically true and semantically false — it reads as absence while the gate is working.
+   */
+  checkoutOnlyPlugins: string[];
 }
 
 interface LockedPlugin {
@@ -76,7 +86,15 @@ export function listAuthorizableCapabilities(workspaceRoot: string, adapter: str
     }
   }
 
+  // A plugin with no targets at all installs nothing a grant could carry, for any runtime. It is not
+  // a candidate in either direction — not authorizable, not refusable — so it leaves this list and is
+  // reported as what it is.
+  const checkoutOnlyPlugins = lock
+    .filter((plugin) => plugin.targets.length === 0)
+    .map((plugin) => plugin.name)
+    .sort();
   const plugins = lock
+    .filter((plugin) => plugin.targets.length > 0)
     .map((plugin) => describePlugin(plugin, adapter))
     .sort((left, right) => left.name.localeCompare(right.name));
 
@@ -90,7 +108,11 @@ export function listAuthorizableCapabilities(workspaceRoot: string, adapter: str
     }
   }
 
-  return { workspaceSkills: workspaceSkills.sort((left, right) => left.name.localeCompare(right.name)), plugins };
+  return {
+    workspaceSkills: workspaceSkills.sort((left, right) => left.name.localeCompare(right.name)),
+    plugins,
+    checkoutOnlyPlugins,
+  };
 }
 
 function describePlugin(plugin: LockedPlugin, adapter: string): AuthorizablePlugin {
