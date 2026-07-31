@@ -465,6 +465,31 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.agentId === "string" && PROFILE_ID_RE.test(value.agentId);
   }
+  if (value.type === "authorizableCapabilities") {
+    // t-5498a6 — validated here or it never reaches the App: an unlisted host message is reported as
+    // "malformed Agent Studio host response", which is what a missing branch looks like from the UI —
+    // a protocol error at the top of the page and two selectors stuck on Loading forever.
+    if (!exactKeys(value, ["type", "agent", "capabilities"])
+      || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return false;
+    const capabilities = value.capabilities as { workspaceSkills?: unknown; plugins?: unknown } | null;
+    if (!capabilities || typeof capabilities !== "object") return false;
+    if (!Array.isArray(capabilities.workspaceSkills) || !Array.isArray(capabilities.plugins)) return false;
+    if (capabilities.workspaceSkills.length > 256 || capabilities.plugins.length > 256) return false;
+    const okSkill = (entry: unknown): boolean => {
+      const skill = entry as { name?: unknown; path?: unknown };
+      return typeof skill?.name === "string" && SKILL_NAME_RE.test(skill.name)
+        && typeof skill.path === "string" && skill.path.length <= 1_024;
+    };
+    const okPlugin = (entry: unknown): boolean => {
+      const plugin = entry as Record<string, unknown>;
+      return typeof plugin?.name === "string" && SKILL_NAME_RE.test(plugin.name)
+        && typeof plugin.version === "string" && plugin.version.length <= 256
+        && Array.isArray(plugin.runtimes) && Array.isArray(plugin.skills) && Array.isArray(plugin.ungrantableKinds)
+        && typeof plugin.authorizable === "boolean"
+        && (plugin.reason === undefined || (typeof plugin.reason === "string" && plugin.reason.length <= 2_000));
+    };
+    return capabilities.workspaceSkills.every(okSkill) && capabilities.plugins.every(okPlugin);
+  }
   if (value.type === "agentProfileError") {
     return exactKeys(value, ["type", "agent", "code", "message", "conflict"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
