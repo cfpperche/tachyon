@@ -10,7 +10,7 @@ import {
 } from "../agents/savedAgentProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
-import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
+import { parentCwdRefusalFor } from "./spawnContract.js";
 import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
@@ -1401,26 +1401,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             "spawn_agent parent is only valid for a Temporary delegated agent; omit parent when starting a declared Saved Agent because ownership comes from the roster",
           ));
         }
-        // t-6fe04b — refuse the incompatible pair at the ENTRY, before a delegation contract is
-        // composed and before lineage is resolved.
-        //
-        // It has to read the caller's LITERAL `parent`, which is why it sits above the resolution
-        // below: an omitted parent becomes the caller itself a few lines down, and after that every
-        // spawn looks parented. So this catches only the explicit pair — the manager-level guard
-        // stays as the complete one, and this is the earlier, friendlier half of the same refusal.
-        //
-        // The message names `delivery_join` deliberately. The old one said only what NOT to do, and
-        // in the incident behind t-e787dc the caller answered a refusal that pointed nowhere by
-        // putting an absolute path in the child's BRIEFING — the least governed outcome available.
-        if (parent && cwd) {
-          return fail(new Error(PARENT_CWD_REFUSAL));
-        }
         // spec 351 — Temporary delegation resolves omitted parent to the caller itself; a lineage
         // lie is a structured mismatch. Saved activation deliberately preserves parent=undefined.
         if (isTemporaryAiAgent) {
           const parentActor = resolveDeclaredActor(deps, parent);
           if (!parentActor.ok) return fail(new Error(parentActor.message));
           parent = parentActor.name;
+        }
+        // t-6fe04b — refuse the incompatible pair at the ENTRY: before a delegation contract is
+        // composed, so the caller does not spend a turn writing a brief for a spawn that cannot
+        // happen. The old one said only what NOT to do, and in the incident behind t-e787dc the
+        // caller answered a refusal that pointed nowhere by putting an absolute path in the child's
+        // BRIEFING — the least governed outcome available.
+        //
+        // t-5f823a — it used to sit ABOVE the resolution and read the caller's LITERAL `parent`,
+        // which made it catch only the explicit pair. Measured consequence: an agent that passed
+        // cwd alone sailed past here, had its omitted parent filled in with its own name two lines
+        // up, and was refused by the AgentManager one step later — with a message telling it to
+        // "spawn without parent and pass cwd", which is exactly what it had just done. The rule was
+        // right and the message was unexecutable, which is the worse of the two failures.
+        //
+        // So it runs on the RESOLVED parent, which is the honest predicate ("will this child be
+        // parented?"), and renders the refusal for THIS caller — an agent hears only the exits an
+        // agent has. Resolution is pure and cheap; nothing has been composed or mutated yet, so
+        // t-6fe04b's "refuse at the entry" property is unchanged.
+        if (parent && cwd) {
+          return fail(new Error(parentCwdRefusalFor(deps.caller?.kind)));
         }
         // SDD 478 M9 — attestation runs BEFORE every other Temporary check, including the delegation
         // contract. A command that may not be an agent at all must hear WHY and which operation to use;

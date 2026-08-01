@@ -8,6 +8,8 @@
  * COMPOSITION (D3) — lossless, backstopped by an explicit MAX_CONTRACT_CHARS rejection (t-11a2d1).
  */
 
+import type { CallerKind } from "./callerIdentity.js";
+
 export interface SpawnContract {
   task: string;
   context: string;
@@ -265,8 +267,66 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
  * Its own guard is why the dead pointer survived three removal stages: the test asserted the string
  * CONTAINS "delivery_join", so deleting the tool left the assertion passing. A guard that pins a
  * name must pin it against the live registration, not against itself.
+ *
+ * t-5f823a — and the exit it named instead was reachable only by a HUMAN caller. `resolveActor`
+ * gives an agent caller its own name for an omitted `parent` (spec 351: a delegating agent may not
+ * spawn an orphan), so "spawn without parent" is not a door an agent can walk through — it is the
+ * one thing the identity model exists to forbid it. Naming a live tool is not enough; the exit has
+ * to be executable BY THE CALLER READING IT. Hence the exits are enumerated per caller kind below
+ * and pinned against `resolveActor` itself, not against this text.
  */
-export const PARENT_CWD_REFUSAL =
-  "spawn_agent cannot combine parent with cwd: a parented child inherits its parent's working directory. "
-  + "To run somewhere else, spawn without parent and pass cwd. To give the child its own checkout, "
-  + "declare it in tachyon.yml with a worktree.";
+
+/** The rule, invariant across callers — the sentence every rendering of this refusal shares. */
+export const PARENT_CWD_RULE =
+  "spawn_agent cannot combine parent with cwd: a parented child inherits its parent's working directory.";
+
+/**
+ * The ways out of the parent+cwd rule. Enumerated rather than written inline so a test can pin the
+ * OFFER against the mechanism that decides reachability, instead of pinning prose against prose.
+ */
+export type SpawnCwdExit =
+  /** spawn the child with no lineage at all and name its directory — only a caller that CAN be unparented. */
+  | "unparented-spawn"
+  /** put the child on the roster with a worktree of its own. */
+  | "declare-in-config"
+  /** accept the inheritance: drop cwd, and the child runs where its parent runs. */
+  | "inherit-parent-cwd";
+
+const EXIT_PROSE: Record<SpawnCwdExit, string> = {
+  "unparented-spawn": "To run somewhere else, spawn without parent and pass cwd.",
+  "declare-in-config": "To give the child its own checkout, declare it in tachyon.yml with a worktree.",
+  "inherit-parent-cwd": "Omit cwd and the child runs where you run.",
+};
+
+/**
+ * Why an agent gets a different list: for every other caller kind an omitted `parent` resolves to
+ * nothing, so "spawn without parent" is a real instruction. For an agent it resolves to the caller,
+ * which is not an oversight to route around — it is spec 351. Telling an agent to do it anyway is
+ * how the incident behind t-e787dc repeats: a refusal that points nowhere gets answered with an
+ * absolute path written into the child's BRIEFING, outside every guardrail this rule protects.
+ */
+const AGENT_LINEAGE_NOTE =
+  "You are an agent: an omitted parent resolves to your own identity (spec 351 — a delegating agent "
+  + "cannot spawn a child with no lineage), so every spawn you make is parented and the exit a human "
+  + "caller has here is not one you can take.";
+
+/** The exits that exist for a given caller kind. `undefined` is the unauthenticated/legacy Bridge. */
+export function parentCwdExitsFor(callerKind: CallerKind | undefined): SpawnCwdExit[] {
+  return callerKind === "agent"
+    ? ["inherit-parent-cwd", "declare-in-config"]
+    : ["unparented-spawn", "declare-in-config"];
+}
+
+/** The refusal as the given caller should hear it — the rule, then only the exits that caller has. */
+export function parentCwdRefusalFor(callerKind: CallerKind | undefined): string {
+  const exits = parentCwdExitsFor(callerKind).map((exit) => EXIT_PROSE[exit]);
+  const preamble = callerKind === "agent" ? [PARENT_CWD_RULE, AGENT_LINEAGE_NOTE] : [PARENT_CWD_RULE];
+  return [...preamble, ...exits].join(" ");
+}
+
+/**
+ * The caller-neutral rendering. The AgentManager throws THIS one: it is reached by launches that
+ * carry no caller identity at all (config-driven, internal), and it is deliberately the same
+ * sentence-plus-exits a non-agent Bridge caller hears, so one rule never gets two stories.
+ */
+export const PARENT_CWD_REFUSAL = parentCwdRefusalFor(undefined);

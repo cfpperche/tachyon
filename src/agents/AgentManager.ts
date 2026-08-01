@@ -2259,10 +2259,15 @@ export class AgentManager {
         throw new Error(`spawn_agent cwd is not an existing directory: ${requested}`);
       }
       if (parent) {
-        // t-6fe04b — the Bridge refuses this pair earlier, but only when the caller states `parent`
-        // explicitly: an omitted parent resolves to the caller itself further down that path, so this
-        // is the guard that catches every case. Defence in depth, same sentence, so a caller who
-        // reaches either one is pointed at the same way out.
+        // t-6fe04b — the Bridge refuses this pair earlier and this is defence in depth, same rule,
+        // same sentence, so a caller who reaches either one is pointed at the same way out.
+        //
+        // t-5f823a — the Bridge guard used to catch only an EXPLICIT `parent`, which left this the
+        // one that fired for an agent that passed cwd alone. It now runs on the resolved parent, so
+        // an agent caller never gets this far; what still can are launches with no caller identity
+        // at all (config-driven, internal). That is why this throws the caller-neutral rendering:
+        // the manager has no caller to render for, and inventing one would be a worse lie than the
+        // generic message.
         throw new Error(PARENT_CWD_REFUSAL);
       }
       if (worktree) {
