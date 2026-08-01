@@ -26,7 +26,7 @@ import type { AgentVM } from "../../src/sidebar/types.js";
  * Each scenario is shot at the sidebar's real width and at its narrowest, because a template's damage
  * usually shows up first when the card is squeezed.
  */
-const OUT_DIR = path.resolve(__dirname, "../../docs/screenshots/479-card-templates");
+const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-card-templates");
 const DIST = path.resolve(__dirname, "../../dist/webview");
 const WIDTHS = [
   { id: "320", px: 320 },

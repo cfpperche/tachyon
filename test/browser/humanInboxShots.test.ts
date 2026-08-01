@@ -20,7 +20,7 @@ import type { SavedAgentProposalReview } from "../../src/agents/savedAgentPropos
  * layout property, so it is measured in a real browser against the real, shipped stylesheets.
  *
  * Two outputs, both deliberate:
- *  - PNGs a human can look at (docs/screenshots/e76acc-human-inbox), because "no artifacts" vs "one
+ *  - PNGs a human can look at (.tachyon/visual-qa/e76acc-human-inbox), because "no artifacts" vs "one
  *    image" vs "unavailable" is a judgement about appearance;
  *  - a MECHANICAL overflow assertion per shot, because "looks fine to me" is not evidence and a
  *    reviewer scrolling a screenshot cannot see a page that scrolls sideways.
@@ -29,7 +29,7 @@ import type { SavedAgentProposalReview } from "../../src/agents/savedAgentPropos
  *
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/humanInboxShots.test.ts
  */
-const OUT_DIR = path.resolve(__dirname, "../../docs/screenshots/e76acc-human-inbox");
+const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/e76acc-human-inbox");
 const DIST = path.resolve(__dirname, "../../dist/webview");
 /** Control's comfortable width, and the narrowest a person plausibly drags the panel to. */
 const WIDTHS = [

@@ -22,7 +22,7 @@ import { resolveChromeExecutable } from "./support/chrome";
  * question — does it look right INSIDE the extension host — is the human dogfood, and the dev-host
  * pointer is armed for it.
  */
-const OUT_DIR = path.resolve(__dirname, "../../docs/screenshots/479-card-templates");
+const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-card-templates");
 const ROOT = path.resolve(__dirname, "../..");
 const DIST = path.join(ROOT, "dist/webview");
 
