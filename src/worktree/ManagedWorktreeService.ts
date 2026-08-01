@@ -10,6 +10,7 @@ import {
   type GitExec,
   type WorktreeOccupancyProbe,
   type WorktreeRecord,
+  type WorktreeRemovalResult,
   defaultGitExec,
   gitArgs,
   pathFor,
@@ -65,6 +66,17 @@ export interface ManagedWorktreeServiceOpts {
    * module refuses ancestor claims accordingly rather than granting them.
    */
   lineage?: HygieneLineageSource;
+  /**
+   * t-05dff5 — an `agent` entry is a claim recorded in TWO places: this registry and the session
+   * ledger's `worktree` block. Removing the checkout through Control → Worktrees used to clear only
+   * this one, leaving the ledger owning a directory that no longer existed — a state no governed
+   * action could then undo (forget refused "still owns a worktree", and the agent-card removal
+   * failed on `git worktree remove` before it ever reached the ledger).
+   *
+   * So the registry tells the ledger. Optional because a headless/test service has no ledger to
+   * tell; `Workspace` always wires it to `SessionLedger.clearWorktree`.
+   */
+  onAgentWorktreeRemoved?: (agent: string) => void;
 }
 
 /** Where hygiene removals are recorded. Gitignored `.tachyon/`, so the shared checkout stays clean. */
@@ -631,7 +643,7 @@ export class ManagedWorktreeService {
   async remove(
     idOrPath: string,
     opts: { deleteBranch?: boolean; confirmDirty?: boolean; actor: { kind: string; name?: string } },
-  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  ): Promise<WorktreeRemovalResult> {
     const entry = findManagedEntry(this.load(), idOrPath);
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
     if (!canMutateManagedWorktree(entry, opts.actor)) {
@@ -658,7 +670,7 @@ export class ManagedWorktreeService {
       /** When true: force remove (abandon/data-loss). When false: soft + dirty refuse. */
       force?: boolean;
     },
-  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  ): Promise<WorktreeRemovalResult> {
     const abs = path.resolve(worktreePath);
     const entry = findManagedEntry(this.load(), abs);
     if (entry) {
@@ -686,7 +698,7 @@ export class ManagedWorktreeService {
   private async removeEntryEngine(
     entry: ManagedWorktreeEntry,
     opts: { deleteBranch: boolean; force: boolean; refuseUnlessForceIfDirty: boolean },
-  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  ): Promise<WorktreeRemovalResult> {
     const rec: WorktreeRecord = {
       path: entry.path,
       branch: entry.branch,
@@ -698,7 +710,13 @@ export class ManagedWorktreeService {
       force: opts.force,
       refuseUnlessForceIfDirty: opts.refuseUnlessForceIfDirty,
     });
-    if (result.removed) this.save(removeManagedEntry(this.load(), entry.id));
+    // A checkout that was already absent is as gone as one we just deleted, so the registry must
+    // stop claiming it either way — a removal that leaves a record behind is the divergence again.
+    if (result.removed || result.absent) {
+      this.save(removeManagedEntry(this.load(), entry.id));
+      // t-05dff5 — and so must the ledger, for an agent entry. One removal, one owner, one truth.
+      if (entry.kind === "agent" && entry.agent) this.opts.onAgentWorktreeRemoved?.(entry.agent);
+    }
     return result;
   }
 }

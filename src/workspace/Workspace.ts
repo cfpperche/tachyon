@@ -776,6 +776,11 @@ export class Workspace {
         runtimeParentOf: (name: string) => this.manager.parentOf(name),
         declaredOwnerOf: (name: string) => this.config?.declaredOwner?.[name],
       }),
+      // t-05dff5 — the registry and the ledger both record who owns an agent's checkout, and a
+      // removal through Control → Worktrees used to update only the registry. The ledger then owned
+      // a directory that no longer existed, which no governed action could undo. Same removal, both
+      // records: `clearWorktree` is a no-op for a row that never had one.
+      onAgentWorktreeRemoved: (agent: string) => this.ledger.clearWorktree(agent),
     });
     const defaultClaudeConfigHome = realConfigHome();
     this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));

@@ -816,6 +816,13 @@ async function confirmAndRemoveWorktree(
   if (answer !== removeLabel) return "kept"; // dismiss/Esc OR explicit keep → destroy nothing
   const res = jsonObject(await extensionInvoke(ws, { action: "worktree.remove", agent: name }), "worktree.remove");
   if (res.removed !== true) throw new Error(`worktree removal for '${name}' was not confirmed`);
+  if (res.checkoutAlreadyAbsent === true) {
+    // t-05dff5 — the checkout was already gone (removed through Control → Worktrees, or by hand).
+    // The ownership record is what we just released, so say that instead of claiming a deletion,
+    // and skip the branch follow-up: nothing here proved what that branch still holds.
+    notify(vscode.l10n.t("'{0}' no longer owns a worktree — its checkout was already gone; branch '{1}' was left alone.", name, rec.branch), "info");
+    return "removed";
+  }
   if (res.branchDeleted === true) {
     notify(vscode.l10n.t("Removed worktree and merged branch '{0}'.", rec.branch), "info");
     return "removed";

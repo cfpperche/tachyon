@@ -17,6 +17,7 @@
   "'{0}' is not saved in tachyon.yml (a Temporary instance has no stored definition)": "'{0}' não está salvo no tachyon.yml (uma instância Temporary não tem definição salva)",
   "'{0}' is running — stop it before renaming (its session carries the old name)": "'{0}' está rodando — pare-o antes de renomear (a sessão carrega o nome antigo)",
   "'{0}' needs you: {1}": "'{0}' precisa de você: {1}",
+  "'{0}' no longer owns a worktree — its checkout was already gone; branch '{1}' was left alone.": "'{0}' não é mais dono de um worktree — o checkout já não existia; o branch '{1}' foi mantido.",
   "'{0}' restarted": "'{0}' reiniciado",
   "'{0}' restarted (watched file changed)": "'{0}' reiniciado (arquivo observado mudou)",
   "'{0}' saved & started (autostart)": "'{0}' salvo e iniciado (autostart)",

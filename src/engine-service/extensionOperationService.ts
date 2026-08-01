@@ -35,6 +35,7 @@ import {
 } from "../runtime-api/extensionOperations.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import type { Workspace } from "../workspace/Workspace.js";
+import type { WorktreeRecord, WorktreeRemovalResult } from "../worktree/WorktreeManager.js";
 import type { ProviderObservationService } from "../runtimeObservability/service.js";
 import { buildDoctorReport, formatDoctorReport } from "../workspace/doctorReport.js";
 import type { StagedPayloadStore } from "./stagedPayloadStore.js";
@@ -978,22 +979,68 @@ async function forkAgent(
   }
 }
 
-async function removeAgentWorktree(workspace: Workspace, agent: string, deleteBranch: boolean): Promise<JsonValue> {
-  const descendants = await workspace.manager.liveDescendants(agent);
+/**
+ * t-05dff5 — the narrow slice of the Workspace this removal actually touches, so the recovery
+ * behaviour below is testable without standing up a whole engine. `Workspace` satisfies it.
+ */
+export interface AgentWorktreeRemovalPorts {
+  manager: {
+    liveDescendants(agent: string): Promise<string[]>;
+    agentStates(): Promise<{ has(agent: string): boolean }>;
+    kill(agent: string): Promise<unknown>;
+    releaseOwnedWorktreeForRemoval(agent: string, worktreePath: string): Promise<void>;
+  };
+  ledger: {
+    get(agent: string): { worktree?: WorktreeRecord } | undefined;
+    clearWorktree(agent: string): void;
+  };
+  worktrees: { remove(rec: WorktreeRecord, deleteBranch: boolean): Promise<WorktreeRemovalResult> };
+  managedWorktrees: { syncAgentRecord(agent: string, rec: WorktreeRecord | null): void };
+}
+
+/**
+ * Remove the checkout an agent owns, and stop owning it.
+ *
+ * t-05dff5 — IDEMPOTENT when the checkout is already gone. The other door (Control → Worktrees)
+ * can remove the same checkout, and a human can delete it by hand; this one then found `git
+ * worktree remove` failing with `is not a working tree` and threw BEFORE clearing the ledger, so
+ * the row kept owning a directory that did not exist and nothing could release it — forget refused
+ * ("still owns a worktree"), and every retry of this action failed the same way.
+ *
+ * A proved-absent checkout is not a failure: what this action promises is already true, so it
+ * finishes the promise — clear the ledger, drop the registry record — and says so in the receipt
+ * rather than pretending it deleted something. The proof comes from `WorktreeManager.probeAbsence`
+ * (repository + disk), never from the shape of a git error, so a lock, a permission error or a
+ * dirty refusal still throws.
+ */
+export async function removeAgentWorktree(ports: AgentWorktreeRemovalPorts, agent: string, deleteBranch: boolean): Promise<JsonValue> {
+  const descendants = await ports.manager.liveDescendants(agent);
   if (descendants.length > 0) throw new Error(`cannot remove '${agent}' worktree while descendants are live: ${descendants.join(", ")}`);
-  const record = workspace.ledger.get(agent)?.worktree;
+  const record = ports.ledger.get(agent)?.worktree;
   if (!record) throw new Error(`'${agent}' has no worktree`);
-  if ((await workspace.manager.agentStates()).has(agent)) {
-    await workspace.manager.kill(agent).catch(() => undefined);
-    if ((await workspace.manager.agentStates()).has(agent)) {
+  if ((await ports.manager.agentStates()).has(agent)) {
+    await ports.manager.kill(agent).catch(() => undefined);
+    if ((await ports.manager.agentStates()).has(agent)) {
       throw new Error(`could not stop '${agent}' before removing its worktree`);
     }
   }
-  await workspace.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
-  const result = await workspace.worktrees.remove(record, deleteBranch);
-  if (!result.removed) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
-  workspace.ledger.clearWorktree(agent);
-  workspace.managedWorktrees.syncAgentRecord(agent, null);
+  await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
+  const result = await ports.worktrees.remove(record, deleteBranch);
+  if (!result.removed && !result.absent) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
+  ports.ledger.clearWorktree(agent);
+  ports.managedWorktrees.syncAgentRecord(agent, null);
+  if (result.absent) {
+    // The branch is deliberately left alone: nothing proved this checkout's work was merged, and
+    // the branch has its own spelled-out delete action.
+    return json({
+      removed: true,
+      branchDeleted: false,
+      checkoutAlreadyAbsent: true,
+      absence: result.absent,
+      path: record.path,
+      ...(result.error ? { gitMessage: result.error } : {}),
+    });
+  }
   return json(result);
 }
 

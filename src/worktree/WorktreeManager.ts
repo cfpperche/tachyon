@@ -196,13 +196,45 @@ export interface GitResult {
 }
 /** Runs git in a cwd. Resolves (never rejects) on a non-zero exit so callers branch on `code`; rejects only when git can't spawn (binary absent). */
 export type GitExec = (args: string[], cwd: string) => Promise<GitResult>;
+/**
+ * t-05dff5 — MEASURED proof that the checkout a record points at is not a working tree of this
+ * repository (as opposed to a removal that failed for a real reason: lock, permission, dirtiness).
+ *
+ * - `missing`: nothing at that path on disk, and git does not list it as a worktree.
+ * - `not-a-worktree`: something is still on disk there, but git does not own it — `git worktree
+ *   remove` can never succeed on it, and deleting a directory git disclaims is not our business.
+ */
+export type WorktreeAbsence = "missing" | "not-a-worktree";
+
+export interface WorktreeRemovalResult {
+  removed: boolean;
+  branchDeleted: boolean;
+  error?: string;
+  /**
+   * Set only when the failure was PROVED to be "there was nothing here to remove". Callers that
+   * own a durable claim on this checkout may treat it as done; everyone else keeps failing.
+   */
+  absent?: WorktreeAbsence;
+}
+
 export type WorktreeOccupancy = { state: "live" | "pending" | "dirty"; agent: string; cwd: string };
 export type WorktreeOccupancyProbe = (worktreePath: string) => Promise<WorktreeOccupancy | undefined>;
 
 export function createGitExec(resolveBinary: () => string): GitExec {
   return (args, cwd) => new Promise((resolve, reject) => {
     execFile(resolveBinary(), args, { cwd, encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }, (err, stdout, stderr) => {
-      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") return reject(gitNotFoundError());
+      if (err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+        // t-05dff5 — spawn ENOENT has TWO causes and they are not the same fact: git is not
+        // installed, or the cwd we asked git to run in no longer exists. Blaming the binary for a
+        // deleted checkout turned "this worktree is gone" into "git not found on PATH", and every
+        // best-effort probe that ran inside a removed worktree threw instead of reporting. Measure
+        // which one it is, and report a missing cwd the way git itself reports it: a fatal (128),
+        // so `status()`'s documented best-effort contract holds instead of exploding.
+        if (!fs.existsSync(cwd)) {
+          return resolve({ stdout: "", stderr: `fatal: cannot change to '${cwd}': No such file or directory`, code: 128 });
+        }
+        return reject(gitNotFoundError());
+      }
       const code = err && typeof (err as { code?: unknown }).code === "number" ? ((err as { code: number }).code) : err ? 1 : 0;
       resolve({ stdout: stdout ?? "", stderr: stderr ?? "", code });
     });
@@ -771,7 +803,7 @@ export class WorktreeManager {
        */
       refuseUnlessForceIfDirty?: boolean;
     },
-  ): Promise<{ removed: boolean; branchDeleted: boolean; error?: string }> {
+  ): Promise<WorktreeRemovalResult> {
     return this.withLock(rec.path, async () => {
       if (!this.opts.occupancy) {
         return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: no occupancy probe configured` };
@@ -808,7 +840,18 @@ export class WorktreeManager {
       }
       // Soft remove when clean (Git re-checks); --force only when explicitly authorized.
       const rm = await this.git(gitArgs.remove(rec.path, force), this.opts.workspaceRoot);
-      if (rm.code !== 0) return { removed: false, branchDeleted: false, error: rm.stderr.trim() || rm.stdout.trim() };
+      if (rm.code !== 0) {
+        const error = rm.stderr.trim() || rm.stdout.trim();
+        // t-05dff5 — a failed `git worktree remove` is not automatically a failure to remove. When
+        // the checkout is already gone (another door removed it, or a human deleted it), git says
+        // `is not a working tree` and there is nothing left to do. That is not inferred from the
+        // message: `probeAbsence` re-measures the repository and the disk, so a lock, a permission
+        // error or a dirty refusal still fails exactly as before.
+        const absent = await this.probeAbsence(rec.path);
+        if (!absent) return { removed: false, branchDeleted: false, error };
+        await this.git(gitArgs.prune(), this.opts.workspaceRoot);
+        return { removed: false, branchDeleted: false, error, absent };
+      }
       let branchDeleted = false;
       if (deleteBranch && rec.tachyonCreatedBranch) {
         // SAFE delete: git refuses if the branch has commits not merged into HEAD/upstream,
@@ -820,6 +863,27 @@ export class WorktreeManager {
       await this.git(gitArgs.prune(), this.opts.workspaceRoot);
       return { removed: true, branchDeleted };
     });
+  }
+
+  /**
+   * t-05dff5 — is this path still a working tree of this repository? Answers only from what it can
+   * measure: `git worktree list` (the repository's own view) and the disk. A list probe that itself
+   * failed proves nothing, so it answers `undefined` — fail-closed, the caller keeps its error.
+   *
+   * A path git still lists (including a `prunable` one whose directory a human deleted) is NOT
+   * absent: git can still act on it, and `git worktree remove` on it succeeds. Only a path git
+   * disclaims entirely gets an absence verdict.
+   */
+  private async probeAbsence(worktreePath: string): Promise<WorktreeAbsence | undefined> {
+    const listed = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);
+    if (listed.code !== 0) return undefined;
+    const abs = path.resolve(worktreePath);
+    const known = listed.stdout
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .some((line) => path.resolve(line.slice("worktree ".length).trim()) === abs);
+    if (known) return undefined;
+    return this.exists(abs) ? "not-a-worktree" : "missing";
   }
 
   /**
