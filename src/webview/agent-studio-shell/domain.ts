@@ -11,6 +11,7 @@ import type {
 } from "../../config/agentProfileStudio.js";
 import { AGENT_OWNERSHIP_MAX_SUBAGENTS, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
 import { agentOwnershipViewSchemaV1, agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
+import { agentForgetPlanResultSchemaV1 } from "../../config/agentForgetPlan.js";
 import {
   claudeScalarNativeConfigPolicy,
   claudeSelectorNativeConfigPolicy,
@@ -79,6 +80,7 @@ export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "refreshAgentProfile",
   "setAgentProfileEnabled",
   "renameAgentProfile",
+  "planAgentProfileForget",
   "forgetAgentProfile",
   "setAgentProfileSubagents",
   "setAgentProfileProposeGrant",
@@ -97,6 +99,7 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "evolutionActionResult",
   "evolutionError",
   "agentProfileSnapshot",
+  "agentProfileForgetPlan",
   "agentProfileForgotten",
   "agentProfileOwnership",
   "agentProfileError",
@@ -167,6 +170,12 @@ export type AgentStudioLifecycleActionMessage =
   | { type: "refreshAgentProfile"; agent: string }
   | { type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }
   | { type: "renameAgentProfile"; agent: string; expectedRevision: string; newName: string }
+  /**
+   * t-e722ce — ask what the forget WOULD do. Read-only, and deliberately a separate message from
+   * the forget itself: the plan is what the human approves, so it cannot be a side effect of the
+   * action it authorises.
+   */
+  | { type: "planAgentProfileForget"; agent: string; expectedRevision: string }
   | { type: "forgetAgentProfile"; agent: string; expectedRevision: string; confirmation: string }
   /** t-4c113c — the owner's full declared-subagents list; an empty list clears the declaration. */
   | { type: "setAgentProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }
@@ -243,6 +252,13 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
       && typeof value.newName === "string" && AGENT_NAME_RE.test(value.newName)
       && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
       ? { type: "renameAgentProfile", agent: value.agent, expectedRevision: value.expectedRevision, newName: value.newName }
+      : undefined;
+  }
+  if (value.type === "planAgentProfileForget") {
+    return exactKeys(value, ["type", "agent", "expectedRevision"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.expectedRevision === "string" && SHA256_RE.test(value.expectedRevision)
+      ? { type: "planAgentProfileForget", agent: value.agent, expectedRevision: value.expectedRevision }
       : undefined;
   }
   if (value.type === "forgetAgentProfile") {
@@ -462,6 +478,11 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
     return exactKeys(value, ["type", "agent", "ownership"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && agentOwnershipViewSchemaV1.safeParse(value.ownership).success;
+  }
+  if (value.type === "agentProfileForgetPlan") {
+    return exactKeys(value, ["type", "agent", "result"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && agentForgetPlanResultSchemaV1.safeParse(value.result).success;
   }
   if (value.type === "agentProfileForgotten") {
     return exactKeys(value, ["type", "agent", "agentId"])

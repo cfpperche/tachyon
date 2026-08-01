@@ -20,7 +20,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "../../src/engine-service/extensionOperationService.js";
+import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "../../src/agents/agentRemovalCascade.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { ManagedWorktreeService, agentWorktreePath } from "../../src/worktree/ManagedWorktreeService.js";
 import { WorktreeManager, type WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
@@ -131,7 +131,7 @@ describe("t-05dff5: a worktree removal leaves one story behind it", () => {
     expect(probed.absent).toBe("missing");
     expect(probed.error).toMatch(/not a working tree/);
 
-    const receipt = await removeAgentWorktree(cardPorts(h), AGENT, true) as Record<string, unknown>;
+    const receipt = await removeAgentWorktree(cardPorts(h), AGENT, true);
 
     expect(receipt.removed).toBe(true);
     expect(receipt.checkoutAlreadyAbsent).toBe(true);
@@ -148,7 +148,7 @@ describe("t-05dff5: a worktree removal leaves one story behind it", () => {
     fs.mkdirSync(rec.path, { recursive: true });
     fs.writeFileSync(path.join(rec.path, "leftover.txt"), "not git's\n");
 
-    const receipt = await removeAgentWorktree(cardPorts(h), AGENT, true) as Record<string, unknown>;
+    const receipt = await removeAgentWorktree(cardPorts(h), AGENT, true);
 
     expect(receipt.checkoutAlreadyAbsent).toBe(true);
     expect(receipt.absence).toBe("not-a-worktree");

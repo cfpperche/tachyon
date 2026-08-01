@@ -3094,6 +3094,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Form owns renaming a canonical agent. The `config.agent.rename` runtime-api operation stays:
     // it is a declared EXTENSION_COMMAND_ACTIONS entry served by extensionOperationService, reachable
     // by API clients independently of this command.
+    // t-e722ce — `tachyon.removeWorktreeItem` is gone with the sidebar action that was its only
+    // caller. A Saved Agent's checkout is released by Agent Studio → Forget, as one planned step of
+    // the cascade; a standalone button that took the checkout and left the agent was a second human
+    // surface for the same possession, and it read the ledger while the card that offered it read the
+    // registry. `worktree.remove` stays as a runtime-api operation for API/Bridge clients.
+    //
+    // `tachyon.deleteAgentItem` below survives ONLY for the rows Agent Studio cannot address —
+    // Temporary instances (no canonical profile to forget) and declared terminals (no Studio page).
+    // The gate is `actionsFor` in src/sidebar/actions.ts, which is the sole reachable caller: the
+    // palette entry is `when: false`, so nothing else can invoke it.
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentItem, forceArg?: boolean) => {
       const ws = wsOf(item);
       if (!ws) return;
@@ -3125,20 +3135,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (answer !== confirmLabel) return;
       }
       await extensionInvoke(ws, { action: "config.agent.delete", agent: item.agentName, removeWorktree: false });
-      refreshAll();
-    }),
-    vscode.commands.registerCommand("tachyon.removeWorktreeItem", async (item: AgentItem) => {
-      // spec 210 — standalone "Remove worktree" (Decision 3): clean up the worktree while
-      // keeping the agent entry. Same descendant guard + ownership-aware confirmation.
-      const ws = wsOf(item);
-      if (!ws) return;
-      const inspected = await agentInspection(ws, item.agentName);
-      const rec = inspected.worktree;
-      if (!rec) {
-        notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
-        return;
-      }
-      await confirmAndRemoveWorktree(ws, item.agentName, rec, inspected.status);
       refreshAll();
     }),
     vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem) => {

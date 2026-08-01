@@ -51,6 +51,7 @@ import {
   setAgentProfileEnabledMessage,
   renameAgentProfileMessage,
   forgetAgentProfileMessage,
+  planAgentProfileForgetMessage,
   setAgentProfileSubagentsMessage,
   setAgentProfileProposeGrantMessage,
   exportSavedAgentProfileBundleMessage,
@@ -61,6 +62,8 @@ import {
 } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
 import { EvolutionSection } from "./EvolutionSection";
+import { ForgetPlanView } from "./ForgetPlanView";
+import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
 import type {
   AgentEvolutionCandidateDetailMessage,
   AgentEvolutionCandidateSummaryMessage,
@@ -241,6 +244,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const [renameValue, setRenameValue] = useState("");
   const [forgetConfirmOpen, setForgetConfirmOpen] = useState(false);
   const [forgetValue, setForgetValue] = useState("");
+  // t-e722ce — the plan the human approves. `undefined` while the engine computes it; the typed
+  // confirmation below stays hidden until it arrives, because confirming before reading the plan is
+  // the order this change exists to invert.
+  const [forgetPlan, setForgetPlan] = useState<AgentForgetPlanResultV1 | undefined>(undefined);
   const [profileRetired, setProfileRetired] = useState(false);
   const [ownership, setOwnership] = useState<AgentOwnershipViewV1 | undefined>(undefined);
   const [ownershipDraft, setOwnershipDraft] = useState<string[] | undefined>(undefined);
@@ -298,6 +305,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setRenameValue("");
     setForgetConfirmOpen(false);
     setForgetValue("");
+    setForgetPlan(undefined);
     setProfileRetired(false);
     setOwnership(undefined);
     setOwnershipDraft(undefined);
@@ -354,6 +362,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setRenameValue("");
       setForgetConfirmOpen(false);
       setForgetValue("");
+      setForgetPlan(undefined);
       setProfileRetired(false);
       setOwnership(d.entity.ownership);
       setOwnershipDraft(d.entity.ownership ? [...d.entity.ownership.subagents] : undefined);
@@ -491,6 +500,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       if (entityRef.current?.name !== d.agent) return;
       setOwnership(d.ownership);
       setOwnershipDraft([...d.ownership.subagents]);
+    } else if (d.type === "agentProfileForgetPlan") {
+      if (entityRef.current?.name !== d.agent) return;
+      // The panel state FOLLOWS the plan rather than racing it: a plan only ever arrives because
+      // this panel asked for one, and a re-render that dropped the local flag would otherwise leave
+      // the answer with nowhere to land. It also makes the surface addressable without a click,
+      // which is how the preview harness can render it for review.
+      setForgetConfirmOpen(true);
+      setForgetPlan(d.result);
     } else if (d.type === "agentProfileForgotten") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(undefined);
@@ -552,7 +569,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   }, [renameConfirmOpen]);
 
   useEffect(() => {
-    if (forgetConfirmOpen) forgetCancelButtonRef.current?.focus();
+    // t-e722ce — `preventScroll`, because the panel now opens with a seven-step plan above these
+    // buttons. Focusing Cancel used to scroll the plan off the top of the frame, landing the reader
+    // on the two controls before the thing they are meant to read. Focus still goes to the safe
+    // action (Escape-equivalent, unchanged); only the viewport stays where the human left it.
+    if (forgetConfirmOpen) forgetCancelButtonRef.current?.focus({ preventScroll: true });
   }, [forgetConfirmOpen]);
   useEffect(() => { if (bundleAction) bundleCancelButtonRef.current?.focus(); }, [bundleAction]);
 
@@ -759,9 +780,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     setForgetConfirmOpen(false);
                   }}>{profileLabels.rename}</Button>
                   <Button variant="danger" disabled={canonicalLifecycleDisabled} onClick={() => {
+                    // ONE click computes the plan. Nothing destructive is armed by this button any
+                    // more — it opens a panel that is empty until the engine answers what it would do.
                     setForgetValue("");
+                    setForgetPlan(undefined);
                     setForgetConfirmOpen(true);
                     setRenameConfirmOpen(false);
+                    if (canonicalSnapshot) post(planAgentProfileForgetMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision));
                   }}>{profileLabels.forget}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => canonicalSnapshot && runCanonicalLifecycle("Exporting profile", exportSavedAgentProfileBundleMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))}>{profileLabels.export}</Button>
                   <Button disabled={canonicalLifecycleDisabled} onClick={() => { setBundleAction("clone"); setBundleDestination(""); setBundleImportBase64(undefined); }}>{profileLabels.clone}</Button>
@@ -879,15 +904,27 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 )}
                 {forgetConfirmOpen && canonicalSnapshot && (
                   <div class="ash-soul-delete-confirm" aria-labelledby="ash-forget-confirm-title">
-                    <div class="ash-soul-delete-confirm-title" id="ash-forget-confirm-title">Forget this agent?</div>
-                    <div>This retires the canonical profile and removes the declared agent. Type <strong>{canonicalSnapshot.agentName}</strong> to confirm.</div>
-                    <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
+                    <div class="ash-soul-delete-confirm-title" id="ash-forget-confirm-title">Forget {canonicalSnapshot.agentName}</div>
+                    <ForgetPlanView result={forgetPlan} />
+                    {forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (
+                      <>
+                        <div>Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.</div>
+                        <Input aria-label="Agent name confirmation" value={forgetValue} onInput={(event) => setForgetValue((event.currentTarget as HTMLInputElement).value)} />
+                      </>
+                    )}
                     <div class="ash-soul-delete-confirm-actions">
-                      <Button ref={forgetCancelButtonRef} onClick={() => setForgetConfirmOpen(false)}>Cancel</Button>
-                      <Button variant="danger" disabled={forgetValue !== canonicalSnapshot.agentName} onClick={() => runCanonicalLifecycle(
-                        "Forgetting agent",
-                        forgetAgentProfileMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision, forgetValue),
-                      )}>Forget agent</Button>
+                      <Button ref={forgetCancelButtonRef} onClick={() => { setForgetConfirmOpen(false); setForgetPlan(undefined); }}>Cancel</Button>
+                      <Button
+                        variant="danger"
+                        disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}
+                        onClick={() => forgetPlan?.kind === "plan" && runCanonicalLifecycle(
+                          "Forgetting agent",
+                          // The plan's revision, not the snapshot's: the human approved THAT reading of
+                          // the workspace, and if the profile moved since, the engine must refuse rather
+                          // than execute a plan nobody was shown.
+                          forgetAgentProfileMessage(canonicalSnapshot.agentName, forgetPlan.plan.revision, forgetValue),
+                        )}
+                      >Approve and execute</Button>
                     </div>
                   </div>
                 )}

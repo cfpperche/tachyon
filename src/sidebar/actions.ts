@@ -15,7 +15,12 @@ export type ActionId =
   // called a different one, `config.agent.rename`, which only rewrites the tachyon.yml entry — a second,
   // divergent surface for the same word. It was also pushed unconditionally, so a Temporary row offered a
   // rename for an entity that does not exist to be renamed.
-  | "promote" | "reviewWorktree" | "createPr" | "removeWorktree" | "edit" | "editYaml" | "clone" | "remove";
+  // t-e722ce — no `removeWorktree`. A Saved Agent's worktree is part of its possession, and possession
+  // has ONE human door now: Agent Studio → Forget, which plans and releases the checkout as one step
+  // of the cascade. A standalone button that removed the checkout and kept the agent was a second
+  // surface for the same fact, reading a different source than the forget that then refused because
+  // of it. The `worktree.remove` runtime-api operation is untouched; what left is a human button.
+  | "promote" | "reviewWorktree" | "createPr" | "edit" | "editYaml" | "clone" | "remove";
 
 export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   activity: { icon: "pulse", label: "Activity" },
@@ -39,7 +44,6 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   promote: { icon: "save", label: "Save to tachyon.yml" },
   reviewWorktree: { icon: "git-compare", label: "Review worktree changes" },
   createPr: { icon: "git-pull-request", label: "Create PR" },
-  removeWorktree: { icon: "trash", label: "Remove worktree" },
   edit: { icon: "edit", label: "Edit in Studio" },
   editYaml: { icon: "file-code", label: "Edit YAML" },
   clone: { icon: "copy", label: "Clone" },
@@ -61,6 +65,21 @@ const canRestart = (_a: AgentVM) => true;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals have no transcript, so they never resume. */
 const canResume = (a: AgentVM) => !!a.resumable && isAgentRow(a) && (a.status === "stopped" || a.status === "crashed");
+/**
+ * t-e722ce — this row's removal belongs to Agent Studio, so the card does not offer one.
+ *
+ * A declared AI agent is backed by a canonical profile (`agents:` narrowed to profile pointers), and
+ * Agent Studio → Forget now plans and runs the whole cascade for it — the same cascade this card's
+ * Remove used to run, in the place the product tells people to look. Two doors for one destructive
+ * act is what produced the dead end: they read different sources, so the one that was offered and
+ * the one that worked were not the same button.
+ *
+ * The exclusions are not exceptions to that rule; they are rows Studio genuinely cannot address.
+ * A Temporary instance (the `adhoc` wire flag) has no canonical profile to forget, and a declared
+ * TERMINAL has no Agent Studio page at all. Dropping their Remove would leave them with no human
+ * door whatsoever, which is the failure mode this task was written to avoid, not to cause.
+ */
+const hasStudioForget = (a: AgentVM) => isAgentRow(a) && !a.adhoc;
 
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
@@ -70,7 +89,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   // the "…" menu only (never a primaryAction). An agent with zero probes gets an honest empty panel —
   // hiding the item behind data presence would be a discoverability trap (probe dueto F4).
   if (canViewActivity(a)) out.push("probes");
-  if (a.status === "stopping") return [...out, "remove"];
+  if (a.status === "stopping") return hasStudioForget(a) ? out : [...out, "remove"];
   if (hasPane(a)) {
     if (!isCleanExitPostmortem(a)) out.push("inspect", "openPane");
     if (isRunning(a)) out.push("stop", "kill");
@@ -83,10 +102,10 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (a.verifiable) out.push("verify");
   // spec 381 — injectPrompt joins reanchor/reinject as mid-session operator ops on live AI panes
   if (isRunning(a) && isAgentRow(a)) out.push("reanchor", "reinjectContinuity", "injectPrompt");
-  if (a.worktree) out.push("reviewWorktree", "createPr", "removeWorktree");
+  if (a.worktree) out.push("reviewWorktree", "createPr");
   if (a.adhoc) out.push("promote");
   if (!a.adhoc) out.push("edit", "editYaml", "clone");
-  out.push("remove");
+  if (!hasStudioForget(a)) out.push("remove");
   return out;
 }
 

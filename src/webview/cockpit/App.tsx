@@ -1019,7 +1019,11 @@ function WorktreesHygiene({
 
   const renderRow = (row: CockpitWorktreeRow, group: WtGroup) => {
     const reasons = row.classification?.reasons ?? [];
-    const selectable = group === "ready-to-remove" || group === "record-only";
+    // t-e722ce — an agent's checkout is not this tab's to remove. The engine refuses it outright;
+    // hiding the control here is so a human is not invited into that refusal, and the row stays
+    // VISIBLE because "where did my agent's worktree go" is a question this tab should still answer.
+    const studioOwned = row.kind === "agent";
+    const selectable = !studioOwned && (group === "ready-to-remove" || group === "record-only");
     const op: "remove" | "forget" = group === "ready-to-remove" ? "remove" : "forget";
     const occupant = row.classification?.occupant;
     return (
@@ -1064,7 +1068,16 @@ function WorktreesHygiene({
         }
         detail={group !== "record-only" && row.path ? <span class="ck-mono">{row.path}</span> : undefined}
         actions={
-          group === "record-only" ? (
+          studioOwned ? (
+            <>
+              <span class="ck-wt-reason-muted">{s.wtAgentOwned}</span>
+              {row.path ? (
+                <Button variant="default" onClick={() => onRevealPath(row.path)}>
+                  {s.reveal}
+                </Button>
+              ) : null}
+            </>
+          ) : group === "record-only" ? (
             <Button variant="default" onClick={() => onPost({ type: "worktreeForgetRecord", id: row.id, ...(row.wsHash ? { wsHash: row.wsHash } : {}) })}>
               {s.wtForgetRecord}
             </Button>

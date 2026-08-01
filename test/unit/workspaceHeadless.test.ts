@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
@@ -26,6 +26,7 @@ import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfil
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
+import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -775,7 +776,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
   }
 });
 
-it("refuses canonical forget while any tmux binding still exists", async () => {
+it("refuses the bare canonical forget while a tmux binding exists, and plans the kill in the Studio door", async () => {
   const root = mkdir();
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
@@ -792,30 +793,49 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
       operation: "create",
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
+    await ws.commitAgentProfileLifecycle({
+      agentName: "auditor",
+      operation: "create",
+      createProfile: { runtime: { adapter: "codex", executable: "codex" } },
+    });
     await ws.manager.spawn("reviewer");
     await expect(ws.forgetAgentProfileAgent("reviewer")).rejects.toThrow("fully stopped");
     expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle).toBeDefined();
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
 
-    // t-05dff5 — the same precondition, taken through the Studio door the panel actually calls. It
-    // must arrive as a VALUE carrying the engine's own sentence: this is the exact hop where the
-    // text used to be replaced by "the profile lifecycle action could not be completed", and where
-    // an exception would lose the class that tells a refusal from a broken transaction.
+    // t-e722ce — the STUDIO door no longer inherits that refusal, and that is the change.
+    //
+    // "Stop the agent first" was a precondition the product could satisfy itself and made the human
+    // satisfy instead; the sidebar's Remove always tore the session down, and the door that stayed
+    // now does the same. The refusal is not lost, it is MOVED EARLIER: the plan reports this exact
+    // condition as a step that WILL RUN and names the kill, so the human reads "the session is live
+    // and will be killed" before approving rather than "could not be completed" afterwards.
+    const revision = (await ws.inspectAgentProfileStudio("reviewer")).revision;
+    const planned = await ws.planAgentProfileForget("reviewer", revision);
+    const stopStep = planned.steps.find((entry) => entry.id === "stop-session");
+    expect(stopStep?.state).toBe("will-run");
+    expect(stopStep?.detail).toContain("will be killed");
+    expect(planned.executable).toBe(true);
+
     expect(await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
       operation: "forget",
       agentName: "reviewer",
-      expectedRevision: (await ws.inspectAgentProfileStudio("reviewer")).revision,
+      expectedRevision: revision,
       confirmation: "reviewer",
-    })).toEqual({
+    })).toMatchObject({ kind: "forgotten", agentName: "reviewer" });
+    expect(ws.config?.agents.reviewer).toBeUndefined();
+
+    // t-05dff5's property still holds at this hop: a refusal the cascade CANNOT resolve for the
+    // human arrives as a VALUE carrying the engine's own sentence and its class, rather than as the
+    // flattened "the profile lifecycle action could not be completed" this door used to show.
+    expect(await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
-      kind: "refused",
-      code: "agent-profile/forget-agent-running",
-      // t-4736b4 composes with this: the fresh occupancy probe appends WHICH of its conditions held,
-      // so the human learns "a launch is in flight" instead of only "still running". The two fixes
-      // meet in this string — the code carries the class, the detail carries the cause.
-      message: "agent 'reviewer' must be fully stopped before canonical forget (a launch for this name is in flight)",
-    });
+      operation: "forget",
+      agentName: "auditor",
+      expectedRevision: "f".repeat(64),
+      confirmation: "auditor",
+    })).toMatchObject({ kind: "refused", code: "agent-profile/revision-conflict" });
   } finally {
     ws.dispose();
   }
@@ -2101,4 +2121,155 @@ describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
     expect(await ws.agentOwnershipView(TEAM[1]!)).toEqual({ subagents: [], candidates: [TEAM[2]] });
     ws.dispose();
   });
+});
+
+/**
+ * t-e722ce — ONE human door, and the proof that it is the door that WORKS.
+ *
+ * The trap this task exists inside is an ordering trap. The button the owner asked to remove
+ * (sidebar → Remove) was the only one that could finish the job; the button he asked to keep (Agent
+ * Studio → Forget) was the one that refused. Removing the first before the second could do the work
+ * would leave a human with no door at all — so the two halves land together, and this is the test
+ * that proves the surviving half inherited the capability.
+ *
+ * It is deliberately built on a REAL git repository with a REAL worktree. The whole failure was
+ * about what happens to a checkout and to the two records that claim it, and a fake `worktrees.remove`
+ * would assert only that the code calls the function it obviously calls.
+ */
+function gitRepoWorkspace(): string {
+  const root = mkdir();
+  const git = (args: string[]): void => { execFileSync("git", args, { cwd: root, stdio: "ignore" }); };
+  git(["init", "-b", "main"]);
+  git(["config", "user.email", "t@t.dev"]);
+  git(["config", "user.name", "T"]);
+  fs.writeFileSync(path.join(root, "README.md"), "hi\n");
+  git(["add", "-A"]);
+  git(["commit", "-m", "init"]);
+  return root;
+}
+
+it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove used to remove", async () => {
+  const root = gitRepoWorkspace();
+  const homeDir = mkdir();
+  const worktreeBase = mkdir();
+  // Two agents: `tachyon.yml` refuses to lose its last one, and the point here is the worktree.
+  const { host } = canonicalHost(root, [{ name: "reviewer" }, { name: "keeper" }], `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    // Give the agent a real checkout, claimed in BOTH records — exactly the state the dogfood found
+    // `claude-validador` and `codex` in, and the state in which every human door disagreed.
+    const branch = "tachyon/reviewer";
+    const worktreePath = path.join(worktreeBase, "reviewer");
+    execFileSync("git", ["worktree", "add", "-b", branch, worktreePath, "main"], { cwd: root, stdio: "ignore" });
+    const record = {
+      path: worktreePath,
+      branch,
+      tachyonCreatedBranch: true,
+      baseRef: execFileSync("git", ["rev-parse", "main"], { cwd: root, encoding: "utf8" }).trim(),
+      createdAt: new Date().toISOString(),
+    };
+    ws.ledger.record("reviewer", { cwd: worktreePath, worktree: record, def: { cmd: "codex", kind: "agent" } });
+    ws.managedWorktrees.syncAgentRecord("reviewer", record);
+    expect(ws.managedWorktrees.list({ kind: "agent" })).toHaveLength(1);
+
+    // 0. THE OTHER HUMAN DOOR IS CLOSED. Control → Worktrees keeps the CHANGE worktrees and hands
+    //    agent ones back by name. It has to REFUSE rather than merely hide the button, because what
+    //    it performs is real and partial — it drops the registry entry and leaves the session ledger
+    //    still owning the checkout, so forget goes on refusing `forget-worktree-owned` while the
+    //    surface that could have fixed it stops offering the branch. That is the measured dead end.
+    const entry = ws.managedWorktrees.list({ kind: "agent" })[0]!;
+    const refusedByControl = await executeExtensionCommand(
+      // Only `workspace` is reached on this path; the rest of the context is never touched by the
+      // hygiene case, and stubbing it keeps the case under test in view.
+      { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+      { action: "worktree.remove-managed", id: entry.id },
+    ) as { removed: boolean; error?: string };
+    expect(refusedByControl.removed).toBe(false);
+    expect(refusedByControl.error).toContain("Agent Studio");
+    expect(fs.existsSync(worktreePath)).toBe(true);
+    expect(ws.ledger.get("reviewer")?.worktree?.path).toBe(worktreePath);
+
+    // 1. THE PLAN. One click, before anything is approved, and it names the checkout rather than
+    //    making the human discover it through a refusal.
+    const revision = (await ws.inspectAgentProfileStudio("reviewer")).revision;
+    const plan = await ws.planAgentProfileForget("reviewer", revision);
+    expect(plan.authority).toBe("session-ledger");
+    expect(plan.executable).toBe(true);
+    const byId = new Map(plan.steps.map((step) => [step.id, step]));
+    expect(byId.get("stop-session")?.state).toBe("satisfied");
+    expect(byId.get("remove-worktree")).toMatchObject({ state: "will-run" });
+    expect(byId.get("remove-worktree")?.detail).toContain(worktreePath);
+    expect(byId.get("remove-locator")?.state).toBe("will-run");
+    expect(byId.get("quarantine-profile")?.state).toBe("will-run");
+    // The retention declaration is the cascade's, not the bare transaction's: the worktree IS
+    // deleted here, so claiming it survives would be the plan lying about its own first step.
+    expect(plan.retained).not.toContain("worktrees");
+    expect(plan.retained).toContain("continuity");
+
+    // 2. THE EXECUTION, through the door the panel actually calls. Before this change it resolved
+    //    `{ kind: "refused", code: "agent-profile/forget-worktree-owned" }` and nothing moved.
+    const forgotten = await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: "reviewer",
+      expectedRevision: revision,
+      confirmation: "reviewer",
+    });
+    expect(forgotten).toMatchObject({ kind: "forgotten", agentName: "reviewer" });
+
+    // 3. THE RESULT — everything the sidebar's Remove used to leave behind it, and the three sources
+    //    agreeing again, which is the state the dogfood had to reach by hand.
+    expect(fs.existsSync(worktreePath)).toBe(false);
+    expect(ws.ledger.get("reviewer")).toBeUndefined();
+    expect(ws.managedWorktrees.list({ kind: "agent" })).toHaveLength(0);
+    expect(ws.config?.agents.reviewer).toBeUndefined();
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
+ * t-e722ce — the plan REFUSES in the same words the transaction would, and refusing is not acting.
+ *
+ * A blocked step has to be distinguishable from a step that will run, and the plan must leave the
+ * workspace exactly as it found it: this is the read-only half of the contract, and a projection
+ * that quietly performed its own first step would be the worst possible version of this feature.
+ */
+it("t-e722ce: the forget plan names the blocking precondition and changes nothing", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  const { host } = canonicalHost(root, [{ name: "reviewer" }], "settings:\n  auth: false\n");
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.manager.spawn("reviewer");
+    const revision = (await ws.inspectAgentProfileStudio("reviewer")).revision;
+    const plan = await ws.planAgentProfileForget("reviewer", revision);
+    const stop = plan.steps.find((step) => step.id === "stop-session");
+    // A live session is a step the cascade PERFORMS (it kills the pane), not a wall — so the plan
+    // must say "will run" and name the kill, or the human is being asked to go stop something the
+    // product was about to stop for them. That misdirection is the whole class of bug here.
+    expect(stop?.state).toBe("will-run");
+    expect(plan.executable).toBe(true);
+    // Read-only: the agent is still declared, still on disk, still in tmux.
+    expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle).toBeDefined();
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
+
+    // A revision that moved under the panel is refused as a VALUE, with its code intact, exactly as
+    // the lifecycle door refuses — the plan crosses the same wire and must survive it the same way.
+    await expect(ws.planAgentProfileForget("reviewer", "f".repeat(64)))
+      .rejects.toMatchObject({ code: "agent-profile/revision-conflict" });
+  } finally {
+    ws.dispose();
+  }
 });

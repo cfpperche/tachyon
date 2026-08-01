@@ -6,6 +6,8 @@ import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
+import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -3747,6 +3749,97 @@ export class Workspace {
     return asAgent(this.config?.agents[name])?.profileLifecycle !== undefined;
   }
 
+  /**
+   * t-e722ce — the read-only projection of what a forget would do, computed before the human is
+   * asked to approve anything.
+   *
+   * Every fact below is gathered HERE and nowhere else, so `projectAgentForgetPlan` stays pure and
+   * every branch of it is reachable in a unit test. The measurements are the same ones the cascade
+   * makes — a MEASURED occupancy verdict rather than the last-known-good inventory (t-4736b4), the
+   * session ledger rather than the worktree registry — because a plan that samples different
+   * sources than the transaction is a plan that can be wrong in exactly the way this replaces.
+   *
+   * The checkout probe is `existsSync`, deliberately weaker than `WorktreeManager.probeAbsence`:
+   * the plan never GATES on it (it reports it as `dissent` and as a change of wording on a step that
+   * runs either way), and the cascade re-proves absence against the repository before it acts.
+   */
+  async planAgentProfileForget(name: string, expectedRevision?: string): Promise<AgentForgetPlanV1> {
+    if (!this.isAgentProfileAgent(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    const snapshot = await this.inspectAgentProfileLifecycle(name);
+    if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) {
+      throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${name}' profile revision conflict`);
+    }
+    const record = this.ledger.get(name)?.worktree;
+    const [occupancy, liveDescendants, authority, evolutionProfile] = await Promise.all([
+      this.manager.probeAgentOccupancy(name),
+      this.manager.liveDescendants(name),
+      this.profileAuthorityPort().read(name),
+      this.evolutionStore.readProfile(name),
+    ]);
+    const checkoutPresent = record ? fs.existsSync(record.path) : null;
+    // A status probe that fails is not a fact about risk; reporting zeroes for it would be a
+    // confident lie, so the worktree facts carry `status: null` and the plan says nothing measured.
+    const status = record && checkoutPresent
+      ? await this.worktrees.status(record.path, record.baseRef).catch(() => null)
+      : null;
+    const home = path.join(this.workspaceRoot, ".tachyon", "agents", name);
+    return projectAgentForgetPlan({
+      agentName: name,
+      revision: snapshot.revision,
+      occupancy,
+      liveDescendants,
+      ledgerWorktree: record
+        ? {
+          branch: record.branch,
+          path: record.path,
+          tachyonCreatedBranch: record.tachyonCreatedBranch === true,
+          status: status
+            ? {
+              staged: status.staged,
+              unstaged: status.unstaged,
+              untracked: status.untracked,
+              conflicts: status.conflicts,
+              aheadOfBase: status.aheadOfBase,
+              unpushed: status.unpushed,
+              ...(status.aheadProbeFailed ? { aheadProbeFailed: true } : {}),
+            }
+            : null,
+        }
+        : null,
+      checkoutPresent,
+      registryWorktreeBranch: this.managedWorktrees.list({ kind: "agent" }).find((entry) => entry.agent === name)?.branch ?? null,
+      evolutionProfilePresent: evolutionProfile?.profileId !== undefined,
+      evolutionProfileTreeEntryPresent: fs.existsSync(path.join(home, "evolution", "profile.json")),
+      authorityPresent: authority !== undefined
+        && authority.agentId === snapshot.profile.agentId
+        && authority.canonicalSha256 === snapshot.provenance.canonical.sha256,
+      locatorPresent: this.config?.agents[name] !== undefined,
+      profileHomePresent: fs.existsSync(home),
+    });
+  }
+
+  /**
+   * t-e722ce — the whole removal behind ONE approval, and the only thing a human door calls.
+   *
+   * This is the cascade `config.agent.delete` has always run with `removeWorktree: true`: release
+   * the checkout, prove the session is down, then commit the canonical forget. It was reachable only
+   * from the sidebar's Remove button, which is why Agent Studio's Forget — the door the product tells
+   * people to use — refused on a precondition it had no way to satisfy. Moving the cascade here, and
+   * having BOTH `deleteConfiguredAgent` and Studio call it, is what makes "one means" true rather
+   * than merely stated: there is one implementation, so two doors cannot disagree about it.
+   *
+   * The order is not negotiable. `prepareAgentProfileForget` refuses while the ledger still records
+   * a checkout, so the worktree must go first; and the canonical transaction re-measures occupancy
+   * twice more after `stopAgentSessionForDelete` (t-4736b4's three gates), so stopping early is not
+   * an optimisation that lets a later gate be skipped — it is the gate that makes the later two pass.
+   */
+  async forgetAgentProfileAgentCascade(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
+    if (!this.isAgentProfileAgent(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    if (this.ledger.get(name)?.worktree) await removeAgentWorktree(this, name, true);
+    await stopAgentSessionForDelete(this.manager, name);
+    return this.forgetAgentProfileAgent(name, expectedRevision);
+  }
+
   /** Recoverable retirement for a profile-backed declared agent. */
   async forgetAgentProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
     const lifecycle = asAgent(this.config?.agents[name])?.profileLifecycle;
@@ -4724,7 +4817,15 @@ export class Workspace {
     }
     if (mutation.operation === "forget") {
       if (mutation.confirmation !== mutation.agentName) throw new Error("canonical profile forget confirmation mismatch");
-      const result = await this.forgetAgentProfileAgent(mutation.agentName, mutation.expectedRevision);
+      // t-e722ce — the CASCADE, not the bare canonical forget.
+      //
+      // This branch used to call `forgetAgentProfileAgent`, which refuses while the session ledger
+      // still records a checkout. That made the door the product points people at the one door that
+      // could not finish the job: the human was told to remove the worktree, the only surface that
+      // could was a sidebar button reading a different source, and Control → Worktrees cleared the
+      // registry without clearing the ledger — so the remedy left the refusal exactly where it was.
+      // Running the whole cascade here is what makes Agent Studio a door and not a diagnosis.
+      const result = await this.forgetAgentProfileAgentCascade(mutation.agentName, mutation.expectedRevision);
       return { schemaVersion: 1, kind: "forgotten", agentName: result.agentName, agentId: result.agentId };
     }
     // t-9464ac — this chain used to END on the forget body, reaching it by narrowing rather than by

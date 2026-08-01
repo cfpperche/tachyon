@@ -11,6 +11,7 @@ import type {
   EvolutionStudioOverview,
 } from "../evolution/studioProjection.js";
 import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
 
 /** Narrow identity contract shared by editor panels during the shell cutover. */
@@ -77,6 +78,11 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;
+  /**
+   * t-e722ce — what the forget WILL do, computed before the human is asked to approve it. Read-only;
+   * `commitAgentProfileStudioLifecycle` with `operation: "forget"` is what then executes it.
+   */
+  planAgentProfileForget(agent: string, expectedRevision: string): Promise<AgentForgetPlanResultV1>;
   commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1>;
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1>;
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1>;

@@ -108,6 +108,10 @@ describe("preview route table", () => {
       "studio-agent-codex-danger-off",
       "studio-agent-codex-danger-on",
       "studio-agent-edit",
+      // t-e722ce — the Forget plan panel, in both of its shapes. Addressable without driving a click
+      // (the plan arrives as a second host message), so it can be reviewed like any other surface.
+      "studio-agent-forget-plan",
+      "studio-agent-forget-plan-blocked",
       "studio-command",
       "studio-command-edit",
       "studio-pin-edit",

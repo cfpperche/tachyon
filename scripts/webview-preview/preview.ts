@@ -99,7 +99,16 @@ function run(): void {
       injected = true;
       window.removeEventListener("message", onReady);
       const msg = route.makeMessage(fixture.vm);
-      for (const m of Array.isArray(msg) ? msg : [msg]) window.postMessage(m, "*");
+      const batch = Array.isArray(msg) ? msg : [msg];
+      // t-e722ce — SPACED, not same-tick. A Control-hosted studio receives host messages through ONE
+      // shared `studioIncoming` state slot (cockpit/main.tsx), so two messages posted in the same
+      // tick collapse to the last one and the studio never sees its `load` — it sits on "Loading…"
+      // forever. Posting each on its own macrotask is how a real host delivers them (a reply always
+      // follows a render), and it makes a request/response surface previewable at all.
+      batch.forEach((m, index) => {
+        if (index === 0) window.postMessage(m, "*");
+        else window.setTimeout(() => window.postMessage(m, "*"), index * 50);
+      });
     }
   };
   window.addEventListener("message", onReady);

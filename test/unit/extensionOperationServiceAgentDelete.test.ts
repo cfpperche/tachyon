@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { stopAgentSessionForDelete } from "../../src/engine-service/extensionOperationService.js";
+import { stopAgentSessionForDelete } from "../../src/agents/agentRemovalCascade.js";
 import type { AgentOccupancyVerdict } from "../../src/agents/AgentManager.js";
 
 function sessionManager(dead: boolean, removeOnKill = true) {

@@ -716,6 +716,7 @@ function strings(): CockpitStrings {
     wtRecordTitle: t("Record-only"),
     wtRecordDesc: t("The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row."),
     wtRemoveCheckout: t("Remove checkout"),
+    wtAgentOwned: t("Managed by Agent Studio → Forget"),
     wtForgetRecord: t("Forget record"),
     wtAlsoDeleteBranch: t("Also delete local branch"),
     wtSelectAll: t("Select all"),

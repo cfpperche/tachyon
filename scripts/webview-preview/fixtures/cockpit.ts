@@ -322,6 +322,7 @@ export const strings: CockpitStrings = {
   wtRecordTitle: "Record-only",
   wtRecordDesc: "The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row.",
   wtRemoveCheckout: "Remove checkout",
+  wtAgentOwned: "Managed by Agent Studio → Forget",
   wtForgetRecord: "Forget record",
   wtAlsoDeleteBranch: "Also delete local branch",
   wtSelectAll: "Select all",
@@ -934,6 +935,15 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "studio-agent-codex-danger-on": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-on"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  // t-e722ce — Agent Studio's forget plan: the panel a human reads before approving a removal.
+  "studio-agent-forget-plan": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan"), studioMountNonce: "fixture-mount-nonce" },
+  },
+  "studio-agent-forget-plan-blocked": {
+    provenance: "synthetic-edge",
+    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan-blocked"), studioMountNonce: "fixture-mount-nonce" },
   },
   // t-610705 (Phase D, D2) — task is edit-only in practice (route.ts's decodeRoute rejects
   // studio-new + "task" outright — every real caller pre-mints an id), so there is no "studio-task"

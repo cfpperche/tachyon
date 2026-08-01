@@ -81,7 +81,6 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" |
   promote: "tachyon.promoteAgentItem",
   reviewWorktree: "tachyon.reviewWorktreeItem",
   createPr: "tachyon.createWorktreePrItem",
-  removeWorktree: "tachyon.removeWorktreeItem",
   edit: "tachyon.editAgentStudioItem",
   editYaml: "tachyon.editAgentItem",
   clone: "tachyon.cloneAgentItem",

@@ -36,6 +36,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait", "soul.profile.status",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
+  "agent-profile.forget-plan",
   "agent-profile.authorizable-capabilities",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
@@ -90,6 +91,13 @@ export const extensionQuerySchema = z.union([
   /** t-4c113c — declared-ownership read side. Additive action: an engine that predates it refuses
    *  the unknown action outright rather than decoding a changed payload. */
   z.object({ action: z.literal("agent-profile.studio-ownership"), agent: name }).strict(),
+  /**
+   * t-e722ce — the read-only projection of what a forget would do, so the human approves a plan
+   * instead of discovering the preconditions one refusal at a time. Additive action, for the same
+   * skew reason as `agent-profile.studio-ownership`: an engine that predates it refuses the unknown
+   * action by name rather than decoding a payload that changed shape under it.
+   */
+  z.object({ action: z.literal("agent-profile.forget-plan"), agent: name, expectedRevision: sha256 }).strict(),
   z.object({ action: z.literal("agent-profile.authorizable-capabilities"), agent: name }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),

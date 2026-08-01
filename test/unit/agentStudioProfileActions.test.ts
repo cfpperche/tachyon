@@ -243,9 +243,15 @@ describe("Agent Studio soul profile protocol (T15A)", () => {
     expect(source).toContain('canonical && mode === "edit"');
     expect(source).toContain("const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired");
     expect(source).toContain("renameCancelButtonRef.current?.focus()");
-    expect(source).toContain("forgetCancelButtonRef.current?.focus()");
-    expect(source).toContain("Type <strong>{canonicalSnapshot.agentName}</strong> to confirm.");
-    expect(source).toContain("forgetValue !== canonicalSnapshot.agentName");
+    expect(source).toContain("forgetCancelButtonRef.current?.focus({ preventScroll: true })");
+    // t-e722ce — the typed confirmation comes AFTER the plan, and only when the plan can execute.
+    // The order is the fix: confirming first and then discovering the preconditions one refusal at a
+    // time is the flow this replaced, so a regression that re-arms the button before the engine has
+    // answered must fail here.
+    expect(source).toContain("Type <strong>{canonicalSnapshot.agentName}</strong> to approve the plan above.");
+    expect(source).toContain('forgetPlan?.kind === "plan" && forgetPlan.plan.executable && (');
+    expect(source).toContain('disabled={forgetPlan?.kind !== "plan" || !forgetPlan.plan.executable || forgetValue !== canonicalSnapshot.agentName}');
+    expect(source).toContain("post(planAgentProfileForgetMessage(canonicalSnapshot.agentName, canonicalSnapshot.revision))");
     expect(source).toContain("bundleCancelButtonRef.current?.focus()");
     expect(source).toContain("Creates a new disabled agent. Secrets, grants and workspace bindings must be authorized again.");
     expect(source).toContain('{canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}');

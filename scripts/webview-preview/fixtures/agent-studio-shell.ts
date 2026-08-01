@@ -7,11 +7,18 @@
 import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
 import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
 import type { AgentProfileStudioSnapshotV1 } from "../../../src/config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "../../../src/config/agentForgetPlan";
 import type { Fixture, Route } from "../routes";
 
 interface AgentStudioShellFixtureVM {
   entity: AgentStudioEntity;
   loadError?: { code: string; message: string };
+  /**
+   * t-e722ce — a forget plan delivered after `load`, so the plan panel is addressable for a visual
+   * pass without driving a click. The panel opens on the plan's arrival (its state follows the
+   * data), which is the same path the real engine reply takes.
+   */
+  forgetPlan?: AgentForgetPlanResultV1;
 }
 
 const STUDIO_PROTOCOL_VERSION = 1;
@@ -24,8 +31,98 @@ export function agentStudioShellMakeMessage(vm: AgentStudioShellFixtureVM): unkn
   if (vm.loadError) {
     return envelope({ type: "error", code: vm.loadError.code, message: vm.loadError.message, blocking: true });
   }
-  return envelope({ type: "load", entity: vm.entity, concurrency: { kind: "none" } });
+  const load = envelope({ type: "load", entity: vm.entity, concurrency: { kind: "none" } });
+  if (!vm.forgetPlan) return load;
+  return [load, envelope({ type: "agentProfileForgetPlan", agent: vm.entity.name ?? "", result: vm.forgetPlan })];
 }
+
+/** The state a human meets most: nothing blocks, the checkout goes, and the risk is real. */
+const executableForgetPlan: AgentForgetPlanResultV1 = {
+  schemaVersion: 1,
+  kind: "plan",
+  plan: {
+    schemaVersion: 1,
+    agentName: "reviewer",
+    revision: "b".repeat(64),
+    authority: "session-ledger",
+    steps: [
+      { id: "stop-session", state: "satisfied", detail: "no live session, pane or reservation holds this agent" },
+      {
+        id: "remove-worktree",
+        state: "will-run",
+        detail: "deletes the checkout at /home/dev/.cache/tachyon/worktrees/reviewer; branch tachyon/reviewer was created by Tachyon and is deleted if git can safe-delete it",
+      },
+      { id: "retire-evolution", state: "will-run", detail: "retires the stored Agent Evolution profile" },
+      { id: "retire-authority", state: "will-run", detail: "retires this agent's record in the host authority vault" },
+      { id: "remove-locator", state: "will-run", detail: "removes the 'reviewer' entry from tachyon.yml" },
+      { id: "quarantine-profile", state: "will-run", detail: "moves .tachyon/agents/reviewer/ into the retirement receipt" },
+      {
+        id: "converge-runtime",
+        state: "will-run",
+        detail: "drops the session ledger row, the generated spawn brief and soul anchor, and the pane transcript",
+      },
+    ],
+    dissent: [
+      { source: "managed-worktree-registry", claim: "the worktree registry lists nothing; the ledger owns tachyon/reviewer, and the ledger decides" },
+    ],
+    retained: ["runtime homes", "runtime secrets", "session-owner rows", "continuity"],
+    retiredToReceipt: ["canonical profile tree", "activity projections"],
+    risk: {
+      branch: "tachyon/reviewer",
+      uncommittedChanges: 4,
+      commitsAheadOfBase: 2,
+      unpushedCommits: 2,
+      aheadProbeFailed: false,
+      branchDeletionPlanned: true,
+      liveDescendants: [],
+    },
+    executable: true,
+  },
+};
+
+/** The state the old flow could only render as "could not be completed". */
+const blockedForgetPlan: AgentForgetPlanResultV1 = {
+  schemaVersion: 1,
+  kind: "plan",
+  plan: {
+    schemaVersion: 1,
+    agentName: "reviewer",
+    revision: "b".repeat(64),
+    authority: "session-ledger",
+    steps: [
+      { id: "stop-session", state: "satisfied", detail: "no live session, pane or reservation holds this agent" },
+      {
+        id: "remove-worktree",
+        state: "blocked",
+        detail: "scout, tester still run inside this checkout",
+        refusalCode: "agent-profile/worktree-release-agent-running",
+        resolution: "Stop scout, tester first — they share this worktree.",
+      },
+      { id: "retire-evolution", state: "satisfied", detail: "this agent has no Agent Evolution profile" },
+      { id: "retire-authority", state: "will-run", detail: "retires this agent's record in the host authority vault" },
+      { id: "remove-locator", state: "will-run", detail: "removes the 'reviewer' entry from tachyon.yml" },
+      { id: "quarantine-profile", state: "will-run", detail: "moves .tachyon/agents/reviewer/ into the retirement receipt" },
+      {
+        id: "converge-runtime",
+        state: "will-run",
+        detail: "drops the session ledger row, the generated spawn brief and soul anchor, and the pane transcript",
+      },
+    ],
+    dissent: [],
+    retained: ["runtime homes", "runtime secrets", "session-owner rows", "continuity"],
+    retiredToReceipt: ["canonical profile tree", "activity projections"],
+    risk: {
+      branch: "tachyon/reviewer",
+      uncommittedChanges: 4,
+      commitsAheadOfBase: 0,
+      unpushedCommits: 0,
+      aheadProbeFailed: true,
+      branchDeletionPlanned: true,
+      liveDescendants: ["scout", "tester"],
+    },
+    executable: false,
+  },
+};
 
 const chips = [
   { bin: "claude", label: "Claude Code", detected: true },
@@ -210,6 +307,9 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
     provenance: "synthetic-edge",
     vm: { entity: codexCanonicalEntity(["neverAskForApproval", "dangerFullAccess"]) },
   },
+  // t-e722ce — the plan a human approves, in both of its shapes.
+  "forget-plan": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: executableForgetPlan } },
+  "forget-plan-blocked": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: blockedForgetPlan } },
   "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
 };
 

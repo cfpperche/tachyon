@@ -58,16 +58,17 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
-  it("clean exit after auto-clear → Activity/Restart/Resume/Remove, no Kill and no Start", () => {
+  it("clean exit after auto-clear → Activity/Restart/Resume, no Kill and no Start", () => {
     const a = A({ status: "stopped", exited: true, pane: false, resumable: true, canDismiss: true });
     expect(actionsFor(a)).toEqual(expect.arrayContaining(["activity", "restart", "resume"]));
-    expect(actionsFor(a)).toContain("remove");
+    // t-e722ce — a declared AI row's removal is Agent Studio → Forget's; the card offers none.
+    expect(actionsFor(a)).not.toContain("remove");
     expect(actionsFor(a)).not.toContain("inspect");
     expect(actionsFor(a)).not.toContain("openPane");
     expect(actionsFor(a)).not.toContain("kill");
     expect(actionsFor(a)).not.toContain("spawn");
     expect(primaryActions(a)).toEqual(["activity"]);
-    expect(moreActions(a)).toEqual(expect.arrayContaining(["restart", "resume", "remove"]));
+    expect(moreActions(a)).toEqual(expect.arrayContaining(["restart", "resume"]));
   });
   it("restart is offered for declared and ad-hoc agents, but only in the overflow menu", () => {
     const declared = A({ status: "running" });
@@ -102,9 +103,10 @@ describe("sidebar action matrix (spec 237)", () => {
   it("stopping → durable-record views + Remove; blocks pane-contending actions while graceful stop is in flight", () => {
     // spec 322 — probes, like activity, reads durable on-disk records and never contends for the pane,
     // so it stays available during a graceful stop.
-    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity", "probes", "remove"]);
+    expect(actionsFor(A({ status: "stopping" }))).toEqual(["activity", "probes"]);
+    expect(actionsFor(A({ status: "stopping", adhoc: true }))).toEqual(["activity", "probes", "remove"]);
     expect(primaryActions(A({ status: "stopping" }))).toEqual(["activity"]);
-    expect(moreActions(A({ status: "stopping" }))).toEqual(["probes", "remove"]);
+    expect(moreActions(A({ status: "stopping" }))).toEqual(["probes"]);
   });
   it("stop-failed → live pane actions stay available for retry or forced kill", () => {
     const a = A({ status: "stop-failed" });
@@ -124,7 +126,9 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
     expect(actionsFor(A({ status: "running", adhoc: true }))).toContain("remove");
     expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("remove");
-    expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr", "removeWorktree"]));
+    expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr"]));
+    // t-e722ce — the worktree row keeps its READ actions and loses the destructive one.
+    expect(actionsFor(A({ status: "running", worktree: "b" }))).not.toContain("removeWorktree" as ActionId);
   });
   it("spec 322 — probes: offered wherever activity is (ai, pane-independent), more-menu only, never terminals", () => {
     expect(actionsFor(A({ status: "running" }))).toContain("probes");
@@ -151,7 +155,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "throttled" }))).not.toContain("spawn");
   });
   it("management actions always present", () => {
-    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone", "remove"]));
+    expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone"]));
   });
   it("ad-hoc agent rows omit declared-only edit actions", () => {
     const actions = actionsFor(A({ status: "running", adhoc: true }));
@@ -189,17 +193,54 @@ describe("sidebar action matrix (spec 237)", () => {
       expect(primaryActions(shape)).not.toContain("rename" as ActionId);
     }
   });
-  it("removal is a single action for declared and ad-hoc agents", () => {
+  /**
+   * t-e722ce — the sidebar offers removal ONLY where Agent Studio cannot.
+   *
+   * A declared AI agent is backed by a canonical profile, and Agent Studio → Forget now runs the
+   * whole cascade for it. Leaving a second button here is what produced the dead end: the card read
+   * the ledger, the Forget read the ledger, Control read the registry, and the one that was OFFERED
+   * and the one that WORKED were not the same button on the same day.
+   *
+   * An ad-hoc agent has no canonical profile to forget and a declared terminal has no Studio page,
+   * so both keep their door. Asserting the absence AND the presence together is the point: this test
+   * fails if someone puts the canonical Remove back, and equally if someone strips the last human
+   * door from the rows Studio was never able to serve.
+   */
+  it("removal is offered only for rows Agent Studio cannot forget", () => {
     for (const a of [
-      A({ status: "running" }),
-      A({ status: "stopped" }),
       A({ status: "running", adhoc: true }),
       A({ status: "stopped", adhoc: true, canDismiss: true }),
+      A({ status: "running", kind: "terminal" }),
+      A({ status: "stopped", kind: "terminal" }),
     ]) {
       const actions = actionsFor(a);
       expect(actions).toContain("remove");
       expect(actions).not.toContain("dismiss");
       expect(actions).not.toContain("delete");
+    }
+    for (const a of [
+      A({ status: "running" }),
+      A({ status: "stopped" }),
+      A({ status: "stopping" }),
+      A({ status: "crashed" }),
+      A({ status: "running", worktree: "feature/x" }),
+    ]) {
+      expect(actionsFor(a)).not.toContain("remove");
+      expect(moreActions(a)).not.toContain("remove");
+      expect(primaryActions(a)).not.toContain("remove");
+    }
+  });
+
+  /** t-e722ce — the standalone worktree removal left the surface entirely; it has no row shape. */
+  it("offers no standalone worktree removal on any row shape", () => {
+    for (const a of [
+      A({ status: "running", worktree: "feature/x" }),
+      A({ status: "stopped", worktree: "feature/x" }),
+      A({ status: "running", worktree: "feature/x", adhoc: true }),
+      A({ status: "crashed", worktree: "feature/x" }),
+    ]) {
+      expect(actionsFor(a)).not.toContain("removeWorktree" as ActionId);
+      expect(moreActions(a)).not.toContain("removeWorktree" as ActionId);
     }
   });
   it("primary is capped at 5 and inline+more partition the set with no overlap", () => {

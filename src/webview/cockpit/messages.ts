@@ -321,6 +321,8 @@ export interface CockpitStrings {
   wtRecordTitle: string;
   wtRecordDesc: string;
   wtRemoveCheckout: string;
+  /** t-e722ce — an agent worktree row: this tab shows it and Agent Studio removes it. */
+  wtAgentOwned: string;
   wtForgetRecord: string;
   wtAlsoDeleteBranch: string;
   wtSelectAll: string;

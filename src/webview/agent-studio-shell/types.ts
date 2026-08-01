@@ -10,6 +10,7 @@ import type {
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
 import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
 
 export type {
   AgentEvolutionCandidateDetailMessage,
@@ -35,6 +36,8 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>
   | StudioDomainMessage<{ type: "agentProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
   | StudioDomainMessage<{ type: "agentProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
+  /** t-e722ce — the read-only plan (or the refusal that stopped it being computed). */
+  | StudioDomainMessage<{ type: "agentProfileForgetPlan"; agent: string; result: AgentForgetPlanResultV1 }>
   | StudioDomainMessage<{ type: "agentProfileForgotten"; agent: string; agentId: string }>
   | StudioDomainMessage<{ type: "agentProfileError"; agent: string; code: string; message: string; conflict: boolean }>
   /** t-5498a6 — the two candidate lists, delivered host → webview. */
@@ -72,6 +75,7 @@ export type AgentStudioWebviewMessage =
   | StudioDomainMessage<{ type: "refreshAgentProfile"; agent: string }>
   | StudioDomainMessage<{ type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }>
   | StudioDomainMessage<{ type: "renameAgentProfile"; agent: string; expectedRevision: string; newName: string }>
+  | StudioDomainMessage<{ type: "planAgentProfileForget"; agent: string; expectedRevision: string }>
   | StudioDomainMessage<{ type: "forgetAgentProfile"; agent: string; expectedRevision: string; confirmation: string }>
   | StudioDomainMessage<{ type: "setAgentProfileSubagents"; agent: string; expectedRevision: string; subagents: string[] }>
   | StudioDomainMessage<{ type: "exportSavedAgentProfileBundle"; agent: string; expectedRevision: string }>

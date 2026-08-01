@@ -104,6 +104,9 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   ) {
     return this.studio.createSavedAgent(mutation, options);
   }
+  planAgentProfileForget(agent: string, expectedRevision: string) {
+    return this.studio.planAgentProfileForget(agent, expectedRevision);
+  }
   commitAgentProfileStudioLifecycle(mutation: Parameters<ClientWorkspaceStudioTarget["commitAgentProfileStudioLifecycle"]>[0]) {
     return this.studio.commitAgentProfileStudioLifecycle(mutation);
   }

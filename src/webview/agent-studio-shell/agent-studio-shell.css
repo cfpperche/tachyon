@@ -117,12 +117,45 @@
 .ash-evolution details { margin-top: 0; padding-top: var(--ds-2); border-top: 1px solid var(--ds-border); }
 .ash-evolution details > summary { cursor: pointer; color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
 
+/* t-e722ce — the forget plan. Each step is a row of three columns (name, state, detail) so the
+   states line up and a reader scans "already satisfied" vs "will run" down one column rather than
+   parsing seven sentences. A blocked step gets the error colour and keeps its resolution inline,
+   beside the thing it blocks, instead of in a toast that outlives the panel. */
+.ash-forget-plan { display: grid; gap: var(--ds-2); }
+.ash-forget-plan-pending { color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-forget-plan-refused { display: grid; gap: var(--ds-1); color: var(--ds-err); }
+/* An <ol>, because a plan is a SEQUENCE and assistive tech should say "step 2 of 7". No visual
+   marker: each row is a grid, so it is not a list-item box and no marker would render anyway —
+   styling one here would be a rule that silently does nothing. The order reads from the layout. */
+.ash-forget-plan-steps { display: grid; gap: var(--ds-1); margin: 0; padding-left: 0; list-style: none; }
+/* The state column never wraps: a two-line "ALREADY SATISFIED" broke the row rhythm the whole layout
+   exists for — the states have to be readable as ONE vertical column at a glance. */
+.ash-forget-plan-step { display: grid; grid-template-columns: minmax(0, 12rem) max-content minmax(0, 1fr); gap: var(--ds-2); align-items: baseline; }
+.ash-forget-plan-step-state { white-space: nowrap; }
+.ash-forget-plan-step-title { font-weight: var(--tachyon-weight-semibold); }
+.ash-forget-plan-step-state { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.ash-forget-plan-step-detail, .ash-forget-plan-step-resolution { overflow-wrap: anywhere; font-size: var(--ds-small); }
+.ash-forget-plan-step-satisfied .ash-forget-plan-step-title, .ash-forget-plan-step-satisfied .ash-forget-plan-step-detail { color: var(--ds-muted); }
+.ash-forget-plan-step-blocked .ash-forget-plan-step-state, .ash-forget-plan-step-blocked .ash-forget-plan-step-resolution { color: var(--ds-err); }
+.ash-forget-plan-step-resolution, .ash-forget-plan-step-code { grid-column: 3; }
+.ash-forget-plan-step-blocked .ash-forget-plan-step-resolution { font-weight: var(--tachyon-weight-semibold); }
+.ash-forget-plan-risk { color: var(--ds-err); font-size: var(--ds-small); overflow-wrap: anywhere; }
+.ash-forget-plan-retained, .ash-forget-plan-dissent { font-size: var(--ds-small); color: var(--ds-muted); }
+.ash-forget-plan-dissent ul { margin: 0; padding-left: var(--ds-5); }
+.ash-forget-plan-blocked-note { color: var(--ds-err); font-size: var(--ds-small); }
+.ash-mono { font-family: var(--vscode-editor-font-family, monospace); }
+
 @media (max-width: 720px) {
   .ash-fields { width: calc(100vw - (2 * var(--ds-page-pad-x))); margin: 0; justify-self: start; }
   .ash-grid-compact, .ash-check-grid, .ash-evolution-active-grid, .ash-evolution-file-diff, .ash-profile-source-grid { grid-template-columns: 1fr; }
   .ash-row { align-items: stretch; flex-direction: column; }
   .ash-identity-heading, .ash-evolution-heading, .ash-evolution-toolbar { align-items: stretch; flex-direction: column; }
   .ash-runtime-readiness-heading { align-items: stretch; flex-direction: column; }
+  /* Stacked, the rows lose their column rhythm, so the GAP has to carry the separation — at
+     --ds-1 the seven steps read as one paragraph. */
+  .ash-forget-plan-steps { gap: var(--ds-3); }
+  .ash-forget-plan-step { grid-template-columns: 1fr; gap: 0; }
+  .ash-forget-plan-step-resolution, .ash-forget-plan-step-code { grid-column: 1; }
   .ash-evolution-candidate { grid-template-columns: 1fr; }
   .ash-soul-state { align-self: flex-start; }
   .ash-evolution-state { align-self: flex-start; }

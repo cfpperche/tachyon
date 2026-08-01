@@ -166,11 +166,6 @@
         "icon": "$(trash)"
       },
       {
-        "command": "tachyon.removeWorktreeItem",
-        "title": "%command.removeWorktreeItem%",
-        "icon": "$(git-branch)"
-      },
-      {
         "command": "tachyon.reviewWorktreeItem",
         "title": "%command.reviewWorktreeItem%",
         "icon": "$(git-compare)"
@@ -718,10 +713,6 @@
         },
         {
           "command": "tachyon.reviewWorktreeItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.removeWorktreeItem",
           "when": "false"
         },
         {

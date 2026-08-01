@@ -223,6 +223,9 @@ export const ROUTES: Record<string, Route> = {
           "canonical-claude-bypass-on": "canonical-claude-bypass-on",
           "canonical-codex-danger-off": "canonical-codex-danger-off",
           "canonical-codex-danger-on": "canonical-codex-danger-on",
+          // t-e722ce — the forget plan panel, both shapes, addressable without driving a click.
+          "canonical-forget-plan": "forget-plan",
+          "canonical-forget-plan-blocked": "forget-plan-blocked",
         };
         const entityId = (activeRoute as { entityId?: string }).entityId ?? "";
         const key = (activeRoute as { studio?: string }).studio === "agent" && agentFixtureByEntity[entityId]

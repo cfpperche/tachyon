@@ -5,7 +5,9 @@ import { createProfileFromStudioMutation } from "../config/agentProfileStudio.js
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
-import type { AgentOccupancyVerdict } from "../agents/AgentManager.js";
+import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
+import { isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
+import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/soul.js";
 import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
@@ -36,7 +38,6 @@ import {
 } from "../runtime-api/extensionOperations.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
 import type { Workspace } from "../workspace/Workspace.js";
-import type { WorktreeRecord, WorktreeRemovalResult } from "../worktree/WorktreeManager.js";
 import type { ProviderObservationService } from "../runtimeObservability/service.js";
 import { buildDoctorReport, formatDoctorReport } from "../workspace/doctorReport.js";
 import type { StagedPayloadStore } from "./stagedPayloadStore.js";
@@ -99,6 +100,8 @@ export async function executeExtensionQuery(
       return json(await workspace.inspectAgentProfileStudio(query.agent));
     case "agent-profile.studio-ownership":
       return json(await workspace.agentOwnershipView(query.agent));
+    case "agent-profile.forget-plan":
+      return json(await agentForgetPlanResult(workspace, query.agent, query.expectedRevision));
     case "agent-profile.authorizable-capabilities":
       return json(await workspace.authorizableCapabilitiesFor(query.agent));
     case "agent-profile.studio-bundle-export": {
@@ -478,7 +481,7 @@ export async function executeExtensionCommand(
         taskSummary: command.taskSummary,
       }));
     case "worktree.remove":
-      return removeAgentWorktree(workspace, command.agent, true);
+      return json({ ...(await removeAgentWorktree(workspace, command.agent, true)) });
     case "worktree.delete-branch":
       return json({ deleted: await workspace.worktrees.deleteBranch(command.branch) });
     // spec 444 — registry-id-scoped hygiene actions from Control's Worktrees tab. Both are
@@ -489,6 +492,27 @@ export async function executeExtensionCommand(
       return json({ forgotten });
     }
     case "worktree.remove-managed": {
+      // t-e722ce — Control → Worktrees keeps the CHANGE worktrees and hands the agent ones back.
+      //
+      // This tab is a human surface with exactly one caller (the Cockpit's `worktreeRemove` dep), so
+      // refusing here refuses a button and nothing else: the Bridge reaches `removeClassified`
+      // directly and `worktree.remove` is untouched, which is what "the way agents do it stays the
+      // same" means in code. It has to be refused rather than merely hidden, because the removal it
+      // performs is real and partial — it drops the registry entry and leaves the session ledger
+      // still owning the checkout, so canonical forget goes on refusing `forget-worktree-owned`
+      // while the surface that could fix it no longer offers the branch. That is the exact dead end
+      // measured on 0.56.142, and the classifier cannot catch it: `classifyManagedWorktree` never
+      // reads `kind`, so an agent's checkout classifies `ready-to-remove` like any other.
+      const managed = workspace.managedWorktrees.list().find((entry) => entry.id === command.id);
+      if (managed?.kind === "agent") {
+        return json({
+          removed: false,
+          error: `'${managed.agent ?? managed.slug ?? command.id}' is an agent's worktree. `
+            + "Its checkout is released by Agent Studio → Forget, which plans the whole removal and "
+            + "keeps the session ledger and the worktree registry in agreement. This tab manages "
+            + "change worktrees.",
+        });
+      }
       // removeClassified re-runs the FULL classifier at execution time (occupancy + dirtiness +
       // base-containment) — a render-time "ready-to-remove" verdict is never trusted at click time.
       const result = await workspace.managedWorktrees.removeClassified(command.id, {
@@ -873,6 +897,28 @@ function configMutation(workspace: Workspace, mutate: () => boolean): JsonValue 
   return json({ changed: true });
 }
 
+/**
+ * t-e722ce — the plan, as a VALUE on the success channel.
+ *
+ * `planAgentProfileForget` refuses with an `AgentProfileRefusal` when the profile moved under the
+ * panel. Letting that travel as an exception would flatten it to `COMMAND_FAILED` on the wire and
+ * strand the one sentence that tells the human what to do, which is the failure this whole change
+ * exists to remove. Only refusals are converted; a broken transaction stays an exception, because
+ * a stack is not an answer anybody can act on.
+ */
+async function agentForgetPlanResult(
+  workspace: Workspace,
+  agent: string,
+  expectedRevision: string,
+): Promise<AgentForgetPlanResultV1> {
+  try {
+    return { schemaVersion: 1, kind: "plan", plan: await workspace.planAgentProfileForget(agent, expectedRevision) };
+  } catch (error) {
+    if (!isAgentProfileRefusal(error)) throw error;
+    return { schemaVersion: 1, kind: "refused", code: error.code, message: error.message };
+  }
+}
+
 async function deleteConfiguredAgent(
   workspace: Workspace,
   agent: string,
@@ -883,13 +929,15 @@ async function deleteConfiguredAgent(
   if (record?.worktree && !removeWorktree) {
     throw new Error(`agent '${agent}' still owns a worktree; remove it before deleting the agent`);
   }
-  if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
+  // t-e722ce — the profile-backed cascade lives on the Workspace now, because Agent Studio's Forget
+  // runs the SAME one. This operation and that button are two callers of one implementation rather
+  // than two implementations of one promise, which is what let them disagree in the first place.
   if (workspace.isAgentProfileAgent(agent)) {
-    await stopAgentSessionForDelete(workspace.manager, agent);
-    await workspace.forgetAgentProfileAgent(agent);
+    await workspace.forgetAgentProfileAgentCascade(agent);
     onViewsChanged("agents");
     return json({ changed: true });
   }
+  if (record?.worktree) await removeAgentWorktree(workspace, agent, true);
   await stopAgentSessionForDelete(workspace.manager, agent);
   if (workspace.config?.agents[agent] === undefined) {
     workspace.manager.dismissTemporary(agent);
@@ -904,45 +952,6 @@ async function deleteConfiguredAgent(
     onViewsChanged("agents");
   }
   return json({ changed: true });
-}
-
-export interface AgentDeleteSessionManager {
-  probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
-  kill(agent: string): Promise<void>;
-}
-
-/**
- * Fleet Remove is one confirmed destructive action: its prompt promises to tear down a live
- * session before deleting saved state. A stopped remain-on-exit pane is still present in tmux, so
- * it needs the same teardown as a running pane before canonical forget can prove zero occupancy.
- *
- * t-4736b4 — this used to ask `agentStates()`, which serves the last known-good inventory when the
- * tmux read is ambiguous. On the removal path that fallback is a lie in both directions: a stale
- * LIVE entry makes teardown chase a session that is already gone and then declare it unkillable, and
- * a stale ABSENT entry lets the removal skip teardown on an agent that is still up. It now asks for a
- * MEASURED verdict, and an unmeasurable one refuses out loud instead of picking a side.
- *
- * An unknown verdict before the kill still gets the kill attempted — the human already confirmed the
- * teardown, and `kill` on an absent session is a caught no-op — but only a measured `free` afterwards
- * lets the removal continue.
- */
-export async function stopAgentSessionForDelete(
-  manager: AgentDeleteSessionManager,
-  agent: string,
-): Promise<void> {
-  const before = await manager.probeAgentOccupancy(agent);
-  if (before.state === "free") return;
-  await manager.kill(agent).catch(() => undefined);
-  const after = await manager.probeAgentOccupancy(agent);
-  if (after.state === "occupied") {
-    throw new Error(`could not stop '${agent}' — it was not removed (${after.detail})`);
-  }
-  if (after.state === "unknown") {
-    throw new Error(
-      `could not confirm '${agent}' stopped: occupancy unverifiable — ${after.detail}. `
-      + "Removal refuses to guess; nothing durable was deleted. Retry once the tmux server answers.",
-    );
-  }
 }
 
 async function promoteAgent(
@@ -996,80 +1005,6 @@ async function forkAgent(
     activityLog.clearLifecycle(workspace.wsHash, plan.forkName);
     throw error;
   }
-}
-
-/**
- * t-05dff5 — the narrow slice of the Workspace this removal actually touches, so the recovery
- * behaviour below is testable without standing up a whole engine. `Workspace` satisfies it.
- */
-export interface AgentWorktreeRemovalPorts {
-  manager: {
-    liveDescendants(agent: string): Promise<string[]>;
-    probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
-    kill(agent: string): Promise<unknown>;
-    releaseOwnedWorktreeForRemoval(agent: string, worktreePath: string): Promise<void>;
-  };
-  ledger: {
-    get(agent: string): { worktree?: WorktreeRecord } | undefined;
-    clearWorktree(agent: string): void;
-  };
-  worktrees: { remove(rec: WorktreeRecord, deleteBranch: boolean): Promise<WorktreeRemovalResult> };
-  managedWorktrees: { syncAgentRecord(agent: string, rec: WorktreeRecord | null): void };
-}
-
-/**
- * Remove the checkout an agent owns, and stop owning it.
- *
- * t-05dff5 — IDEMPOTENT when the checkout is already gone. The other door (Control → Worktrees)
- * can remove the same checkout, and a human can delete it by hand; this one then found `git
- * worktree remove` failing with `is not a working tree` and threw BEFORE clearing the ledger, so
- * the row kept owning a directory that did not exist and nothing could release it — forget refused
- * ("still owns a worktree"), and every retry of this action failed the same way.
- *
- * A proved-absent checkout is not a failure: what this action promises is already true, so it
- * finishes the promise — clear the ledger, drop the registry record — and says so in the receipt
- * rather than pretending it deleted something. The proof comes from `WorktreeManager.probeAbsence`
- * (repository + disk), never from the shape of a git error, so a lock, a permission error or a
- * dirty refusal still throws.
- */
-export async function removeAgentWorktree(ports: AgentWorktreeRemovalPorts, agent: string, deleteBranch: boolean): Promise<JsonValue> {
-  const descendants = await ports.manager.liveDescendants(agent);
-  if (descendants.length > 0) throw new Error(`cannot remove '${agent}' worktree while descendants are live: ${descendants.join(", ")}`);
-  const record = ports.ledger.get(agent)?.worktree;
-  if (!record) throw new Error(`'${agent}' has no worktree`);
-  // t-4736b4 — measured occupancy, not the last-known-good snapshot: this gate sits on the same
-  // removal path as canonical forget and inherited the same way of getting permanently stuck.
-  if ((await ports.manager.probeAgentOccupancy(agent)).state !== "free") {
-    await ports.manager.kill(agent).catch(() => undefined);
-    const after = await ports.manager.probeAgentOccupancy(agent);
-    if (after.state === "occupied") {
-      throw new Error(`could not stop '${agent}' before removing its worktree (${after.detail})`);
-    }
-    if (after.state === "unknown") {
-      throw new Error(
-        `could not confirm '${agent}' stopped before removing its worktree: occupancy unverifiable — ${after.detail}. `
-        + "The checkout was left in place; retry once the tmux server answers.",
-      );
-    }
-  }
-  await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
-  const result = await ports.worktrees.remove(record, deleteBranch);
-  if (!result.removed && !result.absent) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
-  ports.ledger.clearWorktree(agent);
-  ports.managedWorktrees.syncAgentRecord(agent, null);
-  if (result.absent) {
-    // The branch is deliberately left alone: nothing proved this checkout's work was merged, and
-    // the branch has its own spelled-out delete action.
-    return json({
-      removed: true,
-      branchDeleted: false,
-      checkoutAlreadyAbsent: true,
-      absence: result.absent,
-      path: record.path,
-      ...(result.error ? { gitMessage: result.error } : {}),
-    });
-  }
-  return json(result);
 }
 
 function canConnect(port: number): Promise<boolean> {

@@ -9,6 +9,7 @@ import {
   type TachyonConfig,
 } from "../config/loadConfig.js";
 import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
 import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
@@ -312,6 +313,21 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     }
     this.refreshConfig();
     return structuredClone(result.value) as AgentProfileStudioSnapshotV1;
+  }
+
+  async planAgentProfileForget(agent: string, expectedRevision: string): Promise<AgentForgetPlanResultV1> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent-profile.forget-plan", agent, expectedRevision },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.forget-plan") {
+      throw new Error("persistent engine returned a mismatched agent forget plan");
+    }
+    const parsed = agentForgetPlanResultSchemaV1.safeParse(result.value);
+    if (!parsed.success) throw new Error("persistent engine returned a malformed agent forget plan");
+    return parsed.data;
   }
 
   async commitAgentProfileStudioLifecycle(mutation: AgentProfileStudioLifecycleMutationV1): Promise<AgentProfileStudioLifecycleResultV1> {

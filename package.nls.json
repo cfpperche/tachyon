@@ -85,7 +85,6 @@
   "command.rerunPipelineNodeItem": "Re-run from here",
   "command.dismissPipelineRunItem": "Dismiss Run",
   "command.resumeAgentItem": "Resume with context",
-  "command.removeWorktreeItem": "Remove Worktree",
   "command.reviewWorktreeItem": "Review Changes",
   "command.verifyAgentItem": "Verify",
   "command.createWorktreePrItem": "Create PR",

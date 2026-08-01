@@ -32,6 +32,7 @@ import {
   evolutionSummaryMessage,
   agentProfileErrorMessage,
   authorizableCapabilitiesMessage,
+  agentProfileForgetPlanMessage,
   agentProfileForgottenMessage,
   agentProfileOwnershipMessage,
   agentProfileSnapshotMessage,
@@ -120,6 +121,7 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
+  if (m.type === "planAgentProfileForget") { void planForget(ws, ctx, agent, m.expectedRevision); return; }
   if (m.type === "forgetAgentProfile") {
     void runAgentProfileAction(ws, ctx, {
       schemaVersion: 1,
@@ -146,6 +148,27 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "enableSoul") { void runProfileAction(ctx, agent, "enable", () => ws.enableSoulProfile(agent)); return; }
   if (m.type === "disableSoul") { void runProfileAction(ctx, agent, "disable", () => ws.disableSoulProfile(agent)); return; }
   if (m.type === "deleteSoulProfile") { void runProfileAction(ctx, agent, "delete", () => ws.deleteSoulProfile(agent)); return; }
+}
+
+/**
+ * t-e722ce — compute the forget plan and post it, refusal included.
+ *
+ * The refusal is posted as the plan RESULT rather than through `postAgentProfileError`, on exactly
+ * the reasoning the lifecycle door above already writes down: the engine addressed that sentence to
+ * a reader, and flattening it here would put the human back in front of a button that does nothing
+ * for no stated reason. Only a genuinely broken projection reaches the neutral sentence.
+ */
+async function planForget(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  expectedRevision: string,
+): Promise<void> {
+  try {
+    ctx.post(agentProfileForgetPlanMessage(agent, await ws.planAgentProfileForget(agent, expectedRevision)));
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
 }
 
 async function runBundleAction(

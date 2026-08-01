@@ -9,6 +9,7 @@ import {
 } from "./domain";
 import type { AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
 import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
 
 /** t-610705 (Phase D, D1b) — routeKey/mountNonce identify WHICH Control-hosted binding this ready is
  *  for (studioHost.ts's mount handshake, round-2 F3); undefined off the Control host. */
@@ -103,6 +104,9 @@ export const setAgentProfileEnabledMessage = (agent: string, expectedRevision: s
   envelope({ type: "setAgentProfileEnabled" as const, agent, expectedRevision, enabled });
 export const renameAgentProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
   envelope({ type: "renameAgentProfile" as const, agent, expectedRevision, newName });
+/** t-e722ce — webview → host: compute the read-only forget plan for this profile revision. */
+export const planAgentProfileForgetMessage = (agent: string, expectedRevision: string) =>
+  envelope({ type: "planAgentProfileForget" as const, agent, expectedRevision });
 export const forgetAgentProfileMessage = (agent: string, expectedRevision: string, confirmation: string) =>
   envelope({ type: "forgetAgentProfile" as const, agent, expectedRevision, confirmation });
 /** t-4c113c — webview → host: replace the owner's whole declared-subagents list under its CAS revision. */
@@ -144,6 +148,9 @@ export const agentProfileSnapshotMessage = (
 ) => envelope({ type: "agentProfileSnapshot" as const, action, snapshot });
 export const agentProfileOwnershipMessage = (agent: string, ownership: AgentOwnershipViewV1) =>
   envelope({ type: "agentProfileOwnership" as const, agent, ownership });
+/** t-e722ce — host → webview: the plan, or the refusal that stopped it from being computed. */
+export const agentProfileForgetPlanMessage = (agent: string, result: AgentForgetPlanResultV1) =>
+  envelope({ type: "agentProfileForgetPlan" as const, agent, result });
 export const agentProfileForgottenMessage = (agent: string, agentId: string) =>
   envelope({ type: "agentProfileForgotten" as const, agent, agentId });
 export const agentProfileErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>

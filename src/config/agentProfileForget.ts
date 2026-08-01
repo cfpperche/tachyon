@@ -19,6 +19,7 @@ import {
 } from "./agentProfileTransactions.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { AgentProfileRefusal } from "./agentProfileRefusal.js";
+import { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 import { agentStanzaSourceSlice, deleteAgent as deleteAgentInYml } from "./YamlConfigEditor.js";
 
@@ -84,14 +85,14 @@ export interface AgentProfileForgetJournal {
 /**
  * t-33ae3f — one list, so the declaration cannot drift from the behaviour. Whatever is added to the
  * retention set belongs here; whatever the transaction removes must NOT.
+ *
+ * t-e722ce moved the literal into `agentForgetPlan.ts` and re-exports it here, where every existing
+ * reader already looks. The list is now READ by the webview (the plan tells a human what survives)
+ * and this module cannot be bundled for a browser — it opens files and hashes them. Inverting the
+ * dependency is what keeps ONE list: the declaration lives in the node-free module and the
+ * transaction imports its own contract, rather than a second copy being typed out for the panel.
  */
-export const AGENT_PROFILE_FORGET_RETAINED_BINDINGS = [
-  "runtime homes",
-  "runtime secrets",
-  "worktrees",
-  "session-owner rows",
-  "continuity",
-] as const;
+export { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
 
 export interface AgentProfileForgetConfigPort {
   read(): string;
