@@ -11,9 +11,12 @@ import {
  *
  * Measured on `main`: `collect` looped over workspaces serially and awaited five engine round-trips
  * inside each — `engineLogHealth`, `tmux.health`, `companion.status`, `worktrees.classified`,
- * `deliveries.classified`. Two of those are real work: the classified worktree read walks every
+ * `deliveries.classified`. Two of those were real work: the classified worktree read walks every
  * managed checkout, of which this repo had 17, and it grows with the fleet. Opening a Task Detail
  * paid for all of it, across every workspace, before a single pixel could change.
+ *
+ * t-e88c8a retired `deliveries.classified` with the Deliveries tab, leaving one expensive slice.
+ * `CockpitCollectNeeds` stays an object anyway — the shape is what makes the next one a one-liner.
  *
  * The fix is not a cache — that would add a second source of truth about the world. It is asking for
  * less: a view collects the slices it reads. These tests pin WHICH views read what, and pin the
@@ -39,27 +42,26 @@ const bundle = (over: Partial<CockpitWorkspaceBundle> = {}): CockpitWorkspaceBun
 describe("t-af3eef — a view collects only what it reads", () => {
   describe("which sections need the expensive classified reads", () => {
     it.each([
-      ["overview", true, true],
-      ["worktrees", true, false],
-      ["deliveries", false, true],
-    ] as const)("%s", (section, worktrees, deliveries) => {
-      expect(collectNeedsFor(section)).toEqual({ worktrees, deliveries });
+      ["overview", true],
+      ["worktrees", true],
+    ] as const)("%s", (section, worktrees) => {
+      expect(collectNeedsFor(section)).toEqual({ worktrees });
     });
 
     it.each(["engine", "fleet", "inbox", "approvals", "mission", "validations"] as const)(
       "%s needs neither — this is the latency the report was about",
       (section) => {
-        expect(collectNeedsFor(section)).toEqual({ worktrees: false, deliveries: false });
+        expect(collectNeedsFor(section)).toEqual({ worktrees: false });
       },
     );
 
     it("treats an unknown section as needing nothing rather than everything", () => {
       // Fail cheap, not expensive: a section nobody listed cannot make navigation slow by default.
-      expect(collectNeedsFor("some-future-section")).toEqual({ worktrees: false, deliveries: false });
+      expect(collectNeedsFor("some-future-section")).toEqual({ worktrees: false });
     });
 
     it("still has a way to ask for everything, for the diagnostics dump", () => {
-      expect(COLLECT_EVERYTHING).toEqual({ worktrees: true, deliveries: true });
+      expect(COLLECT_EVERYTHING).toEqual({ worktrees: true });
     });
   });
 
@@ -68,16 +70,14 @@ describe("t-af3eef — a view collects only what it reads", () => {
       const model = buildCockpitModel([bundle()], { section: "mission" });
 
       expect(model.worktreesCollected).toBe(false);
-      expect(model.deliveriesCollected).toBe(false);
       expect(model.worktrees).toEqual([]);
     });
 
     it("reports it as collected when a bundle carried it, even if it was genuinely empty", () => {
       // The case the flag exists for: an empty list that IS an answer must not read like a skip.
-      const model = buildCockpitModel([bundle({ worktrees: [], deliveries: [] })], { section: "worktrees" });
+      const model = buildCockpitModel([bundle({ worktrees: [] })], { section: "worktrees" });
 
       expect(model.worktreesCollected).toBe(true);
-      expect(model.deliveriesCollected).toBe(true);
       expect(model.worktrees).toEqual([]);
     });
 

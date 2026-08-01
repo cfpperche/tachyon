@@ -236,7 +236,7 @@ export interface CockpitInspector {
 /**
  * Control — editor visual hub.
  * Embedded product surfaces: Mission, Approvals, Plugins, Runtime Ops, tmux Inspector,
- * plus rich native Fleet / Worktrees / Deliveries / Settings modules.
+ * plus rich native Fleet / Worktrees / Settings modules.
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
  */
@@ -394,7 +394,6 @@ function strings(): CockpitStrings {
     navValidations: t("Validations"),
     navHandoff: t("Handoff"),
     navWorktrees: t("Worktrees"),
-    navDeliveries: t("Deliveries"),
     navRuntime: t("Runtime Ops"),
     navRuntimeConfig: t("Runtime Config"),
     navTmux: t("tmux"),
@@ -459,8 +458,6 @@ function strings(): CockpitStrings {
     egAttrUnproven: t("unproven"),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
-    deliveriesTitle: t("Deliveries"),
-    deliveriesHint: t("Local GitDelivery records — phase, branch, worktree."),
     runtimeTitle: t("Runtime Ops"),
     runtimeHint: t("Usage and rate limits (embedded)."),
     runtimeConfigTitle: t("Runtime Config"),
@@ -525,7 +522,6 @@ function strings(): CockpitStrings {
     approvals: t("Approvals"),
     inbox: t("Waiting on you"),
     worktrees: t("Worktrees"),
-    deliveries: t("Deliveries"),
     attached: t("attached"),
     error: t("error"),
     none: t("none"),
@@ -730,9 +726,6 @@ function strings(): CockpitStrings {
     wtBlocked: t("Blocked"),
     wtOccupiedBy: t("occupied by"),
     wtShowAll: t("Show all"),
-    dlvMissingRef: t("ref missing"),
-    dlvLive: t("agent live"),
-    dlvUnmerged: t("not in base"),
   };
 }
 
@@ -1308,7 +1301,6 @@ export async function openCockpit(
             },
             agents: [],
             worktrees: [],
-            deliveries: [],
             approvals: [],
           },
         ],

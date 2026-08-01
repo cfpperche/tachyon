@@ -17,7 +17,6 @@ export interface CockpitStrings {
   navValidations: string;
   navHandoff: string;
   navWorktrees: string;
-  navDeliveries: string;
   navRuntime: string;
   navRuntimeConfig: string;
   navTmux: string;
@@ -84,8 +83,6 @@ export interface CockpitStrings {
   egAttrUnproven: string;
   worktreesTitle: string;
   worktreesHint: string;
-  deliveriesTitle: string;
-  deliveriesHint: string;
   runtimeTitle: string;
   runtimeHint: string;
   runtimeConfigTitle: string;
@@ -151,7 +148,6 @@ export interface CockpitStrings {
   /** t-e76acc — Overview's single "waiting on a human" metric label. */
   inbox: string;
   worktrees: string;
-  deliveries: string;
   attached: string;
   error: string;
   none: string;
@@ -335,10 +331,6 @@ export interface CockpitStrings {
   wtBlocked: string;
   wtOccupiedBy: string;
   wtShowAll: string;
-  /** t-43c6fa — Deliveries tab classification badges (spec 365 signals, now actually surfaced). */
-  dlvMissingRef: string;
-  dlvLive: string;
-  dlvUnmerged: string;
 }
 
 export type CockpitAction =

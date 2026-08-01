@@ -390,7 +390,6 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   mission: { icon: "checklist", navKey: "navMission" },
   validations: { icon: "checklist", navKey: "navValidations" },
   worktrees: { icon: "folder-library", navKey: "navWorktrees" },
-  deliveries: { icon: "git-commit", navKey: "navDeliveries" },
   "execution-graph": { icon: "type-hierarchy", navKey: "navExecutionGraph" },
   runtime: { icon: "graph", navKey: "navRuntime" },
   "runtime-config": { icon: "settings", navKey: "navRuntimeConfig" },
@@ -1736,10 +1735,6 @@ export function App(p: CockpitAppProps) {
             <div class="label">{s.worktrees}</div>
             <div class="value">{o.worktreesActive}</div>
           </div>
-          <div class="ck-metric">
-            <div class="label">{s.deliveries}</div>
-            <div class="value">{o.deliveriesOpen}</div>
-          </div>
         </div>
         <div class="ck-panel">
           <h2>{s.bridges}</h2>
@@ -1945,86 +1940,6 @@ export function App(p: CockpitAppProps) {
           onSelect={setEgSelected}
           onFilter={setEgFilters}
         />
-      </ModuleChrome>
-    );
-  } else if (section === "deliveries") {
-    body = (
-      <ModuleChrome title={s.deliveriesTitle} hint={s.deliveriesHint}>
-        {/* t-43c6fa — engine unreachable is its own state, never an empty list that reads as
-            "no deliveries". Mirrors the Worktrees tab (spec 444). */}
-        {m.deliveriesUnavailable && m.deliveriesUnavailable.length > 0 ? (
-          <div class="ck-wt-unavailable" role="alert">
-            {s.wtEngineUnavailable}
-            {m.deliveriesUnavailable.map((u) => (
-              <div key={u.folder} class="ck-mono ck-wt-unavailable-detail">
-                {u.folder}: {u.reason}
-              </div>
-            ))}
-          </div>
-        ) : null}
-        {m.deliveries.length === 0 ? (
-          m.deliveriesUnavailable && m.deliveriesUnavailable.length > 0 ? null : (
-            <EmptyState kind="empty" message={s.noneListed} />
-          )
-        ) : (
-          <div class="ck-card-list" data-testid="control-deliveries">
-            {m.deliveries.map((d) => (
-              <ListRow
-                key={d.id}
-                title={
-                  <>
-                    <span class="name ck-mono">{d.id}</span>
-                    <Badge tone={["pruned", "abandoned"].includes(d.phase) ? "default" : "ok"}>{d.phase}</Badge>
-                    {d.missingRef ? <Badge tone="warn">{s.dlvMissingRef}</Badge> : null}
-                    {d.liveState === "live" ? <Badge tone="info">{s.dlvLive}</Badge> : null}
-                    {d.containedInBase === false && !d.missingRef ? <Badge tone="warn">{s.dlvUnmerged}</Badge> : null}
-                  </>
-                }
-                meta={
-                  <>
-                    {d.branchRef ? (
-                      <span>
-                        {s.branch}: <span class="ck-mono">{d.branchRef}</span>
-                      </span>
-                    ) : null}
-                    {d.agent ? (
-                      <span>
-                        {s.agent}: {d.agent}
-                      </span>
-                    ) : null}
-                    {d.folder ? <span>{d.folder}</span> : null}
-                  </>
-                }
-                detail={
-                  <>
-                    {d.worktreePath ? <span class="ck-mono">{d.worktreePath}</span> : null}
-                    {/* Spec 444 lesson: never show a state the human cannot act on — say why. */}
-                    {d.reasons && d.reasons.length > 0 ? (
-                      <span class="ck-dlv-reasons">{d.reasons.join(" · ")}</span>
-                    ) : null}
-                  </>
-                }
-                actions={
-                  <>
-                    <Button variant="default" onClick={() => p.onCopyText(d.id)}>
-                      {s.copyId}
-                    </Button>
-                    {d.worktreePath ? (
-                      <>
-                        <Button variant="default" onClick={() => p.onRevealPath(d.worktreePath!)}>
-                          {s.reveal}
-                        </Button>
-                        <Button variant="default" onClick={() => p.onCopyText(d.worktreePath!)}>
-                          {s.copyPath}
-                        </Button>
-                      </>
-                    ) : null}
-                  </>
-                }
-              />
-            ))}
-          </div>
-        )}
       </ModuleChrome>
     );
   } else if (section === "runtime") {

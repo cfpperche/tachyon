@@ -33,7 +33,6 @@ const bundle = (folder: string, cardTemplate?: { configured: boolean; refused: b
   control: { folderName: folder, workspaceRoot: `/w/${folder}`, wsHash: folder, bridgeUrl: "" },
   agents: [],
   worktrees: [],
-  deliveries: [],
   approvals: [],
   ...(cardTemplate ? { cardTemplate } : {}),
 });

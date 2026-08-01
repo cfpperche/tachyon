@@ -187,53 +187,6 @@ describe("YamlConfigEditor", () => {
     expect(() => renameAgent(YML, "frontend", "dev")).toThrow("already exists");
   });
 
-  /**
-   * t-17d885 — `canMutateLinkedGitDelivery` grants by `principals.includes(caller.name)`, so a name
-   * that outlives its agent is a grant waiting for a homonym.
-   */
-  describe("t-17d885 — name-keyed principal allowlists follow the agent", () => {
-    const PRINCIPALS = [
-      "agents:",
-      "  dev:",
-      "    cmd: codex",
-      "  frontend:",
-      "    cmd: claude",
-      "settings:",
-      "  gitDelivery:",
-      "    prunePrincipals: [ dev, frontend ]",
-      "    integratePrincipals: [ frontend, dev ]",
-      "",
-    ].join("\n");
-
-    it("deleteAgent drops the removed name from every principal list", () => {
-      const config = expectValid(deleteAgent(PRINCIPALS, "dev").text);
-
-      expect(config.settings?.gitDelivery?.prunePrincipals).toEqual(["frontend"]);
-      expect(config.settings?.gitDelivery?.integratePrincipals).toEqual(["frontend"]);
-    });
-
-    it("renameAgent carries the grant to the new name instead of stranding it", () => {
-      const config = expectValid(renameAgent(PRINCIPALS, "dev", "ui").text);
-
-      // Both halves matter: the old name must not linger for a homonym, and the renamed agent must
-      // not lose an authority it held a second earlier.
-      expect(config.settings?.gitDelivery?.prunePrincipals).toEqual(["ui", "frontend"]);
-      expect(config.settings?.gitDelivery?.integratePrincipals).toEqual(["frontend", "ui"]);
-    });
-
-    it("renaming onto a name already listed does not duplicate the grant", () => {
-      const yaml = PRINCIPALS.replace("prunePrincipals: [ dev, frontend ]", "prunePrincipals: [ dev, frontend, ui ]");
-
-      expect(expectValid(renameAgent(yaml, "dev", "ui").text).settings?.gitDelivery?.prunePrincipals)
-        .toEqual(["ui", "frontend"]);
-    });
-
-    it("leaves a config without principal lists untouched", () => {
-      // The common case: no `settings.gitDelivery` at all. Reconciliation must not invent the block.
-      expect(deleteAgent(YML, "dev").text).not.toContain("gitDelivery");
-    });
-  });
-
   it("agentEntryLine points Edit at the right line", () => {
     const line = agentEntryLine(YML, "dev")!;
     expect(YML.split("\n")[line]).toContain("dev:");

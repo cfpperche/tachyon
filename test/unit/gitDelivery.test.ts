@@ -268,9 +268,16 @@ describe("GitDelivery prune", () => {
 });
 
 describe("GitDelivery settings", () => {
-  it("contains only linked-projection authority lists", () => {
-    expect(resolveGitDeliverySettings({ gitDelivery: { prunePrincipals: ["orch"], integratePrincipals: ["release"] } }))
-      .toEqual({ prunePrincipals: ["orch"], integratePrincipals: ["release"] });
+  /**
+   * t-e88c8a — `settings.gitDelivery` is gone from the schema, so no principal can be configured.
+   * This is the ACCURATE answer rather than a fallback: the tools those lists authorized
+   * (git_delivery_integrate, git_delivery_prune, delivery_salvage) were retired, so the remaining
+   * internal callers refuse everyone but a delivery's own creator. Pinned so a later change that
+   * quietly reads a config key again has to come through this test.
+   */
+  it("grants nobody, because the authority it configured has no door left", () => {
+    expect(resolveGitDeliverySettings(undefined)).toEqual({ prunePrincipals: [], integratePrincipals: [] });
+    expect(resolveGitDeliverySettings({ maxAgents: 8 })).toEqual({ prunePrincipals: [], integratePrincipals: [] });
   });
 });
 

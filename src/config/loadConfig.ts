@@ -501,12 +501,6 @@ export interface TachyonConfig {
       maxConcurrentRebinds?: number;
       circuitFailCount?: number;
     };
-    /** spec 365 — local GitDelivery lifecycle/hygiene settings. Profiles supply defaults; explicit keys override. */
-    /** Linked GitDelivery projection authority. Lifecycle selection is not configurable. */
-    gitDelivery?: {
-      prunePrincipals?: string[];
-      integratePrincipals?: string[];
-    };
     /** t-aaad95 — the single authority for human-facing task mutation toasts (the four VS Code keys are gone). */
     taskNotifications?: TaskNotificationSettingsInput;
     /**
@@ -1890,26 +1884,20 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.bridgeClientRebind = out;
         }
       }
+      /**
+       * t-e88c8a — the key is still KNOWN so a workspace that declares it is told, by name, that it
+       * no longer does anything. Dropping it from the known list instead would produce
+       * `settings: unknown key 'gitDelivery'`, which reads as a typo and sends the human looking for
+       * the correct spelling of a setting that has been retired.
+       *
+       * It named the agents authorized to integrate and prune linked GitDeliveries. Both actions
+       * were reached only through `git_delivery_integrate` / `git_delivery_prune` / `delivery_salvage`,
+       * and those tools are gone — so the authority it granted has nothing left to grant.
+       */
       if (raw.settings.gitDelivery !== undefined) {
-        if (!isPlainObject(raw.settings.gitDelivery)) {
-          errors.push("settings.gitDelivery: must be a mapping");
-        } else {
-          const gd = raw.settings.gitDelivery;
-          const out: NonNullable<TachyonConfig["settings"]["gitDelivery"]> = {};
-          for (const key of ["prunePrincipals", "integratePrincipals"] as const) {
-            if (gd[key] !== undefined) {
-              if (!Array.isArray(gd[key]) || gd[key].some((v: unknown) => typeof v !== "string" || v.trim().length === 0)) {
-                errors.push(`settings.gitDelivery.${key}: must be a list of non-empty agent names`);
-              } else {
-                out[key] = (gd[key] as string[]).map((v) => v.trim());
-              }
-            }
-          }
-          for (const key of Object.keys(gd)) {
-            if (!["prunePrincipals", "integratePrincipals"].includes(key)) errors.push(`settings.gitDelivery: unknown key '${key}'`);
-          }
-          if (Object.keys(out).length > 0) settings.gitDelivery = out;
-        }
+        warnings.push(
+          "settings.gitDelivery was ignored because the Delivery tools it authorized (git_delivery_integrate, git_delivery_prune, delivery_salvage) were retired; remove settings.gitDelivery from tachyon.yml",
+        );
       }
       if (raw.settings.delivery !== undefined) {
         warnings.push(

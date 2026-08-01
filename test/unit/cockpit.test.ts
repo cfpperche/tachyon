@@ -11,13 +11,14 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER).toContain("mission");
     expect(COCKPIT_SECTION_ORDER).not.toContain("validations");
     expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
-    expect(COCKPIT_SECTION_ORDER).toContain("deliveries");
+    // t-e88c8a — the Deliveries tab was retired with the Delivery tool surface.
+    expect(COCKPIT_SECTION_ORDER).not.toContain("deliveries");
     expect(COCKPIT_SECTION_ORDER).toContain("runtime");
     expect(COCKPIT_SECTION_ORDER).toContain("runtime-config");
     expect(COCKPIT_SECTION_ORDER).toContain("settings");
   });
 
-  it("builds fleet/worktrees/deliveries overview counts", () => {
+  it("builds fleet/worktrees overview counts", () => {
     const m = buildCockpitModel(
       [
         {
@@ -45,10 +46,6 @@ describe("cockpit model", () => {
             { id: "1", kind: "change", path: "/x", branch: "b", status: "active" },
             { id: "2", kind: "change", path: "/y", branch: "c", status: "abandoned" },
           ],
-          deliveries: [
-            { id: "d1", phase: "open", branchRef: "br" },
-            { id: "d2", phase: "pruned", branchRef: "br2" },
-          ],
           approvals: [{ id: "a1", status: "pending" }],
           tmux: { state: "healthy", version: "3.4" },
           companion: {
@@ -74,7 +71,6 @@ describe("cockpit model", () => {
     );
     expect(m.overview.agentsRunning).toBe(1);
     expect(m.overview.worktreesActive).toBe(1);
-    expect(m.overview.deliveriesOpen).toBe(1);
     expect(m.overview.approvalsPending).toBe(1);
     expect(m.fleet).toHaveLength(2);
     expect(m.tmux[0]?.state).toBe("healthy");
@@ -98,7 +94,6 @@ describe("cockpit model", () => {
           control: { folderName: "a", workspaceRoot: "/a", wsHash: "h1", bridgeUrl: "http://127.0.0.1:1/mcp" },
           agents: [],
           worktrees: [],
-          deliveries: [],
           approvals: [],
           companion: { tabTools: true, allowedHosts: [], paired: false, devices: [] },
         },
@@ -106,7 +101,6 @@ describe("cockpit model", () => {
           control: { folderName: "b", workspaceRoot: "/b", wsHash: "h2", bridgeUrl: "http://127.0.0.1:2/mcp" },
           agents: [],
           worktrees: [],
-          deliveries: [],
           approvals: [],
           companion: { tabTools: false, allowedHosts: ["example.com"], paired: true, devices: [] },
         },
@@ -129,7 +123,6 @@ describe("cockpit model", () => {
       },
       agents: Array.from({ length: agents }, (_, i) => ({ name: `a${i}`, running: true })),
       worktrees: [{ id: `${hash}-w`, kind: "change" as const, path: `/${folder}/x`, branch: "b", status: "active" as const }],
-      deliveries: [{ id: `${hash}-d`, phase: "open", branchRef: "br" }],
       approvals: [{ id: `${hash}-a`, status: "pending" }],
       tmux: { state: "healthy" },
     });

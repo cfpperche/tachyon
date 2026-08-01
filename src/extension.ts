@@ -1417,39 +1417,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (err !== SKIP_SLICE) worktreesUnavailable = err instanceof Error ? err.message : String(err);
         }
 
-        // t-43c6fa — the classified engine read is the ONE source for the Deliveries tab, exactly as
-        // spec 444 did for Worktrees. Engine unreachable → an EMPTY list plus a note, never
-        // unverified raw-disk rows. `readGitDeliveriesFromDisk` is deleted.
-        let deliveryRows: CockpitWorkspaceBundle["deliveries"];
-        let deliveriesUnavailable: string | undefined;
-        try {
-          if (!needs.deliveries) throw SKIP_SLICE;
-          deliveryRows = [];
-          const classified = await extensionQuery(ws, { action: "deliveries.classified" });
-          const rows = (classified as { deliveries?: unknown[] })?.deliveries;
-          if (!Array.isArray(rows)) throw new Error("engine returned no deliveries payload");
-          deliveryRows = rows.map((row) => {
-            const d = row as Record<string, unknown>;
-            return {
-              id: String(d.id ?? ""),
-              phase: String(d.phase ?? "unknown"),
-              branchRef: String(d.branchRef ?? ""),
-              agent: d.agent != null ? String(d.agent) : undefined,
-              worktreePath: d.worktreePath != null ? String(d.worktreePath) : undefined,
-              folder: ws.folderName,
-              wsHash: ws.wsHash,
-              liveState: d.liveState != null ? String(d.liveState) : undefined,
-              containedInBase: typeof d.containedInBase === "boolean" ? d.containedInBase : undefined,
-              missingRef: typeof d.missingRef === "boolean" ? d.missingRef : undefined,
-              clean: typeof d.clean === "boolean" ? d.clean : undefined,
-              safetyClass: d.safetyClass != null ? String(d.safetyClass) : undefined,
-              reasons: Array.isArray(d.reasons) ? d.reasons.map((r) => String(r)) : undefined,
-            };
-          });
-        } catch (err) {
-          if (err !== SKIP_SLICE) deliveriesUnavailable = err instanceof Error ? err.message : String(err);
-        }
-
         bundles.push({
           control: {
             folderName: ws.folderName,
@@ -1468,8 +1435,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           agents: agentRows,
           worktrees: worktreeRows,
           ...(worktreesUnavailable ? { worktreesUnavailable } : {}),
-          deliveries: deliveryRows,
-          ...(deliveriesUnavailable ? { deliveriesUnavailable } : {}),
           // t-d85857 — Overview counts these, and it must count what the Approvals section shows:
           // same read, one function. The list used to be hardcoded empty here, so the counter said
           // "0 pending" with requests waiting on disk. A read failure is deliberately NOT swallowed

@@ -2,7 +2,8 @@
  * Cockpit (desktop POC) — project sysadmin in the editor.
  * Pure model only (safe for webview + host). There are no disk readers left beside it: `cockpit/disk.ts`
  * was deleted once its last raw-JSON reader went away (spec 444 took the worktree one, t-43c6fa the
- * delivery one). Both tabs now read the engine's validated, classified RPC.
+ * delivery one, and t-e88c8a retired the Deliveries tab outright). The Worktrees tab reads the
+ * engine's validated, classified RPC.
  * Top tabs only (no webview left rail). Does not replace VS Code/Tachyon sidebar.
  */
 
@@ -41,7 +42,6 @@ export type CockpitSectionId =
   // route.ts) opened from the sidebar's `handoff · N` entry, with its breadcrumb back to Overview.
   // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
-  | "deliveries"
   // SDD 480 Phase 4 — the Execution Graph. Read-only by construction: the section's model is a
   // projection of the append-only ledger, and the projection cannot describe a destructive action.
   | "execution-graph"
@@ -58,7 +58,6 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "inbox",
   "mission",
   "worktrees",
-  "deliveries",
   "execution-graph",
   "runtime",
   "runtime-config",
@@ -112,28 +111,6 @@ export interface CockpitWorktreeRow {
    * (the classifier itself threw); the client must never treat "absent" as "safe".
    */
   classification?: import("../worktree/classify.js").WorktreeClassification;
-}
-
-export interface CockpitDeliveryRow {
-  id: string;
-  phase: string;
-  branchRef: string;
-  agent?: string;
-  worktreePath?: string;
-  folder?: string;
-  wsHash?: string;
-  /**
-   * t-43c6fa — spec 365's fail-closed classification, now that this row comes from the engine's
-   * validated store instead of a raw-JSON disk parse. Absent only when the engine omitted it.
-   * `reasons` is what lets the tab explain a state instead of just labelling it (the spec 444
-   * lesson: never show a status the human cannot act on).
-   */
-  liveState?: string;
-  containedInBase?: boolean;
-  missingRef?: boolean;
-  clean?: boolean;
-  safetyClass?: string;
-  reasons?: string[];
 }
 
 /**
@@ -192,34 +169,31 @@ export interface CockpitCompanionSettings {
 /**
  * t-af3eef — which expensive slices a collect is being asked for.
  *
- * `worktrees.classified` and `deliveries.classified` are real engine work — the classified worktree
- * read walks every managed checkout, of which this repo had 17 at the time of writing, and it grows
- * with the fleet. Collecting them on EVERY navigation meant opening a Task Detail paid for both,
- * across every workspace, before a single pixel could change.
+ * `worktrees.classified` is real engine work — it walks every managed checkout, of which this repo
+ * had 17 at the time of writing, and it grows with the fleet. Collecting it on EVERY navigation meant
+ * opening a Task Detail paid for it across every workspace before a single pixel could change.
+ *
+ * t-e88c8a — this was a two-slice type; `deliveries.classified` went with the Deliveries tab. It
+ * stays an OBJECT rather than collapsing to a boolean, because the shape is what makes adding the
+ * next expensive slice a one-line change instead of a signature migration.
  *
  * The needs are derived from the section being rendered, never stored, so there is one authority for
  * "what does this view consume" and no cache to invalidate.
  */
 export interface CockpitCollectNeeds {
   worktrees: boolean;
-  deliveries: boolean;
 }
 
 /** Sections that actually read the classified worktree rows (or their Overview counter). */
 const SECTIONS_NEEDING_WORKTREES = new Set(["overview", "worktrees"]);
-/** Sections that actually read the classified delivery rows (or their Overview counter). */
-const SECTIONS_NEEDING_DELIVERIES = new Set(["overview", "deliveries"]);
 
 /** What a given section needs. Unknown sections get nothing expensive — they render without it. */
 export function collectNeedsFor(section: string): CockpitCollectNeeds {
-  return {
-    worktrees: SECTIONS_NEEDING_WORKTREES.has(section),
-    deliveries: SECTIONS_NEEDING_DELIVERIES.has(section),
-  };
+  return { worktrees: SECTIONS_NEEDING_WORKTREES.has(section) };
 }
 
 /** Everything. For diagnostics dumps, which are explicitly a full picture of the world. */
-export const COLLECT_EVERYTHING: CockpitCollectNeeds = { worktrees: true, deliveries: true };
+export const COLLECT_EVERYTHING: CockpitCollectNeeds = { worktrees: true };
 
 export interface CockpitWorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
@@ -235,9 +209,6 @@ export interface CockpitWorkspaceBundle {
    *  error state for this workspace instead of unverified raw rows. */
   worktreesUnavailable?: string;
   /** t-af3eef — absent means "not collected for this view", never "none". See `worktrees` above. */
-  deliveries?: CockpitDeliveryRow[];
-  /** t-43c6fa — same contract as `worktreesUnavailable`, for the Deliveries classified read. */
-  deliveriesUnavailable?: string;
   approvals: CockpitApprovalRow[];
   /**
    * t-e76acc — validations still awaiting a HUMAN in this workspace, counted host-side with the very
@@ -320,7 +291,6 @@ export interface CockpitModel {
      */
     inboxPending: number;
     worktreesActive: number;
-    deliveriesOpen: number;
     bridges: Array<{ folder: string; url: string; port?: number; ok: boolean }>;
   };
   fleet: CockpitAgentRow[];
@@ -330,11 +300,6 @@ export interface CockpitModel {
   worktreesCollected: boolean;
   /** spec 444 — folders whose classified worktree read failed (engine unreachable), with reasons. */
   worktreesUnavailable?: Array<{ folder: string; reason: string }>;
-  deliveries: CockpitDeliveryRow[];
-  /** t-af3eef — see `worktreesCollected`. */
-  deliveriesCollected: boolean;
-  /** t-43c6fa — folders whose classified delivery read failed (engine unreachable), with reasons. */
-  deliveriesUnavailable?: Array<{ folder: string; reason: string }>;
   approvals: CockpitApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
   /**
@@ -391,7 +356,7 @@ export function buildCockpitModel(
   },
 ): CockpitModel {
   // t-d16a39 — the shell-level workspace scope: when a specific workspace is selected, every
-  // aggregate section (overview/engine/fleet/worktrees/deliveries/tmux) narrows to that one
+  // aggregate section (overview/engine/fleet/worktrees/tmux) narrows to that one
   // bundle; "All workspaces" (wsHash undefined, or a hash that no longer exists — e.g. a folder
   // was closed since the selection persisted) keeps today's aggregate behavior. The selector list
   // itself always spans ALL bundles, never the filtered set.
@@ -432,11 +397,6 @@ export function buildCockpitModel(
   const worktreesUnavailable = scoped.flatMap((b) =>
     b.worktreesUnavailable ? [{ folder: b.control.folderName, reason: b.worktreesUnavailable }] : [],
   );
-  const deliveriesCollected = scoped.some((b) => b.deliveries !== undefined);
-  const deliveries = scoped.flatMap((b) => b.deliveries ?? []);
-  const deliveriesUnavailable = scoped.flatMap((b) =>
-    b.deliveriesUnavailable ? [{ folder: b.control.folderName, reason: b.deliveriesUnavailable }] : [],
-  );
   const approvals = scoped.flatMap((b) => b.approvals);
   const tmux = scoped.map((b) => ({
     folder: b.control.folderName,
@@ -444,7 +404,6 @@ export function buildCockpitModel(
     version: b.tmux?.version,
   }));
 
-  const deliveriesOpen = deliveries.filter((d) => !["pruned", "abandoned"].includes(d.phase)).length;
   const worktreesActive = worktrees.filter((w) => w.status === "active").length;
   const approvalsPending = approvals.filter((a) => !a.status || a.status === "pending").length;
   // t-e76acc — a missing per-bundle count contributes nothing rather than a zero it cannot vouch for.
@@ -507,7 +466,6 @@ export function buildCockpitModel(
       approvalsPending,
       inboxPending,
       worktreesActive,
-      deliveriesOpen,
       bridges: control.workspaces.map((w) => ({
         folder: w.folderName,
         url: w.bridge.url,
@@ -519,9 +477,6 @@ export function buildCockpitModel(
     worktrees,
     worktreesCollected,
     ...(worktreesUnavailable.length > 0 ? { worktreesUnavailable } : {}),
-    deliveries,
-    deliveriesCollected,
-    ...(deliveriesUnavailable.length > 0 ? { deliveriesUnavailable } : {}),
     approvals,
     tmux,
     ...(companion ? { companion } : {}),
@@ -540,7 +495,6 @@ export function formatCockpitDiagnostics(model: CockpitModel): string {
     `approvals pending: ${model.overview.approvalsPending}`,
     `human inbox waiting: ${model.overview.inboxPending}`,
     `worktrees active: ${model.overview.worktreesActive}`,
-    `deliveries open: ${model.overview.deliveriesOpen}`,
     "",
     formatControlInspectorDiagnostics(model.control),
   ].join("\n");

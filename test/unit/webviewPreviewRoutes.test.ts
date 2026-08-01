@@ -75,7 +75,6 @@ describe("preview route table", () => {
       "agent-probes",
       "approvals",
       "default",
-      "deliveries",
       "empty",
       "engine",
       // SDD 480 Phase 4 — the heavy/grouped surface plus each explicit state, which is what the

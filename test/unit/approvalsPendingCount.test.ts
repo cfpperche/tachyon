@@ -41,7 +41,6 @@ function bundle(approvals: CockpitWorkspaceBundle["approvals"]): CockpitWorkspac
     control: { folderName: "tachyon", workspaceRoot: "/w", wsHash: "abc", bridgeUrl: "" },
     agents: [],
     worktrees: [],
-    deliveries: [],
     approvals,
   };
 }
