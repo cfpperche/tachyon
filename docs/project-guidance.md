@@ -25,6 +25,11 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   hardening and unrelated follow-ups.
 - Preserve unrelated changes. Stage explicit paths only; never `git add .` or `git add -A`. Run add
   and commit separately, and include the Task id when one exists.
+- **Never `git stash` in a worktree.** The stash stack belongs to the repository, not the worktree, so
+  every agent working in parallel shares one stack. On 2026-08-01 an agent stashed to check whether a
+  typecheck error pre-existed; its `pop` restored a DIFFERENT agent's work into its tree and left its
+  own dangling. Recovered only because that agent noticed and pinned both under `refs/recovered/`. To
+  set work aside, commit it (amend later) or copy files out — both are worktree-local.
 - Do not use the retired `agent-screen` or `agent-desktop` plugins.
 
 ## Who else can reach this?
