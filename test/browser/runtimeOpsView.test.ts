@@ -3,6 +3,21 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 
+// t-2a49b2 / t-c55f8d — ALL FOUR TESTS IN THIS FILE ARE RED, KNOWINGLY, AND ARE NOT BEING REPOINTED.
+// The `?view=runtime-ops` standalone preview route was retired in t-ed3067, so every `openRuntimeOpsFixture`
+// below times out waiting for a `previewFixture` marker the harness never sets. Its three sibling files
+// (boardCardLayout, boardHeaderKitParity, pilotAPlugins, pilotBTaskStudio) were repointed at the Control
+// route in t-c55f8d because their surfaces survived intact behind ONE cockpit fixture each. This one did not:
+// the route below drives 16 runtime-ops fixtures (loading, error, empty, mixed, throttled, stale-bridge,
+// long-label, duplicate-workspace, provider-*) and `?view=cockpit&fixture=runtime` exposes exactly one of
+// them. Reaching the other 15 means either restoring a standalone entry point or teaching the cockpit route
+// to select a sub-fixture — and the narrow-width overflow assertions would then be measuring the Control
+// chrome's page box, not this panel's, so they need rewriting rather than repointing.
+//
+// The human decided on 2026-07-31 (t-2a49b2 journal) that this guard comes back only after the plugin work
+// lands — deps t-54cdb2 and t-54cdb1, both still inbox as of 2026-08-01. Repointing it now would also mean
+// deciding what it covers, including the t-283149 session-inspection panel, which is design work, not a
+// mechanical fix. Left as-is so the guard's absence stays loud instead of being silently skipped.
 const PREVIEW_PATH = "/scripts/webview-preview/index.html?view=runtime-ops&fixture=";
 
 interface Viewport {

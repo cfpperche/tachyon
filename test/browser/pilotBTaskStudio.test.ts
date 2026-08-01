@@ -6,12 +6,19 @@ import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protoco
 import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
 
 // spec 342 T7 — Pilot B: Task Studio fields row (Kind/Priority/Assignee Kit migration).
-// Drives the REAL dist/webview/task-studio.js bundle via the gate server's static root.
 //
 // t-1c745f (2026-07-12): after spec 350 studio-shell, the host↔webview wire is the versioned
 // envelope (`type: "load" | "ready"` + `studioProtocolVersion`), NOT the pre-migration
 // `{ type: "taskStudio", vm }` push. The fixture is a TaskDetailEntity (mode lives on the shell
 // panel entry; assets come from bootstrapGlobals in product — optional here).
+//
+// t-c55f8d (2026-08-01): there is no `dist/webview/task-studio.js` any more — after t-610705 Phase D
+// the task studio is a Control route inside the cockpit bundle, so the hand-rolled host page that
+// loaded a standalone bundle 404'd and all six tests timed out. The door is now the dev preview
+// harness at `?view=cockpit&fixture=studio-task-edit`, which mounts the studio route for real. The
+// `load` injection below is UNCHANGED and still the thing under test: the mounted studio keeps
+// listening for the versioned envelope, so each test still drives its OWN entity (new vs edit, long
+// dep title, long artifact paths) rather than whatever the catalog fixture happens to hold.
 
 const ENTITY_NEW: TaskDetailEntity = {
   workspaceHash: "ws1",
@@ -37,25 +44,17 @@ const ENTITY_EDIT: TaskDetailEntity = {
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
 };
 
-function hostPage(cspSource: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<link rel="stylesheet" href="${cspSource}/dist/webview/codicon.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/design-system.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/vscode-theme.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/task-studio.tailwind.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/rich-doc.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/task-studio.css">
-<title>task-studio pilot B</title></head>
-<body><div id="root"></div><script src="${cspSource}/dist/webview/task-studio.js"></script></body></html>`;
-}
+const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit";
 
-/** Load the real bundle and inject a TaskDetailEntity via the studio-shell `load` message.
+/** Open the studio route on the real bundle, then inject a TaskDetailEntity via the studio-shell
+ *  `load` message — the entity the test wants, replacing the catalog fixture the route mounted with.
  *  Race-proof: re-post load until Root's message listener is mounted (ready may fire before the
  *  test installs a listener; late load is accepted once useEffect has registered). */
 async function loadTaskStudio(page: Page, origin: string, entity: TaskDetailEntity): Promise<void> {
   // useEffect flushes via rAF — a background tab can stall the handshake under multi-browser load.
   await page.bringToFront();
-  await page.setContent(hostPage(origin), { waitUntil: "domcontentloaded" });
+  await page.goto(`${origin}${PREVIEW}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector(".ts-fields", { visible: true, timeout: 15_000 });
 
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
@@ -75,13 +74,19 @@ async function loadTaskStudio(page: Page, origin: string, entity: TaskDetailEnti
       STUDIO_PROTOCOL_VERSION,
     );
     try {
-      await page.waitForSelector(".ts-fields", { visible: true, timeout: 250 });
+      // The route already mounted SOME entity (the catalog fixture), so ".ts-fields exists" no longer
+      // proves the injection landed — wait for the title field to carry THIS entity's title instead.
+      await page.waitForFunction(
+        (title) => document.querySelector<HTMLInputElement>("input.rd-title")?.value === title,
+        { timeout: 250 },
+        entity.title,
+      );
       return;
     } catch {
       // Root not listening yet — retry load.
     }
   }
-  throw new Error("Task Studio never rendered .ts-fields after studio-protocol load messages");
+  throw new Error("Task Studio never adopted the injected entity after studio-protocol load messages");
 }
 
 describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", () => {

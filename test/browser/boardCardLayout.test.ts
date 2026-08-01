@@ -1,35 +1,20 @@
 import { mkdirSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
-import { missionControlFixtures } from "../../scripts/webview-preview/fixtures/mission-control";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import type { MissionControlVM } from "../../src/webview/mission-control/messages";
 
-function hostPage(cspSource: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<link rel="stylesheet" href="${cspSource}/dist/webview/codicon.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/design-system.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/vscode-theme.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/mission-control.tailwind.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/mission-control.css">
-<title>board card layout</title></head>
-<body><div id="root"></div><script src="${cspSource}/dist/webview/mission-control.js"></script></body></html>`;
-}
+// t-c55f8d (2026-08-01): the board stopped shipping as its own `dist/webview/mission-control.js` bundle —
+// it is a Control section inside cockpit.js now (esbuild.mjs keeps both mission-control CSS files, which is
+// why only the script 404'd and the page rendered empty). The hand-rolled host page + `snapshot` push that
+// used to stand in for the harness is replaced by the harness itself: `?view=cockpit&fixture=mission` pushes
+// the SAME missionControlFixtures.default VM. `width`/`height` size the preview frame to the viewport, so
+// the lane-width and board-scroller measurements below still measure what they measured before.
+const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=mission";
 
-async function loadBoard(page: Page, origin: string): Promise<void> {
-  const vm = missionControlFixtures.default!.vm as MissionControlVM;
-  await page.setContent(hostPage(origin), { waitUntil: "domcontentloaded" });
-  await page.evaluate((fixture) => {
-    const onReady = (event: MessageEvent) => {
-      const data = event.data as { type?: string } | undefined;
-      if (data?.type !== "ready") return;
-      window.removeEventListener("message", onReady);
-      window.postMessage({ type: "snapshot", vm: fixture }, "*");
-    };
-    window.addEventListener("message", onReady);
-  }, vm);
-  await page.waitForSelector('[data-card-id="t-82f870"]', { visible: true, timeout: 5_000 });
+async function loadBoard(page: Page, origin: string, frame: { width: number; height: number }): Promise<void> {
+  await page.goto(`${origin}${PREVIEW}&width=${frame.width}&height=${frame.height}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector('[data-card-id="t-82f870"]', { visible: true, timeout: 15_000 });
 }
 
 type Box = { left: number; right: number; top: number; bottom: number; width: number };
@@ -52,7 +37,7 @@ describe("SDD 419 — Board card metadata layout", () => {
   it("keeps author/badges and id/assignee-priority in independent opposite regions", async () => {
     const page = await browser.newPage();
     await page.setViewport({ width: 1440, height: 900 });
-    await loadBoard(page, server.origin);
+    await loadBoard(page, server.origin, { width: 1440, height: 900 });
 
     const result = await page.$eval('[data-card-id="t-82f870"]', (card) => {
       const box = (selector: string): Box => {
@@ -91,7 +76,7 @@ describe("SDD 419 — Board card metadata layout", () => {
   it("keeps 300px lanes and delegates narrow overflow to the board scroller", async () => {
     const page = await browser.newPage();
     await page.setViewport({ width: 900, height: 900 });
-    await loadBoard(page, server.origin);
+    await loadBoard(page, server.origin, { width: 900, height: 900 });
 
     const layout = await page.$eval(".board", (board) => ({
       clientWidth: board.clientWidth,
