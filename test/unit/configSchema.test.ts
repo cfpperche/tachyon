@@ -18,6 +18,8 @@ interface SchemaNode {
   enum?: string[];
   default?: unknown;
   dependencies?: Record<string, string[]>;
+  /** t-8b8315 — retired keys stay published so a workspace that declares one is told by name. */
+  deprecated?: boolean;
 }
 
 const schemaPath = path.join(process.cwd(), "src", "config", "tachyon.schema.json");
