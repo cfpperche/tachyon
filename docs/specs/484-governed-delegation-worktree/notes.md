@@ -132,6 +132,22 @@ git-level anomalies, whose error message names the recovery path. Recorded rathe
 closing it means either widening hygiene to scan `git worktree list` or teaching the resolver to
 register before it can fail, and both are larger than this spec.
 
+**3 — CORRECTED. Promotion cannot orphan a worktree, because it refuses everything that could own
+one.** The earlier reading stopped at `addAgent(text, agent, definition.cmd, "terminal")` and
+concluded the tree is stranded by omission. Two lines above it, `promoteAgent` throws for any
+instance whose `definition.kind !== "terminal"` — and a worktree is an Agent capability
+(`asAgent(ctx.def)` in `Workspace.resolveSpawnCwd`; a terminal never reaches the create path). The
+two sets do not intersect. Worse for the "carry the flag" outcome: config validation refuses
+`worktree` on a terminal entry outright (`loadConfig.ts`, "this entry is a terminal — it gets no git
+worktree"), so this door could not carry isolation even with a parameter for it.
+
+So the carry-or-announce decision resolves to ANNOUNCE, and the implementation is an explicit refusal
+that names the checkout, placed ahead of the kind gate. It changes no outcome today — it changes what
+the human hears, from "only a terminal instance can be saved" (true, and silent about the tree they
+are standing in) to a sentence that names the path, the branch, and the two doors that do work. It is
+also the pin the spec asked for instead of trust: lift the terminal-only gate later and this refuses,
+rather than writing a profile that relocates the agent and abandons its checkout.
+
 **Occupancy gates on the Bridge dismiss — decided by measuring what each one is for.** The Saved
 cascade's gates all apply and arrive with `removeAgentWorktree`: `liveDescendants` (the one that
 matters most HERE — a parented child with no `worktree:true` runs in its parent's cwd by

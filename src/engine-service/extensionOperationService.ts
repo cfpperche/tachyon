@@ -962,6 +962,32 @@ async function promoteAgent(
   const record = workspace.ledger.get(agent);
   const definition = record?.def;
   if (!definition) throw new Error(`'${agent}' has no stored definition to save`);
+  // t-d06da3 — promotion may not strand a checkout by OMISSION. Measured, in this order:
+  //
+  //  1. This door writes the profile with `addAgent(text, agent, definition.cmd, "terminal")` — cmd and
+  //     kind, nothing else. There is no parameter for `worktree` and adding one would not help: config
+  //     validation refuses `worktree` on a terminal entry outright ("this entry is a terminal — it gets
+  //     no git worktree", loadConfig.ts). So this promotion CANNOT carry isolation. That is the measured
+  //     reason the spec's "carry the flag" outcome is not what this door does.
+  //  2. Nothing is orphaned today, and the protection is incidental rather than stated: a worktree is an
+  //     Agent capability (`asAgent(ctx.def)` in Workspace's `resolveSpawnCwd` — a terminal never reaches
+  //     the create path), and the gate below refuses every instance that is not a terminal. The two sets
+  //     do not intersect, so the refusal an isolated child actually hears is "only a terminal instance
+  //     can be saved", which says nothing about the checkout it is standing in.
+  //
+  // This makes the exclusion EXPLICIT and says the discarded intent out loud (t-da80ed). It fires before
+  // the kind gate so the reader hears the fact that decides their case, and it is the pin the spec asked
+  // for rather than trust: lift the terminal-only gate later and this refuses instead of silently
+  // writing a profile that relocates the agent and abandons its tree — including through
+  // `ledger.remove(agent)` below, which for a non-resumable instance drops the row that OWNS the record.
+  if (record?.worktree) {
+    throw new Error(
+      `'${agent}' runs in its own git worktree (${record.worktree.path}, branch ${record.worktree.branch}) and saving it to `
+      + "tachyon.yml here would leave that checkout behind: this promotion writes a terminal entry, and a terminal entry "
+      + "cannot declare a worktree. Create the Saved Agent in Agent Studio, where a profile can declare its own worktree, "
+      + "or dismiss the instance — dismissing removes the checkout with it.",
+    );
+  }
   if (definition.kind !== "terminal") {
     throw new Error("only a terminal instance can be saved to tachyon.yml; create an agent in Agent Studio instead");
   }

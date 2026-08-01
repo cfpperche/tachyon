@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { registerTools } from "../../src/bridge/tools.js";
+import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
 
 /**
- * t-d06da3 (spec 484) — the dismiss door that opens once a Temporary child may own a worktree.
+ * t-d06da3 (spec 484) — the two lifecycle doors that open once a Temporary child may own a worktree.
  *
- * It was not reachable before: `spawn_agent worktree:true` was refused for a Temporary AI agent, so
- * nothing a Temporary owned could be stranded. Lifting that refusal turns this from dead code into
- * product behaviour, which is why it is pinned here rather than left to be discovered by the first
- * coordinator that dismisses a child.
+ * Neither of these was reachable before: `spawn_agent worktree:true` was refused for a Temporary AI
+ * agent, so nothing a Temporary owned could be stranded. Lifting that refusal turns both of them from
+ * dead code into product behaviour, which is why they are pinned here rather than left to be
+ * discovered by the first coordinator that dismisses a child.
  *
  * DISMISS was measured to be a THIRD door. `extensionOperationService` already ran
  * `removeAgentWorktree` before dismissing, generically, and `agentRemovalCascade` was extracted by
@@ -16,6 +17,12 @@ import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
  * `dismiss_agent` called `dismissTemporary` and nothing else. The fix is the call, not a new cascade,
  * so these tests drive the REAL cascade through fake ports: what they assert is that the ledger, the
  * registry and the occupancy gates all moved, not that one function called another.
+ *
+ * PROMOTION was measured to be safe by accident. It writes `addAgent(text, agent, cmd, "terminal")` —
+ * cmd and kind only — and a terminal entry may not declare `worktree` at all, so it cannot carry
+ * isolation; it is protected today only because it separately refuses every instance that is not a
+ * terminal, and a worktree is an Agent capability. That is an incidental exclusion holding up an
+ * acceptance criterion, which is exactly the shape that breaks silently later.
  */
 
 class ToolCapture {
@@ -200,5 +207,73 @@ describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => 
 
     expect(result.content[0]?.text).toBe("agent 'child' dismissed");
     expect(world.events).toEqual(["dismiss-row"]); // no probe, no release, no git
+  });
+});
+
+/** The narrow slice of the Workspace `config.agent.promote` reaches, with every write recorded. */
+function promoteWorld(opts: { worktree?: WorktreeRecord; kind?: "agent" | "terminal"; resume?: boolean }) {
+  const writes: string[] = [];
+  const workspace = {
+    ledger: {
+      get: () => ({
+        def: { cmd: "codex", kind: opts.kind ?? "agent" },
+        ...(opts.worktree ? { worktree: opts.worktree } : {}),
+        ...(opts.resume ? { resume: { runtime: "codex", sessionId: "s" } } : {}),
+      }),
+      record: () => { writes.push("ledger-record"); },
+      remove: () => { writes.push("ledger-remove"); },
+    },
+    config: { agents: {} },
+    mutateConfig: (mutate: (text: string) => { text: string }) => {
+      writes.push(`config:${mutate("agents: {}\n").text}`);
+      return true;
+    },
+    manager: { forgetTemporary: () => { writes.push("forget-temporary"); } },
+  };
+  return { writes, workspace };
+}
+
+const promote = (workspace: unknown, agent: string): Promise<unknown> => executeExtensionCommand(
+  { workspace, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+  { action: "config.agent.promote", agent } as Parameters<typeof executeExtensionCommand>[1],
+);
+
+describe("t-d06da3 — promotion does not orphan a checkout by omission", () => {
+  /**
+   * The measurement the guard exists for, asserted against the real writer rather than quoted from a
+   * note: what promotion puts in `tachyon.yml` is a terminal entry with a cmd, and there is no
+   * isolation in it. Anything this door promotes therefore lands somewhere else on its next launch.
+   */
+  it("writes a profile that says nothing about isolation", async () => {
+    const { writes, workspace } = promoteWorld({ kind: "terminal" });
+
+    await promote(workspace, "helper");
+
+    const written = writes.find((w) => w.startsWith("config:"))!;
+    expect(written).toContain("cmd: codex");
+    expect(written).toContain("kind: terminal");
+    expect(written).not.toContain("worktree");
+  });
+
+  it("refuses an instance that owns a checkout, and names the checkout it would have left behind", async () => {
+    const { writes, workspace } = promoteWorld({ worktree: RECORD, kind: "terminal" });
+
+    await expect(promote(workspace, "helper")).rejects.toThrow(/\/checkouts\/child/);
+    // Nothing may move: a promotion that wrote the profile and then failed would leave the agent
+    // declared, relocated on its next launch, and still owning a tree nobody removes.
+    expect(writes).toEqual([]);
+  });
+
+  /**
+   * The pin, and the reason this guard is not dead code sitting behind the kind gate. A worktree is an
+   * Agent capability (`asAgent(def)` — a terminal never reaches the create path), so today the only
+   * instances that can own one are refused by the kind gate anyway. That refusal says "only a terminal
+   * instance can be saved", which tells the human nothing about the checkout they are standing in.
+   */
+  it("tells an isolated AI child about its checkout, not just that it is the wrong kind", async () => {
+    const { workspace } = promoteWorld({ worktree: RECORD, kind: "agent" });
+
+    await expect(promote(workspace, "helper")).rejects.toThrow(/git worktree/);
+    await expect(promote(workspace, "helper")).rejects.not.toThrow(/only a terminal instance/);
   });
 });
