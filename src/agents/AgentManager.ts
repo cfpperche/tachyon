@@ -3432,7 +3432,13 @@ export class AgentManager {
     txid: string,
     expected: AgentProfileForgetSnapshot,
   ): Promise<void> {
-    await this.assertRemovalOccupancyFree(name, `canonical forget found a live session for '${name}'`);
+    // Mesmo código da pré-condição: a condição é a mesma (sessão viva bloqueia o forget), só a fase
+    // muda. O código nomeia a classe; a mensagem nomeia onde foi detectada.
+    await this.assertRemovalOccupancyFree(
+      name,
+      "agent-profile/forget-agent-running",
+      `canonical forget found a live session for '${name}'`,
+    );
     this.opts.ledger?.removeExactDigest(name, expected.ledgerSha256);
     convergeActivityRetirement(
       this.activityDir(),

@@ -811,7 +811,10 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
       schemaVersion: 1,
       kind: "refused",
       code: "agent-profile/forget-agent-running",
-      message: "agent 'reviewer' must be fully stopped before canonical forget",
+      // t-4736b4 composes with this: the fresh occupancy probe appends WHICH of its conditions held,
+      // so the human learns "a launch is in flight" instead of only "still running". The two fixes
+      // meet in this string — the code carries the class, the detail carries the cause.
+      message: "agent 'reviewer' must be fully stopped before canonical forget (a launch for this name is in flight)",
     });
   } finally {
     ws.dispose();
