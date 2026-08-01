@@ -122,7 +122,7 @@ class SharedSecretHost extends FakeHost {
 }
 
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
-function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
+function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[]) => void } = {}) {
   const sessions = new Set<string>();
   /** `${session}\0${key}` → value, mirroring tmux's per-session environment. */
   const sessionEnv = new Map<string, string>();
@@ -145,6 +145,9 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
   };
   const exec = async (args: string[]): Promise<ExecResult> => {
     calls.push(args);
+    // t-d06da3 — a seam for cases whose subject is what happens when a tmux command FAILS partway
+    // through a launch. Default undefined, so every existing case is byte-identical.
+    opts.onExec?.(args);
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       sessions.add(name);
@@ -2284,6 +2287,71 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
     // the lifecycle door refuses — the plan crosses the same wire and must survive it the same way.
     await expect(ws.planAgentProfileForget("reviewer", "f".repeat(64)))
       .rejects.toMatchObject({ code: "agent-profile/revision-conflict" });
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
+ * t-d06da3 (spec 484, "failed create") — the fourth measure-first read, left PARTIAL on purpose.
+ *
+ * `rollbackPreparedWorktree` PRESERVES the checkout after a launch fails, and deliberately so: its own
+ * contract says deleting it "would risk deleting a concurrent ignored write or rewinding a commit
+ * after a time-of-check/time-of-use gap". That is the better choice — a preserved tree is untidy, a
+ * deleted one is unrecoverable. But it only holds if the preserved tree can be FOUND: `classify.ts`
+ * classifies a registered `ManagedWorktreeEntry`, so `worktree_hygiene` sees a checkout iff
+ * `.tachyon/managed-worktrees.json` still names it. Reading alone could not settle whether the
+ * failure path keeps that row or rolls it back, and an unregistered preserved checkout is invisible
+ * debt — the exact thing the criterion exists to prevent.
+ *
+ * So it is measured here, end to end, on a real git repository: a real isolated launch that fails
+ * after `git worktree add` has already succeeded.
+ */
+it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout preserved AND registered", async () => {
+  const root = gitRepoWorkspace();
+  const homeDir = mkdir();
+  const worktreeBase = mkdir();
+  fs.writeFileSync(
+    path.join(root, "tachyon.yml"),
+    `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
+  );
+  const host = new SharedSecretHost(mkdir(), new Map());
+  // The failure: tmux refuses to create the session. That lands AFTER cwd resolution, which is where
+  // a real launch spends most of its fallible steps, and it is the shape every one of them shares.
+  const fake = fakeTmux({
+    onExec: (args) => { if (args.includes("new-session")) throw new Error("tmux server unavailable"); },
+  });
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.commitAgentProfileLifecycle({
+      agentName: "isolated",
+      operation: "create",
+      createProfile: {
+        runtime: { adapter: "codex", executable: "codex" },
+        workspace: { worktree: { enabled: true } },
+      },
+    });
+
+    // Measured, not assumed: the launch fails through the PRESERVATION path, so the assertions below
+    // are about a checkout the product deliberately kept — not one it happened not to reach yet.
+    const failure = await ws.manager.spawn("isolated").then(() => null, (error: unknown) => error as AggregateError);
+    expect(failure?.message).toContain("session creation failed");
+    expect((failure?.errors ?? []).map((e: Error) => e.message)).toContain(
+      "agent worktree recovery state was preserved instead of automatic cleanup",
+    );
+
+    const checkout = ws.worktrees.pathForAgent("isolated");
+    // 1. Preserved, as `rollbackPreparedWorktree` promises.
+    expect(fs.existsSync(checkout)).toBe(true);
+    // 2. And VISIBLE. `Workspace.resolveSpawnCwd` registers the record the moment the resolver hands
+    //    it back — before the HEAD probe, before any launch step can fail — and the rollback hook
+    //    deliberately leaves registry rows active "so reveal still points at the recovery path". So
+    //    `worktree_hygiene`, which reads exactly this list, can see the debt a failed launch left.
+    expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.path)).toContain(path.resolve(checkout));
   } finally {
     ws.dispose();
   }

@@ -1956,6 +1956,11 @@ export class Workspace {
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
         runHostAction: (input) => this.runHostAction(input),
         managedWorktrees: this.managedWorktrees,
+        // t-d06da3 — the ports of the shared agent-removal cascade, so `dismiss_agent` takes an owned
+        // checkout down through the SAME code `config.agent.delete` uses. The Workspace IS the port
+        // bundle (manager + ledger + worktrees + registry), which is exactly how the operation service
+        // already calls `removeAgentWorktree(workspace, …)`.
+        agentWorktrees: this,
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),

@@ -274,6 +274,15 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
  * one thing the identity model exists to forbid it. Naming a live tool is not enough; the exit has
  * to be executable BY THE CALLER READING IT. Hence the exits are enumerated per caller kind below
  * and pinned against `resolveActor` itself, not against this text.
+ *
+ * t-d06da3 — the exits were both HEAVY, and the light one did not exist yet. Until this task the only
+ * way to give a delegated child a directory of its own was to write it into tachyon.yml first, once
+ * per delegation, because `spawn_agent worktree:true` was refused outright for a Temporary AI child.
+ * That refusal is gone, so the direct exit joins the list. It is offered to every caller kind for the
+ * same reason the unparented one is not: this rule fires only on a Temporary AI spawn (a resolved
+ * `parent` implies `cmd`), and that is exactly the door `worktree:true` now opens. The pin follows the
+ * mechanism, as before — reachability here is decided by the `spawn_agent` handler itself, so the test
+ * drives it per caller kind rather than reading this prose back to itself.
  */
 
 /** The rule, invariant across callers — the sentence every rendering of this refusal shares. */
@@ -287,6 +296,8 @@ export const PARENT_CWD_RULE =
 export type SpawnCwdExit =
   /** spawn the child with no lineage at all and name its directory — only a caller that CAN be unparented. */
   | "unparented-spawn"
+  /** t-d06da3 — ask for isolation instead of naming a path: the child is born in its own checkout. */
+  | "isolate-in-own-worktree"
   /** put the child on the roster with a worktree of its own. */
   | "declare-in-config"
   /** accept the inheritance: drop cwd, and the child runs where its parent runs. */
@@ -294,7 +305,10 @@ export type SpawnCwdExit =
 
 const EXIT_PROSE: Record<SpawnCwdExit, string> = {
   "unparented-spawn": "To run somewhere else, spawn without parent and pass cwd.",
-  "declare-in-config": "To give the child its own checkout, declare it in tachyon.yml with a worktree.",
+  "isolate-in-own-worktree":
+    "To give the child a directory of its own, drop cwd and pass worktree:true — it is born in its own "
+    + "git worktree on its own branch, and dismissing it takes that checkout with it.",
+  "declare-in-config": "For a checkout that outlives the child, declare it in tachyon.yml with a worktree.",
   "inherit-parent-cwd": "Omit cwd and the child runs where you run.",
 };
 
@@ -313,8 +327,8 @@ const AGENT_LINEAGE_NOTE =
 /** The exits that exist for a given caller kind. `undefined` is the unauthenticated/legacy Bridge. */
 export function parentCwdExitsFor(callerKind: CallerKind | undefined): SpawnCwdExit[] {
   return callerKind === "agent"
-    ? ["inherit-parent-cwd", "declare-in-config"]
-    : ["unparented-spawn", "declare-in-config"];
+    ? ["inherit-parent-cwd", "isolate-in-own-worktree", "declare-in-config"]
+    : ["unparented-spawn", "isolate-in-own-worktree", "declare-in-config"];
 }
 
 /** The refusal as the given caller should hear it — the rule, then only the exits that caller has. */

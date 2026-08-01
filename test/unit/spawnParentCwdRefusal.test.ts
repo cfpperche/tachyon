@@ -27,12 +27,15 @@ import {
 
 class ToolCapture {
   handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>();
+  /** t-d06da3 — the parameter DESCRIPTIONS are agent-facing text too, and one of them carried the lie. */
+  schemas = new Map<string, { inputSchema?: Record<string, { description?: string }> }>();
   registerTool(
     name: string,
-    _schema: unknown,
+    schema: unknown,
     handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>,
   ) {
     this.handlers.set(name, handler);
+    this.schemas.set(name, schema as { inputSchema?: Record<string, { description?: string }> });
   }
 }
 
@@ -254,5 +257,78 @@ describe("t-5f823a — the refusal an AGENT caller receives", () => {
     expect(result.isError).toBeFalsy();
     expect(spawned[0]?.cwd).toBe("/repo/worktrees/reviewer");
     expect(spawned[0]?.parent).toBeUndefined();
+  });
+});
+
+/**
+ * t-d06da3 — the exit the refusal could not offer, because the door it names was welded shut.
+ *
+ * `worktree:true` was refused outright for a Temporary AI agent, with a message naming "declare the
+ * agent in tachyon.yml" (an edit per delegation) and "spawn top-level" (impossible for an agent, for
+ * exactly the reason t-5f823a measured one refusal over). So a coordinator that wanted an isolated
+ * child had no door at all, and the containment it could still reach — running the child inside its
+ * OWN worktree — is strictly less contained than the thing being refused.
+ *
+ * These pin the lift the same way t-5f823a pinned the earlier one: against the mechanism that decides
+ * reachability, never against the prose. For the unparented exit that mechanism is `resolveActor`; for
+ * this one it is the `spawn_agent` handler itself, so the test asks the handler.
+ */
+describe("t-d06da3 — a delegated child may ask for its own worktree", () => {
+  it("lets an agent's parented child ask for isolation, and passes it through", async () => {
+    const { spawn, spawned } = bridge("agent");
+
+    const result = await spawn({ name: "helper", cmd: "codex", worktree: true, ...CONTRACT });
+
+    expect(result.isError).toBeFalsy();
+    // Both halves matter: refusing this was the defect, and dropping `worktree` on the way to the
+    // manager would be the "ignored, not refused" promise t-6fe04b already caught this door making.
+    expect(spawned[0]).toMatchObject({ parent: "ada", worktree: true });
+  });
+
+  it("offers worktree:true to exactly the callers this door lets ask for it", async () => {
+    for (const kind of CALLER_KINDS) {
+      const { spawn, spawned } = bridge(kind);
+
+      const result = await spawn({ name: "helper", cmd: "codex", worktree: true, ...CONTRACT });
+      const granted = !result.isError && spawned[0]?.worktree === true;
+
+      expect(parentCwdExitsFor(kind).includes("isolate-in-own-worktree"), `caller kind '${kind}'`).toBe(granted);
+    }
+  });
+
+  /**
+   * The cwd refusal is the surviving one, and until now every exit it named was heavy: inherit (give
+   * up on isolation) or edit workspace config first. It now names the direct one, and this asserts the
+   * NAME is there for every caller that reaches the refusal — all of whom are, by construction, making
+   * a Temporary AI spawn, since only such a spawn can carry a resolved `parent`.
+   */
+  it("names the isolated exit in the refusal that survives", async () => {
+    const { spawn } = bridge("agent");
+
+    const result = await spawn({ name: "helper", cmd: "codex", cwd: "/elsewhere", ...CONTRACT });
+
+    expect(result.content[0]?.text).toContain("worktree:true");
+    for (const kind of CALLER_KINDS) expect(parentCwdRefusalFor(kind)).toContain("worktree:true");
+  });
+
+  /**
+   * The lie did not only live in the refusal. `spawn_agent`'s own `worktree` parameter told every
+   * reader the flag was "REFUSED, not ignored" for a Temporary AI agent and pointed at the same
+   * unreachable "spawn top-level" — and a parameter description is read BEFORE the call, by the
+   * caller deciding whether to make it at all. Pinned against `resolveActor` like its sibling: an
+   * agent can never be unparented, so no agent-facing text on this door may send it that way.
+   */
+  it("never tells an agent to go top-level — not in the refusal, and not in the parameter that did", () => {
+    const mcp = new ToolCapture();
+    registerTools(mcp as never, { workspaceRoot: "/repo", caller: { kind: "agent", name: "ada" } } as never);
+    const worktreeParam = mcp.schemas.get("spawn_agent")?.inputSchema?.worktree?.description ?? "";
+    const resolved = resolveActor({ caller: callerFor("agent"), declared: undefined, registry: undefined, scope: CALLER_SCOPE });
+
+    expect(resolved.ok && resolved.name).toBe("ada"); // the mechanism: an agent's spawn is always parented
+    expect(worktreeParam.length).toBeGreaterThan(0); // a parameter that describes nothing cannot be checked
+    for (const text of [worktreeParam, parentCwdRefusalFor("agent")]) {
+      expect(text).not.toContain("top-level");
+      expect(text).not.toContain("spawn without parent");
+    }
   });
 });

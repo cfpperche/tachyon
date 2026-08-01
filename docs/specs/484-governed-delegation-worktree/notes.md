@@ -105,3 +105,47 @@ failure path leaves the registry entry in place, or rolls it back and leaves an 
 on disk, was not established by reading alone. **Do not assume**: the implementation must prove it,
 because an unregistered preserved checkout is invisible debt — the exact thing criterion "failed
 create" exists to prevent.
+
+## Measured during implementation (2026-08-01)
+
+**4 — ANSWERED, and the answer is that the preserved checkout IS visible.** The fourth read was left
+PARTIAL because reading could not settle whether the registry row survives a failed launch. Measured
+end to end on a real git repository (`workspaceHeadless.test.ts`, "leaves the checkout preserved AND
+registered"): a real isolated launch whose `tmux new-session` fails after `git worktree add` has
+already succeeded rejects with `agent worktree recovery state was preserved instead of automatic
+cleanup` — and the checkout is BOTH on disk and still in `.tachyon/managed-worktrees.json`. Two
+mechanisms make that so, and both are deliberate: `Workspace.resolveSpawnCwd` calls
+`syncAgentRecord` the moment the resolver hands the record back — before the HEAD probe, before any
+launch step can fail — and `rollbackPreparedWorktree`'s implementation states "Registry rows stay
+active so reveal still points at the recovery path". So `worktree_hygiene`, which classifies
+registered entries, sees the debt. Verified by mutation: deleting that `syncAgentRecord` call turns
+the test red with an empty registry, which is exactly the invisible-debt state the criterion exists
+to prevent.
+
+One window remains and is narrower than it looks: a throw BETWEEN `git worktree add` succeeding and
+`resolveWorktreeCwd` returning (quarantine-lock failure, branch/HEAD drift under the lock, an
+unresolvable HEAD, or a `runSetup` failure) never reaches the registration line, so the preserved
+checkout would be unregistered. For the case this spec opens it is not reachable through setup: a
+Temporary's def carries no `worktreeSetup`, and a Saved profile's `workspace.worktree.setup` is
+refused by projection ("verification/setup references are not materialized yet"). What is left are
+git-level anomalies, whose error message names the recovery path. Recorded rather than fixed —
+closing it means either widening hygiene to scan `git worktree list` or teaching the resolver to
+register before it can fail, and both are larger than this spec.
+
+**Occupancy gates on the Bridge dismiss — decided by measuring what each one is for.** The Saved
+cascade's gates all apply and arrive with `removeAgentWorktree`: `liveDescendants` (the one that
+matters most HERE — a parented child with no `worktree:true` runs in its parent's cwd by
+construction, so this is the only lifecycle that can put a live agent inside the checkout being
+removed), the measured `probeAgentOccupancy` gate (the door's own `running` flag comes from
+`manager.list()`, the stale snapshot t-4736b4 found lying in both directions), and
+`releaseOwnedWorktreeForRemoval`'s ownership check. The engine door's extra
+`stopAgentSessionForDelete` is NOT reused: on this path it is a second run of the probe → kill →
+re-probe the cascade just did, and for an entry with no checkout it would add a new way for a dismiss
+that works today to refuse when tmux is slow.
+
+**What criterion 3 still does not cover.** `removeAgentWorktree` passes `deleteBranch: true`, and
+`WorktreeManager.remove` deletes with `git branch -d`, so a branch holding unmerged commits survives
+— the dismiss now says so, in the reply and in a warn notice. Uncommitted FILES are a different
+story: `remove()` defaults to `force: true` for legacy/internal callers, so a dirty checkout is
+force-removed. That is unchanged from the engine door and is the shared cascade's behaviour, not this
+door's; narrowing it would change both doors and belongs to its own task.

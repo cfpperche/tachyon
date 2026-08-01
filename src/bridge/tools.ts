@@ -8,6 +8,7 @@ import {
   readLiveSavedAgentProposalQueue,
   recordSavedAgentProposal,
 } from "../agents/savedAgentProposalStore.js";
+import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "../agents/agentRemovalCascade.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
 import { parentCwdRefusalFor } from "./spawnContract.js";
@@ -459,6 +460,17 @@ export interface BridgeDeps {
   flagAwaitingHuman?: (agent: string, reason: string) => void;
   /** spec 392 — managed worktree registry + change worktree create/remove. */
   managedWorktrees?: ManagedWorktreeService;
+  /**
+   * t-d06da3 — the ports the SHARED agent-removal cascade needs (`agentRemovalCascade`), so
+   * `dismiss_agent` runs the same worktree step the engine's `config.agent.delete` runs instead of
+   * being a third door with no worktree step at all. `Workspace` satisfies this interface directly,
+   * which is how the operation service already calls the cascade.
+   *
+   * Optional for the same reason every other capability here is: a Bridge stood up without a
+   * workspace (tests, `registerTools` called directly) keeps the pre-t-d06da3 behaviour, which is
+   * correct there because a Temporary with no engine cannot own a checkout either.
+   */
+  agentWorktrees?: AgentWorktreeRemovalPorts;
 }
 
 /**
@@ -817,6 +829,84 @@ function taskReceipt(before: Task | undefined, after: Task, requested: string[])
 
 async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
   return (await deps.manager.list()).find((a) => a.name === name);
+}
+
+/** What the Bridge needs to SAY about a checkout it just took down — the record, plus git's verdict on the branch. */
+interface DismissedWorktree {
+  path: string;
+  branch: string;
+  branchKept: boolean;
+  alreadyAbsent: boolean;
+}
+
+/**
+ * t-d06da3 — the worktree half of `dismiss_agent`, and the reason it is a call rather than code.
+ *
+ * `agentRemovalCascade` was extracted by t-e722ce "so BOTH doors can call the same code instead of two
+ * copies drifting" — the engine's `config.agent.delete` and Agent Studio's Forget. This was a THIRD
+ * door: it called `dismissTemporary` and nothing else, so an owned checkout and its registry row would
+ * have outlived the row that owned them. Invisible until now only because a Temporary could not own a
+ * worktree; lifting that refusal one screen up is what makes it visible, which is `t-33ae3f` for the
+ * third time if this door keeps its own copy.
+ *
+ * WHICH OCCUPANCY GATES A TEMPORARY DISMISS NEEDS — the question `tasks.md` refused to let the code
+ * answer implicitly. `removeAgentWorktree` carries three, and all three are load-bearing HERE:
+ *
+ *  - `liveDescendants` — the one that matters MOST for a Temporary and least for a Saved Agent. A
+ *    parented child with no `worktree:true` runs in its parent's cwd by construction, so dismissing an
+ *    isolated parent while a child still runs there deletes the ground under a live agent. Only the
+ *    Temporary lifecycle can produce that arrangement.
+ *  - the measured `probeAgentOccupancy` gate (t-4736b4) — the entry's `running` flag above comes from
+ *    `manager.list()`, the last-known-good inventory, which is exactly the stale snapshot t-4736b4
+ *    found lying in both directions on a removal path. A checkout cannot be removed under a live shell
+ *    anyway, so this is git's precondition, not ceremony.
+ *  - `releaseOwnedWorktreeForRemoval`'s ownership + `assertRemovalOccupancyFree` check — it is what
+ *    stops this door releasing a checkout some OTHER agent is quarantining.
+ *
+ * What is deliberately NOT reused is the engine door's extra `stopAgentSessionForDelete` step. On this
+ * path it would be a second run of the same probe → kill → re-probe the cascade just did, and for an
+ * entry with no checkout it would add a brand-new way for a dismiss that works today to refuse
+ * ("occupancy unverifiable") when tmux is slow. Reusing a gate that does not apply is the ceremony the
+ * spec's first non-goal forbids; this one does not apply.
+ */
+async function dismissOwnedWorktree(
+  deps: Pick<BridgeDeps, "agentWorktrees" | "notify">,
+  name: string,
+): Promise<DismissedWorktree | undefined> {
+  const ports = deps.agentWorktrees;
+  const record = ports?.ledger.get(name)?.worktree;
+  if (!ports || !record) return undefined;
+  // `deleteBranch: true`, the same argument the engine door passes, and it is the SAFE delete:
+  // `WorktreeManager.remove` runs `git branch -d`, so a branch holding commits that are not merged
+  // survives and the receipt says so. That is the only recoverable work this step can preserve.
+  const receipt = await removeAgentWorktree(ports, name, true);
+  const released = {
+    path: record.path,
+    branch: record.branch,
+    branchKept: !receipt.branchDeleted,
+    alreadyAbsent: receipt.checkoutAlreadyAbsent === true,
+  };
+  // Said out loud rather than left in a return value nobody reads (t-da80ed): the caller of
+  // `dismiss_agent` is usually an agent, and the branch that outlives the checkout is the human's
+  // only handle on work that was never merged.
+  if (released.branchKept) {
+    deps.notify(
+      `dismissed '${name}' and removed its worktree; branch '${released.branch}' was KEPT — it holds commits that are not merged`,
+      "warn",
+    );
+  }
+  return released;
+}
+
+function dismissReceipt(name: string, released: DismissedWorktree | undefined): string {
+  if (!released) return `agent '${name}' dismissed`;
+  const checkout = released.alreadyAbsent
+    ? `its worktree at ${released.path} was already gone (ownership released)`
+    : `its worktree at ${released.path} was removed`;
+  const branch = released.branchKept
+    ? `branch '${released.branch}' was kept — it holds unmerged commits, or Tachyon did not create it`
+    : `branch '${released.branch}' was deleted`;
+  return `agent '${name}' dismissed; ${checkout}; ${branch}`;
 }
 
 function outputCapabilities(
@@ -1383,10 +1473,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .boolean()
           .optional()
           .describe(
-            // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
+            // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSED it outright for a
             // Temporary AI agent. "Ignored" and "refused" are different promises to a caller, and only
             // one of them was true.
-            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for a Temporary AI agent this is REFUSED, not ignored — declare the agent in tachyon.yml, or spawn top-level.",
+            //
+            // t-d06da3 — and then the refusal itself went. Neither word describes this parameter now:
+            // a delegated child may ask for isolation, and `resolveWorktreeCwd` has always honored it
+            // (`ctx.parent && !ctx.worktree` is the inheritance branch — `worktree:true` opts out of it).
+            // The old text also offered "spawn top-level", which an agent caller cannot do at all: an
+            // omitted `parent` resolves to the caller itself (spec 351), so every spawn it makes is
+            // parented. This says what the parameter DOES, to the caller who reads it most.
+            "isolate this agent in its own git worktree + branch, instead of inheriting a directory. "
+            + "For a delegated child this is the governed alternative to cwd (which is refused for a parented "
+            + "child): it opts out of running where its parent runs and is born in its own checkout. "
+            + "Dismissing the child removes that checkout with it; a branch holding unmerged commits is kept.",
           ),
         // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
@@ -1452,6 +1552,24 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
+        // t-d06da3 — a `isTemporaryAiAgent && worktree === true` refusal used to stand here, and it is
+        // gone. Two measured reasons, both recorded in spec 484:
+        //
+        // 1. It protected nothing. The honesty control behind the cwd refusal (c0d6ed81) exists because
+        //    a parented child's cwd is DECIDED by `resolveWorktreeCwd`, so a supplied path would be
+        //    silently discarded. `worktree:true` supplies no path — there is nothing to discard — and the
+        //    resolver's own contract already reads "sub-agent (parent set): inherit the parent's cwd
+        //    unless `worktree:true` opts into its own worktree". Only this door disagreed.
+        // 2. Its cost was the opposite of containment. With both exits shut, a coordinator's remaining
+        //    option was to run the child in the PARENT's worktree — strictly less contained than the
+        //    thing being refused — and the exits it named were "declare the agent in tachyon.yml" (an
+        //    edit per delegation) and "spawn top-level", which no agent caller can execute: an omitted
+        //    parent resolves to the caller (`resolveActor`), so every spawn an agent makes is parented.
+        //    That is the same defect 0ac7a71e fixed one refusal over; the fix was written for one message.
+        //
+        // What replaces it is not a second guard: `worktree` flows to the manager below and the resolver
+        // decides, exactly as it does for a declared agent.
+        //
         // spec 246 — the contract gate fires only for a Temporary AI-agent spawn (the genuine "delegate a fresh
         // task to a new CLI" case). A declared agent (no cmd, carries config intent) is not gated.
         // Enforced HERE at the agent-facing Bridge surface so it is runtime-neutral across the attested
@@ -1459,11 +1577,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         //
         // M9 collapsed what this used to compute: an accepted `cmd` is an attested runtime by
         // construction now, so there is no longer a terminal child to exempt — the kind is not inferred.
-        if (isTemporaryAiAgent && worktree === true) {
-          return fail(new Error(
-            "spawn_agent worktree:true is not available to a Temporary AI agent; declare the agent in tachyon.yml to give it an owned worktree, or spawn top-level",
-          ));
-        }
         const suppliedTaskBrief = !!normalizeField(instructions);
         let brief = instructions;
         let contract: SpawnContract | undefined;
@@ -1605,12 +1718,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           ));
         }
         if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
-        if (info.dead) {
+        // t-d06da3 — the worktree step, ahead of BOTH dismissal branches, through the cascade the
+        // other door already runs. See `dismissOwnedWorktree` for why it is that cascade and not a
+        // second one, and which of its gates a Temporary dismiss actually needs.
+        const released = await dismissOwnedWorktree(deps, name);
+        if (info.dead && !released) {
           await deps.manager.kill(name);
           return ok(`agent '${name}' dismissed`);
         }
+        // A `dead` entry whose checkout WAS released has already had its pane torn down: the cascade's
+        // occupancy gate reads a stopped-but-present pane as occupied and kills it, through the same
+        // `manager.kill` this branch would call. Calling it twice would throw AgentNotRunningError and
+        // turn a completed dismissal into an error; `dismissTemporary` is idempotent and finishes the row.
         deps.manager.dismissTemporary(name);
-        return ok(`agent '${name}' dismissed`);
+        return ok(dismissReceipt(name, released));
       } catch (err) {
         return fail(err);
       }
