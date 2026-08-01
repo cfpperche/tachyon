@@ -52,4 +52,11 @@ test/fixtures/**/.tachyon/*
 # verify:full — they need a system Chrome and a built dist/. Megabytes of PNG that any run
 # reproduces, and that a `git add -A` after running them would otherwise sweep into a commit about
 # something else.
-docs/screenshots/
+#
+# Scoped to the per-spec output dirs those suites own, NOT `docs/screenshots/` as a whole: the
+# README embeds eleven product screenshots from that path, and ignoring the directory would silently
+# swallow them the day someone adds them. Same mistake, same file, twice in one day.
+docs/screenshots/e76acc-human-inbox/
+docs/screenshots/479-card-templates/
+docs/screenshots/479-personal-card-template/
+docs/screenshots/t-37f554-attentions-tab/
