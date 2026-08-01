@@ -268,7 +268,17 @@ export function composeSpawnContractBrief(name: string, c: SpawnContract, instru
  * absolute path into the child's BRIEFING — outside every guardrail the refusal existed to protect.
  * So the message names the governed alternative, and the Bridge and the AgentManager say the same
  * sentence: two refusals disagreeing about the way out would be worse than one.
+ *
+ * t-e88c8a — the alternative it named USED TO BE `delivery_join`, and that tool was retired with the
+ * Delivery machinery. A refusal pointing at a door that does not exist is worse than one that only
+ * forbids: the caller burns a turn discovering the tool is not there, and then invents the same
+ * workaround this message exists to prevent. Both remaining exits are real and reachable today.
+ *
+ * Its own guard is why the dead pointer survived three removal stages: the test asserted the string
+ * CONTAINS "delivery_join", so deleting the tool left the assertion passing. A guard that pins a
+ * name must pin it against the live registration, not against itself.
  */
 export const PARENT_CWD_REFUSAL =
   "spawn_agent cannot combine parent with cwd: a parented child inherits its parent's working directory. "
-  + "To run in an existing managed worktree, use delivery_join. To choose the directory yourself, spawn without parent.";
+  + "To run somewhere else, spawn without parent and pass cwd. To give the child its own checkout, "
+  + "declare it in tachyon.yml with a worktree.";

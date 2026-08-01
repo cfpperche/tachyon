@@ -35,6 +35,13 @@ function spawnTool(): (args: Record<string, unknown>) => Promise<{ content: Arra
   return mcp.handlers.get("spawn_agent")!;
 }
 
+/** Every tool name the Bridge actually registers, from the same registration this file already drives. */
+function liveToolNames(): Set<string> {
+  const mcp = new ToolCapture();
+  registerTools(mcp as never, { workspaceRoot: "/repo", caller: { kind: "agent", name: "ada" } } as never);
+  return new Set(mcp.handlers.keys());
+}
+
 describe("t-6fe04b — spawn_agent refuses parent+cwd at the entry", () => {
   it("refuses the pair before composing anything", async () => {
     const result = await spawnTool()({ name: "helper", cmd: "codex", parent: "ada", cwd: "/somewhere" });
@@ -44,18 +51,34 @@ describe("t-6fe04b — spawn_agent refuses parent+cwd at the entry", () => {
   });
 
   describe("the message names the governed alternative", () => {
-    it("points at delivery_join instead of only forbidding", async () => {
+    it("names a way out, not just a prohibition", async () => {
       const result = await spawnTool()({ name: "helper", cmd: "codex", parent: "ada", cwd: "/somewhere" });
 
       // The whole reason the refusal moved: a caller who is only told "don't" invents a way around.
-      expect(result.content[0]?.text).toContain("delivery_join");
       expect(result.content[0]?.text).toContain("spawn without parent");
+      expect(result.content[0]?.text).toContain("declare it in tachyon.yml");
+    });
+
+    /**
+     * t-e88c8a — this assertion used to read `toContain("delivery_join")`, and that is exactly how a
+     * dead pointer survived three stages of removing the Delivery machinery: deleting the tool left
+     * the assertion passing, because the assertion pinned the refusal against ITSELF.
+     *
+     * So the guard now pins it against the LIVE registration. Any tool-shaped name the refusal
+     * mentions must be a tool the Bridge actually registers. `spawn_agent` passes because it exists;
+     * `delivery_join` would fail today, which is the whole point.
+     */
+    it("never names a tool the Bridge does not register", () => {
+      const registered = liveToolNames();
+      const mentioned = PARENT_CWD_REFUSAL.match(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/g) ?? [];
+
+      expect(mentioned.length).toBeGreaterThan(0); // a refusal that names nothing cannot point anywhere
+      expect(mentioned.filter((name) => !registered.has(name))).toEqual([]);
     });
 
     it("is the SAME sentence the manager-level guard throws", () => {
       // Two refusals for one rule must not disagree about the way out. The guard stays — it is the
       // complete one — and this is its earlier, friendlier half.
-      expect(PARENT_CWD_REFUSAL).toContain("delivery_join");
       expect(PARENT_CWD_REFUSAL).toContain("cannot combine parent with cwd");
     });
   });
