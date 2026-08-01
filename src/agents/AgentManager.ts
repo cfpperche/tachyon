@@ -63,6 +63,7 @@ import { AgentRuntimeAdmissionError, admitAgentRuntimeCommand } from "./agentRun
 import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
+import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/agentProfileRefusal.js";
 import { openingPromptCapability } from "./openingPromptCapability.js";
 import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
 import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
@@ -128,9 +129,18 @@ export type AgentOccupancyVerdict =
  * This is a fail-closed refusal with a door: it is decided from a fresh read every time, so the very
  * next attempt succeeds once tmux answers. Nothing durable records it.
  */
-export class AgentOccupancyUnverifiableError extends Error {
+/**
+ * t-4736b4 + t-05dff5 — this is a GOVERNED REFUSAL, not an internal failure, so it declares itself.
+ *
+ * Its message names the recovery ("check the tmux server, retry — the check re-measures each time").
+ * Left as a bare `Error` it would be flattened to "could not be completed" at the Studio boundary,
+ * which would undo the reason t-4736b4 gave it a distinct sentence in the first place: the human has
+ * to be able to tell "I could not measure" apart from "it is still running".
+ */
+export class AgentOccupancyUnverifiableError extends AgentProfileRefusal {
   constructor(name: string, detail: string) {
     super(
+      "agent-profile/occupancy-unverifiable",
       `occupancy unverifiable for agent '${name}': ${detail}. `
       + "Removal refuses to guess whether the session is still there — nothing was changed. "
       + "Check the workspace tmux server (Control → Doctor) and retry; the check re-measures each time.",
@@ -1438,9 +1448,13 @@ export class AgentManager {
    * refuse for different reasons at different points in the transaction); the unverifiable refusal is
    * one message everywhere, because there is only one thing to say about it.
    */
-  private async assertRemovalOccupancyFree(name: string, occupiedMessage: string): Promise<void> {
+  private async assertRemovalOccupancyFree(
+    name: string,
+    occupiedCode: AgentProfileRefusalCode,
+    occupiedMessage: string,
+  ): Promise<void> {
     const verdict = await this.probeAgentOccupancy(name);
-    if (verdict.state === "occupied") throw new Error(`${occupiedMessage} (${verdict.detail})`);
+    if (verdict.state === "occupied") throw new AgentProfileRefusal(occupiedCode, `${occupiedMessage} (${verdict.detail})`);
     if (verdict.state === "unknown") throw new AgentOccupancyUnverifiableError(name, verdict.detail);
   }
 
@@ -1912,7 +1926,11 @@ export class AgentManager {
       // t-4736b4 — the third door on the same removal trail (delete with `removeWorktree:true` walks
       // `removeAgentWorktree` → here → `prepareAgentProfileForget`), and it inherited the same stale
       // snapshot. Measured, never cached; unmeasurable refuses as unverifiable.
-      await this.assertRemovalOccupancyFree(agent, `agent '${agent}' must be fully stopped before releasing its worktree`);
+      await this.assertRemovalOccupancyFree(
+        agent,
+        "agent-profile/worktree-release-agent-running",
+        `agent '${agent}' must be fully stopped before releasing its worktree`,
+      );
       if (occ.pid !== undefined && isPidAlive(occ.pid)) {
         throw new Error(`agent '${agent}' still has a live root process for its worktree`);
       }
@@ -3357,12 +3375,26 @@ export class AgentManager {
     };
   }
 
-  /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
+  /**
+   * Capture a stopped profile's exact name-scoped projections without touching runtime homes.
+   *
+   * t-05dff5 — both preconditions are `AgentProfileRefusal`, not `Error`. Each names a gesture the
+   * human can perform (stop the agent; remove the worktree), and that CODE is what carries them
+   * intact through the Studio boundary instead of being flattened to "could not be completed".
+   */
   async prepareAgentProfileForget(name: string): Promise<AgentProfileForgetSnapshot> {
-    // t-4736b4 — measured fresh, never from `lastAgentStates`. See `probeAgentOccupancy`.
-    await this.assertRemovalOccupancyFree(name, `agent '${name}' must be fully stopped before canonical forget`);
+    // t-4736b4 measures fresh (never `lastAgentStates`); t-05dff5 makes the answer reach the human.
+    // The two fixes meet here: an occupancy this path REFUSES on is a governed refusal, so it says so.
+    await this.assertRemovalOccupancyFree(
+      name,
+      "agent-profile/forget-agent-running",
+      `agent '${name}' must be fully stopped before canonical forget`,
+    );
     if (this.opts.ledger?.get(name)?.worktree) {
-      throw new Error(`agent '${name}' still owns a worktree; remove it explicitly before canonical forget`);
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-worktree-owned",
+        `agent '${name}' still owns a worktree; remove it explicitly before canonical forget`,
+      );
     }
     return {
       ledgerSha256: this.opts.ledger?.recordDigest(name) ?? null,

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
 import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
+import { AGENT_PROFILE_REFUSAL_CODE_RE, AgentProfileRefusal } from "./agentProfileRefusal.js";
 import {
   previewAgentNativeConfigPolicy,
   resolveAgentNativeConfigSupport,
@@ -205,9 +206,30 @@ export const agentProfileStudioLifecycleMutationSchemaV1 = z.discriminatedUnion(
 
 export type AgentProfileStudioLifecycleMutationV1 = z.infer<typeof agentProfileStudioLifecycleMutationSchemaV1>;
 
+/**
+ * t-05dff5 — `refused` is a third OUTCOME, not a failure mode.
+ *
+ * A governed precondition ("still owns a worktree; remove it explicitly before canonical forget") is
+ * an answer the engine computed, so it travels as a value on the success channel, exactly as the
+ * skill/plugin authorization doors already do. Reaching the shell as a thrown error would strand it:
+ * the wire flattens an exception to `{ status: "error", code: "COMMAND_FAILED", message }` with the
+ * class gone, and the cockpit would be back to guessing from prose which is the bug this replaces.
+ *
+ * `code` is validated by SHAPE rather than against the closed code list, so a shell one release
+ * behind an engine renders a refusal it has never heard of instead of rejecting the payload as
+ * malformed and falling back to "the profile lifecycle action could not be completed" — which is the
+ * one sentence this whole change exists to stop showing. `message` is bounded to the same 1 000
+ * characters the engine transport already bounds every message to.
+ */
 export const agentProfileStudioLifecycleResultSchemaV1 = z.union([
   z.object({ schemaVersion: z.literal(1), kind: z.literal("snapshot"), snapshot: z.lazy(() => agentProfileStudioSnapshotSchemaV1) }).strict(),
   z.object({ schemaVersion: z.literal(1), kind: z.literal("forgotten"), agentName: studioAgentName, agentId: z.string().uuid() }).strict(),
+  z.object({
+    schemaVersion: z.literal(1),
+    kind: z.literal("refused"),
+    code: z.string().regex(AGENT_PROFILE_REFUSAL_CODE_RE),
+    message: z.string().min(1).max(1_000),
+  }).strict(),
 ]);
 
 export type AgentProfileStudioLifecycleResultV1 = z.infer<typeof agentProfileStudioLifecycleResultSchemaV1>;
@@ -628,7 +650,7 @@ export function proposeSavedAgentGrantPatchFromStudioMutation(
   current: AgentProfileLifecycleSnapshot,
 ): { grants: AgentProfileV1["grants"] } {
   if (mutation.agentName !== current.agentName || mutation.expectedRevision !== current.revision) {
-    throw new Error(`agent '${mutation.agentName}' profile revision conflict`);
+    throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${mutation.agentName}' profile revision conflict`);
   }
   const others = { ...(current.profile.grants ?? {}) };
   delete others.proposeSavedAgent;
@@ -651,7 +673,7 @@ export function ownershipPatchFromStudioMutation(
 ): { ownership: AgentProfileV1["ownership"] } {
   const owner = mutation.agentName;
   if (owner !== current.agentName || mutation.expectedRevision !== current.revision) {
-    throw new Error(`agent '${owner}' profile revision conflict`);
+    throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${owner}' profile revision conflict`);
   }
   const byName = new Map(roster.map((entry) => [entry.name, entry]));
   if (byName.get(owner)?.kind !== "agent") {

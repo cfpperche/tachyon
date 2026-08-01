@@ -470,7 +470,14 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     const target = ws({
       commitAgentProfileStudioLifecycle: async (mutation) => {
         mutations.push(mutation);
-        if (mutation.expectedRevision === "a".repeat(64)) throw new Error("agent 'Ada' profile revision conflict at /private/path");
+        if (mutation.expectedRevision === "a".repeat(64)) {
+          return {
+            schemaVersion: 1,
+            kind: "refused",
+            code: "agent-profile/revision-conflict",
+            message: "agent 'Ada' profile revision conflict at /private/path",
+          };
+        }
         return { schemaVersion: 1, kind: "snapshot", snapshot: profileSnapshot("Ada", "c".repeat(64)) };
       },
       inspectAgentProfileStudio: async () => profileSnapshot("Ada", "b".repeat(64)),
@@ -502,5 +509,62 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     await flush();
     expect(mutations).toHaveLength(2);
     expect(mutations[1]).toMatchObject({ operation: "forget", confirmation: "Bea" });
+  });
+
+  /**
+   * t-05dff5 — the two classes, side by side, because the bug was that only one of them existed.
+   *
+   * A GOVERNED REFUSAL arrives as `kind: "refused"`: a precondition the engine named, whose sentence
+   * IS the recovery. It reaches the human verbatim. An INTERNAL FAILURE arrives as a thrown error and
+   * is still flattened to one neutral sentence, because a path or a stack is not a gesture anyone can
+   * perform. Nothing here reads the message to decide which is which — that was the defect: the old
+   * `message.includes("revision")` classified "still owns a worktree; remove it explicitly before
+   * canonical forget" as an internal failure and threw the only actionable text on the screen away.
+   */
+  it("forwards a governed refusal verbatim and still flattens an internal failure", async () => {
+    const refusal = "agent 'Ada' still owns a worktree; remove it explicitly before canonical forget";
+    const target = ws({
+      commitAgentProfileStudioLifecycle: async (mutation) => {
+        if (mutation.expectedRevision === "a".repeat(64)) {
+          return { schemaVersion: 1, kind: "refused", code: "agent-profile/forget-worktree-owned", message: refusal };
+        }
+        throw new Error("EIO writing /Users/ada/.tachyon/profiles/Ada/profile.yml");
+      },
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada", "b".repeat(64)),
+    });
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "forgetAgentProfile" as const,
+      agent: "Ada",
+      expectedRevision: "a".repeat(64),
+      confirmation: "Ada",
+    }));
+    await flush();
+    expect(findType(ctx.posted, "agentProfileError").at(-1)).toMatchObject({
+      agent: "Ada",
+      code: "agent-profile/forget-worktree-owned",
+      message: refusal,
+      conflict: false,
+    });
+    // No reload: the block is the worktree, not a stale read, so redrawing would show the same wall.
+    expect(findType(ctx.posted, "agentProfileSnapshot")).toHaveLength(0);
+    expect(findType(ctx.posted, "agentProfileForgotten")).toHaveLength(0);
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({
+      type: "forgetAgentProfile" as const,
+      agent: "Ada",
+      expectedRevision: "b".repeat(64),
+      confirmation: "Ada",
+    }));
+    await flush();
+    const flattened = findType(ctx.posted, "agentProfileError").at(-1);
+    expect(flattened).toMatchObject({
+      agent: "Ada",
+      code: "agent-profile/lifecycle-failed",
+      message: "The profile lifecycle action could not be completed.",
+      conflict: false,
+    });
+    expect(JSON.stringify(flattened)).not.toContain("/Users/ada");
   });
 });

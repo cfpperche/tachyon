@@ -17,6 +17,7 @@ import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
 import { SoulError } from "../agents/soul.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
+import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../config/agentProfileRefusal.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 import {
   projectSoulProfileStatus,
@@ -159,12 +160,29 @@ async function runBundleAction(
     else ctx.post(agentProfileBundleCreatedMessage(result));
   } catch (error) {
     postBundleError(ctx, agent, error);
-    if (isRevisionConflict(error)) await refreshAgentProfile(ws, ctx, agent);
+    if (isBundleRevisionConflict(error)) await refreshAgentProfile(ws, ctx, agent);
   }
 }
 
+/**
+ * The LAST substring reader on this file, kept deliberately and named for the one surface it still
+ * serves: portable bundle export/clone.
+ *
+ * t-05dff5 removed the lifecycle copy of this because it was silently swallowing forget's refusals.
+ * The bundle surface has no such refusals to lose — `exportAgentProfileStudioBundle` and
+ * `cloneAgentProfileStudioBundle` return raw bytes and an import result, not a discriminated
+ * outcome, so there is no success channel a refusal could travel on and nothing but a stale revision
+ * to detect. Giving those two calls a `refused` outcome the way the lifecycle call now has one is the
+ * fix; until then this stays narrow, and its narrowness is the point — it decides ONLY whether to
+ * reload, never whether an engine sentence may be shown.
+ */
+function isBundleRevisionConflict(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes("revision")
+    && (error.message.toLowerCase().includes("conflict") || error.message.toLowerCase().includes("changed"));
+}
+
 function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown): void {
-  const conflict = isRevisionConflict(error);
+  const conflict = isBundleRevisionConflict(error);
   ctx.post(agentProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
     ? "This profile changed. The latest profile was loaded; review it before trying again."
     : "The portable profile action could not be completed.", conflict));
@@ -297,6 +315,32 @@ async function runAgentProfileAction(
 ): Promise<void> {
   try {
     const result = await ws.commitAgentProfileStudioLifecycle(mutation);
+    if (result.kind === "refused") {
+      // t-05dff5 — the engine's own sentence, posted DIRECTLY, on the same reasoning the skill door
+      // above already wrote down: this text is the ANSWER. "still owns a worktree; remove it
+      // explicitly before canonical forget" names the gesture that unblocks the human, and routing it
+      // through `postAgentProfileError` would replace it with a button that does nothing for no
+      // stated reason. It is safe to show BECAUSE it arrived as a refusal — a value the engine
+      // deliberately addressed to a reader — and not because of anything it happens to say.
+      // A revision conflict is the one refusal the SHELL resolves rather than the human, so it is the
+      // one whose sentence the shell owns: it reloads the profile and then says so. Deferring to the
+      // engine's "agent 'Ada' profile revision conflict" here would describe the condition and hide
+      // the recovery that already happened — and would forward engine prose that, unlike forget's,
+      // has carried absolute paths. Every other refusal names a gesture only the human can perform,
+      // so its own words go through and no refresh is issued; redrawing would show the same block.
+      if (result.code === AGENT_PROFILE_REVISION_CONFLICT_CODE) {
+        ctx.post(agentProfileErrorMessage(
+          mutation.agentName,
+          result.code,
+          "This profile changed. The latest profile was loaded; review it before trying again.",
+          true,
+        ));
+        await refreshAgentProfile(ws, ctx, mutation.agentName);
+        return;
+      }
+      ctx.post(agentProfileErrorMessage(mutation.agentName, result.code, result.message, false));
+      return;
+    }
     if (result.kind === "forgotten") {
       ctx.post(agentProfileForgottenMessage(result.agentName, result.agentId));
       return;
@@ -305,24 +349,28 @@ async function runAgentProfileAction(
     if (mutation.operation === "set-subagents") await postOwnership(ws, ctx, mutation.agentName);
   } catch (error) {
     postAgentProfileError(ctx, mutation.agentName, error);
-    if (isRevisionConflict(error)) await refreshAgentProfile(ws, ctx, mutation.agentName);
   }
 }
 
-function isRevisionConflict(error: unknown): boolean {
-  return error instanceof Error && error.message.toLowerCase().includes("revision")
-    && (error.message.toLowerCase().includes("conflict") || error.message.toLowerCase().includes("changed"));
-}
-
-function postAgentProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
-  const conflict = isRevisionConflict(error);
+/**
+ * The internal-failure sentence, and now ONLY that.
+ *
+ * It used to also classify: `message.includes("revision")` decided whether an exception was a
+ * conflict, which put the decision in a READER of free prose rather than in the author of the
+ * condition, and let every refusal that did not happen to say "revision" — all of forget's — be
+ * flattened away (t-05dff5). Refusals no longer arrive here at all; they arrive as
+ * `kind: "refused"` values above. What reaches this function is a broken transaction, and one
+ * neutral sentence is the correct thing to say about a stack, a path or an EIO.
+ *
+ * `_error` is kept, deliberately unread, so every call site still states at the throw what went
+ * wrong for whoever reads the source or a future log sink — the panel just never repeats it.
+ */
+function postAgentProfileError(ctx: StudioDomainContext, agent: string, _error: unknown): void {
   ctx.post(agentProfileErrorMessage(
     agent,
-    conflict ? "agent-profile/revision-conflict" : "agent-profile/lifecycle-failed",
-    conflict
-      ? "This profile changed. The latest profile was loaded; review it before trying again."
-      : "The profile lifecycle action could not be completed.",
-    conflict,
+    "agent-profile/lifecycle-failed",
+    "The profile lifecycle action could not be completed.",
+    false,
   ));
 }
 

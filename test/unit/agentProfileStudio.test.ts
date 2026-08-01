@@ -343,6 +343,32 @@ describe("canonical Agent Studio projection", () => {
       privatePath: "/secret",
     }).success).toBe(false);
   });
+
+  /**
+   * t-05dff5 — the refused outcome is validated by SHAPE, and that asymmetry is the durability claim.
+   *
+   * The code list is closed where preconditions are AUTHORED, so a typo cannot invent a refusal. It
+   * is open where the payload is DECODED, so a shell running one release behind its engine still
+   * renders a refusal code it has never heard of. Pinning the wire to today's list would make every
+   * new precondition arrive as "malformed" — that is, as the generic sentence this task removed.
+   */
+  it("accepts an unknown-but-well-shaped refusal code and rejects a malformed one", () => {
+    const refusal = {
+      schemaVersion: 1,
+      kind: "refused",
+      code: "agent-profile/forget-worktree-owned",
+      message: "agent 'reviewer' still owns a worktree; remove it explicitly before canonical forget",
+    };
+    expect(agentProfileStudioLifecycleResultSchemaV1.parse(refusal)).toEqual(refusal);
+    expect(agentProfileStudioLifecycleResultSchemaV1.safeParse({
+      ...refusal, code: "agent-profile/a-precondition-from-a-newer-engine",
+    }).success).toBe(true);
+    for (const code of ["lifecycle-failed", "agent-profile/", "agent-profile/Forget", "agent-profile/a--b", "other/forget"]) {
+      expect(agentProfileStudioLifecycleResultSchemaV1.safeParse({ ...refusal, code }).success).toBe(false);
+    }
+    expect(agentProfileStudioLifecycleResultSchemaV1.safeParse({ ...refusal, message: "" }).success).toBe(false);
+    expect(agentProfileStudioLifecycleResultSchemaV1.safeParse({ ...refusal, snapshot: {} }).success).toBe(false);
+  });
 });
 
 describe("declared subagents authoring (t-4c113c)", () => {

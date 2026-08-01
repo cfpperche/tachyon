@@ -593,13 +593,16 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
         worktree: { enabled: false, branch: "" }, isolation: "",
       },
     });
-    await expect(ws.commitAgentProfileStudioLifecycle({
+    // t-05dff5 — a stale revision RESOLVES as a governed refusal instead of rejecting: it is an
+    // answer the engine computed for a reader, and only a value survives the engine\u2194shell wire
+    // with its classification intact.
+    expect(await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
       operation: "set-enabled",
       agentName: "reviewer",
       expectedRevision: "f".repeat(64),
       enabled: true,
-    })).rejects.toThrow("revision conflict");
+    })).toMatchObject({ kind: "refused", code: "agent-profile/revision-conflict" });
     const enabled = await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
       operation: "set-enabled",
@@ -793,6 +796,23 @@ it("refuses canonical forget while any tmux binding still exists", async () => {
     await expect(ws.forgetAgentProfileAgent("reviewer")).rejects.toThrow("fully stopped");
     expect(asAgent(ws.config?.agents.reviewer)?.profileLifecycle).toBeDefined();
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer", "agent.yml"))).toBe(true);
+
+    // t-05dff5 — the same precondition, taken through the Studio door the panel actually calls. It
+    // must arrive as a VALUE carrying the engine's own sentence: this is the exact hop where the
+    // text used to be replaced by "the profile lifecycle action could not be completed", and where
+    // an exception would lose the class that tells a refusal from a broken transaction.
+    expect(await ws.commitAgentProfileStudioLifecycle({
+      schemaVersion: 1,
+      operation: "forget",
+      agentName: "reviewer",
+      expectedRevision: (await ws.inspectAgentProfileStudio("reviewer")).revision,
+      confirmation: "reviewer",
+    })).toEqual({
+      schemaVersion: 1,
+      kind: "refused",
+      code: "agent-profile/forget-agent-running",
+      message: "agent 'reviewer' must be fully stopped before canonical forget",
+    });
   } finally {
     ws.dispose();
   }
@@ -2016,13 +2036,13 @@ describe("Agent Studio — declaring ownership.subagents (t-4c113c)", () => {
     const fresh = (await ws.inspectAgentProfileStudio(OWNER)).revision;
     expect(fresh).not.toBe(stale);
 
-    await expect(ws.commitAgentProfileStudioLifecycle({
+    expect(await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
       operation: "set-subagents",
       agentName: OWNER,
       expectedRevision: stale,
       subagents: TEAM,
-    })).rejects.toThrow("revision conflict");
+    })).toMatchObject({ kind: "refused", code: "agent-profile/revision-conflict" });
     expect(asAgent(ws.config?.agents[OWNER])?.subagents).toEqual([TEAM[0]]);
 
     await setSubagents(ws, TEAM);

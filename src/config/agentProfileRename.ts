@@ -18,6 +18,7 @@ import {
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
+import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 import { agentStanzaSourceSlice, renameAgent as renameAgentInYml } from "./YamlConfigEditor.js";
 
@@ -464,7 +465,9 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       authority: input.authority,
       config: input.config,
     });
-    if (snapshot.revision !== input.expectedRevision) throw new Error("agent profile revision changed before rename");
+    if (snapshot.revision !== input.expectedRevision) {
+      throw new AgentProfileRefusal("agent-profile/revision-conflict", "agent profile revision changed before rename");
+    }
     const sourceAuthority = await input.authority.read(input.oldAgentName);
     if (!sourceAuthority || sourceAuthority.agentId !== snapshot.profile.agentId
       || sourceAuthority.canonicalSha256 !== snapshot.provenance.canonical.sha256) {

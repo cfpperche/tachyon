@@ -24,6 +24,7 @@ import {
 } from "./agentProfileTransactions.js";
 import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
+import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
 import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
@@ -651,7 +652,9 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     } else {
       if (!canonical || !priorAuthority) throw new Error(`agent '${input.agentName}' has incomplete canonical state`);
       const current = await inspectAgentProfileLifecycle(input);
-      if (!input.expectedRevision || input.expectedRevision !== current.revision) throw new Error(`agent '${input.agentName}' profile revision conflict`);
+      if (!input.expectedRevision || input.expectedRevision !== current.revision) {
+        throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${input.agentName}' profile revision conflict`);
+      }
     }
     const createArtifacts = validateCreateArtifacts(input);
     const profile = targetProfile(input, canonical?.profile);

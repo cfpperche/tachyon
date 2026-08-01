@@ -82,6 +82,7 @@ import {
   isTransientLegacyRefusal,
 } from "../agents/legacyFleetGate.js";
 import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
+import { AgentProfileRefusal, isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
   adoptSoulProfile,
@@ -3751,7 +3752,7 @@ export class Workspace {
     if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const inspected = await this.inspectAgentProfileLifecycle(name);
     if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
-      throw new Error(`agent '${name}' profile revision conflict`);
+      throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${name}' profile revision conflict`);
     }
     const wasOpen = this.terminals.has(name);
     if (wasOpen) this.terminals.close(name);
@@ -4649,7 +4650,31 @@ export class Workspace {
     });
   }
 
+  /**
+   * t-05dff5 — the one place a governed refusal stops being an exception and becomes an answer.
+   *
+   * Below this line every precondition throws, because every caller in the engine already treats a
+   * lifecycle failure as an exception and none of them should have to learn a second control flow.
+   * Above it lies the engine↔shell wire, which carries values and not classes: an `AgentProfileRefusal`
+   * thrown past here arrives as an anonymous `Error` whose message the cockpit dare not trust, which
+   * is precisely how "still owns a worktree; remove it explicitly" became "could not be completed".
+   *
+   * Only `AgentProfileRefusal` converts. Everything else keeps rising as an exception and is still
+   * flattened at the panel, which is right: a stack, a path or an EIO is not a gesture anyone can
+   * perform, and its raw text leaks host layout into the webview.
+   */
   async commitAgentProfileStudioLifecycle(
+    mutation: AgentProfileStudioLifecycleMutationV1,
+  ): Promise<AgentProfileStudioLifecycleResultV1> {
+    try {
+      return await this.runAgentProfileStudioLifecycle(mutation);
+    } catch (error) {
+      if (!isAgentProfileRefusal(error)) throw error;
+      return { schemaVersion: 1, kind: "refused", code: error.code, message: error.message };
+    }
+  }
+
+  private async runAgentProfileStudioLifecycle(
     mutation: AgentProfileStudioLifecycleMutationV1,
   ): Promise<AgentProfileStudioLifecycleResultV1> {
     if (mutation.operation === "set-enabled") {
@@ -6012,7 +6037,7 @@ export class Workspace {
     if (profileLifecycle) {
       const inspected = await this.inspectAgentProfileLifecycle(oldName);
       if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
-        throw new Error(`agent '${oldName}' profile revision conflict`);
+        throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${oldName}' profile revision conflict`);
       }
       const liveSnapshot = await this.manager.prepareAgentProfileRename(oldName, newName);
       const wasOpen = this.terminals.has(oldName);

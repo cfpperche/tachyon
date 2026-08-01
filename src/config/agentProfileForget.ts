@@ -18,6 +18,7 @@ import {
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
 import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
+import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 import { agentStanzaSourceSlice, deleteAgent as deleteAgentInYml } from "./YamlConfigEditor.js";
 
@@ -428,11 +429,21 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       authority: input.authority,
       config: input.config,
     });
-    if (snapshot.revision !== input.expectedRevision) throw new Error("agent profile revision changed before forget");
+    // t-05dff5 — every precondition from here to `input.live.prepare` is an `AgentProfileRefusal`:
+    // each one is a decision handed back to the human, not a transaction that broke. They are the
+    // ONLY throws in this function that carry a code; the state-changed-under-us guards below and
+    // everything inside `rollForward` stay plain errors, because "the profile moved while the intent
+    // was installed" is not a gesture anyone can perform — it is a retry the machine owns.
+    if (snapshot.revision !== input.expectedRevision) {
+      throw new AgentProfileRefusal("agent-profile/revision-conflict", "agent profile revision changed before forget");
+    }
     const sourceAuthority = await input.authority.read(input.agentName);
     if (!sourceAuthority || sourceAuthority.agentId !== snapshot.profile.agentId
       || sourceAuthority.canonicalSha256 !== snapshot.provenance.canonical.sha256) {
-      throw new Error(`canonical authority for '${input.agentName}' is missing or stale`);
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-authority-stale",
+        `canonical authority for '${input.agentName}' is missing or stale`,
+      );
     }
     const config = plannedConfig(input.config, input.agentName);
     const oldRoot = profileRoot(input.workspaceRoot, input.agentName);
@@ -440,7 +451,13 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
     const evolutionProfileId = await input.evolution.readProfileId(input.agentName);
     const hasEvolutionProfile = profileManifest.some((entry) => entry.path === "evolution/profile.json" && entry.kind === "file");
     if ((evolutionProfileId === undefined) !== !hasEvolutionProfile) {
-      throw new Error("Agent Evolution profile storage is incomplete");
+      // Named rather than flattened even though no Studio button resolves it: the human who reads
+      // "evolution storage and the profile tree disagree" knows WHERE to look and that retrying is
+      // pointless, which is the whole difference between a refusal and "could not be completed".
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-evolution-incomplete",
+        `agent '${input.agentName}': Agent Evolution profile storage and the canonical profile tree disagree about whether a stored profile exists; canonical forget will not run until they match`,
+      );
     }
     let ownership: AgentProfileForgetJournal["ownership"];
     if (input.ownerAgentName) {
