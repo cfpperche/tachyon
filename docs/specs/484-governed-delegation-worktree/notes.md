@@ -62,3 +62,46 @@ one namespace with declared agents. The real question is not "what template" but
 Temporary name can repeat across spawns, and `ensure()` receives `prior: deps.priorRecord`. What the
 second spawn of a same-named Temporary does with a leftover branch or checkout is the thing to
 resolve, and it is a sharper question than the one the spec wrote down.
+
+## Measure-first results (2026-08-01, before any implementation)
+
+The four reads `tasks.md` demanded ahead of code. Three of them changed the plan.
+
+**1. `forgetAgent` cannot host worktree removal, and the reason is shape, not policy.**
+`src/agents/forgetAgent.ts:33-50` is synchronous (`: void`) and every injected remover is a sync call
+(`deps.removeHarnessHome?.(name)`). Removing a git worktree spawns git and is async. So a
+`removeWorktree` dep in the same style does not fit — the whole function would have to become async,
+and its callers with it.
+
+This retroactively vindicates the adversarial review's objection to the withdrawn "ONE removal path"
+criterion: the two lifecycles differ in *nature*, not merely in policy. Worktree removal belongs at
+the dismiss CALL SITE, which is already async, not inside the sync footprint sweeper.
+
+**2. The shared cascade already exists, and the Bridge is a third door that skips it.**
+`src/engine-service/extensionOperationService.ts:940` already runs
+`if (record?.worktree) await removeAgentWorktree(workspace, agent, true)` before dismissing — and it
+is GENERIC, not Saved-specific. `src/agents/agentRemovalCascade.ts` exists precisely for this; its
+docstring (from `t-e722ce`, today) says it was extracted "so BOTH doors can call the same code instead
+of two copies drifting".
+
+`src/bridge/tools.ts:1612` calls `deps.manager.dismissTemporary(name)` directly, with no worktree step.
+
+So the fix is not a new cascade — it is the Bridge door calling the one that already exists. Today
+this is invisible because a Temporary cannot own a worktree; enabling that turns it into `t-33ae3f`
+for the third time. Note the irony worth keeping: the module written today to stop two doors from
+drifting has a third door that never called it.
+
+**3. Promotion orphans the worktree by omission — confirmed, not suspected.**
+`promoteAgent` (`extensionOperationService.ts:957-989`) writes the tachyon.yml entry through
+`addAgent(text, agent, definition.cmd, "terminal")` — cmd and kind ONLY. No worktree flag. So a
+promoted agent's declared profile says nothing about isolation, `ctx.worktree` resolves false on its
+next launch, and the tree it was using is stranded. The spec's carry-or-announce criterion is
+therefore load-bearing, not defensive.
+
+**4. Hygiene visibility of a preserved checkout — PARTIAL, verify during implementation.**
+`classify.ts` classifies a `ManagedWorktreeEntry`, i.e. a REGISTERED worktree. A launch that fails
+after `git worktree add` succeeded should therefore still be registered and visible. But whether the
+failure path leaves the registry entry in place, or rolls it back and leaves an unregistered directory
+on disk, was not established by reading alone. **Do not assume**: the implementation must prove it,
+because an unregistered preserved checkout is invisible debt — the exact thing criterion "failed
+create" exists to prevent.
