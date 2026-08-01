@@ -40,14 +40,37 @@ import { LOCKFILE_REL_PATH } from "./lockfile.js";
  * RELATIVE path from the worktree's cwd, and it is read-only tooling.
  *
  * `.tachyon/bin` — `.tachyon/bin/_tachyon-tool <plugin> <tool>` is the documented, and only sanctioned,
- * way to reach a provisioned binary.
- * `.claude/skills` / `.agents/skills` — skills ship scripts invoked as
- * `sh .claude/skills/<plugin>/scripts/<x>.sh` from the workspace root.
+ * way to reach a provisioned binary. It is INERT: nothing discovers it, nothing loads it into a
+ * session; something has to name it. That is why it stays while the skill trees left.
  *
  * Adding to this list is a security decision, not a convenience one: see `assertProjectionAllowlist`.
  */
 export const PROJECTED_TOOLING_RELS: readonly string[] = [
   ".tachyon/bin",
+];
+
+/**
+ * t-62f599 — the two paths this projection used to include, and why they had to stop.
+ *
+ * Maintainer's ruling, 2026-07-31: an agent given its own worktree that did not explicitly ask to
+ * inherit the workspace's configuration must not have it, no matter that the workspace or the global
+ * config holds it. Inheritance is opt-in; silence means no.
+ *
+ * A projected skill tree broke that, and did it INVISIBLY. Measured on this workspace: the codex agent
+ * had all twelve workspace plugin skills on offer — including two that spend real money through
+ * fal.ai — under a profile that granted none of them. The Claude agents happened to be spared only
+ * because `--setting-sources user` closes the `project` setting source, which is a flag Codex has no
+ * equivalent of. So the policy existed in one runtime and was unenforceable in the other.
+ *
+ * Withdrawing the projection is what makes the rule hold the same way everywhere, through the one
+ * mechanism every runtime shares: the working directory. What arrives at an agent stops depending on
+ * which runtime it happens to be.
+ *
+ * These stay listed rather than being deleted, because a worktree created by an earlier build already
+ * HAS the links. An allowlist alone would leave every existing worktree open — the door would be shut
+ * only for agents nobody had created yet.
+ */
+export const RETIRED_PROJECTION_RELS: readonly string[] = [
   ".claude/skills",
   ".agents/skills",
 ];
@@ -68,6 +91,8 @@ export const NEVER_PROJECT_PREFIXES: readonly string[] = [
 export type ProjectionState =
   /** created the symlink now */
   | "linked"
+  /** t-62f599 — a link from a build that still projected this path, removed now */
+  | "retired"
   /** already the correct symlink — projection is idempotent */
   | "already"
   /** the authority does not have this path: the plugin is genuinely not installed */
@@ -160,6 +185,11 @@ export function projectPluginTooling(input: {
     return { entries: rels.map((rel) => ({ rel, state: "already" as const })) };
   }
 
+  // t-62f599 — withdraw what earlier builds projected, BEFORE linking anything new. This runs on every
+  // worktree registration and every restart, which is what turns the policy change into a fact on disk
+  // for worktrees that already exist rather than a promise about future ones.
+  entries.push(...retireProjections(worktreeRoot, authorityRoot));
+
   for (const rel of rels) {
     const target = path.join(authorityRoot, rel);
     const link = path.join(worktreeRoot, rel);
@@ -210,6 +240,34 @@ export function projectPluginTooling(input: {
   return { authorityRoot, entries };
 }
 
+/**
+ * t-62f599 — remove a retired projection, and ONLY when it is one we made.
+ *
+ * The test is deliberately narrow: a symlink whose target is the authority's copy of that same path.
+ * Real content in the worktree is somebody's work and is never touched, and a symlink pointing
+ * anywhere else was not ours to place or to remove. Getting this wrong would mean deleting a human's
+ * hand-written skills to enforce a policy about inheritance, which is the opposite of the point.
+ *
+ * A failure is reported, never thrown: a worktree whose stale link could not be removed is still a
+ * valid worktree, and the caller's own contract is best-effort. But it must not be silent — an
+ * unremoved link means an agent still has the inheritance this ruling withdrew.
+ */
+function retireProjections(worktreeRoot: string, authorityRoot: string): ProjectionEntry[] {
+  const entries: ProjectionEntry[] = [];
+  for (const rel of RETIRED_PROJECTION_RELS) {
+    const link = path.join(worktreeRoot, rel);
+    const target = path.join(authorityRoot, rel);
+    if (!isLinkTo(link, target)) continue;
+    try {
+      fs.unlinkSync(link);
+      entries.push({ rel, state: "retired", target });
+    } catch (err) {
+      entries.push({ rel, state: "failed", target, reason: `could not retire projection: ${errText(err)}` });
+    }
+  }
+  return entries;
+}
+
 function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -224,6 +282,10 @@ export function describeToolingProjection(result: ProjectionResult): string {
   const parts: string[] = [];
   const linked = [...by("linked"), ...by("already")];
   if (linked.length) parts.push(`projected from ${result.authorityRoot}: ${linked.join(", ")}`);
+  // t-62f599 — say it out loud. An agent losing inherited skills mid-life is exactly the kind of
+  // change that reads as a bug when it happens without a word.
+  const retired = by("retired");
+  if (retired.length) parts.push(`withdrew inherited workspace config (agents inherit only what their profile grants): ${retired.join(", ")}`);
   const absent = by("absent-in-authority");
   if (absent.length) parts.push(`not installed in the workspace: ${absent.join(", ")}`);
   const occupied = by("occupied");

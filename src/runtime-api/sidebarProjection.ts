@@ -119,6 +119,9 @@ const agent = z.object({
   externalTools: externalTools.optional(),
   awaitingHuman: z.object({ reason: text(2_000) }).strict().optional(),
   configInvalid: z.boolean().optional(),
+  // t-0ad300 — the refusal reason for a declared agent this load would not project. Bounded like
+  // every other free text on the wire; the full reason also lives in the config banner.
+  refused: text(500).optional(),
   // SDD 478 M5 — the managed-entry arm, required because every row has one. This schema is
   // `.strict()`, so it is the wire contract: a row carrying an arm it does not declare is REJECTED,
   // not silently trimmed. That is why removing `ai` had to land here in the same change.

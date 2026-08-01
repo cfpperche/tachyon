@@ -12,7 +12,7 @@ import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js"
  * Not part of `verify:full` (needs system Chrome + built `dist/`). Regenerate with:
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/attentionsTabShots.test.ts
  */
-const OUT_DIR = path.resolve(__dirname, "../../docs/screenshots/t-37f554-attentions-tab");
+const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-37f554-attentions-tab");
 const DIST = path.resolve(__dirname, "../../dist/webview");
 
 const WIDTHS = [

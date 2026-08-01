@@ -28,6 +28,9 @@ import {
 } from "./domain";
 import {
   adoptSoulProfileMessage,
+  authorizePluginMessage,
+  authorizeSkillMessage,
+  refreshAuthorizableCapabilitiesMessage,
   browseMessage,
   cancelMessage,
   createSoulMessage,
@@ -69,6 +72,7 @@ import type {
   SoulProfileStatusMessage,
 } from "./types";
 import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
+import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -210,6 +214,10 @@ function SoulImportPicker({ onCancel, onSelect }: {
 }
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: AgentStudioAppProps) {
+  // t-5498a6 — candidate lists live outside `fields`: they are workspace state, not a profile edit,
+  // and must never mark the form dirty. `undefined` means "not asked yet", which renders as Loading
+  // rather than as an empty workspace — those are different facts.
+  const [candidates, setCandidates] = useState<AuthorizableCapabilities | undefined>();
   const [mode, setMode] = useState<"new" | "edit">("new");
   const [entityId, setEntityId] = useState<string | undefined>(undefined);
   const [entity, setEntity] = useState<AgentStudioEntity | undefined>(undefined);
@@ -489,6 +497,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setForgetConfirmOpen(false);
       setProfileRetired(true);
       setProfileNotice({ kind: "success", text: "Agent forgotten. Its recoverable retirement record was kept." });
+    } else if (d.type === "authorizableCapabilities") {
+      if (entityRef.current?.name !== d.agent) return;
+      setCandidates(d.capabilities);
     } else if (d.type === "agentProfileError") {
       if (entityRef.current?.name !== d.agent) return;
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
@@ -517,6 +528,16 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     post(patchMessage(serializeAgentPatch(fields, true)!, editRevisionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields, frozen]);
+
+  // t-5498a6 — ask for candidates once the canonical profile is bound. Not folded into the profile
+  // snapshot: that snapshot is revisioned and the Studio uses the revision as a CAS token, while
+  // installing a plugin changes no revision at all. Candidates are workspace state.
+  useEffect(() => {
+    const name = entityRef.current?.name;
+    if (!name || !entityRef.current?.profile) return;
+    post(refreshAuthorizableCapabilitiesMessage(name));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityRef.current?.name, entityRef.current?.profile?.revision]);
 
   useEffect(() => {
     if (soulDeleteConfirmOpen) deleteCancelButtonRef.current?.focus();
@@ -958,6 +979,70 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                     </label>;
                   }))}
                   {Object.values(canonicalSnapshot.bindings.tooling).every((items) => items.length === 0) && <div class="ash-native-config-empty">No pre-authorized tooling references are available for this profile.</div>}
+                  {/* t-5498a6 — the two selectors. Kept separate because a skill installed by a
+                    * Tachyon plugin and one written by hand here are different things: the plugin is
+                    * versioned and pinned at its own tree, the hand-written one has only its content.
+                    * The discriminator is the plugin LOCKFILE, never a content comparison — a plugin
+                    * skill edited by hand diverges and is still the plugin's. */}
+                  <div class="ash-label" style="margin-top:12px">Workspace skills (not from a plugin)</div>
+                  <div class="hint">Authorize gives this agent the skill and enables it. Untick it above to turn it off without withdrawing the authorization — the pinned digest survives, so turning it back on needs no fresh approval.</div>
+                  {candidates === undefined
+                    ? <div class="ash-native-config-empty">Loading…</div>
+                    : candidates.workspaceSkills.length === 0
+                      ? <div class="ash-native-config-empty">No hand-written skills in this workspace for this runtime.</div>
+                      : candidates.workspaceSkills.map((skill) => (
+                        <div class="ash-native-config-row" key={`ws:${skill.name}`}>
+                          <code>{skill.name}</code>
+                          <span class="hint">{skill.path}{skill.authorized?.stale ? " · content changed since you authorized it" : ""}</span>
+                          {/* t-4a2a6f — three states, three renders. An already-authorized skill used
+                            * to render exactly like a new one, so the only control offered was the one
+                            * the core correctly refuses to honour silently. */}
+                          {skill.authorized === undefined
+                            ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, false))}>Authorize</Button>
+                            : skill.authorized.stale
+                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizeSkillMessage(entity.name, skill.name, true))}>Reauthorize</Button>
+                              : <span class="hint">Authorized</span>}
+                        </div>
+                      ))}
+
+                  <div class="ash-label" style="margin-top:12px">Tachyon plugins</div>
+                  <div class="hint">Authorize gives this agent everything the plugin exposes for this runtime, enabled. A plugin that also installs something no capability grant can carry is refused whole — half a plugin reported as success would be worse than a refusal.</div>
+                  {candidates === undefined
+                    ? <div class="ash-native-config-empty">Loading…</div>
+                    : candidates.plugins.length === 0
+                      ? <div class="ash-native-config-empty">No Tachyon plugins are installed in this workspace.</div>
+                      : candidates.plugins.map((plugin) => (
+                        <div class="ash-native-config-row" key={`plugin:${plugin.name}`}>
+                          <code>{plugin.name}@{plugin.version}</code>
+                          {/* t-4a2a6f — the version delta, not two digests. "authorized at 2.1.2, now
+                            * 3.0.0" is the sentence that connects the refusal to the plugin update
+                            * that caused it; `expected e468…, consumed 6f27…` never did. */}
+                          <span class="hint">
+                            {plugin.skills.length > 0 ? plugin.skills.join(", ") : "—"}
+                            {plugin.authorized?.stale
+                              ? plugin.authorized.version && plugin.authorized.version !== plugin.version
+                                ? ` · authorized at ${plugin.authorized.version}, now ${plugin.version}`
+                                : " · content changed since you authorized it"
+                              : ""}
+                          </span>
+                          {/* An unauthorizable plugin is SHOWN with its reason rather than hidden: a
+                            * hidden option is indistinguishable from one that is not installed. */}
+                          {!plugin.authorizable
+                            ? <span class="hint" title={plugin.reason}>{plugin.reason}</span>
+                            : plugin.authorized === undefined
+                              ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, false))}>Authorize</Button>
+                              : plugin.authorized.stale
+                                ? <Button disabled={mutationDisabled} onClick={() => entity.name && post(authorizePluginMessage(entity.name, plugin.name, true))}>Reauthorize</Button>
+                                : <span class="hint">Authorized</span>}
+                        </div>
+                      ))}
+                  {/* t-c01f91 — git-hook plugins act on the CHECKOUT, not on an agent: `core.hooksPath`
+                    * is repository-level and shared by every worktree, so they already apply and
+                    * there is nothing to authorize. Named rather than dropped silently — listing one
+                    * as "installs nothing" would read as absence while the gate is working. */}
+                  {candidates && candidates.checkoutOnlyPlugins.length > 0 && (
+                    <div class="hint">Already active on this checkout via git hooks, not agent capabilities: {candidates.checkoutOnlyPlugins.join(", ")}.</div>
+                  )}
                 </div>
               </section>
             )}
@@ -1367,12 +1452,23 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               <Textarea id="ash-watch" rows={2} value={fields.watch} placeholder="src/** · package.json (one per line)" onInput={(e) => set("watch", (e.currentTarget as HTMLTextAreaElement).value)} />
             </div>
 
+            {/* t-da80ed — an isolated agent's working directory IS its worktree, and the runtime
+             * already overwrites this field's value with the worktree path. Leaving it editable let a
+             * human type a path, save without error, and get nothing. Disabled, and the placeholder
+             * states the directory that will actually be used instead of the workspace root. */}
             <div class="ash-group">
               <label class="ash-label" for="ash-cwd">Working directory</label>
               <div class="ash-row">
-                <Input id="ash-cwd" value={fields.cwd} placeholder={`(workspace root: ${entity.defaultCwd})`} onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)} />
-                <Button onClick={() => post(browseMessage())}>Browse</Button>
+                <Input
+                  id="ash-cwd"
+                  disabled={fields.worktree}
+                  value={fields.worktree ? "" : fields.cwd}
+                  placeholder={fields.worktree ? "(its own git worktree — see below)" : `(workspace root: ${entity.defaultCwd})`}
+                  onInput={(e) => set("cwd", (e.currentTarget as HTMLInputElement).value)}
+                />
+                <Button disabled={fields.worktree} onClick={() => post(browseMessage())}>Browse</Button>
               </div>
+              {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the isolation off below to choose a directory.</div>}
               {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
             </div>
 
@@ -1382,7 +1478,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
             <section class="ash-static-section" aria-labelledby="ash-worktree-title">
               <div class="ash-label" id="ash-worktree-title">Git worktree isolation</div>
               <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup and verification.</div>
-              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>
+              {/* t-da80ed — turning isolation ON clears the working directory in the same gesture.
+                * Without this, a profile that already carried a cwd would disable the field while
+                * keeping its value, and the save would then refuse over something the human can
+                * neither see nor edit. */}
+              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => {
+                const enabled = (e.currentTarget as HTMLInputElement).checked;
+                updateFields((current) => ({ ...current, worktree: enabled, ...(enabled ? { cwd: "" } : {}) }));
+              }} /> Run in its own git worktree + branch</label>
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
               <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>

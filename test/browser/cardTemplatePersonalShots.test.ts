@@ -18,7 +18,7 @@ import type { CockpitStrings } from "../../src/webview/cockpit/messages";
  *
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/cardTemplatePersonalShots.test.ts
  */
-const OUT_DIR = path.resolve(__dirname, "../../docs/screenshots/479-personal-card-template");
+const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-personal-card-template");
 const DIST = path.resolve(__dirname, "../../dist/webview");
 const WIDTHS = [
   { id: "880", px: 880 },

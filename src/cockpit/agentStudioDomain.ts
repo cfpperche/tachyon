@@ -30,6 +30,7 @@ import {
   evolutionErrorMessage,
   evolutionSummaryMessage,
   agentProfileErrorMessage,
+  authorizableCapabilitiesMessage,
   agentProfileForgottenMessage,
   agentProfileOwnershipMessage,
   agentProfileSnapshotMessage,
@@ -131,6 +132,9 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "refreshEvolution") { void refreshEvolution(ws, ctx, agent); return; }
   if (m.type === "loadEvolutionCandidate") { void loadEvolutionCandidate(ws, ctx, agent, m.candidateId); return; }
   if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") { void resolveEvolutionCandidate(ws, ctx, agent, m); return; }
+  if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
+  if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
+  if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
   if (m.type === "createSoul") { void runProfileAction(ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
   if (m.type === "importSoul") { void importSoul(ws, ctx, agent, m.contentBase64); return; }
   if (m.type === "replaceSoul") { void replaceSoul(ws, ctx, agent, m.contentBase64, m.expectedDigest); return; }
@@ -164,6 +168,107 @@ function postBundleError(ctx: StudioDomainContext, agent: string, error: unknown
   ctx.post(agentProfileBundleErrorMessage(agent, conflict ? "agent-profile/revision-conflict" : "agent-profile/bundle-failed", conflict
     ? "This profile changed. The latest profile was loaded; review it before trying again."
     : "The portable profile action could not be completed.", conflict));
+}
+
+/**
+ * t-5498a6 — authorize one workspace skill, then refresh so the profile answers for itself.
+ *
+ * The refresh IS the success signal: a newly authorized skill appears as a checkbox in Runtime
+ * tooling, unticked. That is the honest render of what happened — the profile may now select it and
+ * has not. A separate "authorized!" toast would claim the same thing while the list still showed
+ * nothing, which is how a UI ends up disagreeing with the state it is displaying.
+ *
+ * A refusal ("this plugin does not install for codex") arrives as a VALUE, not an exception, so it
+ * reaches the human as itself rather than as a generic save failure.
+ */
+async function authorizeSkill(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  skillName: string,
+  reauthorize: boolean,
+): Promise<void> {
+  try {
+    const result = await ws.authorizeAgentSkill(agent, skillName, { reauthorize });
+    // t-4a2a6f — `digest-changed` is `ok: true` and writes NOTHING. Treating it as success is how the
+    // screen came to report a repair it never performed. It reaches the human as a refusal naming the
+    // gesture that resolves it, because that is what it is: a decision handed back, not a failure.
+    if (result.ok && result.outcome === "digest-changed") {
+      ctx.post(agentProfileErrorMessage(
+        agent,
+        "agent-profile/skill-authorization-refused",
+        `skill '${skillName}' was authorized at content that has since changed — nothing was written. Use Reauthorize to accept the new content.`,
+        false,
+      ));
+      await refreshCandidates(ws, ctx, agent);
+      return;
+    }
+    if (!result.ok) {
+      // Posted DIRECTLY rather than through `postAgentProfileError`, which flattens every message to
+      // "the profile lifecycle action could not be completed". That sanitising is right for an
+      // internal failure and wrong here: this text is the ANSWER — which plugin, which runtime, why —
+      // and returning it as a value only to discard it at the last hop would leave the human staring
+      // at a button that does nothing for no stated reason.
+      ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
+      return;
+    }
+    await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
+}
+
+/**
+ * t-5498a6 — authorize everything a plugin exposes for this runtime.
+ *
+ * The all-or-nothing rule is enforced one layer down: a plugin that also installs a `settings-hook`
+ * or a `view` is refused WHOLE, because authorizing only its skills would report success while half
+ * the plugin never reached the agent.
+ */
+async function authorizePlugin(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+  pluginName: string,
+  reauthorize: boolean,
+): Promise<void> {
+  try {
+    const result = await ws.authorizeAgentPlugin(agent, pluginName, { reauthorize });
+    if (!result.ok) {
+      ctx.post(agentProfileErrorMessage(agent, "agent-profile/skill-authorization-refused", result.error, false));
+      return;
+    }
+    // t-4a2a6f — same rule as the skill door, and it matters more here: a plugin authorizes several
+    // skills, so a partial `digest-changed` means some landed and some did not. Naming the ones that
+    // did not is the only way the human can tell a finished repair from a half one.
+    const stale = result.authorized.filter((_, index) => result.outcomes[index] === "digest-changed");
+    if (stale.length > 0) {
+      ctx.post(agentProfileErrorMessage(
+        agent,
+        "agent-profile/skill-authorization-refused",
+        `plugin '${pluginName}': ${stale.join(", ")} ${stale.length === 1 ? "was" : "were"} authorized at content that has since changed — nothing was written for ${stale.length === 1 ? "it" : "them"}. Use Reauthorize to accept the new content.`,
+        false,
+      ));
+    }
+    await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
+}
+
+/** t-5498a6 — candidate lists, re-queried after every authorization so the two selectors shrink. */
+async function refreshCandidates(
+  ws: WorkspaceAgentStudioTarget,
+  ctx: StudioDomainContext,
+  agent: string,
+): Promise<void> {
+  try {
+    ctx.post(authorizableCapabilitiesMessage(agent, await ws.authorizableCapabilitiesFor(agent)));
+  } catch (error) {
+    postAgentProfileError(ctx, agent, error);
+  }
 }
 
 async function refreshAgentProfile(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {

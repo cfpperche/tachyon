@@ -533,7 +533,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       agentName: "reviewer",
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
-        cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });
@@ -549,7 +549,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       expectedRevision: created.revision,
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
-        cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });

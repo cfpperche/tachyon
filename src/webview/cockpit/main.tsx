@@ -117,6 +117,7 @@ import {
   assignInboxValidationAction,
   decideSavedAgentProposalAction,
 } from "../human-inbox/messages";
+import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
 import {
   RUNTIME_OPS_SNAPSHOT,
@@ -201,7 +202,7 @@ function CockpitRoot() {
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
   const [inboxVm, setInboxVm] = useState<HumanInboxViewModel | undefined>(undefined);
-  const [inboxError, setInboxError] = useState<string | undefined>(undefined);
+  const [inboxError, setInboxError] = useState<HumanInboxErrorReceipt | undefined>(undefined);
   const [inboxItemVm, setInboxItemVm] = useState<HumanInboxItemViewModel | undefined>(undefined);
   const [inboxItemMissing, setInboxItemMissing] = useState<{ kind: HumanInboxKind; id: string } | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
@@ -423,7 +424,9 @@ function CockpitRoot() {
         setInboxVm(raw.vm as HumanInboxViewModel);
         setInboxError(undefined);
       } else if (type === HUMAN_INBOX_ERROR && typeof raw.message === "string") {
-        setInboxError(raw.message);
+        // t-58f9e9 — a NEW object per receipt, never the bare string: an identical refusal twice in
+        // a row must still read as a second refusal downstream.
+        setInboxError({ message: raw.message });
       } else if (type === HUMAN_INBOX_ITEM && raw.vm) {
         // identity-checked against the CURRENT route, same rule as TASK/ACTIVITY above.
         const route = activeRouteRef.current;

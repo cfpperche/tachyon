@@ -7,6 +7,7 @@ import type {
   AgentStudioPatch,
   SoulProfileStatusMessage,
 } from "./domain";
+import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
 import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
 
@@ -36,6 +37,8 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "agentProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
   | StudioDomainMessage<{ type: "agentProfileForgotten"; agent: string; agentId: string }>
   | StudioDomainMessage<{ type: "agentProfileError"; agent: string; code: string; message: string; conflict: boolean }>
+  /** t-5498a6 — the two candidate lists, delivered host → webview. */
+  | StudioDomainMessage<{ type: "authorizableCapabilities"; agent: string; capabilities: AuthorizableCapabilities }>
   | StudioDomainMessage<{ type: "agentProfileBundleExport"; result: AgentProfileStudioBundleExportResultV1 }>
   | StudioDomainMessage<{ type: "agentProfileBundleCreated"; result: AgentProfileStudioBundleCreatedResultV1 }>
   | StudioDomainMessage<{ type: "agentProfileBundleError"; agent: string; code: string; message: string; conflict: boolean }>;
@@ -44,6 +47,9 @@ export type AgentStudioHostMessage =
 export type AgentStudioWebviewMessage =
   | StudioWebviewCoreMessage<AgentStudioPatch>
   | StudioDomainMessage<{ type: "browse" }>
+  | StudioDomainMessage<{ type: "authorizeSkill"; agent: string; skillName: string }>
+  | StudioDomainMessage<{ type: "authorizePlugin"; agent: string; pluginName: string }>
+  | StudioDomainMessage<{ type: "refreshAuthorizableCapabilities"; agent: string }>
   | StudioDomainMessage<{ type: "createSoul"; agent: string }>
   | StudioDomainMessage<{ type: "importSoul"; agent: string; contentBase64: string }>
   | StudioDomainMessage<{ type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }>

@@ -207,6 +207,15 @@ export function captureCapabilitySourceFromDirectory(
   referencePath: string,
   expectedSha256: string,
 ): CapturedCapabilitySource {
+  return captureFromDirectory(directoryFd, rootPath, referencePath, expectedSha256);
+}
+
+function captureFromDirectory(
+  directoryFd: number,
+  rootPath: string,
+  referencePath: string,
+  expectedSha256: string | undefined,
+): CapturedCapabilitySource {
   const reason = agentProfileRelativePathError(referencePath);
   if (reason) fail("profile/invalid-path", referencePath, reason);
   const source = referencePath;
@@ -247,7 +256,9 @@ export function captureCapabilitySourceFromDirectory(
       fail("profile/not-regular", source, "must be a regular file or directory");
     }
     const sha256 = digestCapturedCapability(type, entries);
-    if (sha256 !== expectedSha256) fail("profile/digest-mismatch", source, `expected ${expectedSha256}, consumed ${sha256}`);
+    if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
+      fail("profile/digest-mismatch", source, `expected ${expectedSha256}, consumed ${sha256}`);
+    }
     return { source, sourcePath: path.join(rootPath, ...referencePath.split("/")), type, sha256, entries };
   } finally {
     fs.closeSync(current);
@@ -255,6 +266,24 @@ export function captureCapabilitySourceFromDirectory(
 }
 
 export function captureCapabilitySourceAtRoot(rootPath: string, referencePath: string, expectedSha256: string): CapturedCapabilitySource {
+  return captureAtRoot(rootPath, referencePath, expectedSha256);
+}
+
+/**
+ * t-5498a6 — capture a capability source that has NO expected digest yet.
+ *
+ * Authorization is the one moment where the digest is being established rather than verified: the
+ * human is deciding to pin whatever is on disk right now. Every other caller is verifying a pin that
+ * already exists, and for those an absent expectation would silently disable the check that makes a
+ * grant meaningful. That is why this is a separate exported name instead of an optional parameter on
+ * `captureCapabilitySourceAtRoot` — "no expectation" has to be visible at the call site, not hidden in
+ * an argument a caller can forget to pass.
+ */
+export function inspectCapabilitySourceAtRoot(rootPath: string, referencePath: string): CapturedCapabilitySource {
+  return captureAtRoot(rootPath, referencePath, undefined);
+}
+
+function captureAtRoot(rootPath: string, referencePath: string, expectedSha256: string | undefined): CapturedCapabilitySource {
   const source = referencePath;
   let canonicalRoot: string;
   try {
@@ -269,7 +298,7 @@ export function captureCapabilitySourceAtRoot(rootPath: string, referencePath: s
     fail("profile/io", source, `cannot open custody root: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
-    return captureCapabilitySourceFromDirectory(fd, canonicalRoot, referencePath, expectedSha256);
+    return captureFromDirectory(fd, canonicalRoot, referencePath, expectedSha256);
   } finally {
     fs.closeSync(fd);
   }

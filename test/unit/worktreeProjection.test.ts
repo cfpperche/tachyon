@@ -55,18 +55,60 @@ describe("projectPluginTooling", () => {
     expect(result.authorityRoot).toBe(authority);
 
     const bin = path.join(worktree, ".tachyon", "bin");
-    const skills = path.join(worktree, ".claude", "skills");
     // A LINK, not a copy: the binary continues to exist exactly once on disk.
     expect(fs.lstatSync(bin).isSymbolicLink()).toBe(true);
-    expect(fs.lstatSync(skills).isSymbolicLink()).toBe(true);
     expect(fs.realpathSync(bin)).toBe(fs.realpathSync(path.join(authority, ".tachyon", "bin")));
 
     // And it actually resolves through: this is what the failing doctor could not do.
     expect(fs.existsSync(path.join(worktree, ".tachyon", "bin", "_tachyon-tool"))).toBe(true);
-    expect(fs.readFileSync(path.join(worktree, ".claude", "skills", "agent-browser", "SKILL.md"), "utf8"))
-      .toContain("# skill");
 
     expect(result.entries.find((e) => e.rel === ".tachyon/bin")?.state).toBe("linked");
+  });
+
+  it("t-62f599 — does NOT hand the worktree the workspace's skills", () => {
+    // The authority has a full skill tree. A worktree agent that did not ask to inherit it gets
+    // nothing: no link, and nothing invented in its place.
+    projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
+
+    expect(fs.existsSync(path.join(worktree, ".claude", "skills"))).toBe(false);
+    expect(fs.existsSync(path.join(worktree, ".agents", "skills"))).toBe(false);
+    expect(PROJECTED_TOOLING_RELS).not.toContain(".claude/skills");
+    expect(PROJECTED_TOOLING_RELS).not.toContain(".agents/skills");
+  });
+
+  it("t-62f599 — RETIRES a skill link an earlier build already created", () => {
+    // The half that decides whether this ruling is real. An allowlist alone would shut the door only
+    // for worktrees nobody had created yet, leaving every live agent with the inheritance intact —
+    // and every live agent is precisely the population the measurement came from.
+    const skills = path.join(worktree, ".claude", "skills");
+    fs.mkdirSync(path.dirname(skills), { recursive: true });
+    fs.symlinkSync(path.join(authority, ".claude", "skills"), skills);
+
+    const result = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
+
+    expect(fs.existsSync(skills)).toBe(false);
+    expect(result.entries.find((e) => e.rel === ".claude/skills")?.state).toBe("retired");
+    // And it is stated, not done quietly: losing skills mid-life reads as a bug without a word.
+    expect(describeToolingProjection(result)).toContain("withdrew inherited workspace config");
+    // The authority keeps its own, untouched.
+    expect(fs.existsSync(path.join(authority, ".claude", "skills", "agent-browser", "SKILL.md"))).toBe(true);
+  });
+
+  it("t-62f599 — retiring NEVER deletes a human's own skills, or a link pointing elsewhere", () => {
+    // Deleting hand-written work to enforce a rule about inheritance would be the opposite of the
+    // point. The test for "ours" is narrow on purpose: a symlink aimed at the authority's same path.
+    const own = path.join(worktree, ".claude", "skills");
+    fs.mkdirSync(own, { recursive: true });
+    fs.writeFileSync(path.join(own, "local.md"), "hand-written");
+    const elsewhere = path.join(worktree, ".agents", "skills");
+    fs.mkdirSync(path.dirname(elsewhere), { recursive: true });
+    fs.symlinkSync(path.join(root, "somewhere-else"), elsewhere);
+
+    const result = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
+
+    expect(fs.readFileSync(path.join(own, "local.md"), "utf8")).toBe("hand-written");
+    expect(fs.lstatSync(elsewhere).isSymbolicLink()).toBe(true);
+    expect(result.entries.some((e) => e.state === "retired")).toBe(false);
   });
 
   it("is idempotent — the second run relinks nothing", () => {
@@ -89,27 +131,28 @@ describe("projectPluginTooling", () => {
     const bin = path.join(worktree, ".tachyon", "bin");
     fs.mkdirSync(path.dirname(bin), { recursive: true });
     fs.symlinkSync(path.join(root, "somewhere-else"), bin);
-    // real directory → not ours to touch
-    const skills = path.join(worktree, ".claude", "skills");
-    fs.mkdirSync(skills, { recursive: true });
-    fs.writeFileSync(path.join(skills, "local.md"), "hand-written");
 
     const result = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
     expect(result.entries.find((e) => e.rel === ".tachyon/bin")?.state).toBe("linked");
-    expect(result.entries.find((e) => e.rel === ".claude/skills")?.state).toBe("occupied");
-    expect(fs.readFileSync(path.join(skills, "local.md"), "utf8")).toBe("hand-written");
+
+    // real directory → not ours to touch, on a path that IS still projected
+    fs.unlinkSync(bin);
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, "local.sh"), "hand-written");
+    const second = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
+    expect(second.entries.find((e) => e.rel === ".tachyon/bin")?.state).toBe("occupied");
+    expect(fs.readFileSync(path.join(bin, "local.sh"), "utf8")).toBe("hand-written");
   });
 
   it("distinguishes a plugin that is NOT INSTALLED from one that is merely not projected", () => {
-    // The authority has no codex skills dir at all.
-    const result = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
-    expect(result.entries.find((e) => e.rel === ".agents/skills")?.state).toBe("absent-in-authority");
-    // Nothing is invented in the worktree for it.
-    expect(fs.existsSync(path.join(worktree, ".agents", "skills"))).toBe(false);
+    // The authority has no `.tachyon/bin` at all.
+    fs.rmSync(path.join(authority, ".tachyon", "bin"), { recursive: true, force: true });
 
-    const described = describeToolingProjection(result);
-    expect(described).toContain("projected from");
-    expect(described).toContain("not installed in the workspace: .agents/skills");
+    const result = projectPluginTooling({ worktreeRoot: worktree, authorityRoot: authority });
+    expect(result.entries.find((e) => e.rel === ".tachyon/bin")?.state).toBe("absent-in-authority");
+    // Nothing is invented in the worktree for it.
+    expect(fs.existsSync(path.join(worktree, ".tachyon", "bin"))).toBe(false);
+    expect(describeToolingProjection(result)).toContain("not installed in the workspace: .tachyon/bin");
   });
 
   it("a primary checkout projects nothing onto itself", () => {
@@ -151,6 +194,5 @@ describe("the projection allowlist is a security boundary", () => {
     fs.rmSync(worktree, { recursive: true, force: true });
     // This is what `git worktree remove` does, and why symlinks are safe here.
     expect(fs.existsSync(path.join(authority, ".tachyon", "bin", "_tachyon-tool"))).toBe(true);
-    expect(fs.existsSync(path.join(authority, ".claude", "skills", "agent-browser", "SKILL.md"))).toBe(true);
   });
 });

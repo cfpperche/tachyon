@@ -1197,3 +1197,117 @@ describe("loadProfileAwareConfig", () => {
     expect(result.errors.join("\n")).toContain("inline agent definitions are no longer supported");
   });
 });
+
+/**
+ * t-588644 — one agent's refused profile must not take the roster with it.
+ *
+ * Measured before the split: two agents, one with a pin left stale by a plugin update. The healthy
+ * one produced no error at all, `config` came back undefined, and no agent survived. The fix is not
+ * "ignore the failure" — the failure still reaches the human through `profileErrors`, and the
+ * refused agent is absent from the config rather than silently degraded into something spawnable.
+ */
+describe("t-588644 — a refused profile is not a refused config", () => {
+  function twoAgents(): { root: string; healthySha: string; input: LoadProfileAwareConfigInput } {
+    const root = temporaryRoot("tachyon-blast-");
+    const homeDir = temporaryRoot("tachyon-blast-home-");
+    const skill = (name: string, body: string) => {
+      const dir = path.join(root, ".tachyon", "plugins", name, "skills", name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), body);
+      return treeSha256(dir);
+    };
+    const healthySha = skill("good", "v1\n");
+    const staleSha = skill("drifted", "v1\n");
+    // the plugin update: same path, new bytes
+    fs.writeFileSync(path.join(root, ".tachyon/plugins/drifted/skills/drifted/SKILL.md"), "v2\n");
+
+    const write = (name: string, id: string, plugin: string, sha: string) => {
+      const dir = path.join(root, ".tachyon", "agents", name);
+      fs.mkdirSync(dir, { recursive: true });
+      const bytes = Buffer.from(stringify({
+        schemaVersion: 1, agentId: id,
+        runtime: { adapter: "codex", executable: "codex" },
+        capabilities: { skills: [plugin] },
+        references: [{
+          id: plugin, kind: "skill", scope: "project", owner: `plugin:${plugin}`,
+          path: `.tachyon/plugins/${plugin}/skills/${plugin}`, mode: "pinned", sha256: sha, version: "1.0.0",
+        }],
+      }));
+      fs.writeFileSync(path.join(dir, "agent.yml"), bytes);
+      return {
+        schemaVersion: 1, agentName: name, agentId: id, revision: "profile-r1",
+        canonicalSha256: sha256(bytes), runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
+        capabilityGrants: [{ kind: "skill", referenceId: plugin, sourceSha256: sha, adapter: "codex" }],
+      } as unknown as AgentProfileAuthorityRecord;
+    };
+    const healthy = write("healthy", "11111111-1111-4111-8111-111111111111", "good", healthySha);
+    const broken = write("broken", "22222222-2222-4222-8222-222222222222", "drifted", staleSha);
+
+    return {
+      root,
+      healthySha,
+      input: {
+        yamlText: "agents:\n  healthy:\n    profile: .tachyon/agents/healthy/agent.yml\n  broken:\n    profile: .tachyon/agents/broken/agent.yml\n",
+        workspaceRoot: root,
+        authorities: new Map([["healthy", healthy], ["broken", broken]]),
+        homeDir,
+      },
+    };
+  }
+
+  it("loads the healthy agent and refuses only the one whose pinned plugin drifted", () => {
+    const result = loadProfileAwareConfig(twoAgents().input);
+
+    expect(result.config).toBeDefined();
+    expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
+    expect(result.profileErrors.join("\n")).toContain("agents.broken.profile: profile/digest-mismatch");
+    expect(result.profileErrors.join("\n")).not.toContain("healthy");
+  });
+
+  it("keeps every isolatable error in `errors` too, so a validity check refuses exactly what it did before", () => {
+    const result = loadProfileAwareConfig(twoAgents().input);
+
+    expect(result.errors).toEqual(result.profileErrors);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  // t-0ad300 — the refused agent has to stay NAMED somewhere. Deleting it from `config.agents` is
+  // what the legacy parser needs; leaving it nowhere else is what made it vanish from the sidebar
+  // and stranded the repair, since Agent Studio opens from a roster row.
+  it("names the refused agent in agentSources, with why, even though it is not in config.agents", () => {
+    const result = loadProfileAwareConfig(twoAgents().input);
+
+    expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
+    const refused = result.config!.agentSources.broken;
+    expect(refused?.mode).toBe("refused");
+    // The reason travels with the name: a row that says only "refused" sends the human to a banner
+    // on another surface to find out what broke.
+    expect(refused).toMatchObject({ reason: expect.stringContaining("profile/digest-mismatch") });
+    expect(refused).not.toHaveProperty("cmd");
+    expect(result.config!.agentSources.healthy?.mode).toBe("profile");
+  });
+
+  it("does not invent a refused entry when every agent projects", () => {
+    const { input } = twoAgents();
+    const healthyOnly = {
+      ...input,
+      yamlText: "agents:\n  healthy:\n    profile: .tachyon/agents/healthy/agent.yml\n",
+    };
+
+    const result = loadProfileAwareConfig(healthyOnly);
+
+    expect(Object.values(result.config!.agentSources).map((source) => source.mode)).toEqual(["profile"]);
+  });
+
+  it("still fails the whole file when the failure is not one agent's profile", () => {
+    // Pointer syntax describes the declaration itself: there is no healthy subset to salvage.
+    const result = loadProfileAwareConfig({
+      ...twoAgents().input,
+      yamlText: "agents:\n  healthy:\n    profile: not/a/canonical/pointer.yml\n",
+    });
+
+    expect(result.config).toBeUndefined();
+    expect(result.profileErrors).toEqual([]);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+});

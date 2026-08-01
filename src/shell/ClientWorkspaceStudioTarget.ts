@@ -8,6 +8,7 @@ import {
   suggestKindForCommand,
   type TachyonConfig,
 } from "../config/loadConfig.js";
+import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
 import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
@@ -216,6 +217,86 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     }
     this.refreshConfig();
     return { revision: value.revision, txid: value.txid };
+  }
+
+  /**
+   * t-5498a6 — authorize a workspace skill for an agent that already exists.
+   *
+   * The engine answers refusals as VALUES (`{ ok: false, error }`), so a "this plugin does not
+   * install for codex" reaches the human as itself instead of as a transport error. Only a genuine
+   * engine failure throws.
+   */
+  async authorizeAgentSkill(
+    agentName: string,
+    skillName: string,
+    options: { reauthorize?: boolean } = {},
+  ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }> {
+    const result = await this.client.invoke(`authorize-skill:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.authorize-skill", agentName, skillName, ...options },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-skill") {
+      throw new Error("persistent engine returned a malformed skill authorization result");
+    }
+    const value = result.value as { ok?: unknown; error?: unknown; outcome?: unknown; referenceId?: unknown };
+    if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
+    if (value?.ok !== true || typeof value.outcome !== "string" || typeof value.referenceId !== "string") {
+      throw new Error("persistent engine returned a malformed skill authorization result");
+    }
+    this.refreshConfig();
+    return { ok: true, outcome: value.outcome, referenceId: value.referenceId };
+  }
+
+  /** t-5498a6 — the two candidate lists, queried fresh rather than read off the revisioned snapshot. */
+  async authorizableCapabilitiesFor(agent: string): Promise<AuthorizableCapabilities> {
+    const result = await this.client.query({
+      schemaVersion: 1,
+      method: "extension.query",
+      input: { action: "agent-profile.authorizable-capabilities", agent },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.query" || result.action !== "agent-profile.authorizable-capabilities") {
+      throw new Error("persistent engine returned a malformed capability candidate result");
+    }
+    const value = result.value as Partial<AuthorizableCapabilities>;
+    if (!Array.isArray(value?.workspaceSkills) || !Array.isArray(value?.plugins)) {
+      throw new Error("persistent engine returned a malformed capability candidate result");
+    }
+    return {
+      workspaceSkills: value.workspaceSkills,
+      plugins: value.plugins,
+      checkoutOnlyPlugins: Array.isArray(value.checkoutOnlyPlugins) ? value.checkoutOnlyPlugins : [],
+    };
+  }
+
+  /** t-5498a6 — authorize a whole plugin; a refusal arrives as a value, never as a transport error. */
+  async authorizeAgentPlugin(
+    agentName: string,
+    pluginName: string,
+    options: { reauthorize?: boolean } = {},
+  ): Promise<{ ok: true; authorized: string[]; outcomes: string[] } | { ok: false; error: string }> {
+    const result = await this.client.invoke(`authorize-plugin:${this.operationId()}`, {
+      schemaVersion: 1,
+      method: "extension.invoke",
+      input: { action: "agent-profile.authorize-plugin", agentName, pluginName, ...options },
+    });
+    if (result.status === "error") throw new Error(result.message);
+    if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-plugin") {
+      throw new Error("persistent engine returned a malformed plugin authorization result");
+    }
+    const value = result.value as { ok?: unknown; error?: unknown; authorized?: unknown; outcomes?: unknown };
+    if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
+    // t-4a2a6f — `outcomes` must be present AND aligned with `authorized`. The caller reads them by
+    // index to say which skills were written and which were held back, so a short or missing array
+    // would silently reclassify a refused skill as an authorized one.
+    if (value?.ok !== true || !Array.isArray(value.authorized) || !Array.isArray(value.outcomes)
+      || value.outcomes.length !== value.authorized.length) {
+      throw new Error("persistent engine returned a malformed plugin authorization result");
+    }
+    this.refreshConfig();
+    return { ok: true, authorized: value.authorized as string[], outcomes: value.outcomes as string[] };
   }
 
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {

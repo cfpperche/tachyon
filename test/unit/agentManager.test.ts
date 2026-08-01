@@ -8150,4 +8150,50 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
     await expect(manager.spawn("worker")).resolves.not.toThrow();
     expect(sessions.has(sessionName(HASH, "worker"))).toBe(true);
   });
+
+  /**
+   * t-0ad300 — a refused agent must be on the roster, marked, not merely absent.
+   *
+   * The isolation from t-588644 deletes it from `config.agents`, which is what the legacy parser
+   * needs and what made it indistinguishable from a name nobody ever wrote. It disappeared from the
+   * sidebar, and with the row went the only route into Agent Studio — the one place the refusal
+   * gets repaired. Measured in the real workspace: `codex` was gone from the sidebar, from Fleet and
+   * from Control at the same time, with a banner naming it two surfaces away.
+   */
+  describe("refused agents", () => {
+    function withRefused(refused: Record<string, string>) {
+      const { tmux } = fakeTmux();
+      const config = configOf("agents:\n  healthy:\n    cmd: sh\n");
+      return new AgentManager({
+        tmux,
+        wsHash: HASH,
+        workspaceRoot: WS,
+        getConfig: () => config,
+        getRefusedAgents: () => refused,
+        launchPreflight: HERMETIC_PREFLIGHT,
+      });
+    }
+
+    it("lists a declared-but-refused agent beside the healthy one, carrying the reason", async () => {
+      const manager = withRefused({ broken: "profile/digest-mismatch: .tachyon/plugins/x: expected aa, consumed bb" });
+
+      const rows = await manager.list();
+
+      expect(rows.map((row) => row.name).sort()).toEqual(["broken", "healthy"]);
+      const broken = rows.find((row) => row.name === "broken")!;
+      // The reason rides with the row: "refused" alone sends the human to another surface to learn why.
+      expect(broken.refused).toContain("profile/digest-mismatch");
+      // Declared is declared — the human wrote it in tachyon.yml, so it is Saved, not a stray
+      // Temporary instance that the sidebar would offer to dismiss.
+      expect(broken.lifetime).toBe("saved");
+      expect(rows.find((row) => row.name === "healthy")!.refused).toBeUndefined();
+    });
+
+    it("adds no row and no marker when nothing was refused", async () => {
+      const rows = await withRefused({}).list();
+
+      expect(rows.map((row) => row.name)).toEqual(["healthy"]);
+      expect(rows.every((row) => row.refused === undefined)).toBe(true);
+    });
+  });
 });

@@ -50,6 +50,10 @@ function ports(over: Partial<SavedAgentCommitPorts> = {}): SavedAgentCommitPorts
       return { revision: "rev-1", txid: "tx-1" };
     },
     readProposerGrants: () => ({ proposeSavedAgent: true }),
+    authorizeSkill: async (input) => {
+      calls.push({ kind: "authorize-skill", ...input } as unknown as Record<string, unknown>);
+      return { ok: true };
+    },
     currentConfigSha256: () => CONFIG_SHA,
     ...over,
   };
@@ -109,6 +113,65 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     // The proposal is consumed, and the witness records who approved it.
     expect(listSavedAgentProposals(ws)).toEqual([]);
     expect(readSavedAgentProposalWitness(ws).some((e) => e.kind === "committed")).toBe(true);
+  });
+
+  /**
+   * t-5498a6 — CALLER A. A proposal's `capabilities.skills` is a REQUEST that grants nothing; these
+   * hold the human's answer to it, and that only what they ticked is authorized.
+   */
+  it("authorizes only the skills the human ticked, after the agent exists", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws);
+    const p = ports();
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human:cfpperche", nowMs: NOW, authorizeSkills: ["visual-qa"], ports: p,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.receipt.authorizedSkills).toEqual(["visual-qa"]);
+    expect(result.receipt.refusedSkills).toBeUndefined();
+    // Ordering is load-bearing: the canonical create refuses to select capability references before
+    // host authorization, so the agent has to exist before anything can be granted to it.
+    const kinds = p.calls.map((call) => call.kind);
+    expect(kinds).toEqual(["create", "authorize-skill"]);
+    expect(p.calls[1]).toMatchObject({ agentName: "importer", skillName: "visual-qa" });
+  });
+
+  it("grants nothing when the human ticked nothing, which is what every approval did before", async () => {
+    const ws = workspace();
+    const proposal = proposed(ws);
+    const p = ports();
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human:cfpperche", nowMs: NOW, ports: p,
+    });
+
+    expect(result.ok && result.receipt.authorizedSkills).toBeUndefined();
+    expect(p.calls.map((call) => call.kind)).toEqual(["create"]);
+  });
+
+  it("RECORDS a refused skill instead of undoing an approval that already landed", async () => {
+    // The agent was created by a decision the human made. Throwing here would discard it because one
+    // capability could not be granted, so the refusal becomes a fact on the receipt instead.
+    const ws = workspace();
+    const proposal = proposed(ws);
+    const p = ports({
+      authorizeSkill: async () => ({ ok: false, error: "plugin 'product-foundation@0.1.1' does not declare runtime 'codex'" }),
+    });
+    const result = await approveSavedAgentProposal({
+      workspaceRoot: ws, proposalId: proposal.id, approvedDigest: proposal.digest,
+      approvedBy: "human:cfpperche", nowMs: NOW, authorizeSkills: ["product-foundation"], ports: p,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.receipt.outcome).toBe("committed");
+    expect(result.receipt.authorizedSkills).toBeUndefined();
+    expect(result.receipt.refusedSkills).toEqual([
+      "product-foundation: plugin 'product-foundation@0.1.1' does not declare runtime 'codex'",
+    ]);
   });
 
   it("creates a top-level agent without writing an owner edge", async () => {

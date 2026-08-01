@@ -160,6 +160,10 @@ export function routeHumanInboxItem(
   const [command, ...args] = INBOX_REVIEW_TARGET[item.kind](workspaceHash, item.id);
   host.notify(item.message, "info", [{
     label: host.t("Review"),
+    // t-ee2f19 — the same destination, as data, so the doorbell still rings after a reload. These
+    // items are exactly the ones that must not be lost to a restart: an approval or a proposal expires
+    // while it waits, so a notice that survives with a dead button is a decision quietly running out.
+    route: { command, args },
     run: async () => {
       // t-5ca73a — a Review that cannot open its window must SAY so.
       //

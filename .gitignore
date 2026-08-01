@@ -29,3 +29,21 @@ dist/
 # Template for new checkouts: tachyon.yml.example
 tachyon.yml
 tachyon.yaml
+
+# Dogfood fixtures are workspaces on purpose, so all four rules above hit them — and they swallowed
+# every fixture's `tachyon.yml`, plugin payload and materialized skills, leaving
+# `test/fixtures/<slug>/` shipping a README and nothing that runs. Tests passed locally because the
+# untracked files were on the author's disk; a fresh clone got an empty workspace and the failure
+# read like a product regression. A fixture's declared workspace is SOURCE.
+#
+# `.tachyon/` is re-opened and then re-closed, because most of what lands in it is exactly the
+# runtime state the rule was written for — activity/, *.sqlite3, sessions, continuity, config.lkg,
+# tasks a local run wrote. Only the plugin-install shape is source, so only that is named.
+!test/fixtures/**/tachyon.yml
+!test/fixtures/**/.claude/
+!test/fixtures/**/.agents/
+!test/fixtures/**/.tachyon/
+test/fixtures/**/.tachyon/*
+!test/fixtures/**/.tachyon/plugins/
+!test/fixtures/**/.tachyon/plugins.lock.json
+!test/fixtures/**/.tachyon/vscode-settings-import.json

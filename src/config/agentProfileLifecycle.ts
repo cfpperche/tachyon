@@ -149,6 +149,19 @@ export interface CommitAgentProfileLifecycleInput {
    * point of putting it here is that there is exactly one phase machine for durable authority.
    */
   companion?: { agentName: string; ownership: AgentProfileV1["ownership"] };
+  /**
+   * t-5498a6 — the capability grants this transaction establishes, replacing whatever the prior
+   * authority held.
+   *
+   * Grants used to be carried through from `prior` untouched and there was no way to mint one, which
+   * is why every profile in a Tachyon workspace granted zero capabilities: not a decision anybody
+   * made, just the only reachable state. It belongs HERE rather than in a second write path because a
+   * grant and the reference it authorizes are one fact — persisting them separately would allow a
+   * crash to leave a grant with no reference, or a selection the authority never blessed.
+   *
+   * Absent means "carry the prior grants", which is what every existing caller wants and gets.
+   */
+  capabilityGrants?: readonly NonNullable<AgentProfileAuthorityRecord["capabilityGrants"]>[number][];
   authority: AgentProfileAuthorityPort;
   config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
@@ -483,7 +496,14 @@ function targetProfile(input: CommitAgentProfileLifecycleInput, current?: AgentP
 }
 
 /** Build the authority record for a canonical profile mutation under the transaction's txid. */
-export function agentProfileAuthorityFor(agentName: string, profile: AgentProfileV1, sha256: string, prior: AgentProfileAuthorityRecord | undefined, txid: string): AgentProfileAuthorityRecord {
+export function agentProfileAuthorityFor(
+  agentName: string,
+  profile: AgentProfileV1,
+  sha256: string,
+  prior: AgentProfileAuthorityRecord | undefined,
+  txid: string,
+  capabilityGrants?: readonly NonNullable<AgentProfileAuthorityRecord["capabilityGrants"]>[number][],
+): AgentProfileAuthorityRecord {
   const inspector = profileRuntimeInspectorFor(profile.runtime.adapter);
   if (!prior && !inspector) throw new Error(`unsupported profile runtime adapter '${profile.runtime.adapter}'`);
   // t-26f508 (review) — preserving the prior inspector is what keeps an edit from silently
@@ -500,7 +520,13 @@ export function agentProfileAuthorityFor(agentName: string, profile: AgentProfil
     revision: `lifecycle-${txid}`,
     canonicalSha256: sha256,
     runtimeInspector: prior && !adopt ? { ...prior.runtimeInspector } : { ...inspector! },
-    ...(prior?.capabilityGrants ? { capabilityGrants: prior.capabilityGrants.map((grant) => ({ ...grant })) } : {}),
+    // t-5498a6 — an explicit grant set REPLACES the carried-through one, including with an empty
+    // array: that is how a revocation lands. Falling back to `prior` on empty would make the last
+    // revocation of a profile silently fail to take, which is the one direction a capability must
+    // never move by accident.
+    ...(capabilityGrants
+      ? (capabilityGrants.length > 0 ? { capabilityGrants: capabilityGrants.map((grant) => ({ ...grant })) } : {})
+      : (prior?.capabilityGrants ? { capabilityGrants: prior.capabilityGrants.map((grant) => ({ ...grant })) } : {})),
   };
 }
 
@@ -637,6 +663,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       targetSha,
       input.operation === "create" ? undefined : priorAuthority,
       txid,
+      input.capabilityGrants,
     );
     // The companion's target, built under the SAME lock as the main subject — which is also why its
     // CAS is a read here rather than an `expectedRevision` the caller carried in from earlier: there

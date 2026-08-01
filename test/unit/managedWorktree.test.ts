@@ -217,11 +217,43 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     const bin = path.join(entry.path, ".tachyon", "bin");
     expect(fs.lstatSync(bin).isSymbolicLink()).toBe(true);
     expect(fs.existsSync(path.join(bin, "_tachyon-tool"))).toBe(true);
-    expect(fs.readFileSync(path.join(entry.path, ".claude", "skills", "demo", "SKILL.md"), "utf8")).toContain("# demo");
     // one binary on disk, not two
     expect(fs.realpathSync(bin)).toBe(fs.realpathSync(path.join(repo, ".tachyon", "bin")));
     // the pins stay in the authority alone
     expect(fs.existsSync(path.join(entry.path, ".tachyon", "plugins.lock.json"))).toBe(false);
+    // t-62f599 — and NEITHER do the workspace's skills. The launcher is inert: something has to name
+    // it. A skill tree is not — the runtime discovers it and offers it unasked, which is the whole
+    // reason inheritance had to become opt-in.
+    expect(fs.existsSync(path.join(entry.path, ".claude", "skills"))).toBe(false);
+  });
+
+  /**
+   * t-62f599 — the trigger, which is where the first attempt at this actually failed.
+   *
+   * Withdrawing the skill projection shipped with its only trigger on `syncAgentRecord`, which fires on
+   * spawn, fork and dismiss. A reload with agents already alive does NONE of those — it re-discovers
+   * them. Measured after installing that build: all three live worktrees still had the links, so the
+   * policy reached only agents somebody happened to restart, which is the opposite of a fleet-wide rule.
+   */
+  it("reprojectRegisteredWorktrees retires an inherited link on a plain reload, with no respawn", async () => {
+    fs.mkdirSync(path.join(repo, ".claude", "skills", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(repo, ".claude", "skills", "demo", "SKILL.md"), "# demo\n");
+
+    const svc = service();
+    const entry = await svc.createChange({ slug: "reload", createdBy: "alice" });
+
+    // Recreate exactly what a worktree from an earlier build carries.
+    const skills = path.join(entry.path, ".claude", "skills");
+    fs.mkdirSync(path.dirname(skills), { recursive: true });
+    fs.symlinkSync(path.join(repo, ".claude", "skills"), skills);
+    expect(fs.existsSync(skills)).toBe(true);
+
+    // Activation only — no spawn, no fork, no register.
+    await svc.reprojectRegisteredWorktrees();
+
+    expect(fs.existsSync(skills)).toBe(false);
+    // The authority is untouched, as always.
+    expect(fs.existsSync(path.join(repo, ".claude", "skills", "demo", "SKILL.md"))).toBe(true);
   });
 
   it("remove refuses peer; human owner soft-removes clean tree and drops registry", async () => {

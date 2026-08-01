@@ -36,6 +36,7 @@ export const EXTENSION_QUERY_ACTIONS = [
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
+  "agent-profile.authorizable-capabilities",
   "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
@@ -67,6 +68,10 @@ export const EXTENSION_COMMAND_ACTIONS = [
   // older shell, because that payload is `.strict()`.
   "agent-profile.saved-agent-create",
   "agent-profile.saved-agent-create-v2",
+  // t-5498a6 — authorizing a skill is its own action for the same skew reason: an older engine
+  // refuses it by name instead of silently decoding it as something else.
+  "agent-profile.authorize-skill",
+  "agent-profile.authorize-plugin",
 ] as const;
 
 const extensionQueryActionSchema = z.enum(EXTENSION_QUERY_ACTIONS);
@@ -87,6 +92,7 @@ export const extensionQuerySchema = z.union([
   /** t-4c113c — declared-ownership read side. Additive action: an engine that predates it refuses
    *  the unknown action outright rather than decoding a changed payload. */
   z.object({ action: z.literal("agent-profile.studio-ownership"), agent: name }).strict(),
+  z.object({ action: z.literal("agent-profile.authorizable-capabilities"), agent: name }).strict(),
   z.object({ action: z.literal("bridge.token") }).strict(),
   z.object({ action: z.literal("companion.pair-code") }).strict(),
   z.object({ action: z.literal("companion.status") }).strict(),
@@ -172,6 +178,18 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     mutation: agentProfileStudioMutationSchemaV1,
     owner: name.optional(),
     grants: z.object({ proposeSavedAgent: z.literal(true).optional() }).strict().optional(),
+  }).strict(),
+  z.object({
+    action: z.literal("agent-profile.authorize-plugin"),
+    agentName: name,
+    pluginName: text(128, 1),
+    reauthorize: z.boolean().optional(),
+  }).strict(),
+  z.object({
+    action: z.literal("agent-profile.authorize-skill"),
+    agentName: name,
+    skillName: text(128, 1),
+    reauthorize: z.boolean().optional(),
   }).strict(),
   z.object({ action: z.literal("config.command.delete"), name }).strict(),
   z.object({ action: z.literal("config.runbook.delete"), name }).strict(),

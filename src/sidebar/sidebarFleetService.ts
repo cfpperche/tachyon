@@ -233,6 +233,7 @@ export async function buildSidebarFleet(
         // in its store. Identity question, converted.
         canDismiss: agent.lifetime === "temporary" && !agent.running,
         ...(configFailure ? { configInvalid: true } : {}),
+        ...(agent.refused ? { refused: agent.refused } : {}),
       });
     });
 

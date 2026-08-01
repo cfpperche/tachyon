@@ -358,6 +358,16 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       </Badge>
     ) : null,
 
+  // t-0ad300 — the reason rides in the tooltip rather than the badge: it is a digest mismatch two
+  // hashes long, and a row that wraps to four lines is how a roster stops being scannable. The badge
+  // says which agent, the tooltip says why, and Edit in Studio is the repair.
+  refused: (slot) =>
+    slot.a.refused ? (
+      <Badge tone="err" title={slot.a.refused}>
+        refused
+      </Badge>
+    ) : null,
+
   // spec 390 — no "delegated by / owned by" text (tree indent is hierarchy); no "working" chip (live-dot).
   attention: ({ a }) => (a.attention && a.attention !== "working" ? <Badge tone="warn">{a.attention}</Badge> : null),
 

@@ -59,6 +59,7 @@ export const CARD_COMPONENT_IDS = [
   "hidden-count",
   "branch",
   "config-invalid",
+  "refused",
   "attention",
   "awaiting-human",
   "auth-required",
@@ -109,6 +110,9 @@ export const CARD_CATALOG: Readonly<Record<CardComponentId, CardComponentSpec>> 
   "hidden-count": { region: "meta", describes: "Count of children hidden by collapse" },
   branch: { region: "meta", describes: "Live HEAD branch and drift (spec 384)" },
   "config-invalid": { region: "meta", critical: true, describes: "tachyon.yml is invalid; the row is read-only" },
+  // t-0ad300 — critical: the row exists ONLY to say this. Collapsing it away would hide the
+  // refusal AND the route to Agent Studio, which is the one place it gets repaired.
+  refused: { region: "meta", critical: true, describes: "This declared agent was refused by the config load; the tooltip says why" },
   attention: { region: "meta", describes: "Attention state reported by the monitor" },
   "awaiting-human": { region: "meta", critical: true, describes: "The agent asked for a human (request_human_attention)" },
   "auth-required": { region: "meta", critical: true, describes: "The runtime reports it is not authenticated (SDD 477)" },
@@ -207,6 +211,7 @@ export const DEFAULT_CARD_TEMPLATE: CardTemplate = {
     "hidden-count",
     "branch",
     "config-invalid",
+    "refused",
     "attention",
     "awaiting-human",
     "auth-required",
@@ -682,6 +687,7 @@ function parseRuntimeOverrides(
 export function criticalComponentActive(id: CardComponentId, row: AgentVM): boolean {
   switch (id) {
     case "config-invalid": return !!row.configInvalid;
+    case "refused": return !!row.refused;
     case "awaiting-human": return !!row.awaitingHuman;
     case "auth-required": return !!row.authRequired;
     // `verify` is critical for its FAIL state only — a passing or stale gate is information, not an

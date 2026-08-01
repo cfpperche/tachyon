@@ -57,6 +57,11 @@ import { isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
  */
 export const AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES = [
   "browse",
+  // t-5498a6 — authorize a workspace skill so this profile MAY select it. Selecting stays the
+  // separate gesture on the Runtime tooling checkboxes.
+  "authorizeSkill",
+  "authorizePlugin",
+  "refreshAuthorizableCapabilities",
   "createSoul",
   "importSoul",
   "replaceSoul",
@@ -95,6 +100,7 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "agentProfileForgotten",
   "agentProfileOwnership",
   "agentProfileError",
+  "authorizableCapabilities",
   "agentProfileBundleExport",
   "agentProfileBundleCreated",
   "agentProfileBundleError",
@@ -110,6 +116,8 @@ export type AgentStudioDomainMessageName = (typeof AGENT_STUDIO_DOMAIN_MESSAGE_N
 
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
+/** t-5498a6 — same shape the profile schema enforces for a reference id. */
+const SKILL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const PROFILE_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -170,8 +178,16 @@ export type AgentStudioBundleActionMessage =
   | { type: "cloneSavedAgentProfileBundle"; agent: string; expectedRevision: string; destinationAgentName: string }
   | { type: "importSavedAgentProfileBundle"; agent: string; destinationAgentName: string; contentBase64: string };
 
+/** t-5498a6 — authorize one workspace skill for a profile; selecting it stays a separate gesture. */
+export type AgentStudioAuthorizeSkillMessage = { type: "authorizeSkill"; agent: string; skillName: string; reauthorize: boolean };
+export type AgentStudioAuthorizePluginMessage = { type: "authorizePlugin"; agent: string; pluginName: string; reauthorize: boolean };
+export type AgentStudioRefreshCandidatesMessage = { type: "refreshAuthorizableCapabilities"; agent: string };
+
 export type AgentStudioInboundDomainMessage =
   | { type: "browse" }
+  | AgentStudioAuthorizeSkillMessage
+  | AgentStudioAuthorizePluginMessage
+  | AgentStudioRefreshCandidatesMessage
   | AgentStudioSoulActionMessage
   | AgentStudioEvolutionActionMessage
   | AgentStudioLifecycleActionMessage
@@ -283,6 +299,25 @@ export function validateAgentStudioInboundMessage(raw: unknown): AgentStudioInbo
   }
   if (typeof value.type !== "string" || !AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES.includes(value.type as never)
     || value.type === "browse" || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return undefined;
+  if (value.type === "authorizePlugin") {
+    // t-4a2a6f — `reauthorize` is REQUIRED on the wire, never defaulted. Accepting content that
+    // changed after a human approved it is the one decision that must not be reachable by omission,
+    // and an optional flag is reachable by omission the moment any caller forgets it.
+    if (!exactKeys(value, ["type", "agent", "pluginName", "reauthorize"]) || typeof value.pluginName !== "string"
+      || !SKILL_NAME_RE.test(value.pluginName) || typeof value.reauthorize !== "boolean") return undefined;
+    return { type: "authorizePlugin", agent: value.agent, pluginName: value.pluginName, reauthorize: value.reauthorize };
+  }
+  if (value.type === "refreshAuthorizableCapabilities") {
+    if (!exactKeys(value, ["type", "agent"])) return undefined;
+    return { type: "refreshAuthorizableCapabilities", agent: value.agent };
+  }
+  if (value.type === "authorizeSkill") {
+    // Bounded and shaped like the reference id it becomes; a name that cannot be a reference id can
+    // never authorize anything, so refusing here beats failing deeper with a schema message.
+    if (!exactKeys(value, ["type", "agent", "skillName", "reauthorize"]) || typeof value.skillName !== "string"
+      || !SKILL_NAME_RE.test(value.skillName) || typeof value.reauthorize !== "boolean") return undefined;
+    return { type: "authorizeSkill", agent: value.agent, skillName: value.skillName, reauthorize: value.reauthorize };
+  }
   if (value.type === "adoptSoulProfile") {
     if (!exactKeys(value, ["type", "agent", "expectedDigest"]) || typeof value.expectedDigest !== "string" || !SHA256_RE.test(value.expectedDigest)) return undefined;
     return { type: "adoptSoulProfile", agent: value.agent, expectedDigest: value.expectedDigest };
@@ -432,6 +467,46 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
     return exactKeys(value, ["type", "agent", "agentId"])
       && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
       && typeof value.agentId === "string" && PROFILE_ID_RE.test(value.agentId);
+  }
+  if (value.type === "authorizableCapabilities") {
+    // t-5498a6 — validated here or it never reaches the App: an unlisted host message is reported as
+    // "malformed Agent Studio host response", which is what a missing branch looks like from the UI —
+    // a protocol error at the top of the page and two selectors stuck on Loading forever.
+    if (!exactKeys(value, ["type", "agent", "capabilities"])
+      || typeof value.agent !== "string" || !AGENT_NAME_RE.test(value.agent)) return false;
+    const capabilities = value.capabilities as { workspaceSkills?: unknown; plugins?: unknown } | null;
+    if (!capabilities || typeof capabilities !== "object") return false;
+    if (!Array.isArray(capabilities.workspaceSkills) || !Array.isArray(capabilities.plugins)) return false;
+    const checkoutOnly = (capabilities as { checkoutOnlyPlugins?: unknown }).checkoutOnlyPlugins;
+    if (checkoutOnly !== undefined
+      && (!Array.isArray(checkoutOnly) || checkoutOnly.length > 256
+        || !checkoutOnly.every((name) => typeof name === "string" && SKILL_NAME_RE.test(name)))) return false;
+    if (capabilities.workspaceSkills.length > 256 || capabilities.plugins.length > 256) return false;
+    // t-4a2a6f — the annotation drives which control is offered, so a malformed one must be refused
+    // rather than coerced: an `authorized` that failed to parse would render as "never authorized"
+    // and put the plain Authorize button back on a stale entry, which is the bug this fixes.
+    const okAuthorized = (entry: unknown): boolean => {
+      if (entry === undefined) return true;
+      const state = entry as Record<string, unknown>;
+      if (typeof state !== "object" || state === null || typeof state.stale !== "boolean") return false;
+      return state.version === undefined || (typeof state.version === "string" && state.version.length <= 256);
+    };
+    const okSkill = (entry: unknown): boolean => {
+      const skill = entry as { name?: unknown; path?: unknown; authorized?: unknown };
+      return typeof skill?.name === "string" && SKILL_NAME_RE.test(skill.name)
+        && typeof skill.path === "string" && skill.path.length <= 1_024
+        && okAuthorized(skill.authorized);
+    };
+    const okPlugin = (entry: unknown): boolean => {
+      const plugin = entry as Record<string, unknown>;
+      return typeof plugin?.name === "string" && SKILL_NAME_RE.test(plugin.name)
+        && typeof plugin.version === "string" && plugin.version.length <= 256
+        && Array.isArray(plugin.runtimes) && Array.isArray(plugin.skills) && Array.isArray(plugin.ungrantableKinds)
+        && typeof plugin.authorizable === "boolean"
+        && (plugin.reason === undefined || (typeof plugin.reason === "string" && plugin.reason.length <= 2_000))
+        && okAuthorized(plugin.authorized);
+    };
+    return capabilities.workspaceSkills.every(okSkill) && capabilities.plugins.every(okPlugin);
   }
   if (value.type === "agentProfileError") {
     return exactKeys(value, ["type", "agent", "code", "message", "conflict"])

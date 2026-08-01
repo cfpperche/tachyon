@@ -49,6 +49,7 @@ import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
 import type { HumanInboxDispatch } from "../human-inbox/App";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
+import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import type { SessionInspectionState } from "../runtime-ops/messages";
@@ -342,7 +343,7 @@ export interface CockpitAppProps {
   approvalDispatch: ApprovalDispatch;
   /** t-e76acc — the unified Human Inbox section and its item subroute. */
   inboxVm?: HumanInboxViewModel;
-  inboxError?: string;
+  inboxError?: HumanInboxErrorReceipt;
   inboxItemVm?: HumanInboxItemViewModel;
   inboxItemMissing?: { kind: HumanInboxKind; id: string };
   inboxDispatch: HumanInboxDispatch;

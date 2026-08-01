@@ -91,8 +91,12 @@ describe("SDD 479 — the component catalog is closed and complete", () => {
   });
 
   it("records exactly the failure states a template may not hide (ratified fork 3)", () => {
+    // t-0ad300 adds `refused`. It qualifies on the same terms as the other four: the row exists ONLY
+    // to report it, and hiding it would restore exactly the defect the row was added to fix — an
+    // agent that vanishes from the sidebar, taking with it the route into Agent Studio where the
+    // refusal is repaired. A template able to suppress it could make the agent unreachable again.
     expect([...CRITICAL_CARD_COMPONENTS].sort()).toEqual(
-      ["auth-required", "awaiting-human", "config-invalid", "verify"],
+      ["auth-required", "awaiting-human", "config-invalid", "refused", "verify"],
     );
   });
 

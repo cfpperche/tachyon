@@ -351,3 +351,43 @@ describe("declared subagents protocol (t-4c113c)", () => {
     expect(source).toContain("disabled={canonicalLifecycleDisabled || !ownershipDirty}");
   });
 });
+
+/**
+ * t-5498a6 — the failure this class produces is invisible at the type level and loud in the UI.
+ *
+ * A host message name added to `AGENT_STUDIO_HOST_MESSAGE_NAMES` and to the TS union, but with no
+ * branch in `validateAgentStudioHostDomainMessage`, typechecks and ships. At runtime the validator
+ * falls through to false, the shell reports "malformed Agent Studio host response", and whatever the
+ * message was carrying never arrives — which looked, in the field, like two selectors stuck on
+ * "Loading…" forever with a protocol error at the top of the page.
+ */
+describe("t-5498a6 — every host message name must have a validation branch", () => {
+  it("names no host message the validator cannot possibly accept", () => {
+    const source = fs.readFileSync(path.join(process.cwd(), "src/webview/agent-studio-shell/domain.ts"), "utf8");
+    const validator = source.slice(source.indexOf("export function validateAgentStudioHostDomainMessage"));
+    for (const name of AGENT_STUDIO_HOST_MESSAGE_NAMES) {
+      expect(validator, `'${name}' has no branch — it will be rejected as malformed at runtime`)
+        .toContain(`value.type === "${name}"`);
+    }
+  });
+
+  it("accepts a well-formed capability candidate payload and rejects a malformed one", () => {
+    const ok = {
+      type: "authorizableCapabilities",
+      agent: "Ada",
+      capabilities: {
+        workspaceSkills: [{ name: "house-style", path: ".claude/skills/house-style" }],
+        plugins: [{
+          name: "diagram", version: "0.1.1", runtimes: ["claude"], skills: ["diagram"],
+          ungrantableKinds: [], authorizable: true,
+        }],
+      },
+    };
+    expect(validateAgentStudioHostDomainMessage(ok)).toBe(true);
+    expect(validateAgentStudioHostDomainMessage({ ...ok, capabilities: { workspaceSkills: [] } })).toBe(false);
+    expect(validateAgentStudioHostDomainMessage({
+      ...ok,
+      capabilities: { ...ok.capabilities, workspaceSkills: [{ name: "../escape", path: "x" }] },
+    })).toBe(false);
+  });
+});

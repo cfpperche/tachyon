@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "plugins": {
+    "demo-drifty": {
+      "name": "demo-drifty",
+      "version": "1.0.0",
+      "runtimes": ["claude", "codex"],
+      "targets": [
+        { "runtime": "claude", "kind": "skill-dir", "file": ".claude/skills/demo-drifty" },
+        { "runtime": "codex", "kind": "skill-dir", "file": ".agents/skills/demo-drifty" }
+      ]
+    },
+    "demo-stable": {
+      "name": "demo-stable",
+      "version": "1.0.0",
+      "runtimes": ["claude", "codex"],
+      "targets": [
+        { "runtime": "claude", "kind": "skill-dir", "file": ".claude/skills/demo-stable" },
+        { "runtime": "codex", "kind": "skill-dir", "file": ".agents/skills/demo-stable" }
+      ]
+    }
+  }
+}

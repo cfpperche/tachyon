@@ -1606,6 +1606,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           },
           // Re-read at commit time, which is what makes a revoked capability effective on a proposal
           // queued before the revocation.
+          // t-5498a6 — the SAME door the Studio uses. Reaching the shared function here is what keeps
+          // the two approval surfaces from drifting into different rules about pinning and refusals.
+          authorizeSkill: async ({ agentName, skillName }) => {
+            const result = await ws.authorizeAgentSkill(agentName, skillName);
+            return result.ok ? { ok: true } : { ok: false, error: result.error };
+          },
           readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
           currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
         },

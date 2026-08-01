@@ -283,6 +283,41 @@ describe("canonical Agent Studio projection", () => {
     expect(() => patchProfileFromStudioMutation(mutation("e".repeat(64)), current)).toThrow("revision conflict");
   });
 
+  /**
+   * t-da80ed — an isolated agent's working directory IS its worktree. `AgentManager` overwrites the
+   * resolved cwd with the worktree path unconditionally, so persisting both meant the human typed a
+   * path, saved without error, and got nothing.
+   */
+  it("REFUSES a working directory on an agent that runs in its own worktree", () => {
+    const current = lifecycleSnapshot();
+    const both = mutation(current.revision);
+    both.editable.worktree = { enabled: true, branch: "" };
+
+    expect(() => patchProfileFromStudioMutation(both, current))
+      .toThrow("the worktree IS its working directory");
+  });
+
+  it("still accepts a working directory when the agent is NOT isolated", () => {
+    const current = lifecycleSnapshot();
+    const only = mutation(current.revision);
+    only.editable.worktree = { enabled: false, branch: "" };
+
+    expect(patchProfileFromStudioMutation(only, current).workspace)
+      .toMatchObject({ cwd: "apps/tester", worktree: { enabled: false } });
+  });
+
+  it("accepts an isolated agent that declares no working directory", () => {
+    // The refusal must fire on the CONTRADICTION, never on isolation itself — every canonical agent
+    // in this workspace is isolated and declares no cwd.
+    const current = lifecycleSnapshot();
+    const isolated = mutation(current.revision);
+    isolated.editable.cwd = "";
+    isolated.editable.worktree = { enabled: true, branch: "feature/x" };
+
+    expect(patchProfileFromStudioMutation(isolated, current).workspace)
+      .toMatchObject({ cwd: undefined, worktree: { enabled: true, branch: "feature/x" } });
+  });
+
   it("keeps lifecycle operations strict, revisioned, and free of form fields", () => {
     const setEnabled = {
       schemaVersion: 1,

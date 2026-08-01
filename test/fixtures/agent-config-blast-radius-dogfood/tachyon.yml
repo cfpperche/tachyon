@@ -1,0 +1,18 @@
+# Disposable Dev Host fixture — t-588644: one refused profile must not take the roster with it.
+#
+# `agents: {}` alone is not a loadable roster ("must be a non-empty mapping ... or declare a
+# 'terminals' block"), so the terminal below is the non-empty half — and it is also how you run
+# ./drift.sh without leaving the EDH.
+#
+# Both agents are created by hand in Agent Studio. They cannot be shipped here: a canonical agent's
+# authority lives in the host secret store keyed by the workspace hash, and an `agent.yml` without
+# its authority loads as "host profile authority is missing" — which would refuse BOTH agents and
+# leave no healthy remainder, i.e. the exact opposite of what this fixture is here to show.
+settings:
+  maxAgents: 4
+
+agents: {}
+terminals:
+  shell:
+    cmd: sh
+    autostart: false

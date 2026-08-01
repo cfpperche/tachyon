@@ -1,0 +1,9 @@
+{
+  "name": "demo-stable",
+  "version": "1.0.0",
+  "description": "Control plugin for the blast-radius dogfood \u2014 never changes, so the agent that authorized it must keep loading.",
+  "runtimes": [
+    "claude",
+    "codex"
+  ]
+}

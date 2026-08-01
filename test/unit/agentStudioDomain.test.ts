@@ -99,6 +99,125 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     expect(JSON.stringify(status)).not.toContain("canonicalPath");
   });
 
+  /**
+   * t-5498a6 — the authorization door reached from the Studio. Authorizing does NOT select; the
+   * refresh that follows is the success signal, because the profile then answers for itself.
+   */
+  it("authorizes a skill and refreshes so the new reference renders from the profile itself", async () => {
+    const calls: Array<{ agent: string; skill: string }> = [];
+    const target = ws({
+      authorizeAgentSkill: async (agent: string, skillName: string) => {
+        calls.push({ agent, skill: skillName });
+        return { ok: true as const, outcome: "authorized", referenceId: skillName };
+      },
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "visual-qa", reauthorize: false }));
+    await flush();
+
+    expect(calls).toEqual([{ agent: "Ada", skill: "visual-qa" }]);
+    expect(findType(ctx.posted, "agentProfileSnapshot").at(-1)).toBeTruthy();
+  });
+
+  it("surfaces a REFUSAL as itself rather than as a generic failure", async () => {
+    // "this plugin does not install for codex" is an answer the human has to read; the engine returns
+    // it as a value precisely so it cannot be flattened into a transport error.
+    const target = ws({
+      authorizeAgentSkill: async () => ({ ok: false as const, error: "plugin 'product-foundation@0.1.1' does not declare runtime 'codex'" }),
+      inspectAgentProfileStudio: async () => { throw new Error("must not refresh after a refusal"); },
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "product-foundation", reauthorize: false }));
+    await flush();
+
+    expect(JSON.stringify(ctx.posted)).toContain("does not declare runtime 'codex'");
+  });
+
+  /**
+   * t-4a2a6f — the defect this closes: `digest-changed` is `ok: true` and writes NOTHING. The handler
+   * used to see `ok` and refresh, so the screen reported a repair it never performed.
+   */
+  it("reports digest-changed as a refusal naming the repair, never as a silent success", async () => {
+    const target = ws({
+      authorizeAgentSkill: async () => ({ ok: true as const, outcome: "digest-changed", referenceId: "visual-qa" }),
+      inspectAgentProfileStudio: async () => { throw new Error("must not refresh a profile that did not change"); },
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "visual-qa", reauthorize: false }));
+    await flush();
+
+    const posted = JSON.stringify(ctx.posted);
+    expect(posted).toContain("has since changed");
+    expect(posted).toContain("Reauthorize");
+  });
+
+  it("carries reauthorize to the host verbatim — the accept-changed-content decision is never inferred", async () => {
+    const seen: boolean[] = [];
+    const target = ws({
+      authorizeAgentPlugin: async (_agent: string, _plugin: string, options: { reauthorize?: boolean }) => {
+        seen.push(options.reauthorize === true);
+        return { ok: true as const, authorized: ["agent-browser"], outcomes: ["reauthorized"] };
+      },
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizePlugin" as const, agent: "Ada", pluginName: "agent-browser", reauthorize: true }));
+    await flush();
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizePlugin" as const, agent: "Ada", pluginName: "agent-browser", reauthorize: false }));
+    await flush();
+
+    expect(seen).toEqual([true, false]);
+  });
+
+  it("refuses an authorize message that omits reauthorize — accepting changed content must not be reachable by omission", async () => {
+    let called = 0;
+    const target = ws({ authorizeAgentPlugin: async () => { called += 1; return { ok: true as const, authorized: [], outcomes: [] }; } } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizePlugin" as const, agent: "Ada", pluginName: "agent-browser" } as never));
+    await flush();
+
+    expect(called).toBe(0);
+  });
+
+  it("names the skills a plugin authorization held back, so a partial repair cannot read as a whole one", async () => {
+    const target = ws({
+      authorizeAgentPlugin: async () => ({
+        ok: true as const,
+        authorized: ["fresh-skill", "drifted-skill"],
+        outcomes: ["authorized", "digest-changed"],
+      }),
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizePlugin" as const, agent: "Ada", pluginName: "multi", reauthorize: false }));
+    await flush();
+
+    const posted = JSON.stringify(ctx.posted);
+    expect(posted).toContain("drifted-skill");
+    expect(posted).not.toContain("fresh-skill was authorized at content");
+  });
+
+  it("refuses a skill name that could never BE a reference id, before it reaches the host", async () => {
+    let called = 0;
+    const target = ws({ authorizeAgentSkill: async () => { called += 1; return { ok: true as const, outcome: "authorized", referenceId: "x" }; } } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "../../etc/passwd", reauthorize: false }));
+    await flush();
+
+    expect(called).toBe(0);
+  });
+
   it("rejects profile actions when the binding has no entityId (an unsaved new-agent route)", async () => {
     let creates = 0;
     const target = ws({ createSoulProfile: async () => { creates += 1; throw new Error("must not run"); } } as never);

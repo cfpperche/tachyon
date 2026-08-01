@@ -107,6 +107,15 @@ export interface AgentVM {
   /** t-8354ae — row is shown while tachyon.yml is invalid (ledger and/or LKG). */
   configInvalid?: boolean;
   /**
+   * t-0ad300 — this agent is declared and was REFUSED, carrying why. Distinct from `configInvalid`,
+   * which says "the file has a problem somewhere". This says "the problem is THIS agent, and it is
+   * the reason you cannot start it".
+   *
+   * The row exists precisely so the refusal is visible and Agent Studio stays reachable — that is
+   * where the human repairs it. Dropping the row would hide both.
+   */
+  refused?: string;
+  /**
    * SDD 478 M5 — the managed-entry arm this row renders, carried straight through from the config
    * union. It replaces `ai?: boolean`, which was a SECOND, independent encoding of the same
    * distinction: optional, so its absence meant "agent" to the model/focus code and "terminal" to

@@ -31,6 +31,15 @@ import {
   type CommitAgentProfileLifecycleInput,
 } from "../config/agentProfileLifecycle.js";
 import {
+  authorizeAgentPlugin,
+  authorizeAgentSkill,
+  authorizedSkillStates,
+  revokeAgentSkill,
+  skillOriginFor,
+  type SkillAuthorizationPorts,
+} from "../config/agentSkillAuthorizationService.js";
+import { annotateAuthorized, listAuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
   reconcileAgentProfileRenames,
@@ -1229,6 +1238,7 @@ export class Workspace {
       failDeliveryJoin: (_name, request, prepared, error) => this.deliveryLease.failJoin(request.deliveryId, prepared.reservationNonce, error instanceof Error ? error.message : String(error), `${request.operationId}:fail`).then(() => undefined),
 
       getConfig: () => this.config,
+      getRefusedAgents: () => this.refusedAgents(),
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
       assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
       // t-aaad95 — `maxAgents` and `agentMemoryMax` used to arrive here from VS Code settings ALONGSIDE
@@ -5195,8 +5205,15 @@ export class Workspace {
       this.blockProfileSpawnsFromLiveConfig();
       return false;
     }
-    const { config, errors, warnings } = this.parseTrustedConfigText(text);
-    if (errors.length > 0) {
+    const { config, errors, warnings, profileErrors } = this.parseTrustedConfigText(text);
+    // t-588644 — a broken profile is ONE agent's problem. Before this, every error went into one
+    // bucket and any of them took the whole roster down: measured with two agents, the healthy one
+    // produced no error and still did not load. The loader now says which errors belong to a single
+    // agent; when that is all of them, the healthy agents load and the refused ones are named in the
+    // durable failure banner. `configValid` stays false — the file DOES have a problem — which is the
+    // invariant `workspaceProjection` enforces between the two, and which keeps this loud.
+    const isolatable = errors.length > 0 && profileErrors.length === errors.length && config !== undefined;
+    if (errors.length > 0 && !isolatable) {
       // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
       // Do NOT clear a previously-loaded in-memory config: live sessions keep working until
       // the human fixes the file. Cold start leaves config undefined (never loaded).
@@ -5212,8 +5229,21 @@ export class Workspace {
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
-    this.configFailure = undefined;
+    // t-588644 — the refused agents are ABSENT from the config we just accepted, so this banner is
+    // the only thing standing between "that agent was refused, here is why" and an agent that
+    // silently stopped existing. Trading a loud whole-roster failure for a quiet partial one would
+    // be the worse bug, so the failure surface is set BEFORE anything reads the new roster.
+    this.configFailure = isolatable
+      ? { path: file, file: path.basename(file), errors: [...profileErrors], at: new Date().toISOString() }
+      : undefined;
     this.profileSpawnBlocked.clear();
+    if (isolatable) {
+      this.blockProfileSpawnsFromLiveConfig();
+      this.host.notify(
+        this.t("{0}: {1}{2}", path.basename(file), profileErrors[0], profileErrors.length > 1 ? this.t(" (+{0} more)", profileErrors.length - 1) : ""),
+        "error",
+      );
+    }
     // SDD 414 — human toggle settings.companion.tabTools changes the Bridge tool catalog.
     // Close MCP sessions + announce list_changed so runtimes re-discover (pair alone does not).
     const nextCompanionTabTools = config?.settings.companion?.tabTools === true;
@@ -5272,11 +5302,34 @@ export class Workspace {
 
   private blockProfileSpawnsFromLiveConfig(): void {
     const sources = (this.config as (TachyonConfig & {
-      agentSources?: Record<string, { mode: "terminal" | "profile" }>;
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
     }) | undefined)?.agentSources;
     this.profileSpawnBlocked = new Set(
-      Object.entries(sources ?? {}).filter(([, source]) => source.mode === "profile").map(([name]) => name),
+      // t-0ad300 — `refused` joins `profile` here. A refused agent now has a roster row, so for the
+      // first time there is a surface that could try to start it; it has no definition to start
+      // from, and starting it is exactly what its refusal denies.
+      Object.entries(sources ?? {})
+        .filter(([, source]) => source.mode === "profile" || source.mode === "refused")
+        .map(([name]) => name),
     );
+  }
+
+  /**
+   * t-0ad300 — the agents tachyon.yml declares that this load refused, name → reason.
+   *
+   * Read off `agentSources`, which is the only structure that still holds them: the isolation from
+   * t-588644 deletes a refused agent from `config.agents` before the legacy parser runs, and every
+   * roster reader downstream goes through `config.agents`.
+   */
+  refusedAgents(): Record<string, string> {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: string; reason?: string }>;
+    }) | undefined)?.agentSources;
+    const out: Record<string, string> = {};
+    for (const [name, source] of Object.entries(sources ?? {})) {
+      if (source.mode === "refused" && source.reason) out[name] = source.reason;
+    }
+    return out;
   }
 
   async inspectAgentProfileLifecycle(agentName: string): Promise<AgentProfileLifecycleSnapshot> {
@@ -5569,6 +5622,119 @@ export class Workspace {
         sha256: createHash("sha256").update(selector).digest("hex"),
       }],
     });
+  }
+
+  /**
+   * t-5498a6 — CALLER B: authorize a skill for an agent that already exists.
+   *
+   * This is the one that unblocks the agents in this workspace. `claude`, `claude-validador` and
+   * `codex` never went through a proposal, so the approval path (caller A) would never reach them and
+   * they would stay at zero capabilities forever.
+   *
+   * Authorizing does not select. The Studio's tooling checkboxes are the second gesture, and keeping
+   * them separate is the whole point: "may have" and "has" are different facts.
+   */
+  async authorizeAgentSkill(agentName: string, skillName: string, options: { reauthorize?: boolean } = {}) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    const origin = skillOriginFor(this.workspaceRoot, skillName, snapshot.profile.runtime.adapter);
+    if (!origin) {
+      return { ok: false as const, error: `no skill named '${skillName}' is installed by a plugin or present in this workspace` };
+    }
+    return authorizeAgentSkill({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      origin,
+      reauthorize: options.reauthorize,
+      // t-5498a6 — one click. The AUTHORIZE/SELECT split carries weight when the two acts belong to
+      // different actors or different moments: an agent asks, a human answers. Here it is the same
+      // person, in the same form, seconds apart — the second click carries no information. The
+      // protection was never the second click either; it is the validation that refuses a selection
+      // without a matching grant, and clicking Authorize IS the host authorization.
+      //
+      // The checkbox keeps the role that IS load-bearing: turning a capability off without revoking,
+      // which preserves the digest pin so re-enabling needs no fresh approval. Revoking and
+      // re-authorizing would re-pin whatever the content is by then.
+      select: true,
+      ports: this.skillAuthorizationPorts(snapshot.revision),
+    });
+  }
+
+  /**
+   * t-5498a6 — what this agent's runtime could be given, in two lists.
+   *
+   * A QUERY rather than a field on the profile snapshot: that snapshot is revisioned and the Studio
+   * uses the revision as a CAS token, but installing a plugin changes none of it. Candidates carried
+   * there would go stale while still claiming to be current.
+   */
+  /**
+   * t-5498a6 — what this agent could be given. t-4a2a6f — annotated with what it already holds.
+   *
+   * The annotation is the whole repair path for a plugin update: without it an already-authorized
+   * plugin is indistinguishable in this list from one the agent never saw, so the human clicks
+   * "Authorize", the core correctly refuses to accept changed content silently, and the screen
+   * reports success while nothing moved.
+   */
+  async authorizableCapabilitiesFor(agentName: string) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return annotateAuthorized(
+      listAuthorizableCapabilities(this.workspaceRoot, snapshot.profile.runtime.adapter),
+      authorizedSkillStates(this.workspaceRoot, snapshot.profile.references ?? []),
+    );
+  }
+
+  /**
+   * t-5498a6 — authorize a whole plugin: everything it exposes for this agent's runtime.
+   *
+   * Ratified with the user. A plugin exposing something no capability grant can carry is refused
+   * WHOLE rather than partially — half a plugin reported as success is the failure this ends.
+   */
+  async authorizeAgentPlugin(agentName: string, pluginName: string, options: { reauthorize?: boolean } = {}) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return authorizeAgentPlugin({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      pluginName,
+      adapter: snapshot.profile.runtime.adapter,
+      ...(options.reauthorize ? { reauthorize: true } : {}),
+      select: true,
+      ports: this.skillAuthorizationPorts(snapshot.revision),
+    });
+  }
+
+  /** t-5498a6 — withdraw an authorization, dropping the selection in the same transaction. */
+  async revokeAgentSkill(agentName: string, referenceId: string) {
+    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+    return revokeAgentSkill({ agentName, referenceId, ports: this.skillAuthorizationPorts(snapshot.revision) });
+  }
+
+  /**
+   * The ports both callers share. `expectedRevision` is carried in so the commit is a compare-and-set
+   * against the profile the decision was computed from — without it, two concurrent authorizations
+   * would each write a grant set that silently discarded the other's.
+   */
+  private skillAuthorizationPorts(expectedRevision: string): SkillAuthorizationPorts {
+    return {
+      read: async (agentName) => {
+        const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+        const authority = await this.profileAuthorityPort().read(agentName);
+        return { profile: snapshot.profile, grants: authority?.capabilityGrants ?? [] };
+      },
+      commit: async ({ agentName, references, capabilityGrants, selectedSkills }) => {
+        const snapshot = await this.inspectAgentProfileLifecycle(agentName);
+        await this.commitAgentProfileLifecycle({
+          agentName,
+          operation: "edit",
+          expectedRevision,
+          patch: {
+            references: [...references],
+            ...(selectedSkills
+              ? { capabilities: { ...(snapshot.profile.capabilities ?? {}), skills: [...selectedSkills] } }
+              : {}),
+          },
+          capabilityGrants,
+        });
+      },
+    };
   }
 
   private async assertAgentStoppedForProfileMutation(agentName: string): Promise<void> {
@@ -6144,6 +6310,11 @@ export class Workspace {
     // so a re-discovered Temporary instance is restartable and re-nests under its parent.
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
     await this.manager.rehydrateFromLedger();
+
+    // t-62f599 — reproject every registered worktree, BEFORE the configOk branch below returns early.
+    // Withdrawing inherited config is a policy decision, and a policy that only reaches agents somebody
+    // restarts is not in force. This is the one hook that runs on a plain reload of a live fleet.
+    await this.managedWorktrees.reprojectRegisteredWorktrees();
 
     if (!configOk) {
       // t-8354ae — fail VISIBLE, not silent wipe: rehydrate + surface views, but never
