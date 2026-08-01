@@ -23,8 +23,6 @@ import {
 } from "../../src/worktree/managedWorktree.js";
 import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
 import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
-import { pruneDeliveryRecord } from "../../src/git-delivery/prune.js";
-import type { GitDelivery } from "../../src/git-delivery/types.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 describe("spec 392 managed worktree registry", () => {
@@ -344,79 +342,6 @@ describe("spec 392 ManagedWorktreeService (real git)", () => {
     expect(svc.get(entry.id)?.status).toBe("abandoned");
   });
 
-  it("removePath engine: registered prune + unregistered force; occupancy never overridden", async () => {
-    const svc = service(async () => undefined);
-    const entry = await svc.createChange({ slug: "gd", createdBy: "orch" });
-    const d: GitDelivery = {
-      schemaVersion: 1,
-      id: "gd-1",
-      deliveryId: "d-managed-worktree",
-      version: 1,
-      workspaceId: "ws",
-      createdBy: { kind: "agent", name: "orch" },
-      agent: "orch",
-      branchRef: entry.branch,
-      worktreePath: entry.path,
-      tachyonCreatedBranch: true,
-      baseRef: "main",
-      currentHeadSha: git(["rev-parse", "HEAD"], entry.path).trim(),
-      phase: "integrated",
-      taskLinks: [],
-      transitions: [],
-      createdAt: "t",
-      updatedAt: "t",
-    };
-    const pruned = await pruneDeliveryRecord(
-      d,
-      { id: d.id, expectedVersion: 1 },
-      { kind: "agent", name: "orch" },
-      {
-        workspaceRoot: repo,
-        git: async (args, cwd) => {
-          try {
-            const stdout = execFileSync("git", args, { cwd: cwd ?? repo, encoding: "utf8" });
-            return { code: 0, stdout, stderr: "" };
-          } catch (err) {
-            const e = err as { status?: number; stdout?: string; stderr?: string };
-            return { code: e.status ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(err) };
-          }
-        },
-        liveness: async () => "not_live",
-        worktreeOccupancy: async () => undefined,
-        removeManagedWorktree: (p, o) => svc.removePath(p, o),
-      },
-    );
-    expect(pruned.result.ok).toBe(true);
-    expect(svc.get(entry.id)).toBeUndefined();
-    expect(fs.existsSync(entry.path)).toBe(false);
-
-    // Occupied path: abandon flags must still refuse (no override).
-    const entry2 = await svc.createChange({ slug: "gd2", createdBy: "orch" });
-    const d2 = { ...d, id: "gd-2", worktreePath: entry2.path, branchRef: entry2.branch };
-    const refused = await pruneDeliveryRecord(
-      d2,
-      { id: d2.id, expectedVersion: 1, abandon: true },
-      { kind: "agent", name: "orch" },
-      {
-        workspaceRoot: repo,
-        git: async (args, cwd) => {
-          try {
-            const stdout = execFileSync("git", args, { cwd: cwd ?? repo, encoding: "utf8" });
-            return { code: 0, stdout, stderr: "" };
-          } catch (err) {
-            const e = err as { status?: number; stdout?: string; stderr?: string };
-            return { code: e.status ?? 1, stdout: e.stdout ?? "", stderr: e.stderr ?? String(err) };
-          }
-        },
-        liveness: async () => "not_live",
-        worktreeOccupancy: async () => ({ state: "live", agent: "live-peer", cwd: entry2.path }),
-        removeManagedWorktree: (p, o) => svc.removePath(p, o),
-      },
-    );
-    expect(refused.result.ok).toBe(false);
-    expect(refused.result.ok ? [] : refused.result.reasons.join(" ")).toMatch(/occupied/);
-    expect(fs.existsSync(entry2.path)).toBe(true);
-  });
 });
 
 /** spec 444 — listClassified() real-git integration (the classify.ts unit suite covers the pure logic). */

@@ -1,3 +1,11 @@
+/**
+ * HMAC-chained append-only integrity for a host-custodied record.
+ *
+ * t-e88c8a moved this out of `src/delivery/`. It was written for the Delivery store, but nothing in
+ * it is about Delivery: it signs a payload with a workspace key, chains each revision to the previous
+ * MAC, and keeps the freshness head in HOST custody so a rolled-back workspace file cannot replay an
+ * older authorized state. The evolution store depends on exactly that and outlived Delivery.
+ */
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

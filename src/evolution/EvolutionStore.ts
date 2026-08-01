@@ -11,7 +11,7 @@ import {
   type AuthorityRecord,
   type AuthorityHead,
   type AuthorityHeadPort,
-} from "../delivery/authorityIntegrity.js";
+} from "./authorityIntegrity.js";
 import {
   EVOLUTION_SCHEMA_VERSION,
   createInitialEvolutionProfile,

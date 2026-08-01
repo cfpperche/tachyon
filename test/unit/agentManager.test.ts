@@ -2232,69 +2232,7 @@ describe("AgentManager — session resume (spec 209)", () => {
 
 
 
-  it("SDD 368 T14 worktree occupancy gathers all rows and fails closed on duplicates", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-occ-"));
-    dirs.push(root);
-    const wt = path.join(root, "wt");
-    fs.mkdirSync(wt, { recursive: true });
-    const { manager, ledger, hash } = resumeHarness("agents: {}\n");
-    // Two bound rows claim the same worktree cwd → dirty/unavailable (dead), not free.
-    ledger.record("a1", {
-      def: { cmd: "claude", kind: "agent" },
-      cwd: wt,
-      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
-      delivery: { deliveryId: "d-1", segmentId: "seg-a", executionNonce: "n1" },
-    });
-    ledger.record("a2", {
-      def: { cmd: "claude", kind: "agent" },
-      cwd: wt,
-      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
-      delivery: { deliveryId: "d-1", segmentId: "seg-b", executionNonce: "n2" },
-    });
-    // Probe occupancy via reuse path's public surface when possible; fall back to private method.
-    const occ = await (manager as unknown as {
-      findLedgerWorktreeOccupant: (p: string) => Promise<{ agent: string; state: "live" | "dead"; cwd: string } | undefined>;
-    }).findLedgerWorktreeOccupant(wt);
-    expect(occ?.state).toBe("dead");
-    expect(["a1", "a2"]).toContain(occ?.agent);
-    void hash;
-  });
 
-  it("SDD 368 T14/R3 cwd-drifted bound worktree.path still dirties public occupancy/reuse", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cwd-drift-"));
-    dirs.push(root);
-    const deliveryWt = path.join(root, "delivery-wt");
-    const driftedCwd = path.join(root, "elsewhere");
-    fs.mkdirSync(deliveryWt, { recursive: true });
-    fs.mkdirSync(driftedCwd, { recursive: true });
-    const { manager, ledger } = resumeHarness("agents: {}\n");
-    // Bound row: worktree.path names the Delivery worktree, but cwd drifted elsewhere.
-    // Pre-R3 occupancy only scanned rec.cwd and would miss this occupant.
-    ledger.record("drifter", {
-      def: { cmd: "claude", kind: "agent" },
-      cwd: driftedCwd,
-      worktree: {
-        path: deliveryWt,
-        branch: "tachyon/d",
-        tachyonCreatedBranch: true,
-        baseRef: "abc",
-        createdAt: "t0",
-      },
-      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
-      delivery: { deliveryId: "d-drift", segmentId: "seg-d", executionNonce: "n-d" },
-    });
-    const publicOcc = await manager.worktreeOccupant(deliveryWt);
-    expect(publicOcc).toEqual(expect.objectContaining({
-      state: "dirty",
-      agent: "drifter",
-    }));
-    // Drifted cwd alone must not free the delivery worktree for a second writer.
-    expect(await manager.worktreeOccupant(driftedCwd)).toEqual(expect.objectContaining({
-      state: "dirty",
-      agent: "drifter",
-    }));
-    void ledger;
-  });
 
   it("releases only a stopped agent's own stale worktree occupancy for governed removal", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-wt-"));

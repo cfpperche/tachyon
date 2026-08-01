@@ -34,7 +34,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "worktrees.classified", "deliveries.classified", "pipeline.inspect", "agent.wait", "soul.profile.status", "legacy-delivery.retirement-preview",
+  "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait", "soul.profile.status",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "agent-profile.authorizable-capabilities",
   "evolution.overview", "evolution.candidate",
@@ -58,7 +58,6 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
   "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
-  "legacy-delivery.retirement-apply",
   "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
   "agent-profile.studio-bundle-clone", "agent-profile.studio-bundle-import",
   // SDD 482 phase 4 (`t-5e1113`) — create a Saved Agent and record its owner in ONE canonical
@@ -86,7 +85,6 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("schedules.list") }).strict(),
   z.object({ action: z.literal("proposals.list") }).strict(),
   z.object({ action: z.literal("doctor.report") }).strict(),
-  z.object({ action: z.literal("legacy-delivery.retirement-preview") }).strict(),
   z.object({ action: z.literal("agent-profile.studio-inspect"), agent: name }).strict(),
   z.object({ action: z.literal("agent-profile.studio-bundle-export"), agent: name, expectedRevision: sha256 }).strict(),
   /** t-4c113c — declared-ownership read side. Additive action: an engine that predates it refuses
@@ -112,7 +110,6 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("worktrees.list") }).strict(),
   // spec 444 — registry entries + fail-closed hygiene classification (Control Worktrees tab).
   z.object({ action: z.literal("worktrees.classified") }).strict(),
-  z.object({ action: z.literal("deliveries.classified") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
   z.object({ action: z.literal("pipeline.inspect"), name: name.optional(), runId: text(128, 1).optional() }).strict(),
@@ -244,11 +241,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
-  z.object({
-    action: z.literal("legacy-delivery.retirement-apply"),
-    snapshotDigest: sha256,
-    archiveId: text(128, 1),
-  }).strict(),
   z.object({ action: z.literal("tmux.kill"), expected: tmuxPaneIdentitySchema }).strict(),
   z.object({ action: z.literal("tmux.recover") }).strict(),
   z.object({

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { EvolutionStore, evolutionActiveSnapshotDigest, type EvolutionActiveSnapshotBytes } from "../../src/evolution/EvolutionStore.js";
 import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 import { FormationAuthorityStore } from "../../src/agents/formation/authorityStore.js";
-import type { AuthorityHead, AuthorityHeadPort } from "../../src/delivery/authorityIntegrity.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../../src/evolution/authorityIntegrity.js";
 import {
   EVOLUTION_FORMATION_RENDERER_CONTRACT,
   EVOLUTION_FORMATION_RENDERER_SHA256,

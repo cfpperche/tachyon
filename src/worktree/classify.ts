@@ -4,7 +4,7 @@
  * base-containment) into one of four algorithmic states. "active" (the registry's own `status`
  * field, spec 392) stays a separate, unchanged axis shown alongside — see notes.md.
  *
- * Deliberately does NOT import from `../git-delivery/classify.js`: that module's containment check
+ * Deliberately does NOT import from the retired `git-delivery/classify` module: that module's containment check
  * is coupled to the `GitDelivery` type. The underlying git operation is small and stable enough to
  * port against primitive `(cwd, baseRef)` args instead of widening spec 365's shipped code for a
  * spec 444 concern.

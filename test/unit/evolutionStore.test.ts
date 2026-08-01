@@ -10,7 +10,7 @@ import {
   type EvolutionLearning,
 } from "../../src/evolution/domain.js";
 import { EvolutionStore, EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
-import type { AuthorityHead, AuthorityHeadPort } from "../../src/delivery/authorityIntegrity.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../../src/evolution/authorityIntegrity.js";
 import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
 import {
   digestEvolutionSkillFiles,

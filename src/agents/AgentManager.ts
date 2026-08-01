@@ -13,9 +13,6 @@ import { redactSecrets } from "../bridge/redact.js";
 import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import {
-  hasDeliveryMarker,
-  isInvalidDeliveryMarker,
-  isValidDeliveryBinding,
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
@@ -1805,9 +1802,6 @@ export class AgentManager {
       if (occ.agentId !== agent) {
         throw new Error(`worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agentId}' (cwd ${occ.cwd})`);
       }
-      if (hasDeliveryMarker(this.opts.ledger?.get(agent))) {
-        throw new Error(`worktree for '${agent}' is Delivery-bound and cannot be released by agent removal`);
-      }
       if ((await this.agentStates()).has(agent) || await this.opts.tmux.hasSession(this.session(agent))) {
         throw new Error(`agent '${agent}' must be fully stopped before releasing its worktree`);
       }
@@ -1862,12 +1856,6 @@ export class AgentManager {
       this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
       return;
     }
-    // SDD 368 T14 — a Delivery-bound occupant never becomes free from tmux disappearance alone.
-    // Bound worktrees stay dirty/unavailable until an explicit Delivery recovery path clears them.
-    if (hasDeliveryMarker(this.opts.ledger?.get(occ.agentId))) {
-      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
-      return;
-    }
     if (occ.pid === undefined) console.warn(`[tachyon] worktree occupancy freed on tmux-session-gone alone for '${occ.agentId}' — no pid was captured to verify its root process also exited`);
     this.worktreeOccupancy.delete(key);
   }
@@ -1903,18 +1891,10 @@ export class AgentManager {
       const wtMatch = !!wtKey && isPathAtOrUnder(wtKey, root);
       if (!cwdMatch && !wtMatch) continue;
 
-      const bound = hasDeliveryMarker(rec);
-      const invalidMarker = isInvalidDeliveryMarker(rec.delivery)
-        || (bound && !isValidDeliveryBinding(rec.delivery));
-      // Bound mismatch (including cwd-drift): one of cwd/worktree under the target without the
-      // other agreeing, missing side, or both under but not the same canonical key.
-      const boundPathMismatch = bound && (
-        !rec.cwd
-        || !rec.worktree?.path
-        || cwdMatch !== wtMatch
-        || (cwdKey !== undefined && wtKey !== undefined && cwdKey !== wtKey)
-      );
-      const invalid = invalidMarker || boundPathMismatch;
+      // t-e88c8a — a row can no longer be "bound" to anything: the Delivery marker that made this
+      // distinction is gone. Every candidate is an ordinary occupant now.
+      const bound = false;
+      const invalid = false;
       const reportCwd = (cwdMatch && rec.cwd)
         ? rec.cwd
         : (rec.worktree?.path ?? rec.cwd ?? worktreePath);

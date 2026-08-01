@@ -12,7 +12,7 @@ import { watchdogStep, type WatchdogState } from "../tmux/wedgeWatchdog.js";
 import {
   readLinuxProcessIdentity,
   type ObservedProcess,
-} from "../delivery/reloadReconciliation.js";
+} from "../runtime/processIdentity.js";
 import { ensureSecureRuntimeDir } from "./runtimeSecurity.js";
 
 const DEFAULT_WATCHDOG_MS = 30_000;

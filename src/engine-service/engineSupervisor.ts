@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { ensureSecureRuntimeDir, MAX_CONTROL_SOCKET_PATH_BYTES } from "./runtimeSecurity.js";
-import { readLinuxProcessIdentity } from "../delivery/reloadReconciliation.js";
+import { readLinuxProcessIdentity } from "../runtime/processIdentity.js";
 import { TMUX_SOCKET_ENV, workspaceHash } from "../tmux/TmuxService.js";
 import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import { EngineControlClientError, requestEngineControl } from "./controlClient.js";

@@ -7,7 +7,7 @@ import {
   GlobalTmuxWatchdog,
   recoverTmuxServer,
 } from "../../src/engine-service/tmuxAuthority.js";
-import type { ObservedProcess } from "../../src/delivery/reloadReconciliation.js";
+import type { ObservedProcess } from "../../src/runtime/processIdentity.js";
 
 const roots: string[] = [];
 const servers: net.Server[] = [];

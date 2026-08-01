@@ -112,7 +112,7 @@ import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 /** t-d185e1 — the reference id the selector is pinned under; local to this writer. */
 const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
 import { agentLaunchPath } from "../agents/spawnPath.js";
-import { SessionLedger, durableBoundGeneration, type SessionDeliveryBinding, type SessionRecord } from "../resume/SessionLedger.js";
+import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
@@ -199,7 +199,7 @@ import {
   type BridgeClientRebindSettings,
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
-import type { AuthorityHead, AuthorityHeadPort } from "../delivery/authorityIntegrity.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../evolution/authorityIntegrity.js";
 import { renderPrimer, wrapWithPrimer } from "../bridge/primer.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
@@ -265,29 +265,9 @@ import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import { composerProfileFor } from "../runtime/composerRegion.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
-import { GitDeliveryStore } from "../git-delivery/store.js";
-import { DeliveryStore } from "../delivery/store.js";
-import { DeliveryLeaseService, type DeliveryRecoveryApproval, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
-import { UnavailableProcessFence } from "../agents/processFence.js";
-import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
-import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
-import { DeliveryProjectionService } from "../delivery/projectionService.js";
-import { LegacyDeliveryRetirement } from "../delivery/retireLegacyState.js";
-import type { DeliveryActor } from "../delivery/types.js";
-import {
-  readLinuxProcessIdentity,
-  reconcileDeliveryReload,
-  type LinkedGitProjection,
-  type ObservedProcess,
-  type ReloadReconciliationSnapshot,
-} from "../delivery/reloadReconciliation.js";
-import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
 import { resolveGitBinaryForHost } from "../worktree/gitBinary.js";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
-import type { GitDelivery, GitDeliveryListRow } from "../git-delivery/types.js";
-import { listRows } from "../git-delivery/classify.js";
-import { hasDeliveryMarker, isInvalidDeliveryMarker, isValidDeliveryBinding, sameDeliveryBinding } from "../resume/SessionLedger.js";
 import { TaskNotificationService } from "./TaskNotificationService.js";
 import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
@@ -355,50 +335,6 @@ function parseAuthorityHeads(raw: string | undefined): Map<string, AuthorityHead
 
 function serializeAuthorityHeads(heads: Map<string, AuthorityHead>): string {
   return JSON.stringify(Object.fromEntries([...heads.entries()].sort(([a], [b]) => a.localeCompare(b))));
-}
-
-/**
- * A gated launch is deliberately persisted with an invalid Delivery marker until its
- * authority is durable. Canonical Delivery creation resolves the exact binding while
- * that marker is still present; the AgentManager then removes the marker with one
- * ledger.record call. Promote the staged binding in that same write so no crash window
- * can leave a restartable, unbound row between those two lifecycle phases.
- */
-class CanonicalSessionLedger extends SessionLedger {
-  private readonly stagedBindings = new Map<string, SessionDeliveryBinding>();
-
-  stageCanonicalBinding(name: string, binding: SessionDeliveryBinding): void {
-    if (!isValidDeliveryBinding(binding)) {
-      throw new Error(`cannot stage canonical Delivery for '${name}': binding is invalid`);
-    }
-    const current = this.get(name);
-    if (!isInvalidDeliveryMarker(current?.delivery)) {
-      throw new Error(`cannot stage canonical Delivery for '${name}': pending lifecycle marker is missing`);
-    }
-    const staged = this.stagedBindings.get(name);
-    if (staged) {
-      if (sameDeliveryBinding(staged, binding)) return;
-      throw new Error(`cannot stage canonical Delivery for '${name}': staged binding differs`);
-    }
-    this.stagedBindings.set(name, { ...binding });
-  }
-
-  override record(name: string, rec: Omit<SessionRecord, "updatedAt"> & { updatedAt?: string }): void {
-    const staged = this.stagedBindings.get(name);
-    const current = staged ? this.get(name) : undefined;
-    if (staged && rec.delivery === undefined && isInvalidDeliveryMarker(current?.delivery)) {
-      // The pending-marker removal and canonical reverse binding are one durable sessions.json write.
-      super.record(name, { ...rec, delivery: staged });
-      this.stagedBindings.delete(name);
-      return;
-    }
-    super.record(name, rec);
-  }
-
-  override remove(name: string): void {
-    super.remove(name);
-    if (!this.get(name)) this.stagedBindings.delete(name);
-  }
 }
 
 export interface WorkspaceDeps {
@@ -567,16 +503,9 @@ export class Workspace {
    * ledger without engineService having to thread a second object through the call.
    */
   readonly recordExecution?: (event: SealedExecutionEvent) => void;
-  private readonly canonicalLedger: CanonicalSessionLedger;
   readonly worktrees: WorktreeManager;
   /** spec 392 — product registry + change worktrees over WorktreeManager. */
   readonly managedWorktrees: ManagedWorktreeService;
-  readonly gitDeliveries: GitDeliveryStore;
-  readonly deliveries: DeliveryStore;
-  readonly deliveryProjection: DeliveryProjectionService;
-  readonly deliveryLease: DeliveryLeaseService;
-  readonly deliveryVerification: DeliveryVerificationLeaseService;
-  readonly legacyDeliveryRetirement: LegacyDeliveryRetirement;
   /** spec 257 — the captured headless A2A probe lane (probe_agent / read_probe_result). */
   readonly probeService: ProbeService;
   private readonly probeStore: ProbeStore;
@@ -593,19 +522,6 @@ export class Workspace {
   private readonly pipelineRunWt = new Map<string, WorktreeRecord>();
   /** Dead agents with a resumable session that we did NOT auto-resume — offered to the human (spec 209). */
   private resumable: ResumePlanItem[] = [];
-  /**
-   * SDD 368 T14/R4 — explicit reload snapshot readiness.
-   * Construction attempts one bounded reload before the Workspace is returned;
-   * external callers must never observe `uninitialized`. Non-ready phases
-   * (failed, and the internal uninitialized default before that attempt)
-   * deny every generic lifecycle action. Explicit deliveryJoin remains allowed.
-   */
-  private deliveryReload:
-    | { phase: "uninitialized" }
-    | { phase: "ready"; snapshot: ReloadReconciliationSnapshot }
-    | { phase: "failed"; reason: string } = { phase: "uninitialized" };
-  /** Suppresses the duplicate factory/start warning for one unchanged quarantine set. */
-  private deliveryAuthorityQuarantineNoticeKey?: string;
   readonly monitor: AttentionMonitor;
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
@@ -830,15 +746,8 @@ export class Workspace {
     this.hostActionSessionEpoch = (deps.host.getState<number>(epochKey) ?? 0) + 1;
     deps.host.setState(epochKey, this.hostActionSessionEpoch);
 
-    this.canonicalLedger = new CanonicalSessionLedger(workspaceRoot);
-    this.ledger = this.canonicalLedger;
-    this.legacyDeliveryRetirement = new LegacyDeliveryRetirement(workspaceRoot);
+    this.ledger = new SessionLedger(workspaceRoot);
     this.externalTools = new ExternalToolRegistry(workspaceRoot);
-    this.gitDeliveries = new GitDeliveryStore(workspaceRoot);
-    this.deliveries = new DeliveryStore(workspaceRoot, {
-      authorityIntegrityKey: () => this.authorityIntegrityKey,
-      authorityHead: this.canonicalAuthorityHeadPort(),
-    });
     this.worktrees = new WorktreeManager({
       workspaceRoot,
       wsHash: this.wsHash,
@@ -867,92 +776,6 @@ export class Workspace {
         runtimeParentOf: (name: string) => this.manager.parentOf(name),
         declaredOwnerOf: (name: string) => this.config?.declaredOwner?.[name],
       }),
-    });
-    // SDD 368 T15 — constructed after worktrees so the path lock seam is available.
-    this.deliveryProjection = new DeliveryProjectionService({
-      deliveries: this.deliveries,
-      gitDeliveries: this.gitDeliveries,
-      workspaceRoot,
-      workspaceId: this.wsHash,
-      git: this.gitExec,
-      liveness: (agent) => this.gitDeliveryLiveness(agent),
-      worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
-      // t-2dd637 §4 — the base repair may only widen a pinned SHA to the workspace's own checked-out
-      // branch: the exact ref WorktreeManager forks deliveries from, so nothing else can be proposed.
-      targetBranch: () => this.workspaceTargetBranch(),
-      resolveBaseRepairApproval: (approvalId, actor, actionDigest) => this.resolveTrustedRecoveryApproval(approvalId, actor, actionDigest),
-      removeManagedWorktree: (worktreePath, o) =>
-        this.managedWorktrees.removePath(worktreePath, {
-          deleteBranch: o?.deleteBranch,
-          branch: o?.branch,
-          tachyonCreatedBranch: o?.tachyonCreatedBranch,
-          baseRef: o?.baseRef,
-          force: o?.force,
-        }),
-      withWorktreeLock: (canonicalWorktree, fn) => this.worktrees.withPathLock(canonicalWorktree, fn),
-      settings: () => resolveGitDeliverySettings(this.config?.settings),
-      loadReloadSnapshot: async (deliveryId) => {
-        // Prefer the in-memory T14 snapshot when ready; otherwise recompute one bounded view.
-        if (this.deliveryReload.phase === "ready") {
-          const snap = this.deliveryReload.snapshot;
-          if (snap.byId.has(deliveryId)) return snap;
-        }
-        return this.refreshDeliveryReloadSnapshot();
-      },
-    });
-    // T14.6B2: the strong fence remains deliberately unavailable until T14.6C.
-    // Mechanism-only uses the exact ledger/pane stopper below and never claims descendant absence.
-    this.deliveryLease = new DeliveryLeaseService({
-      store: this.deliveries,
-      processFence: new UnavailableProcessFence(),
-      recoveryPrincipals: () => resolveGitDeliverySettings(this.config?.settings).prunePrincipals,
-      resolveRecoveryApproval: (approvalId, actor, actionDigest) => this.resolveTrustedRecoveryApproval(approvalId, actor, actionDigest),
-      // t-9e57e8 — the free→abandoned disposition substitutes liveness + occupancy evidence for the
-      // process fence. Both reuse the existing oracles (no second liveness/occupancy source).
-      agentLiveness: (agent) => this.gitDeliveryLiveness(agent),
-      worktreeOccupancy: (canonicalWorktree) => this.manager.worktreeOccupant(canonicalWorktree),
-      canonicalWorktreeFor: async (delivery) => fs.realpathSync((await this.exactCanonicalProjection(delivery)).worktreePath),
-      readHead: async (cwd) => this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"),
-      inspectWorktree: async (cwd) => ({ headSha: await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD"), clean: await this.requiredGitStatus(cwd) }),
-      inspectRecoveryWorktree: (cwd, baseSha) => this.requiredRecoveryInventory(cwd, baseSha),
-      inspectReviewWorktree: async (cwd, taskRef) => {
-        const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
-        const taskRefSha = await this.requiredGitOutput(["rev-parse", taskRef], cwd, "Git task ref");
-        const indexTreeSha = await this.requiredGitOutput(["write-tree"], cwd, "Git index tree");
-        const commitTreeSha = await this.requiredGitOutput(["rev-parse", "HEAD^{tree}"], cwd, "Git commit tree");
-        return { headSha, taskRefSha, indexTreeSha, commitTreeSha, trackedClean: await this.requiredGitStatus(cwd) };
-      },
-      isAncestor: async (older, newer, cwd) => {
-        const result = await this.gitExec(["merge-base", "--is-ancestor", older, newer], cwd);
-        if (result.code === 0) return true;
-        if (result.code === 1) return false;
-        throw new Error(`Git ancestry inspection failed (${result.code}): ${result.stderr.trim() || "no diagnostic"}`);
-      },
-      withWorktreeLock: (cwd, fn) => this.worktrees.withPathLock(cwd, fn),
-      processObserver: { observe: (identity) => {
-        const observed = readLinuxProcessIdentity(identity.pid);
-        if (observed.state === "gone") return { state: "gone" as const };
-        if (observed.state !== "exact") return { state: "unknown" as const, reason: observed.reason };
-        return observed.processStart === identity.processStart && observed.bootId === identity.bootId ? { state: "alive" as const } : { state: "unknown" as const, reason: "pid identity changed" };
-      } },
-      exactExecutionStopper: { stop: async (input) => {
-        const holder = (await this.deliveries.get(input.deliveryId))?.lease.holder;
-        const row = this.ledger.get(input.executionAgent);
-        const panePid = await this.tmux.panePid(this.manager.session(input.executionAgent));
-        const observed = readLinuxProcessIdentity(input.process.pid);
-        if (!holder || holder.segmentId !== input.segmentId || holder.executionNonce !== input.executionNonce
-          || holder.executionAgent !== input.executionAgent || !isValidDeliveryBinding(row?.delivery) || row.delivery.deliveryId !== input.deliveryId || row.delivery.segmentId !== input.segmentId || row.delivery.executionNonce !== input.executionNonce
-          || !row.cwd || !row.worktree?.path || fs.realpathSync(row.cwd) !== input.canonicalWorktree || fs.realpathSync(row.worktree.path) !== input.canonicalWorktree
-          || panePid !== input.process.pid || observed.state !== "exact" || observed.processStart !== input.process.processStart || observed.bootId !== input.process.bootId) {
-          throw new Error("DELIVERY_EXACT_STOP_REFUSED: ledger, worktree, or pane identity drifted");
-        }
-        await this.manager.kill(input.executionAgent);
-      } },
-      postStopObservation: {
-        attempts: 81,
-        delayMs: 25,
-        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      },
     });
     const defaultClaudeConfigHome = realConfigHome();
     this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
@@ -1265,7 +1088,6 @@ export class Workspace {
         this.refreshAgentsViews();
       },
       onKilled: async (name) => {
-        await this.deliveryLease.quarantineKilledExecution(name);
         this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
         this.surfaces.forget(name); // t-b88106 — a kill ends the agent; nothing to restore
@@ -1406,18 +1228,6 @@ export class Workspace {
       completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
       removeHarnessHome: (name) => this.harness.remove(name),
       removePiSessionDir: (name) => removePiSessionDir(this.workspaceRoot, name),
-    });
-
-    this.deliveryVerification = new DeliveryVerificationLeaseService({
-      store: this.deliveries,
-      gitDeliveries: this.gitDeliveries,
-      ownerEpoch: randomBytes(16).toString("hex"),
-      withPathLock: (worktreePath, fn) => this.worktrees.withPathLock(worktreePath, fn),
-      isAgentRunning: async (name) => {
-        const state = (await this.manager.agentStates()).get(name);
-        return !!state && !state.dead;
-      },
-      establishTailAbsence: (input) => this.deliveryLease.establishVerificationTailAbsence(input),
     });
 
     // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can
@@ -2120,9 +1930,6 @@ export class Workspace {
           // hand back a non-stale verdict we can no longer validate (round-2 review fix).
           return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true, evidence: await this.evidenceHandoff(agent) };
         },
-        withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
-        deliveryVerification: this.deliveryVerification,
-        assertLegacyDeliveryRetired: () => this.legacyDeliveryRetirement.assertRetired(),
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -3134,7 +2941,6 @@ export class Workspace {
       // SDD 368 T14/R4 — one bounded Delivery reload before Bridge exposure or return,
       // so ensureWorkspaceFor / createForTest never leave callers on `uninitialized`.
       // start() still recomputes after rehydrate/GC (failed→ready retry + ledger truth).
-      await ws.attemptDeliveryReloadSnapshot();
       if (seams.startBridge !== false) {
         const preferred = ws.config?.settings.bridgePort ?? derivePort(ws.wsHash);
         const port = await ws.startBridgeListener(preferred);
@@ -3732,7 +3538,6 @@ export class Workspace {
     if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
     // The kind guard above already refused a terminal, so the Agent arm is the only one left.
     const def = asAgent(this.manager.defOf(agent));
-    const canonicalGate = await this.canonicalPrimerGate(agent);
     const sessionEvolution = this.ledger.get(agent)?.evolution;
     if (def?.soul) {
       const previous = this.ledger.get(agent)?.identity;
@@ -3743,7 +3548,6 @@ export class Workspace {
           agentName: agent,
           delegator: this.manager.delegatorOf(agent),
           parent: this.manager.parentOf(agent),
-          gate: canonicalGate,
           verify: this.config?.settings.verify,
         });
         const body = composeAgentPrompt({
@@ -3792,7 +3596,6 @@ export class Workspace {
         agentName: agent,
         delegator: this.manager.delegatorOf(agent),
         parent: this.manager.parentOf(agent),
-        gate: canonicalGate,
         verify: this.config?.settings.verify,
       });
       assertSafeBriefTransport(
@@ -3821,7 +3624,6 @@ export class Workspace {
       agentName: agent,
       delegator: this.manager.delegatorOf(agent),
       parent: this.manager.parentOf(agent),
-      gate: canonicalGate,
       verify: this.config?.settings.verify,
     });
     // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
@@ -3833,26 +3635,6 @@ export class Workspace {
     const injection = frame(deliverable);
     assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
     await this.tmux.sendKeys(session, injection, true);
-  }
-
-  /** Primer metadata is advisory, but it must still come from the exact canonical binding. */
-  private async canonicalPrimerGate(agent: string): Promise<{ behaviorTest: string; owns: string[]; stubPath?: string } | undefined> {
-    const binding = this.ledger.get(agent)?.delivery;
-    if (!isValidDeliveryBinding(binding)) return undefined;
-    try {
-      const delivery = await this.deliveries.get(binding.deliveryId);
-      const holder = delivery?.lease.holder;
-      if (!delivery || !holder || holder.segmentId !== binding.segmentId || holder.executionAgent !== agent) return undefined;
-      const segment = delivery.segments.find((candidate) => candidate.id === binding.segmentId);
-      if (!segment || segment.executionAgent !== agent || segment.releasedAt) return undefined;
-      return {
-        behaviorTest: delivery.contract.behaviorTest,
-        owns: [...segment.ownsSubset],
-        ...(delivery.contract.stubPath ? { stubPath: delivery.contract.stubPath } : {}),
-      };
-    } catch {
-      return undefined;
-    }
   }
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
@@ -4373,14 +4155,6 @@ export class Workspace {
    * The single linked Git projection for a canonical Delivery, or a refusal. Kept while the Delivery
    * lease still resolves a worktree by projection (t-e88c8a stage 3 removes both together).
    */
-  private async exactCanonicalProjection(delivery: import("../delivery/types.js").Delivery): Promise<GitDelivery> {
-    if (!delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: Delivery '${delivery.id}' has no projection backlink`);
-    const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
-    if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected exact linked projection for '${delivery.id}'`);
-    fs.realpathSync(linked[0].worktreePath);
-    return linked[0];
-  }
-
   /**
    * spec 210 — run an agent's `worktreeSetup` in its fresh worktree: sequential,
    * stop on first failure, with `TACHYON_WORKSPACE_ROOT`/`TACHYON_WORKTREE_ROOT`
@@ -4400,214 +4174,6 @@ export class Workspace {
       }
     }
     this.host.notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
-  }
-
-  private async requiredGitOutput(args: string[], cwd: string, label: string): Promise<string> {
-    const result = await this.gitExec(args, cwd);
-    const output = result.stdout.trim();
-    // Git object formats are SHA-1 (40 hex) or SHA-256 (64 hex).  Do not turn a
-    // successful SHA-256 repository into an apparent inspection failure.
-    if (result.code !== 0 || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(output)) {
-      throw new Error(`${label} failed (${result.code}): ${result.stderr.trim() || "missing or malformed object id"}`);
-    }
-    return output;
-  }
-
-  private async requiredGitStatus(cwd: string): Promise<boolean> {
-    const result = await this.gitExec(["status", "--porcelain"], cwd);
-    if (result.code !== 0) {
-      throw new Error(`Git status inspection failed (${result.code}): ${result.stderr.trim() || "no diagnostic"}`);
-    }
-    return result.stdout.trim() === "";
-  }
-
-  private async requiredRecoveryInventory(cwd: string, baseSha: string): Promise<DeliveryRecoveryInspection> {
-    const headSha = await this.requiredGitOutput(["rev-parse", "HEAD"], cwd, "Git HEAD");
-    const status = await this.gitExec(["status", "--porcelain=v1"], cwd);
-    if (status.code !== 0) {
-      throw new Error(`Git status failed (${status.code}): ${status.stderr.trim() || "no diagnostic"}`);
-    }
-    const history = await this.gitExec(["rev-list", `${baseSha}..${headSha}`], cwd);
-    if (history.code !== 0) {
-      throw new Error(`Git recovery history failed (${history.code}): ${history.stderr.trim() || "no diagnostic"}`);
-    }
-    const uniqueCommits = history.stdout.split(/\r?\n/).filter(Boolean);
-    if (uniqueCommits.some((sha) => !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(sha))) {
-      throw new Error("Git recovery history returned a malformed object id");
-    }
-    return { inventory: {
-      headSha,
-      dirtyPaths: status.stdout.split(/\r?\n/).filter(Boolean).map((line) => ({ status: line.slice(0, 2), path: line.slice(3) })),
-      uniqueCommits,
-    } };
-  }
-
-  private async refreshDeliveryReloadSnapshot(): Promise<ReloadReconciliationSnapshot> {
-    const deliveryList = await this.deliveries.listWithCorrupt();
-    if (deliveryList.corrupt.length > 0) {
-      const noticeKey = deliveryList.corrupt.map((record) => `${record.id}\0${record.error}`).join("\0");
-      if (noticeKey !== this.deliveryAuthorityQuarantineNoticeKey) {
-        const preview = deliveryList.corrupt
-          .slice(0, 3)
-          .map((record) => `${record.id}: ${record.error.replace(/\s+/g, " ").slice(0, 160)}`)
-          .join("; ");
-        const omitted = deliveryList.corrupt.length - 3;
-        console.warn(
-          `[tachyon] quarantined ${deliveryList.corrupt.length} canonical Delivery record(s) with invalid authority: ${preview}${omitted > 0 ? `; +${omitted} more` : ""}`,
-        );
-        this.host.notify(
-          this.t(
-            "Tachyon quarantined {0} canonical Delivery record(s) with invalid authority; affected agents remain unavailable",
-            deliveryList.corrupt.length,
-          ),
-          "warn",
-        );
-        this.deliveryAuthorityQuarantineNoticeKey = noticeKey;
-      }
-    } else {
-      this.deliveryAuthorityQuarantineNoticeKey = undefined;
-    }
-    const deliveries = deliveryList.records;
-    const gitList = await this.gitDeliveries.list();
-    const linkedProjections: LinkedGitProjection[] = [];
-    for (const g of gitList) {
-      if (g.deliveryId && g.worktreePath) {
-        linkedProjections.push({
-          gitDeliveryId: g.id,
-          deliveryId: g.deliveryId,
-          worktreePath: g.worktreePath,
-        });
-      }
-    }
-    const sessions = this.ledger.all();
-    // Observe processes for every session that may participate in classification:
-    // bound rows, and also marker-less names that appear as Delivery holders (crash window).
-    const observeNames = new Set<string>();
-    for (const [name, rec] of sessions) {
-      if (hasDeliveryMarker(rec)) observeNames.add(name);
-    }
-    for (const d of deliveries) {
-      const holder = d.lease.holder?.executionAgent;
-      if (holder) observeNames.add(holder);
-    }
-    const processByAgent = new Map<string, ObservedProcess>();
-    for (const name of observeNames) {
-      try {
-        const session = this.manager.session(name);
-        if (!(await this.tmux.hasSession(session))) {
-          processByAgent.set(name, { state: "gone" });
-          continue;
-        }
-        const pid = await this.tmux.panePid(session);
-        processByAgent.set(name, readLinuxProcessIdentity(pid));
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        processByAgent.set(name, { state: "unknown", reason });
-      }
-    }
-    const snapshot = reconcileDeliveryReload({
-      deliveries,
-      untrustedDeliveries: deliveryList.corrupt.map((record) => ({ id: record.id })),
-      linkedProjections,
-      sessions,
-      processByAgent,
-    });
-    this.deliveryReload = { phase: "ready", snapshot };
-    return snapshot;
-  }
-
-  /**
-   * SDD 368 T14/R4 — shared bounded reload attempt used by `_create` and `start`.
-   * Success → ready; failure → failed + warn. Never leaves callers on uninitialized
-   * after the attempt completes. Does not special-case empty stores or test mode.
-   */
-  private async attemptDeliveryReloadSnapshot(): Promise<void> {
-    try {
-      await this.refreshDeliveryReloadSnapshot();
-    } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err);
-      this.deliveryReload = { phase: "failed", reason };
-      this.host.notify(
-        this.t("delivery reload reconciliation failed: {0}", reason),
-        "warn",
-      );
-    }
-  }
-
-  /** SDD 368 T14 — last ready reload snapshot (undefined when not ready). */
-  deliveryReloadState(): ReloadReconciliationSnapshot | undefined {
-    return this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined;
-  }
-
-  /**
-   * SDD 368 T14/R3 — explicit snapshot readiness. Never interpret a missing
-   * snapshot as safe generic-lifecycle admission. After `_create`/`start` attempt,
-   * callers should only see `ready` or `failed` (not `uninitialized`).
-   */
-  deliveryReloadPhase(): "uninitialized" | "ready" | "failed" {
-    return this.deliveryReload.phase;
-  }
-
-  /**
-   * The workspace's own checked-out branch — the ref `WorktreeManager.add` forks new delivery
-   * branches from, and therefore the only base a governed base repair may widen a pin to.
-   * A detached or unresolvable HEAD throws so the repair stays unavailable rather than guessing.
-   */
-  private async workspaceTargetBranch(): Promise<string> {
-    const result = await this.gitExec(["rev-parse", "--abbrev-ref", "HEAD"], this.workspaceRoot);
-    const branch = result.stdout.trim();
-    if (result.code !== 0 || !branch || branch === "HEAD") {
-      throw new Error(`workspace target branch is not resolvable (${result.stderr.trim() || "detached HEAD"})`);
-    }
-    return branch;
-  }
-
-  /**
-   * The one durable approval store both governed recovery dispositions redeem against: the caller
-   * may only redeem an approval it requested itself, and the resolved payload must name this exact
-   * action digest. Shared by the lease service's recovery approvals and the projection service's
-   * base repair so neither can drift onto a weaker binding check.
-   */
-  private resolveTrustedRecoveryApproval(approvalId: string, actor: DeliveryActor, actionDigest: string): DeliveryRecoveryApproval {
-    if (actor.kind !== "agent" || !actor.name) throw new Error("recovery approval requires an agent caller");
-    const request = readOwnApprovalRequest(this.workspaceRoot, approvalId, actor.name);
-    if (request.status !== "resolved" || request.resolution?.decision !== "approved") throw new Error("approval is not resolved as approved");
-    if (!request.payload.proposedAction.includes(actionDigest)) throw new Error("approval is not bound to this recovery action digest");
-    return { decision: "approved", requester: request.requester, actionDigest, payloadHash: request.payloadHash,
-      resolvedAt: request.resolution.resolvedAt, resolvedBy: request.resolution.resolvedBy };
-  }
-
-  private async gitDeliveryLiveness(agent: string): Promise<"live" | "not_live" | "unknown"> {
-    try {
-      const state = (await this.manager.agentStates()).get(agent);
-      return state && !state.dead ? "live" : "not_live";
-    } catch {
-      return "unknown";
-    }
-  }
-
-  /**
-   * t-43c6fa — the ONE classified GitDelivery read for Control's Deliveries tab, mirroring spec
-   * 444's `managedWorktrees.listClassified()` for Worktrees. Every row flows through the validated
-   * `GitDeliveryStore` plus spec 365's fail-closed `listRows` classifier (live git containment,
-   * missing-ref and agent liveness) — the same path `git_delivery_list` serves over the Bridge.
-   *
-   * It deliberately does NOT swallow failures: a store or git error propagates so the caller can
-   * render an honest "engine unavailable" state instead of an empty list that reads as "no
-   * deliveries" (the exact ambiguity the deleted raw-disk reader produced).
-   */
-  async listClassifiedDeliveries(): Promise<GitDeliveryListRow[]> {
-    const deliveries = await this.gitDeliveries.list();
-    const deliveriesById = new Map((await this.deliveries.list()).map((d) => [d.id, d]));
-    const reloadSnapshot = this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined;
-    return listRows(deliveries, {
-      workspaceRoot: this.workspaceRoot,
-      git: this.gitExec,
-      liveness: (agent) => this.gitDeliveryLiveness(agent),
-      tasks: this.taskStore,
-      deliveriesById,
-      ...(reloadSnapshot ? { reloadSnapshot } : {}),
-    });
   }
 
   /**
@@ -5724,32 +5290,8 @@ export class Workspace {
       if (!wtPath) continue;
       const baseSha = rec?.worktree?.baseRef;
       if (!baseSha) continue;
-      let deliveryId = `gated:${entry.name}`;
-      let sinceIso = rec?.updatedAt ?? new Date(0).toISOString();
-      const binding = rec?.delivery;
-      if (isValidDeliveryBinding(binding)) {
-        deliveryId = binding.deliveryId;
-        try {
-          const delivery = await this.deliveries.get(binding.deliveryId);
-          if (delivery) {
-            sinceIso = delivery.createdAt;
-            // Prefer contract base when present
-            if (delivery.contract.baseSha) {
-              out.push({
-                agent: entry.name,
-                delegator: entry.delegator,
-                deliveryId,
-                worktreePath: wtPath,
-                baseSha: delivery.contract.baseSha,
-                sinceIso,
-              });
-              continue;
-            }
-          }
-        } catch {
-          /* fall through to ledger base */
-        }
-      }
+      const deliveryId = `gated:${entry.name}`;
+      const sinceIso = rec?.updatedAt ?? new Date(0).toISOString();
       out.push({
         agent: entry.name,
         delegator: entry.delegator,
@@ -6004,8 +5546,6 @@ export class Workspace {
         ledger: this.ledger.all(),
         declaredAutostart: new Set(), // no autostart while config invalid
         liveSessions,
-        deliveryUnavailableAgents: undefined,
-        deliveryReloadSnapshotReady: false,
       });
       this.resumable = offers(plan);
       this.refreshAgentsViews();
@@ -6026,17 +5566,7 @@ export class Workspace {
     this.gcOrphanAgentFootprints(liveSessions); // t-8310ca: continuity (+ activity) for names no longer known
     this.sweepWorktreeHygiene(); // t-e74631: change worktrees already landed, left behind by finished agents
     await this.rehydratePipelines(); // spec 230: restore pipeline runs so a reloaded run's surviving nodes can still complete
-    // SDD 368 T14/R4 — recompute after ledger rehydration/GC (same attempt helper as _create).
-    // Reflects post-rehydrate truth and allows a prior failed create/start to become ready.
-    await this.attemptDeliveryReloadSnapshot();
-    const reload = this.deliveryReload;
-    const plan = planResume({
-      ledger: this.ledger.all(),
-      declaredAutostart,
-      liveSessions,
-      deliveryUnavailableAgents: reload.phase === "ready" ? reload.snapshot.unavailableAgents : undefined,
-      deliveryReloadSnapshotReady: reload.phase === "ready",
-    });
+    const plan = planResume({ ledger: this.ledger.all(), declaredAutostart, liveSessions });
     let resumed = 0;
     for (const item of autoResumes(plan)) {
       try {

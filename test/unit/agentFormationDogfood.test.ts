@@ -29,7 +29,7 @@ import { completeFormationRendererContractsSha256, resolveCompleteFormationPaylo
 import { validateFormationSessionTransition } from "../../src/agents/formation/sessionPolicy.js";
 import { formationLifecycleConsumerContract } from "../../src/agents/formation/lifecycleContract.js";
 import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
-import type { AuthorityHead, AuthorityHeadPort } from "../../src/delivery/authorityIntegrity.js";
+import type { AuthorityHead, AuthorityHeadPort } from "../../src/evolution/authorityIntegrity.js";
 import { SelectedMemoryStore } from "../../src/memory/SelectedMemoryStore.js";
 import { selectedMemoryCandidateBytes, selectedMemoryManifestBytes, selectedMemorySha256 } from "../../src/memory/domain.js";
 import { detectRuntimes, loadPlugin, previewInstall } from "../../src/plugins/engine.js";

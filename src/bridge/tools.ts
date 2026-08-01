@@ -62,7 +62,6 @@ import { appendDoorbellEvent } from "./doorbell.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
-import type { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import {
   buildApprovalRequest,
   writeApprovalRequest,
@@ -404,10 +403,6 @@ export interface BridgeDeps {
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
   runVerify?: (agent: string) => Promise<VerifyHandoff>;
-  /** spec 362 — serialize verify_task's checkout dance with WorktreeManager ensure/remove for the same agent worktree. */
-  withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
-  /** spec 368 T9 — Workspace-owned canonical system verification lease lifecycle. */
-  deliveryVerification?: DeliveryVerificationLeaseService;
   /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
@@ -450,8 +445,6 @@ export interface BridgeDeps {
   /** t-35d95a — latch the CALLER's own agent as awaiting-human (AttentionMonitor.flagAwaitingHuman),
    *  publishing to the owned Attention Stack/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
-  /** Refuses tracked canonical operations while pre-Delivery metadata awaits explicit retirement. */
-  assertLegacyDeliveryRetired?: () => void;
   /** spec 392 — managed worktree registry + change worktree create/remove. */
   managedWorktrees?: ManagedWorktreeService;
 }

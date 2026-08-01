@@ -93,8 +93,6 @@ export async function executeExtensionQuery(
       return json(workspace.proposals.list());
     case "doctor.report":
       return doctorReport(workspace);
-    case "legacy-delivery.retirement-preview":
-      return json(workspace.legacyDeliveryRetirement.preview());
     case "agent-profile.studio-inspect":
       return json(await workspace.inspectAgentProfileStudio(query.agent));
     case "agent-profile.studio-ownership":
@@ -234,13 +232,6 @@ export async function executeExtensionQuery(
       // spec 444 — the ONE classified read for Control's Worktrees tab. Every row flows through
       // ManagedWorktreeService (fail-closed loader + reconcile) + classify.ts; no raw JSON parsing.
       return json({ worktrees: (await workspace.managedWorktrees.listClassified()) as unknown as JsonValue });
-    }
-    case "deliveries.classified": {
-      // t-43c6fa — the ONE classified read for Control's Deliveries tab, mirroring
-      // `worktrees.classified` above. Rows come from the validated GitDeliveryStore + spec 365's
-      // fail-closed classifier; the deleted raw-JSON reader is not a fallback (untrusted data is
-      // not better than no data — maintainer-ratified with spec 444).
-      return json({ deliveries: (await workspace.listClassifiedDeliveries()) as unknown as JsonValue });
     }
     case "worktree.review":
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
@@ -551,13 +542,6 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
-    case "legacy-delivery.retirement-apply": {
-      const preview = workspace.legacyDeliveryRetirement.preview();
-      if (preview.snapshotDigest !== command.snapshotDigest || preview.archiveId !== command.archiveId) {
-        throw new Error("legacy Delivery metadata changed after preview; review the new snapshot before retiring it");
-      }
-      return json(workspace.legacyDeliveryRetirement.apply(preview));
-    }
     case "tmux.kill": {
       assertTachyonSession(command.expected.session);
       const rows = (await workspace.tmux.serverSnapshot(SESSION_PREFIX))

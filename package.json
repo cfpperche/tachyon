@@ -338,11 +338,6 @@
         "icon": "$(heart)"
       },
       {
-        "command": "tachyon.retireLegacyDeliveryState",
-        "title": "Tachyon: Retire Legacy Delivery State",
-        "icon": "$(archive)"
-      },
-      {
         "command": "tachyon.openConfig",
         "title": "%command.openConfig%",
         "icon": "$(file-code)"

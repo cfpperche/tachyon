@@ -2,9 +2,8 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { DatabaseSync } from "node:sqlite";
 import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Workspace.js";
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
@@ -928,11 +927,6 @@ const flushMicrotasks = async () => {
 const exitPoke = (agent: string, exitDescriptor: string): string =>
   `[tachyon] child '${agent}' exited(${exitDescriptor}) — inspect Activity/read_output, dismiss, resume, or re-delegate`;
 
-function git(cwd: string, args: string[]): string {
-  return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
-}
-
-
 
 
 describe("Workspace — headless composition smoke (spec 235)", () => {
@@ -1156,40 +1150,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("accepts a clean recovery inventory with more than one unique commit", async () => {
-    const { ws } = await makeWorkspace();
-    const repo = mkdir();
-    git(repo, ["init"]);
-    git(repo, ["config", "user.email", "test@example.com"]);
-    git(repo, ["config", "user.name", "Test User"]);
-    fs.writeFileSync(path.join(repo, "recovery.txt"), "base\n");
-    git(repo, ["add", "recovery.txt"]);
-    git(repo, ["commit", "-m", "base"]);
-    const baseSha = git(repo, ["rev-parse", "HEAD"]);
-    fs.appendFileSync(path.join(repo, "recovery.txt"), "one\n");
-    git(repo, ["commit", "-am", "one"]);
-    const firstUniqueSha = git(repo, ["rev-parse", "HEAD"]);
-    fs.appendFileSync(path.join(repo, "recovery.txt"), "two\n");
-    git(repo, ["commit", "-am", "two"]);
-    const headSha = git(repo, ["rev-parse", "HEAD"]);
-    const inspect = (ws as unknown as {
-      requiredRecoveryInventory(cwd: string, base: string): Promise<{
-        inventory: { headSha: string; dirtyPaths: Array<{ status: string; path: string }>; uniqueCommits: string[] };
-      }>;
-    }).requiredRecoveryInventory.bind(ws);
-    try {
-      await expect(inspect(repo, baseSha)).resolves.toEqual({
-        inventory: { headSha, dirtyPaths: [], uniqueCommits: [headSha, firstUniqueSha] },
-      });
-
-      fs.writeFileSync(path.join(repo, "dirty.txt"), "untracked\n");
-      await expect(inspect(repo, baseSha)).resolves.toEqual({
-        inventory: { headSha, dirtyPaths: [{ status: "??", path: "dirty.txt" }], uniqueCommits: [headSha, firstUniqueSha] },
-      });
-    } finally {
-      ws.dispose();
-    }
-  });
 
 
 
@@ -1280,184 +1240,8 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
-  it("rejects a signed canonical rollback from another host and quarantines only that Delivery", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
-    const secrets = new Map<string, string>();
-    const firstFake = fakeTmux();
-    const secondFake = fakeTmux();
-    const first = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: firstFake.tmux, startBridge: false });
-    const secondHost = new SharedSecretHost(mkdir(), secrets);
-    const second = await Workspace.createForTest(root, { host: secondHost, onViewsChanged: () => {} }, { tmux: secondFake.tmux, startBridge: false });
-    try {
-      const created = await first.deliveries.create({
-        id: "d-shared-rollback",
-        workspaceId: workspaceHash(root),
-        createdBy: { kind: "system", name: "tachyon" },
-        contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/shared" },
-        events: [{ id: "event-created", at: "2026-07-15T12:00:00.000Z", type: "created", by: { kind: "system", name: "tachyon" } }],
-      });
-      const database = new DatabaseSync(first.deliveries.databasePath);
-      let versionOneJson: string;
-      try {
-        versionOneJson = String((database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(created.id) as { record_json: string }).record_json);
-      } finally {
-        database.close();
-      }
-      const updated = await first.deliveries.update(created.id, created.version, (record) => {
-        record.events.push({ id: "event-version-two", at: "2026-07-15T12:01:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
-        return record;
-      });
-      await expect(second.deliveries.get(created.id)).resolves.toMatchObject({ version: updated.version });
 
-      const attacker = new DatabaseSync(first.deliveries.databasePath);
-      try {
-        attacker.prepare("UPDATE deliveries SET record_json = ? WHERE id = ?").run(versionOneJson, created.id);
-      } finally {
-        attacker.close();
-      }
 
-      await expect(second.deliveries.get(created.id)).rejects.toThrow("authority head mismatch");
-      await second.start();
-      expect(second.deliveryReloadPhase()).toBe("ready");
-      expect(second.deliveryReloadState()?.byId.get(created.id)).toMatchObject({ class: "unavailable" });
-      const quarantineNotice = secondHost.notices.find((notice) => /quarantined 1 canonical Delivery record/.test(notice.message));
-      expect(quarantineNotice?.message).not.toContain(created.id);
-      expect(quarantineNotice?.message.length).toBeLessThan(180);
-      // The invalid authority is still unusable; only unrelated generic lifecycle remains available.
-      await expect(second.deliveries.get(created.id)).rejects.toThrow("authority head mismatch");
-      await expect(second.manager.spawn("a")).resolves.toBeUndefined();
-      expect(await second.manager.runningAgents()).toContain("a");
-    } finally {
-      first.dispose();
-      second.dispose();
-    }
-  });
-
-  it("one-time reseals a pre-hardening unsigned Delivery without blocking signed rows", async () => {
-    const { DeliveryStore } = await import("../../src/delivery/store.js");
-    const root = mkdir();
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents: {}\nterminals:\n  bound-old:\n    cmd: sh\n    autostart: false\n  ordinary:\n    cmd: sh\n    autostart: false\n",
-      "utf8",
-    );
-    const unsignedStore = new DeliveryStore(root);
-    const unsigned = await unsignedStore.create({
-      id: "d-pre-hardening",
-      workspaceId: workspaceHash(root),
-      createdBy: { kind: "system", name: "tachyon" },
-      contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/old" },
-    });
-    const readStoredJson = (): string => {
-      const database = new DatabaseSync(unsignedStore.databasePath);
-      try {
-        return String((database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(unsigned.id) as { record_json: string }).record_json);
-      } finally {
-        database.close();
-      }
-    };
-    const before = readStoredJson();
-    expect(JSON.parse(before)).not.toHaveProperty("authorityIntegrity");
-    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
-      sessions: {
-        "bound-old": {
-          def: { cmd: "sh", kind: "agent" },
-          resume: { runtime: "claude", sessionId: "old-session" },
-          cwd: root,
-          declared: true,
-          instance: { lifetime: "saved", resumePolicy: "restartable" },
-          delivery: { deliveryId: unsigned.id, segmentId: "old-segment", executionNonce: "old-nonce" },
-          updatedAt: "2026-07-15T12:00:00.000Z",
-        },
-      },
-    }), "utf8");
-
-    const host = new FakeHost(mkdir());
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
-    try {
-      expect(ws.deliveryReloadPhase()).toBe("ready");
-      expect(ws.deliveryReloadState()?.byId.get(unsigned.id)).toMatchObject({ class: "unavailable" });
-      expect(ws.deliveryReloadState()?.unavailableAgents.has("bound-old")).toBe(true);
-      await expect(ws.deliveries.get(unsigned.id)).resolves.toMatchObject({ id: unsigned.id });
-      expect(JSON.parse(readStoredJson())).toHaveProperty("authorityIntegrity");
-
-      const signed = await ws.deliveries.create({
-        id: "d-post-hardening",
-        workspaceId: workspaceHash(root),
-        createdBy: { kind: "system", name: "tachyon" },
-        contract: { baseSha: "base", behaviorTest: "gate", owns: [], taskRef: "tachyon/new" },
-      });
-      await ws.start();
-      expect(ws.deliveryReloadPhase()).toBe("ready");
-      expect(ws.deliveryReloadState()?.byId.get(unsigned.id)?.class).toBe("unavailable");
-      expect(ws.deliveryReloadState()?.byId.get(signed.id)?.class).toBe("terminal");
-      await expect(ws.deliveries.get(signed.id)).resolves.toMatchObject({ id: signed.id });
-      expect(JSON.parse(readStoredJson())).toHaveProperty("authorityIntegrity");
-
-      expect(host.notices.filter((notice) => /quarantined 1 canonical Delivery record/.test(notice.message))).toHaveLength(0);
-      await expect(ws.manager.spawn("ordinary")).resolves.toBeUndefined();
-    } finally {
-      ws.dispose();
-      await fake.cleanup();
-    }
-  });
-
-  it("one-time reseals a pre-hardening unsigned Delivery already at version > 1, anchoring its head at that version", async () => {
-    // Real legacy data is never version 1 by the time the reseal migration ships (spec-397 t-headfix):
-    // this drives the exact end-to-end path (real Workspace + real DeliveryStore + real host authority
-    // port) that shipped broken, rather than a hand-simulated port.
-    const { DeliveryStore } = await import("../../src/delivery/store.js");
-    const root = mkdir();
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents: {}\nterminals:\n  ordinary:\n    cmd: sh\n    autostart: false\n",
-      "utf8",
-    );
-    const unsignedStore = new DeliveryStore(root);
-    let record = await unsignedStore.create({
-      id: "d-pre-hardening-v3",
-      workspaceId: workspaceHash(root),
-      createdBy: { kind: "system", name: "tachyon" },
-      contract: { baseSha: "base", behaviorTest: "gate", owns: ["src"], taskRef: "tachyon/old-v3" },
-    });
-    for (let i = 0; i < 2; i++) {
-      record = await unsignedStore.update(record.id, record.version, (r) => {
-        r.events.push({ id: `bump-${i}`, at: "2026-07-15T12:00:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
-        return r;
-      });
-    }
-    expect(record.version).toBe(3);
-    const database = new DatabaseSync(unsignedStore.databasePath);
-    try {
-      const row = database.prepare("SELECT record_json FROM deliveries WHERE id = ?").get(record.id) as { record_json: string };
-      expect(JSON.parse(row.record_json)).not.toHaveProperty("authorityIntegrity");
-    } finally {
-      database.close();
-    }
-
-    const host = new FakeHost(mkdir());
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
-    try {
-      const migrated = await ws.deliveries.get(record.id);
-      expect(migrated?.version).toBe(3);
-      expect(migrated?.authorityIntegrity?.mac).toMatch(/^[0-9a-f]{64}$/);
-      const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
-      const heads = JSON.parse(await host.getSecret(secretKey) ?? "{}") as Record<string, { revision: number; mac: string }>;
-      expect(heads[`canonical:${record.id}`]).toEqual({ revision: 3, mac: migrated!.authorityIntegrity!.mac });
-      // The migration marker is set, so ordinary operations on this now-signed Delivery work.
-      const advanced = await ws.deliveries.update(record.id, record.version, (r) => {
-        r.events.push({ id: "post-migration", at: "2026-07-15T12:05:00.000Z", type: "advanced", by: { kind: "system", name: "tachyon" } });
-        return r;
-      });
-      expect(advanced.version).toBe(4);
-    } finally {
-      ws.dispose();
-      await fake.cleanup();
-    }
-  });
 
   it("keeps anti-rollback CAS intact for ordinary heads while the migration-only initial path stays guarded", async () => {
     const root = mkdir();
@@ -1515,28 +1299,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     }
   });
 
-  it("refreshes a previously absent canonical head after another host creates the Delivery", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
-    const secrets = new Map<string, string>();
-    const firstFake = fakeTmux();
-    const secondFake = fakeTmux();
-    const first = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: firstFake.tmux, startBridge: false });
-    const second = await Workspace.createForTest(root, { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux: secondFake.tmux, startBridge: false });
-    try {
-      await expect(second.deliveries.get("d-created-elsewhere")).resolves.toBeUndefined();
-      const created = await first.deliveries.create({
-        id: "d-created-elsewhere",
-        workspaceId: workspaceHash(root),
-        createdBy: { kind: "system", name: "tachyon" },
-        contract: { baseSha: "base", behaviorTest: "gate", owns: [], taskRef: "tachyon/shared" },
-      });
-      await expect(second.deliveries.get(created.id)).resolves.toEqual(created);
-    } finally {
-      first.dispose();
-      second.dispose();
-    }
-  });
 
 
 
@@ -1761,46 +1523,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("SDD 368 T14 does not auto-resume a dead Delivery-bound runtime on Workspace.start", async () => {
-    const root = mkdir();
-    fs.writeFileSync(
-      path.join(root, "tachyon.yml"),
-      "agents:\n  holder:\n    cmd: claude\n    autostart: true\n  a:\n    cmd: sh\n    autostart: false\n",
-      "utf8",
-    );
-    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
-    fs.writeFileSync(path.join(root, ".tachyon", "sessions.json"), JSON.stringify({
-      sessions: {
-        holder: {
-          def: { cmd: "claude", kind: "agent" },
-          resume: { runtime: "claude", sessionId: "dead-session" },
-          cwd: root,
-          declared: true,
-          delivery: { deliveryId: "d-dead", segmentId: "seg-1", executionNonce: "n1" },
-          updatedAt: "2026-07-12T00:00:00.000Z",
-        },
-      },
-    }), "utf8");
-    const host = new FakeHost(mkdir());
-    const { tmux, sessions } = fakeTmux();
-    // holder is NOT live — dead Delivery-bound must not generic-resume; a is not autostart.
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
-    await ws.start();
-    // Delivery-bound holder must not appear as a started session via generic resume/autostart.
-    expect([...sessions].some((s) => s.endsWith("-holder"))).toBe(false);
-    // Rehydrate still keeps the ledger row for visibility.
-    expect(ws.ledger.get("holder")?.delivery).toEqual({
-      deliveryId: "d-dead",
-      segmentId: "seg-1",
-      executionNonce: "n1",
-    });
-    // Reload snapshot was computed (read-only) and is explicitly ready.
-    expect(ws.deliveryReloadPhase()).toBe("ready");
-    expect(ws.deliveryReloadState()).toBeDefined();
-    // Offered resume list must not include the Delivery-bound agent.
-    expect(ws.resumableAgents()).not.toContain("holder");
-    ws.dispose();
-  });
 
 
 });
