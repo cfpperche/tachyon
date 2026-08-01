@@ -77,11 +77,38 @@ const FAMILY_KEYS: Record<GrokScalarNativeConfigFamily, readonly string[]> = {
   featureFlags: [
     "features.telemetry",
     "features.feedback",
-    "features.lsp_tools",
     "features.codebase_indexing",
     "features.two_pass_compaction",
     "features.remote_fetch",
   ],
+};
+
+/**
+ * t-52964c — keys this projector once carried and deliberately no longer does, each with the reason
+ * a person needs to hear when their own global config still sets one.
+ *
+ * Withdrawing a key is not the same as never having listed it. A profile that selects the family
+ * keeps loading and keeps launching, but the key stops reaching the private home — and doing that
+ * quietly would rebuild, one layer down, exactly the defect that made this list necessary. So a
+ * withdrawn key that is PRESENT in a selected family's source is announced: the value is dropped,
+ * the person is told which key and why, and the agent stays launchable. It is a warning and never an
+ * error, because inheriting a key is not a mistake the person made.
+ *
+ * An entry stays for as long as the key can plausibly still sit in someone's `~/.grok/config.toml`.
+ * Deleting one early turns the announcement back into silence.
+ */
+const WITHDRAWN_KEYS: Readonly<
+  Record<string, { readonly family: GrokScalarNativeConfigFamily; readonly reason: string }>
+> = {
+  "features.lsp_tools": {
+    family: "featureFlags",
+    reason:
+      "measured on Grok 0.2.114, the `lsp` tool appears only when this flag is on AND a non-empty LSP"
+      + " configuration is merged, and a canonical private home can never hold one — `.grok/lsp.json` is"
+      + " ambient Grok input, which the profile inspector refuses outright. Projecting the flag announced"
+      + " a capability that could not exist. Code intelligence is being built as a Tachyon capability"
+      + " covering every runtime instead (t-4fbbb2)",
+  },
 };
 
 /** Agent Studio's own family labels, so a refusal names the control the person has to change. */
@@ -278,6 +305,15 @@ export function projectGrokNativeConfig(
       readable = false;
     }
     if (readable) {
+      for (const [key, withdrawn] of Object.entries(WITHDRAWN_KEYS)) {
+        if (!selected.includes(withdrawn.family)) continue;
+        if (valueAt(parsed as Record<string, unknown>, key) === undefined) continue;
+        warnings.push(
+          `profile/native-config-value: Grok global key '${key}' is no longer projected into this agent's`
+          + ` private home: ${withdrawn.reason}`
+          + `; your own global config is untouched and the key still applies to Grok run outside Tachyon`,
+        );
+      }
       for (const family of selected) {
         for (const key of FAMILY_KEYS[family]) {
           const value = valueAt(parsed as Record<string, unknown>, key);
@@ -331,4 +367,4 @@ export const GROK_PROJECTED_KEY_ORDER: readonly string[] = [
   ...FAMILY_KEYS.featureFlags,
 ];
 
-export { FAMILY_KEYS as GROK_NATIVE_CONFIG_FAMILY_KEYS };
+export { FAMILY_KEYS as GROK_NATIVE_CONFIG_FAMILY_KEYS, WITHDRAWN_KEYS as GROK_WITHDRAWN_NATIVE_CONFIG_KEYS };

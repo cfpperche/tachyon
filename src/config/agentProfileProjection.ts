@@ -463,6 +463,13 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     // directory carries skills, plugins, agents, hooks, workflows and LSP definitions, and `AGENTS.md`
     // is read as project instructions. None of that is selectable by a family, so its presence is
     // refused rather than silently inherited — the Claude arm below does the same for its own roots.
+    //
+    // t-52964c — `.grok/lsp.json` stays on this list on purpose, and the resolution went the other
+    // way: `features.lsp_tools` was WITHDRAWN from the projectable Feature flags family instead. The
+    // flag and this blocker together made an inert switch (Grok exposes its `lsp` tool only when the
+    // flag is on and a non-empty LSP config is merged), and the fix for an inert switch is to stop
+    // offering it, not to open a measured leak. Code intelligence is being built as Bridge `code_*`
+    // tools across every runtime (`t-4fbbb2`), which is also the only shape that covers Codex.
     const ambientCandidates = [
       "AGENTS.md",
       ".grok/config.toml",

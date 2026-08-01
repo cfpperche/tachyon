@@ -10,7 +10,12 @@ import {
   GROK_ALWAYS_APPROVE_AUTHORIZATION,
   type ResolvedAgentNativeConfigProjection,
 } from "../../src/config/agentNativeConfigPolicy.js";
-import { projectGrokNativeConfig } from "../../src/config/grokNativeConfigProjection.js";
+import {
+  projectGrokNativeConfig,
+  GROK_NATIVE_CONFIG_FAMILY_KEYS,
+  GROK_PROJECTED_KEY_ORDER,
+  GROK_WITHDRAWN_NATIVE_CONFIG_KEYS,
+} from "../../src/config/grokNativeConfigProjection.js";
 import { renderGrokCanonicalConfig } from "../../src/harness/HarnessManager.js";
 import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
 
@@ -247,5 +252,73 @@ describe("Grok canonical private config rendering", () => {
   it("refuses another runtime's projection", () => {
     expect(() => renderGrokCanonicalConfig("grok-agent", { adapter: "claude", selectors: {} }))
       .toThrow(/targets 'claude', not 'grok'/);
+  });
+});
+
+/**
+ * t-52964c. `features.lsp_tools` used to sit in the Feature flags family, so Tachyon projected it
+ * into the private home while the profile inspector refused the only file that could make it mean
+ * anything (`.grok/lsp.json`, ambient Grok input). The flag was inert by construction. It was
+ * withdrawn rather than made useful, and withdrawing it silently would have rebuilt the same class
+ * of defect one layer down — so a person whose own global config still sets it is told.
+ */
+describe("Grok withdrawn projection keys", () => {
+  const WITH_LSP = "[features]\ntelemetry = false\nlsp_tools = true\n";
+
+  it("does not project features.lsp_tools even when the Feature flags family is selected", () => {
+    const result = projectGrokNativeConfig(
+      profile({ featureFlags: grokScalarNativeConfigPolicy("global") }),
+      { global: WITH_LSP },
+      base,
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.projection.toml).toEqual({ "features.telemetry": false });
+  });
+
+  it("announces the withdrawn key instead of dropping it in silence", () => {
+    const result = projectGrokNativeConfig(
+      profile({ featureFlags: grokScalarNativeConfigPolicy("global") }),
+      { global: WITH_LSP },
+      base,
+    );
+    expect(result.warnings).toHaveLength(1);
+    const warning = result.warnings[0];
+    // The key, the fact it stopped being projected, and why it could never have worked.
+    expect(warning).toContain("features.lsp_tools");
+    expect(warning).toContain("no longer projected");
+    expect(warning).toContain(".grok/lsp.json");
+    // A warning must never make the agent unlaunchable.
+    expect(result.errors).toEqual([]);
+  });
+
+  it("stays quiet for the people it does not affect", () => {
+    // Family selected, key absent from their config: nothing changed for them.
+    const absent = projectGrokNativeConfig(
+      profile({ featureFlags: grokScalarNativeConfigPolicy("global") }),
+      { global: "[features]\ntelemetry = false\n" },
+      base,
+    );
+    expect(absent.warnings).toEqual([]);
+
+    // Key present but the family excluded: it was never projected in the first place.
+    const unselected = projectGrokNativeConfig(
+      profile({ interface: grokScalarNativeConfigPolicy("global") }),
+      { global: WITH_LSP },
+      base,
+    );
+    expect(unselected.warnings).toEqual([]);
+  });
+
+  it("keeps the withdrawn key out of every projectable surface at once", () => {
+    // One place to add a key, so one place to remove it. If a future edit puts a withdrawn key back
+    // into a family, this fails rather than letting the render order and the family list disagree.
+    for (const [key, withdrawn] of Object.entries(GROK_WITHDRAWN_NATIVE_CONFIG_KEYS)) {
+      expect(GROK_PROJECTED_KEY_ORDER).not.toContain(key);
+      for (const family of Object.values(GROK_NATIVE_CONFIG_FAMILY_KEYS)) {
+        expect(family).not.toContain(key);
+      }
+      expect(GROK_NATIVE_CONFIG_FAMILY_KEYS[withdrawn.family]).toBeDefined();
+    }
+    expect(Object.keys(GROK_WITHDRAWN_NATIVE_CONFIG_KEYS)).toContain("features.lsp_tools");
   });
 });
