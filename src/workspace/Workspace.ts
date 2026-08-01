@@ -165,7 +165,7 @@ import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
-import { NoticeQueue, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
+import { NoticeQueue, type NoticeOrigin, type NoticeQueueItem, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
@@ -548,7 +548,8 @@ export class Workspace {
   private readonly agentIncarnationCounters = new Map<string, number>();
   /** SDD 446 C — running agents keep their current session until the next lifecycle boundary. */
   private readonly runtimeConfigPending = new Map<string, { scope: "global" | "workspace"; revision: string }>();
-  private readonly noticeQueue = new NoticeQueue();
+  // t-fb1453 — the TTL was the one drop path that told nobody. It now reports like overflow does.
+  private readonly noticeQueue = new NoticeQueue({ onExpired: (items) => this.reportExpiredNotices(items) });
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
@@ -1377,7 +1378,7 @@ export class Workspace {
         attentionOf: (agent) => this.attentionOf(agent),
         now: () => Date.now(),
         deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
-        sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+        sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent, "host-poke"),
         completionHinted: (agent) => this.completionHints.has(agent),
       },
       // t-585d5c — resolved per tick from the LIVE config, never captured here. `this.config` is
@@ -1402,7 +1403,7 @@ export class Workspace {
       isVerifiedSince: (worktreePath, headSha, sinceIso) =>
         isVerifiedSince(worktreePath, headSha, sinceIso, defaultGitExec),
       deliverNotice: (delegator, line, metadata) => this.deliverNotice(delegator, line, metadata),
-      sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+      sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent, "host-poke"),
       now: () => Date.now(),
       loadCandidates: () => this.loadGatedCompletionCandidates(),
       saveCandidates: (c) => this.saveGatedCompletionCandidates(c),
@@ -1881,7 +1882,8 @@ export class Workspace {
           ),
 
         deliverNotice: (target, line, metadata) => this.deliverNotice(target, line, metadata),
-        sourceNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent),
+        // t-fb1453 — notify_agent is the sender speaking for itself, so its notice outlives the sender.
+        authoredNoticeMetadata: (agent) => this.sourceNoticeMetadata(agent, "agent-authored"),
         markCompletionHint: (agent) => {
           this.completionHints.mark(agent);
           this.monitor.flagUnseen(agent);
@@ -4050,6 +4052,12 @@ export class Workspace {
       // spec 245 — serially AFTER continuity (so two sendKeys never interleave): a light, workspace-throttled
       // reminder to append a PROJECT-handoff note. Cadence is `settings.handoff.nudgeEvery` (default 30m, `off`).
       await this.maybeRemindHandoff(agent);
+      // t-fb1453 — a notice that arrived WHILE this pass held the mutex was queued by deliverNotice's
+      // `recoveryInFlight` branch even though the recipient was idle the whole time. Without this it
+      // waits for the next working→idle edge, and an agent that is done working has no next edge. Safe
+      // to run unconditionally: this line is only reached when the flush at the top found nothing, so
+      // it can never re-submit the notice that pass already wrote.
+      await this.flushQueuedNotice(agent);
     } finally {
       this.recoveryInFlight.delete(agent);
     }
@@ -4100,29 +4108,93 @@ export class Workspace {
     return { status: "queued", queued: result.queued, dropped: result.dropped || undefined };
   }
 
+  /**
+   * t-fb1453 — never silently. Expiry is a LOSS, and until now the only one with no witness: the sender
+   * was answered `queued '<x>' for idle delivery` and nothing ever took that back. Named, not counted —
+   * "a notice expired" tells a human nothing they can act on; "the report codex-revisor filed for you
+   * expired unread" tells them which piece of work they now have to go find by hand.
+   */
+  private reportExpiredNotices(items: NoticeQueueItem[]): void {
+    for (const item of items) {
+      const message = item.sourceChild
+        ? this.t(
+            "'{0}' never saw the notice from '{1}' — it expired in the delivery queue: {2}",
+            item.target,
+            item.sourceChild,
+            item.line,
+          )
+        : this.t("'{0}' never saw a Tachyon notice — it expired in the delivery queue: {1}", item.target, item.line);
+      this.host.notify(message, "warn");
+    }
+  }
+
+  /**
+   * t-fb1453 / t-99ccc9 — provenance for a doorbell that outlived its sender. Without it the recipient
+   * cannot tell a report retained across a dismissal from something that just happened, which is the
+   * confusion t-99ccc9 was filed about. Bounded and single-line, like everything else in the envelope.
+   */
+  private staleSenderMarker(sender: string, queuedAt: number): string {
+    const minutes = Math.max(1, Math.round((Date.now() - queuedAt) / 60_000));
+    return `[delayed ~${minutes}m; '${sender}' was dismissed before you read this]`;
+  }
+
   private async flushQueuedNotice(agent: string): Promise<boolean> {
     if (this.monitor.stateOf(agent)?.composerOccupied) return false;
     this.noticeQueue.clearExpired(agent);
-    let item = this.noticeQueue.dequeue(agent);
+    // t-fb1453 — peek, submit, THEN drop. Removing first meant an unobserved submit took the notice
+    // with it (t-b4a799's unknown-flattened-into-known); now only a KNOWN fate consumes the item.
+    let item = this.noticeQueue.peek(agent);
     while (item) {
+      let line = item.line;
       if (item.sourceChild !== undefined) {
         const currentIncarnation = this.agentIncarnations.get(item.sourceChild);
         // t-572cef: agentIncarnationCounters is never deleted (onKilled clears only agentIncarnations,
         // rename only raises it) so `.has()` here means "this name went through recordSpawnIncarnation
         // at least once" — i.e. a genuinely killed-and-not-respawned child, as opposed to a name this
-        // process has never recorded at all (a reload survivor start() didn't cover). Drop only in the
+        // process has never recorded at all (a reload survivor start() didn't cover). React only in the
         // former case when incarnations disagree (covers both "mismatched" and "killed, no current
         // entry"); an entirely unknown name delivers — the safe default for the latter, undamaged case.
         const everRecorded = this.agentIncarnationCounters.has(item.sourceChild);
         if (everRecorded && currentIncarnation !== item.sourceIncarnation) {
-          item = this.noticeQueue.dequeue(agent);
-          continue;
+          // t-fb1453 — the sender being gone means different things for the two origins, and treating
+          // them alike is what lost the doorbell.
+          //
+          // A host poke is Tachyon's claim about a child's LIVE state ("child 'X' is waiting for
+          // input"). That claim stops being true when X stops existing, so it is still discarded
+          // (t-572cef/t-eed531: the dead child must not reach out from beyond the grave).
+          if (item.origin === "host-poke") {
+            this.noticeQueue.dropFront(agent);
+            item = this.noticeQueue.peek(agent);
+            continue;
+          }
+          // A `notify_agent` doorbell is the child's own finished report. Dismissing the author does
+          // not falsify the report — and measured on 2026-08-01, dismissing the author is precisely
+          // what destroyed it: codex-revisor rang at 21:08, the coordinator killed it minutes later,
+          // and the queued completion died with it while still inside its TTL.
+          //
+          // t-99ccc9 dropped these deliberately, and its incident was real: a parent that had ALREADY
+          // consumed the work via read_output was later told about it again, out of context. But
+          // "sender was killed" was only ever a PROXY for "already acknowledged" — the acknowledgement
+          // mechanism that task asked for was explicitly deferred as out of free-run scope. That same
+          // task's acceptance criteria also say, in as many words, that there must be "nenhuma perda
+          // silenciosa de completion signals" and that delayed messages must be "rotuladas como
+          // atrasadas [com] idade/proveniência". So: deliver it, and never as if it were fresh news.
+          line = `${item.line} ${this.staleSenderMarker(item.sourceChild, item.createdAt)}`;
         }
       }
       try {
-        await this.submitNoticeLine(agent, item.line);
+        const receipt = await this.submitNoticeLine(agent, line);
+        // t-8d190f drew the line between "delivered" and "we could not see it leave the composer";
+        // t-fb1453 makes the queue respect it. An unconfirmed line stays queued for the next idle
+        // rather than being consumed on a guess. Both outcomes still wrote to the pane, so both
+        // report true — the caller's question is "did I touch the pane this pass", not "did it land".
+        if (receipt.status !== "submit-unconfirmed") this.noticeQueue.dropFront(agent);
         return true;
       } catch (err) {
+        // A throw here is `submitNoticeLine`'s dead-session path (which already cleared the queue) or a
+        // transient tmux failure. Consume either way: this branch is loud, and a notice that re-fires a
+        // warning on every idle would bury the one that matters.
+        this.noticeQueue.dropFront(agent);
         this.host.notify(this.t("failed to deliver queued notice to '{0}': {1}", agent, err instanceof Error ? err.message : String(err)), "warn");
         return false;
       }
@@ -4137,8 +4209,9 @@ export class Workspace {
     return incarnation;
   }
 
-  private sourceNoticeMetadata(agent: string): NoticeQueueMetadata {
-    return { sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
+  /** t-fb1453 — `origin` is a parameter with no default on purpose: see NoticeQueue's ChildBoundNoticeMetadata. */
+  private sourceNoticeMetadata(agent: string, origin: NoticeOrigin): NoticeQueueMetadata {
+    return { origin, sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
   }
 
   private async submitNoticeLine(agent: string, line: string): Promise<SubmitReceipt> {
@@ -5280,7 +5353,7 @@ export class Workspace {
         if (stillThere) return undefined; // false alarm — the child is actually still running
         return this.tmux
           .hasSession(parentSession)
-          .then((alive) => (alive ? this.deliverNotice(parent, line, this.sourceNoticeMetadata(agent)) : undefined));
+          .then((alive) => (alive ? this.deliverNotice(parent, line, this.sourceNoticeMetadata(agent, "host-poke")) : undefined));
       })
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
@@ -5298,7 +5371,7 @@ export class Workspace {
     const line = matchedLine ?? "waiting for input";
     void this.tmux
       .hasSession(session)
-      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`, this.sourceNoticeMetadata(agent)) : undefined))
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is waiting for input: ${line}`, this.sourceNoticeMetadata(agent, "host-poke")) : undefined))
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the monitor tick
   }
 
@@ -5311,7 +5384,7 @@ export class Workspace {
     const line = attention.matchedLine ?? "provider throttled";
     void this.tmux
       .hasSession(session)
-      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`, this.sourceNoticeMetadata(agent)) : undefined))
+      .then((alive) => (alive ? this.deliverNotice(parent, `[tachyon] child '${agent}' is rate-limited${runtime}.${reset} ${line}`, this.sourceNoticeMetadata(agent, "host-poke")) : undefined))
       .catch(() => undefined);
   }
 
@@ -5332,7 +5405,7 @@ export class Workspace {
           ? this.deliverNotice(
               parent,
               `[tachyon] child '${agent}' is held: ${describeAuthRequired(agent, evidence)}`,
-              this.sourceNoticeMetadata(agent),
+              this.sourceNoticeMetadata(agent, "host-poke"),
             )
           : undefined,
       )

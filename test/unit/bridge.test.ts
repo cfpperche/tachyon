@@ -16,6 +16,7 @@ import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
+import type { NoticeSourceMetadata } from "../../src/bridge/tools.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -207,7 +208,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const verifyRuns: string[] = [];
   let taskChanges = 0;
   let noticeMode: "immediate" | "queued" = "immediate";
-  let deliveredNoticeMetadata: { sourceChild?: string; sourceIncarnation?: number } | undefined;
+  let deliveredNoticeMetadata: NoticeSourceMetadata | undefined;
   // t-8605be — "claude"'s attention is mutable so tests can flip it between needs-input (the default,
   // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
   // to exercise write_input's refusal path without disturbing those other tests.
@@ -244,7 +245,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
       return { status: "notified" };
     },
-    sourceNoticeMetadata: (agent) => ({ sourceChild: agent, sourceIncarnation: 7 }),
+    authoredNoticeMetadata: (agent: string) => ({ origin: "agent-authored" as const, sourceChild: agent, sourceIncarnation: 7 }),
     // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
     // spec 273 — fold the evidence summary into the handoff (additive).
     verifyInfo: async (agent) =>
@@ -1273,7 +1274,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       const result = await client.callTool({ name: "notify_agent", arguments: { to: "queued-sibling", summary: "done", agent: "claude" } });
       expect(result.isError).toBeFalsy();
       expect(JSON.stringify(result.content)).toContain("queued 'queued-sibling' for idle delivery");
-      expect(deliveredNoticeMetadata).toEqual({ sourceChild: "claude", sourceIncarnation: 7 });
+      // t-fb1453 — the doorbell is tagged as authored BY the sender, which is what stops the flush
+      // from discarding it once that sender is dismissed.
+      expect(deliveredNoticeMetadata).toEqual({ origin: "agent-authored", sourceChild: "claude", sourceIncarnation: 7 });
       expect(sessions.get(`tachyon-${HASH}-queued-sibling`)).toBe("");
     } finally {
       noticeMode = "immediate";

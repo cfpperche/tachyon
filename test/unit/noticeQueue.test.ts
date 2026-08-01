@@ -34,4 +34,39 @@ describe("NoticeQueue", () => {
     expect(q.clear("a")).toBe(2);
     expect(q.dequeue("a")).toBeUndefined();
   });
+
+  // t-fb1453 — expiry was the only drop path with no witness, whichever operation triggered the sweep.
+  it("hands every TTL-expired item to onExpired, from whatever operation sweeps", () => {
+    let now = 0;
+    const expired: string[] = [];
+    const q = new NoticeQueue({ ttlMs: 10, now: () => now, onExpired: (items) => expired.push(...items.map((i) => i.line)) });
+    q.enqueue("a", "doomed", { origin: "agent-authored", sourceChild: "child", sourceIncarnation: 1 });
+    q.enqueue("b", "also-doomed");
+    now = 11;
+    expect(q.peek("a")).toBeUndefined();
+    expect(q.count("b")).toBe(0);
+    expect(expired).toEqual(["doomed", "also-doomed"]);
+  });
+
+  // t-fb1453 — same text, same child, different survival rules: one slot each, never merged.
+  it("keeps a host poke and an authored doorbell about the same child in separate slots", () => {
+    const q = new NoticeQueue();
+    q.enqueue("parent", "same text", { origin: "host-poke", sourceChild: "kid", sourceIncarnation: 1 });
+    q.enqueue("parent", "same text", { origin: "agent-authored", sourceChild: "kid", sourceIncarnation: 1 });
+    expect(q.count("parent")).toBe(2);
+    expect(q.dequeue("parent")?.origin).toBe("host-poke");
+    expect(q.dequeue("parent")?.origin).toBe("agent-authored");
+  });
+
+  // t-fb1453 — peek/dropFront exist so an unobserved submit cannot consume the only copy (t-b4a799).
+  it("peek leaves the head in place until dropFront takes it", () => {
+    const q = new NoticeQueue();
+    q.enqueue("a", "one");
+    q.enqueue("a", "two");
+    expect(q.peek("a")?.line).toBe("one");
+    expect(q.peek("a")?.line).toBe("one");
+    expect(q.count("a")).toBe(2);
+    expect(q.dropFront("a")?.line).toBe("one");
+    expect(q.peek("a")?.line).toBe("two");
+  });
 });

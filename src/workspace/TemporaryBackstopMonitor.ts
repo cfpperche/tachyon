@@ -1,5 +1,6 @@
 import { MAX_WORKING_STALL_MS, type AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
+import type { NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 
 export const DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
 
@@ -25,8 +26,9 @@ export interface TemporaryBackstopDeps {
   listEntries(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   now(): number;
-  deliverNotice(parent: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
-  sourceNoticeMetadata?(agent: string): { sourceChild?: string; sourceIncarnation?: number };
+  deliverNotice(parent: string, line: string, metadata?: NoticeQueueMetadata): Promise<unknown>;
+  /** t-fb1453 — a host-authored observation ABOUT a child; it expires with that child by design. */
+  sourceNoticeMetadata?(agent: string): NoticeQueueMetadata;
   /** t-9552f3 — true when the child already rang notify_agent this session (completion hint). */
   completionHinted?(agent: string): boolean;
 }

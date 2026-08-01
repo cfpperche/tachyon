@@ -60,6 +60,7 @@ import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
 import { appendDoorbellEvent } from "./doorbell.js";
+import type { NoticeQueueMetadata } from "./NoticeQueue.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
@@ -108,7 +109,12 @@ export type NoticeDeliveryResult = {
   /** Why confirmation failed, propagated from the tmux submit receipt. */
   submitReason?: string;
 };
-export type NoticeSourceMetadata = { sourceChild?: string; sourceIncarnation?: number };
+/**
+ * t-fb1453 — one definition, imported rather than restated. The second copy that used to live here
+ * could not express the `origin` requirement, so a caller binding a notice to a child's identity got
+ * no compiler help deciding whether that notice outlives the child.
+ */
+export type NoticeSourceMetadata = NoticeQueueMetadata;
 
 export interface BridgeDeps {
   /** Workspace root used by best-effort local discovery tools. */
@@ -354,8 +360,13 @@ export interface BridgeDeps {
   composerOccupiedOf?: (agent: string) => boolean | undefined;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
   deliverNotice?: (target: string, line: string, metadata?: NoticeSourceMetadata) => Promise<NoticeDeliveryResult>;
-  /** Metadata that binds a queued notice to the sender's current live incarnation. */
-  sourceNoticeMetadata?: (agent: string) => NoticeSourceMetadata;
+  /**
+   * t-fb1453 — metadata binding a queued notice to the SENDER that authored it. Named for the origin
+   * it carries (`agent-authored`), not for the field it fills: an authored notice survives its author,
+   * and a future caller that wants a host poke's expire-with-the-child semantics must not reach for
+   * this one by accident.
+   */
+  authoredNoticeMetadata?: (agent: string) => NoticeSourceMetadata;
   /** t-9552f3 — mark sender as having completed a doorbell this session (attention/backstop reconciliation). */
   markCompletionHint?: (agent: string) => void;
   /** Fired after any pin mutation — wired to the sidebar refresh. */
@@ -3532,7 +3543,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         deps.markCompletionHint?.(agent);
         const line = composeBoundedAgentNotice(agent, to, summary, pointer);
         const result = deps.deliverNotice
-          ? await deps.deliverNotice(to, line, deps.sourceNoticeMetadata?.(agent))
+          ? await deps.deliverNotice(to, line, deps.authoredNoticeMetadata?.(agent))
           : await deliverNoticeFallback(deps, session, line, to);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
         // t-8d190f — never report a delivery that was not observed. The doorbell stays actionable:

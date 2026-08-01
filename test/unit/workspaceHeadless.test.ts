@@ -27,6 +27,7 @@ import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../.
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
+import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -1966,7 +1967,18 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     ws.dispose();
   });
 
-  it("drops a queued notify when its sender is killed before the recipient becomes idle (t-99ccc9)", async () => {
+  /**
+   * t-99ccc9 originally asserted that this notice is DROPPED. t-fb1453 measured what that costs: a
+   * child's completion report is destroyed by the act of dismissing the child, which is the normal end
+   * of a delegation. "Sender was killed" was only ever a proxy for "the parent already consumed this"
+   * — t-99ccc9's own body defers the real acknowledgement mechanism and demands, in the same breath,
+   * "nenhuma perda silenciosa de completion signals" plus delayed messages "rotuladas como atrasadas".
+   *
+   * So the contract flipped from drop to deliver-with-provenance, and both halves are asserted here:
+   * the report arrives, and it arrives visibly labelled so it cannot read as fresh news. The dead-child
+   * HOST poke (the t-572cef/t-eed531 case) is still dropped — see notifyDoorbellDelivery.test.ts.
+   */
+  it("delivers a queued notify whose sender was killed, labelled as delayed (t-99ccc9 → t-fb1453)", async () => {
     const { ws, sent } = await makeWorkspace();
     await ws.manager.spawn("a");
     await ws.manager.spawn("b");
@@ -1975,19 +1987,22 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
       agent === "b" ? { state: "working" } : originalStateOf(agent);
     const internals = ws as unknown as {
-      deliverNotice(agent: string, line: string, metadata: { sourceChild?: string; sourceIncarnation?: number }): Promise<{ status: string }>;
-      sourceNoticeMetadata(agent: string): { sourceChild?: string; sourceIncarnation?: number };
+      deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata): Promise<{ status: string }>;
+      sourceNoticeMetadata(agent: string, origin: "host-poke" | "agent-authored"): NoticeQueueMetadata;
       recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
     };
 
-    const queued = await internals.deliverNotice("b", "[tachyon] a → b: stale", internals.sourceNoticeMetadata("a"));
+    const queued = await internals.deliverNotice("b", "[tachyon] a → b: t-21101f done", internals.sourceNoticeMetadata("a", "agent-authored"));
     expect(queued.status).toBe("queued");
     await ws.manager.kill("a");
 
     (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
       agent === "b" ? { state: "idle" } : originalStateOf(agent);
     await internals.recoverOnIdle("b", false);
-    expect(sent.has(targetSession)).toBe(false);
+    const delivered = sent.get(targetSession) ?? "";
+    expect(delivered).toContain("t-21101f done");
+    expect(delivered).toContain("delayed");
+    expect(delivered).toContain("'a' was dismissed before you read this");
     ws.dispose();
   });
 });

@@ -8,6 +8,7 @@
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import type { ManagedWorktreeEntry } from "../worktree/managedWorktree.js";
+import type { NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
 
 export const DEFAULT_GATED_COMPLETION_GRACE_MS = 45_000;
 
@@ -64,8 +65,9 @@ export interface GatedCompletionDeps {
    */
   isVerifiedSince?(worktreePath: string, headSha: string, sinceIso: string): Promise<boolean>;
   hasDoorbellRung(agent: string, delegator: string, sinceIso: string): boolean;
-  deliverNotice(delegator: string, line: string, metadata?: { sourceChild?: string; sourceIncarnation?: number }): Promise<unknown>;
-  sourceNoticeMetadata?(agent: string): { sourceChild?: string; sourceIncarnation?: number };
+  deliverNotice(delegator: string, line: string, metadata?: NoticeQueueMetadata): Promise<unknown>;
+  /** t-fb1453 — a host-authored observation ABOUT a child; it expires with that child by design. */
+  sourceNoticeMetadata?(agent: string): NoticeQueueMetadata;
   now(): number;
   loadCandidates(): Record<string, GatedCandidateRecord>;
   saveCandidates(candidates: Record<string, GatedCandidateRecord>): void;
