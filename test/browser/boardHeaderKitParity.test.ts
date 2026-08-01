@@ -57,23 +57,29 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
 
     expect(agentSelect.height).toBe(search.height);
     expect(agentSelect.top).toBe(search.top);
-    // t-c55f8d — THIS PAIR IS RED ON PURPOSE, and the red is the point: measured 2026-08-01 on the
-    // shipped bundle, +Task/Dropped compute 32px at top 42 while search and the agent filter compute
-    // 34px at top 41. That is the t-6da5f0 dogfood bug back on the same row, 2px short and 1px low.
+    // t-c55f8d left this pair RED on purpose: on 2026-08-01 the shipped bundle rendered +Task/Dropped
+    // at 32px/top 42 while search and the agent filter measured 34px/top 41 — the t-6da5f0 dogfood bug
+    // back on the same row, 2px short and 1px low. 7be4265a ("one Button box") had deleted t-6da5f0's
+    // `.mc-head .ds-btn` override and folded its padding + font-size into the global `.ds-btn`; two of
+    // the three height terms carried over and the third did not, because `.ds-btn` declared
+    // `line-height: 1.2` (14.4px at 12px) where `.ds-input` and the trigger left `normal` (16px).
     //
-    // How it came back: 7be4265a ("one Button box") deleted the `.mc-head .ds-btn` override t-6da5f0
-    // had added, folding its padding + font-size into the global `.ds-btn`. Those two thirds carried
-    // over; the third did not — `.ds-btn` still declares `line-height: 1.2` (14.4px at 12px font),
-    // while `.ds-input` and the Kit select-trigger leave line-height `normal` (~15.6px). 8+8 padding
-    // + 2 border + 14.4 = 32.4 against 34.
-    //
-    // NOT fixed here: this is a product defect in a shared token, not a stale assertion. `.ds-btn` is
-    // the one button box for every surface in the extension, so raising it to match the input row is a
-    // repo-wide visual change that belongs to whoever owns the design system, with its own dogfood.
-    // Left failing so it is finally visible — this guard was dark (the bundle it loaded 404'd) on the
-    // day 7be4265a landed, which is exactly why the regression got in unseen.
+    // t-b8b85c made it green, and NOT by reconciling the numbers a third time: `.ds-btn`, `.ds-input`
+    // and `[data-slot="select-trigger"]` now take padding, border-width, font and line box from ONE
+    // shared rule in design-system.css, so there is no longer a per-selector copy that can go stale.
+    // If this ever reddens again, the structural guard in test/unit/uiPatterns.test.ts should have
+    // reddened first — that one runs even when this browser suite is dark, which it was on the day
+    // 7be4265a landed (the bundle it loaded 404'd), and which is why the regression got in unseen.
     expect(taskButton.height).toBe(search.height);
     expect(taskButton.top).toBe(search.top);
+
+    // the nominal --ds-control-h is a DERIVED number that is supposed to describe the real box; assert
+    // it against the box actually rendered, so the token cannot become decorative the way `.ds-btn`'s
+    // old `min-height: 28px` did (it described no button on any screen).
+    const nominal = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--ds-control-h").trim(),
+    );
+    expect(nominal).toBe(`${search.height}px`);
 
     await page.close();
   });

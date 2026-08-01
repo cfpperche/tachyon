@@ -101,6 +101,22 @@
   --ds-border-width: 1px;
   --ds-radius: 6px;
   --ds-icon-gap: 6px; /* spec 282 — the ONE canonical icon↔text gap for buttons/tabs/chips */
+
+  /* ── control box (t-b8b85c) ── the THREE terms a control's height is made of. A control's rendered
+     height is padding-block×2 + border-width×2 + line box, and nothing else; these tokens are the only
+     place any of the three is chosen. `--ds-control-line` is a RATIO, not a px value, on purpose: it
+     scales with whatever --ds-mono resolves to (the bundled Tachyon Mono, or a host fallback if the
+     woff2 never loads) where a fixed px height would clip. 4/3 reproduces exactly the 16px line box
+     the fields already computed from `normal` at 12px, so no field moves; written as `calc(4 / 3)`
+     rather than 1.3333 because the decimal floors to 15.984px in Chromium's 1/64px layout grid and
+     the fraction does not. See the `.ds-btn, .ds-input, [data-slot="select-trigger"]` rule below —
+     the ONE place these are applied. */
+  --ds-control-pad-y: var(--ds-2);
+  --ds-control-pad-x: var(--ds-3);
+  --ds-control-line: calc(4 / 3);
+  /* Derived, not chosen: 8+8 pad + 1+1 border + 16 line box. The nominal height of any control that can
+     share a row with another. Guarded arithmetically in test/unit/uiPatterns.test.ts. */
+  --ds-control-h: 34px;
 }
 
 /* ── reset ── */
@@ -134,24 +150,53 @@ a { color: var(--ds-link); }
 .ds-actions { margin-left: auto; display: flex; gap: var(--ds-2); }
 .ds-section { font-size: var(--ds-section); font-weight: var(--tachyon-weight-semibold); text-transform: uppercase; letter-spacing: var(--tachyon-tracking-label); color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
+/* ── control box ──────────────────────────────────────────────────────────────────────────────────
+   t-b8b85c. The button, the text field and the Kit select trigger share rows all over this product
+   (Board header, Plugins add-bar, Studio path pickers), so their heights are not three independent
+   facts — they are one. This rule is that one fact, and it is the ONLY place the height terms are
+   declared for any of the three.
+
+   Why it is written as a shared rule and not as three matching declarations: it already was three
+   matching declarations, twice, and both times they drifted apart.
+     · t-6da5f0 found `.ds-btn` short beside `.ds-input` and fixed it by COPYING two terms (padding,
+       font) into a `.mc-head`-scoped override.
+     · 7be4265a ("one Button box") folded that copy into the global `.ds-btn` and deleted the scoped
+       rule — correct instinct, but a copy can only carry the terms someone wrote down. The line box
+       was never in it: `.ds-btn` said `line-height: 1.2` (14.4px at 12px) while `.ds-input` and the
+       trigger left `normal` (16px). 8+8+2+14.4 = 32.4 against 34, and the 2px was back.
+   Reconciling them a third time would buy a third regression. Declared together, they cannot drift:
+   changing a control's height now means editing a line that visibly governs all three.
+
+   Deliberately NOT here: border-radius (button 6px vs field 5px is a real, separate design choice)
+   and any `height`/`min-height` — see the floor comment on `.ds-btn` below. */
+.ds-btn,
+.ds-input,
+[data-slot="select-trigger"] {
+  box-sizing: border-box;
+  padding: var(--ds-control-pad-y) var(--ds-control-pad-x);
+  border: var(--ds-border-width) solid var(--ds-border);
+  font-family: var(--ds-mono);
+  font-size: var(--ds-small);
+  line-height: var(--ds-control-line);
+}
+
 /* ── buttons (ONE size everywhere — Fleet Open Board is the reference) ── */
 .ds-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--ds-icon-gap);
-  box-sizing: border-box;
   margin: 0;
+  /* A FLOOR for the shrunk variants only (icon-only below, `.ck-card-entry-move`, the sidebar's
+     22px act hits) — NOT the nominal height, which the control box above computes as
+     --ds-control-h (34px) and which is taller than this. Raising this floor to the nominal would
+     inflate every deliberately-dense button in the product; leaving it at 28 changes nothing that
+     is not already sized by hand. */
   min-height: 28px;
-  padding: var(--ds-2) var(--ds-3);
-  border: var(--ds-border-width) solid var(--ds-border);
   border-radius: var(--ds-radius);
   background: transparent;
   color: var(--ds-fg);
-  font-family: var(--ds-mono);
-  font-size: var(--ds-small);
   font-weight: var(--tachyon-weight-regular);
-  line-height: 1.2;
   cursor: pointer;
 }
 .ds-btn:hover { background: var(--ds-hover); }
@@ -225,7 +270,9 @@ a { color: var(--ds-link); }
 .ds-chip.disabled:hover { background: color-mix(in srgb, var(--ds-fg) 8%, transparent); }
 
 /* ── inputs ── */
-.ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
+/* height terms (padding / border-width / font / line box) come from the shared control box above — do
+   not re-declare them here, that split is exactly what let `.ds-btn` drift 2px away twice (t-b8b85c). */
+.ds-input { background: var(--ds-input-bg); color: var(--ds-input-fg); border-color: var(--ds-border); border-radius: 5px; }
 .ds-input::placeholder { color: var(--ds-muted); }
 /* dogfood round 1 (#2) — Kit vs legacy height/border parity on mixed rows. Root cause: this file's own
    unlayered `button` reset above (border/background/padding: none) ALWAYS wins over Tailwind's `@layer
@@ -236,8 +283,13 @@ a { color: var(--ds-link); }
    naked, oddly-tall trigger." Fixed with the SAME declarations `.ds-input` uses (not a hardcoded px height —
    --ds-mono resolves to the user's own editor font, so a fixed number would drift per install) plus an
    explicit `height: auto` to override `h-9`, so both controls compute their box from the same padding/
-   border/font and land on the same height by construction. */
-[data-slot="select-trigger"] { -webkit-appearance: none; appearance: none; height: auto; line-height: normal; background: var(--ds-input-bg); color: var(--ds-input-fg); border: 1px solid var(--ds-border); border-radius: 5px; padding: var(--ds-2) var(--ds-3); font-family: var(--ds-mono); font-size: var(--ds-small); }
+   border/font and land on the same height by construction.
+
+   t-b8b85c: the box/padding/border/font declarations that used to be copied here now live in the
+   shared control box near the top of this file, together with `.ds-btn` and `.ds-input`, so the
+   copy can no longer go stale. `height: auto` stays — it is not a height CHOICE, it is the undo of
+   Tailwind's `h-9` utility, which is this selector's problem alone. */
+[data-slot="select-trigger"] { -webkit-appearance: none; appearance: none; height: auto; background: var(--ds-input-bg); color: var(--ds-input-fg); border-color: var(--ds-border); border-radius: 5px; }
 /* the trigger's chevron codicon defaults to a fixed 16px (Tailwind `size-4`) box — taller than the
    12px text line-box, which was the LAST source of the height mismatch even after the rule above: a
    flex row's cross-axis follows its tallest child, not just its text. Sized like every other codicon
