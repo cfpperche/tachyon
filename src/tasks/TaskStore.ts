@@ -28,6 +28,7 @@ import {
   type TaskCreateInput,
   type TaskDerived,
   type TaskPriority,
+  type TaskReconcileInput,
   type TaskStatus,
   type TaskUpdateExpect,
   type TaskUpdateInput,
@@ -88,6 +89,35 @@ const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 /** The statuses a task may transition to from `status`, per the store's transition authority. */
 export function allowedTransitions(status: TaskStatus): TaskStatus[] {
   return TASK_STATUS_TRANSITIONS[status];
+}
+
+/**
+ * t-f638bd — the RECONCILE table, deliberately not a relaxation of the one above.
+ *
+ * `TASK_STATUS_TRANSITIONS` describes work being driven: the lanes an operator walks a task
+ * through, where `active` means a named someone is on it. Reconciling is the other operation —
+ * recording that an outcome already happened elsewhere, with the evidence, when git drove the work
+ * and the store is only keeping the books. Those need different tables because they answer
+ * different questions, and collapsing them is what made bookkeeping require a false claim.
+ *
+ * What this table does NOT do is skip triage. `inbox` reconciles to nothing: a task nobody has
+ * evaluated cannot be closed by asserting an outcome, because the question triage answers — is this
+ * work we wanted? — is still open, and no SHA answers it. The lane structure survives; only the
+ * assignee-and-active detour through it is removed. `landed -> done` stays reachable both ways since
+ * both readings are honest there.
+ */
+const TASK_RECONCILE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  inbox: [],
+  triaged: ["landed", "done"],
+  active: ["landed", "done"],
+  landed: ["done"],
+  done: [],
+  dropped: [],
+};
+
+/** The outcomes that may be RECONCILED onto a task in `status` (see `TaskStore.reconcile`). */
+export function allowedReconciliations(status: TaskStatus): TaskStatus[] {
+  return TASK_RECONCILE_TRANSITIONS[status];
 }
 
 export class TaskStore {
@@ -225,6 +255,56 @@ export class TaskStore {
       // string (a priority quick-edit always sends `rank:null`, dueto F5); guard against two concurrent drags
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
+      this.writeTask(next);
+      this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
+      return next;
+    });
+  }
+
+  /**
+   * t-f638bd — record an outcome that already happened outside the store, with its evidence.
+   *
+   * The sibling of `update`, not a back door into it. It shares the write path, the CAS check, the
+   * mutation event and the evolution marker, and differs in exactly the two ways the operation
+   * differs: it consults `TASK_RECONCILE_TRANSITIONS` instead of the driving table, and it does not
+   * require an assignee, because nobody is being asked to pick this up — it is already finished.
+   * It touches no other field, so there is nothing here that `update` could not already refuse.
+   *
+   * The evidence is mandatory and journalled before the status moves, so a reconciliation that the
+   * store accepts always leaves behind the reason it was accepted. A refusal names the state it
+   * refused from; a compact receipt upstream must not turn that into silence.
+   */
+  async reconcile(id: string, input: TaskReconcileInput): Promise<Task> {
+    return this.withMutation(async () => {
+      assertTaskId(id);
+      const current = this.get(id);
+      assertExpect(current, input.expect);
+      const evidence = boundedString(input.evidence, "evidence", 2000);
+      if (current.status === input.status) {
+        throw new Error(`task '${id}' is already '${input.status}'; nothing to reconcile`);
+      }
+      const allowed = allowedReconciliations(current.status);
+      if (!allowed.includes(input.status)) {
+        throw new Error(
+          allowed.length === 0
+            ? current.status === "inbox"
+              ? `cannot reconcile an untriaged task: '${id}' is in inbox, and reconciling records an outcome rather than skipping triage — triage it first`
+              : `cannot reconcile '${id}' from '${current.status}': it is already terminal`
+            : `cannot reconcile '${id}' from '${current.status}' to '${input.status}'; allowed: ${allowed.join(", ")}`,
+        );
+      }
+      const next: Task = { ...current, status: input.status, updatedAt: input.now ?? new Date().toISOString() };
+      // Same two derived clears `update` performs on any status move: an advancing task is no longer
+      // waiting on the human, and the completion marker is recomputed rather than carried.
+      delete next.awaitingHuman;
+      delete next.evolutionCompletion;
+      if (input.status === "done") {
+        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
+        if (marker) next.evolutionCompletion = marker;
+      }
+      // Journal first: if the cap rejects the evidence, the status has not moved and the caller is
+      // told why, rather than getting a silent reconciliation with no record of what made it true.
+      this.journal.append(id, { author: input.actor ?? "human", text: `reconciled ${current.status} -> ${input.status}: ${evidence}` });
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;

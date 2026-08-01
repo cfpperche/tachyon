@@ -141,6 +141,27 @@ export interface TaskUpdateInput {
   actor?: string;
 }
 
+/**
+ * t-f638bd — the input to RECONCILING a task, which is not the input to transitioning one.
+ *
+ * `update` drives work: it moves a task through the lanes an operator walks, and `active` means
+ * someone is on it, which is why it demands an assignee. Reconciling records an outcome that
+ * already happened somewhere else — the branch landed, the SHA is in the journal — and the store is
+ * being told about it, not asked to schedule it. Forcing that through `update` made bookkeeping
+ * require a false claim: to write down that a triaged task was finished, you first had to assign it
+ * to yourself and declare it active. Hence a separate verb with its own, narrower table.
+ */
+export interface TaskReconcileInput {
+  /** The outcome being recorded. Only the terminal-ish states — reconciling never re-opens work. */
+  status: Extract<TaskStatus, "landed" | "done">;
+  /** What makes this true outside the store: a SHA, a PR, a path. Required, and journalled verbatim. */
+  evidence: string;
+  expect?: TaskUpdateExpect;
+  now?: string;
+  /** As on TaskUpdateInput: who is recording this. Never persisted on the Task. */
+  actor?: string;
+}
+
 export const TASK_ID_RE = /^t-[0-9a-f]{6}$/;
 
 export function isTaskStatus(value: unknown): value is TaskStatus {

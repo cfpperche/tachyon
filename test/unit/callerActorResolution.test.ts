@@ -255,7 +255,12 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
 
     const appended = await claudeClient.callTool({ name: "append_task_note", arguments: { id: task.id, text: "blocked on review" } });
     expect(appended.isError).toBeFalsy();
-    expect(JSON.parse((appended.content as Array<{ text: string }>)[0].text)).toMatchObject({ author: "claude", text: "blocked on review" });
+    // t-f638bd — the receipt keeps the Bridge-resolved author (the thing under test here) and the minted
+    // entry id; it does not echo the note text back, which the caller just wrote.
+    const receipt = JSON.parse((appended.content as Array<{ text: string }>)[0].text);
+    expect(receipt).toMatchObject({ taskId: task.id, author: "claude" });
+    expect(receipt.text).toBeUndefined();
+    expect(typeof receipt.entryId).toBe("string");
     expect(taskNotices.some((n) => n.target === "codex" && n.line.includes("journal updated"))).toBe(true);
 
     taskNotices.length = 0;

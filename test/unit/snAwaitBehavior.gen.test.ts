@@ -133,15 +133,19 @@ describe("container-generated delegation behavior", () => {
     const mcp = wireTools(root, store, { kind: "agent", name: "snAwait" });
     const flagRes = await callTool(mcp, "flag_for_human", { id: task.id, reason: "need a call on scope", kind: "decision" });
     expect(flagRes.isError).toBeUndefined();
+    // t-f638bd — both tools answer with a receipt now, so the authored field is read back off the store,
+    // which is where the contract actually lives.
     const flagged = JSON.parse(flagRes.content[0].text);
-    expect(flagged.awaitingHuman.reason).toBe("need a call on scope");
-    expect(flagged.awaitingHuman.kind).toBe("decision");
-    expect(new Date(flagged.awaitingHuman.since).toISOString()).toBe(flagged.awaitingHuman.since);
+    expect(flagged).toMatchObject({ id: task.id, changed: ["awaitingHuman"] });
+    const stored = store.get(task.id).awaitingHuman!;
+    expect(stored.reason).toBe("need a call on scope");
+    expect(stored.kind).toBe("decision");
+    expect(new Date(stored.since).toISOString()).toBe(stored.since);
 
     const clearRes = await callTool(mcp, "clear_human_flag", { id: task.id });
     expect(clearRes.isError).toBeUndefined();
-    const cleared = JSON.parse(clearRes.content[0].text);
-    expect(cleared.awaitingHuman).toBeUndefined();
+    expect(JSON.parse(clearRes.content[0].text)).toMatchObject({ id: task.id, changed: ["awaitingHuman"] });
+    expect(store.get(task.id).awaitingHuman).toBeUndefined();
   });
 
   it("clear_human_flag requires an agent-authenticated caller — a legacy/human caller is rejected", async () => {

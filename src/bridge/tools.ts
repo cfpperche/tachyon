@@ -15,6 +15,7 @@ import { TmuxQueueError, type TmuxService } from "../tmux/TmuxService.js";
 import { paneTranscriptExists, readPaneTranscript } from "../agents/paneTranscript.js";
 import type { PinStore, TiptapJSON } from "../pins/PinStore.js";
 import { taskSummary, type TaskStore } from "../tasks/TaskStore.js";
+import type { Task } from "../tasks/types.js";
 import {
   codePointLength,
   TASK_AUTHORING_LIMITS,
@@ -770,6 +771,37 @@ function inlineTextNodes(block: string): TiptapJSON[] {
 
 function definedPatch<T extends Record<string, unknown>>(input: T): Partial<T> {
   return Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
+/**
+ * t-f638bd — the acknowledgement a task mutation owes its caller, and nothing more.
+ *
+ * Every task mutation used to answer with the whole task, pretty-printed. Measured over 129 real
+ * `update_task` calls in the harness transcripts that is 316KB / ~134k tokens of echo — the caller
+ * re-reading a body it just sent, or never asked for. The board's own orchestrator abandoned a
+ * nine-task bookkeeping pass mid-way to protect its context, which is the tool forcing a choice
+ * between governing the board and doing the work.
+ *
+ * What a mutation genuinely owes back is what the caller could NOT have known: that it committed,
+ * at which `updatedAt` (the CAS token for the next `expect`), and which fields the STORE changed
+ * on its own — `assignee` unset by a return to inbox, `awaitingHuman` dropped by any transition.
+ * `cleared` is why this is a receipt and not just an ack: those are the surprises. Anyone who wants
+ * the document calls `get_task`, or passes `include:"task"` here.
+ */
+function taskReceipt(before: Task | undefined, after: Task, requested: string[]): string {
+  const changed = requested.filter((field) => field !== "expect");
+  const cleared = before
+    ? (["assignee", "awaitingHuman", "evolutionCompletion"] as const).filter(
+        (field) => before[field] !== undefined && after[field] === undefined && !changed.includes(field),
+      )
+    : [];
+  return JSON.stringify({
+    id: after.id,
+    status: after.status,
+    updatedAt: after.updatedAt,
+    changed,
+    ...(cleared.length ? { cleared } : {}),
+  });
 }
 
 async function managedEntry(deps: Pick<BridgeDeps, "manager">, name: string) {
@@ -3634,7 +3666,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "If a request has four independently shippable slices, create one umbrella Task and explicit follow-up Tasks; " +
         "this tool does not create follow-ups or infer dependencies automatically. Use append_task_note for chronological " +
         "execution context. Keep long material in a durable artifact and point to it with artifact_refs; " +
-        "type:'sdd' enables best-effort local spec enrichment only. Never truncate authoring input to fit a limit.",
+        "type:'sdd' enables best-effort local spec enrichment only. Never truncate authoring input to fit a limit. " +
+        "Answers with a receipt {id,status,author,createdAt} — not the task; read it back with get_task if needed.",
       inputSchema: {
         title: createTaskString("title", TASK_AUTHORING_LIMITS.title).min(1),
         body: createTaskString("body", TASK_AUTHORING_LIMITS.body).optional(),
@@ -3656,7 +3689,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const task = await deps.tasks.create({ title, author: authorActor.name ?? "human", body, kind, artifact_refs, deps: taskDeps });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         emitTaskNotification(deps, { type: "created", task, actor: authorActor.name ?? "human" });
-        return ok(JSON.stringify(task, null, 2));
+        // t-f638bd — the caller wrote the title, body, kind and refs; echoing them back teaches it nothing.
+        // What it could not know is the minted id, the lane the store put the task in, the author the
+        // Bridge resolved from its token, and the timestamp. That is the whole receipt.
+        return ok(JSON.stringify({ id: task.id, status: task.status, author: task.author, createdAt: task.createdAt }));
       } catch (err) {
         return fail(err);
       }
@@ -3756,7 +3792,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Patch a Task. Use expect:{assignee:null} when claiming a task returned by next_task; " +
-        "precondition failures are structured errors and mean you must re-query.",
+        "precondition failures are structured errors and mean you must re-query. " +
+        "Answers with a compact receipt {id,status,updatedAt,changed,cleared?} — not the task; " +
+        "`updatedAt` is the CAS token for your next expect, and `cleared` names fields the STORE " +
+        "dropped on its own. Pass include:'task' only if you actually need the whole document back.",
       inputSchema: {
         id: TASK_ID,
         title: z.string().min(1).max(300).optional(),
@@ -3769,9 +3808,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         artifact_refs: z.array(TASK_ARTIFACT_REF).max(10).nullable().optional(),
         deps: z.array(TASK_ID).nullable().optional(),
         expect: TASK_EXPECT,
+        include: z
+          .enum(["receipt", "task"])
+          .optional()
+          .describe("'receipt' (default) answers with {id,status,updatedAt,changed,cleared?}; 'task' echoes the whole task"),
       },
     },
-    async ({ id, title, body, status, priority, rank, kind, assignee, artifact_refs, deps: taskDeps, expect }) => {
+    async ({ id, title, body, status, priority, rank, kind, assignee, artifact_refs, deps: taskDeps, expect, include }) => {
       try {
         const patch = definedPatch({ title, body, status, priority, rank, kind, assignee, artifact_refs, deps: taskDeps, expect });
         const changedFields = Object.keys(patch).filter((key) => key !== "expect");
@@ -3803,7 +3846,51 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // mutation sink, which every writer crosses; firing it here too would notify twice for a Bridge
         // update and still leave the four UI writers silent. spec 351's self-assign suppression is
         // preserved by the `actor` this handler puts on the patch (see the caller resolution above).
-        return ok(JSON.stringify(task, null, 2));
+        // t-f638bd — a receipt by default; the whole task only when the caller says it needs it.
+        return ok(include === "task" ? JSON.stringify(task) : taskReceipt(priorTask, task, changedFields));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  // t-f638bd — the second verb the board was missing. See TaskStore.reconcile for why this is not a
+  // relaxation of update_task's transition table.
+  mcp.registerTool(
+    "reconcile_task",
+    {
+      description:
+        "Record that a Task's work ALREADY finished outside the board — the branch landed, the SHA exists — " +
+        "rather than driving it through the lanes. update_task moves work you are doing and demands an " +
+        "assignee to reach 'active'; reconciling a finished task through it would mean claiming work that is " +
+        "over. This takes triaged/active/landed straight to landed or done, needs no assignee, and requires " +
+        "evidence, which is journalled verbatim before the status moves. It does NOT skip triage: an inbox " +
+        "task is refused by name, because no SHA answers whether the work was wanted. Answers with a receipt.",
+      inputSchema: {
+        id: TASK_ID,
+        status: z.enum(["landed", "done"]).describe("the outcome that already happened; reconciling never re-opens work"),
+        evidence: z
+          .string()
+          .min(1)
+          .max(2000)
+          .describe("what makes this true outside the store — a commit SHA, PR, or path; journalled verbatim"),
+        expect: TASK_EXPECT,
+      },
+    },
+    async ({ id, status, evidence, expect }) => {
+      try {
+        const priorTask = deps.tasks.get(id);
+        const callerAgent = deps.caller?.kind === "agent" ? deps.caller.name : undefined;
+        const task = await deps.tasks.reconcile(id, { status, evidence, ...(expect ? { expect } : {}), ...(callerAgent ? { actor: callerAgent } : {}) });
+        deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
+        emitTaskNotification(deps, {
+          type: "statusChanged",
+          task,
+          actor: taskNotificationActor(deps),
+          from: priorTask.status,
+          to: status,
+        });
+        return ok(taskReceipt(priorTask, task, ["status"]));
       } catch (err) {
         return fail(err);
       }
@@ -3846,7 +3933,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const task = await deps.tasks.update(id, { awaitingHuman: { reason, kind, since: new Date().toISOString(), ...(subject ? { subject } : {}) } });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
         emitTaskNotification(deps, { type: "awaitingHuman", task, actor: caller.name, reason, kind });
-        return ok(JSON.stringify(task, null, 2));
+        // t-f638bd — same receipt as every other task mutation; the flag itself is the caller's own words.
+        return ok(taskReceipt(undefined, task, ["awaitingHuman"]));
       } catch (err) {
         return fail(err);
       }
@@ -3872,7 +3960,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         }
         const task = await deps.tasks.update(id, { awaitingHuman: null });
         deps.onTasksChanged?.({ reason: "task-mutated", id: task.id });
-        return ok(JSON.stringify(task, null, 2));
+        // t-f638bd — a receipt: the caller asked for one field to go away and needs only the ack and the CAS token.
+        return ok(taskReceipt(undefined, task, ["awaitingHuman"]));
       } catch (err) {
         return fail(err);
       }
@@ -3926,7 +4015,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Append a task-local execution note to a Task's journal. Use ONLY for annotations about a task in progress " +
         "(blockers, decisions, deviations, handoff context). Do not use for follow-up work; create_task for that. " +
-        "Do not use for human reminders or cross-cutting findings; create_pin for those. Author is always the Bridge-resolved caller; never pass author.",
+        "Do not use for human reminders or cross-cutting findings; create_pin for those. Author is always the Bridge-resolved caller; never pass author. " +
+        "Answers with a receipt {taskId,entryId,ts,author} — your own note text is not echoed back.",
       inputSchema: {
         id: TASK_ID.describe("task id from list_tasks or next_task"),
         text: z.string().min(1).max(4000).describe("journal text; bounded per entry and appended atomically to the per-task .journal log"),
@@ -3942,7 +4032,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         deps.onTasksChanged?.({ reason: "journal-appended", id });
         if (task.status === "active") emitTaskNotification(deps, { type: "journalAppended", task, actor: resolvedAuthor });
         await notifyTaskJournalAppended(deps, task, resolvedAuthor);
-        return ok(JSON.stringify(entry, null, 2));
+        // t-f638bd — the entry's `text` is the caller's own argument coming straight back; at 99 measured
+        // calls that echo cost ~101k tokens to confirm writes the caller had just composed. The receipt
+        // keeps what it did not supply: the minted entry id, the timestamp, and the Bridge-resolved author.
+        return ok(JSON.stringify({ taskId: id, entryId: entry.id, ts: entry.ts, author: entry.author }));
       } catch (err) {
         return fail(err);
       }

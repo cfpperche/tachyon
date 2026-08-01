@@ -91,7 +91,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-e88c8a stage 1 — 78 → 69. The nine Delivery tools are gone: the seven git_delivery_*/delivery_*
   // plus verify_task ("Requires delivery_id") and wait_for_lease, which had no subject without the
   // lease. This list IS the inventory guard — a reintroduced tool fails here by name.
-  it("exposes exactly the 69 canonical tools, including the explicit Terminal operation", async () => {
+  // t-f638bd — 69 → 70: reconcile_task, the verb for recording an outcome that already happened.
+  it("exposes exactly the 70 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "append_project_handoff_note",
@@ -139,6 +140,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_output",
       "reanchor_agent",
+      "reconcile_task",
       "reconcile_worktree_hygiene",
       "register_worktree",
       "remove_worktree",
@@ -500,8 +502,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       },
     });
     expect(created.isError).toBeFalsy();
+    // t-f638bd — create_task answers with a receipt: the minted id, the lane, the Bridge-resolved author
+    // and the timestamp. The title went out in the request; it comes back from get_task, below.
     const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
-    expect(task).toMatchObject({ title: "Build queue entity", author: "claude", status: "inbox" });
+    expect(task).toMatchObject({ author: "claude", status: "inbox" });
+    expect(task.id).toMatch(/^t-[0-9a-f]{6}$/);
+    expect(task.title).toBeUndefined();
 
     await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged", priority: 1, rank: "a" } });
     const listed = await client.callTool({ name: "list_tasks", arguments: { limit: 10 } });
@@ -605,8 +611,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       },
     });
     expect(created.isError).toBeFalsy();
-    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
-    expect(task.artifact_refs).toEqual([{ type: "sdd", ref: "358-runtime-profile", role: "relation" }]);
+    // t-f638bd — the receipt carries the id; the accepted refs are read back from the stored task.
+    const receipt = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    const stored = JSON.parse(
+      ((await client.callTool({ name: "get_task", arguments: { id: receipt.id } })).content as Array<{ text: string }>)[0].text,
+    );
+    expect(stored.task.artifact_refs).toEqual([{ type: "sdd", ref: "358-runtime-profile", role: "relation" }]);
   });
 
   it("validation tools round-trip through MCP with open type, routing, CAS claim, and proof-on-close", async () => {
@@ -1139,8 +1149,14 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const assigned = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "nobody-here" } });
     expect(assigned.isError).toBeFalsy();
-    const parsed = JSON.parse((assigned.content as Array<{ text: string }>)[0].text);
-    expect(parsed.assignee).toBe("nobody-here");
+    // t-f638bd — update_task answers with a receipt, not the task. The receipt names what changed and
+    // carries the CAS token; the field's committed value is read back from the store's own view.
+    const receipt = JSON.parse((assigned.content as Array<{ text: string }>)[0].text);
+    expect(receipt).toMatchObject({ id: task.id, status: "triaged", changed: ["assignee"] });
+    expect(typeof receipt.updatedAt).toBe("string");
+    expect(receipt.title).toBeUndefined();
+    const readBack = await client.callTool({ name: "get_task", arguments: { id: task.id } });
+    expect(JSON.parse((readBack.content as Array<{ text: string }>)[0].text).task.assignee).toBe("nobody-here");
     expect(sessions.has(`tachyon-${HASH}-nobody-here`)).toBe(false);
     expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(beforeClaudeSession);
   });
@@ -1167,6 +1183,45 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const reasserted = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude", priority: 2 } });
     expect(reasserted.isError).toBeFalsy();
     expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("__SENTINEL__");
+  });
+
+  // t-f638bd — reconciling is the other operation: recording an outcome that already happened. It must
+  // reach done from triaged WITHOUT anyone claiming the task, must keep the evidence, and must still
+  // refuse to skip triage — a compact receipt is not licence to make the refusal quiet.
+  it("reconcile_task: closes a triaged task with evidence and no assignee, and refuses an untriaged one by name", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "Landed elsewhere", agent: "claude" } });
+    const task = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+
+    // inbox is refused, and the refusal says why rather than failing silently.
+    const untriaged = await client.callTool({ name: "reconcile_task", arguments: { id: task.id, status: "done", evidence: "abc1234" } });
+    expect(untriaged.isError).toBe(true);
+    expect((untriaged.content as Array<{ text: string }>)[0].text).toMatch(/untriaged|triage it first/);
+
+    await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
+    // The whole point: no assignee anywhere, and update_task would refuse this move.
+    const viaUpdate = await client.callTool({ name: "update_task", arguments: { id: task.id, status: "done" } });
+    expect(viaUpdate.isError).toBe(true);
+
+    const reconciled = await client.callTool({
+      name: "reconcile_task",
+      arguments: { id: task.id, status: "done", evidence: "landed as abc1234" },
+    });
+    expect(reconciled.isError).toBeFalsy();
+    const receipt = JSON.parse((reconciled.content as Array<{ text: string }>)[0].text);
+    expect(receipt).toMatchObject({ id: task.id, status: "done", changed: ["status"] });
+    expect(receipt.title).toBeUndefined();
+
+    const full = JSON.parse(
+      ((await client.callTool({ name: "get_task", arguments: { id: task.id } })).content as Array<{ text: string }>)[0].text,
+    );
+    expect(full.task).toMatchObject({ id: task.id, status: "done" });
+    expect(full.task.assignee).toBeUndefined();
+    expect(full.journal.at(-1).text).toContain("landed as abc1234");
+
+    // Reconciling a task already there is refused, not silently re-applied.
+    const again = await client.callTool({ name: "reconcile_task", arguments: { id: task.id, status: "done", evidence: "abc1234" } });
+    expect(again.isError).toBe(true);
+    expect((again.content as Array<{ text: string }>)[0].text).toMatch(/already 'done'/);
   });
 
   it("notify_agent: self-notify, non-agent target, and not-running all fail closed; a real agent target is woken with a sanitized, provenance-enveloped one-liner", async () => {
