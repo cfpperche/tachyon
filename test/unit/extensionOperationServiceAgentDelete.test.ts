@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { stopAgentSessionForDelete } from "../../src/engine-service/extensionOperationService.js";
+import type { AgentOccupancyVerdict } from "../../src/agents/AgentManager.js";
 
 function sessionManager(dead: boolean, removeOnKill = true) {
   const states = new Map<string, { dead: boolean; exitCode?: number }>([
@@ -8,7 +9,11 @@ function sessionManager(dead: boolean, removeOnKill = true) {
   return {
     states,
     manager: {
-      agentStates: vi.fn(async () => new Map(states)),
+      probeAgentOccupancy: vi.fn(async (agent: string): Promise<AgentOccupancyVerdict> => {
+        const state = states.get(agent);
+        if (!state) return { state: "free" };
+        return { state: "occupied", detail: state.dead ? "a stopped pane is still present in tmux" : "the session is running" };
+      }),
       kill: vi.fn(async (agent: string) => {
         if (removeOnKill) states.delete(agent);
       }),
@@ -21,12 +26,12 @@ describe("Fleet agent deletion session teardown", () => {
     ["running", false],
     ["stopped remain-on-exit", true],
   ])("removes a %s canonical-agent pane before forget", async (_label, dead) => {
-    const { manager } = sessionManager(dead);
+    const { manager, states } = sessionManager(dead);
 
     await expect(stopAgentSessionForDelete(manager, "codex-canonico")).resolves.toBeUndefined();
 
     expect(manager.kill).toHaveBeenCalledWith("codex-canonico");
-    expect((await manager.agentStates()).has("codex-canonico")).toBe(false);
+    expect(states.has("codex-canonico")).toBe(false);
   });
 
   it("does nothing when the agent has no tmux session", async () => {
@@ -43,5 +48,44 @@ describe("Fleet agent deletion session teardown", () => {
 
     await expect(stopAgentSessionForDelete(manager, "codex-canonico"))
       .rejects.toThrow("could not stop 'codex-canonico' — it was not removed");
+  });
+
+  /**
+   * t-4736b4 — the teardown gate must not confuse "I could not measure" with "it is still there".
+   * The two refusals send the human to different places, so they are different messages.
+   */
+  it("t-4736b4 refuses an unmeasurable occupancy with the unverifiable message, not 'still running'", async () => {
+    const manager = {
+      probeAgentOccupancy: vi.fn(async (): Promise<AgentOccupancyVerdict> => ({
+        state: "unknown",
+        detail: "the tmux session inventory could not be read after 3 attempts",
+      })),
+      kill: vi.fn(async () => undefined),
+    };
+
+    const failure = await stopAgentSessionForDelete(manager, "codex-canonico").catch((error: Error) => error);
+
+    expect((failure as Error).message).toContain("occupancy unverifiable");
+    expect((failure as Error).message).not.toContain("it was not removed");
+  });
+
+  /**
+   * t-4736b4 — and once tmux answers again, the same call goes through: the refusal is decided from a
+   * fresh measurement every time, so it can never become a permanent state with no way out.
+   */
+  it("t-4736b4 succeeds on the retry after the inventory recovers", async () => {
+    const verdicts: AgentOccupancyVerdict[] = [
+      { state: "unknown", detail: "the tmux session inventory could not be read after 3 attempts" },
+      { state: "unknown", detail: "the tmux session inventory could not be read after 3 attempts" },
+      { state: "free" },
+    ];
+    let call = 0;
+    const manager = {
+      probeAgentOccupancy: vi.fn(async (): Promise<AgentOccupancyVerdict> => verdicts[Math.min(call++, verdicts.length - 1)]!),
+      kill: vi.fn(async () => undefined),
+    };
+
+    await expect(stopAgentSessionForDelete(manager, "codex-canonico")).rejects.toThrow("occupancy unverifiable");
+    await expect(stopAgentSessionForDelete(manager, "codex-canonico")).resolves.toBeUndefined();
   });
 });

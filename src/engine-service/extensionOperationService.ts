@@ -5,6 +5,7 @@ import { createProfileFromStudioMutation } from "../config/agentProfileStudio.js
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
+import type { AgentOccupancyVerdict } from "../agents/AgentManager.js";
 import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/soul.js";
 import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
@@ -905,8 +906,8 @@ async function deleteConfiguredAgent(
   return json({ changed: true });
 }
 
-interface AgentDeleteSessionManager {
-  agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>>;
+export interface AgentDeleteSessionManager {
+  probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
   kill(agent: string): Promise<void>;
 }
 
@@ -914,15 +915,33 @@ interface AgentDeleteSessionManager {
  * Fleet Remove is one confirmed destructive action: its prompt promises to tear down a live
  * session before deleting saved state. A stopped remain-on-exit pane is still present in tmux, so
  * it needs the same teardown as a running pane before canonical forget can prove zero occupancy.
+ *
+ * t-4736b4 — this used to ask `agentStates()`, which serves the last known-good inventory when the
+ * tmux read is ambiguous. On the removal path that fallback is a lie in both directions: a stale
+ * LIVE entry makes teardown chase a session that is already gone and then declare it unkillable, and
+ * a stale ABSENT entry lets the removal skip teardown on an agent that is still up. It now asks for a
+ * MEASURED verdict, and an unmeasurable one refuses out loud instead of picking a side.
+ *
+ * An unknown verdict before the kill still gets the kill attempted — the human already confirmed the
+ * teardown, and `kill` on an absent session is a caught no-op — but only a measured `free` afterwards
+ * lets the removal continue.
  */
 export async function stopAgentSessionForDelete(
   manager: AgentDeleteSessionManager,
   agent: string,
 ): Promise<void> {
-  if (!(await manager.agentStates()).has(agent)) return;
+  const before = await manager.probeAgentOccupancy(agent);
+  if (before.state === "free") return;
   await manager.kill(agent).catch(() => undefined);
-  if ((await manager.agentStates()).has(agent)) {
-    throw new Error(`could not stop '${agent}' — it was not removed`);
+  const after = await manager.probeAgentOccupancy(agent);
+  if (after.state === "occupied") {
+    throw new Error(`could not stop '${agent}' — it was not removed (${after.detail})`);
+  }
+  if (after.state === "unknown") {
+    throw new Error(
+      `could not confirm '${agent}' stopped: occupancy unverifiable — ${after.detail}. `
+      + "Removal refuses to guess; nothing durable was deleted. Retry once the tmux server answers.",
+    );
   }
 }
 
@@ -986,7 +1005,7 @@ async function forkAgent(
 export interface AgentWorktreeRemovalPorts {
   manager: {
     liveDescendants(agent: string): Promise<string[]>;
-    agentStates(): Promise<{ has(agent: string): boolean }>;
+    probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
     kill(agent: string): Promise<unknown>;
     releaseOwnedWorktreeForRemoval(agent: string, worktreePath: string): Promise<void>;
   };
@@ -1018,10 +1037,19 @@ export async function removeAgentWorktree(ports: AgentWorktreeRemovalPorts, agen
   if (descendants.length > 0) throw new Error(`cannot remove '${agent}' worktree while descendants are live: ${descendants.join(", ")}`);
   const record = ports.ledger.get(agent)?.worktree;
   if (!record) throw new Error(`'${agent}' has no worktree`);
-  if ((await ports.manager.agentStates()).has(agent)) {
+  // t-4736b4 — measured occupancy, not the last-known-good snapshot: this gate sits on the same
+  // removal path as canonical forget and inherited the same way of getting permanently stuck.
+  if ((await ports.manager.probeAgentOccupancy(agent)).state !== "free") {
     await ports.manager.kill(agent).catch(() => undefined);
-    if ((await ports.manager.agentStates()).has(agent)) {
-      throw new Error(`could not stop '${agent}' before removing its worktree`);
+    const after = await ports.manager.probeAgentOccupancy(agent);
+    if (after.state === "occupied") {
+      throw new Error(`could not stop '${agent}' before removing its worktree (${after.detail})`);
+    }
+    if (after.state === "unknown") {
+      throw new Error(
+        `could not confirm '${agent}' stopped before removing its worktree: occupancy unverifiable — ${after.detail}. `
+        + "The checkout was left in place; retry once the tmux server answers.",
+      );
     }
   }
   await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);

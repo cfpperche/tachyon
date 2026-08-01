@@ -90,7 +90,7 @@ function cardPorts(h: ReturnType<typeof harness>): AgentWorktreeRemovalPorts {
   return {
     manager: {
       liveDescendants: async () => [],
-      agentStates: async () => new Map<string, { dead: boolean }>(),
+      probeAgentOccupancy: async () => ({ state: "free" as const }),
       kill: async () => undefined,
       releaseOwnedWorktreeForRemoval: async () => undefined,
     },

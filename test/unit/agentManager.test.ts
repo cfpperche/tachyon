@@ -2047,6 +2047,12 @@ describe("AgentManager — session resume (spec 209)", () => {
     const startArgs: string[][] = []; // chronological new-session OR respawn (prefer for env asserts)
     const paneInjections: string[] = []; // t-762940 — send-keys -l / load-buffer paste payloads
     const failRespawn = { current: false };
+    /**
+     * t-4736b4 — an AMBIGUOUS `list-panes` failure: not the "no server running" clean-down that
+     * TmuxService reads as zero sessions, so `sessionStates` returns null and the manager cannot
+     * measure occupancy. This is the condition that used to resurrect the pre-kill snapshot.
+     */
+    const ambiguousInventory = { current: false };
     const exec = async (args: string[]): Promise<ExecResult> => {
       const target = () => {
         const i = args.indexOf("-t");
@@ -2095,6 +2101,7 @@ describe("AgentManager — session resume (spec 209)", () => {
           if (sessions.size === 0) throw new Error("no server running");
           return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
         case "list-panes":
+          if (ambiguousInventory.current) throw new Error("lost server: connection reset by peer");
           if (sessions.size === 0) throw new Error("no server running");
           return { stdout: [...sessions].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t`).join("\n") + "\n", stderr: "" };
         case "send-keys":
@@ -2153,7 +2160,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       removePiSessionDir: opts.removePiSessionDir,
       launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
-    return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
+    return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ambiguousInventory, ws, hash };
   }
 
 
@@ -2172,6 +2179,106 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
       ledgerSha256: expect.any(String),
     });
+  });
+
+  /**
+   * t-4736b4 — the measured reproduction. Five Saved Agents were stopped through the Bridge,
+   * `list_agents` reported them `running:false`, their tmux sessions were gone, and canonical forget
+   * still refused four of them "must be fully stopped" on every attempt. The seam was
+   * `agentStates()`: it serves `lastAgentStates` when the fresh read is ambiguous, so the pre-kill
+   * snapshot answered for tmux forever — and only a successful read clears that cache, which was the
+   * very thing failing. The refusal had no door.
+   *
+   * Before the fix this asserted the wrong sentence: `must be fully stopped`, from a memory of a
+   * session that had already been killed.
+   */
+  it("t-4736b4 refuses a forget it cannot measure as unverifiable, not as still-running", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    // Seed the known-good snapshot the way the sidebar poll does — this is what later gets resurrected.
+    expect((await h.manager.agentStates()).has("reviewer")).toBe(true);
+    await h.manager.kill("reviewer");
+    h.ambiguousInventory.current = true;
+
+    const failure = await h.manager.prepareAgentProfileForget("reviewer").catch((error: Error) => error) as Error;
+
+    expect(failure.message).toContain("occupancy unverifiable");
+    expect(failure.message).not.toContain("must be fully stopped");
+    // The cache still holds the stale live entry — the point is that the removal path no longer reads it.
+    expect(h.manager.isKnownAliveSync("reviewer")).toBe(true);
+  });
+
+  /**
+   * t-4736b4 — and the refusal is decided from a fresh measurement every time, so it cannot become a
+   * permanent state. The moment tmux answers, the same call goes through with no engine restart.
+   */
+  it("t-4736b4 lets the very next forget through once the inventory answers again", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    expect((await h.manager.agentStates()).has("reviewer")).toBe(true);
+    await h.manager.kill("reviewer");
+
+    h.ambiguousInventory.current = true;
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).rejects.toThrow("occupancy unverifiable");
+
+    h.ambiguousInventory.current = false;
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
+      ledgerSha256: expect.any(String),
+    });
+  });
+
+  /**
+   * t-4736b4 — the other half of the contract: a genuinely live session is still refused, and with
+   * the running-specific sentence. Failing closed on `unknown` is only worth anything if `occupied`
+   * did not get softer.
+   */
+  it("t-4736b4 still refuses a genuinely live session with the still-running message", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+
+    const failure = await h.manager.prepareAgentProfileForget("reviewer").catch((error: Error) => error) as Error;
+
+    expect(failure.message).toContain("must be fully stopped before canonical forget");
+    expect(failure.message).not.toContain("occupancy unverifiable");
+  });
+
+  /**
+   * t-4736b4 — `lastAgentStates` exists because a tmux read is noisy and the sidebar must not blink
+   * every agent out of existence over one bad `list-panes` (t-3a3a14). The fix hardens the REMOVAL
+   * path only; the readers built on that fallback keep it.
+   */
+  it("t-4736b4 leaves the sidebar fallback intact for ordinary readers", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+
+    await h.manager.spawn("reviewer");
+    expect((await h.manager.agentStates()).has("reviewer")).toBe(true);
+
+    h.ambiguousInventory.current = true;
+    expect((await h.manager.agentStates()).has("reviewer")).toBe(true);
+    await expect(h.manager.runningAgents()).resolves.toContain("reviewer");
+    // The strict reader still reports the ambiguity rather than an empty fleet (t-016e8b).
+    await expect(h.manager.runningAgentsStrict()).resolves.toBeNull();
   });
 
   it("t-33ae3f canonical forget removes the generated brief, soul anchor and pane transcript", async () => {
@@ -2255,6 +2362,39 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt, pid: process.pid });
     await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/live root process/);
+  });
+
+  /**
+   * t-4736b4 — `config.agent.delete` with `removeWorktree:true` walks three occupancy gates in a row
+   * (`removeAgentWorktree` → here → `prepareAgentProfileForget`). All three read the same stale
+   * snapshot, so fixing only the forget would have moved the permanent refusal one step earlier
+   * instead of removing it.
+   */
+  it("t-4736b4 refuses a worktree release it cannot measure, and allows it once tmux answers", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-wt-unknown-"));
+    dirs.push(root);
+    const wt = path.join(root, "wt");
+    fs.mkdirSync(wt, { recursive: true });
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    const internals = h.manager as unknown as {
+      canonicalWorktreeKey: (value: string) => string;
+      worktreeOccupancy: Map<string, { state: "pending" | "live" | "dirty"; agentId: string; cwd: string; pid?: number }>;
+    };
+    const key = internals.canonicalWorktreeKey(wt);
+
+    await h.manager.spawn("reviewer");
+    expect((await h.manager.agentStates()).has("reviewer")).toBe(true);
+    await h.manager.kill("reviewer");
+
+    internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "reviewer", cwd: wt });
+    h.ambiguousInventory.current = true;
+    await expect(h.manager.releaseOwnedWorktreeForRemoval("reviewer", wt)).rejects.toThrow("occupancy unverifiable");
+    // Refused means untouched: the quarantine is still there to release on the retry.
+    expect(internals.worktreeOccupancy.has(key)).toBe(true);
+
+    h.ambiguousInventory.current = false;
+    await expect(h.manager.releaseOwnedWorktreeForRemoval("reviewer", wt)).resolves.toBeUndefined();
+    expect(internals.worktreeOccupancy.has(key)).toBe(false);
   });
 
 

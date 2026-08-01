@@ -169,7 +169,13 @@ function fakeTmux(opts: { realPaneProcesses?: boolean } = {}) {
       throw new Error("can't find session"); // non-zero exit = does not exist
     }
     if (args[2] === "list-panes") {
-      if (sessions.size === 0) throw new Error("no server");
+      // t-4736b4 — real tmux answers a down server with `error connecting to <socket> (No such file
+      // or directory)`, which `sessionStates` classifies as a CONFIRMED zero sessions. The bare
+      // "no server" this fake used matches none of those patterns, so it modelled an AMBIGUOUS
+      // failure instead — the one condition where the inventory cannot be measured. That mismatch was
+      // invisible while `agentStates()` covered a null read with its last-known-good snapshot; the
+      // removal path reads the ambiguity directly, so the fixture has to tell the truth.
+      if (sessions.size === 0) throw new Error("error connecting to /tmp/tmux-1000/fake (No such file or directory)");
       return { stdout: [...sessions].map((s) => `${s}\t${dead.has(s) ? 1 : 0}\t${dead.get(s) ?? ""}`).join("\n") + "\n", stderr: "" };
     }
     if (args[2] === "list-sessions") {

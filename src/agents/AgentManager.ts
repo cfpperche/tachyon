@@ -109,6 +109,36 @@ export class AgentNotRunningError extends Error {
   }
 }
 
+/**
+ * t-4736b4 — the answer to "is this name still occupied?" when the question is being asked by a
+ * REMOVAL. Three values, not two: `unknown` is a first-class outcome, because a tmux inventory that
+ * could not be read is neither proof of life nor proof of death, and collapsing it into either one
+ * is how a stopped agent became undeletable.
+ */
+export type AgentOccupancyVerdict =
+  | { state: "occupied"; detail: string }
+  | { state: "free" }
+  | { state: "unknown"; detail: string };
+
+/**
+ * t-4736b4 — raised when a removal could not MEASURE occupancy. Deliberately distinct from the
+ * "still running" refusal: they call for different actions from the human, and a caller that cannot
+ * tell them apart will report the wrong one.
+ *
+ * This is a fail-closed refusal with a door: it is decided from a fresh read every time, so the very
+ * next attempt succeeds once tmux answers. Nothing durable records it.
+ */
+export class AgentOccupancyUnverifiableError extends Error {
+  constructor(name: string, detail: string) {
+    super(
+      `occupancy unverifiable for agent '${name}': ${detail}. `
+      + "Removal refuses to guess whether the session is still there — nothing was changed. "
+      + "Check the workspace tmux server (Control → Doctor) and retry; the check re-measures each time.",
+    );
+    this.name = "AgentOccupancyUnverifiableError";
+  }
+}
+
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 /**
  * t-aaad95 — the fork-bomb guardrail when `tachyon.yml` says nothing. This used to be the default of
@@ -1337,6 +1367,83 @@ export class AgentManager {
     return (await this.readAgentStates()) ?? this.lastAgentStates;
   }
 
+  /** t-4736b4 — a removal asks tmux this many times before it calls occupancy unverifiable. */
+  private static readonly OCCUPANCY_PROBE_ATTEMPTS = 3;
+  private static readonly OCCUPANCY_PROBE_DELAY_MS = 100;
+
+  /**
+   * t-4736b4 — STRICT, FRESH occupancy for the removal path.
+   *
+   * `agentStates()` serves `lastAgentStates` when the tmux read comes back ambiguous, and that
+   * fallback is right for the readers it was built for (t-3a3a14): the sidebar must not blink every
+   * agent out of existence over one bad `list-panes`. It is exactly wrong for a removal. A
+   * last-known-LIVE snapshot is a memory of the past, and the past is not evidence that the agent is
+   * running now — five agents killed through the Bridge, confirmed `running:false`, were refused
+   * canonical forget indefinitely because the pre-kill snapshot kept answering for tmux, and no
+   * retry could clear it (nothing invalidates the cache except a successful read, which is the very
+   * thing that was failing).
+   *
+   * So this never consults the cache. It reports what it MEASURED:
+   *  - `occupied` — an in-process reservation is held, or a fresh inventory / session probe found the
+   *    name. A dead remain-on-exit pane counts: it is still present in tmux and still has to be torn
+   *    down before forget can claim zero occupancy.
+   *  - `free` — a fresh inventory came back and the name was not in it.
+   *  - `unknown` — tmux could not be inventoried. Neither alive nor dead; the caller must fail closed
+   *    and say which of the two it could not establish.
+   *
+   * A successful read still refreshes `lastAgentStates` (via `readAgentStates`), so this also heals
+   * the cache the other readers depend on.
+   */
+  async probeAgentOccupancy(name: string): Promise<AgentOccupancyVerdict> {
+    // In-process facts first: they are free to read and cannot be stale — they live on this object,
+    // not in another process's tmux server.
+    if (this.provisionalAgents.has(name)) return { state: "occupied", detail: "a launch for this name is in flight" };
+    if (this.soulReservations.has(name)) return { state: "occupied", detail: "a soul launch reservation is held for this name" };
+
+    // Retry the fresh inventory before giving up: a transient `list-panes` failure (racing a
+    // concurrent kill, a momentarily busy server) is the common cause of `null`, and re-asking is
+    // what makes "unverifiable" a rare, real condition instead of a coin flip.
+    let states: Map<string, { dead: boolean; exitCode?: number }> | null = null;
+    for (let attempt = 0; attempt < AgentManager.OCCUPANCY_PROBE_ATTEMPTS; attempt++) {
+      if (attempt > 0) await sleep(AgentManager.OCCUPANCY_PROBE_DELAY_MS);
+      states = await this.readAgentStates();
+      if (states !== null) break;
+    }
+    if (states === null) {
+      return {
+        state: "unknown",
+        detail: `the tmux session inventory could not be read after ${AgentManager.OCCUPANCY_PROBE_ATTEMPTS} attempts`,
+      };
+    }
+    const state = states.get(name);
+    if (state) {
+      return { state: "occupied", detail: state.dead ? "a stopped pane is still present in tmux" : "the session is running" };
+    }
+
+    // `hasSession` can only ADD occupancy here. Its negative is worthless as proof — it answers false
+    // for an unreachable server too — but the fresh inventory above already supplied the negative,
+    // and this catches the one thing `list-panes` cannot see: a session with no panes at all.
+    try {
+      if (await this.opts.tmux.hasSession(this.session(name))) {
+        return { state: "occupied", detail: "a tmux session with this name is still present" };
+      }
+    } catch (error) {
+      return { state: "unknown", detail: `the tmux session probe failed (${error instanceof Error ? error.message : String(error)})` };
+    }
+    return { state: "free" };
+  }
+
+  /**
+   * t-4736b4 — the removal-side gate. `occupiedMessage` stays phase-specific (prepare and converge
+   * refuse for different reasons at different points in the transaction); the unverifiable refusal is
+   * one message everywhere, because there is only one thing to say about it.
+   */
+  private async assertRemovalOccupancyFree(name: string, occupiedMessage: string): Promise<void> {
+    const verdict = await this.probeAgentOccupancy(name);
+    if (verdict.state === "occupied") throw new Error(`${occupiedMessage} (${verdict.detail})`);
+    if (verdict.state === "unknown") throw new AgentOccupancyUnverifiableError(name, verdict.detail);
+  }
+
   /** Agents whose process is ALIVE — crashed dead panes don't count. */
   async runningAgents(): Promise<string[]> {
     const states = await this.agentStates();
@@ -1802,9 +1909,10 @@ export class AgentManager {
       if (occ.agentId !== agent) {
         throw new Error(`worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agentId}' (cwd ${occ.cwd})`);
       }
-      if ((await this.agentStates()).has(agent) || await this.opts.tmux.hasSession(this.session(agent))) {
-        throw new Error(`agent '${agent}' must be fully stopped before releasing its worktree`);
-      }
+      // t-4736b4 — the third door on the same removal trail (delete with `removeWorktree:true` walks
+      // `removeAgentWorktree` → here → `prepareAgentProfileForget`), and it inherited the same stale
+      // snapshot. Measured, never cached; unmeasurable refuses as unverifiable.
+      await this.assertRemovalOccupancyFree(agent, `agent '${agent}' must be fully stopped before releasing its worktree`);
       if (occ.pid !== undefined && isPidAlive(occ.pid)) {
         throw new Error(`agent '${agent}' still has a live root process for its worktree`);
       }
@@ -3251,10 +3359,8 @@ export class AgentManager {
 
   /** Capture a stopped profile's exact name-scoped projections without touching runtime homes. */
   async prepareAgentProfileForget(name: string): Promise<AgentProfileForgetSnapshot> {
-    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)
-      || this.provisionalAgents.has(name) || this.soulReservations.has(name)) {
-      throw new Error(`agent '${name}' must be fully stopped before canonical forget`);
-    }
+    // t-4736b4 — measured fresh, never from `lastAgentStates`. See `probeAgentOccupancy`.
+    await this.assertRemovalOccupancyFree(name, `agent '${name}' must be fully stopped before canonical forget`);
     if (this.opts.ledger?.get(name)?.worktree) {
       throw new Error(`agent '${name}' still owns a worktree; remove it explicitly before canonical forget`);
     }
@@ -3286,9 +3392,7 @@ export class AgentManager {
     txid: string,
     expected: AgentProfileForgetSnapshot,
   ): Promise<void> {
-    if (await this.opts.tmux.hasSession(this.session(name)) || (await this.agentStates()).has(name)) {
-      throw new Error(`canonical forget found a live or indeterminate session for '${name}'`);
-    }
+    await this.assertRemovalOccupancyFree(name, `canonical forget found a live session for '${name}'`);
     this.opts.ledger?.removeExactDigest(name, expected.ledgerSha256);
     convergeActivityRetirement(
       this.activityDir(),
