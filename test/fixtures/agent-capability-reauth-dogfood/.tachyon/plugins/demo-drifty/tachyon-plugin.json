@@ -1,0 +1,6 @@
+{
+  "name": "demo-drifty",
+  "version": "1.0.0",
+  "description": "Subject plugin for the reauthorize dogfood — ./drift.sh updates its bytes and version the way a real plugin update does.",
+  "runtimes": ["claude", "codex"]
+}

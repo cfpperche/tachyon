@@ -1,0 +1,6 @@
+{
+  "name": "demo-stable",
+  "version": "1.0.0",
+  "description": "Control plugin for the reauthorize dogfood — never changes, so an agent that authorized it must keep reading Authorized.",
+  "runtimes": ["claude", "codex"]
+}

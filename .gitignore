@@ -29,3 +29,13 @@ dist/
 # Template for new checkouts: tachyon.yml.example
 tachyon.yml
 tachyon.yaml
+
+# Dogfood fixtures are workspaces on purpose, and the four rules above are written for a REAL
+# workspace root — they swallowed every fixture's `tachyon.yml`, plugin payload and materialized
+# skills, leaving `test/fixtures/<slug>/` shipping a README and nothing that runs. The tests passed
+# locally, because the untracked files were on the author's disk; a fresh clone got an empty
+# workspace and the failure read like a product regression. Fixture content is source.
+!test/fixtures/**/tachyon.yml
+!test/fixtures/**/.tachyon/
+!test/fixtures/**/.claude/
+!test/fixtures/**/.agents/

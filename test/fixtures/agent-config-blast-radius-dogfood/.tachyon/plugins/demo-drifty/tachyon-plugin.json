@@ -1,0 +1,9 @@
+{
+  "name": "demo-drifty",
+  "version": "1.0.0",
+  "description": "Subject plugin for the blast-radius dogfood \u2014 ./drift.sh moves it, refusing the profile that pinned it.",
+  "runtimes": [
+    "claude",
+    "codex"
+  ]
+}

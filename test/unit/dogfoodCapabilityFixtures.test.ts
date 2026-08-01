@@ -31,6 +31,30 @@ const FIXTURES = path.resolve(__dirname, "../fixtures");
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
 /**
+ * A fixture file that `.gitignore` swallows is a fixture that does not exist for anyone else.
+ *
+ * `.tachyon/`, `.claude/`, `.agents/` and `tachyon.yml` are ignored because they are a real
+ * workspace's runtime state. A dogfood fixture is a workspace ON PURPOSE, so every one of those
+ * rules hits it — and both fixtures added for t-4a2a6f / t-588644 committed as a README and a shell
+ * script, with every file that makes them run left untracked on the author's disk. Tests passed
+ * locally and the push gate failed in a clean checkout with `profile/missing-reference`. Two older
+ * fixtures were already shipping empty the same way.
+ *
+ * The negations in `.gitignore` fix the four known rules. This fails if a future rule reaches
+ * fixture content again, which is the part nobody would think to re-check.
+ */
+describe("dogfood fixtures are source, not runtime state", () => {
+  it("has no fixture file that git would ignore", () => {
+    const files = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "test/fixtures/"], {
+      cwd: path.resolve(__dirname, "../.."),
+      encoding: "utf8",
+    }).trim();
+
+    expect(files === "" ? [] : files.split("\n")).toEqual([]);
+  });
+});
+
+/**
  * Copy a fixture the way `point` mirrors it. The marker file is what `drift.sh` checks before it
  * will write anything — without it the script refuses, which is the guard that keeps a hand-driven
  * scenario from editing the tracked source.

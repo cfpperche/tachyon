@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "plugins": {
+    "diagram": {
+      "name": "diagram",
+      "version": "0.1.1",
+      "runtimes": ["claude", "codex"],
+      "targets": [
+        { "runtime": "claude", "kind": "skill-dir", "file": ".claude/skills/diagram" },
+        { "runtime": "codex", "kind": "skill-dir", "file": ".agents/skills/diagram" }
+      ]
+    },
+    "product-foundation": {
+      "name": "product-foundation",
+      "version": "0.1.1",
+      "runtimes": ["codex"],
+      "targets": [
+        { "runtime": "codex", "kind": "skill-dir", "file": ".agents/skills/product-foundation" }
+      ]
+    },
+    "secrets-guard": {
+      "name": "secrets-guard",
+      "version": "2.0.4",
+      "runtimes": ["claude", "codex"],
+      "targets": [
+        { "runtime": "claude", "kind": "settings-hook", "file": ".claude/settings.json" },
+        { "runtime": "claude", "kind": "skill-dir", "file": ".claude/skills/guard-helper" }
+      ]
+    }
+  }
+}
