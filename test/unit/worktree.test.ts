@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import nodePath from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   resolveBase,
@@ -478,13 +476,13 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
         expect(h.asked).toEqual(["tachyon/tmp.codex-residuo.20260801-203145-9f3c"]);
       });
 
-      it("is wired: the Workspace hands the resolver the Temporary fact it already computes", () => {
-        // Everything above resolves off `ctx.temporary`, so the product behaviour rests on one line
-        // of plumbing. Drop it and every spawn looks declared to the resolver, the name-derived
-        // branch comes straight back, and not one unit test above would notice.
-        const workspace = fs.readFileSync(nodePath.join(process.cwd(), "src/workspace/Workspace.ts"), "utf8");
-        expect(workspace.match(/temporary: ctx\.temporary/gu)?.length ?? 0).toBe(1);
-      });
+      // Everything here resolves off `ctx.temporary`, which THIS suite supplies itself — so none of
+      // it can see whether the Workspace supplies it in production. That gap was held by a source
+      // pin on `/temporary: ctx\.temporary/`, which t-e73e54 already showed is not a proof (a second
+      // door satisfies it, a comment satisfies it, rewriting the expression breaks it for nothing).
+      // It is now held by behaviour, in `workspaceHeadless.test.ts` ("spec 484: a delegated Temporary
+      // child is born on a per-SPAWN branch…"), which spawns through the real Workspace into a real
+      // git repository and reads the branch off the repository.
 
       it("still honours an explicitly named branch — that is an identity the caller owns", async () => {
         const h = branchProbe();

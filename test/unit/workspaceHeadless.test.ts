@@ -2356,3 +2356,102 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
     ws.dispose();
   }
 });
+
+/**
+ * spec 484 — the branch a Temporary child is born on, proven THROUGH the Workspace and real git.
+ *
+ * `resolveWorktreeCwd` decides that branch from `ctx.temporary`, and the only thing that puts that
+ * fact in front of it is one property in `Workspace.resolveSpawnCwd`. The resolver's own unit tests
+ * hand it `temporary: true` themselves, so not one of them can see whether the Workspace does —
+ * delete the plumbing and they all stay green while every real spawn silently goes back to the
+ * name-derived branch. A source pin asserting the expression appears once stood here instead; that
+ * is the shape t-e73e54 already caught being wrong (a second door elsewhere satisfies it just as
+ * happily, a comment satisfies it, and rewriting the same expression breaks it for nothing).
+ *
+ * So these drive the composition that actually ships — `Workspace` → `AgentManager.spawn` → the
+ * resolver → `git` — and read the answer off the repository, where a branch either exists or does
+ * not. A REAL repo is not decoration here: adoption of a leftover branch is a git decision
+ * (`exists-free` → attach), and a faked `ensure` would only assert that we call what we call.
+ */
+function delegatingWorkspace(): Promise<{ root: string; ws: Workspace; fake: ReturnType<typeof fakeTmux> }> {
+  const root = gitRepoWorkspace();
+  const worktreeBase = mkdir();
+  // `boss` is the parent this child is delegated by. It is declared because lineage must name an
+  // agent this workspace knows; where the PARENT runs is never consulted on this path, because a
+  // child that asked for `worktree: true` is getting its own checkout rather than inheriting one.
+  const { host } = canonicalHost(
+    root,
+    [{ name: "boss", spec: { runtime: "claude" } }],
+    `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
+  );
+  const fake = fakeTmux();
+  return Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: mkdir() },
+  ).then((ws) => ({ root, ws, fake }));
+}
+
+/** Every local branch the repository actually has — the only authority on what could be adopted. */
+const branchesOf = (repo: string): string[] =>
+  execFileSync("git", ["for-each-ref", "--format=%(refname:short)", "refs/heads/"], { cwd: repo, encoding: "utf8" })
+    .split("\n").map((line) => line.trim()).filter(Boolean);
+
+const gitIn = (cwd: string, args: string[]): string =>
+  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+it("spec 484: a delegated Temporary child is born on a per-SPAWN branch, and the name-derived one is never minted", async () => {
+  const { root, ws, fake } = await delegatingWorkspace();
+  try {
+    await ws.manager.spawn("residuo", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+
+    const record = ws.ledger.get("residuo")?.worktree;
+    expect(record?.branch).toMatch(/^tachyon\/tmp\.residuo\.\d{8}-\d{6}-[0-9a-z]+$/u);
+    // Git is the authority, not our own record: the checkout is really sitting on that branch.
+    expect(gitIn(record!.path, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(record!.branch);
+    // And the branch a SECOND child of this name would have found free and adopted was never created.
+    expect(branchesOf(root)).not.toContain("tachyon/residuo");
+  } finally {
+    ws.dispose();
+    await fake.cleanup();
+  }
+});
+
+it("spec 484: two spawns of the SAME Temporary name get two different branches, and the first child's commits are left alone", async () => {
+  const { root, ws, fake } = await delegatingWorkspace();
+  try {
+    await ws.manager.spawn("residuo", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+    const first = ws.ledger.get("residuo")!.worktree!;
+    // Give the first child work of its own, because the defect is not "same string" — it is a second
+    // child committing on top of a stranger's commits while its briefing says it starts from main.
+    fs.writeFileSync(path.join(first.path, "first-childs-work.txt"), "written by the first residuo\n", "utf8");
+    gitIn(first.path, ["add", "-A"]);
+    gitIn(first.path, ["commit", "-m", "first child's work"]);
+    const firstTip = gitIn(root, ["rev-parse", first.branch]);
+
+    // End of life, exactly as the Bridge performs it: kill the pane, then drop the row. Dismiss is
+    // what clears the ledger, and the cleared ledger is what makes the respawn a NEW child rather
+    // than a relaunch of this one.
+    await ws.manager.kill("residuo");
+    ws.manager.dismissTemporary("residuo");
+    // Sweep the CHECKOUT and keep the branch — the leftover a human is left holding after a one-shot
+    // child, and the exact state in which `exists-free` → attach used to fire.
+    expect(await ws.worktrees.remove(first, false)).toMatchObject({ removed: true, branchDeleted: false });
+    expect(branchesOf(root)).toContain(first.branch);
+
+    await ws.manager.spawn("residuo", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+    const second = ws.ledger.get("residuo")!.worktree!;
+
+    // The property the user actually gets: a reused NAME is not a reused identity.
+    expect(second.branch).not.toBe(first.branch);
+    expect(second.branch).toMatch(/^tachyon\/tmp\.residuo\./u);
+    // It started from the trunk, which is what its briefing told it, not from its namesake's tip.
+    expect(fs.existsSync(path.join(second.path, "first-childs-work.txt"))).toBe(false);
+    expect(gitIn(second.path, ["rev-parse", "HEAD"])).toBe(gitIn(root, ["rev-parse", "main"]));
+    // And the orphan is still exactly where its owner left it — nothing was built on top of it.
+    expect(gitIn(root, ["rev-parse", first.branch])).toBe(firstTip);
+  } finally {
+    ws.dispose();
+    await fake.cleanup();
+  }
+});
