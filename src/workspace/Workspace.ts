@@ -1142,6 +1142,10 @@ export class Workspace {
             branch: ctxAgent?.branch,
             worktreeSetup: ctxAgent?.worktreeSetup,
             parent: ctx.parent,
+            // spec 484 — a Temporary's NAME is reusable across spawns, so it cannot stand for its
+            // branch identity the way a declared agent's does. The AgentManager has computed this
+            // fact since spec 210; it just never reached the resolver that has to act on it.
+            temporary: ctx.temporary,
             isRestart: ctx.isRestart,
             declaredCwd: ctx.declaredCwd,
           },

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import nodePath from "node:path";
 import { describe, it, expect } from "vitest";
 import {
   resolveBase,
@@ -7,11 +9,13 @@ import {
   validateReuse,
   gitArgs,
   resolveWorktreeCwd,
+  temporaryBranchFor,
   WorktreeUnavailableError,
   WorktreeManager,
   type WorktreeRecord,
   type WorktreeResolveDeps,
 } from "../../src/worktree/WorktreeManager.js";
+import { AGENT_NAME_PATTERN } from "../../src/config/nameValidation.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 const settings = (s: Partial<TachyonConfig["settings"]> = {}): TachyonConfig["settings"] => s as TachyonConfig["settings"];
@@ -394,6 +398,174 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
           message: expect.stringContaining(REC.path),
         });
       expect(h.notices).toEqual([]);
+    });
+
+    /**
+     * spec 484 — a Temporary child's branch is minted per SPAWN; a declared agent's stays derived
+     * from its name.
+     *
+     * `actionForBranchState` maps `exists-free` → attach, which is correct for a declared agent (the
+     * branch is its identity) and wrong for a Temporary (the name is reusable). Under the
+     * name-derived template the second `codex-residuo` would attach to the first one's branch and
+     * build on a stranger's commits while its briefing says it starts from main. These pin that the
+     * adoption state is UNREACHABLE for a Temporary, not merely guarded.
+     */
+    describe("branch identity of a Temporary child", () => {
+      /** capture the branch `ensure()` is actually asked for — the only thing that decides adoption */
+      function branchProbe(over: Partial<WorktreeResolveDeps> = {}): { d: WorktreeResolveDeps; asked: string[] } {
+        const asked: string[] = [];
+        const d: WorktreeResolveDeps = {
+          manager: {
+            pathForAgent: () => "/wt/h/x",
+            ensure: async (o: { branch: string }) => {
+              asked.push(o.branch);
+              return { record: { ...REC, branch: o.branch }, created: true };
+            },
+          } as unknown as WorktreeResolveDeps["manager"],
+          settings: {},
+          resolveParent: async () => ({ cwd: "/wt/h/boss", known: true }),
+          runSetup: async () => {},
+          notify: () => {},
+          ...over,
+        };
+        return { d, asked };
+      }
+
+      it("never asks for the name-derived branch, so a leftover one cannot be adopted", async () => {
+        const h = branchProbe();
+
+        await resolveWorktreeCwd(
+          { name: "codex-residuo", worktree: true, parent: "boss", temporary: true, isRestart: false },
+          h.d,
+        );
+
+        // The whole defect in one assertion: this is the branch the FIRST child of this name owns.
+        expect(h.asked).not.toContain("tachyon/codex-residuo");
+        expect(h.asked[0]).toMatch(/^tachyon\/tmp\.codex-residuo\./u);
+      });
+
+      it("gives two spawns of the SAME name two different branches", async () => {
+        const first = branchProbe();
+        const second = branchProbe();
+        const ctx = { name: "codex-residuo", worktree: true, parent: "boss", temporary: true, isRestart: false };
+
+        await resolveWorktreeCwd({ ...ctx }, first.d);
+        await resolveWorktreeCwd({ ...ctx }, second.d);
+
+        expect(first.asked[0]).not.toBe(second.asked[0]);
+      });
+
+      it("leaves a DECLARED agent's branch exactly as it was — template and default alike", async () => {
+        const plain = branchProbe();
+        await resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, plain.d);
+        expect(plain.asked).toEqual(["tachyon/rev"]);
+
+        const templated = branchProbe({ settings: settings({ worktree: { branch: "wt/{agent}" } }) });
+        await resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, templated.d);
+        expect(templated.asked).toEqual(["wt/rev"]);
+      });
+
+      it("keeps its OWN prior record's branch — a relaunch is the same child, not a namesake", async () => {
+        // Not the defect this fixes: a prior record is this agent's own persisted row. Minting a
+        // fresh branch here would also strand the checkout `ensure()` reuses at `prior.path`.
+        const h = branchProbe({ priorRecord: { ...REC, branch: "tachyon/tmp.codex-residuo.20260801-203145-9f3c" } });
+
+        await resolveWorktreeCwd(
+          { name: "codex-residuo", worktree: true, parent: "boss", temporary: true, isRestart: true },
+          h.d,
+        );
+
+        expect(h.asked).toEqual(["tachyon/tmp.codex-residuo.20260801-203145-9f3c"]);
+      });
+
+      it("is wired: the Workspace hands the resolver the Temporary fact it already computes", () => {
+        // Everything above resolves off `ctx.temporary`, so the product behaviour rests on one line
+        // of plumbing. Drop it and every spawn looks declared to the resolver, the name-derived
+        // branch comes straight back, and not one unit test above would notice.
+        const workspace = fs.readFileSync(nodePath.join(process.cwd(), "src/workspace/Workspace.ts"), "utf8");
+        expect(workspace.match(/temporary: ctx\.temporary/gu)?.length ?? 0).toBe(1);
+      });
+
+      it("still honours an explicitly named branch — that is an identity the caller owns", async () => {
+        const h = branchProbe();
+
+        await resolveWorktreeCwd(
+          { name: "codex-residuo", worktree: true, parent: "boss", temporary: true, branch: "feature/x", isRestart: false },
+          h.d,
+        );
+
+        expect(h.asked).toEqual(["feature/x"]);
+      });
+    });
+
+    describe("temporaryBranchFor — the shape, and why it cannot collide", () => {
+      const at = new Date("2026-08-01T20:31:45.123Z");
+
+      it("reads as the agent it belonged to, with when it was born", () => {
+        expect(temporaryBranchFor("codex-residuo", at, "9f3c")).toBe("tachyon/tmp.codex-residuo.20260801-203145-9f3c");
+      });
+
+      it("is disjoint from the declared namespace by CONSTRUCTION, not by convention", () => {
+        // `tachyon/tmp.…` can only equal `tachyon/{agent}` if some valid agent name contains a dot.
+        // AGENT_NAME_PATTERN forbids one, so the two namespaces can never meet — and staying flat
+        // under `tachyon/` also avoids the ref directory/file clash a nested form would create with
+        // an agent actually named `tmp`.
+        const leaf = temporaryBranchFor("codex-residuo", at, "9f3c").slice("tachyon/".length);
+        expect(leaf).toContain(".");
+        expect(AGENT_NAME_PATTERN.test(leaf)).toBe(false);
+      });
+
+      it("mints a fresh value per call, even within the same second", () => {
+        const seen = new Set(Array.from({ length: 32 }, () => temporaryBranchFor("codex-residuo", at)));
+        expect(seen.size).toBe(32);
+      });
+
+      it("stays inside what git accepts for a branch name", () => {
+        const branch = temporaryBranchFor("codex-residuo", at, "9f3c");
+        expect(branch).toMatch(/^[A-Za-z0-9][A-Za-z0-9._/-]*[A-Za-z0-9]$/u);
+        expect(branch).not.toContain("..");
+        expect(branch.endsWith(".lock")).toBe(false);
+      });
+    });
+
+    /**
+     * spec 484 — `null` here means "the AgentManager uses the workspace ROOT". Who asked decides
+     * whether that is a home or the worst possible answer.
+     */
+    describe("isolation asked for and not delivered", () => {
+      const unavailable = (over: Partial<WorktreeResolveDeps> = {}) => deps({
+        manager: {
+          pathForAgent: () => "/wt/h/rev",
+          ensure: async () => { throw new WorktreeUnavailableError("not a git repository", "not-repo"); },
+        } as unknown as WorktreeResolveDeps["manager"],
+        resolveParent: async () => ({ cwd: "/wt/h/boss", known: true }),
+        ...over,
+      });
+
+      it("refuses to put a PARENTED child in the human's checkout, and names the reason", async () => {
+        const h = unavailable();
+
+        await expect(resolveWorktreeCwd(
+          { name: "helper", worktree: true, parent: "boss", isRestart: false },
+          h.d,
+        )).rejects.toMatchObject({
+          reason: "not-repo",
+          message: expect.stringContaining("asked for an isolated worktree under parent 'boss'"),
+        });
+        // A notice would be the tell that it degraded and carried on.
+        expect(h.notices).toEqual([]);
+      });
+
+      it("still lets a TOP-LEVEL agent fall back to its own home, unchanged", async () => {
+        // The asymmetry is the point: for a top-level agent the root IS its normal home, so refusing
+        // would brick it over a git condition it can work without.
+        const h = unavailable();
+
+        expect(await resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, h.d)).toBeNull();
+        expect(h.notices).toEqual([
+          "'rev' falling back to the workspace root — not a git repository",
+        ]);
+      });
     });
   });
 

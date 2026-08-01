@@ -12,6 +12,7 @@
 
 import { execFile } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -92,6 +93,47 @@ export function branchFor(agent: string, settings: TachyonConfig["settings"], ag
     return template.replaceAll("{agent}", agent);
   }
   return `tachyon/${agent}`;
+}
+
+/**
+ * spec 484 — the branch identity of a TEMPORARY child, minted per spawn instead of derived from its
+ * name.
+ *
+ * A declared agent's branch IS its identity: `tachyon/{agent}` is stable across restarts on purpose,
+ * and `actionForBranchState` maps `exists-free` → ATTACH so reattaching to it is the whole point. A
+ * Temporary name is not an identity — it is reusable across spawns. Under the name-derived template
+ * a second child called `codex-residuo` resolves to the FIRST one's branch, finds it free, attaches,
+ * and starts building on a stranger's commits while its briefing says it starts from main. That is
+ * "unknown flattened into known" (`t-b4a799`) wearing a plausible value, and no warning undoes the
+ * commits the child would then build on.
+ *
+ * A per-spawn branch does not guard the adoption path — it makes the state that reaches it always
+ * `absent`, so adoption is UNREACHABLE for a Temporary rather than watched.
+ *
+ * The shape, and why:
+ *   `tachyon/tmp.{agent}.{YYYYMMDD}-{HHMMSS}-{entropy}`
+ *
+ *   - It carries the agent name, so an orphan branch in `git branch` says whose it was. That is the
+ *     hard requirement: a unique-but-opaque id would trade one silent failure for an unreadable one.
+ *   - The second path component contains `.`, which `AGENT_NAME_PATTERN` (`^[a-zA-Z][a-zA-Z0-9_-]*$`)
+ *     forbids. So `tachyon/tmp.…` can never equal `tachyon/{agent}` for ANY valid agent name — the
+ *     disjointness from the declared namespace is structural, not a convention someone must keep.
+ *     Staying flat under `tachyon/` also means no directory/file ref conflict with `tachyon/{agent}`,
+ *     which a nested `tachyon/tmp/{agent}/…` would create for an agent actually named `tmp`.
+ *   - The UTC stamp sorts spawns chronologically in `git branch` output, which is what a human
+ *     sweeping leftovers needs to tell the first child from the fifth; the entropy covers two spawns
+ *     of one name inside the same second.
+ *   - `tachyon/tmp.*` is a single glob for finding every ephemeral leftover.
+ *
+ * Pure, with the clock and the entropy injectable, so the shape unit-tests without either.
+ */
+export function temporaryBranchFor(
+  agent: string,
+  now: Date = new Date(),
+  entropy: string = randomBytes(2).toString("hex"),
+): string {
+  const stamp = now.toISOString().replaceAll(/[-:]/gu, "").replace(/\..*$/u, "").replace("T", "-");
+  return `tachyon/tmp.${agent}.${stamp}-${entropy}`;
 }
 
 /**
@@ -974,6 +1016,15 @@ export interface WorktreeSpawnCtx {
   worktreeSetup?: string[];
   /** lineage parent — a sub-agent inherits the parent's cwd unless it explicitly opts into worktree isolation */
   parent?: string;
+  /**
+   * spec 484 — Temporary (MCP-spawned) rather than declared in `tachyon.yml`.
+   *
+   * The one fact that decides whether the agent's NAME may stand for its branch identity. A declared
+   * name is unique and durable by construction (the roster owns it); a Temporary name is neither, so
+   * the two must not share the name-derived template. `SpawnCwdContext.temporary` has carried this
+   * since spec 210 — it simply never reached the resolver that needed it.
+   */
+  temporary?: boolean;
   /** restart/resume — reuse the worktree, never re-run setup */
   isRestart: boolean;
   /**
@@ -1047,6 +1098,34 @@ function announceDiscardedCwd(
   );
 }
 
+/**
+ * spec 484 — what to hand `branchFor` through its `agentDef.branch` seam, which it honours ahead of
+ * the template. No new machinery: the seam already exists and this is its one new caller.
+ *
+ * The precedence, and the reason for each rung:
+ *
+ *   1. An EXPLICIT `ctx.branch` wins for anyone. The caller named a ref; that is an identity it owns
+ *      and this function has no standing to overrule it.
+ *   2. A DECLARED agent gets `undefined` — the template/`tachyon/{agent}` path, byte for byte what it
+ *      resolved to before this change. Its branch is its identity and reattaching to it is correct.
+ *   3. A Temporary WITH a prior record keeps that record's branch. This is not the defect: the prior
+ *      record is this agent's OWN persisted row, so it means restart, resume, or a relaunch of a
+ *      still-rostered child — the same child, not a namesake. Minting a fresh branch here would also
+ *      brick it, because `ensure()` reuses `prior.path` and `validateReuse` would then reject the
+ *      checkout for being on the "wrong" branch.
+ *   4. A Temporary with NO prior record is a genuinely new child, and gets a fresh identity. The
+ *      dismissed-then-respawned case lands here: dismiss clears the ledger row, so a leftover
+ *      `tachyon/{name}` branch is no longer reachable by name and cannot be adopted. A leftover
+ *      CHECKOUT at the name-derived path still fails closed through `validateReuse` → the existing
+ *      `recovery-preserved` propagation — loudly, never as a silent landing in a stranger's tree.
+ */
+function spawnBranchIdentity(ctx: WorktreeSpawnCtx, prior?: WorktreeRecord): string | undefined {
+  if (ctx.branch) return ctx.branch;
+  if (!ctx.temporary) return undefined;
+  if (prior?.branch) return prior.branch;
+  return temporaryBranchFor(ctx.name);
+}
+
 export async function resolveWorktreeCwd(
   ctx: WorktreeSpawnCtx,
   deps: WorktreeResolveDeps,
@@ -1085,7 +1164,7 @@ export async function resolveWorktreeCwd(
 
   let branch: string;
   try {
-    branch = branchFor(ctx.name, deps.settings, { branch: ctx.branch });
+    branch = branchFor(ctx.name, deps.settings, { branch: spawnBranchIdentity(ctx, deps.priorRecord) });
   } catch (err) {
     const recoveryPath = deps.priorRecord?.path ?? deps.manager.pathForAgent(ctx.name);
     const primary = err instanceof Error ? err : new Error(String(err));
@@ -1124,6 +1203,27 @@ export async function resolveWorktreeCwd(
       throw err;
     }
     if (err instanceof WorktreeUnavailableError) {
+      // spec 484 — the fallback's discriminator was "might we have created recoverable state?" (the
+      // branch just above). That is the wrong question for an ordinary unavailability: nothing was
+      // created, so nothing needs preserving, and the answer turns on WHO asked and what the root
+      // means to them.
+      //
+      // For a top-level agent the workspace root is its home; landing there is a degraded launch, not
+      // a wrong one, and refusing would brick an agent over a git condition it can work without. That
+      // path is unchanged, notice and all.
+      //
+      // A PARENTED child is the opposite case. It did not merely tolerate isolation — it opted in,
+      // and without a worktree the root is the HUMAN'S primary checkout: strictly worse than doing
+      // nothing, since inheriting the parent's tree (what it would have got without the flag) at
+      // least keeps it inside an agent's own directory. So the one request the fallback can satisfy
+      // is the one it must not: it would put a delegated child in the one place nobody asked it to
+      // write. Fail closed, and say which unavailability caused it.
+      if (ctx.parent) {
+        throw new WorktreeUnavailableError(
+          `'${ctx.name}' asked for an isolated worktree under parent '${ctx.parent}' and cannot have one — ${err.message}`,
+          err.reason,
+        );
+      }
       deps.notify(`'${ctx.name}' falling back to the workspace root — ${err.message}`, "warn");
       return null;
     }
