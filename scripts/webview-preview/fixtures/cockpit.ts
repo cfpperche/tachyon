@@ -7,6 +7,10 @@ import { routes as cockpitRoutes } from "../../../src/cockpit/route";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
+import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/webview/human-inbox/viewModel";
+import { buildHumanInbox, humanInboxCounts } from "../../../src/humanInbox/model";
+import type { SavedAgentProposalReview } from "../../../src/agents/savedAgentProposalReview";
+import { approvalFixtures } from "./approval";
 import type { Validation } from "../../../src/validations/types";
 import type { Fixture } from "../routes";
 import realExecutionGraphVm from "./execution-graph-real.vm.json";
@@ -560,6 +564,89 @@ export const validationsFixtureVm: ValidationsViewModel = buildValidationsViewMo
   validations: validationsSample,
 });
 
+/**
+ * t-d16698 — the Human Inbox and one OPENED item.
+ *
+ * The Inbox is where every "Review" doorbell leads, and the item route is the exact destination of
+ * the Saved Agent proposal deep-link this task is about — and neither had a preview fixture, so the
+ * one surface a person reaches from a notification could not be looked at outside a running editor.
+ * `sp-45042f` is the id from the original report.
+ *
+ * The ROWS come from the real projection (`buildHumanInbox` + `humanInboxCounts`, over the approval
+ * and validation fixtures already in this harness), because ordering, severity and the counts are
+ * exactly what a preview must not be free to invent.
+ *
+ * The two things AROUND them are typed literals, and that is a build constraint rather than a
+ * preference: this bundle is browser-targeted, and both real builders reach node — the review
+ * builder through `savedAgentProposal.ts`'s `node:crypto`, and `buildHumanInboxItemViewModel`
+ * through `humanInbox/artifacts.ts`'s `node:path`. Importing either breaks `dist/webview-preview`
+ * outright (measured: 2 unresolved esbuild imports). Same convention `approvalFixtures` already
+ * uses; the annotations keep the shapes pinned to the interfaces the host really posts.
+ */
+const savedAgentProposalSample: SavedAgentProposalReview = {
+  id: "sp-45042f",
+  proposer: "claude",
+  proposerTrust: "bridge-resolved",
+  digest: "3f1c8a5e2b7d4906c1e5a8f2b0d7c3946e2a1f8b5c0d3e7a9b4f6c2d8e1a5b03",
+  createdAt: "2026-07-16T15:20:35.735Z",
+  expiresAt: "2026-07-17T15:20:35.735Z",
+  expired: false,
+  agentName: "grok-builder",
+  displayName: "Grok Builder",
+  worktreeEnabled: true,
+  runtime: { adapter: "grok", model: "grok-4", reasoningEffort: "high" },
+  ownership: "top-level",
+  requestedGrants: [],
+  permissionAuthorizations: [],
+  rationale: "bounded implementation work on the webview bundles, with no roster ownership",
+  environmentNames: ["XAI_API_KEY"],
+  requestedOwnership: [],
+  requestedSkills: ["visual-qa"],
+  requestedMcpServers: [],
+  requestedHooks: [],
+  hasUngrantedCapabilityRequests: true,
+  dangerous: [
+    {
+      label: "capabilities requested (NOT granted by this approval)",
+      detail:
+        "skill visual-qa. Approving creates the profile; capability references still require a separate "
+        + "host authorization, exactly as they do for an agent a human writes by hand.",
+    },
+  ],
+  affected: ["tachyon.yml"],
+  baseConfigSha256: "9f8b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b",
+  baseDiverged: false,
+};
+
+const humanInboxItems = buildHumanInbox(
+  {
+    wsHash: "b349073a",
+    folder: "tachyon",
+    approvals: approvalFixtures.pending!.vm.approvals,
+    validations: validationsFixtureVm.validations,
+    savedAgentProposals: [savedAgentProposalSample],
+  },
+  { now },
+);
+
+export const humanInboxFixtureVm: HumanInboxViewModel = {
+  folder: "tachyon",
+  wsHash: "b349073a",
+  items: humanInboxItems,
+  counts: humanInboxCounts(humanInboxItems),
+};
+
+/** The deep-link's destination: ONE item, opened, exactly as `tachyon.openHumanInbox` lands on it. */
+export const humanInboxItemFixtureVm: HumanInboxItemViewModel = {
+  folder: humanInboxFixtureVm.folder,
+  wsHash: humanInboxFixtureVm.wsHash,
+  item: humanInboxItems.find((i) => i.kind === "saved-agent-proposal" && i.id === "sp-45042f")!,
+  // A proposal carries no evidence files, so the empty preview + zeroed summary IS this item's real
+  // shape — not a placeholder standing in for artifacts the fixture declined to build.
+  artifacts: [],
+  artifactSummary: { total: 0, previewable: 0, unavailable: 0 },
+};
+
 export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
   runtimes: [
     {
@@ -976,6 +1063,16 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
+  // t-d16698 — the two Inbox surfaces a "Review" doorbell can land on. Both were unpreviewable, which
+  // is why a deep-link defect that ended on one of them could only be judged inside a real editor.
+  inbox: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "inbox", nowIso: now }) },
+  "inbox-item": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...buildCockpitModel(bundles, { section: "inbox", nowIso: now }),
+      activeRoute: cockpitRoutes.inboxItem("b349073a", "saved-agent-proposal", "sp-45042f"),
+    },
+  },
   // t-ace77f — Handoff is a DETAIL ROUTE, not a section: the model still carries a background
   // section (nav-less routes fall back to overview at every call site) and `activeRoute` is what
   // actually renders, same shape as the task-detail/Fleet-subroute fixtures above.

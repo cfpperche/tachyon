@@ -43,6 +43,7 @@ import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPane
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
+import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
 import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
 import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
@@ -2485,19 +2486,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-1f6d02 — optional `target` deep-links Control → Inbox → exact item (validation/approval/
     // saved-agent-proposal). Omitted target opens the list. Missing items fall back to the list
     // (cockpit inbox-item handshake).
+    // t-d16698 — the accepted kinds come from `decodeHumanInboxDeepLink`, which derives them from
+    // HUMAN_INBOX_KINDS. They used to be three literals written out here, unconnected to the
+    // inventory the EMITTER is pinned to (`INBOX_REVIEW_TARGET`'s Record<HumanInboxKind, …>): a
+    // fourth kind would have compiled, rung a doorbell, and silently landed the person on the queue.
     vscode.commands.registerCommand(
       "tachyon.openHumanInbox",
-      async (hash?: string, target?: { kind?: string; id?: string }) => {
+      async (hash?: string, target?: unknown) => {
         const ws = hash ? byHash(hash) : await pickWorkspace();
-        const kind = target?.kind;
-        const id = typeof target?.id === "string" ? target.id.trim() : "";
-        if (
-          ws
-          && (kind === "validation" || kind === "approval" || kind === "saved-agent-proposal")
-          && id.length > 0
-        ) {
+        const link = decodeHumanInboxDeepLink(target);
+        if (ws && link.target === "item") {
           await openCockpit(makeCockpitDeps(), {
-            route: cockpitRoutes.inboxItem(ws.wsHash, kind, id),
+            route: cockpitRoutes.inboxItem(ws.wsHash, link.itemKind, link.itemId),
           });
           return;
         }

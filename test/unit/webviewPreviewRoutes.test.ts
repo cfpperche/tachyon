@@ -88,6 +88,10 @@ describe("preview route table", () => {
       "execution-graph-real",
       "fleet",
       "handoff",
+      // t-d16698 — the Human Inbox list and ONE opened item: the two surfaces every "Review"
+      // doorbell can land on, and the deep-link destination this task is about.
+      "inbox",
+      "inbox-item",
       "mission",
       "multi-workspace",
       // t-46eb4f — Overview with two roots attached: the one global scope selector, with its

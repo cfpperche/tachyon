@@ -1003,6 +1003,48 @@
   },
   {
     "view": "cockpit",
+    "fixture": "inbox",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=inbox",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "inbox-item",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=inbox-item",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "handoff",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=handoff",
     "frame": {

@@ -22,6 +22,7 @@ import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
+import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/human-inbox/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
@@ -35,6 +36,8 @@ import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
 import {
   cockpitFixtures,
+  humanInboxFixtureVm,
+  humanInboxItemFixtureVm,
   NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
   strings as cockpitStrings,
@@ -165,6 +168,10 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "approvals") {
         const approval = approvalFixtures.pending?.vm;
         if (approval) msgs.push(approvalsMessage(approval));
+      } else if (model.section === "inbox") {
+        // t-d16698 — the Inbox list. The item subroute rides on top of this same section push below,
+        // exactly like task-detail rides on Mission's.
+        msgs.push(humanInboxMessage(humanInboxFixtureVm));
       } else if (model.section === "runtime") {
         const runtime = runtimeOpsFixtures.default?.vm as RuntimeOpsPreviewState | undefined;
         if (runtime) {
@@ -207,6 +214,9 @@ export const ROUTES: Record<string, Route> = {
         // above: same fixture VM, same envelope, now keyed off the route instead of the tab.
         const handoff = handoffFixtures.default?.vm;
         if (handoff) msgs.push(handoffMessage(handoff));
+      } else if (activeRoute?.kind === "inbox-item") {
+        // t-d16698 — where every Inbox doorbell's "Review" is supposed to land: ONE item, opened.
+        msgs.push(humanInboxItemMessage(humanInboxItemFixtureVm));
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));
