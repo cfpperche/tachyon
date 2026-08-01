@@ -1694,10 +1694,13 @@ export class DeliveryLeaseService {
    */
   private occupied(delivery: Delivery, message: string): DeliveryLeaseError {
     const disposition = LEASE_DISPOSITION[delivery.lease.state];
-    const next = disposition.kind === "action"
-      ? { next: { action: disposition.action, deliveryId: delivery.id } }
-      : disposition.kind === "transitional"
-        ? { next: { retry: true, why: disposition.why } }
+    // t-e88c8a stage 1 — the `action` arm is gone with the Delivery tools. `unavailable` still
+    // travels, because a refusal that says WHY there is no next step is not the same as one that
+    // says nothing: the second reads as an omission and sends the operator to raw git.
+    const next = disposition.kind === "transitional"
+      ? { next: { retry: true, why: disposition.why } }
+      : disposition.kind === "unavailable"
+        ? { next: { retry: false, why: disposition.why } }
         : {};
     return new DeliveryLeaseError("WORKTREE_OCCUPIED", true, message, {
       deliveryId: delivery.id,

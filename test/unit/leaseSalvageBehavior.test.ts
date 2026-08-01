@@ -134,7 +134,7 @@ describe("delivery lease salvage flagship behavior", () => {
       canonicalWorktreeFor: () => f.worktree, readHead: () => "head", inspectWorktree: () => ({ headSha: "head", clean: true }), isAncestor: () => true,
       processObserver: { observe: () => state === "alive" ? { state } : { state, reason: "ambiguous" } }, withWorktreeLock: async (_cwd, fn) => fn() });
     await expect(lease.quarantineHeld({ deliveryId: "d-salvage", canonicalWorktree: f.worktree, actor: coordinator, operationId: `refuse-${state}`, approvalId: "a" }))
-      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", detail: { next: { action: "delivery_salvage" } } });
+      .rejects.toMatchObject({ code: "WORKTREE_OCCUPIED", detail: { next: { retry: false } } });
     expect((await f.store.get("d-salvage"))!.lease.state).toBe("held");
   });
 });

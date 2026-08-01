@@ -82,24 +82,24 @@ function leaseFor(state: DeliveryLeaseState): Delivery["lease"] {
 }
 
 describe("lease service refusals name a reachable exit (t-2600f8)", () => {
-  it("hands a caller blocked by a HELD lease the salvage action", async () => {
+  it("tells a caller blocked by a HELD lease why no exit remains", async () => {
     // Control case: this one already worked before the fix, and must keep working after it. A case
     // that holds in BOTH states is what proves the fix added an exit rather than moving one.
     const refusal = await refusalFor("held");
     expect(refusal.code).toBe("WORKTREE_OCCUPIED");
-    expect(refusal.detail).toMatchObject({ state: "held", next: { action: "delivery_salvage", deliveryId: "d-lease" } });
+    expect(refusal.detail).toMatchObject({ state: "held", next: { retry: false, why: expect.stringContaining("retired") } });
   });
 
-  it("hands a caller blocked by a QUARANTINED lease the salvage action", async () => {
+  it("tells a caller blocked by a QUARANTINED lease why no exit remains", async () => {
     const refusal = await refusalFor("quarantined");
-    expect(refusal.detail).toMatchObject({ state: "quarantined", next: { action: "delivery_salvage", deliveryId: "d-lease" } });
+    expect(refusal.detail).toMatchObject({ state: "quarantined", next: { retry: false, why: expect.stringContaining("retired") } });
   });
 
-  it("hands a caller blocked by a VERIFYING lease reconcile, not salvage", async () => {
+  it("tells a caller blocked by a VERIFYING lease why no exit remains", async () => {
     // Salvage on a live verification would discard a run that may still be legitimately in flight,
     // so the exit for a stuck verification is reconciliation. Before the fix: no exit at all.
     const refusal = await refusalFor("verifying");
-    expect(refusal.detail).toMatchObject({ state: "verifying", next: { action: "git_delivery_reconcile", deliveryId: "d-lease" } });
+    expect(refusal.detail).toMatchObject({ state: "verifying", next: { retry: false, why: expect.stringContaining("retired") } });
   });
 
   it.each(["pending", "draining"] as const)("tells a caller blocked by a %s lease that it clears on its own", async (state) => {

@@ -41,20 +41,22 @@ describe("lease disposition (t-cc6495)", () => {
     for (const [state, d] of Object.entries(LEASE_DISPOSITION)) {
       if (d.kind === "terminal") continue;
       // "nothing to do" must be a decision someone wrote down, not an omission.
-      if (d.kind === "transitional") {
-        expect(d.why.length, `${state} declares transitional but explains nothing`).toBeGreaterThan(0);
-      } else {
-        expect(d.action, `${state} must name an operator-invokable action`).toBeTruthy();
-      }
+      // t-e88c8a stage 1 — "an action" is no longer one of the answers: the operator-invokable
+      // Delivery tools are gone. What survives is the property that mattered — a non-terminal state
+      // must EXPLAIN itself, whether it clears on its own or has no way forward at all.
+      expect(d.why.length, `${state} declares ${d.kind} but explains nothing`).toBeGreaterThan(0);
     }
   });
 
-  it("routes a held or quarantined lease to salvage, and a verifying one to reconcile", () => {
+  it("declares no governed action for held, quarantined or verifying", () => {
     // Not interchangeable: salvage on a live verification would discard a run that may still be
     // legitimately in flight, so a stuck verification is reconciled instead.
-    expect(LEASE_DISPOSITION.held).toEqual({ kind: "action", action: "delivery_salvage" });
-    expect(LEASE_DISPOSITION.quarantined).toEqual({ kind: "action", action: "delivery_salvage" });
-    expect(LEASE_DISPOSITION.verifying).toEqual({ kind: "action", action: "git_delivery_reconcile" });
+    // t-e88c8a stage 1 — salvage and reconcile no longer exist, so the three states that routed to
+    // them now declare that no governed action remains. The distinction the old assertion protected
+    // (salvage is NOT interchangeable with reconcile) is moot once neither is reachable.
+    expect(LEASE_DISPOSITION.held.kind).toBe("unavailable");
+    expect(LEASE_DISPOSITION.quarantined.kind).toBe("unavailable");
+    expect(LEASE_DISPOSITION.verifying.kind).toBe("unavailable");
   });
 
   it("treats only free and abandoned as terminal", () => {
@@ -67,13 +69,16 @@ describe("lease disposition (t-cc6495)", () => {
     expect(terminal).toEqual(["abandoned", "free"]);
   });
 
-  it("names only actions the Bridge actually exposes", () => {
-    // A disposition pointing at a tool that does not exist is worse than none: it sends the operator
-    // somewhere unreachable, which is the dead end wearing a helpful face.
+  it("names no Bridge tool at all, since the Delivery surface is retired", () => {
+    // The original assertion checked that every named action existed in the Bridge. t-e88c8a stage 1
+    // removed the tools, so the guard inverts: no disposition may name one. Keeping it pointed at
+    // tools.ts is deliberate — if a later change reintroduces a named action, this fails.
     const tools = fs.readFileSync(path.resolve(__dirname, "../../src/bridge/tools.ts"), "utf8");
     for (const [state, d] of Object.entries(LEASE_DISPOSITION)) {
-      if (d.kind !== "action") continue;
-      expect(tools.includes(`"${d.action}"`), `${state} points at '${d.action}', absent from the Bridge`).toBe(true);
+      expect(d.kind, `${state} names a Bridge action; the Delivery surface is retired`).not.toBe("action");
+    }
+    for (const retired of ["delivery_salvage", "git_delivery_reconcile"]) {
+      expect(tools.includes(`"${retired}"`), `${retired} is back in the Bridge`).toBe(false);
     }
   });
 });

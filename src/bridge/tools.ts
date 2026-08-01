@@ -63,7 +63,6 @@ import { appendDoorbellEvent } from "./doorbell.js";
 import { resolveActor, type CallerSnapshot, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
 import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
-import { verifyTask, VerifyTaskStructuredError } from "./verifyTask.js";
 import type { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import {
   buildApprovalRequest,
@@ -73,24 +72,9 @@ import {
   cancelOwnApprovalRequest,
   appendApprovalWitnessEvent,
 } from "./approvalRequest.js";
-import { hygieneReport, listRows, type DeliveryLiveness } from "../git-delivery/classify.js";
-import { resolveGitDeliverySettings } from "../git-delivery/settings.js";
-import {
-  canPruneLinkedGitDelivery,
-  canIntegrateLinkedGitDelivery,
-} from "../git-delivery/policy.js";
-import type { GitDeliveryStore } from "../git-delivery/store.js";
-import type { GitExec } from "../worktree/WorktreeManager.js";
-import type { WorktreeOccupancyProbe } from "../worktree/WorktreeManager.js";
 import type { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
-import type { GitDeliveryActor, GitDeliverySettings } from "../git-delivery/types.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
 import { TaskPrototypeStore, type TaskPrototypeSnapshot } from "../tasks/TaskPrototypeStore.js";
-import type { DeliveryLeaseService, WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../delivery/leaseService.js";
-import type { DeliveryProjectionService } from "../delivery/projectionService.js";
-import type { DeliveryStore } from "../delivery/store.js";
-import type { Delivery } from "../delivery/types.js";
-import type { ReloadReconciliationSnapshot } from "../delivery/reloadReconciliation.js";
 import { RuntimeLaunchPreflightError } from "../runtime/launchPreflight.js";
 import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "../agents/agentRuntimeAdmission.js";
 import { RuntimeLaunchReadinessError } from "../runtime/launchReadiness.js";
@@ -467,33 +451,8 @@ export interface BridgeDeps {
   /** t-35d95a — latch the CALLER's own agent as awaiting-human (AttentionMonitor.flagAwaitingHuman),
    *  publishing to the owned Attention Stack/badge wiring. Enables request_human_attention; absent = no-op tool. */
   flagAwaitingHuman?: (agent: string, reason: string) => void;
-  /** spec 368 — bounded read-only Delivery lease watcher. */
-  waitForDeliveryLease?: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult>;
   /** Refuses tracked canonical operations while pre-Delivery metadata awaits explicit retirement. */
   assertLegacyDeliveryRetired?: () => void;
-  deliveryLease?: DeliveryLeaseService;
-  /** spec 365 — local GitDelivery store + live-git/liveness seams. Enables git_delivery_* tools. */
-  gitDelivery?: {
-    store: GitDeliveryStore;
-    git: GitExec;
-    liveness: DeliveryLiveness;
-    worktreeOccupancy?: WorktreeOccupancyProbe;
-    settings?: () => GitDeliverySettings;
-    tasks?: TaskStore;
-    workspaceId: string;
-    withWorktreeLock?: <T>(agent: string, fn: () => Promise<T>) => Promise<T>;
-    /** SDD 368 T15 — canonical linked projection mutations. */
-    projection?: DeliveryProjectionService;
-    /** Canonical Delivery store for list/hygiene safety metadata. */
-    deliveries?: DeliveryStore;
-    /** Optional T14 snapshot for list/hygiene linked safety labeling. */
-    reloadSnapshot?: () => ReloadReconciliationSnapshot | undefined;
-    /** spec 392 — remove via WorktreeManager engine (occupancy fail-closed). */
-    removeManagedWorktree?: (
-      worktreePath: string,
-      opts?: { deleteBranch?: boolean; branch?: string; tachyonCreatedBranch?: boolean; baseRef?: string; force?: boolean },
-    ) => Promise<{ removed: boolean; branchDeleted: boolean; error?: string }>;
-  };
   /** spec 392 — managed worktree registry + change worktree create/remove. */
   managedWorktrees?: ManagedWorktreeService;
 }
@@ -709,27 +668,7 @@ function validationActor(deps: Pick<BridgeDeps, "caller">): ValidationActor {
   return caller.kind === "agent" && caller.name ? { kind: "agent", name: caller.name } : { kind: caller.kind };
 }
 
-function gitDeliveryActor(deps: Pick<BridgeDeps, "caller">): GitDeliveryActor {
-  const caller = deps.caller ?? { kind: "legacy" as const };
-  return caller.kind === "agent" ? { kind: "agent", name: caller.name } : { kind: caller.kind };
-}
 
-async function gitDeliveryClassifyExtras(deps: BridgeDeps): Promise<{
-  deliveriesById?: ReadonlyMap<string, Delivery>;
-  reloadSnapshot?: ReloadReconciliationSnapshot;
-}> {
-  const out: {
-    deliveriesById?: ReadonlyMap<string, Delivery>;
-    reloadSnapshot?: ReloadReconciliationSnapshot;
-  } = {};
-  if (deps.gitDelivery?.deliveries) {
-    const list = await deps.gitDelivery.deliveries.list();
-    out.deliveriesById = new Map(list.map((d) => [d.id, d]));
-  }
-  const snap = deps.gitDelivery?.reloadSnapshot?.();
-  if (snap) out.reloadSnapshot = snap;
-  return out;
-}
 
 function runtimeLaunchFailure(err: unknown): RuntimeLaunchPreflightError | RuntimeLaunchReadinessError | undefined {
   if (err instanceof RuntimeLaunchPreflightError || err instanceof RuntimeLaunchReadinessError) return err;
@@ -762,12 +701,6 @@ function fail(err: unknown): ToolResult {
               // must do; a coordinator that reads a bare code will just retry into the same wall.
               ...(launchFailure instanceof RuntimeLaunchPreflightError && launchFailure.humanAction ? { humanAction: launchFailure.humanAction } : {}),
             },
-          },
-        }
-      : err instanceof VerifyTaskStructuredError
-      ? {
-          structuredContent: {
-            error: { code: err.code, message: err.message, candidates: err.candidates },
           },
         }
       : err instanceof TmuxQueueError
@@ -994,33 +927,6 @@ function waitOutputGateFor(manager: AgentManager): WaitOutputConcurrencyGate {
   return gate;
 }
 
-const MAX_CONCURRENT_LEASE_WAITS = 4;
-class DeliveryLeaseWaitGate {
-  private readonly deliveries = new Set<string>();
-
-  tryAcquire(deliveryId: string): string | undefined {
-    if (this.deliveries.has(deliveryId)) {
-      return `wait_for_lease refused: Delivery '${deliveryId}' already has an active watcher (limit: 1 per Delivery)`;
-    }
-    if (this.deliveries.size >= MAX_CONCURRENT_LEASE_WAITS) {
-      return `wait_for_lease refused: workspace already has ${MAX_CONCURRENT_LEASE_WAITS} active lease watchers (limit: ${MAX_CONCURRENT_LEASE_WAITS})`;
-    }
-    this.deliveries.add(deliveryId);
-    return undefined;
-  }
-
-  release(deliveryId: string): void { this.deliveries.delete(deliveryId); }
-}
-
-const deliveryLeaseWaitGates = new WeakMap<AgentManager, DeliveryLeaseWaitGate>();
-function deliveryLeaseWaitGateFor(manager: AgentManager): DeliveryLeaseWaitGate {
-  let gate = deliveryLeaseWaitGates.get(manager);
-  if (!gate) {
-    gate = new DeliveryLeaseWaitGate();
-    deliveryLeaseWaitGates.set(manager, gate);
-  }
-  return gate;
-}
 
 /** The Bridge tools. Schema-validated MCP handlers over AgentManager and workspace services. */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
@@ -1355,279 +1261,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  mcp.registerTool(
-    "git_delivery_list",
-    {
-      description: "List local GitDelivery records with live git containment/missing-ref/liveness classification. Read-only.",
-      inputSchema: { phase: z.enum(["open", "in_review", "accepted", "changes_requested", "integrated", "integrated_unverified", "abandoned", "pruned"]).optional() },
-    },
-    async ({ phase }) => {
-      try {
-        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
-        const deliveries = (await deps.gitDelivery.store.list()).filter((d) => !phase || d.phase === phase);
-        const rows = await listRows(deliveries, {
-          workspaceRoot: deps.workspaceRoot,
-          git: deps.gitDelivery.git,
-          liveness: deps.gitDelivery.liveness,
-          tasks: deps.gitDelivery.tasks,
-          ...(await gitDeliveryClassifyExtras(deps)),
-        });
-        return ok(JSON.stringify(rows, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
-  mcp.registerTool(
-    "git_delivery_hygiene",
-    {
-      description:
-        "Read-only GitDelivery hygiene report. Categories include ready_to_prune, candidate_orphan, landed_without_integrated, missing_ref, integrated_unverified, corrupt_record, and delivery_unavailable. Never deletes.",
-      inputSchema: {},
-    },
-    async () => {
-      try {
-        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
-        const { records, corrupt } = await deps.gitDelivery.store.listWithCorrupt();
-        const report = await hygieneReport(records, corrupt, {
-          workspaceRoot: deps.workspaceRoot,
-          git: deps.gitDelivery.git,
-          liveness: deps.gitDelivery.liveness,
-          tasks: deps.gitDelivery.tasks,
-          ...(await gitDeliveryClassifyExtras(deps)),
-        });
-        return ok(JSON.stringify(report, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
-  mcp.registerTool(
-    "git_delivery_integrate",
-    {
-      description:
-        "Record-only integrate: records integrated only after live Git proves the exact delivered head is contained in the base (ancestor or audited patch-equivalence). Never runs a main-mutating Git command. Linked projections require privileged or configure integratePrincipals.",
-      inputSchema: {
-        id: z.string().regex(/^gd-[0-9a-f]+$/),
-        expectedVersion: z.number().int().min(1),
-        expectedHeadSha: z.string().min(7),
-      },
-    },
-    async ({ id, expectedVersion, expectedHeadSha }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
-        if (!deps.caller || deps.caller.kind === "legacy" || deps.caller.kind === "external") {
-          return fail(new Error("git_delivery_integrate refused: linked mutation requires a resolved Bridge caller"));
-        }
-        const store = deps.gitDelivery.store;
-        const projection = await store.get(id);
-        if (!projection) return fail(new Error(`GitDelivery '${id}' not found`));
-        const actor = gitDeliveryActor(deps);
-        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
-        if (!projection.deliveryId) {
-          return fail(new Error(
-            "LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT: GitDelivery is not linked to a canonical Delivery; " +
-              "run the legacy delivery retirement action before tracked Delivery operations",
-          ));
-        }
-        if (!deps.gitDelivery.projection) {
-          return fail(new Error("canonical DeliveryProjectionService is not available for linked integrate"));
-        }
-        if (!canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller)) {
-          return fail(new Error("git_delivery_integrate refused: linked caller is not privileged or a configured integratePrincipal"));
-        }
-        const result = await deps.gitDelivery.projection.integrate({
-          deliveryId: projection.deliveryId,
-          gitDeliveryId: id,
-          expectedGitVersion: expectedVersion,
-          expectedHeadSha,
-          actor,
-          caller: deps.caller,
-        });
-        return ok(JSON.stringify({ ok: true, projection: result.projection }, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
-  mcp.registerTool(
-    "git_delivery_reconcile",
-    {
-      description:
-        "Reconcile canonical Delivery projection state for one linked GitDelivery. " +
-        "action 'pending_intents' (default) applies pending canonical projection intents and requires a resolved caller " +
-        "authorized for both linked integrate and prune mutations. action 'base_repair' performs the narrow governed " +
-        "repair of a projection whose baseRef degraded to a pinned commit SHA: it requires expected_version, " +
-        "proposed_base_ref equal to the workspace target branch, and an approval_id bound to a digest over " +
-        "(gitDeliveryId, currentBaseRef, proposedBaseRef, currentHeadSha). It refuses any record whose stored base is " +
-        "already a branch ref or is not an ancestor of the proposed base, so it can only ever repair the defect class.",
-      inputSchema: {
-        id: z.string().regex(/^gd-[0-9a-f]+$/),
-        action: z.enum(["pending_intents", "base_repair"]).optional(),
-        expected_version: z.number().int().min(1).optional(),
-        proposed_base_ref: z.string().min(1).optional(),
-        approval_id: z.string().min(1).optional(),
-      },
-    },
-    async ({ id, action, expected_version, proposed_base_ref, approval_id }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
-        if (!deps.caller || deps.caller.kind === "legacy" || deps.caller.kind === "external") {
-          return fail(new Error("git_delivery_reconcile refused: linked mutation requires a resolved Bridge caller"));
-        }
-        const projection = await deps.gitDelivery.store.get(id);
-        if (!projection) return fail(new Error(`GitDelivery '${id}' not found`));
-        if (!projection.deliveryId) {
-          return fail(new Error(
-            "LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT: GitDelivery is not linked to a canonical Delivery; " +
-              "run the legacy delivery retirement action before tracked Delivery operations",
-          ));
-        }
-        if (!deps.gitDelivery.projection) {
-          return fail(new Error("canonical DeliveryProjectionService is not available for linked reconcile"));
-        }
-        const actor = gitDeliveryActor(deps);
-        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
-        if ((action ?? "pending_intents") === "base_repair") {
-          if (!expected_version || !proposed_base_ref || !approval_id) {
-            return fail(new Error(
-              "git_delivery_reconcile base_repair requires expected_version, proposed_base_ref, and approval_id",
-            ));
-          }
-          if (!canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller)) {
-            return fail(new Error(
-              "git_delivery_reconcile base_repair refused: linked caller is not privileged or a configured integratePrincipal",
-            ));
-          }
-          const repaired = await deps.gitDelivery.projection.reconcileBase({
-            deliveryId: projection.deliveryId,
-            gitDeliveryId: id,
-            expectedGitVersion: expected_version,
-            proposedBaseRef: proposed_base_ref,
-            approvalId: approval_id,
-            actor,
-            caller: deps.caller,
-          });
-          return ok(JSON.stringify({ ok: true, projection: repaired.projection }, null, 2));
-        }
-        const canIntegrate = canIntegrateLinkedGitDelivery(actor, settings.integratePrincipals, deps.caller);
-        const canPrune = canPruneLinkedGitDelivery(actor, settings.prunePrincipals, deps.caller);
-        if (!canIntegrate || !canPrune) {
-          return fail(new Error(
-            "git_delivery_reconcile refused: linked caller must be privileged or configured as both an integratePrincipal and prunePrincipal",
-          ));
-        }
-        const result = await deps.gitDelivery.projection.reconcile(projection.deliveryId);
-        return ok(JSON.stringify({ ok: true, deliveryId: projection.deliveryId, result }, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
-  mcp.registerTool(
-    "delivery_salvage",
-    {
-      description: "Governed recovery for a canonical Delivery held by a dead execution. Caller authority is Bridge-resolved. Enter quarantines a held lease; salvage creates a recovery reservation; abandon_without_worktree performs the approval-only terminal disposition; abandon_free is the terminal disposition for a superseded delivery whose lease is already free, and requires a not-live agent, an unoccupied and clean canonical worktree at expected_head_sha, and an approval_id approved by someone other than the former holder.",
-      inputSchema: {
-        delivery_id: z.string().min(1),
-        action: z.enum(["enter", "salvage", "abandon", "abandon_without_worktree", "abandon_free"]),
-        operation_id: z.string().min(1),
-        canonical_worktree: z.string().min(1).optional(),
-        approval_id: z.string().min(1).optional(),
-        expected_head_sha: z.string().min(1).optional(),
-        expected_inventory: z.object({ headSha: z.string(), dirtyPaths: z.array(z.object({ path: z.string(), status: z.string() })), uniqueCommits: z.array(z.string()) }).optional(),
-        execution_agent: z.string().min(1).optional(),
-        principal: z.string().min(1).optional(),
-        owns_subset: z.array(z.string()).optional(),
-      },
-    },
-    async ({ delivery_id, action, operation_id, canonical_worktree, approval_id, expected_head_sha, expected_inventory, execution_agent, principal, owns_subset }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.deliveryLease) return fail(new Error("delivery_salvage is unavailable on this Bridge"));
-        const caller = deps.caller;
-        if (!caller || caller.kind !== "agent" || !caller.name) return fail(new Error("delivery_salvage requires an agent-authenticated Bridge caller"));
-        const actor = { kind: "agent" as const, name: caller.name };
-        if (action === "enter") {
-          if (!canonical_worktree) return fail(new Error("delivery_salvage enter requires canonical_worktree"));
-          return ok(JSON.stringify(await deps.deliveryLease.quarantineHeld({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
-        }
-        if (action === "abandon_without_worktree") {
-          if (!approval_id) return fail(new Error("delivery_salvage abandon_without_worktree requires approval_id"));
-          return ok(JSON.stringify(await deps.deliveryLease.abandonWithoutWorktree({ deliveryId: delivery_id, actor, operationId: operation_id, approvalId: approval_id }), null, 2));
-        }
-        if (action === "abandon_free") {
-          if (!canonical_worktree || !expected_head_sha || !approval_id) return fail(new Error("delivery_salvage abandon_free requires canonical_worktree, expected_head_sha, and approval_id"));
-          return ok(JSON.stringify(await deps.deliveryLease.abandonFreeDelivery({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, expectedHeadSha: expected_head_sha, approvalId: approval_id }), null, 2));
-        }
-        if (action === "abandon") {
-          if (!canonical_worktree || !expected_head_sha || !expected_inventory || !approval_id) return fail(new Error("delivery_salvage abandon requires canonical_worktree, expected_head_sha, expected_inventory, and approval_id"));
-          return ok(JSON.stringify(await deps.deliveryLease.abandonQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory }), null, 2));
-        }
-        if (!canonical_worktree || !expected_head_sha || !expected_inventory || !execution_agent || !owns_subset) return fail(new Error("delivery_salvage salvage requires canonical_worktree, expected_head_sha, expected_inventory, execution_agent, and owns_subset"));
-        return ok(JSON.stringify(await deps.deliveryLease.salvageQuarantine({ deliveryId: delivery_id, canonicalWorktree: canonical_worktree, actor, operationId: operation_id, approvalId: approval_id, expectedHeadSha: expected_head_sha, expectedInventory: expected_inventory, executionAgent: execution_agent, principal, ownsSubset: owns_subset }), null, 2));
-      } catch (error) { return fail(error); }
-    },
-  );
 
-  mcp.registerTool(
-    "git_delivery_prune",
-    {
-      description:
-        "Prune a GitDelivery after live fail-closed checks. Integrated branch prune requires live containedInBase, clean worktree, not-live agent, Tachyon-created branch, and expectedVersion. Abandon mode removes the worktree and keeps unique branch commits unless forceLoseCommits plus doomedShas match live history. Linked projections route through DeliveryProjectionService with T14 safety.",
-      inputSchema: {
-        id: z.string().regex(/^gd-[0-9a-f]+$/),
-        expectedVersion: z.number().int().min(1),
-        abandon: z.boolean().optional(),
-        forceLoseCommits: z.boolean().optional(),
-        doomedShas: z.array(z.string().min(7)).optional(),
-      },
-    },
-    async ({ id, expectedVersion, abandon, forceLoseCommits, doomedShas }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.gitDelivery) return fail(new Error("GitDelivery is not available on this Bridge"));
-        if (!deps.caller || deps.caller.kind === "legacy" || deps.caller.kind === "external") {
-          return fail(new Error("git_delivery_prune refused: linked mutation requires a resolved Bridge caller"));
-        }
-        const delivery = await deps.gitDelivery.store.get(id);
-        if (!delivery) return fail(new Error(`GitDelivery '${id}' not found`));
-        if (!delivery.deliveryId) {
-          return fail(new Error(
-            "LEGACY_DELIVERY_STATE_REQUIRES_RETIREMENT: GitDelivery is not linked to a canonical Delivery; " +
-              "run the legacy delivery retirement action before tracked Delivery operations",
-          ));
-        }
-        if (!deps.gitDelivery.projection) {
-          return fail(new Error("canonical DeliveryProjectionService is not available for linked prune"));
-        }
-        const actor = gitDeliveryActor(deps);
-        const settings = deps.gitDelivery.settings?.() ?? resolveGitDeliverySettings(undefined);
-        if (!canPruneLinkedGitDelivery(actor, settings.prunePrincipals, deps.caller)) {
-          return fail(new Error("git_delivery_prune refused: linked caller is not privileged or a configured prunePrincipal"));
-        }
-        const result = await deps.gitDelivery.projection.prune({
-          deliveryId: delivery.deliveryId,
-          gitDeliveryId: id,
-          expectedGitVersion: expectedVersion,
-          actor,
-          caller: deps.caller,
-          abandon,
-          forceLoseCommits,
-          doomedShas,
-        });
-        return ok(JSON.stringify(result.result, null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
   mcp.registerTool(
     "run_host_action",
@@ -1689,7 +1327,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
         "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
-        "Use delivery_join to run a later implementer, reviewer, fixer, or recovery segment in a canonical Delivery's existing worktree. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),
@@ -1729,18 +1366,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           })
           .optional()
           .describe("verification-gated delegation contract; forces worktree isolation and records BASE_SHA/task ref for verify_task"),
-        delivery_join: z
-          .object({
-            delivery_id: z.string().min(1),
-            role: z.enum(["implementer", "reviewer", "fixer", "recovery"]),
-            owns_subset: z.array(z.string().min(1)).default([]),
-            expected_head: z.string().min(1),
-            principal: z.string().min(1).optional(),
-            declared_agent: AGENT_NAME.optional().describe("select a declared agent definition for a distinct ephemeral Delivery execution"),
-            operation_id: z.string().min(1),
-          })
-          .optional()
-          .describe("Join an existing canonical Delivery in its one worktree. Occupied/unavailable Deliveries refuse; no fallback worktree is created."),
         // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -1753,10 +1378,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, gate, delivery_join, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, gate, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
-        const isBoundDeliveryExecution = !!delivery_join?.declared_agent;
-        const isTemporaryAiAgent = !!cmd || isBoundDeliveryExecution;
+        const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
         // authenticated caller may request the activation, but must not become runtime lineage or
         // ownership merely by making that request. Saved ownership is read exclusively from the
@@ -1787,9 +1411,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           if (!parentActor.ok) return fail(new Error(parentActor.message));
           parent = parentActor.name;
         }
-        if (delivery_join && (gate || worktree)) {
-          return fail(new Error("spawn_agent cannot combine delivery_join with gate or worktree:true — a Delivery already owns its worktree"));
-        }
         // SDD 478 M9 — attestation runs BEFORE every other Temporary check, including the delegation
         // contract. A command that may not be an agent at all must hear WHY and which operation to use;
         // being told first that its delegation contract is incomplete would send the caller to fill in
@@ -1799,7 +1420,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // own contract (an immutable Delivery, an owned subset, an expected HEAD) and its own measured
         // policy for an unrecognized reviewer runtime — SDD 368 T10 deliberately runs one and advises
         // rather than refusing. M9 was told to enforce a boundary, not to withdraw that.
-        if (cmd && !delivery_join) {
+        if (cmd) {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
@@ -1810,9 +1431,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         //
         // M9 collapsed what this used to compute: an accepted `cmd` is an attested runtime by
         // construction now, so there is no longer a terminal child to exempt — the kind is not inferred.
-        if (isBoundDeliveryExecution && cmd) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with cmd"));
-        if (isBoundDeliveryExecution && delivery_join?.principal) return fail(new Error("spawn_agent cannot combine delivery_join.declared_agent with principal"));
-        if (isTemporaryAiAgent && worktree === true && gate === undefined && delivery_join === undefined) {
+        if (isTemporaryAiAgent && worktree === true && gate === undefined) {
           return fail(new Error(
             "spawn_agent worktree:true is not a tracked-change lifecycle for a Temporary AI agent; use gate with a behavior_test and owned paths",
           ));
@@ -1881,17 +1500,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           return fail(new Error("spawn_agent gate is only supported for a Temporary AI sub-agent with a delegation contract"));
         }
         if (delegationGate) deps.assertLegacyDeliveryRetired?.();
-        if (delivery_join) {
-          deps.assertLegacyDeliveryRetired?.();
-          if (!deps.gitDelivery?.deliveries) return fail(new Error("DELIVERY_LEASE_UNAVAILABLE: delivery_join requires the Delivery store dependency"));
-          const caller = deps.caller;
-          if (!caller || caller.kind === "legacy" || caller.kind === "external") return fail(new Error("delivery_join refused: resolved caller required"));
-          const delivery = await deps.gitDelivery?.deliveries?.get(delivery_join.delivery_id);
-          if (!delivery) return fail(new Error(`delivery_join refused: Delivery '${delivery_join.delivery_id}' not found`));
-          const permitted = caller.kind === "human" || caller.kind === "master"
-            || (caller.kind === "agent" && caller.name === (delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined));
-          if (!permitted) return fail(new Error("delivery_join refused: caller is not the Delivery creator/coordinator or privileged"));
-        }
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
         const receipt = await deps.manager.spawn(name, {
@@ -1915,17 +1523,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           contract,
           contractSkipReason: skip_contract_reason,
           gate: delegationGate,
-          deliveryJoin: delivery_join
-            ? {
-              deliveryId: delivery_join.delivery_id,
-              role: delivery_join.role,
-              ownsSubset: delivery_join.owns_subset,
-              expectedHead: delivery_join.expected_head,
-              principal: delivery_join.principal,
-              declaredAgent: delivery_join.declared_agent,
-              operationId: delivery_join.operation_id,
-            }
-            : undefined,
         });
         if (receipt) return ok(JSON.stringify(receipt, null, 2));
         const session = deps.manager.session(name);
@@ -3534,77 +3131,6 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  mcp.registerTool(
-    "verify_task",
-    {
-      description:
-        "Deterministic landing-side gate for a canonical Delivery. Requires delivery_id and verifies its immutable contract and segment history directly. It verifies the task ref against BASE_SHA, runs the behavior verifier " +
-        "fail-before/pass-after pair, scans suppression tripwires and scope breaches, applies coordinator " +
-        "waivers, and persists a SHA-bound verification record. Scope waivers are coordinator-authored " +
-        "decisions by the verify_task caller, matched by finding code/detail/file path, and auditable in " +
-        "the record. A scope_breach waiver must name a file or exact detail — the bare code 'scope_breach' " +
-        "is rejected (it would blanket-waive every scope breach). A self-caller (any Delivery occupant " +
-        "verifying itself) is rejected whenever waivers are present — waivers are coordinator-authored, " +
-        "never self-authored; self-verification with no waivers stays allowed. The resolved caller is " +
-        "recorded on the verification record for after-the-fact attribution. Canonical verification first owns the " +
-        "verification lease, then exact-stops and releases a held live tail before checking out immutable SHAs; do " +
-        "not call kill_agent first, because an explicit cancellation is quarantined. This gate records verification " +
-        "evidence but does not complete a canonical " +
-        "review: review closure requires delivery_join(role=reviewer, owns_subset=[]) followed by " +
-        "delivery_complete_review. When any waiver was applied, " +
-        "the output text leads with an unmissable 'WAIVED' verdict line. Advisory: returns accept or " +
-        "precise blockers; it does not merge.",
-      inputSchema: {
-        delivery_id: z.string().min(1).describe("required canonical Delivery identity"),
-        full: z.boolean().optional().describe("run the project-owned settings.verify.full command in addition to configured typecheck/affected tiers; full=true is blocked when that command is not configured"),
-        waivers: z
-          .array(
-            z.object({
-              finding: z.string().min(1).describe("finding code/detail/file to waive for this verification (scope_breach waivers must name a file or exact detail, not the bare code)"),
-              reason: z.string().min(1).describe("coordinator-authored reason for the waiver"),
-              cites: z.string().min(1).optional().describe("optional deleted/changed production artifact cited by the waiver"),
-            }),
-          )
-          .optional()
-          .describe(
-            "coordinator-authored waivers for suppression tripwire or scope_breach findings; finding may be code/detail/file path (scope_breach: file/detail only, never the bare code), reason is required, and the decision is persisted in the verification record. Rejected if the caller is the agent being verified.",
-          ),
-      },
-    },
-    async ({ delivery_id, full, waivers }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.deliveryVerification) {
-          return fail(new Error("canonical Delivery verification is unavailable on this Bridge"));
-        }
-        // t-0b5723 (F1) — anti-laundering (spec 351 pattern, mirrors request_human_approval): a requester
-        // never resolves its own escalation. The guard itself lives in verifyTask, because it can only be
-        // decided AFTER the delivery is resolved: it compares this Bridge-resolved caller against the
-        // occupants resolution proved, not against the `agent`/`delivery_id` arguments the caller chose.
-        // Deciding it here, from the arguments alone, is exactly how a caller spoofed its way past it.
-        const caller = deps.caller ?? { kind: "legacy" as const };
-        const result = await verifyTask({
-          workspaceRoot: deps.workspaceRoot,
-          deliveryId: delivery_id,
-          full,
-          waivers,
-          deliveryVerification: deps.deliveryVerification,
-          verifierCaller: caller,
-        });
-        // t-7acc58 — an unmissable marker at the very top of the tool output text when waivers were
-        // applied, so a coordinator's merge ritual can't miss a waived-accept by reading only the verdict
-        // line (the JSON body already carried this, buried in record.findings; this puts it where a caller
-        // actually glances first).
-        const verdictLine =
-          result.waivedFindings.length > 0
-            ? `verdict: ${result.verdict} (${result.waivedFindings.length} finding(s) WAIVED — coordinator waivers applied)`
-            : `verdict: ${result.verdict}`;
-        return ok(`${verdictLine}\n${JSON.stringify(result, null, 2)}`);
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
   mcp.registerTool(
     "attach_evidence",
@@ -5065,63 +4591,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  mcp.registerTool(
-    "delivery_complete_review",
-    {
-      description: "Complete an exact canonical Delivery review after delivery_join created the live tail reviewer segment with owns_subset=[]. This operation validates and stops that exact reviewer; it is distinct from verify_task evidence. Mechanism-only root death is best-effort; descendants are unproven.",
-      inputSchema: { delivery_id: z.string().min(1), expected_reviewed_head_sha: z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i, "must be a SHA-1 or SHA-256 object id"), verdict: z.enum(["ACCEPT", "FINDINGS"]), operation_id: z.string().min(1) },
-    },
-    async ({ delivery_id, expected_reviewed_head_sha, verdict, operation_id }) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.deliveryLease || !deps.gitDelivery?.deliveries) return fail(new Error("delivery_complete_review unavailable"));
-        const caller = deps.caller;
-        if (!caller || caller.kind === "legacy" || caller.kind === "external") return fail(new Error("delivery_complete_review refused: resolved caller required"));
-        const delivery = await deps.gitDelivery.deliveries.get(delivery_id);
-        if (!delivery) return fail(new Error(`Delivery '${delivery_id}' not found`));
-        const permitted = caller.kind === "human" || caller.kind === "master" || (caller.kind === "agent" && caller.name === (delivery.createdBy.kind === "agent" ? delivery.createdBy.name : undefined));
-        if (!permitted) return fail(new Error("delivery_complete_review refused: caller is not the Delivery creator/coordinator or privileged"));
-        if (!delivery.gitDeliveryId) return fail(new Error("delivery_complete_review refused: canonical projection backlink unavailable"));
-        const linked = (await deps.gitDelivery.store.list()).filter((g) => g.deliveryId === delivery_id && !!g.worktreePath);
-        if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) return fail(new Error("delivery_complete_review refused: exact canonical worktree unavailable"));
-        const actor = caller.kind === "agent" ? { kind: "agent" as const, name: caller.name! } : { kind: caller.kind as "human" | "master" };
-        const completed = await deps.deliveryLease.completeReview({ deliveryId: delivery_id, canonicalWorktree: fs.realpathSync(linked[0].worktreePath!), expectedReviewedHeadSha: expected_reviewed_head_sha, verdict, actor, operationId: operation_id });
-        return ok(JSON.stringify({ delivery: completed, warning: "Mechanism-only: root death is best-effort; descendant process absence is unproven." }));
-      } catch (err) { return fail(err); }
-    },
-  );
 
-  mcp.registerTool(
-    "wait_for_lease",
-    {
-      description: "Wait for a Delivery lease to be released, quarantined, disappear, or change version. Read-only and bounded.",
-      inputSchema: {
-        delivery_id: z.string().min(1),
-        after_version: z.number().int().min(0).optional(),
-        timeout_ms: z.number().int().min(1).max(300_000),
-      },
-    },
-    async ({ delivery_id, after_version, timeout_ms }, extra) => {
-      try {
-        deps.assertLegacyDeliveryRetired?.();
-        if (!deps.waitForDeliveryLease) return fail(new Error("Delivery lease observation is not available on this Bridge"));
-        const gate = deliveryLeaseWaitGateFor(deps.manager);
-        const refusal = gate.tryAcquire(delivery_id);
-        if (refusal) return fail(new Error(refusal));
-        try {
-          return ok(JSON.stringify(await deps.waitForDeliveryLease({
-            deliveryId: delivery_id,
-            ...(after_version !== undefined ? { afterVersion: after_version } : {}),
-            timeoutMs: timeout_ms,
-          }, extra.signal)));
-        } finally {
-          gate.release(delivery_id);
-        }
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 
   mcp.registerTool(
     "wait_for_agent",

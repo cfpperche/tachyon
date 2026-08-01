@@ -16,10 +16,6 @@ import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
-import { deterministicGitDeliveryId, GitDeliveryStore } from "../../src/git-delivery/store.js";
-import { DeliveryStore } from "../../src/delivery/store.js";
-import { registerTools } from "../../src/bridge/tools.js";
-import type { WaitForDeliveryLeaseInput, WaitForDeliveryLeaseResult } from "../../src/delivery/leaseService.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -92,6 +88,84 @@ function fakeTmuxExec() {
 }
 
 describe("Bridge end-to-end over streamable HTTP", () => {
+  // t-e88c8a stage 1 — 78 → 69. The nine Delivery tools are gone: the seven git_delivery_*/delivery_*
+  // plus verify_task ("Requires delivery_id") and wait_for_lease, which had no subject without the
+  // lease. This list IS the inventory guard — a reintroduced tool fails here by name.
+  it("exposes exactly the 69 canonical tools, including the explicit Terminal operation", async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "append_project_handoff_note",
+      "append_task_note",
+      "attach_evidence",
+      "attach_task_prototype",
+      "cancel_human_approval",
+      "cancel_saved_agent_proposal",
+      "clear_human_flag",
+      "close_validation",
+      "complete_node",
+      "complete_pin",
+      "continue_task",
+      "continuity_status",
+      "create_pin",
+      "create_task",
+      "create_validation",
+      "create_worktree",
+      "discover_validation_candidates",
+      "dismiss_agent",
+      "flag_for_human",
+      "get_approval_status",
+      "get_continuity",
+      "get_pin",
+      "get_project_handoff",
+      "get_task",
+      "get_validation",
+      "get_worktree",
+      "kill_agent",
+      "list_agents",
+      "list_commands",
+      "list_evidence",
+      "list_pending_approvals",
+      "list_pins",
+      "list_saved_agent_proposals",
+      "list_schedules",
+      "list_tasks",
+      "list_validations",
+      "list_worktrees",
+      "next_task",
+      "next_validation",
+      "notify",
+      "notify_agent",
+      "propose_saved_agent",
+      "propose_schedule",
+      "read_output",
+      "reanchor_agent",
+      "reconcile_worktree_hygiene",
+      "register_worktree",
+      "remove_worktree",
+      "request_human_approval",
+      "request_human_attention",
+      "restart_agent",
+      "run_command",
+      "run_host_action",
+      "run_runbook",
+      "set_continuity",
+      "set_project_handoff",
+      "spawn_agent",
+      "spawn_terminal",
+      "submit_evolution_review",
+      "unregister_worktree",
+      "update_pin",
+      "update_task",
+      "update_validation",
+      "verify_agent",
+      "wait_for_agent",
+      "wait_for_output",
+      "worktree_hygiene",
+      "write_input",
+      "write_tachyon_config",
+    ]);
+  });
+
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
   const { sessions, launches, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
@@ -146,9 +220,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let evSeq = 0;
   let validationChanges = 0;
   const hostActionCalls: unknown[] = [];
-  const leaseWaitCalls: unknown[] = [];
-  let leaseWaitImpl: (input: WaitForDeliveryLeaseInput, signal?: AbortSignal) => Promise<WaitForDeliveryLeaseResult> = async (input) =>
-    ({ deliveryId: input.deliveryId, outcome: "changed" as const, waitedMs: 7, version: 4, state: "held" as const });
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
     manager,
@@ -232,10 +303,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
         outcomeSeq: 2,
       };
     },
-    waitForDeliveryLease: async (input, signal) => {
-      leaseWaitCalls.push(input);
-      return leaseWaitImpl(input, signal);
-    },
   });
   // t-57a00a — delivery for the store's sink, mirroring the deps' `deliverNotice` above: `queued` means
   // the notice is held for idle, which for these tests is "the pane must not have received it".
@@ -275,162 +342,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     fs.rmSync(pinsRoot, { recursive: true, force: true });
   });
 
-  it("exposes exactly the 78 canonical tools, including the explicit Terminal operation", async () => {
-    const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      "append_project_handoff_note",
-      "append_task_note",
-      "attach_evidence",
-      "attach_task_prototype",
-      "cancel_human_approval",
-      "cancel_saved_agent_proposal",
-      "clear_human_flag",
-      "close_validation",
-      "complete_node",
-      "complete_pin",
-      "continue_task",
-      "continuity_status",
-      "create_pin",
-      "create_task",
-      "create_validation",
-      "create_worktree",
-      "delivery_complete_review",
-      "delivery_salvage",
-      "discover_validation_candidates",
-      "dismiss_agent",
-      "flag_for_human",
-      "get_approval_status",
-      "get_continuity",
-      "get_pin",
-      "get_project_handoff",
-      "get_task",
-      "get_validation",
-      "get_worktree",
-      "git_delivery_hygiene",
-      "git_delivery_integrate",
-      "git_delivery_list",
-      "git_delivery_prune",
-      "git_delivery_reconcile",
-      "kill_agent",
-      "list_agents",
-      "list_commands",
-      "list_evidence",
-      "list_pending_approvals",
-      "list_pins",
-      "list_saved_agent_proposals",
-      "list_schedules",
-      "list_tasks",
-      "list_validations",
-      "list_worktrees",
-      "next_task",
-      "next_validation",
-      "notify",
-      "notify_agent",
-      "propose_saved_agent",
-      "propose_schedule",
-      "read_output",
-      "reanchor_agent",
-      "reconcile_worktree_hygiene",
-      "register_worktree",
-      "remove_worktree",
-      "request_human_approval",
-      "request_human_attention",
-      "restart_agent",
-      "run_command",
-      "run_host_action",
-      "run_runbook",
-      "set_continuity",
-      "set_project_handoff",
-      "spawn_agent",
-      "spawn_terminal",
-      "submit_evolution_review",
-      "unregister_worktree",
-      "update_pin",
-      "update_task",
-      "update_validation",
-      "verify_agent",
-      "verify_task",
-      "wait_for_agent",
-      "wait_for_lease",
-      "wait_for_output",
-      "worktree_hygiene",
-      "write_input",
-      "write_tachyon_config",
-    ]);
-  });
 
-  it("wait_for_lease forwards snake-case input, enforces bounds, and returns only public lease fields", async () => {
-    leaseWaitCalls.length = 0;
-    const response = await client.callTool({
-      name: "wait_for_lease",
-      arguments: { delivery_id: "d-bridge", after_version: 3, timeout_ms: 250 },
-    });
-    expect(leaseWaitCalls).toEqual([{ deliveryId: "d-bridge", afterVersion: 3, timeoutMs: 250 }]);
-    const text = (response.content as Array<{ type: "text"; text: string }>)[0]!.text;
-    expect(JSON.parse(text)).toEqual({ deliveryId: "d-bridge", outcome: "changed", waitedMs: 7, version: 4, state: "held" });
-    expect(text).not.toMatch(/holder|nonce|process|principal|reason/i);
 
-    for (const arguments_ of [
-      { delivery_id: "d-bridge", timeout_ms: 0 },
-      { delivery_id: "d-bridge", timeout_ms: 300_001 },
-      { delivery_id: "d-bridge", timeout_ms: 1, after_version: -1 },
-    ]) {
-      const invalid = await client.callTool({ name: "wait_for_lease", arguments: arguments_ });
-      expect(invalid.isError).toBe(true);
-    }
-    expect(leaseWaitCalls).toHaveLength(1);
-  });
 
-  it("wait_for_lease forwards real MCP cancellation to the dependency and releases its slot", async () => {
-    leaseWaitCalls.length = 0;
-    let observedSignal!: AbortSignal;
-    let dependencyStarted!: () => void;
-    const started = new Promise<void>((resolve) => { dependencyStarted = resolve; });
-    leaseWaitImpl = async (input, signal) => {
-      observedSignal = signal!;
-      dependencyStarted();
-      await new Promise<void>((_resolve, reject) => signal!.addEventListener("abort", () => reject(signal!.reason), { once: true }));
-      return { deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 };
-    };
-    const controller = new AbortController();
-    const call = client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-abort", timeout_ms: 1_000 } }, undefined,
-      { signal: controller.signal });
-    await started;
-    controller.abort();
-    await expect(call).rejects.toThrow(/AbortError/);
-    await vi.waitFor(() => expect(observedSignal.aborted).toBe(true));
-
-    leaseWaitImpl = async (input) => ({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 });
-    const reused = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-abort", timeout_ms: 1 } });
-    expect(reused.isError).not.toBe(true);
-    expect(leaseWaitCalls).toHaveLength(2);
-  });
-
-  it("wait_for_lease refuses duplicate and fifth fanout without invoking the dependency, then reuses slots", async () => {
-    leaseWaitCalls.length = 0;
-    const releases = new Map<string, () => void>();
-    leaseWaitImpl = (input) => new Promise((resolve) => {
-      releases.set(input.deliveryId, () => resolve({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 1 }));
-    });
-    const held = ["d-one", "d-two", "d-three", "d-four"].map((delivery_id) =>
-      client.callTool({ name: "wait_for_lease", arguments: { delivery_id, timeout_ms: 1_000 } }));
-    await vi.waitFor(() => expect(leaseWaitCalls).toHaveLength(4));
-
-    const duplicate = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-one", timeout_ms: 1_000 } });
-    expect(duplicate.isError).toBe(true);
-    expect((duplicate.content as Array<{ type: "text"; text: string }>)[0]!.text).toContain("limit: 1 per Delivery");
-    const fifth = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-five", timeout_ms: 1_000 } });
-    expect(fifth.isError).toBe(true);
-    expect((fifth.content as Array<{ type: "text"; text: string }>)[0]!.text).toContain("limit: 4");
-    expect(leaseWaitCalls).toHaveLength(4);
-
-    for (const release of releases.values()) release();
-    await Promise.all(held);
-    leaseWaitImpl = async (input) => ({ deliveryId: input.deliveryId, outcome: "timeout", waitedMs: 0 });
-    const reused = await client.callTool({ name: "wait_for_lease", arguments: { delivery_id: "d-one", timeout_ms: 1 } });
-    expect(reused.isError).not.toBe(true);
-    expect(leaseWaitCalls).toHaveLength(5);
-  });
 
   it("run_host_action uses the Bridge-resolved caller and never accepts caller as a parameter", async () => {
     hostActionCalls.length = 0;
@@ -451,139 +365,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     ]);
   });
 
-  it("linked delivery mutations refuse without a resolved Bridge caller and never invoke projection", async () => {
-    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-missing-caller-"));
-    const store = new GitDeliveryStore(root, { now: () => "2026-07-09T00:00:00.000Z" });
-    const linkedId = deterministicGitDeliveryId("delivery-linked");
-    await store.open({ workspaceId: "ws", deliveryId: "delivery-linked", createdBy: { kind: "human" }, agent: "worker", branchRef: "refs/heads/worker", worktreePath: "/wt/worker", tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
-    const integrate = vi.fn();
-    const prune = vi.fn();
-    class ToolCapture {
-      handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>();
-      registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); }
-    }
-    const mcp = new ToolCapture();
-    registerTools(mcp as never, {
-      workspaceRoot: root,
-      gitDelivery: {
-        store,
-        workspaceId: "ws",
-        settings: () => ({ profile: "balanced", autoOpen: true, requireNonSelfAccept: false, autoPrune: false, prunePrincipals: [], integratePrincipals: [] }),
-        git: async () => ({ code: 0, stdout: "tip\n", stderr: "" }),
-        liveness: async () => "not_live",
-        projection: { integrate, prune },
-      },
-    } as never);
-    try {
-      const integrated = await mcp.handlers.get("git_delivery_integrate")!({ id: linkedId, expectedVersion: 1, expectedHeadSha: "tip123" });
-      const pruned = await mcp.handlers.get("git_delivery_prune")!({ id: linkedId, expectedVersion: 1 });
-      expect(integrated.isError).toBe(true);
-      expect(pruned.isError).toBe(true);
-      expect(JSON.stringify(integrated.content)).toContain("resolved Bridge caller");
-      expect(JSON.stringify(pruned.content)).toContain("resolved Bridge caller");
-      expect(integrate).not.toHaveBeenCalled();
-      expect(prune).not.toHaveBeenCalled();
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
 
-  it("git_delivery_reconcile delegates the linked canonical Delivery for a caller authorized to integrate and prune", async () => {
-    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-reconcile-"));
-    const store = new GitDeliveryStore(root, { now: () => "2026-07-17T00:00:00.000Z" });
-    const linkedId = deterministicGitDeliveryId("delivery-reconcile");
-    await store.open({
-      workspaceId: "ws",
-      deliveryId: "delivery-reconcile",
-      createdBy: { kind: "agent", name: "hermes" },
-      agent: "worker",
-      branchRef: "refs/heads/worker",
-      worktreePath: "/wt/worker",
-      tachyonCreatedBranch: true,
-      baseRef: "main",
-      reason: "test",
-    });
-    const reconcile = vi.fn(async () => ({ applied: 1 }));
-    class ToolCapture {
-      handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>();
-      registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); }
-    }
-    const mcp = new ToolCapture();
-    registerTools(mcp as never, {
-      workspaceRoot: root,
-      caller: { kind: "agent", name: "hermes" },
-      gitDelivery: {
-        store,
-        workspaceId: "ws",
-        settings: () => ({
-          profile: "balanced",
-          autoOpen: true,
-          requireNonSelfAccept: false,
-          autoPrune: false,
-          prunePrincipals: ["hermes"],
-          integratePrincipals: ["hermes"],
-        }),
-        git: async () => ({ code: 0, stdout: "", stderr: "" }),
-        liveness: async () => "not_live",
-        projection: { reconcile },
-      },
-    } as never);
-    try {
-      const result = await mcp.handlers.get("git_delivery_reconcile")!({ id: linkedId });
-      expect(result.isError).toBeFalsy();
-      expect(reconcile).toHaveBeenCalledWith("delivery-reconcile");
-      expect(JSON.parse(result.content[0]!.text)).toMatchObject({
-        ok: true,
-        deliveryId: "delivery-reconcile",
-        result: { applied: 1 },
-      });
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
 
-  it("delivery_complete_review authorizes only the exact creator and keeps refusal paths side-effect free", async () => {
-    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-review-auth-"));
-    const projections = new GitDeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
-    const deliveries = new DeliveryStore(root, { now: () => "2026-07-12T00:00:00.000Z" });
-    const gitDeliveryId = deterministicGitDeliveryId("d-review");
-    const delivery = await deliveries.create({ id: "d-review", workspaceId: "ws", createdBy: { kind: "agent", name: "creator" }, gitDeliveryId, contract: { baseSha: "a", taskRef: "task", behaviorTest: "test", owns: [] }, segments: [] });
-    await projections.open({ workspaceId: "ws", deliveryId: "d-review", createdBy: { kind: "agent", name: "creator" }, agent: "worker", branchRef: "branch", worktreePath: root, tachyonCreatedBranch: true, baseRef: "main", reason: "test" });
-    const completeReview = vi.fn(async () => delivery);
-    class ToolCapture { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(name: string, _schema: unknown, handler: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(name, handler); } }
-    const args = { delivery_id: "d-review", expected_reviewed_head_sha: "a".repeat(40), verdict: "ACCEPT", operation_id: "review-op" };
-    try {
-      const deniedMcp = new ToolCapture();
-      registerTools(deniedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "reviewer" }, deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
-      const denied = await deniedMcp.handlers.get("delivery_complete_review")!(args);
-      expect(denied.isError).toBe(true); expect(JSON.stringify(denied.content)).toContain("not the Delivery creator"); expect(completeReview).not.toHaveBeenCalled();
-      const allowedMcp = new ToolCapture();
-      registerTools(allowedMcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "agent", name: "creator" }, deliveryLease: { completeReview } as never, gitDelivery: { store: projections, deliveries, workspaceId: "ws" } } as never);
-      const allowed = await allowedMcp.handlers.get("delivery_complete_review")!(args);
-      expect(allowed.isError).toBeFalsy(); expect(completeReview).toHaveBeenCalledOnce(); expect(JSON.stringify(allowed.content)).toContain("root death is best-effort");
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
-  });
 
-  it("delivery_complete_review accepts both Git object formats and rejects malformed IDs before service", async () => {
-    const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "tachyon-bridge-review-sha-"));
-    const mcp = new (class { handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>>(); registerTool(n: string, _s: unknown, h: (a: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>) { this.handlers.set(n, h); } })();
-    const completeReview = vi.fn();
-    registerTools(mcp as never, { workspaceRoot: root, manager: {} as never, caller: { kind: "human" }, deliveryLease: { completeReview } as never, gitDelivery: { deliveries: { get: async () => undefined }, store: { list: async () => [] } } } as never);
-    try {
-      for (const sha of ["b".repeat(40), "c".repeat(64)]) {
-        const result = await mcp.handlers.get("delivery_complete_review")!({ delivery_id: "missing", expected_reviewed_head_sha: sha, verdict: "ACCEPT", operation_id: sha });
-        expect(JSON.stringify(result.content)).toContain("not found");
-      }
-      const malformed = await mcp.handlers.get("delivery_complete_review")!({ delivery_id: "missing", expected_reviewed_head_sha: "not-an-object", verdict: "ACCEPT", operation_id: "bad" });
-      expect(malformed.isError).toBe(true); expect(completeReview).not.toHaveBeenCalled();
-    } finally { fs.rmSync(root, { recursive: true, force: true }); }
-  });
 
-  it("verify_task exposes the full-suite flag in its Bridge schema", async () => {
-    const { tools } = await client.listTools();
-    const tool = tools.find((t) => t.name === "verify_task");
-    expect(JSON.stringify(tool?.inputSchema)).toContain('"full"');
-  });
 
   it("emits notifications/tools/list_changed to established MCP sessions", async () => {
     const changed = new Promise<void>((resolve, reject) => {
@@ -1062,81 +847,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await client.callTool({ name: "kill_agent", arguments: { name: "waiting-child" } });
   });
 
-  it("SDD 368 T6 delivery_join is no-fallback, mutually exclusive, and still contract-gated", async () => {
-    const join = {
-      delivery_id: "d-one", role: "fixer", owns_subset: ["src"], expected_head: "abc", operation_id: "join-1",
-    };
-    const noContract = await client.callTool({
-      name: "spawn_agent", arguments: { name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join },
-    });
-    expect(noContract.isError).toBe(true);
-    expect(JSON.stringify(noContract.content)).toContain("delegation contract");
 
-    const boundNoContract = await client.callTool({
-      name: "spawn_agent", arguments: { name: "delivery-bound-child", parent: "claude", delivery_join: { ...join, declared_agent: "claude" } },
-    });
-    expect(boundNoContract.isError).toBe(true);
-    expect(JSON.stringify(boundNoContract.content)).toContain("delegation contract");
-
-    const boundCmdConflict = await client.callTool({
-      name: "spawn_agent", arguments: { name: "delivery-bound-child", cmd: "claude", parent: "claude", delivery_join: { ...join, declared_agent: "claude" } },
-    });
-    expect(boundCmdConflict.isError).toBe(true);
-    expect(JSON.stringify(boundCmdConflict.content)).toContain("declared_agent with cmd");
-
-    const conflicting = await client.callTool({
-      name: "spawn_agent",
-      arguments: {
-        name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join, worktree: true,
-        task: "fix delivery", context: "existing canonical delivery", constraints: "reuse only",
-        done_when: "fix committed",
-      },
-    });
-    expect(conflicting.isError).toBe(true);
-    expect(JSON.stringify(conflicting.content)).toContain("cannot combine delivery_join");
-
-    const unavailable = await client.callTool({
-      name: "spawn_agent",
-      arguments: {
-        name: "delivery-child", cmd: "claude", parent: "claude", delivery_join: join,
-        task: "fix delivery", context: "existing canonical delivery", constraints: "reuse only",
-        done_when: "fix committed",
-      },
-    });
-    expect(unavailable.isError).toBe(true);
-    expect(JSON.stringify(unavailable.content)).toContain("DELIVERY_LEASE_UNAVAILABLE");
-    expect(sessions.has(`tachyon-${HASH}-delivery-child`)).toBe(false);
-  });
-
-  it("T14.6B2 refuses bound Delivery execution when the canonical Delivery store is unavailable", async () => {
-    const spawn = vi.spyOn(manager, "spawn").mockResolvedValue(undefined);
-    try {
-      const result = await client.callTool({
-        name: "spawn_agent",
-        arguments: {
-          name: "bound-review-execution",
-          parent: "claude",
-          task: "review the isolated delivery",
-          context: "the declared reviewer owns the durable principal",
-          constraints: "read only; retain the declared principal",
-          done_when: "review evidence is recorded",
-          delivery_join: {
-            delivery_id: "delivery-bound",
-            role: "reviewer",
-            owns_subset: ["src/agents"],
-            expected_head: "abc",
-            operation_id: "bridge-bound-success",
-            declared_agent: "claude",
-          },
-        },
-      });
-      expect(result.isError).toBe(true);
-      expect(JSON.stringify(result.content)).toContain("DELIVERY_LEASE_UNAVAILABLE");
-      expect(spawn).not.toHaveBeenCalled();
-    } finally {
-      spawn.mockRestore();
-    }
-  });
 
   it("SDD 478 M9: spawn_agent refuses a generic command and names spawn_terminal, before the contract gate", async () => {
     // Order is the point. A generic command used to become a Terminal here; now it is refused, and the

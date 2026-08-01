@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FULL_VERIFY } from "../../src/bridge/verifyTask.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
 
 /**
@@ -23,11 +22,11 @@ const TACHYON_BUILD_MARKERS = [
 const baseFixture = (over: Partial<DetectedProject> = {}): DetectedProject => ({ files: [], installedClis: ["claude"], ...over });
 
 describe("container-generated delegation behavior", () => {
-  it("project-agnostic boundaries are pinned: verify_task, configuration defaults and init output carry no Tachyon-build assumptions", () => {
-    // (1) docs/architecture/dogfood-product-boundary.md — verify_task has no product-global full-suite
-    // command. Even a seemingly generic `npm test` would impose a package manager on consumer projects;
-    // Tachyon's own repository opts into verify:full through its tracked tachyon.yml instead.
-    expect(DEFAULT_FULL_VERIFY).toBeUndefined();
+  it("project-agnostic boundaries are pinned: configuration defaults and init output carry no Tachyon-build assumptions", () => {
+    // (1) t-e88c8a stage 1 — this used to assert DEFAULT_FULL_VERIFY is undefined, pinning that
+    // verify_task carried no product-global full-suite command. The boundary is now satisfied the
+    // strongest way available: verify_task is gone, so there is no default left to impose a package
+    // manager on a consumer project. Nothing to assert where nothing exists.
 
     // (2) docs/architecture/dogfood-product-boundary.md — "contributes.configuration defaults carry no
     // Tachyon-repo assumptions". t-aaad95 satisfied that boundary the strongest way available: there

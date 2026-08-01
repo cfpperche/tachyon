@@ -38,8 +38,14 @@ export type DeliveryLeaseState = "free" | "pending" | "held" | "draining" | "ver
  * it, and the exhaustive `Record` makes the compiler refuse the second one when a state is added.
  */
 export type LeaseDisposition =
-  /** An operator-invokable Bridge action that moves this lease forward. */
-  | { kind: "action"; action: "delivery_salvage" | "git_delivery_reconcile" }
+  /**
+   * t-e88c8a stage 1 — the `action` arm is gone. It named `delivery_salvage` and
+   * `git_delivery_reconcile`, and both tools were retired with the rest of the Delivery surface. A
+   * disposition pointing at a tool that no longer exists is the dead end wearing a helpful face —
+   * exactly what this map was written to prevent — so the states that used it now say plainly that
+   * no governed action remains, rather than naming one that would 404.
+   */
+  | { kind: "unavailable"; why: string }
   /** Terminal: the lease holds nothing, so there is nothing to dispose of. */
   | { kind: "terminal" }
   /** Transitional: it clears without operator action. `why` is shown, so the caller knows to retry. */
@@ -52,11 +58,10 @@ export const LEASE_DISPOSITION: Record<DeliveryLeaseState, LeaseDisposition> = {
   pending: { kind: "transitional", why: "another contender is mid-transition; retry" },
   // Releasing its tail. Becomes free or quarantined on its own.
   draining: { kind: "transitional", why: "the lease is releasing its tail; retry shortly" },
-  held: { kind: "action", action: "delivery_salvage" },
-  quarantined: { kind: "action", action: "delivery_salvage" },
-  // A verification owns it. If its owner died, reconciliation is what frees it — not salvage,
-  // which would discard a run that may still be legitimately in flight.
-  verifying: { kind: "action", action: "git_delivery_reconcile" },
+  held: { kind: "unavailable", why: "the governed salvage action was retired with the Delivery tools" },
+  quarantined: { kind: "unavailable", why: "the governed salvage action was retired with the Delivery tools" },
+  // A verification owns it. Reconciliation used to free it; that tool is retired too.
+  verifying: { kind: "unavailable", why: "the governed reconcile action was retired with the Delivery tools" },
 };
 
 export interface DeliveryProcessIdentity {

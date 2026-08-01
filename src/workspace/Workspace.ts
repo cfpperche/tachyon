@@ -271,7 +271,7 @@ import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { GitDeliveryStore } from "../git-delivery/store.js";
 import { DeliveryStore } from "../delivery/store.js";
-import { DeliveryLeaseService, waitForDeliveryLease, type DeliveryRecoveryApproval, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
+import { DeliveryLeaseService, type DeliveryRecoveryApproval, type DeliveryRecoveryInspection } from "../delivery/leaseService.js";
 import { UnavailableProcessFence } from "../agents/processFence.js";
 import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
@@ -2257,7 +2257,6 @@ export class Workspace {
         withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
         deliveryVerification: this.deliveryVerification,
         assertLegacyDeliveryRetired: () => this.legacyDeliveryRetirement.assertRetired(),
-        deliveryLease: this.deliveryLease,
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2268,28 +2267,6 @@ export class Workspace {
         completeNode: (input) => this.pipelines.completeSignal(input),
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
         runHostAction: (input) => this.runHostAction(input),
-        gitDelivery: {
-          store: this.gitDeliveries,
-          git: this.gitExec,
-          settings: () => resolveGitDeliverySettings(this.config?.settings),
-          liveness: (agent) => this.gitDeliveryLiveness(agent),
-          worktreeOccupancy: (worktreePath) => this.manager.worktreeOccupant(worktreePath),
-          tasks: this.taskStore,
-          workspaceId: this.wsHash,
-          withWorktreeLock: (agent, fn) => this.worktrees.withAgentPathLock(agent, fn),
-          projection: this.deliveryProjection,
-          deliveries: this.deliveries,
-          reloadSnapshot: () => (this.deliveryReload.phase === "ready" ? this.deliveryReload.snapshot : undefined),
-          // spec 392 — prune through managed engine (occupancy-checked) instead of raw git argv.
-          removeManagedWorktree: (worktreePath, o) =>
-            this.managedWorktrees.removePath(worktreePath, {
-              deleteBranch: o?.deleteBranch,
-              branch: o?.branch,
-              tachyonCreatedBranch: o?.tachyonCreatedBranch,
-              baseRef: o?.baseRef,
-              force: o?.force,
-            }),
-        },
         managedWorktrees: this.managedWorktrees,
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
@@ -2297,7 +2274,6 @@ export class Workspace {
         // t-35d95a — request_human_attention's target: latch the CALLER's own agent on the LIVE
         // attention monitor (distinct from flag_for_human, which flags a Task on the board).
         flagAwaitingHuman: (agent, reason) => this.monitor.flagAwaitingHuman(agent, reason),
-        waitForDeliveryLease: (input, signal) => waitForDeliveryLease(this.deliveries, input, undefined, signal),
       },
       {
         token: this.token,
