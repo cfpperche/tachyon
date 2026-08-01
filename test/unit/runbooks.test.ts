@@ -10,10 +10,14 @@ const HASH = workspaceHash(WS);
  * tmux fake where each new step session "finishes" with a scripted exit code
  * on the next list-panes read — simulating instant one-shot steps.
  */
-function fakeTmux(exitFor: (cmd: string) => number) {
+function fakeTmux(exitFor: (cmd: string) => number, listPanesFault?: () => string | undefined) {
   const sessions = new Map<string, { cmd: string; cwd?: string; env: string[]; dead: boolean; exit?: number }>();
   const exec = async (args: string[]): Promise<ExecResult> => {
     const target = () => args[args.indexOf("-t") + 1].replace(/^=/, "").replace(/:$/, "");
+    if (args.includes("list-panes") && listPanesFault) {
+      const msg = listPanesFault();
+      if (msg !== undefined) throw new Error(msg);
+    }
     if (args.includes("new-session")) {
       const name = args[args.indexOf("-s") + 1];
       const ci = args.indexOf("-c");
@@ -170,5 +174,42 @@ describe("RunbookRunner", () => {
     expect(s?.cmd).toBe("./m.sh");
     expect(s?.cwd).toBe("/wt/rev/db"); // relative command cwd resolved under the worktree override
     expect(s?.env).toContain("DB=prod");
+  });
+
+  // t-37b7b8 — the verify-gate flake. `sessionStates` returns null for a read it could not make
+  // (transient tmux client failure under load: "lost server: connection reset by peer", EPIPE, a
+  // client timeout — all measured verbatim during a real `verify:full`). The poll loop used to
+  // coerce that null to an empty map, conclude the pane had been killed externally, and record the
+  // step as FAILED — turning a step that had already exited 0 into a red gate, once, unreproducibly.
+  it("an unreadable tmux poll does not turn a passing step into a failing one (t-37b7b8)", async () => {
+    let polls = 0;
+    // the first two reads of the running step are unreadable; the third answers truthfully
+    const { tmux } = fakeTmux(() => 0, () => (++polls <= 3 ? "lost server: connection reset by peer" : undefined));
+    const runner = new RunbookRunner({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(YML), stepPollMs: 1 });
+    const job = await runner.runSteps("_verify-a", ["lint"], "/wt/a");
+    expect(job.outcome).toBe("passed");
+    expect(job.steps[0].exitCode).toBe(0);
+  });
+
+  it("a read that SUCCEEDS and finds no pane is still an externally-killed step (t-37b7b8)", async () => {
+    const { sessions, tmux } = fakeTmux(() => 0);
+    const runner = new RunbookRunner({ tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(YML), stepPollMs: 1 });
+    const kill = tmux.newSession.bind(tmux);
+    tmux.newSession = async (o) => {
+      await kill(o);
+      sessions.delete(o.name); // vanished before the first poll — an authoritative absence
+      sessions.set("tachyon-rb-x-decoy-0", { cmd: "x", env: [], dead: false }); // keep the fake's server "up"
+    };
+    const job = await runner.runSteps("_verify-b", ["lint"], "/wt/b");
+    expect(job.outcome).toBe("failed");
+    expect(job.steps[0].exitCode).toBeUndefined();
+  });
+
+  it("gives up loudly rather than guessing when tmux stays unreadable (t-37b7b8)", async () => {
+    const { tmux } = fakeTmux(() => 0, () => "lost server: connection reset by peer");
+    const runner = new RunbookRunner({
+      tmux, wsHash: HASH, workspaceRoot: WS, getConfig: () => configOf(YML), stepPollMs: 1, unreadablePollBudget: 3,
+    });
+    await expect(runner.runSteps("_verify-c", ["lint"], "/wt/c")).rejects.toThrow(/unreadable/);
   });
 });

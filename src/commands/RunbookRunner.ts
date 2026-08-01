@@ -41,19 +41,35 @@ export interface RunbookRunnerOptions {
   now?: () => number;
   /** completion poll interval while a step runs (ms) */
   stepPollMs?: number;
+  /**
+   * How many CONSECUTIVE ambiguous (null) tmux reads a running step tolerates before the runner
+   * gives up and throws instead of guessing an outcome (t-37b7b8). Defaults to
+   * {@link UNREADABLE_POLL_BUDGET}.
+   */
+  unreadablePollBudget?: number;
 }
 
 const HISTORY_CAP = 10;
+
+/**
+ * t-37b7b8 — consecutive unreadable polls a step tolerates. A transient tmux/exec failure under
+ * load is one or two reads; a tmux server that is really gone stays unreadable forever. Sized so a
+ * genuinely dead server still terminates the loop quickly (at the 1s default poll, ~10s) while no
+ * realistic contention spike can exhaust it.
+ */
+export const UNREADABLE_POLL_BUDGET = 10;
 
 export class RunbookRunner {
   private jobs = new Map<string, RunbookJob[]>(); // runbook -> history (newest last)
   private active = new Map<string, RunbookJob>();
   private readonly now: () => number;
   private readonly stepPollMs: number;
+  private readonly unreadableBudget: number;
 
   constructor(private readonly opts: RunbookRunnerOptions) {
     this.now = opts.now ?? Date.now;
     this.stepPollMs = opts.stepPollMs ?? 1000;
+    this.unreadableBudget = opts.unreadablePollBudget ?? UNREADABLE_POLL_BUDGET;
   }
 
   get prefix(): string {
@@ -138,9 +154,10 @@ export class RunbookRunner {
     this.active.set(label, job);
 
     try {
-      // sweep panes from a previous job of this label
-      const stale = (await this.opts.tmux.sessionStates(`${this.prefix}${label}-`)) ?? new Map();
-      for (const session of stale.keys()) await this.opts.tmux.killSession(session);
+      // sweep panes from a previous job of this label. A null read is ambiguous, not "nothing to
+      // sweep" — skip the sweep rather than record a victory over a question we could not read.
+      const stale = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
+      for (const session of stale?.keys() ?? []) await this.opts.tmux.killSession(session);
 
       for (const step of job.steps) {
         step.state = "running";
@@ -154,11 +171,32 @@ export class RunbookRunner {
 
         // poll this step's pane until it dies (steps are one-shots by definition)
         let exitCode: number | undefined;
+        let unreadable = 0;
         for (;;) {
-          const states = (await this.opts.tmux.sessionStates(`${this.prefix}${label}-`)) ?? new Map();
+          const states = await this.opts.tmux.sessionStates(`${this.prefix}${label}-`);
+          if (states === null) {
+            // t-37b7b8 — an AMBIGUOUS read (the tmux client failed for a reason that is NOT a
+            // confirmed "no server": a transient spawn/EAGAIN under load, a racing kill, a client
+            // timeout). `sessionStates` returns null precisely to keep that apart from "the server
+            // answered and the session is not there", and this loop used to erase the distinction
+            // with `?? new Map()` — an unreadable answer became "killed externally", which became
+            // exitCode undefined, which became a FAILED step. A single unlucky poll could therefore
+            // turn a step that had already exited 0 into a red gate, and the next run would be green
+            // with nothing changed: the flake that this loop is the whole cause of. We do not know
+            // the answer here, so we ask again instead of inventing one.
+            if (++unreadable > this.unreadableBudget) {
+              throw new Error(
+                `runbook '${label}' step ${step.index} ('${step.step}'): tmux state was unreadable ` +
+                  `for ${unreadable} polls in a row — refusing to guess an outcome for it`,
+              );
+            }
+            await new Promise((r) => setTimeout(r, this.stepPollMs));
+            continue;
+          }
+          unreadable = 0;
           const st = states.get(session);
           if (!st) {
-            exitCode = undefined; // killed externally — treat as failure
+            exitCode = undefined; // a read that SUCCEEDED and found nothing → killed externally
             break;
           }
           if (st.dead) {
