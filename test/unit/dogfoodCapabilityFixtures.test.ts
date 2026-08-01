@@ -42,15 +42,28 @@ const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex
  *
  * The negations in `.gitignore` fix the four known rules. This fails if a future rule reaches
  * fixture content again, which is the part nobody would think to re-check.
+ *
+ * Scoped to the shapes that ARE source. Most of what lands in a fixture's `.tachyon/` really is
+ * runtime state — activity, sqlite, sessions, tasks a local run wrote — and stays ignored on
+ * purpose, so a blanket "nothing under test/fixtures is ignored" would be a rule the repo cannot
+ * hold and would be silenced within a week.
  */
+const FIXTURE_SOURCE = [
+  /\/tachyon\.ya?ml$/,
+  /\/\.claude\//,
+  /\/\.agents\//,
+  /\/\.tachyon\/plugins(\.lock\.json|\/)/,
+];
+
 describe("dogfood fixtures are source, not runtime state", () => {
-  it("has no fixture file that git would ignore", () => {
-    const files = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "test/fixtures/"], {
+  it("has no ignored file among the shapes a fixture needs to run", () => {
+    const listed = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "test/fixtures/"], {
       cwd: path.resolve(__dirname, "../.."),
       encoding: "utf8",
     }).trim();
+    const ignored = listed === "" ? [] : listed.split("\n");
 
-    expect(files === "" ? [] : files.split("\n")).toEqual([]);
+    expect(ignored.filter((file) => FIXTURE_SOURCE.some((shape) => shape.test(`/${file}`)))).toEqual([]);
   });
 });
 
