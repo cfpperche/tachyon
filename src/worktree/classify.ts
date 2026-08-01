@@ -37,7 +37,11 @@ export interface WorktreeClassification {
    * not "was it born recently". Fail-closed: an unresolvable trunk reads as NOT contained.
    */
   containedInTrunk: boolean;
-  /** The trunk ref containment was measured against, so a reason line can name it. */
+  /**
+   * The trunk ref containment was measured against, so a reason line can name it. When several
+   * candidates were tried (t-24e28d), this is the one that PROVED containment, or the first that was
+   * looked at when none did — a refusal that names a ref nobody has is worse than useless.
+   */
   trunkRef: string;
   occupant?: WorktreeOccupancy;
 }
@@ -45,10 +49,16 @@ export interface WorktreeClassification {
 export interface ClassifyWorktreeDeps {
   git?: GitExec;
   /**
-   * t-6ae9a8 — the trunk to measure containment against. Defaults to `main`, which is this
-   * repository's trunk; injectable so a test can pin it and a fork can name a different one.
+   * t-6ae9a8 — the trunk to measure containment against. An explicit value OVERRIDES discovery and
+   * is the only ref tried, so a test can pin it and a fork can name one that no heuristic would find.
    */
   trunkRef?: string;
+  /**
+   * t-24e28d — pre-resolved trunk candidates, for a caller classifying many entries against one
+   * repository (`ManagedWorktreeService.listClassified`) that would rather resolve once than per row.
+   * Ignored when `trunkRef` is given. Absent, each call discovers its own via `resolveTrunkRefs`.
+   */
+  trunkRefs?: string[];
   /** Dirty/ahead-of-base probe — the same signature as `WorktreeManager.status`. */
   status: (cwd: string, baseRef: string) => Promise<WorktreeStatus>;
   /** Live-agent occupancy probe — the same signature as `AgentManager.worktreeOccupant`. */
@@ -112,6 +122,72 @@ async function isContainedInRef(git: GitExec, cwd: string, ref: string): Promise
   }
 }
 
+/**
+ * t-24e28d — WHICH ref is "the trunk", answered by asking the repository instead of assuming.
+ *
+ * t-6ae9a8 fixed the QUESTION containment asks — is the work in the trunk, not is it in the ref this
+ * worktree was born from — and then hardcoded the answer to the literal string `main`. On this host
+ * that string happens to be right, so the hardcode was invisible; it is wrong in two measured ways
+ * that both regenerate the original symptom, a clean and fully-landed worktree reported as "N
+ * commit(s) not contained in base":
+ *
+ *   · a repository whose trunk is `master` (or `trunk`, or anything a fork chose). `main` never
+ *     resolves, the fail-closed default says "not contained", and EVERY landed worktree is stuck at
+ *     needs-review permanently — the accumulation t-6ae9a8 set out to stop, restored in full;
+ *   · a machine where `origin/main` has been fetched past a local `main` nobody has merged yet. The
+ *     work is in the trunk by any honest reading of the word; only a local pointer has not moved.
+ *
+ * WHICH REF WAS ELECTED, and why, since the three plausible answers diverge on a developer box:
+ *
+ *   · NOT the workspace's checked-out branch. It is whatever a human or agent last checked out — on
+ *     this host, routinely a `tachyon/change/*` branch. Letting an incidental checkout define the
+ *     trunk makes a safety verdict depend on where someone happens to be standing, and could name a
+ *     change branch as the thing that proves change branches disposable.
+ *   · NOT `origin/<trunk>` alone. Tachyon lands into the LOCAL trunk and does not push, so the remote
+ *     lags by every landed commit; measured here 2026-08-01, `main` and `origin/main` agreed at
+ *     4834b958, but they agree only because nothing had landed since the last push. Requiring the
+ *     remote would refuse every worktree landed since — this bug, rebuilt.
+ *   · THE LOCAL TRUNK BRANCH, whatever it is called, AND its remote counterpart, with EITHER proof
+ *     sufficient. That is deliberately the same shape as t-6ae9a8's base-or-trunk rule, and rests on
+ *     the same argument: containment asks whether removal loses the commits, and a commit reachable
+ *     from any durable long-lived ref is not lost. Two refs that can each lag the other in practice
+ *     mean accepting both loses nothing and refuses less.
+ *
+ * The trunk's NAME is taken from `refs/remotes/origin/HEAD` first — the remote's own declaration of
+ * its default branch, which is what `git clone` records and `git remote set-head` refreshes, and the
+ * only statement in the repository that is actually authoritative. Conventional names are tried only
+ * when there is no remote to ask.
+ *
+ * FAIL-CLOSED throughout. Discovery widens where we LOOK, never what counts as proof: a candidate is
+ * only ever a ref to test HEAD against, and `isContainedInRef` still demands real ancestry or a real
+ * patch match. When nothing resolves at all this returns `["main"]` rather than an empty list, so the
+ * refusal can still name what it went looking for — an empty list would read as "no candidate failed".
+ */
+export async function resolveTrunkRefs(git: GitExec, cwd: string): Promise<string[]> {
+  const resolves = async (ref: string): Promise<boolean> => {
+    try {
+      const r = await git(["rev-parse", "--verify", `${ref}^{commit}`], cwd);
+      return r.code === 0 && r.stdout.trim() !== "";
+    } catch {
+      return false;
+    }
+  };
+  let declared: string | undefined;
+  try {
+    const head = await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], cwd);
+    // "origin/main" → "main". A remote HEAD pointing anywhere else is not a name we can localize.
+    if (head.code === 0 && head.stdout.trim().startsWith("origin/")) declared = head.stdout.trim().slice("origin/".length);
+  } catch {
+    /* no remote, or a remote that never had its HEAD set — fall through to the conventional names */
+  }
+  for (const name of [...(declared ? [declared] : []), "main", "master", "trunk"]) {
+    const local = await resolves(name);
+    const remote = await resolves(`origin/${name}`);
+    if (local || remote) return [...(local ? [name] : []), ...(remote ? [`origin/${name}`] : [])];
+  }
+  return ["main"];
+}
+
 export async function classifyManagedWorktree(
   entry: ManagedWorktreeEntry,
   deps: ClassifyWorktreeDeps,
@@ -126,7 +202,9 @@ export async function classifyManagedWorktree(
       aheadOfBase: 0,
       containedInBase: false,
       containedInTrunk: false,
-      trunkRef: deps.trunkRef ?? "main",
+      // No checkout to run git in, so no discovery is possible here; naming the override or the
+      // conventional default is the honest answer for a record that was never probed.
+      trunkRef: deps.trunkRef ?? deps.trunkRefs?.[0] ?? "main",
     };
   }
 
@@ -157,8 +235,24 @@ export async function classifyManagedWorktree(
   // flag means the recorded baseRef could not be resolved or `status` failed against it, which says
   // nothing about the trunk: a worktree whose birth ref was deleted can still be entirely landed.
   // Keeping the trunk probe independent is what lets a stale baseRef stop blocking cleanup.
-  const trunkRef = deps.trunkRef ?? "main";
-  const containedInTrunk = await isContainedInRef(git, entry.path, trunkRef);
+  // t-24e28d — an explicit trunkRef is an override and stays the ONLY candidate; otherwise the
+  // repository is asked what its trunk is called (and whether a remote counterpart exists).
+  const candidates = deps.trunkRef
+    ? [deps.trunkRef]
+    : deps.trunkRefs?.length
+      ? deps.trunkRefs
+      : await resolveTrunkRefs(git, entry.path);
+  let provenBy: string | undefined;
+  for (const candidate of candidates) {
+    if (await isContainedInRef(git, entry.path, candidate)) {
+      provenBy = candidate;
+      break;
+    }
+  }
+  const containedInTrunk = provenBy !== undefined;
+  // Report the ref that carried the proof; with none, the first candidate — the one a reader should
+  // check first to understand the refusal.
+  const trunkRef = provenBy ?? candidates[0] ?? "main";
 
   if (occupant) {
     return {

@@ -22,7 +22,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { classifyManagedWorktree } from "../../src/worktree/classify.js";
+import { classifyManagedWorktree, resolveTrunkRefs } from "../../src/worktree/classify.js";
 import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
 import type { GitExec, WorktreeStatus } from "../../src/worktree/WorktreeManager.js";
 
@@ -228,5 +228,200 @@ describe("t-6ae9a8 — squash-merged work counts as contained", () => {
     });
     expect(result.containedInTrunk, `reasons: ${result.reasons.join("; ")}`).toBe(true);
     expect(result.state).toBe("ready-to-remove");
+  });
+});
+
+/**
+ * t-24e28d — the trunk is DISCOVERED, not assumed to be a branch literally named `main`.
+ *
+ * t-6ae9a8 fixed WHICH question containment asks ("is the work in the trunk", not "is it in the ref
+ * this was born from"). It left the answer hardcoded to the string `main`, and every test above pins
+ * `trunkRef` explicitly, so nothing exercised what production actually resolves. Two measured ways
+ * that hardcode reproduces the ORIGINAL symptom — a clean, fully-landed worktree reported as
+ * "N commit(s) not contained in base" — with the fail-closed default doing the damage:
+ *
+ *   · a repository whose trunk is called `master` (or anything else): `main` never resolves, so
+ *     containment can never be proved and EVERY landed worktree is needs-review, forever;
+ *   · a machine where `origin/main` has been fetched past a stale local `main`: work that landed
+ *     upstream is in the trunk by any honest reading, and reads as uncontained.
+ *
+ * The safety half is asserted in the same breath: work that is in NO durable ref stays held.
+ */
+
+/** A repo whose trunk carries `trunkName`, optionally with a bare `origin` it has been pushed to. */
+function repoWithTrunk(trunkName: string, opts: { withRemote?: boolean } = {}): {
+  dir: string;
+  birthRef: string;
+  git: (...a: string[]) => string;
+} {
+  const dir = makeTempDir(`wt-trunkname-${trunkName}-`);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", trunkName);
+  git("config", "user.email", "t@example.com");
+  git("config", "user.name", "T");
+  git("config", "commit.gpgsign", "false");
+  fs.writeFileSync(path.join(dir, "a.txt"), "one\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "first");
+  const birthRef = git("rev-parse", "HEAD");
+  if (opts.withRemote) {
+    const remote = makeTempDir(`wt-trunkname-${trunkName}-origin-`);
+    execFileSync("git", ["init", "-q", "--bare", "-b", trunkName, remote], { encoding: "utf8" });
+    git("remote", "add", "origin", remote);
+    git("push", "-q", "origin", trunkName);
+    // What `git clone` writes and `git remote set-head` refreshes: the remote's DECLARED default.
+    git("symbolic-ref", `refs/remotes/origin/HEAD`, `refs/remotes/origin/${trunkName}`);
+  }
+  return { dir, birthRef, git };
+}
+
+describe("t-24e28d — the trunk is resolved from the repository, not hardcoded to 'main'", () => {
+  it("reclaims a landed worktree in a repo whose trunk is called 'master'", async () => {
+    const { dir, birthRef, git } = repoWithTrunk("master");
+    fs.writeFileSync(path.join(dir, "b.txt"), "two\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "landed work");
+    git("branch", "-f", "feature", "HEAD");
+    expect(Number(git("rev-list", "--count", `${birthRef}..HEAD`))).toBeGreaterThan(0);
+    // Precondition: there is no `main` here at all, which is exactly what the hardcode assumed.
+    expect(() => execFileSync("git", ["rev-parse", "--verify", "main^{commit}"], { cwd: dir })).toThrow();
+
+    // No `trunkRef` injected — this is the production shape, and the whole point of the case.
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+    });
+    expect(result.state, `reasons: ${result.reasons.join("; ")}`).toBe("ready-to-remove");
+    expect(result.containedInTrunk).toBe(true);
+    expect(result.trunkRef).toBe("master");
+  });
+
+  it("still holds genuinely unlanded work in a 'master' repo", async () => {
+    // The other half of the same discovery: finding the trunk must not become a way to say yes.
+    const { dir, birthRef, git } = repoWithTrunk("master");
+    git("checkout", "-q", "-b", "feature");
+    fs.writeFileSync(path.join(dir, "unmerged.txt"), "never landed\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "work that never landed");
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+    });
+    expect(result.state).toBe("needs-review");
+    expect(result.containedInTrunk).toBe(false);
+    expect(result.reasons.join("; ")).toMatch(/not contained in base or in 'master'/);
+  });
+
+  it("accepts work that landed on origin/main while the local main still lags", async () => {
+    // A fetched-but-not-merged trunk is the developer-machine case: the work IS in the trunk, and
+    // only a local branch pointer has not caught up. Refusing here is the same false alarm in a
+    // different disguise.
+    const { dir, birthRef, git } = repoWithTrunk("main", { withRemote: true });
+    git("checkout", "-q", "-b", "feature");
+    fs.writeFileSync(path.join(dir, "b.txt"), "two\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "landed work");
+    git("push", "-q", "origin", "feature:main"); // it lands upstream …
+    git("fetch", "-q", "origin");
+    // … and local `main` is left exactly where it was.
+    expect(git("rev-parse", "main")).toBe(birthRef);
+    expect(git("rev-parse", "origin/main")).toBe(git("rev-parse", "HEAD"));
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+    });
+    expect(result.state, `reasons: ${result.reasons.join("; ")}`).toBe("ready-to-remove");
+    expect(result.containedInTrunk).toBe(true);
+    expect(result.trunkRef).toBe("origin/main");
+  });
+
+  it("holds work that is in NEITHER the local trunk nor its remote counterpart", async () => {
+    const { dir, birthRef, git } = repoWithTrunk("main", { withRemote: true });
+    git("checkout", "-q", "-b", "feature");
+    fs.writeFileSync(path.join(dir, "unmerged.txt"), "never landed anywhere\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "work in no durable ref");
+    git("fetch", "-q", "origin");
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+    });
+    expect(result.state).toBe("needs-review");
+    expect(result.containedInBase).toBe(false);
+    expect(result.containedInTrunk).toBe(false);
+  });
+
+  it("an explicitly injected trunkRef still wins over discovery", async () => {
+    // Forks and tests pin the trunk; discovery is the DEFAULT, never an override.
+    const { dir, birthRef, git } = repoWithTrunk("master");
+    fs.writeFileSync(path.join(dir, "b.txt"), "two\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "landed work");
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+      trunkRef: "refs/heads/no-such-trunk",
+    });
+    expect(result.trunkRef).toBe("refs/heads/no-such-trunk");
+    expect(result.containedInTrunk).toBe(false);
+  });
+});
+
+describe("t-24e28d — resolveTrunkRefs", () => {
+  it("prefers the remote's declared default branch and pairs it with its local branch", async () => {
+    const { dir } = repoWithTrunk("release", { withRemote: true });
+    expect(await resolveTrunkRefs(realGit, dir)).toEqual(["release", "origin/release"]);
+  });
+
+  it("falls back to the conventional local names when there is no remote", async () => {
+    const { dir } = repoWithTrunk("master");
+    expect(await resolveTrunkRefs(realGit, dir)).toEqual(["master"]);
+  });
+
+  it("names 'main' when nothing at all resolves, so a refusal can still say what it looked for", async () => {
+    const dir = makeTempDir("wt-trunkname-empty-");
+    execFileSync("git", ["init", "-q", "-b", "wip", dir], { encoding: "utf8" });
+    expect(await resolveTrunkRefs(realGit, dir)).toEqual(["main"]);
+  });
+});
+
+describe("t-24e28d — pre-resolved candidates, the seam ManagedWorktreeService sweeps through", () => {
+  it("accepts a list resolved once for the whole repository", async () => {
+    // listClassified resolves the trunk against the workspace root and hands the same list to every
+    // row, so this is the shape production actually takes — worth a case of its own.
+    const { dir, birthRef, git } = repoWithTrunk("master");
+    fs.writeFileSync(path.join(dir, "b.txt"), "two\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "landed work");
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+      trunkRefs: ["main", "master"],
+    });
+    expect(result.state, `reasons: ${result.reasons.join("; ")}`).toBe("ready-to-remove");
+    expect(result.trunkRef).toBe("master"); // the candidate that carried the proof, not the first tried
+  });
+
+  it("still refuses unlanded work when none of the pre-resolved candidates contains it", async () => {
+    const { dir, birthRef, git } = repoWithTrunk("master");
+    git("checkout", "-q", "-b", "feature");
+    fs.writeFileSync(path.join(dir, "unmerged.txt"), "never landed\n");
+    git("add", "-A");
+    git("commit", "-q", "-m", "work that never landed");
+
+    const result = await classifyManagedWorktree(entry(dir, birthRef), {
+      git: realGit,
+      status: statusFor(dir, birthRef),
+      trunkRefs: ["main", "master"],
+    });
+    expect(result.state).toBe("needs-review");
+    expect(result.containedInTrunk).toBe(false);
+    // Names the first candidate looked at, so the refusal points somewhere a reader can go.
+    expect(result.trunkRef).toBe("main");
   });
 });

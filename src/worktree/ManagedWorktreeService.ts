@@ -16,7 +16,7 @@ import {
   pathFor,
   resolveBase,
 } from "./WorktreeManager.js";
-import { classifyManagedWorktree, type WorktreeClassification } from "./classify.js";
+import { classifyManagedWorktree, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
 import {
   resolveHygieneAuthority,
   type HygieneAuthorityDecision,
@@ -155,6 +155,10 @@ export class ManagedWorktreeService {
     status?: ManagedWorktreeEntry["status"];
   }): Promise<Array<ManagedWorktreeEntry & { classification: WorktreeClassification }>> {
     const entries = this.list(filter);
+    // t-24e28d — the trunk is a property of the REPOSITORY, so it is discovered once per sweep against
+    // the workspace root rather than re-probed inside every entry's checkout. Resolving it here also
+    // means a row whose path has gone missing is still described against the same trunk as its peers.
+    const trunkRefs = await resolveTrunkRefs(this.git, this.opts.workspaceRoot);
     return Promise.all(
       entries.map(async (entry) => {
         try {
@@ -162,6 +166,7 @@ export class ManagedWorktreeService {
             git: this.git,
             status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
             occupancy: this.opts.occupancy,
+            trunkRefs,
           });
           return { ...entry, classification };
         } catch (err) {
@@ -177,7 +182,7 @@ export class ManagedWorktreeService {
               // t-6ae9a8 — a classifier that THREW proves nothing about containment, so both signals
               // stay false. This is the same fail-closed shape the rest of the fallback already uses.
               containedInTrunk: false,
-              trunkRef: "main",
+              trunkRef: trunkRefs[0] ?? "main",
             },
           };
         }
