@@ -4,8 +4,6 @@
 
 ### Local multi-agent development, powered by a persistent engine.
 
-**A multi-runtime Agentic Development Environment with a VS Code shell.**
-
 [![Marketplace](https://img.shields.io/visual-studio-marketplace/v/cfpperche.tachyon?label=marketplace&color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![Installs](https://img.shields.io/visual-studio-marketplace/i/cfpperche.tachyon?color=f5c518)](https://marketplace.visualstudio.com/items?itemName=cfpperche.tachyon)
 [![CI](https://github.com/cfpperche/tachyon/actions/workflows/ci.yml/badge.svg)](https://github.com/cfpperche/tachyon/actions/workflows/ci.yml)
@@ -15,1106 +13,120 @@
 
 </div>
 
-Tachyon is a **local multi-agent development platform**: a persistent orchestration and
-governance engine owns agents, sessions, worktrees, tasks and the MCP control plane. The VS Code
-extension is the current **human-facing shell and bootstrap mechanism**, not the product boundary.
-Managed entries run as **tmux sessions** and appear as **native editor terminals**; agents can
-orchestrate the fleet through the embedded **MCP Bridge** — spawn sub-agents, read each other's
-output, run curated commands and notify you when they need you. The engine and tmux sessions
-**survive VS Code restarts**, and after a machine reboot Tachyon can restore each agent **with its
-conversation** through the runtime's native resume mechanism.
-**100% local**: no cloud component, no telemetry, no token proxying — on the subscriptions
-you already pay for.
+Tachyon runs a fleet of coding agents on your machine and keeps them alive. A persistent engine owns
+the agents, their sessions, their git worktrees and the MCP control plane; the VS Code extension is
+the window onto it, not the thing itself. Agents run as tmux sessions and appear as native editor
+terminals, so they survive an editor restart — and after a reboot Tachyon can bring each one back
+with its conversation, through the runtime's own resume.
 
-<a href="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4" title="Watch the 25s screencast">
-  <img src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero-poster.png" alt="Tachyon at work: the fleet in the sidebar, a feature agent on its own worktree branch, Verify turning ✓, and the inline Review / Verify / Create PR actions — isolate → verify → ship in one editor. Click to watch the screencast.">
-</a>
+Agents can also reach the fleet through an embedded **MCP Bridge**: spawn sub-agents, read each
+other's output, run curated commands, and ask for you when they need a human.
 
-> ▶ **[Watch the 25s screencast](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screencasts/hero.mp4)** — the fleet, a worktree agent, Verify turning ✓, and the inline Create PR action.
+**100% local.** No cloud, no telemetry, no token proxying — on the subscriptions you already pay for.
+
+> This README is deliberately short while the project moves fast. The deeper material lives in
+> [`docs/`](docs) — [architecture](docs/architecture), [system design](docs/system-design.md), and
+> the [spec history](docs/specs), where each feature landed with its own spec, plan and validation
+> record.
 
 ## Works with the CLIs you already use
 
-`Claude Code` · `Codex` · `OpenCode` · `Grok` · `Hermes Agent` · `Pi` · `Gemini` · `Copilot CLI` · `Aider` · **any CLI** —
-plus any dev server, watcher or build command. No lock-in, no reselling your tokens.
-
-## Three steps, no magic
-
-1. **Open a project** — run **Tachyon: Init**: it auto-detects Node, Laravel, Rust, Go,
-   Python & Rails and writes a commented starter `tachyon.yml`.
-2. **Set up your agents** — agents, terminals, commands and runbooks, in the Agent Studio UI
-   or by editing the yml (your comments survive UI edits).
-3. **Start your fleet** — auto-start agents boot when the workspace opens, coordinate via MCP,
-   and notify you when they need you.
-
-> **Fresh install?** The **Get Started with Tachyon** walkthrough opens automatically
-> (also via *Tachyon: Get Started*) and the sidebar offers **Initialize Tachyon** on an
-> unconfigured folder. Tachyon stays inert until you opt in — no Bridge or tmux server
-> boots just from installing or opening a folder.
-
-> **Try it now:** clone the [**tachyon-examples**](https://github.com/cfpperche/tachyon-examples)
-> demo repo and open it (or `orbit.code-workspace` inside it for the multi-root demo) — a real,
-> runnable fleet, and the same workspace used for the screenshots.
+`Claude Code` · `Codex` · `OpenCode` · `Grok` · `Hermes Agent` · `Pi` · `Gemini` · `Copilot CLI` ·
+`Aider` · **any CLI** — plus any dev server, watcher or build command.
 
 ## Requirements
 
 | Platform | Supported |
 |---|---|
 | Linux | ✅ tmux ≥ 3.2 (**3.6 recommended** — instant exit-code capture for one-shot commands) |
-| macOS | ❌ temporarily unsupported by the persistent engine; no embedded fallback |
-| Windows + WSL | ✅ (VSCode Remote - WSL; tmux inside the distro) |
+| Windows + WSL | ✅ VS Code Remote - WSL, with tmux inside the distro |
+| macOS | ❌ temporarily unsupported by the persistent engine |
 | Windows native | ❌ by design — use WSL |
+
+## Getting started
+
+1. **Open a project** and run **Tachyon: Init**. It detects Node, Laravel, Rust, Go, Python and
+   Rails, and writes a commented starter `tachyon.yml`.
+2. **Set up your agents** in Agent Studio, or by editing the yml — your comments survive UI edits.
+3. **Start the fleet.** Auto-start agents boot with the workspace and notify you when they need you.
+
+Tachyon stays inert until you opt in: nothing boots merely from installing the extension or opening a
+folder. On a fresh install the **Get Started** walkthrough opens on its own.
+
+To see a working fleet before configuring your own, clone
+[**tachyon-examples**](https://github.com/cfpperche/tachyon-examples) and open it.
 
 ## The tachyon.yml
 
-Generated by **Tachyon: Init** (also offered right in the empty sidebar) or written by hand
-(see the [**tachyon-examples**](https://github.com/cfpperche/tachyon-examples) repo — a real runnable fleet) — your whole fleet, versioned in git:
-
-```yaml
-agents:                      # AI CLIs
-  claude:
-    cmd: claude
-    autostart: true
-
-terminals:                   # servers, shells, builds (kind: terminal implied)
-  dev:
-    cmd: npm run dev
-    autostart: true
-    watch: "package.json"   # restarts when the file changes
-
-commands:                    # one-shot, curated — humans click ▶, agents call run_command
-  test: {cmd: npm test}
-  lint: {cmd: npm run lint}
-
-runbooks:                    # sequential procedures with an exit-code gate
-  ship:
-    steps: [lint, test, ./deploy.sh]
-```
-
-Open the workspace — Tachyon activates, spawns the `autostart` entries in tmux, and opens
-their terminals in the editor area. Split/resize panes with VSCode's normal editor-group
-gestures; closing a tab never kills the agent (the tmux session lives on).
-
-## The Bridge — automatic for every Tachyon-spawned agent
-
-The Bridge listens on a **stable per-workspace port** (derived from the workspace path,
-range 41000–42999 — same workspace, same port, forever). Pin a specific port with
-`settings.bridgePort` in `tachyon.yml`; if the preferred port is ever busy, Tachyon falls
-back to an ephemeral one and warns you. The current port shows in the `$(zap) Tachyon :PORT`
-status-bar item.
-
-**You don't register anything.** Tachyon uses each supported runtime's native integration surface:
-Claude gets additive `--mcp-config`, Codex an additive `-c mcp_servers.tachyon_bridge=…`,
-OpenCode a scoped config, Grok/Hermes a private runtime home with the Bridge folded into their
-config, and Pi an additive Tachyon-owned extension that projects the MCP catalog into native Pi tools.
-Harness agents receive the same wiring inside their materialized private config.
-Injection is rebuilt on the lifecycle operations each runtime supports, so a momentarily-down
-Bridge self-heals on the next start; bearer tokens stay in the process environment, never in a
-committed file or command-line literal.
-
-### External / manual sessions
-
-For a Claude/Codex/OpenCode CLI you start **yourself**, outside Tachyon, run **Tachyon: Connect
-Agent Runtime** to write a durable registration. It's **idempotent and merge-safe**: pre-existing
-MCP config files are preserved (only the `tachyon` key is written), and re-running when the file
-is already correct is a no-op.
-
-| Runtime | Mechanism |
-|---|---|
-| Claude Code | writes/merges `.mcp.json` (`{"type": "http", "url": ...}`) in the workspace |
-| OpenCode | writes/merges `opencode.json` (`{"type": "remote", ...}`) |
-| Codex CLI | copy-paste snippet for `~/.codex/config.toml` (Tachyon never writes outside the workspace) |
-| Anything else | generic URL; stdio-only clients: `npx -y mcp-remote <url>` |
-
-> Runtime MCP client support evolves quickly — if a registration shape fails, check the runtime's
-> official MCP docs and fall back to the `mcp-remote` stdio proxy.
-
-### Bridge tools (22)
-
-| Tool | What it does |
-|---|---|
-| `spawn_agent` | start a declared agent, or an ad-hoc sub-agent with `cmd` + optional `instructions` (role prompt) and `parent` (lineage — the sidebar nests children under who spawned them) |
-| `kill_agent` | stop an agent (kills its tmux session) |
-| `restart_agent` | restart matrix: `stop=graceful\|force` × `session=resume\|new` (default graceful+resume; falls back to new) |
-| `list_agents` | declared + running agents for this workspace, with attention/crash state |
-| `read_output` | another agent's terminal: visible pane by default, `lines` reaches scrollback¹ |
-| `write_input` | type into another agent's terminal (`submit: true` presses Enter) |
-| `wait_for_agent` | block until an agent reaches `idle` / `needs-input` / `dead` (event-driven long-poll — the delegation primitive: spawn → wait → read → kill) |
-| `notify` | show the human a VSCode notification |
-| `run_command` | run a curated one-shot from `commands:` and block until it exits — returns `{passed, exitCode, durationMs, tail}`; a finished result is reported, not re-run (`rerun: true` forces) |
-| `list_commands` | the curated commands and their last results |
-| `run_runbook` | run a `runbooks:` procedure (sequential, exit-code gated); on timeout it keeps running and reports progress on re-call |
-| `verify_agent` | run a worktree agent's declared `verify:` gate **in its worktree** → `{command, passed, atCommit, ranAt, stale}` — the validated-handoff primitive (gate a merge on "child done **and** green") |
-| `complete_node` | a pipeline node signals its task is done (authenticated by a per-node nonce from its env) — see [Agent Pipelines](#agent-pipelines--orchestrate-agents-into-a-one-shot-chain) |
-| `reanchor_agent` | re-anchor an agent to its role — rewrites `.tachyon/roles/<agent>.md` + types a compact reminder into its pane (use when a sub-agent drifted after its CLI compacted) |
-| `propose_schedule` | propose a scheduled action — **inert until the human approves it** in the sidebar (approval writes it into `tachyon.yml`) |
-| `list_schedules` | active schedules (next/last run) + pending proposals awaiting approval |
-| `create_pin` | pin a finding to the shared checklist |
-| `list_pins` | read the checklist (do this before starting work) |
-| `complete_pin` | mark a pin done / reopen it |
-| `update_pin` | edit a pin's text (preserves id/author/created/done) |
-
-¹ Full-screen TUI agents (e.g. Claude Code) render an alternate screen with no scrollback history —
-`lines` silently behaves like the visible capture for them; it works normally for plain CLI/server agents.
-
-## Sub-agents — agents that spawn agents
-
-<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/subagents.png" alt="Sidebar lineage: claude with a nested worker, which has a nested researcher — three levels of spawned agents">
-
-Any Tachyon-spawned agent can spawn another with `spawn_agent` — a declared entry by name, or an
-**ad-hoc child** with its own `cmd`, an `instructions` role prompt (delivered as the child's
-startup prompt), and `parent` for lineage. The sidebar **nests children under who spawned
-them**; when a parent dies, orphans are promoted to the root — **children are never
-cascade-killed**. Children are full agents: each spawned session gets
-`TACHYON_BRIDGE_URL`/`TACHYON_BRIDGE_TOKEN` injected, so a child can call the Bridge too —
-including spawning its own children (nested lineage).
-
-### How agents talk to each other
-
-There is no message bus to learn — communication happens through three concrete channels,
-all mediated by the Bridge:
-
-1. **The terminals themselves.** `read_output` captures another agent's pane (exactly what a
-   human sees in its tab); `write_input` types into it (`submit: true` presses Enter). An
-   orchestrator can answer a child's `[y/n]` prompt, or paste a task straight into a sibling.
-2. **Synchronization.** `wait_for_agent` blocks until a sibling reaches `idle` /
-   `needs-input` / `dead` — event-driven (no polling), the primitive that makes delegation
-   deterministic. `list_agents` exposes everyone's attention and crash state for
-   fire-and-check styles.
-3. **Shared memory.** `create_pin` records a durable finding for the whole team, and
-   `append_project_handoff_note` adds to the curated project state; the parent collects a
-   child's result with `read_output` (or a file the child wrote), and `notify` toasts the
-   human when something needs eyes.
-
-The full cycle, as an orchestrating agent runs it:
-
-```
-spawn_agent  name=worker cmd=claude parent=claude
-             instructions="research X; write findings to findings.md; then notify"
-wait_for_agent  name=worker until=idle                  ← blocks, event-driven (default 45s)
-read_output  name=worker                                ← collect the result (or read findings.md)
-kill_agent   name=worker                                ← tidy up
-```
-
-<br clear="right">
-
-### Delegation patterns
-
-Pick the pattern by **who needs to know the child finished** — the parent agent, or you:
-
-| Pattern | Who learns the child is done | Cost | Use when |
-|---|---|---|---|
-| **Blocking** — `wait_for_agent(until=idle\|dead)` | the **parent agent**, in its next turn | a held turn (event-driven, no polling) | the parent must act on the result — incl. one-shot reviewers (`codex exec`): `spawn → wait(dead) → read_output` |
-| **Fire-and-check** — spawn, keep working, `read_output`/`list_agents` later | the **parent agent**, when it next looks | free | the parent has its own work in parallel |
-| **Announce to the human** — child ends with `notify` (and a `create_pin` for anything durable) | **you** (a VSCode toast) — *not* the parent agent | free | a person is steering; no turn is blocked |
-
-**There is no push to the parent agent.** MCP is request/response — the Bridge cannot inject
-into a running agent's context. `notify` reaches *you*, not the parent agent; a child's output
-is durable but inert until something *reads* it. So a parent agent only ever learns a child
-finished by **making a call** — and `wait_for_agent` is the cheapest one: a single
-event-driven request held open (resolved the instant the child transitions) instead of a poll
-loop. Its `timeoutSec` defaults to **45** — short enough to return cleanly *before* most MCP
-clients impose their own limit; on that soft timeout it returns the child's live state, so you
-just call again. Raise it (max 240) only if you know your client tolerates a longer held call.
-
-A blocked turn is the tool model's nature (a 2-minute bash call blocks the same way) — you can
-still queue messages or press Esc to interrupt, and can always talk to the child directly in
-its own terminal tab.
-
-### What Bridge calls cost
-
-The Bridge process is local, so it charges nothing. But every tool *call* spends the
-**calling agent's** tokens (its provider quota), in three buckets — largest first:
-
-1. **Results** — `read_output` / `list_agents` return text into the agent's
-   context. `read_output` returns only the *visible pane* by default (pass `lines` to reach
-   into scrollback). Keep reads targeted — this is the bucket that actually grows.
-2. **Tool definitions** — the tool schemas are injected once per context window (a few k
-   tokens) and are prompt-cacheable, so they're ~free on every turn after the first.
-3. **Call overhead** — the args of a call (the "Calling tachyon…" line) — negligible.
-
-So the lever is **payload size, not call count**: prefer a targeted `read_output` over scraping a
-long pane, and reach into scrollback only when you need it. A held `wait_for_agent` costs
-nothing while it waits — it resolves on the child's event, not on a clock.
-
-## Attention detection — "this agent needs you"
-
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/observability.png" alt="Sidebar with four live states: needs you, running, crashed — exit 7, idle">
-
-With several agents running, the expensive part is noticing which one stopped to ask you
-something. Tachyon watches each agent's pane and signals:
-
-- **`needs-input`** (strong, high-precision): the pane tail ends in a recognizable prompt
-  (`[y/n]`, `Enter to confirm`, password prompts, numbered selectors, …) and is stable →
-  yellow bell in the sidebar, a counter badge on the ⚡ Activity Bar icon, and a one-time
-  toast with an **Open** button.
-- **`idle`** (weak, informational): no output for `silenceSec` (default 8s) *and* the process
-  subtree's CPU is flat (busy CPU = thinking, suppresses) → dim outline icon + "idle 2m".
-  Never toasts.
-
-Per-agent config (defaults by kind: **on** for agents, **off** for terminals — a quiet
-server is normal):
+One file at the workspace root declares what runs:
 
 ```yaml
 agents:
   claude:
-    cmd: claude            # attention on by default
+    profile: .tachyon/agents/claude/agent.yml   # canonical profile, edited in Agent Studio
 
 terminals:
   dev:
     cmd: npm run dev
-    watch: "package.json"  # attention off by default
-  legacy-repl:
-    cmd: ./repl
-    attention:
-      silenceSec: 30
-      patterns: ["AGUARDANDO COMANDO"]   # extra regexes (case-insensitive)
+    autostart: true
+
+settings:
+  maxAgents: 8
 ```
 
-The state is also visible to other agents via the Bridge's `list_agents` (`attention` field) —
-an orchestrating agent can spot a stuck sibling and `write_input` the answer or `notify` you.
-
-The supported Linux/WSL engine uses `/proc` CPU evidence alongside pane stability to drive
-`idle`; `needs-input` is unaffected.
-
-<br clear="right">
-
-## Crash lifecycle — exit codes, postmortem, auto-restart
-
-When an agent's process dies on its own, the session doesn't vanish: the **dead pane is
-kept** (last output + stack trace visible in its terminal) and the sidebar shows
-**`crashed — exit N`** in red, with ↻ restart / ■ dismiss actions. You get a notification
-with the exit code; clean exits (code 0) are just informational. Intentional kills
-(Stop All, ■, `kill_agent`) stay silent — Tachyon distinguishes them structurally.
-
-Opt into auto-restart per entry:
-
-```yaml
-terminals:
-  dev:
-    cmd: npm run dev
-    restart: on-crash   # default: never
-```
-
-`on-crash` restarts only non-zero exits, with backoff (2s/4s/8s) and a crash-loop guard:
-3 restarts within a minute → Tachyon gives up, keeps the postmortem, and tells you.
-A manual restart clears the guard. Crash state (`crashed`, `exitCode`) is visible to
-other agents via `list_agents`.
-
-## Session resume — survive a reboot, not just a restart
-
-A VS Code restart leaves the tmux sessions alive — Tachyon just re-attaches. But a machine
-reboot, `wsl --shutdown`, or an OOM kill takes the whole tmux server down, and every agent
-process with it. Tachyon brings them back **with their conversation**, not zeroed.
-
-At spawn it records each agent's session id in `.tachyon/sessions.json`. For **claude** it spawns a
-**named session** (`claude -n tachyon-<workspace>-<agent>`) and then captures claude's real session
-uuid from the transcript, so resume is exact even when several claude agents share one folder; for
-**gemini** the id is minted via `--session-id`; for **codex/opencode** it's **resolved** from the
-runtime's own on-disk transcript (keyed by working directory). When you reopen the folder, agents
-whose process is gone are respawned with the runtime's resume command — `claude --resume <id>`,
-`codex resume <id>`, `qwen --continue`, … — and pick up exactly where they left off.
-
-- **Declared `autostart` agents** auto-resume on activation — autostart, but with context.
-- **Ad-hoc / non-autostart agents** are offered: an "N agents can be resumed" prompt with a
-  one-click **Resume all**, or ↻ per agent.
-- **Ad-hoc agents survive a restart** — an MCP-spawned agent's definition + lineage live in
-  the ledger (never in `tachyon.yml`), so after a restart it's **restartable** and re-nests
-  under its parent. Non-AI ad-hoc (`sh`) persist too, but are never shown as "resumable"
-  (nothing to resume). Like a useful one? **Save to tachyon.yml** promotes it to a declared
-  agent in one click.
-- **Re-passes the spawn flags** (permission mode, sandbox, MCP config) that the CLIs don't
-  restore themselves; degrades to a clean fresh start if the transcript was pruned.
-- **In-process, per-workspace** — no global `~/.tmux.conf`, no daemon, no boot hook. Resume
-  is driven by reopening the workspace; nothing runs headless behind your back.
-- **Discoverable + honest** — a stopped or crashed agent shows a **`· resumable`** badge when its
-  transcript is actually on disk (↻ brings back the conversation, ▶ starts fresh), or **`· fresh
-  start`** when the saved session is gone/uncaptured (so ↻ won't surprise you with a blank slate). The
-  badge reflects what resume will really do, checked before you click.
-- **Ownership follows an in-TUI `/resume`** — if you switch sessions *inside* the agent
-  (`/resume` in claude/codex), Tachyon refreshes the saved id when the agent stops, so the
-  next ↻ lands on the session you actually switched to, not the one it was created in. It only
-  refreshes when the working directory unambiguously belongs to that agent (its own worktree,
-  or the sole agent in a folder) — two agents sharing a cwd keep their minted id, never a
-  guess. (gemini's on-disk path isn't derivable from the cwd, so it stays pinned to its
-  minted id — a documented limitation.)
-
-Many windows open when the machine goes down? Reopening each folder resumes its own fleet —
-so set VS Code's `"window.restoreWindows": "all"` and a reboot reopens every folder, bringing
-the whole machine's agents back with context, no per-window babysitting.
-
-## Session fork — ask something off-task without derailing the agent
-
-Need to ask a busy agent something off the current task — without making it wait or losing its
-place? **Fork its session.** The fork is a **new sibling agent** that carries the conversation **up
-to this instant**, so it can answer or run the parallel work while the original keeps going,
-untouched. Click **Fork session** (the `⑂` action) on a running agent; a sibling `<agent>-fork-N`
-appears in the tree. Keep it, or dismiss it when you're done — it's a normal agent in the ledger
-(a Stop keeps it resumable; **Dismiss** removes it).
-
-- **Context up to the fork instant only** — the fork doesn't see anything the original does *after*
-  you fork (it's a snapshot of the conversation, not a live mirror). You own that tradeoff.
-- **Its own worktree** — if the original runs in a git worktree, the fork gets a **fresh worktree
-  branched off the original's committed HEAD**, so it never pollutes the original's files. A
-  warning calls out that **uncommitted** changes in the original aren't carried (commit first to
-  include them). No worktree → the fork shares the workspace root.
-- **Fail-closed** — forking needs the original's *live* session id; if it can't be resolved yet
-  (e.g. the agent hasn't produced output), Tachyon says **"not forkable yet"** rather than guessing.
-- **Runtime support — claude only, today.** Fork is a **native runtime capability**: an agent is
-  forkable iff its CLI has a real session-fork primitive. **claude** has one (`--fork-session`), so
-  the action shows on claude agents (and claude-compatible CLIs via a swapped base URL). **codex,
-  gemini, opencode, qwen** have no native fork, so they simply don't offer the action — Tachyon
-  ships no lossy "summarize-and-reseed" imitation. The action will light up for any runtime that
-  gains a native fork.
-
-## Isolated harness — give one agent its own MCP, scoped to itself
-
-By default every agent in a workspace shares the same MCP servers, skills, and rules (your project
-`.mcp.json` + your global claude config). Sometimes you want **one** agent to have config the others
-don't — a researcher with a web/data MCP, its own research rules, and a few research skills — **without**
-any of it leaking into the rest of the fleet. Declare a per-agent **`harness:`** block:
-
-```yaml
-agents:
-  researcher:
-    cmd: claude
-    harness:
-      inherit: workspace          # none | workspace  (default: workspace)
-      mcp:                        # MCP servers scoped to THIS agent
-        tavily:
-          command: npx
-          args: ["-y", "tavily-mcp"]
-          env:
-            TAVILY_API_KEY: ${TAVILY_API_KEY}   # referenced as ${VAR} — never written to disk
-      rules: ["rules/researcher.md"]   # this agent's own CLAUDE.md context
-      skills: ["skills/research"]      # skill dirs (each a SKILL.md) → /research
-      hooks:                           # claude settings.json hooks, scoped to this agent
-        PreToolUse: [ ... ]
-```
-
-(An image agent would declare the fal.ai MCP the same way; the point is each agent's config is its own.)
-
-Prefer the UI? Open **Agent Studio**, and on a claude agent toggle **Isolated harness** — the same
-fields (inherit · MCP · rules · skills · hooks) write the block back to your `tachyon.yml`.
-
-Tachyon materializes a **private config home** for that agent (its own `CLAUDE_CONFIG_DIR` under
-`.tachyon/harness/<agent>/`): MCP via `--strict-mcp-config` (it sees **only** the servers you declared,
-plus the Tachyon Bridge, which is always folded in so the agent can still call `complete_node`/`write_input`),
-`rules` concatenated into the home's `CLAUDE.md`, `skills` copied into the home's `skills/`, and `hooks`
-merged into the home's `settings.json`. No sibling agent sees any of it. The agent shows a **⚙** badge.
-
-- **`mcp` / `skills` / `rules` / `hooks`** — declare any combination (at least one). `mcp` is scoped
-  with `--strict-mcp-config`; the rest are additive on top of the project's own config.
-- **`inherit`** — `workspace` folds in a snapshot of your project `.mcp.json` (the fleet's MCP plus
-  this agent's extras); `none` is a clean slate (only the declared servers — but the Tachyon Bridge is
-  still injected either way). `global` is a later addition.
-- **Secrets stay off disk** — every `mcp.*.env` value must be a `${VAR}` reference (a literal is
-  rejected). Put the real value in a project **`.env`** (gitignored) or export it in your shell
-  (the shell wins on conflict); Tachyon resolves it and injects it into the agent's process env
-  (where claude expands `${VAR}` at spawn), and **fails the start with a clear message if the var is
-  missing**. The materialized file only ever holds `${VAR}`. `.tachyon/harness/` is git-ignored.
-- **Auth just works** — the private home is symlinked to your real claude credentials, so the agent
-  is logged in without copying secrets around.
-- **Resume/restart keep the harness** — the isolation is re-applied on every start, restart, and
-  resume, and the agent's transcripts live in its own home (resume finds them).
-- **Runtime support — claude only, today.** A `harness:` on a non-claude agent is a config error
-  (no false isolation signal); codex (`CODEX_HOME`) and `inherit: global` are the next follow passes.
-
-## Transcript isolation — own session namespace, same folder
-
-When **several claude agents share one folder** (the common case), they also share one config home
-(`~/.claude`), so claude can't tell whose session is whose — the Activity view and in-TUI `/resume`
-get ambiguous, and one agent's history can show up empty. `isolate: transcript` fixes that **without**
-the heavier `harness:` setup:
-
-```yaml
-agents:
-  reviewer:
-    cmd: claude
-    isolate: transcript
-```
-
-It gives the agent its **own config home** (`.tachyon/harness/<agent>/` — its own transcript namespace),
-so each agent in the folder keeps an **attributable, durable history** and an in-TUI `/resume`/`/clear`
-the Activity view follows. Unlike `harness:`, it **scopes nothing**: your project config still applies
-(`CLAUDE.md`, `.claude/`, `.mcp.json` are cwd-relative), the Bridge is injected, and auth is inherited
-(symlinked credentials — no re-login). Prefer the UI? **Agent Studio → Isolate transcript** on a claude
-agent. claude-only; off by default; redundant when **Isolated harness** is on (which already owns a home).
-
-> Isolation applies **going forward**, not retroactively — old history stays in the home it was written
-> under (a transcript can't be moved). Toggle `isolate` on an existing agent and **Restart**: the fresh
-> session is re-homed to the private namespace (only a `claude --continue`/`--resume` agent, which manages
-> its own session, needs a delete + recreate to re-home — the durable Activity log, keyed by name, survives).
-
-## Isolation, at a glance — transcript · worktree · harness
-
-The three isolation toggles are **independent axes**. Attribution keys on `(cwd, config home)`:
-**worktree** changes the *cwd*, **transcript**/**harness** change the *config home* — so any one of them
-disambiguates a shared folder. **`harness:` already owns a private home**, so `isolate: transcript` is a
-no-op alongside it — harness wins (the Studio omits `isolate` in that case; hand-written YAML can carry both,
-but the engine routes a harness agent through the full harness path regardless). **`worktree:`** is orthogonal
-— it's the only one that isolates *files* (its own branch + checkout), and composes with either.
-
-| `isolate` | `worktree` | `harness` | Config home (transcript) | Files / cwd | MCP & project config | What you get |
-|:--:|:--:|:--:|---|---|---|---|
-| — | — | — | shared `~/.claude` | workspace | project `.mcp.json` + Bridge | Plain claude — **ambiguous** in a shared folder |
-| ✅ | — | — | **own** `.tachyon/harness/<a>` | workspace | project `.mcp.json` + Bridge | **Lightweight fix** — attributable transcript, same files & project config |
-| — | ✅ | — | shared `~/.claude` | **own worktree + branch** | project config (from worktree) + Bridge | **File isolation** — attribution as a side effect (distinct cwd) |
-| ✅ | ✅ | — | **own** | **own worktree + branch** | project `.mcp.json` + Bridge | Own home **and** own branch |
-| — | — | ✅ | **own** (scoped) | workspace | **strict file** — workspace servers + your extras + Bridge (`inherit: none` ⇒ declared only) | **Scoped harness** — transcript isolated for free; claude reads only the strict file |
-| (✅) | — | ✅ | **own** (scoped) | workspace | strict file (as above) | = harness row; `isolate` redundant → harness wins |
-| — | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | strict file (as above) | Scoped harness **+** own branch |
-| (✅) | ✅ | ✅ | **own** (scoped) | **own worktree + branch** | strict file (as above) | Max isolation; `isolate` redundant → harness wins |
-
-**Rules of thumb:** several claude in one folder → **`isolate: transcript`**. Parallel edits that must not
-clobber → **`worktree:`**. A different MCP/skills/rules per agent → **`harness:`**. Mix freely (except
-`isolate`+`harness`, where harness wins).
-
-## Agent Pipelines — orchestrate agents into a one-shot chain
-
-Compose the agents you've configured into a **pipeline**: a declarative chain that solves a task
-end-to-end — plan → implement → review — instead of you sequencing it by hand. A pipeline lives in
-`.tachyon/pipelines/<name>.yml`; run it from the **Pipelines** section of the sidebar (or the
-`Tachyon: Run Pipeline` command).
-
-<p align="center">
-  <img src="docs/screenshots/pipeline.png" alt="A pipeline run paused at the human approval gate — plan ✓, implement ✓, review awaiting-approval — beside the .yml that defines it" width="900">
-</p>
-
-**The run owns one git worktree** that flows down the chain (`worktree-as-state`): every node runs in it
-in sequence, so a node sees what the previous one wrote. The worktree is created at run start and torn
-down when the run completes (or you Dismiss it).
-
-### Two ways to run: a fixed chain, or a reusable workflow
-
-A pipeline is **one engine** with an optional `input:` field — the difference is just where the work
-comes from.
-
-**Fixed chain** (`input: none`, the default) — each node's `task` *is* the work. Good for a release or
-maintenance chain that's the same every time:
-
-```yaml
-# .tachyon/pipelines/feature.yml
-name: feature
-nodes:
-  plan:      { agent: planner,  task: "Write PLAN.md for the new export button.", done: signal, timeout: 20m }
-  implement: { agent: builder,  task: "Implement the plan.", needs: [plan], done: signal_then_verify, timeout: 45m }
-  review:    { cmd: codex,      task: "Review the diff; write REVIEW.md.", needs: [implement], done: signal, gate: approve, timeout: 20m }
-```
-
-**Reusable workflow** (`input: required`) — the pipeline is your team's *process*, run once **per issue**.
-You supply the issue at ▶ Run (an input file opens in the editor); each node is a **persona** whose work
-is the run input plus the upstream context — so the **`task` is optional** for a configured agent (its
-harness already carries its role). One definition, every issue:
-
-```yaml
-# .tachyon/pipelines/feature-issue.yml
-name: feature-issue
-input: required                    # ▶ Run prompts for the issue; it flows down the chain
-nodes:
-  plan:
-    agent: planner                 # no task — the planner's persona + the run input ARE the work
-    done: signal
-    timeout: 15m
-  implement:
-    agent: builder
-    needs: [plan]
-    done: signal
-    timeout: 20m
-  review:
-    agent: reviewer                # a codex specialist — Tachyon wires it to the Bridge automatically
-    needs: [implement]
-    done: signal
-    gate: approve                  # the run PAUSES here for your Approve/Reject
-    timeout: 15m
-```
-
-**Context flows down the chain two ways:** the **worktree** carries the artifacts (files), and an optional
-**handoff** carries the narrative — when a node signals `complete_node` it can pass a short `summary`
-("plan in `docs/plan.md`; chose CSS vars"), which Tachyon hands to the next node as `## Upstream context`.
-Either runtime works as a node: **claude and codex** both reach the `complete_node` signal (Tachyon wires the
-Bridge into both automatically).
-
-**Three node forms** (one per node, sharing the run worktree):
-
-| Form | Declare | When done | Lifecycle |
-|---|---|---|---|
-| Persistent specialist | `agent: <declared>` (must NOT own a worktree) | `signal` / `signal_then_verify` — it calls `complete_node` | stops (stays in the tree, reusable) |
-| Non-interactive one-shot | `cmd: "npm test"` / `codex exec …` / `sh …` | `exit` / `exit_then_verify` — by exit code | dismissed (vanishes) |
-| Ephemeral interactive LLM | `cmd: codex` / `cmd: claude` (workspace default config) | `signal` — calls `complete_node` | dismissed |
-
-**`task` — the per-step directive (and when it's optional).** Every node needs a *work source*: a `task`,
-the run `input`, or (for a `cmd:` node) the command itself. So `task` is **optional** for a configured
-`agent:` node under `input: required` (its persona comes from its harness; the work is the input + upstream
-context) — write a `task` only to *sharpen* a step. It stays **required** for `cmd:` nodes and for any node
-under `input: none`.
-
-**Done-contract** — completion is a real signal, never "idle":
-- `signal_then_verify` *(agent default)* — the agent calls `complete_node`, then Tachyon runs the verify
-  gate; accepted only if it passes **and** the node actually changed the worktree (a no-op fails as
-  stale; set `expectsChange: false` on a read-only/review node to opt out).
-- `exit` / `exit_then_verify` — for a `cmd:` one-shot: exit 0 (then verify).
-- `signal` — bare signal, for a node that doesn't produce code (research, review).
-- Every node has a `timeout` and fails closed.
-
-**Gates & failure** — `gate: approve` parks the node at `awaiting-approval` and pauses the run for your
-Approve/Reject. A failed node holds its downstream visibly **blocked** (no silent wedge, no auto-retry).
-
-**From the sidebar** — a defined pipeline shows ▶ Run / ✎ Edit / 🗑 Delete; an active run shows its
-nodes with live status, **View Changes** (the run-worktree diff), ⏹ Cancel, and ↻ **Re-run from here**
-(reset a node + its downstream and re-run, reusing the upstream work). Each node row opens its agent's
-terminal.
-
-**v1 scope** — a pipeline is a single **linear** chain (parallel/fan-out is a follow); authoring is
-YAML (no visual builder yet); **sensors** (event triggers that start a pipeline) and re-running an
-already-**completed** run are follow passes.
-
-## Commands & runbooks — curated one-shots and gated procedures
-
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/commands.png" alt="Commands section of the Tachyon tree: lint and test passed with exit 0, runbook ship passed with 3 steps">
-
-Agents and terminals run forever; **commands** run once and exit — and exiting IS the result:
-exit 0 = ✓ passed, non-zero = ✗ failed with the **dead pane kept** so you (or an agent) can
-inspect exactly what happened. They live in their own tmux namespace — no crash toasts, no
-restart policies, no agent slot used.
-
-- **You**: the **Commands** sidebar section — ▶ runs, the icon shows pass/fail + duration,
-  clicking a finished item reopens its frozen output.
-- **Agents**: `run_command` blocks until the exit and returns `{passed, exitCode, durationMs,
-  tail}` — a vetted way to run project procedures instead of typing arbitrary shell.
-
-**Runbooks** chain commands (or inline shell) sequentially with an **exit-code gate**: the
-first failure stops the procedure, keeps the failing pane for postmortem, and marks the rest
-skipped. One click for you (`▶`), one blocking call for agents (`run_runbook`).
-
-```yaml
-commands:
-  lint: {cmd: npm run lint}
-  test: {cmd: npm test, cwd: web}
-runbooks:
-  ship:
-    steps: [lint, test, ./deploy.sh]   # names reference commands; strings run as shell
-```
-
-<br clear="right">
-
-## Schedules — runtime-neutral cron, human-gated
-
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/schedules.png" alt="Schedules section of the Tachyon tree: a pending agent proposal awaiting approval, and a paused schedule">
-
-Claude has `/schedule`; Codex, Gemini and OpenCode have nothing. A `schedules:` map
-gives **any runtime** cron-like timers over the executors you already have:
-
-```yaml
-schedules:
-  hourly-tests:        # every / at  +  run (command|runbook) / spawn (agent)
-    every: 1h
-    run: test
-  morning-standup:
-    at: "09:00"
-    spawn: claude
-    instructions: summarize yesterday's commits into the project handoff
-    catchUp: true      # at-only: fire on activation if the time already passed today
-```
-
-**Honest scope:** schedules fire **only while the workspace is open** — the
-extension isn't a daemon (same semantics as watch-restart, and you don't want
-unsupervised AI agents waking at 3am). `every` re-anchors from the last fire;
-`at` fires once per day when the clock crosses it.
-
-**Agents can propose, you approve.** An agent that notices something should run
-regularly calls `propose_schedule` — the proposal lands **inert** in the
-Schedules sidebar under *Pending approval* (it never fires). Approving writes it
-into `tachyon.yml` (config-as-code); rejecting discards it. Agents can never
-schedule themselves into action without your sign-off.
-
-Create and manage them in the **Schedules** sidebar view: the `+` opens the Agent
-Studio's **Schedule** tab (when/every-or-at, run-or-spawn, target), and each entry
-has ‖ pause, edit and delete; pending agent proposals show with ✓ approve / ✗ reject
-and a badge for the count.
-
-<br clear="right">
-
-## Pins — shared human↔agent memory
-
-<img align="right" width="300" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/pins.png" alt="Pins section of the Tachyon tree: two open agent-authored pins, one completed">
-
-Findings shouldn't die in scrollback. Each workspace gets a shared checklist,
-living as a **plain file** so every consumer has a door:
-
-```
-.tachyon/pins.json   # the checklist (sidebar checkboxes, agent tools)
-```
-
-- **You**: the **Pins** sidebar section — checkboxes, ✚ add, 🗑 delete.
-- **Agents (MCP)**: `create_pin` ("pin what you discovered"), `list_pins` ("check before
-  re-discovering"), `complete_pin`, `update_pin`. Narrative coordination state (work
-  division, do-not-touch zones, decisions) lives in the **project handoff**.
-- **Agents without MCP / the team**: the file itself — readable by anything,
-  committable if the project wants shared findings in git (your call; gitignore it for
-  personal scratch).
-
-All doors stay coherent: a file watcher refreshes the sidebar on manual edits, and tool
-mutations land in the files immediately.
-
-<br clear="right">
-
-## Agents vs terminals — the kind taxonomy
-
-Declare AI CLIs under **`agents:`** and servers/shells/builds under **`terminals:`** — so the
-config reads the way you think:
-
-```yaml
-agents:
-  frontend: {cmd: claude}              # an AI coding agent
-  revisor:  {cmd: codex}
-
-terminals:                             # non-AI processes — kind is implied here
-  dev:   {cmd: npm run dev, watch: src/**}
-  shell: {cmd: bash}
-```
-
-Every entry has a `kind` (**agent** = an AI CLI, **terminal** = server/shell/build). Under
-`agents:` it's inferred from the command (`claude`, `codex`, `opencode`, `gemini`, `aider`, … →
-agent; anything else → terminal; launchers like `npx` are seen through) and an explicit
-`kind:` wins; under `terminals:` it's always `terminal`. Kind drives the sidebar grouping, the
-attention default (agents on, terminals off — a quiet dev server is normal, a quiet AI may need
-you), and is exposed in `list_agents` so an orchestrating agent can address only its AI siblings.
-
-**Under the hood it's still ONE kind-tagged set** — `terminals:` is a readable surface, not a
-separate pipeline. Tachyon's unit of management isn't "an AI"; it's **a long-lived process in a
-tmux session, shown as a native editor terminal**. A Claude CLI and an `npm run dev` are the
-same thing to the engine: both get a session, a tab, crash detection + restart, file-watch
-restart, git-worktree isolation, live rename, and reattach-after-reload. The two blocks
-just merge into that one set. Legacy engine/API names such as `list_agents` are compatibility
-names for this managed-entry set; the returned `kind` tells you whether each row is an AI
-agent or a terminal.
-
-Backward compatible: declaring a terminal the old way — under `agents:` with `kind: terminal` —
-still works identically; nothing auto-migrates. One namespace across both blocks (a name can't be
-in both).
-
-## Agent Studio — manage everything from the UI
-
-![Agent Studio — the four tabs (Agent, Terminal, Command, Runbook) on the orbit-api demo](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/studio-grid.png)
-
-You never have to hand-edit `tachyon.yml` (but always can — the file stays the source of
-truth and **your comments survive UI edits**). The Studio is one form with four tabs — the
-tab IS the kind:
-
-- **Agent** — quick-add chips for the AI CLIs **detected on your machine** (undetected majors
-  show disabled with an install hint), per-runtime flag chips (`--model …`,
-  `--permission-mode plan`, `--yolo`…), an **Instructions** role prompt, working directory,
-  autostart/restart/attention.
-- **Terminal** — command + watch globs (restart-on-change).
-- **Command** — name + command + cwd (one-shots have no lifecycle).
-- **Runbook** — name + steps (one per line, with a live hint showing whether each line
-  references a command or runs as inline shell).
-
-Right-click any sidebar item for **Edit (Studio)**, **Edit in tachyon.yml** (cursor lands on
-the entry, schema-validated), **Clone**, **Rename**, **Delete** — with guardrails (rename/delete
-refuse while running where it matters; deleting the last agent is refused).
-
-### Soul — optional per-agent identity
-
-`soul` answers **who this declared agent is**: its stable voice, values, posture, and behavioral
-boundaries. It is separate from `role` (reusable work contract), `instructions` (persistent work
-specialization), and the current task. Enable it explicitly for an agent:
-
-```yaml
-agents:
-  security-reviewer:
-    cmd: claude
-    soul: true
-    role: reviewer
-    instructions: Focus on authentication boundaries.
-```
-
-Agent Studio's **Identity (SOUL.md)** section can create, import a local file as an exact managed
-copy, open, enable/disable, replace with digest-backed confirmation, and permanently delete the
-profile with confirmation. The canonical files are machine-local at
-`.tachyon/agents/<agent>/SOUL.md` and `.tachyon/agents/<agent>/profile.json`; Tachyon never keeps the
-import source path. A retained profile is inert until explicitly enabled/adopted, and `soul: false`
-or absence means disabled. Editing the original imported file never changes the canonical copy.
-
-On a soul-enabled fresh spawn or restart, Tachyon composes identity before role and persistent
-instructions, with Bridge guidance and the current task following as separate layers. Resume/rebind
-does not inject a changed identity into an existing transcript; restart or re-anchor refreshes it.
-Short composed prompts may be visible in process arguments and all delivered content reaches the
-runtime/provider, so SOUL.md is trusted configuration, **not a secrets or authorization surface**.
-
-Direct Claude, Codex, Gemini, `agy`, Grok, Pi, and OpenCode commands have a Tachyon opening-prompt
-adapter; OpenCode receives a TUI prefill, so Tachyon records an offer rather than claiming model
-consumption. Recognized `env`/`npx`/`bunx`/`pnpx` launchers use the same adapters. Shell wrappers,
-renamed/unknown binaries, and Hermes fail closed when `soul: true`; Hermes' native global
-`$HERMES_HOME/SOUL.md` remains externally managed and Tachyon never overwrites it. See the
-[runtime parity matrix](docs/runtimes/parity.md#soul-identity-delivery) for evidence levels.
-
-### Instructions — agents as roles
-
-```yaml
-agents:
-  revisor:
-    cmd: claude --permission-mode plan
-    instructions: you are a code reviewer; read the diff, flag correctness issues
-```
-
-On spawn, the instructions are delivered as a startup prompt for CLIs that accept one
-(claude, codex, gemini — per-runtime arg map); for other commands the field is kept but
-not auto-delivered (the form tells you).
-
-**Role templates.** Instead of writing the contract by hand, pick a built-in `role` — a reusable
-task contract (coder / reviewer / tester / orchestrator / custom). It's composed with your
-`instructions` at delivery (template first, your words appended), so you can start from a role and
-refine. Roles are agents-only (a terminal has no AI). The Studio Agent tab has a role dropdown.
-
-```yaml
-agents:
-  rev:
-    cmd: claude
-    role: reviewer            # the reviewer contract becomes the opening prompt
-    instructions: focus on the auth module   # appended after the template
-```
-
-These are **task contracts, not personas** — they scope the job (what to do, boundaries, how to
-verify, what to report), they don't role-play a character.
-
-**Prompt templates (operator macros).** Mid-session reusable prompts live as markdown under
-`.tachyon/prompts/<id>.md` (optional YAML frontmatter `title:`). They are **not** shell
-`commands:` and **not** spawn roles — use **Tachyon: Inject Prompt Template…** (or the agent
-sidebar overflow) to stage (default) or submit the body into a running AI agent's composer.
-
-```markdown
-<!-- .tachyon/prompts/status-next.md -->
----
-title: Status + next step
----
-Summarize current state in 5 bullets.
-Propose the single next step and why.
-```
-
-**Bridge-coordination guidance.** An agent spawned by another agent via the Bridge gets a short
-note appended to its instructions: coordinate through the Bridge tools, and spawn sub-work through
-the Bridge so it stays visible in Tachyon (a CLI's built-in sub-agents run work Tachyon can't see).
-Guidance only — disable with `settings.bridgeGuidance: false`.
-
-**Role re-anchoring after compaction (opt-in).** A long-running agent's CLI eventually compacts its
-own conversation (`/compact`, auto-summarize) and forgets the role it was given. With
-`settings.anchor.auto: true`, Tachyon detects the compaction (claude + codex; other runtimes are a
-documented gap) and, on the next *idle* moment, types a one-line role reminder into the pane pointing
-at a durable `.tachyon/roles/<agent>.md` it writes. **Off by default** — it types into a live
-terminal, so it's opt-in. The manual **"Re-anchor Role"** action (sidebar row / `reanchor_agent`
-Bridge tool) and the `.tachyon/roles/<agent>.md` doc work regardless of the setting.
-
-## Multi-root workspaces
-
-![Two folders in one window, each with its own Bridge on a different port, own agents, commands and pins — status bar shows Tachyon ×2](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/multiroot.png)
-
-Each folder in a multi-root workspace that carries a `tachyon.yml` gets its **own isolated
-world**: its own tmux namespace, its own Bridge (own port, own token), its own pins and
-commands. The sidebar grows per-folder sections only when you have more than one (a single
-folder renders exactly as before); palette commands ask which folder first; the status bar
-aggregates (`⚡ Tachyon ×2`). Folders added/removed live are picked up without a reload —
-and tmux sessions survive a folder's removal.
-
-## tmux Server Inspector
-
-![tmux Server Inspector: every session on the dedicated tachyon socket, grouped by workspace then kind, with live/exit-code badges, pid and command, and per-session Capture / Kill](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/inspector.png)
-
-The sidebar shows the sessions **this** folder owns. The inspector (⚙ **Inspect tmux Server**
-on the Bridge row, or the palette) opens an editor webview over the *whole* dedicated
-`tmux -L tachyon` socket — every session Tachyon owns, across every open folder **and**
-orphans left by closed windows. Each session is grouped by workspace then kind (agents &
-terminals, commands, runbook steps, the engine anchor), with its **live / exit-N** badge,
-a **busy/idle** CPU tag (Linux), **uptime**, pid, and running command.
-
-Per session: **Open** (attach it in an editor terminal), **Capture** (last lines of pane
-output, inline), **Kill**. For hygiene, the toolbar offers one-click **Kill N dead** (reap
-every dead pane) and **Reap N orphaned** (kill every session owned by a closed/foreign
-workspace) — both confirm first. It auto-refreshes while open.
-
-Scope is deliberate: the inspector covers **only** Tachyon's dedicated socket, never your
-own `tmux` server. That isolation is the whole point — Kill stays safe (you can't reach a
-real working session), exit-code badges work (Tachyon sets `remain-on-exit` on its socket),
-and the orphans worth reaping are Tachyon's own, which is exactly what this surfaces.
-
-### Wedge watchdog — auto-recovery for a stuck server
-
-A long-lived tmux server can occasionally **wedge**: the process stays alive but stops
-answering (every command returns "server exited unexpectedly", it ignores `SIGTERM`). It's an
-upstream tmux quirk (seen on tmux 3.6/WSL2), not something Tachyon causes — but when it
-happens every agent's pane is unreachable and the sidebar goes all-`stopped`. Tachyon runs a
-**background watchdog**: it probes the dedicated socket on a timer and, when a wedge is
-confirmed across **two consecutive checks** (so a one-off hiccup never trips it),
-**auto-recovers** — it `SIGKILL`s the stuck server, clears the stale socket, and notifies you
-to restart your agents. A wedged server had already lost every live session, so nothing
-recoverable is killed, and your conversations come back via [session resume](#session-resume--survive-a-reboot-not-just-a-restart).
-Before killing, it logs a `ps` snapshot of the stuck server to the extension log (so the
-upstream cause can be chased). The manual **Restart tmux Server** command does the same on
-demand.
-
-## Sidebar
-
-The ⚡ Tachyon icon in the Activity Bar opens three sections:
-
-- **Agents** — Bridge status (click to copy the MCP URL) + every entry grouped by kind:
-  **Agents** (🤖 AI CLIs) and **Terminals** (▣ servers, shells, builds), each with running
-  counts, inline ▶ start / ■ stop / ↻ restart actions; clicking a running one opens its terminal.
-  Agents spawned by other agents **nest under their parent** (lineage via `spawn_agent`'s
-  `parent` param; orphans are promoted to the root when the parent dies — children are never
-  cascade-killed).
-- **Schedules** — active timers (next/last run) and any agent proposals awaiting
-  your approval (inline ✓ / ✗).
-- **Commands** — one-shot commands (state icons, exit codes, durations) and runbooks
-  (expandable: each step ✓/✗/skipped; the failing step reopens its pane).
-- **Pins** — the shared checklist; checkboxes sync to `.tachyon/pins.json`.
-
-All refresh on lifecycle events and `tachyon.yml` edits (or via the ↻ title button).
-
-> **Copying from an agent terminal (UTF-8):** just drag-select with the mouse — including past the
-> viewport into scrollback — and it copies clean UTF-8, no Shift. Tachyon routes tmux copy-mode
-> through a platform-aware clipboard helper (PowerShell on WSL, `pbcopy`/`wl-copy`/`xclip`
-> elsewhere) and disables OSC 52, whose host-side decode mangled accents/CJK on VS Code for
-> Windows/WSL (`não` → `nÃ£o`). Opt out with `settings.clipboard: off` (restores OSC 52) — e.g. on a
-> headless/SSH box where OSC 52 is the right path. `mouse on` (the default) keeps scroll working in
-> TUI agents.
-
-## Performance — event-driven under the hood
-
-Tachyon talks to tmux through a single persistent **control-mode client** (`tmux -C`): all
-queries ride one pipe (zero subprocess churn in steady state) and lifecycle changes arrive
-as **events** — a crash or kill is detected in ~1s, not on the next poll. If the control
-client ever drops, every call transparently falls back to one-shot tmux subprocesses while
-it reconnects; the engine failing never fails an operation. (A 3s heartbeat remains as
-backstop; CPU sampling for attention stays polled — tmux has no events for that.)
-
-## Security
-
-- **Local only.** The Bridge binds to `127.0.0.1` — never the network. No cloud component,
-  no telemetry, no account; your agent CLIs run under your user like any terminal.
-- **Bearer auth by default, Bridge-resolved.** Every Bridge request needs
-  `Authorization: Bearer <token>` (disable with `settings: {auth: false}`) — and when your
-  session carries a **per-agent token**, the Bridge resolves *who you are* instead of trusting
-  a self-declared name: an omitted identity param (spawn's `parent`, `notify_agent`'s sender,
-  `create_task`/`create_pin`'s author, ...) resolves to you; declaring someone else's is a
-  structured `caller_mismatch`, not a silent lie. Each agent gets its own token
-  (`TACHYON_AGENT_BRIDGE_TOKEN`), minted at spawn/restart/resume — **treat it as
-  identity-bearing: never copy it into a shared script or another agent's env.** Token kinds:
-  `agent` (a resolved, per-agent identity), `legacy` (the old shared `TACHYON_BRIDGE_TOKEN` —
-  accepted only while `settings: {legacyBridgeAuth: true}`, the default during migration;
-  logged per call; cannot claim a currently-live agent's identity), and `external`/`human`
-  (a deliberately copied token or an internal UI call — never resolves to an agent identity
-  either). External sessions still use the shared token: `Tachyon: Copy Bridge Token` →
-  `export TACHYON_BRIDGE_TOKEN=…`. Both token vars live in the extension's private storage
-  (`0600`)/OS keychain — **never in a committable file**.
-- **Per-workspace isolation.** Sessions, Bridge port, token, pins — all namespaced by a
-  hash of the workspace path; one folder's agents can't address another folder's Bridge
-  (multi-root included). Tachyon runs its own tmux server (`tmux -L tachyon`); your personal
-  tmux and `~/.tmux.conf` are never touched.
-- **Guardrails.** `maxAgents` (default 8) caps concurrent sessions per workspace — an agent
-  spawning agents can't fork-bomb you. Deleting/renaming running entries is refused where
-  it would lie to you.
-- **Honest threat model.** Loopback blocks the network; per-agent tokens raise the bar from
-  "any process can spoof anyone" to "a deliberate, same-user act" (provenance hardening, not a
-  sandbox) — the Bridge only ever stores fixed-length HMAC digests of tokens, never the
-  plaintext, so reading Tachyon's persisted state can't recover a live bearer. Same-user
-  targeted malware that reads extension storage/process env is still out of scope — that's the
-  platform's trust boundary, not ours.
-
-## Commands (palette)
-
-`Tachyon: Init (generate tachyon.yml)` · `Tachyon: Start` · `Tachyon: Stop All` ·
-`Tachyon: Restart Agent` · `Tachyon: Open Agent Terminal` ·
-`Tachyon: Agent Studio` · `Tachyon: Connect Agent Runtime` · `Tachyon: Copy Bridge URL` ·
-`Tachyon: Copy Bridge Token` · `Tachyon: Refresh Views`
+An agent is a **canonical profile**: a durable identity with its own runtime, model, capabilities and
+optional git worktree, whose authority is custodied by the host rather than by the file. Terminals,
+commands and runbooks stay plain declarations.
+
+## What it gives you
+
+- **A persistent engine** — agents outlive the editor; a reboot restores them with their conversation.
+- **The MCP Bridge** — every Tachyon-spawned agent gets a scoped, authenticated control plane for the
+  fleet, with no manual wiring.
+- **Worktree isolation** — an agent can own its branch and checkout, verify it, and open the PR from
+  the sidebar.
+- **Deliberate capabilities** — a plugin or skill reaches an agent only after a human authorizes it,
+  pinned to the exact content approved. When that content changes the agent says so and offers to
+  reauthorize, instead of drifting quietly.
+- **Sub-agents** — agents that spawn agents, with the lineage visible in the sidebar.
+- **Tasks, pins and a human inbox** — shared memory between you and the fleet, and one place where
+  everything waiting on a human shows up.
+- **Pipelines, commands, runbooks and schedules** — curated one-shots and gated procedures, with the
+  human gate where you put it.
 
 ## Settings
 
-Tachyon contributes **no VS Code settings**. There are exactly two homes, split by scope of meaning,
-and both are plain text you can also edit by hand:
+Tachyon contributes no VS Code settings. There are two homes, both plain text, both hand-editable,
+and both validated fail-closed — an invalid value is refused by name and the last known-good is kept,
+never silently defaulted.
 
-| Home | What lives there | Path |
+| Home | Scope | Path |
 |---|---|---|
-| `tachyon.yml` → `settings:` | how **this project** runs — shared with the team, tracked in the repo | `<workspace>/tachyon.yml` |
-| Your Tachyon settings file | how **this machine** behaves for **you** — never committed | `~/.tachyon/settings.json` |
+| `tachyon.yml` → `settings:` | how **this project** runs; tracked with the repo | `<workspace>/tachyon.yml` |
+| Tachyon settings file | how **this machine** behaves for **you**; never committed | `~/.tachyon/settings.json` |
 
-Both are edited from **Control → Settings**, which also says whether a change takes effect
-immediately or waits for Control to be reopened. Both are validated fail-closed: an invalid value is
-refused with a named error and the last known-good is kept, never silently defaulted.
+Both are edited from **Control → Settings**. The global file is hand-editable on purpose: it is the
+recovery path when Control itself will not open (`Tachyon: Open Global Settings File`).
 
-The global file is versioned and hand-editable, and that is deliberate — it is the recovery path when
-Control itself will not open. `Tachyon: Open Global Settings File` opens it (creating it if needed).
+## Security
 
-```json
-{
-  "version": 1,
-  "activity": { "codeTheme": "auto" },
-  "agentPane": { "enabled": true },
-  "sidebar": { "cardTemplate": { "version": 1, "meta": ["harness"] } },
-  "gitPath": ""
-}
-```
+Everything runs as you, on your machine, under your own agent CLIs.
 
-- `activity.codeTheme` (`auto` | `dark` | `light`) — syntax-highlight palette for Activity code blocks.
-- `agentPane.enabled` (default true) — the first-party agent pane. **An invalid or absent value fails
-  toward enabled**, so a broken document can never hide a surface you would need to repair it.
-- `sidebar.cardTemplate` — your personal agent-card layout; wins over the project's, and a region you
-  do not list keeps whatever that project chose.
-- `gitPath` — the git binary Tachyon spawns. Empty falls back to the Git extension's `git.path`, then
-  common install locations, then `git` on `PATH`. (`git.path` is the one VS Code setting Tachyon still
-  reads, because it is not Tachyon's.)
-
-The dogfood steps for this surface — including how recovery behaves when the file is broken — are in
-`docs/runbooks/settings-authority-dogfood.md`.
-
-If you had any of the retired `tachyon.*` VS Code settings, Tachyon imports them once, on first
-activation, into whichever of the two homes now owns them — and tells you when it writes to a tracked
-`tachyon.yml`, so nothing lands in your next commit unannounced.
-
-- In `tachyon.yml` → `settings:`: `maxAgents` (default 8 — concurrent-agent guardrail),
-  `agentMemoryMax`, `taskNotifications.*`, `worktree.revealInWorkspace` (default true),
-  `bridgePort`, `auth`, `tmux`, `worktree`,
-  `bridgeGuidance` (default true — append Bridge-coordination guidance to Bridge-spawned children),
-  `projectGuidance` (explicit project-owned guidance files; no default),
-  `anchor.auto` (default false — opt-in role re-anchoring after a detected compaction; see *Instructions — agents as roles*),
-  `clipboard` (`auto` default — clean UTF-8 copy on plain drag-select; `off` restores OSC 52).
-- `settings.tmux` — tmux options for Tachyon's dedicated socket (applied as `set -g <key> <value>`).
-  Tachyon's defaults (`mouse on`, `focus-events on`, `history-limit 10000`) apply first and your
-  map overlays them; `remain-on-exit` is reserved. Your `~/.tmux.conf` is never loaded (Tachyon
-  runs config-isolated), so this is the only door to tune tmux.
-
-### Project-owned agent guidance
-
-Projects can opt in to repository conventions that Tachyon should deliver to agents without making
-those conventions part of Tachyon's product-global primer:
-
-```yaml
-settings:
-  projectGuidance:
-    files:
-      - docs/agent-guidance.md
-      - docs/testing-conventions.md
-```
-
-`files` is an ordered, non-empty list. Tachyon reads each file from the **source workspace** that
-owns `tachyon.yml` (never from an agent's delegated worktree or process cwd), preserves its content
-verbatim, labels its source, and places it in a separate `PROJECT GUIDANCE (PROJECT-OWNED)` block.
-There is no process-global content cache, so the next supported startup push (spawn or restart) or
-re-anchor sees the current files. Omit `projectGuidance` to deliver no project-owned block. Startup
-Startup delivery uses Tachyon's existing prompt-capable adapters. Hermes receives
-`HERMES_TUI_QUERY` together with `HERMES_TUI=1`; an explicit `hermes --cli` is rejected when a
-startup brief must be delivered rather than silently dropping it. Commands that explicitly
-manage/resume their own transcript and runtimes with
-no startup-prompt adapter are launched without primer or project guidance so Tachyon does not alter
-their command semantics. Manual re-anchor remains an explicit live-pane push for running agents.
-
-The active system/user instructions and task contract remain authoritative for their scopes;
-Tachyon's primer owns orchestration protocol; project guidance owns repository conventions and
-cannot override that protocol. Tachyon does **not** auto-discover `AGENTS.md`, `CLAUDE.md`,
-`GEMINI.md`, or another runtime-specific context filename. Only the explicitly listed files enter
-this Tachyon-owned delivery channel.
-
-The list accepts 1–8 unique POSIX-style relative paths. Each path is limited to 256 UTF-8 bytes;
-absolute, drive/UNC, backslash, control-character, empty, `.`, `..`, and trailing-slash forms are
-rejected. Every target must remain canonically inside the source workspace and be a readable,
-regular, non-symlink UTF-8 file without NUL bytes. The combined file content is limited to 64 KiB.
-Validation is all-or-nothing and fail-closed: one missing, unreadable, escaping, malformed, or
-oversized source prevents session creation/replacement or re-anchor before any partial guidance is
-typed.
-
-## Worktree isolation — parallel agents, one branch each
-
-<img align="right" width="320" src="https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/worktree.png" alt="Sidebar: the feature agent on its own branch — ⎇ tachyon/feature with a ✓ verify badge — alongside claude and codex">
-
-Set `worktree: true` on an agent and Tachyon starts its tmux session in **its own git
-worktree on its own branch** — so parallel agents never clobber each other's files, and
-each agent's work is one coherent, reviewable branch. It's a pure git mechanism, so it
-works for any runtime (claude/codex/gemini/…) and any kind. Off by default; toggle it in
-**Agent Studio** or in `tachyon.yml`:
-
-```yaml
-settings:
-  worktree:
-    base: ~/.cache/tachyon/worktrees   # location root (default; XDG-aware). Path = <base>/<wsHash>/<agent>
-    branch: "tachyon/{agent}"          # global branch template — must contain {agent}
-
-agents:
-  reviewer:
-    cmd: claude
-    worktree: true                     # opt-in
-    branch: feature/auth-redesign      # optional literal branch (overrides the global template)
-    worktreeSetup:                     # run ONCE on create, sequentially, before the agent starts
-      - pnpm install
-      - cp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local   # central path ≠ ../.. — use the env var
-    verify: test                       # verify-gate: a command/runbook name (or inline shell) run IN the worktree
-```
-
-- **Branch** resolves: per-agent `branch` › global template (`{agent}`) › `tachyon/<agent>`.
-  Tachyon records whether **it** created the branch.
-- **Sub-agents share the parent's worktree** (one unit of work = one branch = one PR);
-  `worktree: true` on a child is a no-op + warning. Spawn top-level to isolate.
-- **Setup** runs only on create (not restart/reuse), sequentially, stop-on-first-failure,
-  with `TACHYON_WORKSPACE_ROOT` / `TACHYON_WORKTREE_ROOT` set. A failed setup prevents the
-  agent from starting and preserves the checkout for recovery; Tachyon never automatically
-  removes or rewinds a checkout after a fallible setup/launch step.
-- **Interrupted-launch recovery is explicit.** Tachyon Git-locks a launch checkout until its
-  session ownership (and, for a gate, delegation record) is durable. A surviving lock means an
-  attempt was interrupted or finalization failed, so automatic retry refuses to reuse it. Inspect
-  the path and its `git status`/`git log`, then, only when you have decided the preserved state is
-  safe to reuse or remove, run `git -C <workspace> worktree unlock <path>`. Retry the launch or use
-  **Remove Worktree** afterwards. A normally completed/cleanly stopped checkout is already unlocked
-  and may be reused even if its ephemeral session row is gone.
-- **Cleanup is human-decided.** Dismissing a worktree agent (or the **Remove Worktree**
-  action) shows the path, uncommitted changes, commits-ahead/unpushed, and branch ownership.
-  `git worktree remove --force` runs on confirm. The branch is auto-deleted **only when it's
-  Tachyon-created AND safely merged** (`git branch -d` refuses unmerged work) — a branch with
-  **unmerged commits**, or any **pre-existing** branch, is kept and force-deleted only via a
-  separate, spelled-out confirm, so committed-but-unmerged work is never lost in one click.
-  Removal is blocked while a sub-agent is still running. Declining destroys nothing.
-- Non-git workspaces (no repo, no commits yet, bare) fall back to the workspace root with a
-  notice — the agent is never blocked.
-- **Review changes** — a worktree agent has a `⎇` and a compare action: it opens a quick-pick
-  of everything it changed since the worktree was created (committed + uncommitted, base ↔
-  current), each in VS Code's native diff editor. Review in the editor, then merge with plain
-  git (`git merge tachyon/<agent>` or a PR) — Tachyon stays out of the merge.
-- **Verify gate** — declare `verify:` (a command/runbook name or inline shell; a global default
-  is `settings.worktree.verify`) and the agent gets a **Verify** action + a badge: `✓ verified`
-  / `✗ failing` / `⊘ not verified`. It runs the gate **in the worktree** and keys the result to
-  that commit, so the badge goes `⊘` once the agent commits or changes more (re-verify is one
-  click). Configure it in **Agent Studio** — Tachyon **suggests** candidates from your stack
-  (Node `package.json` scripts, `cargo test`, `go test`, `pytest`, …) but **you have the final
-  word**. Advisory: it never blocks a merge — it's the *evidence* that a branch is shippable.
-- **Create PR** — close the loop without leaving the editor: a worktree agent gets a **Create PR**
-  action that pushes its branch and opens a GitHub PR via `gh`, with the **verify verdict carried into
-  the PR body** (`✓ passed` / `✗ failing` / `⊘ not verified`). It's human-triggered — you review an
-  editable title + a body preview (with a heads-up if the worktree has uncommitted changes that won't
-  be pushed) before it fires; never automatic. The base is the branch the worktree was forked from
-  (recorded at create); needs a GitHub `origin` and an authenticated `gh` (checked on click). isolate
-  → review → verify → **ship**, all in one place.
-- MCP: `spawn_agent` accepts `worktree: true` (top-level spawns only); `list_agents` reports each
-  worktree agent's verify state (`{command, passed, atCommit, ranAt, stale}`) and `verify_agent`
-  runs the gate — so an orchestrating parent can gate a merge on "child finished **and** green".
-
-![Review changes — VS Code's native diff editor comparing the main tree to the feature worktree, the agent's added lines highlighted](https://raw.githubusercontent.com/cfpperche/tachyon/main/docs/screenshots/review.png)
-
-### Task UI prototypes
-
-For a task that needs a UI decision, the coordinator chooses a declared UI/UX specialist when the project has
-one, or spawns an ad-hoc designer otherwise. The producer creates a mocked, self-contained HTML proposal and
-attaches it with `attach_task_prototype`; no real data, backend calls, external assets, fonts, or network access
-belong in a prototype. Producer content remains untrusted even when its agent has declared ownership or trusted
-hooks. Legacy shared Bridge credentials can blur attribution, so attribution is informational, never authority.
-
-Task Detail and Task Studio render prototypes only in a static, scriptless, pointer-disabled sandbox in v1. The
-human approves or requests changes with first-party Task Detail controls outside the frame. Producers cannot
-approve, reject, demote, or name a superseded revision. Approval records the immutable prototype sha256 as the
-single active anchor; implementation and visual QA must resolve that current approved hash rather than a draft,
-runtime DOM state, or journal text. Normal task delegation and verification still govern implementation after the
-decision is recorded.
+- **Loopback only.** The Bridge binds `127.0.0.1` on a per-workspace port. No network, no account.
+- **Per-agent identity.** Each agent is minted its own bearer token at spawn, so the Bridge resolves
+  *who is calling* instead of trusting a self-declared name. Claiming someone else's identity is a
+  structured refusal, not a silent lie. Only HMAC digests are persisted, never the plaintext.
+- **Per-workspace isolation.** Sessions, port, token and pins are namespaced by a hash of the
+  workspace path, and Tachyon runs its own tmux server — your personal tmux is never touched.
+- **Capabilities are granted, not inherited.** An agent gets what a human authorized for it and no
+  more, pinned to content, so an update cannot widen an approval without asking again.
+- **An honest boundary.** This is provenance hardening, not a sandbox. Same-user malware reading
+  process env or extension storage is the platform's trust boundary, not ours.
 
 ## How it works
 
 ```
-VSCode editor area                      tmux server (socket "tachyon")
+VS Code editor area                     tmux server (socket "tachyon")
 ┌──────────────┬──────────────┐
 │ ⚡ claude     │ ⚡ dev        │  attach   tachyon-<ws>-claude
 │ (native      │ (native      │ ────────▶ tachyon-<ws>-dev
@@ -1129,75 +141,36 @@ VSCode editor area                      tmux server (socket "tachyon")
    your agents (Claude Code, Codex, OpenCode, …)
 ```
 
-## Language & theming
+## Language
 
-Tachyon follows your editor: every human-facing string is localized via VS Code's l10n
-(currently **English** and **Português (Brasil)** — switch with `Configure Display Language`),
-and all UI (sidebar + Agent Studio) renders with your theme's tokens and the official
-codicon font, including light and high-contrast themes. Bridge tool descriptions stay in
-English on purpose — their audience is the models reading the MCP schema.
+Tachyon follows your editor. Every human-facing string is localized — currently **English** and
+**Português (Brasil)**, switched with `Configure Display Language`.
 
 ## Development
 
 ```bash
 npm ci
-npm run build          # esbuild bundle -> dist/
-npm test               # aggregate Vitest gate: unit + integration + Product Invariants
-npm run test:integration   # @vscode/test-cli host suites (single-root + multi-root; downloads VSCode once)
+npm run build        # esbuild bundle -> dist/
+npm test             # unit + integration + Product Invariants
 npm run typecheck
+npm run verify:full  # the gate a push to main has to pass
 ```
 
-CI runs the portable core (typecheck + build + unit, including a real-tmux subset) and exposes Product
-Invariants as a distinct gate. The xvfb editor-host integration suites are a local gate — run them on
+CI runs the portable core — typecheck, build, and unit including a real-tmux subset — and exposes
+Product Invariants as its own gate. The editor-host integration suites are a local gate; run them on
 tmux ≥ 3.6.
-
-### Explicit verification migration
-
-Gated delegation verification no longer assumes that a consumer project uses npm, Vitest or `test/unit`.
-Projects that want full, changed-file and named-test verification declare those mechanics explicitly. For
-example, this repository opts into its own Node/Vitest conventions with:
-
-```yaml
-settings:
-  verify:
-    full: npm run verify:full:quiet
-    typecheck: npm run typecheck
-    prepare: npm ci --ignore-scripts --prefer-offline --no-audit --no-fund
-    affected: npx vitest related --run
-    behavior:
-      adapter: vitest-name
-      command: npm test --
-      stubPath: test/unit/{agent}Behavior.gen.test.ts
-      executorPaths: [package.json, package-lock.json, vitest.config.ts, tsconfig.json]
-```
-
-These values are examples owned by this repository, not Tachyon defaults. `affected` is the argv prefix
-to which Tachyon appends existing changed paths as option-safe relative arguments. A plain `behavior_test` name requires an explicit `behavior`
-adapter; configure the `vitest-name` adapter when that is the project's chosen contract, or use
-`cmd:<command>` for an explicit runner-neutral verifier. For a named adapter, `stubPath` is the compatibility
-key for a **pre-existing, tracked, project-owned test oracle**: Tachyon hashes its committed bytes at spawn
-and requires the same bytes at BASE and HEAD. It never turns behavior prose into an assertion, generates a
-placeholder, or authorizes the implementer to edit the oracle. Top-level `settings.verify.prepare`
-provisions a fresh verifier environment in each external isolated clone for named and `cmd:` gates;
-`executorPaths` names every tracked manifest, lockfile and
-runner/config input whose committed hashes must also stay identical. This avoids trusting the agent
-worktree's package scripts, ignored dependencies, hooks or remotes as verification evidence. Requesting
-full verification without `settings.verify.full`, or named verification without an adapter, is reported as
-missing project configuration rather than silently replaced with an npm/Vitest command.
 
 ## Support
 
-Tachyon is free and 100% local — no cloud, no telemetry, no token proxying. If it saves you
-time, **[sponsor the project](https://github.com/sponsors/cfpperche)** to keep it maintained
-and moving. Bug reports, ideas, and PRs are just as welcome.
+Tachyon is free and 100% local. If it saves you time,
+**[sponsor the project](https://github.com/sponsors/cfpperche)** to keep it maintained. Bug reports,
+ideas and PRs are just as welcome.
 
 ## License
 
-**GPL-3.0-or-later.** Copyright © 2026 Carlos Perche. Tachyon is free software: use it,
-study it, share it, improve it — derivatives stay open under the same license. Built in the
-open with a spec-driven loop — see [`docs/specs`](docs/specs) for the full history (every
-feature landed with its own spec, plan, validation record and dogfood).
+**GPL-3.0-or-later.** Copyright © 2026 Carlos Perche. Free software: use it, study it, share it,
+improve it — derivatives stay open under the same license.
 
-_Need to use Tachyon without the GPL's copyleft obligations (e.g. inside a closed-source
-product)? A commercial license is available — see [COMMERCIAL.md](COMMERCIAL.md) or email
+_Need Tachyon without the GPL's copyleft obligations (e.g. inside a closed-source product)? A
+commercial license is available — see [COMMERCIAL.md](COMMERCIAL.md) or email
 [licensing@cognixse.com](mailto:licensing@cognixse.com)._
