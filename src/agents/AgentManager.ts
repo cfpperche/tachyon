@@ -676,6 +676,13 @@ export interface SpawnCwdContext {
   isRestart: boolean;
   /** Immutable project verifier snapshot shown in the primer and persisted with this delegation. */
   verifySettings?: TachyonConfig["settings"]["verify"];
+  /**
+   * t-da80ed — the profile's declared `workspace.cwd`, resolved to an absolute path; absent when the
+   * profile declares none. Present so the resolver can SEE the directory it is about to override:
+   * whatever it returns replaces this value, and until it could read it, a declaration the runtime
+   * discarded was discarded without a word.
+   */
+  declaredCwd?: string;
 }
 
 /**
@@ -2231,6 +2238,7 @@ export class AgentManager {
         temporary,
         isRestart: false,
         verifySettings: verifySettingsSnapshot,
+        ...(def.cwd ? { declaredCwd: cwd } : {}),
       });
       if (resolved) {
         cwd = resolved.cwd;
@@ -3834,7 +3842,16 @@ export class AgentManager {
     // Resolve the exact reused cwd/private home before any live-pane or transient-state mutation.
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
     if (this.opts.resolveSpawnCwd) {
-      const resolved = await this.opts.resolveSpawnCwd({ name, def, parent: restartParent, temporary: this.isTemporary(name), isRestart: true });
+      const resolved = await this.opts.resolveSpawnCwd({
+        name,
+        def,
+        parent: restartParent,
+        temporary: this.isTemporary(name),
+        isRestart: true,
+        // t-da80ed — restart resolves the cwd through the same override as spawn, so it discarded a
+        // declared directory the same way. Same fact in, same sentence out.
+        ...(def.cwd ? { declaredCwd: cwd } : {}),
+      });
       if (resolved) {
         cwd = resolved.cwd;
         worktree = resolved.worktree;

@@ -976,6 +976,17 @@ export interface WorktreeSpawnCtx {
   parent?: string;
   /** restart/resume — reuse the worktree, never re-run setup */
   isRestart: boolean;
+  /**
+   * t-da80ed — the `workspace.cwd` the profile declares, ALREADY resolved to an absolute path.
+   *
+   * This resolver decides where an agent is born, and every directory it hands back overrides the
+   * declared one. Until this field existed it could not even see what the human asked for, so the
+   * override was not a conflict resolved in the worktree's favour — it was a value that never
+   * arrived. The precedence is unchanged (isolation wins, as it always has); what changes is that a
+   * discarded declaration is now said out loud, the way this file already speaks about every other
+   * directory it substitutes.
+   */
+  declaredCwd?: string;
 }
 
 export interface WorktreeResolveDeps {
@@ -1011,13 +1022,41 @@ export interface WorktreeResolveDeps {
  *     fail-closed so an isolated launch never silently moves to the shared root.
  *   - otherwise: null (default).
  */
+/**
+ * t-da80ed — say it when the directory an agent is born in is NOT the one its profile declares.
+ *
+ * The Studio refuses the contradiction at write time, so this speaks for the profile edited by hand
+ * and for the pair a profile carried in from before that refusal existed. It stays a notice rather
+ * than a throw on purpose: refusing here would turn such a profile into one that cannot launch,
+ * bricking the very agent the fix is meant to protect.
+ *
+ * Silent when the declaration agrees with where the agent actually lands — there is nothing to warn
+ * about when the human got what they asked for.
+ */
+function announceDiscardedCwd(
+  ctx: WorktreeSpawnCtx,
+  deps: WorktreeResolveDeps,
+  effective: string,
+  because: string,
+): void {
+  if (!ctx.declaredCwd) return;
+  if (path.resolve(ctx.declaredCwd) === path.resolve(effective)) return;
+  deps.notify(
+    `'${ctx.name}' declares workspace.cwd ${ctx.declaredCwd}, but ${because} — running in ${effective} instead`,
+    "warn",
+  );
+}
+
 export async function resolveWorktreeCwd(
   ctx: WorktreeSpawnCtx,
   deps: WorktreeResolveDeps,
 ): Promise<{ cwd: string; worktree?: WorktreeRecord; created?: boolean; preparationLocked?: boolean; rollbackHeadSha?: string } | null> {
   if (ctx.parent && !ctx.worktree) {
     const parent = await deps.resolveParent(ctx.parent);
-    if (parent.cwd) return { cwd: parent.cwd };
+    if (parent.cwd) {
+      announceDiscardedCwd(ctx, deps, parent.cwd, `a sub-agent runs where its parent '${ctx.parent}' runs`);
+      return { cwd: parent.cwd };
+    }
     // t-c9da28 — the two ways a parent can have no cwd are not the same failure.
     //
     // `spawn_agent` already refuses an explicit `cwd` for a parented child precisely so the caller is
@@ -1068,6 +1107,7 @@ export async function resolveWorktreeCwd(
       quarantineForLaunch: true,
       runSetup: wantSetup ? (r) => deps.runSetup(r, ctx.worktreeSetup as string[]) : undefined,
     });
+    announceDiscardedCwd(ctx, deps, rec.path, "it runs in its own git worktree, which IS its working directory");
     return {
       cwd: rec.path,
       worktree: rec,

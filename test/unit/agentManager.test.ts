@@ -6359,6 +6359,47 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     ).rejects.toThrow(/not an existing directory/i);
   });
 
+  /**
+   * t-da80ed — the resolver's answer overrides the cwd resolved from the profile, unconditionally.
+   * It could not see the declaration it was overriding, so a `workspace.cwd` an agent declared was
+   * discarded with nothing able to report the loss. Handing it over is what lets the discard be
+   * named; the precedence itself is unchanged.
+   */
+  it("t-da80ed: hands the resolver the declared cwd it is about to override — spawn and restart", async () => {
+    const seen: (string | undefined)[] = [];
+    const { manager, ws } = harness("agents:\n  reviewer:\n    cmd: claude\n    cwd: packages/api\n", {
+      resolveSpawnCwd: async (ctx) => {
+        seen.push(ctx.declaredCwd);
+        return null;
+      },
+    });
+    fs.mkdirSync(path.join(ws, "packages", "api"), { recursive: true });
+
+    await manager.spawn("reviewer");
+    await manager.restart("reviewer", { stop: "force", session: "new" });
+
+    expect(seen).toEqual([
+      path.join(ws, "packages", "api"),
+      path.join(ws, "packages", "api"),
+    ]);
+  });
+
+  it("t-da80ed: an agent that declares no cwd hands over nothing (the root is not a declaration)", async () => {
+    // `resolveCwd` answers the workspace root for a blank cwd, so passing the resolved value blindly
+    // would make every ordinary agent look like it had asked for the root.
+    const seen: (string | undefined)[] = [];
+    const { manager } = harness("agents:\n  reviewer:\n    cmd: claude\n", {
+      resolveSpawnCwd: async (ctx) => {
+        seen.push(ctx.declaredCwd);
+        return null;
+      },
+    });
+
+    await manager.spawn("reviewer");
+
+    expect(seen).toEqual([undefined]);
+  });
+
   it("rehydrate restores worktree:true so restart's resolver reuses the worktree (review fix)", async () => {
     const REC = { path: "/wt/h/w", branch: "tachyon/w", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     let seenWorktree: boolean | undefined;

@@ -1140,6 +1140,7 @@ export class Workspace {
             worktreeSetup: ctxAgent?.worktreeSetup,
             parent: ctx.parent,
             isRestart: ctx.isRestart,
+            declaredCwd: ctx.declaredCwd,
           },
           {
             manager: this.worktrees,

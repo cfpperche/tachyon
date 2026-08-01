@@ -205,6 +205,101 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       });
     });
 
+    /**
+     * t-da80ed — a `workspace.cwd` declared in the profile was computed and thrown away whenever the
+     * agent had a worktree: this resolver's answer overrides it unconditionally, and the ctx did not
+     * even carry the declaration, so nothing could report the loss. The human typed a path, saved
+     * without error, and the runtime ran somewhere else in silence.
+     *
+     * The precedence is deliberate and stays (isolation IS the working directory, decided on the
+     * task). What must not stay is the silence — the same shape this file already uses for every
+     * other directory it substitutes.
+     */
+    describe("a profile that declares a cwd the resolver overrides", () => {
+      it("says so when the worktree wins, and still launches", async () => {
+        const h = deps();
+
+        const r = await resolveWorktreeCwd(
+          { name: "rev", worktree: true, isRestart: false, declaredCwd: "/repo/packages/api" },
+          h.d,
+        );
+
+        expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC, created: true });
+        expect(h.notices).toEqual([
+          "'rev' declares workspace.cwd /repo/packages/api, but it runs in its own git worktree, which IS its working directory — running in /wt/h/rev instead",
+        ]);
+      });
+
+      it("says so on RESTART too — restart resolves the cwd through this same override", async () => {
+        const h = deps({ created: false });
+
+        await resolveWorktreeCwd(
+          { name: "rev", worktree: true, isRestart: true, declaredCwd: "/repo/packages/api" },
+          h.d,
+        );
+
+        expect(h.notices).toHaveLength(1);
+        expect(h.notices[0]).toContain("running in /wt/h/rev instead");
+      });
+
+      it("says so when a sub-agent inherits its parent's directory instead", async () => {
+        const h = deps({ resolveParent: async () => ({ cwd: "/wt/h/boss", known: true }) });
+
+        const r = await resolveWorktreeCwd(
+          { name: "helper", parent: "boss", isRestart: false, declaredCwd: "/repo/packages/api" },
+          h.d,
+        );
+
+        expect(r).toEqual({ cwd: "/wt/h/boss" });
+        expect(h.notices).toEqual([
+          "'helper' declares workspace.cwd /repo/packages/api, but a sub-agent runs where its parent 'boss' runs — running in /wt/h/boss instead",
+        ]);
+      });
+
+      it("stays quiet when the declaration is what the agent actually got", async () => {
+        // Nothing was discarded, so there is nothing to warn about: a notice here would train the
+        // human to ignore the one that matters.
+        const h = deps({ resolveParent: async () => ({ cwd: "/wt/h/boss", known: true }) });
+
+        await resolveWorktreeCwd(
+          { name: "helper", parent: "boss", isRestart: false, declaredCwd: "/wt/h/boss/" },
+          h.d,
+        );
+
+        expect(h.notices).toEqual([]);
+      });
+
+      it("stays quiet when the worktree is unavailable — the declared cwd is honoured there", async () => {
+        // The fallback returns null, and the AgentManager then keeps the cwd it already resolved from
+        // the profile. Warning about a discard that did not happen would be a lie in the other
+        // direction; the existing fallback notice is the whole story.
+        const h = deps({
+          manager: {
+            pathForAgent: () => "/wt/h/rev",
+            ensure: async () => {
+              throw new WorktreeUnavailableError("not a git repository", "not-repo");
+            },
+          } as unknown as WorktreeResolveDeps["manager"],
+        });
+
+        expect(await resolveWorktreeCwd(
+          { name: "rev", worktree: true, isRestart: false, declaredCwd: "/repo/packages/api" },
+          h.d,
+        )).toBeNull();
+        expect(h.notices).toEqual([
+          "'rev' falling back to the workspace root — not a git repository",
+        ]);
+      });
+
+      it("stays quiet for the ordinary agent that declares nothing", async () => {
+        const h = deps();
+
+        await resolveWorktreeCwd({ name: "rev", worktree: true, isRestart: false }, h.d);
+
+        expect(h.notices).toEqual([]);
+      });
+    });
+
     it("parented worktree:true opts into its own isolated worktree", async () => {
       const h = deps({ resolveParent: async (p: string) => (p === "boss" ? { cwd: "/wt/h/boss", known: true } : { known: false }) });
       const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
