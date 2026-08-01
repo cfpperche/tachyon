@@ -1,6 +1,12 @@
 /**
  * ESM twin of src/host/hostResources.ts for plain node scripts (verify-full.mjs).
  * Keep algorithms in sync with the TypeScript module (t-019dac).
+ *
+ * t-0b7aa7 — the SHAPES matter as much as the algorithms here, and this file gets none of the
+ * TypeScript union's protection: `scripts/` is outside tsconfig's include, so nothing stops a
+ * caller reading a field the answer should not have. A refused decision therefore carries no
+ * `workers` key at all, matching the .ts union. Reading it blind now yields `undefined`, which
+ * fails loudly, rather than `0`, which reads as a legitimate size.
  */
 import { readFileSync } from "node:fs";
 import { cpus } from "node:os";
@@ -71,7 +77,6 @@ export function decideHeavyGate(input = {}) {
       return {
         ok: false,
         code: "MEMORY_UNAVAILABLE",
-        workers: 0,
         memory,
         reason: "heavy gate refused: host meminfo unavailable (TACHYON_VERIFY_REQUIRE_MEMINFO=1)",
       };
@@ -84,7 +89,6 @@ export function decideHeavyGate(input = {}) {
     return {
       ok: false,
       code: "MEMORY_PRESSURE",
-      workers: 0,
       memory,
       reason:
         `heavy gate refused: memory pressure (MemAvailable ${memory.memAvailableMb}MB < min ${minAvailable}MB; ` +

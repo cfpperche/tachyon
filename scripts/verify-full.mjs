@@ -8,13 +8,23 @@ import { recordVerification, reuseDecision, verifiableTree, verifierFingerprint 
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
-/** Dynamic: prefer decideHeavyGate().workers; kept as function for tests that pin env. */
-export function resolveVitestMaxWorkers() {
-  return decideHeavyGate({ cpuCount: cpus().length || 1 }).workers;
+/**
+ * t-0b7aa7 — hand back the DECISION, never a bare worker count.
+ *
+ * The two exports this replaces were `resolveVitestMaxWorkers()`, which returned
+ * `decideHeavyGate(...).workers`, and a module-load-time `VITEST_MAX_WORKERS` const built from it.
+ * Both read the sizing field off an answer that may be a refusal, so under memory pressure they
+ * reported `0` workers — a refusal wearing the clothes of a measurement. Nothing in this file used
+ * either one (main() calls the gate itself and checks `ok`); they existed for the lock test, which
+ * is how a test came to assert a size against a decision that had declined to size anything.
+ *
+ * Returning the decision keeps `ok` and the sizing inseparable at every call site. It also drops
+ * the import-time /proc/meminfo read: importing the lock helpers no longer probes host memory as a
+ * side effect, so the probe happens when someone asks, not when someone imports.
+ */
+export function resolveHeavyGate() {
+  return decideHeavyGate({ cpuCount: cpus().length || 1 });
 }
-
-/** @deprecated use resolveVitestMaxWorkers — export for lock tests backward compat */
-export const VITEST_MAX_WORKERS = resolveVitestMaxWorkers();
 
 /** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
 export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH || path.join(tmpdir(), "tachyon-verify-full.lock");
@@ -220,7 +230,7 @@ export async function main() {
     throw error;
   }
   // t-019dac: refuse under memory pressure before spending the suite; auto-size workers from free RAM.
-  const gate = decideHeavyGate({ cpuCount: cpus().length || 1 });
+  const gate = resolveHeavyGate();
   if (!gate.ok) {
     process.stderr.write(`${gate.reason}\n`);
     lock?.release();

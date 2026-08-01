@@ -7,9 +7,21 @@ import { decideHeavyGate } from "./src/host/hostResources";
  * t-019dac: auto-size workers from free RAM (grows if you add memory).
  * Still never nproc-blind; hard-capped inside decideHeavyGate/recommendVitestMaxWorkers.
  * Forced override: TACHYON_VITEST_MAX_WORKERS.
+ *
+ * t-0b7aa7 — this config is loaded by EVERY vitest invocation, including a single focused file,
+ * which is not the heavy gate the refusal is about. So a refusal degrades to one worker here rather
+ * than making the suite unrunnable on a busy machine — but it says so. Silently sizing to 1 is how
+ * a refusal stops being a refusal: the run proceeds, slowly, and nobody learns why.
  */
 const gate = decideHeavyGate({ cpuCount: os.cpus().length || 1 });
-export const VITEST_MAX_WORKERS = gate.ok ? gate.workers : 1;
+let workers: number;
+if (gate.ok) {
+  workers = gate.workers;
+} else {
+  workers = 1;
+  process.stderr.write(`[vitest] ${gate.reason}\n[vitest] degrading to maxWorkers=1 — the heavy gate (verify:full) will refuse outright.\n`);
+}
+export const VITEST_MAX_WORKERS = workers;
 
 export default defineConfig({
   resolve: {

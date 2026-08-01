@@ -22,9 +22,19 @@ export type HostMemorySnapshot = {
   source: "proc-meminfo" | "unavailable";
 };
 
+/**
+ * t-0b7aa7 — a REFUSAL carries no worker count, on purpose.
+ *
+ * This union used to put `workers: 0` on the `ok: false` branch, which made `workers` present on
+ * both branches and therefore readable as a plain `number` without ever consulting `ok`. Zero was
+ * the honest value for "not running" and exactly the wrong SHAPE: a refusal that answers a sizing
+ * question at all will eventually be read as a size. Dropping the field makes the compiler refuse
+ * `decision.workers` until the caller has narrowed on `ok`, so the mistake is a type error instead
+ * of a number that travels.
+ */
 export type HeavyGateDecision =
   | { ok: true; workers: number; memory: HostMemorySnapshot; reason: string }
-  | { ok: false; code: "MEMORY_PRESSURE" | "MEMORY_UNAVAILABLE"; workers: 0; memory: HostMemorySnapshot; reason: string };
+  | { ok: false; code: "MEMORY_PRESSURE" | "MEMORY_UNAVAILABLE"; memory: HostMemorySnapshot; reason: string };
 
 const DEFAULT_MIN_AVAILABLE_MB = 2048;
 const DEFAULT_RESERVE_MB = 3072;
@@ -110,7 +120,6 @@ export function decideHeavyGate(input: {
       return {
         ok: false,
         code: "MEMORY_UNAVAILABLE",
-        workers: 0,
         memory,
         reason: "heavy gate refused: host meminfo unavailable (TACHYON_VERIFY_REQUIRE_MEMINFO=1)",
       };
@@ -128,7 +137,6 @@ export function decideHeavyGate(input: {
     return {
       ok: false,
       code: "MEMORY_PRESSURE",
-      workers: 0,
       memory,
       reason:
         `heavy gate refused: memory pressure (MemAvailable ${memory.memAvailableMb}MB < min ${minAvailable}MB; ` +

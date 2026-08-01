@@ -85,6 +85,9 @@ describe("hostResources (t-019dac)", () => {
       expect(decision.code).toBe("MEMORY_PRESSURE");
       expect(decision.reason).toMatch(/memory pressure/i);
     }
+    // t-0b7aa7 — a refusal carries no worker count. The union enforces this for TypeScript callers,
+    // but the ESM twin in scripts/ gets no such help, so pin the runtime shape the twins share.
+    expect("workers" in decision).toBe(false);
   });
 
   it("allows gate and reports auto workers when free RAM is healthy", () => {
