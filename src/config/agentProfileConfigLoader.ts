@@ -15,7 +15,21 @@ export type AgentConfigSource =
       profileSha256: string;
       effectiveSha256: string;
       authorityRevision: string;
-    };
+    }
+  /**
+   * t-0ad300 — declared, refused, and therefore NOT in `config.agents`.
+   *
+   * The isolation added by t-588644 keeps the healthy roster loading by deleting the refused
+   * agent from the document, which is what the legacy parser needs. Downstream that made "refused"
+   * indistinguishable from "never declared", and the agent vanished from the sidebar — the silent
+   * failure t-588644 set out to avoid. It also stranded the repair: Agent Studio opens from a
+   * roster row, so an agent with a stale pin had no reachable control to reauthorize it.
+   *
+   * This entry is the one place that still remembers the name. It carries no command on purpose —
+   * a refused agent must not be spawnable, and a shape with no `cmd` cannot accidentally become
+   * one.
+   */
+  | { mode: "refused"; source: string; reason: string };
 
 export type ProfileAwareTachyonConfig = TachyonConfig & {
   agentSources: Record<string, AgentConfigSource>;
@@ -105,21 +119,27 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   const profileWarnings: string[] = [];
   const profileSources: Record<string, AgentConfigSource> = {};
   const projected = new Map<string, AgentEntry>();
+  // t-0ad300 — the refused names, kept so they can still be rendered as refused. Recorded here and
+  // merged into `agentSources` only if a healthy remainder survives; when nothing does, the whole
+  // file fails and there is no roster to put them in.
+  const refused = new Map<string, { source: string; reason: string }>();
+  const refuse = (agentName: string, source: string, reason: string) => {
+    const message = `agents.${agentName}${reason}`;
+    errors.push(message);
+    profileErrors.push(message);
+    if (!refused.has(agentName)) refused.set(agentName, { source, reason: reason.replace(/^[.:]\s*/, "").replace(/^\.profile:\s*/, "") });
+  };
 
   for (const agentName of declaredAgentNames(doc)) {
     if (!isValidAgentName(agentName)) continue;
     const pointer = scan.pointers.get(agentName);
     if (!pointer) {
-      const message = `agents.${agentName}: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio`;
-      errors.push(message);
-      profileErrors.push(message);
+      refuse(agentName, `tachyon.yml#agents.${agentName}`, ": inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio");
       continue;
     }
     const authority = input.authorities.get(agentName);
     if (!authority) {
-      const message = `agents.${agentName}.profile: host profile authority is missing`;
-      errors.push(message);
-      profileErrors.push(message);
+      refuse(agentName, pointer.path, ".profile: host profile authority is missing");
       continue;
     }
     const result = projectCanonicalAgentProfile({
@@ -130,9 +150,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       homeDir: input.homeDir,
     });
     if (!result.ok) {
-      const messages = result.errors.map((error) => `agents.${agentName}.profile: ${error}`);
-      errors.push(...messages);
-      profileErrors.push(...messages);
+      for (const error of result.errors) refuse(agentName, pointer.path, `.profile: ${error}`);
       continue;
     }
     projected.set(agentName, result.definition);
@@ -201,6 +219,11 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       mode: "terminal",
       source: `tachyon.yml#terminals.${name}`,
     };
+  }
+  // t-0ad300 — the refused entries go in LAST and never overwrite a projected one. A name cannot be
+  // both, but the ordering is what guarantees it rather than the loop above happening to run first.
+  for (const [name, entry] of refused) {
+    if (agentSources[name] === undefined) agentSources[name] = { mode: "refused", ...entry };
   }
   return { ...parsed, errors, warnings, profileErrors, config: { ...parsed.config, agentSources } };
 }

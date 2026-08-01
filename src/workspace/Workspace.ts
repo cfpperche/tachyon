@@ -1238,6 +1238,7 @@ export class Workspace {
       failDeliveryJoin: (_name, request, prepared, error) => this.deliveryLease.failJoin(request.deliveryId, prepared.reservationNonce, error instanceof Error ? error.message : String(error), `${request.operationId}:fail`).then(() => undefined),
 
       getConfig: () => this.config,
+      getRefusedAgents: () => this.refusedAgents(),
       // t-8354ae — refuse spawn of names that exist only in the LKG snapshot while config is invalid.
       assertSpawnAllowed: (name) => this.assertNotLkgOnlySpawn(name),
       // t-aaad95 — `maxAgents` and `agentMemoryMax` used to arrive here from VS Code settings ALONGSIDE
@@ -5300,11 +5301,34 @@ export class Workspace {
 
   private blockProfileSpawnsFromLiveConfig(): void {
     const sources = (this.config as (TachyonConfig & {
-      agentSources?: Record<string, { mode: "terminal" | "profile" }>;
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
     }) | undefined)?.agentSources;
     this.profileSpawnBlocked = new Set(
-      Object.entries(sources ?? {}).filter(([, source]) => source.mode === "profile").map(([name]) => name),
+      // t-0ad300 — `refused` joins `profile` here. A refused agent now has a roster row, so for the
+      // first time there is a surface that could try to start it; it has no definition to start
+      // from, and starting it is exactly what its refusal denies.
+      Object.entries(sources ?? {})
+        .filter(([, source]) => source.mode === "profile" || source.mode === "refused")
+        .map(([name]) => name),
     );
+  }
+
+  /**
+   * t-0ad300 — the agents tachyon.yml declares that this load refused, name → reason.
+   *
+   * Read off `agentSources`, which is the only structure that still holds them: the isolation from
+   * t-588644 deletes a refused agent from `config.agents` before the legacy parser runs, and every
+   * roster reader downstream goes through `config.agents`.
+   */
+  refusedAgents(): Record<string, string> {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: string; reason?: string }>;
+    }) | undefined)?.agentSources;
+    const out: Record<string, string> = {};
+    for (const [name, source] of Object.entries(sources ?? {})) {
+      if (source.mode === "refused" && source.reason) out[name] = source.reason;
+    }
+    return out;
   }
 
   async inspectAgentProfileLifecycle(agentName: string): Promise<AgentProfileLifecycleSnapshot> {

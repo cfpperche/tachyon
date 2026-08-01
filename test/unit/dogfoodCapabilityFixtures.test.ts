@@ -201,6 +201,13 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
     // `bystander` authorized a plugin too. Surviving because it held nothing would prove the wrong
     // thing — that agents with no references are safe, not that isolation is per agent.
     expect(after.profileErrors.join("\n")).not.toContain("bystander");
+    // t-0ad300 — and `pinned` is still NAMED, which is what puts its row back on the roster. The
+    // README's pass criterion depends on this: without it the agent vanishes and Agent Studio, the
+    // only place the pin is repaired, becomes unreachable.
+    expect(after.config!.agentSources.pinned).toMatchObject({
+      mode: "refused",
+      reason: expect.stringContaining("profile/digest-mismatch"),
+    });
   });
 
   it("still reports every isolated failure in `errors`, so a validity check refuses what it did before", () => {

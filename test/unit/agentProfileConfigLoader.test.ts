@@ -1271,6 +1271,34 @@ describe("t-588644 — a refused profile is not a refused config", () => {
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
+  // t-0ad300 — the refused agent has to stay NAMED somewhere. Deleting it from `config.agents` is
+  // what the legacy parser needs; leaving it nowhere else is what made it vanish from the sidebar
+  // and stranded the repair, since Agent Studio opens from a roster row.
+  it("names the refused agent in agentSources, with why, even though it is not in config.agents", () => {
+    const result = loadProfileAwareConfig(twoAgents().input);
+
+    expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
+    const refused = result.config!.agentSources.broken;
+    expect(refused?.mode).toBe("refused");
+    // The reason travels with the name: a row that says only "refused" sends the human to a banner
+    // on another surface to find out what broke.
+    expect(refused).toMatchObject({ reason: expect.stringContaining("profile/digest-mismatch") });
+    expect(refused).not.toHaveProperty("cmd");
+    expect(result.config!.agentSources.healthy?.mode).toBe("profile");
+  });
+
+  it("does not invent a refused entry when every agent projects", () => {
+    const { input } = twoAgents();
+    const healthyOnly = {
+      ...input,
+      yamlText: "agents:\n  healthy:\n    profile: .tachyon/agents/healthy/agent.yml\n",
+    };
+
+    const result = loadProfileAwareConfig(healthyOnly);
+
+    expect(Object.values(result.config!.agentSources).map((source) => source.mode)).toEqual(["profile"]);
+  });
+
   it("still fails the whole file when the failure is not one agent's profile", () => {
     // Pointer syntax describes the declaration itself: there is no healthy subset to salvage.
     const result = loadProfileAwareConfig({

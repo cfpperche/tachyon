@@ -44,10 +44,18 @@ Then F5 → **Tachyon: Dev Host**.
 
 - `bystander` is still in the roster and still spawnable.
 - The durable config banner names **only** `pinned`, with `profile/digest-mismatch`.
-- `pinned` is absent from the roster — refused, not silently degraded.
+- `pinned` is **in the roster too**, carrying a red `refused` badge whose tooltip is the reason, and
+  it will not start. Its **Edit in Studio** action still opens — that is where the pin is repaired.
 
-**Fail:** an empty roster (the blast radius is back), or a banner that mentions `bystander` (the
-split is leaking healthy agents into the failure list).
+**Fail:** an empty roster (the blast radius is back), a banner that mentions `bystander` (the split
+is leaking healthy agents into the failure list), or `pinned` missing from the roster entirely.
+
+That last one was the shipped behaviour of 0.56.137 and is what **t-0ad300** fixed. Isolating the
+refused agent meant deleting it from `config.agents`, which the legacy parser needs — and downstream
+that made "refused" indistinguishable from "never declared". The agent disappeared from the sidebar,
+from Fleet and from Control at once, and since Agent Studio opens from a roster row, the repair went
+with it. A loud whole-roster failure had been traded for a quiet partial one, which t-588644 said in
+its own body must not happen.
 
 Step 4 matters. The isolation happens on the config load path, so an observation taken without a
 reload is reading the roster from before the drift.

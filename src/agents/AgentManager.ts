@@ -245,6 +245,15 @@ export interface ManagedEntryInfo {
    */
   resumePolicy: AgentInstanceResumePolicy;
   /**
+   * t-0ad300 — declared in tachyon.yml and refused, carrying WHY. Present only on those rows.
+   *
+   * A refused agent has no definition, so without this it is indistinguishable from a name that was
+   * never written down, and the row silently disappears. The reason travels with it because a row
+   * that says only "refused" sends the human back to a banner two surfaces away to find out what
+   * broke.
+   */
+  refused?: string;
+  /**
    * SDD 482 phase 3 — the DECLARED instance policy of a recorded instance; absent when this row is a
    * roster entry with no session ledger row behind it. Readers ask their question through the
    * `agentInstancePolicy` helpers rather than reading this directly.
@@ -499,6 +508,15 @@ export interface AgentManagerOptions {
   wsHash: string;
   workspaceRoot: string;
   getConfig: () => TachyonConfig | undefined;
+  /**
+   * t-0ad300 — agents that ARE declared in tachyon.yml and were refused, name → reason.
+   *
+   * They are deliberately absent from `getConfig().agents`: the isolation that keeps the healthy
+   * roster loading has to delete them before the legacy parser sees them. Listing them from here
+   * is what keeps "refused" distinguishable from "never declared" — without it the row disappears,
+   * and with it the only way into Agent Studio, which is where the refusal gets repaired.
+   */
+  getRefusedAgents?: () => Record<string, string>;
   /** t-8354ae — optional pre-spawn gate (e.g. refuse LKG-only names while config is invalid). */
   assertSpawnAllowed?: (name: string) => void;
   /**
@@ -1483,7 +1501,12 @@ export class AgentManager {
   async list(): Promise<ManagedEntryInfo[]> {
     const states = await this.agentStates();
     const config = this.opts.getConfig();
-    const declared = Object.keys(config?.agents ?? {});
+    // t-0ad300 — a refused agent is DECLARED. It counts as `saved` for lifetime and resume policy
+    // for the same reason a healthy one does: the human wrote it in tachyon.yml. What it does not
+    // get is a definition, so every `config.agents[name]` read below still misses and the row stays
+    // command-less — and `assertSpawnAllowed` refuses it outright.
+    const refusedAgents = this.opts.getRefusedAgents?.() ?? {};
+    const declared = [...Object.keys(config?.agents ?? {}), ...Object.keys(refusedAgents)];
     // t-eb4b30 — Temporary names come from the ledger, which is where their definitions are. The old
     // map was repopulated from these same rows on every activation, so in steady state this is the same
     // set; it differs only on the paths where the map and the row disagreed, and those were bugs.
@@ -1554,6 +1577,7 @@ export class AgentManager {
         parent: this.lineage.get(name),
         delegator: this.delegators.get(name),
         declaredOwner: config?.declaredOwner[name],
+        ...(refusedAgents[name] !== undefined ? { refused: refusedAgents[name] } : {}),
       };
     });
     return infos;

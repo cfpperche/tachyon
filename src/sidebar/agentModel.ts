@@ -249,6 +249,8 @@ export interface AgentExtras {
   unseen?: boolean;
   /** t-8354ae — row rendered under invalid config (ledger/LKG degraded mode). */
   configInvalid?: boolean;
+  /** t-0ad300 — this declared agent was refused by the config load; the string is why. */
+  refused?: string;
   /** spec 378 — the transcript-latched observed model fact (undefined = no observation yet; the row falls
    *  back to declared/profile). */
   model?: ObservedModelInput;
@@ -337,5 +339,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(visibleAwaitingHuman ? { awaitingHuman: visibleAwaitingHuman } : {}),
     ...(visibleAuthRequired ? { authRequired: visibleAuthRequired } : {}),
     ...(x.configInvalid ? { configInvalid: true } : {}),
+    ...(x.refused ? { refused: x.refused } : {}),
   };
 }
