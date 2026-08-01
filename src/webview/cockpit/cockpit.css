@@ -1440,8 +1440,42 @@ main.ck-main.ck-main--mission,
   gap: 6px;
 }
 
-.ck-settings-doctor-row {
-  margin: 0 0 4px;
+/* t-aaad95 (visual QA) — which authority a block writes to, stated per block.
+ * Deliberately quiet: it is orientation a reader consults, not something to read on every pass, so it
+ * sits under the title in the same descriptive tone as the hints rather than competing with them. */
+.ck-settings-block-scope {
+  margin: 2px 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* The card-layout composer, collapsed. Its 22 rows were 37% of the page for one setting. */
+.ck-card-regions-disclosure {
+  margin: 6px 0 10px;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+}
+
+.ck-card-regions-summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.ck-card-regions-summary:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+.ck-card-regions-disclosure[open] .ck-card-regions-summary {
+  border-bottom: 1px solid var(--vscode-widget-border);
+}
+
+.ck-card-regions-disclosure .ck-card-regions {
+  padding: 8px 10px;
 }
 
 @media (max-width: 720px) {

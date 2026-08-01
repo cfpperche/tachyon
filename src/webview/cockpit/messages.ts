@@ -210,9 +210,13 @@ export interface CockpitStrings {
   settingsOpenTachyon: string;
   settingsOpenConfig: string;
   settingsDoctor: string;
+  settingsWritesTo: string;
+  settingsWritesToEither: string;
+  settingsWritesToNothing: string;
   /** SDD 479 phase 4 — the Control → Settings card-template block. */
   cardTemplateTitle: string;
   cardTemplateHint: string;
+  cardTemplateComposer: string;
   cardTemplateBody: string;
   cardTemplateYamlHint: string;
   cardTemplateCopy: string;

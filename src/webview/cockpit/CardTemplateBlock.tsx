@@ -203,15 +203,23 @@ export function CardTemplateBlock({
   return (
     <div class="ck-settings-block" data-testid="control-settings-card-template">
       <h3 class="ck-settings-block-title">{s.cardTemplateTitle}</h3>
+      <p class="ck-settings-block-scope" data-testid="settings-writes-to-either">{s.settingsWritesToEither}</p>
       <p class="ck-settings-block-hint">{s.cardTemplateHint}</p>
       <p class="ck-settings-block-body">{s.cardTemplateBody}</p>
       {inEffect ? <CardTemplateInEffect s={s} state={inEffect} /> : null}
 
-      <div class="ck-card-regions">
-        {CARD_REGIONS.map((region) => (
-          <RegionEditor key={region} s={s} state={state} region={region} onChange={setState} />
-        ))}
-      </div>
+      {/* t-aaad95 (visual QA) — collapsed by default. Measured on the shipped surface: the 22 component
+        * rows were ~1000 of 2700px, so one cosmetic preference pushed the agent limit, idle
+        * notifications and Companion below the fold. What stays visible is the summary above (what is
+        * in effect right now) and the preview below — the parts a reader needs without editing. */}
+      <details class="ck-card-regions-disclosure" data-testid="card-template-composer">
+        <summary class="ck-card-regions-summary">{s.cardTemplateComposer}</summary>
+        <div class="ck-card-regions">
+          {CARD_REGIONS.map((region) => (
+            <RegionEditor key={region} s={s} state={state} region={region} onChange={setState} />
+          ))}
+        </div>
+      </details>
 
       {errors.length > 0 && (
         // Inline, and BEFORE anything is saved — the same refusals the config loader would produce,

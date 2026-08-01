@@ -463,6 +463,23 @@ export function parseAllowedHostsDraft(raw: string): string[] {
  * person their change did land, and "I changed it and nothing happened" is how a working setting gets
  * reported as a bug.
  */
+/**
+ * t-aaad95 (visual QA) — which file THIS block writes to.
+ *
+ * The two scope cards at the top of the page teach the split, and then the page is a flat stack of
+ * blocks for the next 2300px with nothing saying which authority each one belongs to. Measured on the
+ * shipped surface: a reader who scrolls past the first 230px has to re-derive the split from each
+ * block's prose. The marker is per block because that is where the question is actually asked.
+ */
+function WritesTo({ s, file }: { s: CockpitStrings; file: "global" | "workspace" | "either" | "none" }) {
+  const label = file === "either"
+    ? s.settingsWritesToEither
+    : file === "none"
+      ? s.settingsWritesToNothing
+      : `${s.settingsWritesTo} ${file === "global" ? s.settingsScopeGlobalTitle : s.settingsScopeWorkspaceTitle}`;
+  return <p class="ck-settings-block-scope" data-testid={`settings-writes-to-${file}`}>{label}</p>;
+}
+
 function GlobalSettingsBlock({
   s,
   settings,
@@ -480,6 +497,7 @@ function GlobalSettingsBlock({
   return (
     <div class="ck-settings-block" data-testid="control-settings-global">
       <h3 class="ck-settings-block-title">{s.globalSettingsTitle}</h3>
+      <WritesTo s={s} file="global" />
       <p class="ck-settings-block-hint">{s.globalSettingsHint}</p>
       <p class="ck-settings-block-body dim" data-testid="global-settings-file">
         {s.globalSettingsFileLabel} <code>{settings.file}</code>
@@ -585,6 +603,7 @@ function IdleNotifyField({
   return (
     <div class="ck-settings-block" data-testid="control-settings-idle-notify">
       <h3 class="ck-settings-block-title">{s.idleNotifyTitle}</h3>
+      <WritesTo s={s} file="workspace" />
       <p class="ck-settings-block-hint">{s.idleNotifyHelp}</p>
       {idle.configured === undefined ? (
         <p class="ck-settings-block-body dim" data-testid="idle-notify-default">
@@ -1988,7 +2007,7 @@ export function App(p: CockpitAppProps) {
       ? `${settingsWorkspace.workspaceRoot.replace(/[/\\]+$/, "")}/tachyon.yml`
       : "tachyon.yml";
     body = (
-      <ModuleChrome title={s.settingsTitle} hint={s.settingsHint}>
+      <ModuleChrome title={s.settingsTitle} hint={s.settingsHint} actionLabel={s.settingsDoctor} onAction={p.onOpenDoctor}>
         <div class="ck-panel" data-testid="control-settings">
           {/* t-7b4bb5 — scope split first: two authorities, named paths, no VS Code settings detour. */}
           <p class="ck-settings-intro" data-testid="control-settings-intro">{s.settingsBody}</p>
@@ -2026,12 +2045,6 @@ export function App(p: CockpitAppProps) {
               </div>
             </section>
           </div>
-          <div class="ck-settings-hosts-actions ck-settings-doctor-row">
-            <Button variant="default" data-testid="control-settings-doctor" onClick={p.onOpenDoctor}>
-              {s.settingsDoctor}
-            </Button>
-          </div>
-
           {/* SDD 479 phase 4 — compose a card layout and watch the REAL card update (ratified fork 5). */}
           <CardTemplateBlock
             s={s}
@@ -2044,24 +2057,15 @@ export function App(p: CockpitAppProps) {
 
           {m.globalSettings ? <GlobalSettingsBlock s={s} settings={m.globalSettings} onPost={p.onPost} /> : null}
 
-          {/* t-aaad95 — the workspace scope, named so the split is visible rather than folklore. */}
-          <div class="ck-settings-block" data-testid="control-settings-workspace">
-            <h3 class="ck-settings-block-title">{s.workspaceSettingsTitle}</h3>
-            <p class="ck-settings-block-hint">{s.workspaceSettingsHint}</p>
-            <p class="ck-settings-block-body dim" data-testid="workspace-settings-file">
-              {s.settingsFileLabel} <code class="ck-settings-path">{workspaceSettingsPath}</code>
-            </p>
-            <div class="ck-settings-hosts-actions">
-              <Button variant="default" data-testid="workspace-settings-open-file" onClick={() => p.onOpenConfigFile(settingsWsHash)}>
-                {s.settingsOpenConfig}
-              </Button>
-            </div>
-          </div>
-
+          {/* t-aaad95 (visual QA) — the second workspace card is GONE. It repeated the "Workspace
+            * (project)" scope card verbatim 1400px above it: same file path, same button, overlapping
+            * hint. Two cards for one authority taught the reader to check whether they differed. Its
+            * one unique sentence — which knobs live in the yml — moved into the scope card's hint. */}
           {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}
 
           <div class="ck-settings-block" data-testid="control-settings-companion">
             <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
+            <WritesTo s={s} file="workspace" />
             <p class="ck-settings-block-hint">{s.companionHint}</p>
             {m.companionNeedsWorkspacePick ? (
               <p class="ck-settings-block-body dim">{s.companionPickWorkspace}</p>
