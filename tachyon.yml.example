@@ -29,11 +29,7 @@ settings:
   # and no recreating agents.
   agentNotifications:
     idleAfterMinutes: 10
-  # Coordinators allowed to record integration or prune linked GitDelivery projections.
-  gitDelivery:
-    prunePrincipals: [ hermes, grok, claude, codex ]
-    integratePrincipals: [ hermes, claude ]
-  # specs 362/385 — this repository's explicit verify_task commands/adapter (no product-global runner defaults):
+  # specs 362/385 — this repository's explicit verify commands/adapter (no product-global runner defaults):
   # full builds dist/ first (the plugin-ui full-stack topology needs bundles; a fresh worktree has none).
   verify:
     full: npm run verify:full:quiet

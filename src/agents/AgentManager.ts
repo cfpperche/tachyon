@@ -28,7 +28,7 @@ import {
   type ActivityRenameSnapshot,
 } from "../activity/logStore.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
-import { spawnContractCompletion, type DelegationGate, type SpawnContract } from "../bridge/spawnContract.js";
+import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
@@ -1601,7 +1601,7 @@ export class AgentManager {
     name: string,
     def: AgentDef,
     parent: string | undefined,
-    primerCtx?: { delegator?: string; gate?: DelegationGate; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"] },
+    primerCtx?: { delegator?: string; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"] },
     taskBrief?: string,
     taskContract?: SpawnContract,
     soul?: ResolvedSoul,
@@ -1644,7 +1644,6 @@ export class AgentManager {
           agentName: name,
           delegator: primerCtx?.delegator,
           parent,
-          gate: primerCtx?.gate,
           verify: primerCtx?.verify ?? this.opts.getConfig()?.settings.verify,
         })
       : deliverable;

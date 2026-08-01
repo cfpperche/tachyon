@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
 
+// t-8b8315 — the `gate` this sample carried was the retired gated-delegation shape; the assertion
+// below never depended on it. The file's own provenance is now stale in a way this edit does not
+// fix: it is a {agent}Behavior.gen.test.ts oracle from the retired behavior adapter, one of 64.
 const sample: PrimerInput = {
   agentName: "primerShape",
   delegator: "claude",
-  gate: { behaviorTest: "primer keeps project Git workflow outside the global protocol", owns: ["src/bridge/", "test/unit/"] },
 };
 
 describe("container-generated delegation behavior", () => {

@@ -115,7 +115,15 @@ describe("tachyon.schema.json — settings.verify", () => {
     expect(verify?.description).toContain("Project-owned");
     expect(verify?.description).toContain("no package-manager");
     expect(Object.keys(verify?.properties ?? {}).sort()).toEqual(["affected", "behavior", "full", "prepare", "typecheck"]);
-    expect(verify?.dependencies).toEqual({ behavior: ["prepare"] });
+    /**
+     * t-8b8315 — `behavior` used to REQUIRE `prepare`, because the retired verify_task provisioned
+     * each isolated BASE/HEAD clone before running the named oracle. With the adapter retired and
+     * ignored, that dependency only had the power to fail a config over a key the loader discards,
+     * so it is gone and `behavior` is published as deprecated instead.
+     */
+    expect(verify?.dependencies).toBeUndefined();
+    expect(behavior?.deprecated).toBe(true);
+    expect(behavior?.description).toContain("RETIRED and ignored");
 
     for (const field of [full, typecheck, prepare, affected]) {
       expect(field).toMatchObject({ type: "string", minLength: 1 });

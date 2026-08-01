@@ -92,8 +92,12 @@ export function hostFallbackLine(input: {
   const base = input.baseSha.slice(0, 12);
   const ageMin = Math.max(1, Math.round(input.ageMs / 60_000));
   // t-5e9bf8 — the line has to name the fact that armed it, because the reader's next move differs:
-  // a gated delivery is inspected through verify_task, an assigned task through its own journal.
+  // an assigned agent is read through its task journal, an unassigned one only through its pane.
   // Saying "gated child" about an assigned agent would send them to the wrong place.
+  //
+  // t-8b8315 — the unassigned branch used to say "inspect verify_task", and that tool was retired
+  // with the Delivery machinery. This line fires exactly when a human is already confused about a
+  // silent agent; naming a door that no longer opens spends their next move on discovering that.
   if (input.evidence === "verified-since") {
     return (
       `[tachyon] host-fallback/unverified: assigned agent '${input.agent}' idle/clean with a VERIFIED ` +
@@ -103,7 +107,7 @@ export function hostFallbackLine(input: {
   return (
     `[tachyon] host-fallback/unverified: gated child '${input.agent}' idle/clean, ` +
     `delivery ${input.deliveryId}, HEAD ${head} (base ${base}), ~${ageMin}m, no notify_agent — ` +
-    `inspect verify_task / Activity; not an accept`
+    `read its pane (read_output) / Activity; not an accept`
   );
 }
 

@@ -339,16 +339,13 @@
         },
         "verify": {
           "type": "object",
-          "description": "Project-owned commands and optional named-behavior adapter used by verify_task. Tachyon supplies no package-manager, runner, or test-location defaults.",
+          "description": "Project-owned verification commands surfaced to agents in their spawn primer and run by the human-facing verify actions. Tachyon supplies no package-manager, runner, or test-location defaults.",
           "additionalProperties": false,
-          "dependencies": {
-            "behavior": ["prepare"]
-          },
           "properties": {
             "full": {
               "type": "string",
               "minLength": 1,
-              "description": "Full verification argv command. Required when verify_task is called with full=true."
+              "description": "Full verification argv command — the gate an agent is told to run on the tree it delivers."
             },
             "typecheck": {
               "type": "string",
@@ -358,7 +355,7 @@
             "prepare": {
               "type": "string",
               "minLength": 1,
-              "description": "Optional project-owned argv command that provisions dependencies independently in every isolated BASE/HEAD clone; required when behavior is configured."
+              "description": "Optional project-owned argv command that provisions dependencies in a fresh clone or worktree before verification runs."
             },
             "affected": {
               "type": "string",
@@ -367,7 +364,8 @@
             },
             "behavior": {
               "type": "object",
-              "description": "Explicit opt-in adapter for plain behavior-test identifiers. The named oracle must already be project-owned and tracked; cmd: verifiers bypass this adapter.",
+              "deprecated": true,
+              "description": "RETIRED and ignored. It bound a project-owned oracle to a gated spawn, and only the removed verify_task ever redeemed that binding. The key stays known so a workspace that configured it is told so by name; remove it from tachyon.yml.",
               "additionalProperties": false,
               "required": ["adapter", "command", "stubPath", "executorPaths"],
               "properties": {
@@ -466,18 +464,21 @@
         },
         "gitDelivery": {
           "type": "object",
-          "description": "Authority allowlists for linked GitDelivery projection integration and pruning.",
+          "deprecated": true,
+          "description": "RETIRED and ignored. It authorized git_delivery_integrate, git_delivery_prune and delivery_salvage, all removed with the Delivery subsystem. The key stays known so a workspace that declares it is told so by name instead of being told it misspelled something; remove it from tachyon.yml.",
           "additionalProperties": false,
           "properties": {
             "prunePrincipals": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 },
-              "description": "Agent principals allowed to prune deliveries they do not own."
+              "deprecated": true,
+              "description": "RETIRED and ignored — the pruning it authorized no longer exists."
             },
             "integratePrincipals": {
               "type": "array",
               "items": { "type": "string", "minLength": 1 },
-              "description": "Agent principals allowed to record canonical Delivery integration when live Git proves containment."
+              "deprecated": true,
+              "description": "RETIRED and ignored — the integration it authorized no longer exists."
             }
           }
         },

@@ -12,14 +12,8 @@ import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
 
 /** Narrow read-only gated Delivery shape so this module stays a leaf
  *  (no bridge-internal coupling beyond the pure stub-path helper). */
-export interface PrimerGate {
-  behaviorTest: string;
-  owns?: string[];
-  stubPath?: string;
-}
-
 /** Mirrors TachyonConfig["settings"]["verify"] (src/config/loadConfig.ts) — the SAME shape
- *  verify_task reads via the now-exported loadVerifySettings, so the primer never invents commands. */
+ *  the agent is told to run, so the primer never invents commands. */
 export interface PrimerVerifySettings {
   full?: string;
   typecheck?: string;
@@ -30,10 +24,8 @@ export interface PrimerInput {
   agentName: string;
   /** Gated delegation's delegator (spec 363 T1's doorbell target), when this is a gated spawn. */
   delegator?: string;
-  /** Plain Temporary lineage parent, when this is an ungated Temporary child. */
+  /** Plain Temporary lineage parent. */
   parent?: string;
-  /** Present only for a gated delegation (spec 246 `gate`). */
-  gate?: PrimerGate;
   /** Explicit settings.verify facts from tachyon.yml; undefined commands are omitted, never inferred. */
   verify?: PrimerVerifySettings;
 }
@@ -67,17 +59,7 @@ function spawnerOf(input: PrimerInput): string | undefined {
 
 function identityLines(input: PrimerInput): string[] {
   const spawner = spawnerOf(input);
-  const lines = [`Identity: you are agent "${input.agentName}"${spawner ? `, spawned by "${spawner}"` : " (no delegator/parent on record)"}.`];
-  if (input.gate) {
-    lines.push(
-      `Gated delegation — canonical behavior verifier: "${input.gate.behaviorTest}"${input.gate.stubPath ? ` at ${input.gate.stubPath}` : ""}.`,
-      ...(input.gate.stubPath
-        ? ["⚠ FIXED PROJECT ORACLE: verify_task checks this exact name and file hash — change the implementation, NEVER edit, rename, or remove the oracle."]
-        : ["⚠ PROTOCOL IDENTIFIER: verify_task checks this exact verifier fail-before/pass-after — do not replace it."]),
-    );
-    if (input.gate.owns && input.gate.owns.length > 0) lines.push(`Owns: ${input.gate.owns.join(", ")}.`);
-  }
-  return lines;
+  return [`Identity: you are agent "${input.agentName}"${spawner ? `, spawned by "${spawner}"` : " (no delegator/parent on record)"}.`];
 }
 
 function protocolLines(input: PrimerInput): string[] {
@@ -118,15 +100,12 @@ function beforeFinishingVerificationLines(input: PrimerInput): string[] {
 }
 
 /** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7):
- *  precedence, spawner, gate and verify facts are computed once and read by both outputs. */
+ *  precedence, spawner and verify facts are computed once and read by both outputs. */
 export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const interpolated = [
     input.agentName,
     input.delegator,
     input.parent,
-    input.gate?.behaviorTest,
-    ...(input.gate?.owns ?? []),
-    input.gate?.stubPath,
     input.verify?.full,
     input.verify?.typecheck,
   ].filter((value): value is string => value !== undefined);
@@ -146,11 +125,6 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const beforeFinishingLines = [
     BEFORE_FINISHING_OPEN,
     ...beforeFinishingVerificationLines(input),
-    ...(input.gate?.stubPath
-      ? [`Make "${input.gate.behaviorTest}" pass by changing implementation; do NOT edit its fixed oracle.`]
-      : input.gate
-        ? [`Make canonical verifier "${input.gate.behaviorTest}" fail at BASE_SHA and pass at delivered HEAD.`]
-        : []),
     ...(spawner
       // t-21bcb7 — a notify is best-effort pane input, not history: it points at durable detail
       // instead of carrying it, which is also what keeps it inside the one-line cap.

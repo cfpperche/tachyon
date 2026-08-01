@@ -14,14 +14,15 @@ import {
 const fullCheck = "./scripts/verify --scope='all modules'";
 const typecheck = "./scripts/typecheck --no-emit";
 
-const gatedAdhoc: PrimerInput = {
+/**
+ * t-8b8315 — this used to be `gatedAdhoc`, carrying a `gate` with a behavior oracle. Gated
+ * delegation was retired with the Delivery machinery and nothing has populated `gate` since, so the
+ * richest input the primer can actually receive today is a delegator plus configured checks.
+ * Keeping the dead field here would have kept the dead branch alive by exercising only itself.
+ */
+const delegatedAdhoc: PrimerInput = {
   agentName: "primerT3",
   delegator: "claude",
-  gate: {
-    behaviorTest: "renders the primer for a gated delegation",
-    owns: ["src/bridge/primer.ts", "test/unit/primer.test.ts"],
-    stubPath: "test/unit/primerT3Behavior.gen.test.ts",
-  },
   verify: { full: fullCheck, typecheck },
 };
 
@@ -51,14 +52,11 @@ const removedProjectPolicies = [
 ];
 
 describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
-  it("gated Temporary preserves identity, gate facts, real-target doorbell and sourced configured checks", () => {
-    const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
+  it("delegated Temporary preserves identity, real-target doorbell and sourced configured checks", () => {
+    const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
     expect(primer.startsWith(PRIMER_OPEN)).toBe(true);
     expect(primer.endsWith(PRIMER_CLOSE)).toBe(true);
     expect(primer).toContain('spawned by "claude"');
-    expect(primer).toContain('canonical behavior verifier: "renders the primer for a gated delegation"');
-    expect(primer).toContain("test/unit/primerT3Behavior.gen.test.ts");
-    expect(primer).toMatch(/FIXED PROJECT ORACLE/);
     expect(primer).not.toContain("notify_agent");
     expect(primer).toContain("Configured verification (source: workspace config settings.verify):");
     expect(primer.split("\n")).toContain(`  - full: ${fullCheck}`);
@@ -73,7 +71,6 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
       `Run configured check (workspace config settings.verify.full): ${fullCheck}`,
     );
     expect(beforeFinishing).not.toContain("workspace config settings.verify.typecheck");
-    expect(beforeFinishing).toContain('Make "renders the primer for a gated delegation" pass by changing implementation; do NOT edit its fixed oracle.');
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
     expect(beforeFinishing).not.toMatch(/green|tree clean|full verify/i);
   });
@@ -101,7 +98,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
   const FOCUSED = "Use focused tests while implementing; run this on the tree you deliver.";
 
   it("prices verification per delivery, and only where a check was actually configured", () => {
-    const configured = renderPrimer(gatedAdhoc).beforeFinishing.split("\n");
+    const configured = renderPrimer(delegatedAdhoc).beforeFinishing.split("\n");
     expect(configured).toContain(FOCUSED);
     // Ordering is the meaning: the advice qualifies the check below it. Above the check it reads as
     // a rule about the whole section; below it, as an afterthought about something already run.
@@ -116,7 +113,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
   });
 
   it("points the doorbell at durable detail instead of carrying it", () => {
-    const line = renderPrimer(gatedAdhoc).beforeFinishing
+    const line = renderPrimer(delegatedAdhoc).beforeFinishing
       .split("\n")
       .find((candidate) => candidate.includes("notify_agent"));
     expect(line).toBeDefined();
@@ -126,32 +123,33 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(line).toMatch(/where the detail lives/);
     // Still one instruction on one line: the summary has a one-line cap, and advice that does not
     // fit the thing it describes teaches the agent to overflow it.
-    expect(renderPrimer(gatedAdhoc).beforeFinishing.split("\n").filter((l) => l.includes("notify_agent"))).toHaveLength(1);
+    expect(renderPrimer(delegatedAdhoc).beforeFinishing.split("\n").filter((l) => l.includes("notify_agent"))).toHaveLength(1);
   });
 
-  it("plain Temporary identifies its parent as the doorbell target without gate text", () => {
+  it("plain Temporary identifies its parent as the doorbell target", () => {
     const { primer, beforeFinishing } = renderPrimer(plainAdhoc);
     expect(primer).toContain('spawned by "claude"');
-    expect(primer).not.toContain("PROTOCOL IDENTIFIER");
-    expect(beforeFinishing).not.toMatch(/Make ".*" pass WITHOUT renaming/);
     expect(primer).not.toContain("notify_agent");
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
   });
 
-  it("keeps a runner-neutral verifier free of stub and rename instructions", () => {
-    const { primer, beforeFinishing } = renderPrimer({
-      agentName: "language-neutral",
-      parent: "parent",
-      gate: { behaviorTest: "cmd:node scripts/check-behavior.mjs" },
-    });
-    const combined = `${primer}\n${beforeFinishing}`;
-    expect(primer).toContain('canonical behavior verifier: "cmd:node scripts/check-behavior.mjs".');
-    expect(combined).not.toContain("test/unit/");
-    expect(combined).not.toContain(".ts");
-    expect(combined).not.toMatch(/renam/i);
-    expect(beforeFinishing).toContain(
-      'Make canonical verifier "cmd:node scripts/check-behavior.mjs" fail at BASE_SHA and pass at delivered HEAD.',
-    );
+  /**
+   * t-8b8315 — the retired gated branch was the only thing that ever put an oracle path, a
+   * "FIXED PROJECT ORACLE" warning or a rename prohibition into a brief. Asserting their absence
+   * on every shape is what keeps the removal from being quietly undone: a reintroduced branch
+   * would have to defeat this, not merely go unnoticed.
+   */
+  it("no shape carries gated-delegation instructions any more", () => {
+    for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+      const { primer, beforeFinishing } = renderPrimer(input);
+      const combined = `${primer}\n${beforeFinishing}`;
+
+      expect(combined).not.toMatch(/FIXED PROJECT ORACLE|PROTOCOL IDENTIFIER/);
+      expect(combined).not.toMatch(/canonical behavior verifier|canonical verifier/);
+      expect(combined).not.toMatch(/BASE_SHA|fixed oracle/);
+      expect(combined).not.toMatch(/renam/i);
+      expect(combined).not.toContain("Behavior.gen.test.ts");
+    }
   });
 
   it("declared agent without lineage receives no placeholder or doorbell instruction", () => {
@@ -186,37 +184,38 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
   });
 
   it("renders byte-identical output for the same facts", () => {
-    expect(renderPrimer({ ...gatedAdhoc })).toEqual(renderPrimer({ ...gatedAdhoc }));
+    expect(renderPrimer({ ...delegatedAdhoc })).toEqual(renderPrimer({ ...delegatedAdhoc }));
   });
 
+  /**
+   * t-8b8315 — four of these cases used to inject through `gate.behaviorTest` / `gate.owns`. Those
+   * fields are gone, so the coverage moves onto the facts that ARE still interpolated. The rule
+   * being defended never depended on which field carried the payload: every fact the primer
+   * interpolates is chosen upstream of this function, so every one of them is attacker-adjacent.
+   */
   it.each([
     { label: "agent name", input: { agentName: "worker\u001b[2J" } },
-    { label: "behavior identifier", input: { agentName: "worker", gate: { behaviorTest: "promise\u001b]8;;https://example.test\u0007" } } },
-    { label: "owned path", input: { agentName: "worker", gate: { behaviorTest: "promise", owns: ["src\u001b[2J"] } } },
+    { label: "delegator", input: { agentName: "worker", delegator: "boss\u001b]8;;https://example.test\u0007" } },
+    { label: "parent", input: { agentName: "worker", parent: "boss\u001b[2J" } },
     { label: "configured check", input: { agentName: "worker", verify: { full: "npm test\u007f" } } },
-    { label: "C1 behavior identifier", input: { agentName: "worker", gate: { behaviorTest: "promise\u009b2J" } } },
+    { label: "C1 in delegator", input: { agentName: "worker", delegator: "boss\u009b2J" } },
     { label: "Unicode line separator", input: { agentName: "worker", verify: { full: "npm test\u2028spoof" } } },
-    { label: "bidi isolate", input: { agentName: "worker", gate: { behaviorTest: "promise", owns: ["src\u2066spoof"] } } },
+    { label: "bidi isolate", input: { agentName: "worker", parent: "boss\u2066spoof" } },
   ])("rejects control characters in interpolated $label facts", ({ input }) => {
     expect(() => renderPrimer(input)).toThrow(/control characters/);
   });
 
   it("budget guard: the maximal-content primer stays within the hard line budgets", () => {
-    const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
+    const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
     expect(primer.split("\n").length).toBeLessThanOrEqual(PRIMER_LINE_BUDGET);
     expect(beforeFinishing.split("\n").length).toBeLessThanOrEqual(BEFORE_FINISHING_LINE_BUDGET);
   });
 
-  it("single source: both sections agree on the real doorbell target and canonical verifier name", () => {
-    const rendered = renderPrimer(gatedAdhoc);
+  it("single source: both sections agree on the real doorbell target", () => {
+    const rendered = renderPrimer(delegatedAdhoc);
     const doorbellInBeforeFinishing = rendered.beforeFinishing.match(/notify_agent\(to: "([^"]+)"/)?.[1];
     expect(rendered.primer).not.toContain("notify_agent");
     expect(doorbellInBeforeFinishing).toBe("claude");
-
-    const testInPrimer = rendered.primer.match(/canonical behavior verifier: "([^"]+)"/)?.[1];
-    const testInBeforeFinishing = rendered.beforeFinishing.match(/Make "([^"]+)" pass/)?.[1];
-    expect(testInPrimer).toBe(gatedAdhoc.gate!.behaviorTest);
-    expect(testInPrimer).toBe(testInBeforeFinishing);
   });
 
   it("states separate precedence for task contract, Tachyon protocol and project-owned guidance", () => {
@@ -231,8 +230,8 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
 
 describe("wrapWithPrimer", () => {
   it("spawn brief carries the generated primer and before-finishing block", () => {
-    const wrapped = wrapWithPrimer("TASK: do the thing", gatedAdhoc);
-    const { primer, beforeFinishing } = renderPrimer(gatedAdhoc);
+    const wrapped = wrapWithPrimer("TASK: do the thing", delegatedAdhoc);
+    const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
     expect(wrapped).toBe(`${primer}\n\nTASK: do the thing\n\n${beforeFinishing}`);
     expect(wrapped.indexOf(PRIMER_OPEN)).toBeLessThan(wrapped.indexOf("TASK: do the thing"));
     expect(wrapped.indexOf("TASK: do the thing")).toBeLessThan(wrapped.indexOf(BEFORE_FINISHING_OPEN));

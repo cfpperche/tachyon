@@ -1845,9 +1845,13 @@ export function parseConfig(yamlText: string): ParseResult {
           "settings.gitDelivery was ignored because the Delivery tools it authorized (git_delivery_integrate, git_delivery_prune, delivery_salvage) were retired; remove settings.gitDelivery from tachyon.yml",
         );
       }
+      // t-8b8315 — this message used to say Delivery "is always active", which was true when the
+      // key was neutralized and false once t-e88c8a removed the machinery. A retirement notice that
+      // outlives the thing it describes tells the reader their setting is redundant when it is in
+      // fact meaningless, so they leave it in place.
       if (raw.settings.delivery !== undefined) {
         warnings.push(
-          "settings.delivery was ignored because canonical Delivery with mechanism-only handoff is always active; remove settings.delivery from tachyon.yml",
+          "settings.delivery was ignored because the Delivery subsystem was retired; remove settings.delivery from tachyon.yml",
         );
       }
       if (raw.settings.taskNotifications !== undefined) {

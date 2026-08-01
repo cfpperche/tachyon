@@ -19,18 +19,6 @@ export interface SpawnContract {
 
 export type SpawnContractCompletion = "deliverable" | "done_when";
 
-/** Verification requirements attached to a canonical gated spawn. The durable copy lives in
- *  Delivery.contract; this shape only carries the request across the Bridge -> AgentManager edge. */
-export interface DelegationGate {
-  behaviorTest: string;
-  owns: string[];
-  stubPath?: string;
-  /** SHA-256 of the fixed, project-owned behavior oracle bytes bound at spawn. */
-  oracleHash?: string;
-  /** SHA-256 by tracked project path for the fixed verifier mechanics bound at spawn. */
-  executorHashes?: Record<string, string>;
-}
-
 /**
  * t-11a2d1 — composition used to silently CLIP each slot to a per-field cap and the whole brief to
  * a 1800-char total, so a real coordinator contract (2-6KB observed in the wild) lost content the
