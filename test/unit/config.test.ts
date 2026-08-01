@@ -280,7 +280,7 @@ describe("parseConfig", () => {
 
   it("parses the closed project-owned settings.verify contract without touching spec-214 worktree verify", () => {
     const { config, errors } = parseConfig(
-      `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: "  npm run test:all  "\n    typecheck: " npm run typecheck "\n    prepare: " npm ci --ignore-scripts "\n    affected: " npx vitest related --run "\n    behavior:\n      adapter: vitest-name\n      command: " npm test -- "\n      stubPath: test/unit/{agent}Behavior.gen.test.ts\n      executorPaths: [package.json, package-lock.json, vitest.config.ts]\n  worktree:\n    verify: ci\n`,
+      `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: "  npm run test:all  "\n    typecheck: " npm run typecheck "\n    prepare: " npm ci --ignore-scripts "\n    affected: " npx vitest related --run "\n  worktree:\n    verify: ci\n`,
     );
     expect(errors).toEqual([]);
     expect(config?.settings.verify).toEqual({
@@ -288,14 +288,24 @@ describe("parseConfig", () => {
       typecheck: "npm run typecheck",
       prepare: "npm ci --ignore-scripts",
       affected: "npx vitest related --run",
-      behavior: {
-        adapter: "vitest-name",
-        command: "npm test --",
-        stubPath: "test/unit/{agent}Behavior.gen.test.ts",
-        executorPaths: ["package.json", "package-lock.json", "vitest.config.ts"],
-      },
     });
     expect(config?.settings.worktree?.verify).toBe("ci");
+  });
+
+  /**
+   * t-e88c8a — `settings.verify.behavior` configured the named-behavior oracle that `verify_task`
+   * bound to a gated spawn. Both are retired, so the key is accepted-and-warned rather than made an
+   * unknown key: a workspace that configured it is told what happened instead of reading a refusal
+   * that looks like a typo. `full`/`typecheck`/`prepare`/`affected` are untouched — the primer still
+   * hands those to agents.
+   */
+  it("accepts a retired settings.verify.behavior with a warning, and drops it from the parsed config", () => {
+    const { config, errors, warnings } = parseConfig(
+      `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: npm test\n    behavior:\n      adapter: vitest-name\n      command: npm test --\n      stubPath: test/unit/{agent}Behavior.gen.test.ts\n      executorPaths: [package.json]\n`,
+    );
+    expect(errors).toEqual([]);
+    expect(warnings.some((w) => w.includes("settings.verify.behavior was ignored") && w.includes("verify_task"))).toBe(true);
+    expect(config?.settings.verify).toEqual({ full: "npm test" });
   });
 
   it("keeps settings.verify closed and rejects empty full, typecheck, and affected commands", () => {
@@ -307,64 +317,7 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).errors[0]).toContain("settings.verify: unknown key 'extra'");
   });
 
-  it("rejects unknown or incomplete named-behavior adapters", () => {
-    const base = `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    behavior:\n`;
-    const unknown = parseConfig(
-      `${base.replace("    behavior:\n", "    prepare: npm ci --ignore-scripts\n    behavior:\n")}      adapter: jest-name\n      command: npm test --\n      stubPath: test/unit/{agent}Behavior.gen.test.ts\n      executorPaths: [package.json]\n`,
-    );
-    expect(unknown.errors.some((error) => error.includes("settings.verify.behavior.adapter") && error.includes("vitest-name"))).toBe(true);
 
-    const missing = parseConfig(`${base}      {}\n`);
-    expect(missing.errors.some((error) => error.includes("settings.verify.behavior.adapter"))).toBe(true);
-    expect(missing.errors.some((error) => error.includes("settings.verify.prepare"))).toBe(true);
-    expect(missing.errors.some((error) => error.includes("settings.verify.behavior.command"))).toBe(true);
-    expect(missing.errors.some((error) => error.includes("settings.verify.behavior.stubPath"))).toBe(true);
-    expect(missing.errors.some((error) => error.includes("settings.verify.behavior.executorPaths"))).toBe(true);
-
-    const empty = parseConfig(
-      `${base.replace("    behavior:\n", "    prepare: \"   \"\n    behavior:\n")}      adapter: vitest-name\n      command: "   "\n      stubPath: ""\n      executorPaths: []\n`,
-    );
-    expect(empty.errors.some((error) => error.includes("settings.verify.prepare") && error.includes("non-empty"))).toBe(true);
-    expect(empty.errors.some((error) => error.includes("settings.verify.behavior.command") && error.includes("non-empty"))).toBe(true);
-    expect(empty.errors.some((error) => error.includes("settings.verify.behavior.stubPath") && error.includes("non-empty"))).toBe(true);
-    expect(empty.errors.some((error) => error.includes("settings.verify.behavior.executorPaths") && error.includes("non-empty"))).toBe(true);
-  });
-
-  it("rejects unsafe behavior stub templates and extra behavior keys", () => {
-    const base = `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    prepare: npm ci --ignore-scripts\n    behavior:\n      adapter: vitest-name\n      command: npm test --\n      executorPaths: [package.json]\n`;
-    const unsafeTemplates: Array<[string, string]> = [
-      ["/tmp/{agent}.test.ts", "workspace-relative"],
-      ["../{agent}.test.ts", "'..'"],
-      ["test\\{agent}.test.ts", "POSIX"],
-      [".git/{agent}.test.ts", "Git metadata"],
-      ["test/unit/fixed.test.ts", "{agent}"],
-      ["test//{agent}.test.ts", "empty path segments"],
-      [" test/{agent}.test.ts ", "leading or trailing whitespace"],
-    ];
-    for (const [stubPath, expected] of unsafeTemplates) {
-      const result = parseConfig(`${base}      stubPath: ${JSON.stringify(stubPath)}\n`);
-      expect(result.errors.some((error) => error.includes("settings.verify.behavior.stubPath") && error.includes(expected))).toBe(true);
-    }
-
-    const extra = parseConfig(
-      `${base}      stubPath: test/unit/{agent}Behavior.gen.test.ts\n      framework: vitest\n`,
-    );
-    expect(extra.errors.some((error) => error.includes("settings.verify.behavior: unknown key 'framework'"))).toBe(true);
-
-    const unsafeExecutor = parseConfig(
-      `${base.replace("executorPaths: [package.json]", "executorPaths: [package.json, ../outside.js]")}      stubPath: test/unit/{agent}Behavior.gen.test.ts\n`,
-    );
-    expect(unsafeExecutor.errors.some((error) =>
-      error.includes("settings.verify.behavior.executorPaths[1]") && error.includes("'..'"),
-    )).toBe(true);
-
-    const duplicateExecutor = parseConfig(
-      `${base.replace("executorPaths: [package.json]", "executorPaths: [package.json, package.json]")}      stubPath: test/unit/{agent}Behavior.gen.test.ts\n`,
-    );
-    expect(duplicateExecutor.errors.some((error) =>
-      error.includes("settings.verify.behavior.executorPaths[1]") && error.includes("duplicate path"),
-    )).toBe(true);
-  });
 
   it("parses ordered project-owned guidance paths, trimming only their outer whitespace", () => {
     const { config, errors } = parseConfig(

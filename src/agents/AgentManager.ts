@@ -16,7 +16,6 @@ import {
   hasDeliveryMarker,
   isInvalidDeliveryMarker,
   isValidDeliveryBinding,
-  type SessionDeliveryBinding,
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
@@ -73,7 +72,6 @@ import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.
 import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
 import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
-import type { CanonicalDeliverySpawnReceipt } from "../delivery/types.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOutcome } from "./formation/lifecycleConsumer.js";
@@ -287,49 +285,6 @@ export interface PostmortemOutput {
   maxBytes: number;
 }
 
-export interface DeliveryJoinRequest {
-  deliveryId: string;
-  role: "implementer" | "reviewer" | "fixer" | "recovery";
-  ownsSubset: string[];
-  expectedHead: string;
-  principal?: string;
-  /** A declared definition used for a distinct, ephemeral Delivery execution. */
-  declaredAgent?: string;
-  operationId: string;
-}
-
-/** A receipt is deliberately local to one Delivery launch.  A name is not cleanup authority. */
-interface DeliveryLaunchAttempt {
-  /** Closed at acquisition: cleanup must never re-infer ownership from mutable maps. */
-  readonly mode: "bound-ephemeral" | "cmd-temporary-ephemeral" | "saved";
-  acquired: boolean;
-  token: boolean;
-  materialized: "not-started" | "attempted" | "completed";
-  session: "not-started" | "attempted" | "completed";
-  ledger: boolean;
-}
-
-function deliveryDefinitionSnapshot(source: AgentEntry): AgentEntry {
-  const clone = structuredClone(source) as AgentEntry;
-  return {
-    ...clone, autostart: false, restart: "never", kind: "agent",
-    ...("cwd" in clone ? { cwd: undefined } : {}),
-    ...("worktree" in clone ? { worktree: undefined } : {}),
-    ...("branch" in clone ? { branch: undefined } : {}),
-    ...("worktreeSetup" in clone ? { worktreeSetup: undefined } : {}),
-    ...("verify" in clone ? { verify: undefined } : {}),
-    ...("subagents" in clone ? { subagents: undefined } : {}),
-  };
-}
-
-export interface PreparedDeliveryJoin {
-  cwd: string;
-  worktree: WorktreeRecord;
-  reservationNonce: string;
-  /** SDD 368 T14 — reserved segment id from the pending lease; required for reverse binding. */
-  segmentId: string;
-}
-
 /**
  * Hermes surfaces that cannot consume HERMES_TUI_QUERY as a managed startup brief.
  * argv is the parseLaunchCommand argv (binary path as argv[0]).
@@ -387,65 +342,6 @@ function piToolFilterPosture(cmd: string): PiToolFilterPosture {
     : "other";
 }
 
-function reviewerSafeCommand(cmd: string): { cmd: string; advisory?: string } {
-  const parsed = parseLaunchCommand(cmd);
-  if (!parsed || !parsed.allWordsLiteral) throw new Error("reviewer command is structurally ambiguous or uses shell expansion");
-  const runtime = adapterFor(parsed.binary)?.runtime;
-  if (parsed.packageLauncher && (!runtime || parsed.binary.includes("@") || parsed.binary.includes("/"))) {
-    throw new Error(`reviewer command cannot prove the runtime adapter after ${parsed.packageLauncher}`);
-  }
-  const boundary = parsed.argv.indexOf("--");
-  const options = boundary < 0 ? parsed.argv : parsed.argv.slice(0, boundary);
-  const has = (flag: string) => options.includes(flag) || options.some((token) => token.startsWith(`${flag}=`));
-  const valuesFor = (flags: string[]): string[] => {
-    const values: string[] = [];
-    for (let index = 0; index < options.length; index++) {
-      const arg = options[index]!;
-      const flag = flags.find((candidate) => arg === candidate || arg.startsWith(`${candidate}=`));
-      if (!flag) continue;
-      const value = arg === flag ? options[++index] : arg.slice(flag.length + 1);
-      if (!value || value.startsWith("-")) throw new Error(`reviewer command has an incomplete ${flag} mode`);
-      values.push(value);
-    }
-    return values;
-  };
-  const bypass = options.some((token) => token.startsWith("--dangerously-"))
-    || has("--yolo") || has("--always-approve") || has("--allow-all");
-  if (bypass) throw new Error("reviewer command refuses bypass flags");
-  const insert = (flag: string) => `${cmd.slice(0, parsed.runtimeTokenEnd)} ${flag}${cmd.slice(parsed.runtimeTokenEnd)}`;
-  if (runtime === "codex") {
-    if (has("--full-auto")) throw new Error("reviewer command refuses --full-auto");
-    const sandboxes: string[] = [];
-    for (let index = 0; index < options.length; index++) {
-      const arg = options[index]!;
-      let value: string | undefined;
-      if (arg === "--sandbox" || arg === "-s") value = options[++index];
-      else if (arg.startsWith("--sandbox=")) value = arg.slice("--sandbox=".length);
-      else if (arg.startsWith("-s=")) value = arg.slice(3);
-      else if (arg.startsWith("-s") && arg.length > 2) value = arg.slice(2);
-      else continue;
-      if (!value || value.startsWith("-")) throw new Error("reviewer command has an incomplete sandbox mode");
-      sandboxes.push(value);
-    }
-    if (sandboxes.length > 1) throw new Error("reviewer command has duplicate sandbox declarations");
-    if (sandboxes.some((sandbox) => sandbox !== "read-only")) throw new Error(`reviewer command conflicts with sandbox mode ${sandboxes.join(",")}`);
-    return { cmd: sandboxes.length ? cmd : insert("--sandbox read-only") };
-  }
-  if (runtime === "claude" || runtime === "grok") {
-    const permissions = valuesFor(["--permission-mode"]);
-    if (permissions.length > 1) throw new Error("reviewer command has duplicate permission-mode declarations");
-    if (permissions.some((permission) => permission !== "plan")) throw new Error(`reviewer command conflicts with permission mode ${permissions.join(",")}`);
-    return { cmd: permissions.length ? cmd : insert("--permission-mode plan") };
-  }
-  if (runtime === "pi") {
-    const posture = piToolFilterPosture(cmd);
-    if (posture === "other") {
-      throw new Error("reviewer command has conflicting Pi tool filters; use exactly --exclude-tools bash,edit,write");
-    }
-    return { cmd: posture === "reviewer-read-only" ? cmd : insert("--exclude-tools bash,edit,write") };
-  }
-  return { cmd, advisory: `reviewer runtime '${path.basename(parsed.binary) || "unknown"}' has no measured shell-level read-only mode; command left unchanged` };
-}
 
 /**
  * t-b88106 — what a launch asks the PRESENTATION layer to do about this agent's surface.
@@ -497,10 +393,6 @@ export interface SpawnOptions {
   contract?: SpawnContract;
   /** spec 246 — set when the spawner bypassed the contract gate (`skip_contract_reason`); recorded for audit. */
   contractSkipReason?: string;
-  /** spec 362 — a gated delegation must be born in an isolated worktree and later verified by behavior test. */
-  gate?: DelegationGate;
-  /** SDD 368 T6 — join an existing canonical Delivery; never creates a fallback worktree. */
-  deliveryJoin?: DeliveryJoinRequest;
 }
 
 export interface AgentManagerOptions {
@@ -653,7 +545,6 @@ export interface AgentManagerOptions {
   resolveSpawnCwd?: (ctx: SpawnCwdContext) => Promise<{
     cwd: string;
     worktree?: WorktreeRecord;
-    delegationBaseSha?: string;
     created?: boolean;
     preparationLocked?: boolean;
     rollbackHeadSha?: string;
@@ -661,16 +552,6 @@ export interface AgentManagerOptions {
     preparationHeadBefore?: string;
     preparationHeadAfter?: string;
   } | null>;
-  /** Persist canonical Delivery + linked Git projection after a gated agent successfully starts. */
-  recordCanonicalDelivery?: (input: {
-    name: string;
-    delegator?: string;
-    gate: DelegationGate;
-    contract: SpawnContract;
-    worktree: WorktreeRecord;
-    baseSha: string;
-    verifySettings?: TachyonConfig["settings"]["verify"];
-  }) => CanonicalDeliverySpawnReceipt | Promise<CanonicalDeliverySpawnReceipt>;
   /**
    * spec 225 — read-only "does the source worktree have uncommitted changes?" probe, for the fork's
    * dirty warning (those changes are NOT carried into the fork, which branches off committed HEAD).
@@ -714,15 +595,6 @@ export interface AgentManagerOptions {
   removeHarnessHome?: (name: string) => void;
   /** Remove a managed Pi agent's private transcript namespace at ephemeral end-of-life. */
   removePiSessionDir?: (name: string) => void;
-  prepareDeliveryJoin?: (name: string, request: DeliveryJoinRequest) => Promise<PreparedDeliveryJoin>;
-  confirmDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number) => Promise<void>;
-  failDeliveryJoin?: (name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, error: unknown) => Promise<void>;
-  /**
-   * SDD 368 T14 — agents denied by the read-only reload snapshot (includes marker-less
-   * cross-store crash rows). Generic spawn/resume/restart/autostart/readiness consult this;
-   * explicit deliveryJoin remains allowed.
-   */
-  isDeliveryLifecycleDenied?: (name: string) => boolean;
   /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
   launchPreflight?: RuntimeLaunchPreflightPort;
   /** Bounded, non-inference post-launch observation. Injectable for fake-timer tests. */
@@ -765,8 +637,6 @@ export interface SpawnCwdContext {
   temporary: boolean;
   /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
   isRestart: boolean;
-  /** spec 362 — present only when spawn_agent requested a verification gate; must fail closed without a worktree. */
-  gate?: DelegationGate;
   /** Immutable project verifier snapshot shown in the primer and persisted with this delegation. */
   verifySettings?: TachyonConfig["settings"]["verify"];
 }
@@ -1864,7 +1734,7 @@ export class AgentManager {
   }
 
   /** Spawns a declared agent, or a Temporary one when `opts.cmd` is given. */
-  async spawn(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
+  async spawn(name: string, opts?: SpawnOptions): Promise<void> {
     const prior = this.spawnLocks.get(name) ?? Promise.resolve();
     const run = prior.then(() => this.spawnUnlocked(name, opts), () => this.spawnUnlocked(name, opts));
     const tail = run.then(() => undefined, () => undefined);
@@ -1876,204 +1746,17 @@ export class AgentManager {
     }
   }
 
-  private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<CanonicalDeliverySpawnReceipt | void> {
+  private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<void> {
     try {
       // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
       // An explicit cmd creates a Temporary identity only when the name is not already declared.
       const declared = this.opts.getConfig()?.agents[name];
       if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
       this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
-      if (opts?.deliveryJoin) {
-        if (opts.gate || opts.worktree) {
-          throw new Error("spawn_agent delivery_join cannot combine with gate or worktree:true");
-        }
-        // Explicit deliveryJoin is the only allowed route after canonical recovery/acquisition.
-        return await this.spawnDeliveryJoin(name, opts, opts.deliveryJoin);
-      }
-      if (opts?.gate) {
-        const behaviorTest = opts.gate.behaviorTest.replace(/\s+/g, " ").trim();
-        const owns = [...new Set(opts.gate.owns.map((ownedPath) => ownedPath.trim()).filter(Boolean))];
-        if (!behaviorTest) throw new Error("gated delegation requires a behavior-level verifier");
-        if (owns.length === 0) throw new Error("gated delegation requires at least one owned path");
-        opts = { ...opts, gate: { ...opts.gate, behaviorTest, owns } };
-      }
-      // SDD 368 T14 — generic spawn refuses snapshot-denied agents before any mutation.
-      this.assertNotDeliveryLifecycleDenied(name, "spawn");
       return await this.spawnCore(name, opts);
     } finally {
       this.releaseSoulReservation(name);
     }
-  }
-
-  /**
-   * SDD 368 T14 — refuse generic lifecycle when the agent has a Delivery marker OR is in the
-   * reload snapshot's unavailable deny set (marker-less crash window). Guards must run before
-   * any transient cache mutation.
-   */
-  private isDeliveryLifecycleDenied(name: string, record?: SessionRecord): boolean {
-    if (hasDeliveryMarker(record) || hasDeliveryMarker(this.opts.ledger?.get(name))) return true;
-    return this.opts.isDeliveryLifecycleDenied?.(name) === true;
-  }
-
-  private assertNotDeliveryLifecycleDenied(name: string, op: "spawn" | "resume" | "restart", record?: SessionRecord): void {
-    if (!this.isDeliveryLifecycleDenied(name, record)) return;
-    if (op === "resume") {
-      throw new Error(
-        `cannot resume '${name}': Delivery-bound execution requires Delivery recovery, not generic resume`,
-      );
-    }
-    if (op === "restart") {
-      throw new Error(
-        `cannot restart '${name}': Delivery-bound execution requires a new nonce-bound segment or recovery path, not generic pane respawn`,
-      );
-    }
-    throw new Error(
-      `cannot spawn '${name}': Delivery lifecycle is unavailable for this agent (reload deny or Delivery marker); use explicit deliveryJoin recovery`,
-    );
-  }
-
-  private async spawnDeliveryJoin(name: string, opts: SpawnOptions, request: DeliveryJoinRequest): Promise<void> {
-    if (!this.opts.prepareDeliveryJoin || !this.opts.confirmDeliveryJoin) {
-      throw new Error("DELIVERY_LEASE_UNAVAILABLE: Delivery join wiring is unavailable");
-    }
-    let definition: AgentEntry | undefined;
-    const bound = request.declaredAgent;
-    if (bound) {
-      if (opts.cmd) throw new Error("delivery_join.declared_agent cannot combine with cmd");
-      if (request.principal) throw new Error("delivery_join.declared_agent cannot combine with principal");
-      if (name === bound) throw new Error("delivery_join execution name must differ from declared_agent");
-      const config = this.opts.getConfig();
-      const declared = config?.agents[bound];
-      if (!declared) throw new UnknownAgentError(bound);
-      this.assertProfileLifecycleEnabled(bound, declared);
-      const source = asAgent(declared);
-      if (!source) throw new Error(`delivery_join.declared_agent '${bound}' must have kind: agent`);
-      if (source.env?.TACHYON_AGENT_BRIDGE_TOKEN !== undefined) throw new Error(`delivery_join.declared_agent '${bound}' may not declare TACHYON_AGENT_BRIDGE_TOKEN`);
-      if (config?.agents[name] || this.opts.ledger?.get(name) || await this.opts.tmux.hasSession(this.session(name))) throw new Error(`delivery_join execution name '${name}' is already in use`);
-      definition = deliveryDefinitionSnapshot(source);
-      request = { ...request, principal: bound };
-    }
-    let commandOverride: string | undefined;
-    if (request.role === "reviewer") {
-      const baseCommand = definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
-      if (!baseCommand) throw new UnknownAgentError(name);
-      const safe = reviewerSafeCommand(baseCommand);
-      commandOverride = safe.cmd;
-      if (safe.advisory) this.opts.notify?.(safe.advisory, "warn");
-    }
-    const effective = commandOverride ?? definition?.cmd ?? opts.cmd ?? this.definitionOf(name)?.cmd;
-    if (!effective) throw new UnknownAgentError(name);
-    const preliminaryPreflight = this.launchPreflight.requiresPreparedEnvironment !== true;
-    if (preliminaryPreflight) {
-      await this.assertLaunchPreflight(name, effective, { ...(definition?.env ?? this.definitionOf(name)?.env), ...(opts.env ?? {}) });
-    }
-    const resolvedSoul = definition?.soul ? await this.reserveSoulLaunch(name, bound!, definition) : undefined;
-    const resolvedEvolution = definition?.selfEvolution?.enabled === true
-      ? await this.evolutionForFreshSession(name, definition, bound ?? name)
-      : undefined;
-    // Preparation is not an acquisition boundary: a same-named session can appear while
-    // the Delivery reservation is being prepared.  The inner spawn boundary records
-    // acquisition only after it rechecks every identity source.
-    const mode: DeliveryLaunchAttempt["mode"] = bound
-      ? "bound-ephemeral"
-      : opts.cmd
-        ? "cmd-temporary-ephemeral"
-        : "saved";
-    const attempt: DeliveryLaunchAttempt = { mode, acquired: false, token: false, materialized: "not-started", session: "not-started", ledger: false };
-    const prepared = await this.opts.prepareDeliveryJoin(name, request);
-    try {
-      await this.spawnCore(name, opts, {
-        cwd: prepared.cwd,
-        worktree: prepared.worktree,
-        commandOverride,
-        definition,
-        ephemeral: mode !== "saved",
-        preliminaryPreflight,
-        attempt,
-        resolvedSoul,
-        resolvedEvolution,
-      });
-      await this.opts.confirmDeliveryJoin(name, request, prepared, await this.tryPanePid(name));
-      // SDD 368 T14 — reverse binding after confirm; failure is a failed join (never unbound successful holder).
-      this.persistDeliveryBinding(name, {
-        deliveryId: request.deliveryId,
-        segmentId: prepared.segmentId,
-        executionNonce: prepared.reservationNonce,
-      });
-    } catch (error) {
-      const compensationErrors = await this.cleanupFailedDeliveryExecution(name, attempt);
-      try { await this.opts.failDeliveryJoin?.(name, request, prepared, error); }
-      catch (cleanupError) { compensationErrors.push(new Error("reservation compensation failed", { cause: cleanupError })); }
-      if (compensationErrors.length) {
-        throw new AggregateError([error, ...compensationErrors], "Delivery join failed and compensation was incomplete", { cause: error });
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * SDD 368 T14 — write the Delivery reverse marker onto the exact execution's ledger row.
-   * Throws on missing ledger/row or conflicting bind so the join path compensates.
-   */
-  private persistDeliveryBinding(name: string, binding: SessionDeliveryBinding): void {
-    if (!this.opts.ledger) {
-      throw new Error(`DELIVERY_BINDING_FAILED: no session ledger to persist reverse binding for '${name}'`);
-    }
-    if (typeof binding.segmentId !== "string" || binding.segmentId.length === 0) {
-      throw new Error(`DELIVERY_BINDING_FAILED: prepared join for '${name}' lacks segmentId`);
-    }
-    this.opts.ledger.bindDelivery(name, binding);
-  }
-
-  private async cleanupFailedDeliveryExecution(name: string, attempt: DeliveryLaunchAttempt): Promise<Error[]> {
-    const errors: Error[] = [];
-    const phase = (label: string, error: unknown) => errors.push(new Error(label, { cause: error }));
-    if (!attempt.acquired) return errors;
-    let completedSessionAbsent = false;
-    if (attempt.session === "completed") {
-      try {
-        if (!(await this.opts.tmux.hasSession(this.session(name)))) completedSessionAbsent = true;
-        else {
-        try { await this.opts.tmux.killSession(this.session(name)); } catch (error) { phase("session kill failed", error); }
-        try { completedSessionAbsent = !(await this.opts.tmux.hasSession(this.session(name))); } catch (error) { phase("post-kill session probe failed", error); }
-        if (!completedSessionAbsent) errors.push(new Error("failed Delivery execution may still be live; recovery state preserved"));
-        }
-      } catch (error) { phase("initial session probe failed", error); }
-      if (!completedSessionAbsent && !errors.some(error => error.message.includes("may still be live"))) errors.push(new Error("failed Delivery execution may still be live; recovery state preserved"));
-    } else if (attempt.session === "attempted") {
-      // newSession may have created a pane before reporting a failure.  It is not
-      // safe to kill a same-named session without a successful creation receipt.
-      errors.push(new Error("Delivery execution session creation is uncertain; recovery state preserved"));
-    }
-    if (attempt.token) try { this.opts.revokeAgentToken?.(name); } catch (error) { phase("token revoke failed", error); }
-    if (attempt.session === "attempted") return errors;
-    if (attempt.session === "not-started") {
-      // No session was completed, so only a freshly acquired ephemeral execution
-      // can discard the materialization it owns.  A declared principal retains
-      // all transient, durable, and callback state from its prior lifetime.
-      if (attempt.mode !== "saved" && (attempt.materialized !== "not-started" || attempt.ledger)) {
-        try { this.forgetTemporary(name); } catch (error) { phase("in-memory cleanup failed", error); }
-        try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
-      }
-      return errors;
-    }
-    if (!completedSessionAbsent) return errors;
-    const transient = [
-      () => this.readyAgents.delete(name),
-      () => this.provisionalAgents.delete(name),
-      () => this.readinessCache.delete(name),
-      () => this.stoppingSince.delete(name),
-      () => this.clearStopFailed(name),
-      () => this.cleanExited.delete(name),
-      () => this.postmortemOutput.delete(name),
-    ];
-    for (const clear of transient) try { clear(); } catch (error) { phase("in-memory cleanup failed", error); }
-    if (attempt.mode !== "saved" && (attempt.materialized !== "not-started" || attempt.ledger)) {
-      try { this.forgetTemporary(name); } catch (error) { phase("in-memory cleanup failed", error); }
-      try { this.removeEphemeralFootprint(name); } catch (error) { phase("footprint cleanup failed", error); }
-    }
-    try { this.opts.onKilled?.(name); } catch (error) { phase("killed callback failed", error); }
-    return errors;
   }
 
   /** The mutex key is a worktree's canonical realpath, so two different-looking paths to the
@@ -2320,7 +2003,7 @@ export class AgentManager {
     else await create();
   }
 
-  private async spawnCore(name: string, opts?: SpawnOptions, forced?: { cwd: string; worktree: WorktreeRecord; commandOverride?: string; definition?: AgentDef; ephemeral?: boolean; preliminaryPreflight?: boolean; attempt?: DeliveryLaunchAttempt; resolvedSoul?: ResolvedSoul; resolvedEvolution?: EvolutionStartupSnapshot }): Promise<CanonicalDeliverySpawnReceipt | void> {
+  private async spawnCore(name: string, opts?: SpawnOptions): Promise<void> {
     const clearTransientState = () => {
       this.readyAgents.delete(name);
       this.readinessCache.delete(name);
@@ -2329,7 +2012,7 @@ export class AgentManager {
       this.cleanExited.delete(name);
       this.postmortemOutput.delete(name);
     };
-    let def = forced?.definition ?? this.definitionOf(name);
+    let def = this.definitionOf(name);
     if (opts?.cmd) {
       const base = {
         cmd: opts.cmd,
@@ -2355,7 +2038,7 @@ export class AgentManager {
       // owned subset and an expected HEAD, and SDD 368 T10 measured that an unrecognized reviewer
       // runtime is run with an advisory rather than refused. That policy is not M9's to withdraw.
       const requested = opts.kind ?? "agent";
-      if (requested === "agent" && !opts.deliveryJoin && !forced?.attempt) {
+      if (requested === "agent") {
         const admission = admitAgentRuntimeCommand(opts.cmd);
         if (!admission.ok) throw new AgentRuntimeAdmissionError(admission.reason);
       }
@@ -2371,27 +2054,17 @@ export class AgentManager {
         : { ...base, kind: "terminal" };
     }
     if (!def) throw new UnknownAgentError(name);
-    if (forced?.commandOverride) def = { ...def, cmd: forced.commandOverride };
 
     const taskBrief = opts?.taskBrief;
 
     // Identity preflight remains before dead-pane replacement. Runtime preflight moves below cwd/private-home
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
-    const resolvedSoul = forced?.resolvedSoul ?? (asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
-    const resolvedEvolution = forced?.resolvedEvolution ?? await this.evolutionForFreshSession(name, def);
+    const resolvedSoul = (asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+    const resolvedEvolution = await this.evolutionForFreshSession(name, def);
 
     const session = this.session(name);
     let replaceDeadSession = false;
-    if (forced?.attempt) {
-      // This is the true Delivery acquisition boundary.  Do not inherit ordinary
-      // spawn's dead-pane replacement behavior: either kind of racing occupant is
-      // another execution and carries no cleanup authority for this receipt.
-      const incumbentIdentity = forced.attempt.mode !== "saved"
-        && (this.opts.getConfig()?.agents[name] || this.opts.ledger?.get(name));
-      if (incumbentIdentity || await this.opts.tmux.hasSession(session)) {
-        throw new Error(`delivery_join execution name '${name}' is already in use`);
-      }
-    } else if (await this.opts.tmux.hasSession(session)) {
+    if (await this.opts.tmux.hasSession(session)) {
       const state = (await this.agentStates()).get(name);
       if (state && state.dead) {
         // Delay replacing the dead postmortem pane until every guidance/brief operation that can
@@ -2402,36 +2075,25 @@ export class AgentManager {
       }
     }
 
-    // A gated launch cannot become valid later in the pipeline: reject incomplete caller wiring
-    // before guidance reads, worktree quarantine, ledger writes or runtime creation.
-    if (opts?.gate && !opts.contract) throw new Error("gated delegation requires a validated delegation contract");
-    if (opts?.gate && !this.opts.recordCanonicalDelivery) {
-      throw new Error("gated delegation requires canonical Delivery persistence");
-    }
-
     // Resolve every declared project file before touching an incumbent tmux session or preparing a
     // worktree. A bad opt-in must fail this launch atomically, never kill a dead pane and then reveal
     // that the replacement brief could not be composed.
     const projectGuidance = this.projectGuidanceFor(def);
-    const temporary = !!opts?.cmd || !!forced?.ephemeral;
+    const temporary = !!opts?.cmd;
     // t-d542ac — runtime lineage belongs to this instance, independent of whether its definition is
     // Saved or Temporary. `declaredOwner` remains separate profile metadata and is never inferred
-    // into this edge; only the explicit spawn parent can create it. Gated delegations continue to
-    // carry `delegator` instead of runtime parent by their existing contract.
-    const parent = !opts?.gate && opts?.parent && opts.parent !== name ? opts.parent : undefined;
-    const delegator = opts?.gate && opts.delegator && opts.delegator !== name ? opts.delegator : undefined;
+    // into this edge; only the explicit spawn parent can create it.
+    const parent = opts?.parent && opts.parent !== name ? opts.parent : undefined;
+    const delegator = opts?.delegator && opts.delegator !== name ? opts.delegator : undefined;
     // t-f660d8 / t-d542ac — primer/doorbell identity honors the explicit runtime parent first, then
     // config `declaredOwner` only as presentation guidance when this spawn has no lineage.
-    const primerParent = !opts?.gate
-      ? ((opts?.parent && opts.parent !== name ? opts.parent : undefined)
-        ?? (!temporary ? this.opts.getConfig()?.declaredOwner?.[name] : undefined))
-      : undefined;
-    // `{}` is an intentional snapshot of "no verifier configured". Leaving it undefined would be
-    // indistinguishable from an omitted snapshot and verify_task could later adopt newly-added commands.
+    const primerParent = (opts?.parent && opts.parent !== name ? opts.parent : undefined)
+      ?? (!temporary ? this.opts.getConfig()?.declaredOwner?.[name] : undefined);
+    // `{}` is an intentional snapshot of "no verifier configured", distinct from an omitted one.
     const verifySettingsSnapshot: NonNullable<TachyonConfig["settings"]["verify"]> = structuredClone(
       this.opts.getConfig()?.settings.verify ?? {},
     );
-    const primerCtx = { delegator, gate: opts?.gate, verify: verifySettingsSnapshot };
+    const primerCtx = { delegator, verify: verifySettingsSnapshot };
 
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? DEFAULT_MAX_AGENTS;
@@ -2441,27 +2103,20 @@ export class AgentManager {
     // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
-    let worktree: WorktreeRecord | undefined = forced?.worktree;
+    let worktree: WorktreeRecord | undefined;
     let createdWorktree = false;
     let preparationLocked = false;
     let rollbackHeadSha: string | undefined;
     let preparationHeadBefore: string | undefined;
     let preparationHeadAfter: string | undefined;
-    let delegationBaseSha: string | undefined;
     let launchTokenMinted = false;
     const revokeLaunchToken = (): void => {
       const revoke = this.opts.revokeAgentToken;
       if (!revoke) return;
       revoke(name);
       launchTokenMinted = false;
-      // Delivery's outer receipt-aware compensator must not revoke the same name again after an
-      // inner launch phase has already revoked the credential acquired by this attempt.
-      if (forced?.attempt) forced.attempt.token = false;
     };
-    if (forced) {
-      // Canonical Delivery provides the exact, already-owned worktree and bypasses generic cwd resolution.
-      cwd = forced.cwd;
-    } else if (this.opts.resolveSpawnCwd) {
+    if (this.opts.resolveSpawnCwd) {
       const resolved = await this.opts.resolveSpawnCwd({
         name,
         def,
@@ -2469,7 +2124,6 @@ export class AgentManager {
         delegator,
         temporary,
         isRestart: false,
-        gate: opts?.gate,
         verifySettings: verifySettingsSnapshot,
       });
       if (resolved) {
@@ -2480,17 +2134,13 @@ export class AgentManager {
         rollbackHeadSha = resolved.rollbackHeadSha;
         preparationHeadBefore = resolved.preparationHeadBefore;
         preparationHeadAfter = resolved.preparationHeadAfter;
-        delegationBaseSha = resolved.delegationBaseSha;
       }
-    }
-    if (opts?.gate && !worktree) {
-      throw new Error("gated delegation requires an isolated worktree; worktree creation was unavailable");
     }
     // t-f660d8 — explicit spawn_agent cwd: honor or fail closed (never silently ignore).
     // Parented Temporary children inherit the parent's cwd via resolveWorktreeCwd — refuse opts.cwd
     // so callers never think a custom path was applied. Declared agents without a worktree may
     // run in an explicit managed checkout (e.g. a Delivery worktree path).
-    if (!forced && opts?.cwd) {
+    if (opts?.cwd) {
       const requested = resolveCwd(this.opts.workspaceRoot, opts.cwd);
       if (!fs.existsSync(requested) || !fs.statSync(requested).isDirectory()) {
         throw new Error(`spawn_agent cwd is not an existing directory: ${requested}`);
@@ -2513,7 +2163,7 @@ export class AgentManager {
       }
     }
     const rollbackLaunchPreparation = async (): Promise<boolean> => {
-      if (forced || !worktree || !this.opts.rollbackPreparedWorktree) return false;
+      if (!worktree || !this.opts.rollbackPreparedWorktree) return false;
       if (!createdWorktree && (!preparationHeadBefore || !preparationHeadAfter)) return false;
       await this.opts.rollbackPreparedWorktree(
         worktree,
@@ -2603,7 +2253,7 @@ export class AgentManager {
     // shared-cwd delegation (t-e2ebe3) is `parent`-truthy but not worktree-contained, and `bash:"allow"`
     // is unconfined shell access with no `external_directory` bound on it. Only a worktree-contained
     // delegation gets the block; an uncontained one falls back to opencode's own default instead.
-    const delegatedOpencode = (parent || delegator || opts?.gate) && isolatedWorktree
+    const delegatedOpencode = (parent || delegator) && isolatedWorktree
       ? { workspaceRoot: this.opts.workspaceRoot, worktreesBase: this.worktreesBaseFor(cwd, worktree) }
       : undefined;
 
@@ -2619,7 +2269,7 @@ export class AgentManager {
     } finally {
       createdRuntimeHome = !runtimeHomeExisted && fs.existsSync(runtimeHome);
     }
-    if (!forced?.preliminaryPreflight) {
+    {
       await this.assertLaunchPreflight(
         name,
         def.cmd,
@@ -2629,11 +2279,8 @@ export class AgentManager {
       );
     }
     const effectiveCmd = this.effectiveCmd(def, effectiveInstructions);
-    if (forced?.attempt) forced.attempt.acquired = true;
     const tokenEnv = this.opts.mintAgentToken?.(name);
     launchTokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
-    if (forced?.attempt && tokenEnv !== undefined) forced.attempt.token = true;
-    if (forced?.attempt) forced.attempt.materialized = "attempted";
     const spawnBuild = this.applyHarness(
       name,
       def,
@@ -2642,7 +2289,6 @@ export class AgentManager {
       { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
       preparedRuntimeHarness,
     );
-    if (forced?.attempt) forced.attempt.materialized = "completed";
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
     // spec 236 — fold the runtime-Bridge env delta (the OPENCODE_CONFIG path for opencode agents)
     // into spawnBuild.env so it reaches the spawn env alongside the Bridge URL/token.
@@ -2684,7 +2330,7 @@ export class AgentManager {
         try { this.opts.removeHarnessHome?.(name); }
         catch { /* preserve the primary preflight/preparation failure */ }
       }
-      if (!forced && worktree && this.opts.rollbackPreparedWorktree) {
+      if (worktree && this.opts.rollbackPreparedWorktree) {
         try {
           await rollbackLaunchPreparation();
         } catch (preservation) {
@@ -2703,7 +2349,7 @@ export class AgentManager {
     const { originalCmd, adapter, resumeId, selfManaged, spawnBridge, spawnBuild, ownedSpawnCmd } = preparedLaunch;
     // Preparation and runtime preflight are now proven. Only now may an ordinary replacement
     // discard prior readiness/postmortem state; a rejected launch preserves its recovery handle.
-    if (!forced?.attempt) clearTransientState();
+    clearTransientState();
     // All fallible guidance, cwd, harness, env and Bridge composition is complete. Only now may a
     // crashed incumbent be replaced; earlier failures leave its postmortem pane intact.
     if (replaceDeadSession) {
@@ -2740,7 +2386,6 @@ export class AgentManager {
         );
       }
     }
-    if (forced?.attempt) forced.attempt.session = "attempted";
     // SDD 480 §3.1 — the first seam that can genuinely CARRY the identity. Minted before the pane
     // exists and merged into the child's env below, so attribution survives the thing PPID cannot:
     // t-41f496 measured 73 processes reparented to `systemd --user` after their launcher died. A pane
@@ -2769,10 +2414,8 @@ export class AgentManager {
         correlation: minted.correlation, at: new Date().toISOString(),
         detail: { seam: "AgentManager.spawnCore", agent: name, session, error: String(error) },
       });
-      // Delivery owns its prepared worktree and has a separate receipt-aware recovery path. For an
-      // ordinary launch, a same-named pane observed after newSession fails is ambiguous: it may belong
-      // to a concurrent creator, so never kill it without an ownership receipt.
-      if (forced) throw error;
+      // A same-named pane observed after newSession fails is ambiguous: it may belong to a
+      // concurrent creator, so never kill it without an ownership receipt.
       const compensation = newLaunchCompensation();
       let sessionGone = false;
       try {
@@ -2798,11 +2441,6 @@ export class AgentManager {
       }
       throw launchCompensationError(error, compensation, `agent '${name}' session creation`);
     }
-    if (forced?.attempt) {
-      forced.attempt.session = "completed";
-      clearTransientState();
-    }
-
     // Once tmux reports a created runtime, even a readiness failure may follow legitimate writes.
     // Readiness owns session cleanup only; the checkout stays as recovery state.
     try {
@@ -2835,9 +2473,6 @@ export class AgentManager {
     // Record when Temporary (restart), adapter-backed (resume), running in a worktree, OR it has a
     // parent. The last clause is deliberately lifetime-agnostic: even a Saved non-adapter instance
     // needs its lineage after reload so the cleanup descendant guard sees it.
-    // A conventional Delivery join may use a declared principal that already has
-    // durable resume state.  It receives a new session, not ownership of that row.
-    const preservesSavedLedger = !!forced?.attempt && forced.attempt.mode === "saved" && !!this.opts.ledger?.get(name);
     const defBlock = {
       cmd: originalCmd,
       kind: def.kind,
@@ -2855,11 +2490,10 @@ export class AgentManager {
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
     const promptCapability = openingPromptCapability(def.cmd);
     const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
-    const shouldPersistLaunch = !!this.opts.ledger && !preservesSavedLedger && !!(temporary || adapter || worktree || parent || resolvedEvolution);
+    const shouldPersistLaunch = !!this.opts.ledger && !!(temporary || adapter || worktree || parent || resolvedEvolution);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
     // stays fail-closed even if canonical persistence and every subsequent cleanup write all fail.
-    const delegationPending = !!opts?.gate && shouldPersistLaunch;
     const launchRecoveryRecord = {
       def: defBlock,
       resume: resumeBlock,
@@ -2877,12 +2511,10 @@ export class AgentManager {
         : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
       ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
-      ...(delegationPending ? { delivery: { invalid: true as const } } : {}),
     };
     try {
       if (shouldPersistLaunch) {
         this.opts.ledger!.record(name, launchRecoveryRecord);
-        if (forced?.attempt) forced.attempt.ledger = true;
       }
       // spec 364 — durable Bridge-client stamp after successful spawn with materialization.
       // Always stamp: preservesSavedLedger only protects principal def/resume/worktree/cwd
@@ -2914,8 +2546,7 @@ export class AgentManager {
       if (!sessionGone && !durableRecoveryHandle && shouldPersistLaunch) {
         try {
           this.opts.ledger!.record(name, launchRecoveryRecord);
-          if (forced?.attempt) forced.attempt.ledger = true;
-        } catch (cleanupError) {
+          } catch (cleanupError) {
           failures.push(new Error("failed to retry durable launch recovery handle", { cause: cleanupError }));
         }
         try { durableRecoveryHandle = hasDurableRecoveryHandle(); }
@@ -2944,70 +2575,6 @@ export class AgentManager {
         { cause: primary },
       );
     }
-    let canonicalReceipt: CanonicalDeliverySpawnReceipt | undefined;
-    if (opts?.gate) {
-      if (!opts.contract) throw new Error("gated delegation requires a validated delegation contract");
-      if (!worktree) throw new Error("gated delegation requires an isolated worktree");
-      try {
-        if (!this.opts.recordCanonicalDelivery) {
-          throw new Error("gated delegation requires canonical Delivery persistence");
-        }
-        canonicalReceipt = await this.opts.recordCanonicalDelivery({
-          name,
-          delegator,
-          gate: opts.gate,
-          contract: opts.contract,
-          worktree,
-          baseSha: delegationBaseSha ?? worktree.baseRef,
-          verifySettings: verifySettingsSnapshot,
-        });
-        if (delegationPending) {
-          const pending = this.opts.ledger?.get(name);
-          if (!pending || !isInvalidDeliveryMarker(pending.delivery)) {
-            throw new Error("gated delegation lost its pending lifecycle marker before authority commit");
-          }
-          const { delivery: _pendingMarker, ...authorized } = pending;
-          this.opts.ledger!.record(name, authorized);
-        }
-      } catch (error) {
-        // Keep the ledger/cwd as a visible recovery handle until tmux proves the runtime is dead.
-        // Every eligible cleanup is attempted and failures retain the reconciliation error as cause.
-        const compensation = newLaunchCompensation();
-        try { await this.opts.tmux.killSession(session); }
-        catch (cleanupError) { compensation.failures.push(new Error("failed to kill rejected delegated runtime", { cause: cleanupError })); }
-        let sessionGone = false;
-        try { sessionGone = !(await this.opts.tmux.hasSession(session)); }
-        catch (cleanupError) { compensation.failures.push(new Error("failed to verify rejected delegated runtime liveness", { cause: cleanupError })); }
-        if (sessionGone) {
-          if (launchTokenMinted) {
-            try { revokeLaunchToken(); }
-            catch (cleanupError) { compensation.failures.push(new Error("failed to revoke rejected delegation token", { cause: cleanupError })); }
-          }
-          // The delegation contract never became durable. Once the runtime is proven absent, its
-          // ordinary ledger row must not survive as an ungated restart/resume recipe after reload.
-          try { this.opts.ledger?.remove(name); }
-          catch (cleanupError) {
-            compensation.failures.push(new Error("failed to remove restartable ledger row after delegation rejection", { cause: cleanupError }));
-            // A one-shot remove fault must still fail closed on reload. Reuse the typed invalid
-            // Delivery marker: generic restart/resume already refuses every row carrying it.
-            try {
-              const recovery = this.opts.ledger?.get(name);
-              if (recovery) this.opts.ledger?.record(name, { ...recovery, delivery: { invalid: true } });
-            } catch (markerError) {
-              compensation.failures.push(new Error("failed to quarantine rejected delegation ledger row", { cause: markerError }));
-            }
-          }
-          clearTransientState();
-          // The runtime existed long enough to pass readiness and may have written legitimate work.
-          // Keeping the Git-quarantined checkout is the decision, not a leftover: deleting its branch
-          // tip could turn fast agent commits into dangling objects.
-          compensation.receipts.push(new Error(`checkout recovery state was preserved deliberately${worktree ? ` at ${worktree.path}` : ""}: the runtime passed readiness and may have written work, so its branch tip is kept`));
-        } else {
-          compensation.failures.push(new Error("rejected delegated runtime may still be live; durable recovery state was preserved"));
-        }
-        throw launchCompensationError(error, compensation, "delegation reconciliation");
-      }
-    }
     if (preparationLocked && worktree) {
       const durable = this.opts.ledger?.get(name)?.worktree;
       if (!durable || durable.path !== worktree.path || durable.branch !== worktree.branch) {
@@ -3034,7 +2601,7 @@ export class AgentManager {
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, temporary });
     await this.attachPaneTranscript(session);
-    return canonicalReceipt;
+    return;
   }
 
   /**
@@ -4007,8 +3574,6 @@ export class AgentManager {
    * row sticks on "stopping…" then flips to stop-failed while the pane is already live.
    */
   async restart(name: string, opts: RestartOptions = {}): Promise<RestartResult> {
-    // SDD 368 T14 — refuse before any stop/replace mutation.
-    this.assertNotDeliveryLifecycleDenied(name, "restart");
     this.assertProfileLifecycleEnabled(name);
     const stop: RestartStopMode = opts.stop ?? RESTART_DEFAULTS.stop;
     const session: RestartSessionMode = opts.session ?? RESTART_DEFAULTS.session;
@@ -4127,8 +3692,6 @@ export class AgentManager {
    * Mints a fresh session title for title-tracked runtimes.
    */
   private async restartFresh(name: string): Promise<void> {
-    // SDD 368 T14 — refuse before mutating transient caches (readiness/postmortem/stopping).
-    this.assertNotDeliveryLifecycleDenied(name, "restart");
     let def = this.definitionOf(name);
     if (!def) {
       throw new Error(
@@ -4363,9 +3926,6 @@ export class AgentManager {
    * changes clear the agent's entry.
    */
   async resumeReadiness(name: string, record: SessionRecord): Promise<boolean> {
-    // SDD 368 T14 — valid/invalid markers and snapshot-unavailable agents never report ready
-    // for generic resume (explicit deliveryJoin recovery only).
-    if (this.isDeliveryLifecycleDenied(name, record)) return false;
     const sid = record.resume?.sessionId ?? "";
     const cached = this.readinessCache.get(name);
     if (cached && cached.sessionId === sid) return cached.ready;
@@ -4379,27 +3939,10 @@ export class AgentManager {
    *
    * This deliberately neither reads nor writes `readinessCache`: a capture runtime can keep the same
    * empty ledger sessionId while its transcript appears, whereas ordinary sidebar reads must retain
-   * their bounded cache.  Delivery authority is checked on both sides of the asynchronous resolver so
-   * a denial that appears during the probe cannot admit destructive teardown.
+   * their bounded cache.
    */
   async rebindResumeReadiness(name: string, record: SessionRecord): Promise<RebindResumeReadiness> {
-    if (this.isDeliveryLifecycleDenied(name, record)) {
-      return { kind: "denied", reason: "generic resume is denied by Delivery lifecycle authority" };
-    }
-    const result = await this.computeResumeReadiness(name, record);
-    if (this.isDeliveryLifecycleDenied(name, record)) {
-      return { kind: "denied", reason: "generic resume became denied by Delivery lifecycle authority" };
-    }
-    return result;
-  }
-
-  /**
-   * Synchronous final admission guard for rebind.  The coordinator calls this after every awaited
-   * readiness/liveness probe and once more immediately before teardown, so a Delivery marker or
-   * crash-window deny that appeared after an earlier positive result still wins.
-   */
-  rebindResumeDenied(name: string, record: SessionRecord): boolean {
-    return this.isDeliveryLifecycleDenied(name, record);
+    return await this.computeResumeReadiness(name, record);
   }
 
   private async computeResumeReadiness(name: string, record: SessionRecord): Promise<RebindResumeReadiness> {
@@ -4554,8 +4097,6 @@ export class AgentManager {
    *   healthy stamp after its post-launch liveness proof. Ordinary human resume leaves this false.
    */
   async resume(name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }): Promise<void> {
-    // SDD 368 T14 — refuse before mutating readiness cache (markers + snapshot deny set).
-    this.assertNotDeliveryLifecycleDenied(name, "resume", record);
     this.assertProfileLifecycleEnabled(name);
     if (!record.resume) throw new ResumeUnavailableError(name, "record is not resumable (no resume block)");
     const { runtime } = record.resume;
@@ -5218,8 +4759,6 @@ export class AgentManager {
     return Object.entries(config.agents)
       .filter(([name, def]) => {
         if (!def.autostart || present.has(name)) return false;
-        // SDD 368 T14 — Delivery markers and snapshot-denied agents never generic autostart.
-        if (this.isDeliveryLifecycleDenied(name)) return false;
         return true;
       })
       .map(([name]) => name);

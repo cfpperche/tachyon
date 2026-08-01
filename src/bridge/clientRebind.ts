@@ -100,11 +100,8 @@ export interface BridgeClientRebindDeps {
   /** Still RUNNING? (preflight + wait loops). */
   isRunning: (name: string) => Promise<boolean>;
   /** Fresh, read-only proof that the generic resume path is available, retryable, or permanently
-   * denied. This must run before any expected-death marker or stop so Delivery-owned executions are
-   * never torn down first. */
+   * denied. This must run before any expected-death marker or stop. */
   canResume: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
-  /** Synchronous authority guard, called after awaited probes and immediately before teardown. */
-  resumeDenied: (name: string, record: SessionRecord) => boolean;
   stopGracefully: (name: string) => Promise<void>;
   /** Hard kill the tmux session WITHOUT wiping ledger/Temporary state (unlike AgentManager.kill). */
   hardKillSession: (name: string) => Promise<void>;
@@ -571,23 +568,6 @@ export class BridgeClientRebindCoordinator {
       this.noteFailure(suspectG);
       return;
     }
-    // No asynchronous boundary is allowed between this final authority check and the intentional
-    // teardown admission below. Delivery/snapshot denial that appeared after a positive probe wins.
-    if (this.deps.resumeDenied(name, ledgerSnapshot)) {
-      rt.clientState = "failed";
-      const denial = "generic resume became denied before teardown";
-      this.audit({
-        at: new Date(now()).toISOString(),
-        agent: name,
-        reason,
-        fromGeneration: suspectG,
-        phase: "preflight_skip",
-        finalState: "failed",
-        error: denial,
-      });
-      this.deps.notify(`Bridge client rebind of '${name}' skipped before stop: ${denial} (agent left running)`, "error");
-      return;
-    }
     rt.clientState = "rebinding";
 
     this.audit({
@@ -874,10 +854,6 @@ export class BridgeClientRebindCoordinator {
     if (!record) {
       rt.clientState = "failed";
       return { ok: false, reason: "no ledger record for resume", state: "failed" };
-    }
-    if (this.deps.resumeDenied(name, record)) {
-      rt.clientState = "failed";
-      return { ok: false, reason: "generic resume is denied by lifecycle authority", state: "failed" };
     }
     // Still require bound < G (durable); suspectG is informational.
     if (rt.suspectGeneration !== undefined && rt.suspectGeneration > G) {

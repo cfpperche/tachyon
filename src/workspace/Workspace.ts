@@ -99,14 +99,13 @@ import {
 } from "../agents/soulProfileTransactions.js";
 import type { SoulProfileStatus } from "../agents/soul.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
-import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
 import {
   type ConfigFailure,
   isLkgOnlySpawn,
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
-import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type DeliveryJoinRequest, type ManagedEntryInfo, type PreparedDeliveryJoin } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 
@@ -201,9 +200,6 @@ import {
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
 import type { AuthorityHead, AuthorityHeadPort } from "../delivery/authorityIntegrity.js";
-import { resolveCanonicalBehaviorOracle } from "../bridge/behaviorStub.js";
-import { behaviorTestError } from "../config/behaviorVerification.js";
-import { parseArgvCommand } from "../config/argvCommand.js";
 import { renderPrimer, wrapWithPrimer } from "../bridge/primer.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
@@ -277,7 +273,7 @@ import { readOwnApprovalRequest } from "../bridge/approvalRequest.js";
 import { DeliveryVerificationLeaseService } from "../delivery/verificationLease.js";
 import { DeliveryProjectionService } from "../delivery/projectionService.js";
 import { LegacyDeliveryRetirement } from "../delivery/retireLegacyState.js";
-import type { CanonicalDeliverySpawnReceipt, DeliveryActor } from "../delivery/types.js";
+import type { DeliveryActor } from "../delivery/types.js";
 import {
   readLinuxProcessIdentity,
   reconcileDeliveryReload,
@@ -489,25 +485,6 @@ function safeRead(p: string): string | undefined {
   }
 }
 
-/**
- * t-7faea9 — gated preparation often wraps the real cause in AggregateError after intentional
- * recovery preservation (`rollbackCreated` always throws). Bridge clients only see `.message`,
- * so the primary error text must be in the AggregateError message, not only in `.errors[0]`.
- */
-function gatedPreparationAggregateError(
-  name: string,
-  primary: unknown,
-  recoveryTail: string,
-  extras: unknown[] = [],
-): AggregateError {
-  const primaryError = primary instanceof Error ? primary : new Error(String(primary));
-  const extraErrors = extras.map((item) => (item instanceof Error ? item : new Error(String(item))));
-  return new AggregateError(
-    [primaryError, ...extraErrors],
-    `gated delegation '${name}' preparation failed: ${primaryError.message}; ${recoveryTail}`,
-    { cause: primaryError },
-  );
-}
 
 function boundedBridgeFailureDetail(detail: string): string {
   if (detail.length <= MAX_BRIDGE_FAILURE_DETAIL_LENGTH) return detail;
@@ -1228,14 +1205,6 @@ export class Workspace {
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
       },
       notify: (message, level) => this.host.notify(message, level),
-      // SDD 368 T14/R3 — fail-closed until a complete snapshot is ready; then consult deny set.
-      isDeliveryLifecycleDenied: (name) => {
-        if (this.deliveryReload.phase !== "ready") return true;
-        return this.deliveryReload.snapshot.unavailableAgents.has(name);
-      },
-      prepareDeliveryJoin: (name, request) => this.prepareDeliveryJoin(name, request),
-      confirmDeliveryJoin: (name, request, prepared, pid) => this.confirmDeliveryJoin(name, request, prepared, pid),
-      failDeliveryJoin: (_name, request, prepared, error) => this.deliveryLease.failJoin(request.deliveryId, prepared.reservationNonce, error instanceof Error ? error.message : String(error), `${request.operationId}:fail`).then(() => undefined),
 
       getConfig: () => this.config,
       getRefusedAgents: () => this.refusedAgents(),
@@ -1331,46 +1300,17 @@ export class Workspace {
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
       // this overrides the per-agent worktree path so the chain shares one checkout.
       resolveSpawnCwd: async (ctx) => {
-        if (ctx.gate) {
-          const gateError = behaviorTestError(ctx.gate.behaviorTest);
-          if (gateError) throw new Error(`gated delegation behavior_test ${gateError}`);
-          for (const [index, ownedPath] of (ctx.gate.owns ?? []).entries()) {
-            if (containsUnsafeFramingCharacter(ownedPath)) {
-              throw new Error(`gated delegation owns[${index}] must not contain control characters`);
-            }
-          }
-        }
-        const explicitBehaviorCommand = ctx.gate?.behaviorTest.match(/^cmd:\s*(.*)$/s);
-        if (explicitBehaviorCommand) {
-          try {
-            parseArgvCommand(explicitBehaviorCommand[1] ?? "");
-          } catch (error) {
-            throw new Error(
-              `gated delegation behavior_test has an invalid cmd: verifier: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-        const namedBehaviorSettings = ctx.gate && !explicitBehaviorCommand
-          ? ctx.verifySettings?.behavior
-          : undefined;
-        if (ctx.gate && !explicitBehaviorCommand && !namedBehaviorSettings) {
-          throw new Error(
-            "plain gated delegation behavior_test requires the project to configure " +
-              "settings.verify.behavior; otherwise use an explicit cmd:<command> verifier",
-          );
-        }
         const pl = this.pipelineNodeCwd.get(ctx.name);
         if (pl) return { cwd: pl.cwd, worktree: pl.worktree };
         // A worktree, its branch and its setup are Agent capabilities — a terminal declares none.
         const ctxAgent = asAgent(ctx.def);
-        const forceWorktree = ctx.gate ? true : ctxAgent?.worktree;
         const resolved = await resolveWorktreeCwd(
           {
             name: ctx.name,
-            worktree: forceWorktree,
+            worktree: ctxAgent?.worktree,
             branch: ctxAgent?.branch,
             worktreeSetup: ctxAgent?.worktreeSetup,
-            parent: ctx.gate ? undefined : ctx.parent,
+            parent: ctx.parent,
             isRestart: ctx.isRestart,
           },
           {
@@ -1395,121 +1335,47 @@ export class Workspace {
         );
         if (!resolved?.worktree) return resolved;
         this.managedWorktrees.syncAgentRecord(ctx.name, resolved.worktree, ctx.delegator);
-        if (!ctx.gate) {
-          let exactPreparedHead: string | undefined;
-          try {
-            const { headRef } = await this.worktrees.headState(resolved.cwd);
-            if (!headRef) throw new Error(`agent '${ctx.name}' could not resolve its prepared worktree HEAD`);
-            exactPreparedHead = headRef;
-            return {
-              ...resolved,
-              ...(resolved.rollbackHeadSha ? { preparationHeadBefore: resolved.rollbackHeadSha } : {}),
-              preparationHeadAfter: headRef,
-            };
-          } catch (primary) {
-            if (resolved.created && exactPreparedHead) {
-              try { await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, exactPreparedHead); }
-              catch (preservation) {
-                throw new AggregateError(
-                  [primary, preservation],
-                  `agent '${ctx.name}' worktree preparation failed; recovery state was preserved`,
-                );
-              }
-            } else if (resolved.created) {
-              throw new AggregateError(
-                [primary, new Error("fresh worktree recovery state was preserved because its exact prepared HEAD is unknown")],
-                `agent '${ctx.name}' worktree preparation failed without a recovery HEAD observation`,
-              );
-            }
-            if (resolved.rollbackHeadSha) {
-              try {
-                await this.worktrees.rollbackPreparation(resolved.worktree, resolved.rollbackHeadSha, resolved.rollbackHeadSha);
-              } catch (preservation) {
-                throw new AggregateError(
-                  [primary, preservation],
-                  `agent '${ctx.name}' worktree preparation failed; its reused recovery checkout is preserved at ${resolved.worktree.path}`,
-                );
-              }
-            }
-            throw new AggregateError(
-              [primary, new Error(`reused worktree recovery state was preserved at ${resolved.worktree.path}; its prepared HEAD is unknown`)],
-              `agent '${ctx.name}' worktree preparation failed; recovery checkout: ${resolved.worktree.path}`,
-            );
-          }
-        }
-        const preparationHeadBefore = resolved.rollbackHeadSha;
-        let preparationHeadAfter: string | undefined;
+        let exactPreparedHead: string | undefined;
         try {
-          const preparedState = await this.worktrees.headState(resolved.cwd);
-          if (!preparedState.headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve its prepared worktree HEAD`);
-          preparationHeadAfter = preparedState.headRef;
-          if (!explicitBehaviorCommand) {
-            const { stubPath, oracleHash, executorHashes, headRef } = await resolveCanonicalBehaviorOracle({
-              worktreePath: resolved.cwd,
-              agent: ctx.name,
-              settings: namedBehaviorSettings!,
-            });
-            preparationHeadAfter = headRef;
-            ctx.gate.stubPath = stubPath;
-            ctx.gate.oracleHash = oracleHash;
-            ctx.gate.executorHashes = executorHashes;
-          }
-          // A reused gated worktree must anchor to its current HEAD, not the original worktree baseRef.
-          // Named adapters bind existing project-owned oracle/executor bytes without mutating the checkout.
           const { headRef } = await this.worktrees.headState(resolved.cwd);
-          if (!headRef) throw new Error(`gated delegation '${ctx.name}' could not resolve the task worktree HEAD`);
-          preparationHeadAfter = headRef;
+          if (!headRef) throw new Error(`agent '${ctx.name}' could not resolve its prepared worktree HEAD`);
+          exactPreparedHead = headRef;
           return {
             ...resolved,
-            delegationBaseSha: headRef,
-            ...(preparationHeadBefore ? { preparationHeadBefore } : {}),
-            ...(preparationHeadAfter ? { preparationHeadAfter } : {}),
+            ...(resolved.rollbackHeadSha ? { preparationHeadBefore: resolved.rollbackHeadSha } : {}),
+            preparationHeadAfter: headRef,
           };
         } catch (primary) {
-          if (resolved.created) {
-            if (!preparationHeadAfter) {
-              throw gatedPreparationAggregateError(
-                ctx.name,
-                primary,
-                "fresh worktree recovery state was preserved because its exact prepared HEAD is unknown",
-                [new Error("fresh gated worktree recovery state was preserved because its exact prepared HEAD is unknown")],
+          if (resolved.created && exactPreparedHead) {
+            try { await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, exactPreparedHead); }
+            catch (preservation) {
+              throw new AggregateError(
+                [primary, preservation],
+                `agent '${ctx.name}' worktree preparation failed; recovery state was preserved`,
               );
             }
-            try {
-              await this.worktrees.rollbackCreated(resolved.worktree, resolved.rollbackHeadSha, preparationHeadAfter);
-            } catch (preservation) {
-              // rollbackCreated intentionally preserves the checkout and always throws (recovery-first).
-              throw gatedPreparationAggregateError(
-                ctx.name,
-                primary,
-                "its fresh worktree recovery state was preserved",
-                [preservation],
-              );
-            }
-          } else if (preparationHeadBefore && preparationHeadAfter) {
-            try {
-              await this.worktrees.rollbackPreparation(resolved.worktree, preparationHeadBefore, preparationHeadAfter);
-            } catch (preservation) {
-              throw gatedPreparationAggregateError(
-                ctx.name,
-                primary,
-                "its reused worktree recovery state was preserved",
-                [preservation],
-              );
-            }
-          } else {
-            throw gatedPreparationAggregateError(
-              ctx.name,
-              primary,
-              `recovery checkout: ${resolved.worktree.path}`,
-              [new Error(`reused gated worktree recovery state was preserved at ${resolved.worktree.path}; complete HEAD observations are unavailable`)],
+          } else if (resolved.created) {
+            throw new AggregateError(
+              [primary, new Error("fresh worktree recovery state was preserved because its exact prepared HEAD is unknown")],
+              `agent '${ctx.name}' worktree preparation failed without a recovery HEAD observation`,
             );
           }
-          throw primary;
+          if (resolved.rollbackHeadSha) {
+            try {
+              await this.worktrees.rollbackPreparation(resolved.worktree, resolved.rollbackHeadSha, resolved.rollbackHeadSha);
+            } catch (preservation) {
+              throw new AggregateError(
+                [primary, preservation],
+                `agent '${ctx.name}' worktree preparation failed; its reused recovery checkout is preserved at ${resolved.worktree.path}`,
+              );
+            }
+          }
+          throw new AggregateError(
+            [primary, new Error(`reused worktree recovery state was preserved at ${resolved.worktree.path}; its prepared HEAD is unknown`)],
+            `agent '${ctx.name}' worktree preparation failed; recovery checkout: ${resolved.worktree.path}`,
+          );
         }
       },
-      recordCanonicalDelivery: ({ name, delegator, gate, worktree, baseSha, verifySettings }) =>
-        this.recordCanonicalDelivery({ name, delegator, gate, worktree, baseSha, verifySettings }),
       // spec 225 — fork: probe the source worktree for the dirty warning, and create the fork's own
       // worktree branched off the source's committed HEAD (its branch).
       worktreeDirty: (rec) => isWorktreeDirty(rec.path, this.gitExec),
@@ -2326,11 +2192,10 @@ export class Workspace {
         const running = await this.manager.runningAgents();
         return running.includes(name);
       },
-      // Use AgentManager's rebind-only, uncached generic-resume boundary. It distinguishes a young
-      // transcript that may appear from Delivery/snapshot/record denial and rechecks authority around
-      // asynchronous resolution. Rebind must receive `ready` before it stops anything.
+      // AgentManager's rebind-only, uncached generic-resume boundary: it distinguishes a young
+      // transcript that may still appear from a record that cannot resume. Rebind must receive
+      // `ready` before it stops anything.
       canResume: (name, record) => this.manager.rebindResumeReadiness(name, record),
-      resumeDenied: (name, record) => this.manager.rebindResumeDenied(name, record),
       stopGracefully: (name) => this.manager.stopGracefully(name),
       hardKillSession: async (name) => {
         // Kill the tmux session only — do NOT call AgentManager.kill (that wipes Temporary ledger rows).
@@ -3352,8 +3217,7 @@ export class Workspace {
     const stragglers = runningAtBoot.filter((name) => {
       const record = ws.ledger.get(name);
       if (!isTachyonBridgeWiredRecord(record)) return true;
-      if (ws.bridgeClientRebindSettings().onHostGenerationBump !== "auto") return true;
-      return record !== undefined && ws.manager.rebindResumeDenied(name, record);
+      return ws.bridgeClientRebindSettings().onHostGenerationBump !== "auto";
     });
     if (lastVersion && lastVersion !== currentVersion && stragglers.length > 0) {
       ws.host.notify(
@@ -4506,6 +4370,18 @@ export class Workspace {
   }
 
   /**
+   * The single linked Git projection for a canonical Delivery, or a refusal. Kept while the Delivery
+   * lease still resolves a worktree by projection (t-e88c8a stage 3 removes both together).
+   */
+  private async exactCanonicalProjection(delivery: import("../delivery/types.js").Delivery): Promise<GitDelivery> {
+    if (!delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: Delivery '${delivery.id}' has no projection backlink`);
+    const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
+    if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected exact linked projection for '${delivery.id}'`);
+    fs.realpathSync(linked[0].worktreePath);
+    return linked[0];
+  }
+
+  /**
    * spec 210 — run an agent's `worktreeSetup` in its fresh worktree: sequential,
    * stop on first failure, with `TACHYON_WORKSPACE_ROOT`/`TACHYON_WORKTREE_ROOT`
    * injected. Awaited by the async spawn (off the UI thread); per-command timeout;
@@ -4566,187 +4442,6 @@ export class Workspace {
     } };
   }
 
-  /** The Delivery backlink, linked row, and real worktree must agree at every canonical entry point. */
-  private async exactCanonicalProjection(delivery: import("../delivery/types.js").Delivery): Promise<GitDelivery> {
-    if (!delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: Delivery '${delivery.id}' has no projection backlink`);
-    const linked = (await this.gitDeliveries.list()).filter((g) => g.deliveryId === delivery.id && !!g.worktreePath);
-    if (linked.length !== 1 || linked[0].id !== delivery.gitDeliveryId) throw new Error(`DELIVERY_WORKTREE_MISMATCH: expected exact linked projection for '${delivery.id}'`);
-    fs.realpathSync(linked[0].worktreePath);
-    return linked[0];
-  }
-
-  /**
-   * Cross-store boundary is deliberately fail-closed: canonical Delivery is durable first, then its
-   * Git projection, then the backlink. Replaying the stable operation repairs either crash boundary;
-   * no compatibility record is dual-written and an unlinked Delivery is never mistaken for a complete one.
-   */
-  private async recordCanonicalDelivery(input: {
-    name: string;
-    delegator?: string;
-    gate: { behaviorTest: string; owns?: string[]; stubPath?: string; oracleHash?: string; executorHashes?: Record<string, string> };
-    worktree: WorktreeRecord;
-    baseSha: string;
-    verifySettings?: NonNullable<TachyonConfig["settings"]>["verify"];
-  }): Promise<CanonicalDeliverySpawnReceipt> {
-    this.legacyDeliveryRetirement.assertRetired();
-    // t-2dd637 — the projection base must be a SYMBOLIC branch ref. `WorktreeRecord.baseRef` is a
-    // fork-point SHA on every producer path, so coalescing to it silently substitutes one meaning
-    // for the other and pins the base to a commit; `containedInBase` then reads that pin as a
-    // containment ceiling and refuses forever, since each new commit moves the tip further from it.
-    // Refuse before ANY durable write (Delivery record included): a refused spawn is loud and
-    // retryable, a SHA-pinned projection is permanently unintegrable.
-    const projectionBaseRef = input.worktree.baseBranch;
-    if (!projectionBaseRef) {
-      throw new Error(
-        "DELIVERY_BASE_REF_UNRESOLVED: canonical gated spawn requires a symbolic base branch; "
-        + `worktree '${input.worktree.path}' carries only a pinned base SHA`,
-      );
-    }
-    const owns = [...new Set(input.gate.owns ?? [])];
-    const spawnKey = createHash("sha256").update(JSON.stringify({
-      agent: input.name, delegator: input.delegator, baseSha: input.baseSha,
-      taskRef: input.worktree.branch, behaviorTest: input.gate.behaviorTest, owns,
-      oracleHash: input.gate.oracleHash,
-      executorHashes: input.gate.executorHashes,
-      verifySettings: input.verifySettings,
-    })).digest("hex");
-    const deliveryId = `d-spawn-${spawnKey.slice(0, 32)}`;
-    const actor = input.delegator ? { kind: "agent" as const, name: input.delegator } : { kind: "system" as const, name: "tachyon" };
-    let delivery = await this.deliveries.get(deliveryId);
-    if (!delivery) {
-      // The gated pane already exists at this callback boundary. Capture its exact
-      // Linux identity before publishing the initial held lease; unknown is fail-closed.
-      const identity = readLinuxProcessIdentity(await this.tmux.panePid(this.manager.session(input.name)));
-      if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: canonical gated spawn requires an exact pane identity");
-      const executionNonce = randomBytes(16).toString("hex");
-      const now = new Date().toISOString();
-      try {
-        delivery = await this.deliveries.create({
-      id: deliveryId,
-      workspaceId: this.wsHash,
-      createdBy: actor,
-      operationId: `gated-spawn:${spawnKey}`,
-      contract: {
-        baseSha: input.baseSha,
-        behaviorTest: input.gate.behaviorTest,
-        owns,
-        taskRef: input.worktree.branch,
-        ...(input.gate.stubPath ? { stubPath: input.gate.stubPath } : {}),
-        ...(input.gate.oracleHash ? { oracleHash: input.gate.oracleHash } : {}),
-        ...(input.gate.executorHashes ? { executorHashes: structuredClone(input.gate.executorHashes) } : {}),
-        ...(input.verifySettings ? { verifySettings: structuredClone(input.verifySettings) } : {}),
-      },
-      lease: { state: "held", holder: { segmentId: `seg-${spawnKey.slice(0, 16)}`, executionAgent: input.name, principal: input.name, executionNonce, process: { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId } }, expectedHeadSha: input.baseSha, changedAt: now },
-      segments: [{
-        id: `seg-${spawnKey.slice(0, 16)}`, index: 0, role: "implementer", executionAgent: input.name,
-        principal: input.name, grantedBy: actor, ownsSubset: owns, grantedHeadSha: input.baseSha, grantedAt: now,
-      }],
-        });
-      } catch (error) {
-        delivery = await this.deliveries.get(deliveryId);
-        if (!delivery) throw error;
-      }
-    }
-    // SDD 368 T15 — canonical gated open under projection claim + intent + backlink repair.
-    const opened = await this.deliveryProjection.openCanonical({
-      deliveryId: delivery.id,
-      agent: input.name,
-      branchRef: input.worktree.branch,
-      worktreePath: input.worktree.path,
-      tachyonCreatedBranch: input.worktree.tachyonCreatedBranch,
-      baseRef: projectionBaseRef,
-      currentHeadSha: input.baseSha,
-      actor,
-      operationId: `gated-spawn-open:${spawnKey}`,
-      reason: "canonical gated spawn",
-    });
-    delivery = opened.delivery;
-    // SDD 368 T14 — reverse binding after Delivery + linked Git projection are durable.
-    // Require one internally exact held holder/open-tail/executionAgent boundary; no
-    // same-name or tail-segment inference.
-    const holder = delivery.lease.holder;
-    const tail = delivery.segments.at(-1);
-    if (
-      !holder
-      || !tail
-      || tail.releasedAt
-      || tail.id !== holder.segmentId
-      || tail.executionAgent !== holder.executionAgent
-      || tail.principal !== holder.principal
-      || holder.executionAgent !== input.name
-    ) {
-      throw new Error(
-        `Delivery '${delivery.id}' has no exact holder/open-tail/executionAgent boundary for '${input.name}'`,
-      );
-    }
-    if (!holder.executionNonce || !holder.process) {
-      throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: sequential canonical holder lacks nonce or process identity");
-    }
-    const projectionWorktree = fs.realpathSync(opened.projection.worktreePath);
-    const expectedWorktree = fs.realpathSync(input.worktree.path);
-    const expectedBaseRef = projectionBaseRef;
-    if (
-      delivery.contract.baseSha !== input.baseSha
-      || opened.projection.workspaceId !== this.wsHash
-      || opened.projection.deliveryId !== delivery.id
-      || opened.projection.branchRef !== input.worktree.branch
-      || opened.projection.tachyonCreatedBranch !== input.worktree.tachyonCreatedBranch
-      || opened.projection.baseRef !== expectedBaseRef
-      || opened.projection.currentHeadSha !== input.baseSha
-      || projectionWorktree !== expectedWorktree
-    ) {
-      throw new Error(`DELIVERY_WORKTREE_MISMATCH: canonical spawn receipt for '${delivery.id}' is inconsistent`);
-    }
-    this.canonicalLedger.stageCanonicalBinding(input.name, {
-      deliveryId: delivery.id,
-      segmentId: holder.segmentId,
-      executionNonce: holder.executionNonce,
-    });
-    return {
-      deliveryId: delivery.id,
-      projectionId: opened.projection.id,
-      segmentId: holder.segmentId,
-      worktree: projectionWorktree,
-      branch: opened.projection.branchRef,
-      head: input.baseSha,
-    };
-  }
-
-  private async prepareDeliveryJoin(name: string, request: DeliveryJoinRequest): Promise<PreparedDeliveryJoin> {
-    this.legacyDeliveryRetirement.assertRetired();
-    const delivery = await this.deliveries.get(request.deliveryId);
-    if (!delivery) throw new Error(`DELIVERY_NOT_FOUND: ${request.deliveryId}`);
-    const projection = await this.exactCanonicalProjection(delivery);
-    const worktreePath = fs.realpathSync(projection.worktreePath);
-    const worktree: WorktreeRecord = { path: worktreePath, branch: projection.branchRef, tachyonCreatedBranch: projection.tachyonCreatedBranch, baseRef: projection.baseRef, createdAt: projection.createdAt };
-    const actor = { kind: "system" as const, name: "tachyon" };
-    const reservation = delivery.lease.state === "free"
-      ? await this.deliveryLease.acquire({ deliveryId: delivery.id, expectedVersion: delivery.version, expectedHeadSha: request.expectedHead, canonicalWorktree: worktreePath, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
-      : delivery.lease.state === "held"
-        ? await this.deliveryLease.handoff({ deliveryId: delivery.id, canonicalWorktree: worktreePath, expectedFinalHeadSha: request.expectedHead, role: request.role, executionAgent: name, principal: request.principal, grantedBy: actor, ownsSubset: request.ownsSubset, operationId: request.operationId })
-        : delivery.lease.state === "pending" && request.role === "recovery"
-          ? await this.deliveryLease.preparePendingRecovery({ deliveryId: delivery.id, canonicalWorktree: worktreePath, expectedHeadSha: request.expectedHead, executionAgent: name, principal: request.principal, ownsSubset: request.ownsSubset })
-        : (() => { throw new Error(`DELIVERY_INVALID_STATE: Delivery is ${delivery.lease.state}`); })();
-    const segmentId = reservation.delivery.lease.holder?.segmentId;
-    if (!segmentId) throw new Error("DELIVERY_INVALID_STATE: reservation has no segment");
-    return { cwd: worktreePath, worktree, reservationNonce: reservation.reservationNonce, segmentId };
-  }
-
-  private async confirmDeliveryJoin(name: string, request: DeliveryJoinRequest, prepared: PreparedDeliveryJoin, pid?: number): Promise<void> {
-    void name;
-    if (!pid) throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: pane pid is unreadable");
-    const identity = readLinuxProcessIdentity(pid);
-    if (identity.state !== "exact") throw new Error("DELIVERY_PROCESS_IDENTITY_MISSING: pane identity is unreadable or reused");
-    await this.deliveryLease.confirmHeld(request.deliveryId, prepared.reservationNonce, { pid: identity.pid, processStart: identity.processStart, bootId: identity.bootId }, `${request.operationId}:confirm`);
-  }
-
-  /**
-   * SDD 368 T14 — recompute the in-memory Delivery reload snapshot from one bounded
-   * set of store/ledger/process reads. Read-only; never mutates Delivery or GitDelivery.
-   * Passes exact linked GitDelivery records (no last-wins path map).
-   * On success installs `{phase:"ready", snapshot}`; throws leave phase unchanged
-   * (callers use `attemptDeliveryReloadSnapshot` for fail-closed handling).
-   */
   private async refreshDeliveryReloadSnapshot(): Promise<ReloadReconciliationSnapshot> {
     const deliveryList = await this.deliveries.listWithCorrupt();
     if (deliveryList.corrupt.length > 0) {

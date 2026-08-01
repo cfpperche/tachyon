@@ -15,11 +15,6 @@ import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
 import { ATTESTED_RUNTIMES } from "../runtime/attestedRuntimes.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
-import {
-  behaviorStubPathError,
-  behaviorStubPathTemplateError,
-  type BehaviorVerificationSettings,
-} from "./behaviorVerification.js";
 import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
@@ -466,7 +461,7 @@ export interface TachyonConfig {
      * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
      */
     worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean };
-    /** spec 362/385 — project-owned commands and named-behavior adapter for verify_task. */
+    /** spec 362/385 — the project's own verification commands, shown in the primer. */
     verify?: {
       full?: string;
       typecheck?: string;
@@ -474,8 +469,6 @@ export interface TachyonConfig {
       prepare?: string;
       /** Argv prefix; existing changed paths are appended as option-safe relative args. Omitted means no affected-test tier. */
       affected?: string;
-      /** Opt-in adapter for plain behavior identifiers. `cmd:` verifiers do not use this. */
-      behavior?: BehaviorVerificationSettings;
     };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
@@ -1551,66 +1544,19 @@ export function parseConfig(yamlText: string): ParseResult {
             const command = normalizedArgvCommand(vf.affected, "settings.verify.affected", errors);
             if (command) out.affected = command;
           }
+          /**
+           * t-e88c8a — the named-behavior adapter bound a project-owned oracle to a gated spawn, and
+           * `verify_task` was the only thing that ever redeemed it. Both are retired, so the block is
+           * accepted-and-ignored rather than made an unknown key: a workspace that configured it gets
+           * told what happened instead of hunting for a spelling mistake.
+           *
+           * `full`, `typecheck`, `prepare` and `affected` are untouched — those are plain project
+           * commands the primer still hands to agents.
+           */
           if (vf.behavior !== undefined) {
-            if (!isPlainObject(vf.behavior)) {
-              errors.push("settings.verify.behavior: must be a mapping with adapter, command, stubPath, and executorPaths");
-            } else {
-              const behavior = vf.behavior;
-              const errorCountBefore = errors.length;
-              for (const key of Object.keys(behavior)) {
-                if (!["adapter", "command", "stubPath", "executorPaths"].includes(key)) {
-                  errors.push(`settings.verify.behavior: unknown key '${key}'`);
-                }
-              }
-              if (behavior.adapter !== "vitest-name") {
-                errors.push("settings.verify.behavior.adapter: must be 'vitest-name'");
-              }
-              const behaviorCommand = normalizedArgvCommand(
-                behavior.command,
-                "settings.verify.behavior.command",
-                errors,
-              );
-              if (typeof behavior.stubPath !== "string") {
-                errors.push("settings.verify.behavior.stubPath: must be a workspace-relative template containing {agent}");
-              } else {
-                const pathError = behaviorStubPathTemplateError(behavior.stubPath);
-                if (pathError) errors.push(`settings.verify.behavior.stubPath: ${pathError}`);
-              }
-              const executorPaths: string[] = [];
-              if (!Array.isArray(behavior.executorPaths) || behavior.executorPaths.length === 0) {
-                errors.push("settings.verify.behavior.executorPaths: must be a non-empty list of tracked workspace-relative paths");
-              } else {
-                const seen = new Set<string>();
-                for (const [index, candidate] of behavior.executorPaths.entries()) {
-                  if (typeof candidate !== "string") {
-                    errors.push(`settings.verify.behavior.executorPaths[${index}]: must be a workspace-relative path string`);
-                    continue;
-                  }
-                  const pathError = behaviorStubPathError(candidate);
-                  if (pathError) {
-                    errors.push(`settings.verify.behavior.executorPaths[${index}]: ${pathError}`);
-                    continue;
-                  }
-                  if (seen.has(candidate)) {
-                    errors.push(`settings.verify.behavior.executorPaths[${index}]: duplicate path '${candidate}'`);
-                    continue;
-                  }
-                  seen.add(candidate);
-                  executorPaths.push(candidate);
-                }
-              }
-              if (errors.length === errorCountBefore) {
-                out.behavior = {
-                  adapter: "vitest-name",
-                  command: behaviorCommand!,
-                  stubPath: behavior.stubPath as string,
-                  executorPaths,
-                };
-              }
-              if (!out.prepare) {
-                errors.push("settings.verify.behavior requires settings.verify.prepare to provision independent BASE/HEAD verifier environments");
-              }
-            }
+            warnings.push(
+              "settings.verify.behavior was ignored because verify_task and gated delegation were retired; remove settings.verify.behavior from tachyon.yml",
+            );
           }
           for (const key of Object.keys(vf)) {
             if (!["full", "typecheck", "prepare", "affected", "behavior"].includes(key)) {

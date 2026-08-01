@@ -770,62 +770,16 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     });
     expect(junk.isError).toBe(true);
 
-    // gated delegations need a behavior-level verifier (spec 362 T1)
-    const missingBehavior = await client.callTool({
+    // SDD 478 M9 — a generic command is refused as an AGENT first, which is the more useful answer
+    // because it names the operation that WILL run it.
+    const terminalCmd = await client.callTool({
       name: "spawn_agent",
-      arguments: {
-        name: "child-ai",
-        cmd: "claude",
-        parent: "claude",
-        task: "add retry behavior",
-        context: "network client flakes under timeout",
-        constraints: "no new dependencies",
-        done_when: "retry behavior test passes",
-        gate: {},
-      },
+      arguments: { name: "child-terminal", cmd: "echo hi", parent: "claude" },
     });
-    expect(missingBehavior.isError).toBe(true);
-    expect(JSON.stringify(missingBehavior.content)).toContain("gate.behavior_test");
-
-    // gated delegations cannot bypass the delegation contract with skip_contract_reason.
-    const gatedSkip = await client.callTool({
-      name: "spawn_agent",
-      arguments: {
-        name: "child-ai",
-        cmd: "claude",
-        parent: "claude",
-        skip_contract_reason: "test fixture but still gated",
-        gate: { behavior_test: "retry behavior" },
-      },
-    });
-    expect(gatedSkip.isError).toBe(true);
-    expect(JSON.stringify(gatedSkip.content)).toContain("cannot combine gate with skip_contract_reason");
-
-    // SDD 478 M9 — this case used to read "a terminal command may not take a gate". A generic command
-    // can no longer reach the gate check at all: it is refused as an AGENT first, which is the more
-    // useful answer because it names the operation that WILL run it.
-    const terminalGate = await client.callTool({
-      name: "spawn_agent",
-      arguments: {
-        name: "child-terminal",
-        cmd: "echo hi",
-        parent: "claude",
-        gate: { behavior_test: "terminal behavior" },
-      },
-    });
-    expect(terminalGate.isError).toBe(true);
-    expect(JSON.stringify(terminalGate.content)).toContain("is not a supported LLM runtime");
-    expect(JSON.stringify(terminalGate.content)).toContain("spawn_terminal");
+    expect(terminalCmd.isError).toBe(true);
+    expect(JSON.stringify(terminalCmd.content)).toContain("is not a supported LLM runtime");
+    expect(JSON.stringify(terminalCmd.content)).toContain("spawn_terminal");
     expect(sessions.has(`tachyon-${HASH}-child-terminal`)).toBe(false);
-
-    // The gate-needs-a-contract refusal still has a live path: a DECLARED agent carries config intent
-    // rather than a delegation, so it is not gated and may not ask to be.
-    const declaredGate = await client.callTool({
-      name: "spawn_agent",
-      arguments: { name: "claude", gate: { behavior_test: "declared behavior" } },
-    });
-    expect(declaredGate.isError).toBe(true);
-    expect(JSON.stringify(declaredGate.content)).toContain("gate is only supported for a Temporary AI sub-agent");
 
     // a too-short skip reason is rejected (D6)
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });

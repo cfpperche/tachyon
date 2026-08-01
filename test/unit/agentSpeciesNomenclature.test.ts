@@ -177,9 +177,7 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
       // in ABSENCE_GUARDS, and a file excused twice is a file whose exemption nobody can retire.
       why: "provenance: names what a prior stage REMOVED, or a dated repro. Deleting the word deletes the explanation",
       files: [
-        "test/helpers/boundDeliveryExecutionHarness.ts",
         "test/unit/agentProfileStudio.test.ts",
-        "test/unit/deliveryJoinFaultInjectionB3B4.test.ts",
         "test/unit/ocGhostBehavior.gen.test.ts",
         "test/unit/ocGhostQBehavior.gen.test.ts",
         "test/unit/ocHarnessBehavior.gen.test.ts",

@@ -46,7 +46,6 @@ function makeDeps(opts: {
   initiator?: string;
   resumeImpl?: (name: string, record: SessionRecord, opts?: { injectPrimer?: boolean; deferBridgeStamp?: boolean }) => Promise<void>;
   canResumeImpl?: (name: string, record: SessionRecord) => Promise<RebindResumeReadiness>;
-  resumeDeniedImpl?: (name: string, record: SessionRecord) => boolean;
   stopImpl?: (name: string) => Promise<void>;
   onSleep?: (ms: number) => void;
 }): BridgeClientRebindDeps & {
@@ -101,7 +100,6 @@ function makeDeps(opts: {
     kindOf: (name) => opts.kinds?.get(name) ?? "agent",
     isRunning: async (name) => opts.running.has(name),
     canResume: (name, record) => opts.canResumeImpl?.(name, record) ?? Promise.resolve({ kind: "ready" as const }),
-    resumeDenied: (name, record) => opts.resumeDeniedImpl?.(name, record) ?? record.delivery !== undefined,
     stopGracefully: async (name) => {
       stops.push(name);
       if (opts.stopImpl) await opts.stopImpl(name);
@@ -426,47 +424,6 @@ describe("BridgeClientRebindCoordinator", () => {
     expect(phases.indexOf("preflight_ok")).toBeLessThan(phases.indexOf("resume_ok"));
   });
 
-  it("388: a final authority denial after positive readiness prevents every teardown side effect", async () => {
-    const auditDir = tmpDir();
-    dirs.push(auditDir);
-    const auditPath = path.join(auditDir, "late-authority-denial.jsonl");
-    const ledger = new Map([["codex", baseRecord({
-      def: { cmd: "codex", kind: "agent" },
-      resume: { runtime: "codex", sessionId: "codex-session-authority-race" },
-      bridgeClient: { boundGeneration: 0, wired: true },
-    })]]);
-    const running = new Set(["codex"]);
-    let authorityChecks = 0;
-    let denied = false;
-    const deps = makeDeps({
-      ledger,
-      running,
-      auditPath,
-      canResumeImpl: async () => ({ kind: "ready" }),
-      resumeDeniedImpl: () => {
-        authorityChecks++;
-        if (authorityChecks === 2) {
-          // Simulate the crash-window authority snapshot changing immediately after the last
-          // awaited liveness/readiness preflight, before teardown admission.
-          denied = true;
-          return false;
-        }
-        return denied;
-      },
-    });
-
-    const coordinator = new BridgeClientRebindCoordinator(deps);
-    await coordinator.onListenerReady();
-
-    expect(authorityChecks).toBe(3);
-    expect(running.has("codex")).toBe(true);
-    expect(coordinator.getClientState("codex")).toBe("failed");
-    expect(deps.expectedDeath).toEqual([]);
-    expect(deps.stops).toEqual([]);
-    expect(deps.hardKills).toEqual([]);
-    expect(deps.resumes).toEqual([]);
-    expect(fs.readFileSync(auditPath, "utf8")).toContain("generic resume became denied before teardown");
-  });
 
   it("388: bounded readiness timeout leaves the original process running with zero teardown", async () => {
     const auditDir = tmpDir();

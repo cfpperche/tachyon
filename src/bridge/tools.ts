@@ -53,7 +53,6 @@ import {
   identityLine,
   idleSpawnGuidance,
   normalizeField,
-  type DelegationGate,
   type SpawnContract,
 } from "./spawnContract.js";
 import type { ProbeService } from "../probe/ProbeService.js";
@@ -1351,21 +1350,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             // t-6fe04b — it said "ignored for a sub-agent", and the Bridge REFUSES it outright for an
             // Temporary AI agent. "Ignored" and "refused" are different promises to a caller, and only
             // one of them was true.
-            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for a Temporary AI agent this is REFUSED, not ignored — use gate with a behavior_test and owned paths, or spawn top-level.",
+            "isolate this agent in its own git worktree + branch. Top-level declared agents only: for a Temporary AI agent this is REFUSED, not ignored — declare the agent in tachyon.yml, or spawn top-level.",
           ),
-        gate: z
-          .object({
-            behavior_test: z
-              .string()
-              .max(2048)
-              .optional()
-              .describe(
-                "canonical behavior verifier that must fail at BASE_SHA and pass at delivered HEAD: use cmd:<command> for a runner-neutral verifier, or a plain identifier only when the project explicitly configures settings.verify.behavior",
-              ),
-            owns: z.array(z.string().min(1)).optional().describe("declared owned paths for this delegated task"),
-          })
-          .optional()
-          .describe("verification-gated delegation contract; forces worktree isolation and records BASE_SHA/task ref for verify_task"),
         // spec 246 — the delegation contract (required for a Temporary AI agent unless skip_contract_reason is given).
         task: z.string().optional().describe("what the child must do — one substantive directive"),
         context: z.string().optional().describe("the situation/files/background the child needs to start"),
@@ -1378,7 +1364,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, gate, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
       try {
         const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
@@ -1431,20 +1417,16 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         //
         // M9 collapsed what this used to compute: an accepted `cmd` is an attested runtime by
         // construction now, so there is no longer a terminal child to exempt — the kind is not inferred.
-        if (isTemporaryAiAgent && worktree === true && gate === undefined) {
+        if (isTemporaryAiAgent && worktree === true) {
           return fail(new Error(
-            "spawn_agent worktree:true is not a tracked-change lifecycle for a Temporary AI agent; use gate with a behavior_test and owned paths",
+            "spawn_agent worktree:true is not available to a Temporary AI agent; declare the agent in tachyon.yml to give it an owned worktree, or spawn top-level",
           ));
         }
         const suppliedTaskBrief = !!normalizeField(instructions);
         let brief = instructions;
         let contract: SpawnContract | undefined;
-        let delegationGate: DelegationGate | undefined;
         if (isTemporaryAiAgent) {
           if (skip_contract_reason !== undefined) {
-            if (gate !== undefined) {
-              return fail(new Error("spawn_agent cannot combine gate with skip_contract_reason; a gated delegation requires a full delegation contract"));
-            }
             if (normalizeField(skip_contract_reason).length < 10) {
               return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
             }
@@ -1475,34 +1457,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
                 ),
               );
             }
-            if (gate !== undefined) {
-              const behaviorTest = normalizeField(gate.behavior_test);
-              if (!behaviorTest) {
-                return fail(
-                  new Error(
-                    "spawn_agent needs a gated delegation contract for an AI sub-agent. Fix and retry:\n- gate.behavior_test: required behavior-level verifier\n" +
-                      "(or omit gate for an ungated delegation)",
-                  ),
-                );
-              }
-              const owns = gate.owns?.map(normalizeField).filter(Boolean) ?? [];
-              if (owns.length === 0) {
-                return fail(new Error(
-                  "spawn_agent needs a gated delegation contract for tracked work. Fix and retry:\n- gate.owns: provide at least one owned path",
-                ));
-              }
-              delegationGate = { behaviorTest, owns };
-            }
             contract = { task: task!, context: context!, constraints: constraints!, deliverable, doneWhen: done_when };
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
-        } else if (gate !== undefined) {
-          return fail(new Error("spawn_agent gate is only supported for a Temporary AI sub-agent with a delegation contract"));
         }
-        if (delegationGate) deps.assertLegacyDeliveryRetired?.();
         // reveal:false — spawning a child must not steal the human's editor focus (F3);
         // the child shows in the tree (nested under parent), opened on demand.
-        const receipt = await deps.manager.spawn(name, {
+        await deps.manager.spawn(name, {
           cmd,
           // M9 — this door only ever asks for an Agent, and says so instead of letting the manager
           // work it out from the command string.
@@ -1517,14 +1478,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? undefined : brief)
             : undefined,
           parent,
-          delegator: delegationGate ? parent : undefined,
-          worktree: delegationGate ? true : worktree,
+          worktree,
           reveal: false,
           contract,
           contractSkipReason: skip_contract_reason,
-          gate: delegationGate,
         });
-        if (receipt) return ok(JSON.stringify(receipt, null, 2));
         const session = deps.manager.session(name);
         const state = deps.manager.kindOf(name) !== "agent" || await deps.manager.isReady(name) ? "ready" : "starting";
         return ok(JSON.stringify({ agent: name, session, state }, null, 2));

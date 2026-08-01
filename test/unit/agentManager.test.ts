@@ -4,7 +4,6 @@ import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
@@ -23,7 +22,6 @@ import {
 import { HarnessManager, bridgeGrokHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { boundDeliveryPreReservationRefusals, exerciseBoundDeliveryPreReservationRefusal } from "../helpers/boundDeliveryExecutionHarness.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
 import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
@@ -41,16 +39,6 @@ const HASH = workspaceHash(WS);
 /** t-0338fc — see the helper: opencode's adapter executes the runtime, so it is stubbed here. */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
-function canonicalSpawnReceipt(worktree: { path: string; branch: string }, head = "head") {
-  return {
-    deliveryId: "d-test",
-    projectionId: "gd-test",
-    segmentId: "seg-0",
-    worktree: worktree.path,
-    branch: worktree.branch,
-    head,
-  };
-}
 const SOUL_LEGACY_LIFECYCLE = JSON.parse(fs.readFileSync(path.resolve("test/fixtures/agent-soul-legacy/lifecycle-bypass-cases.json"), "utf8")) as {
   cases: Array<{ name: string; bytes: string; sendKeys: string[] }>;
 };
@@ -64,11 +52,6 @@ function soulLifecycleBypassSpies(manager: AgentManager) {
   return { compositor, soulResolver };
 }
 
-describe("Delivery pre-reservation refusals", () => {
-  it.each(boundDeliveryPreReservationRefusals)("refuses %s with the complete zero-effect vector", async (refusal) => {
-    await exerciseBoundDeliveryPreReservationRefusal(refusal);
-  });
-});
 
 /**
  * Parse env from either `new-session -e KEY=value` or `set-environment -t … KEY value`
@@ -2015,7 +1998,6 @@ describe("AgentManager — session resume (spec 209)", () => {
       seedTranscript?: (from: string, to: string) => boolean;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       completePreparedWorktree?: (worktree: any) => Promise<void>;
-      recordCanonicalDelivery?: AgentManagerOptions["recordCanonicalDelivery"];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       materializeHarness?: (ctx: { name: string; def: any }) => any;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2153,7 +2135,6 @@ describe("AgentManager — session resume (spec 209)", () => {
       createForkWorktree: opts.createForkWorktree,
       seedTranscript: opts.seedTranscript,
       completePreparedWorktree: opts.completePreparedWorktree,
-      recordCanonicalDelivery: opts.recordCanonicalDelivery ?? (async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha)),
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
       getBridgeGeneration: opts.getBridgeGeneration,
@@ -2170,53 +2151,11 @@ describe("AgentManager — session resume (spec 209)", () => {
       revokeAgentToken: opts.revokeAgentToken,
       removeHarnessHome: opts.removeHarnessHome,
       removePiSessionDir: opts.removePiSessionDir,
-      prepareDeliveryJoin: opts.prepareDeliveryJoin,
-      confirmDeliveryJoin: opts.confirmDeliveryJoin,
-      failDeliveryJoin: opts.failDeliveryJoin,
-      isDeliveryLifecycleDenied: opts.isDeliveryLifecycleDenied,
       launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
     return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ws, hash };
   }
 
-  it("refuses disabled canonical profiles before spawn, resume, restart, or bound Delivery preparation", async () => {
-    let prepared = 0;
-    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
-      prepareDeliveryJoin: async () => { prepared += 1; throw new Error("must not prepare"); },
-      confirmDeliveryJoin: async () => undefined,
-    });
-    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
-      enabled: false,
-      agentId: "11111111-1111-4111-8111-111111111111",
-      canonicalSha256: "a".repeat(64),
-      authorityRevision: "r1",
-    };
-
-    await expect(h.manager.spawn("reviewer")).rejects.toThrow("canonical agent profile is disabled");
-    await expect(h.manager.spawn("reviewer", { cmd: "codex" })).rejects.toThrow("canonical agent profile is disabled");
-    await expect(h.manager.resume("reviewer", {
-      def: { cmd: "codex", kind: "agent" },
-      resume: { runtime: "codex", sessionId: "session-1" },
-      cwd: h.ws,
-      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      updatedAt: "now",
-    })).rejects.toThrow("canonical agent profile is disabled");
-    await expect(h.manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow("canonical agent profile is disabled");
-    await expect(h.manager.spawn("review-run", {
-      deliveryJoin: {
-        deliveryId: "delivery-1",
-        role: "reviewer",
-        ownsSubset: [],
-        expectedHead: "abc",
-        declaredAgent: "reviewer",
-        operationId: "join-disabled",
-      },
-    })).rejects.toThrow("canonical agent profile is disabled");
-
-    expect(prepared).toBe(0);
-    expect(h.sessions.size).toBe(0);
-    expect(h.newSessionArgs).toEqual([]);
-  });
 
   it("allows canonical forget preparation after killing a provisional Saved Agent", async () => {
     const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
@@ -2285,214 +2224,13 @@ describe("AgentManager — session resume (spec 209)", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("SDD 368 T6 reuses the prepared Delivery worktree and never invokes fresh-worktree resolution", async () => {
-    const prepared: string[] = [];
-    const confirmed: string[] = [];
-    let freshResolutions = 0;
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      resolveSpawnCwd: async () => { freshResolutions += 1; return null; },
-      prepareDeliveryJoin: async (name, request) => {
-        prepared.push(`${name}:${request.deliveryId}`);
-        return {
-          cwd: ws,
-          worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-          reservationNonce: "nonce", segmentId: "seg-t14",
-        };
-      },
-      confirmDeliveryJoin: async (name) => { confirmed.push(name); },
-    });
-    await manager.spawn("successor", {
-      cmd: "claude", parent: "boss",
-      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: ["src"], expectedHead: "abc", operationId: "join-1" },
-    });
-    expect(prepared).toEqual(["successor:d-one"]);
-    expect(confirmed).toEqual(["successor"]);
-    expect(freshResolutions).toBe(0);
-    expect(ledger.get("successor")?.cwd).toBe(ws);
-    expect(ledger.get("successor")?.worktree?.branch).toBe("tachyon/delivery");
-  });
 
-  it("SDD 368 T6 refuses unavailable joins without spawning or falling back", async () => {
-    let freshResolutions = 0;
-    const { manager, ledger } = resumeHarness("agents: {}\n", {
-      resolveSpawnCwd: async () => { freshResolutions += 1; return null; },
-      prepareDeliveryJoin: async () => { throw new Error("DELIVERY_LEASE_UNAVAILABLE"); },
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await expect(manager.spawn("successor", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-2" },
-    })).rejects.toThrow("DELIVERY_LEASE_UNAVAILABLE");
-    expect(freshResolutions).toBe(0);
-    expect(ledger.get("successor")).toBeUndefined();
-  });
 
-  it("SDD 368 T6 terminates a spawned successor when durable confirmation fails", async () => {
-    const failed: string[] = [];
-    const { manager, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({
-        cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce", segmentId: "seg-t14",
-      }),
-      confirmDeliveryJoin: async () => { throw new Error("confirmation lost"); },
-      failDeliveryJoin: async (name) => { failed.push(name); },
-    });
-    await expect(manager.spawn("successor", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-3" },
-    })).rejects.toThrow("confirmation lost");
-    expect(failed).toEqual(["successor"]);
-    expect(await manager.runningAgents()).not.toContain("successor");
-  });
 
-  it("SDD 368 T6 fails visibly when reservation compensation itself fails", async () => {
-    const { manager, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({
-        cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce", segmentId: "seg-t14",
-      }),
-      confirmDeliveryJoin: async () => { throw new Error("confirmation failed"); },
-      failDeliveryJoin: async () => { throw new Error("reservation quarantine failed"); },
-    });
-    const error = await manager.spawn("successor", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-4" },
-    }).catch((caught) => caught);
-    expect(error).toBeInstanceOf(AggregateError);
-    expect(error.message).toContain("compensation was incomplete");
-    expect(error.errors.map((entry: Error) => entry.message)).toEqual(["confirmation failed", "reservation compensation failed"]);
-  });
 
-  it("SDD 368 T14 persists reverse binding after confirmed join", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({
-        cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce-bind",
-        segmentId: "seg-bind",
-      }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("successor", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-bind", role: "fixer", ownsSubset: ["src"], expectedHead: "abc", operationId: "join-bind" },
-    });
-    expect(ledger.get("successor")?.delivery).toEqual({
-      deliveryId: "d-bind",
-      segmentId: "seg-bind",
-      executionNonce: "nonce-bind",
-    });
-  });
 
-  it("SDD 368 T14 binding-write failure compensates like a failed join", async () => {
-    const failed: string[] = [];
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({
-        cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce",
-        segmentId: "seg-1",
-      }),
-      confirmDeliveryJoin: async (name) => {
-        // Pre-seed a conflicting binding so post-confirm bindDelivery refuses.
-        ledger.bindDelivery(name, { deliveryId: "d-OTHER", segmentId: "seg-OTHER", executionNonce: "x" });
-      },
-      failDeliveryJoin: async (name) => { failed.push(name); },
-    });
-    // First create a row that confirm can conflict-bind against by intercepting: actually
-    // confirm runs after spawnCore which creates the row; we bind a different value then
-    // persistDeliveryBinding tries the join binding and fails.
-    await expect(manager.spawn("successor", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-one", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-bind-fail" },
-    })).rejects.toThrow(/existing binding differs|Delivery join failed/);
-    expect(failed).toEqual(["successor"]);
-    expect(await manager.runningAgents()).not.toContain("successor");
-  });
 
-  it("SDD 368 T14 refuses generic resume and restart for Delivery-bound rows", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n");
-    ledger.record("claude", {
-      def: { cmd: "claude", kind: "agent" },
-      resume: { runtime: "claude", sessionId: "s1" },
-      cwd: ws,
-      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      delivery: { deliveryId: "d-1", segmentId: "seg-1", executionNonce: "n" },
-    });
-    await expect(manager.resume("claude", ledger.get("claude")!)).rejects.toThrow(/Delivery-bound/);
-    await expect(manager.restart("claude", { stop: "force", session: "new" })).rejects.toThrow(/Delivery-bound/);
-    // Invalid marker also refuses
-    ledger.record("invalid", {
-      def: { cmd: "claude", kind: "agent" },
-      resume: { runtime: "claude", sessionId: "s2" },
-      cwd: ws,
-      instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
-      delivery: { invalid: true },
-    });
-    await expect(manager.resume("invalid", ledger.get("invalid")!)).rejects.toThrow(/Delivery-bound/);
-    // resumeReadiness is false for marker-bound rows
-    expect(await manager.resumeReadiness("claude", ledger.get("claude")!)).toBe(false);
-    expect(await manager.resumeReadiness("invalid", ledger.get("invalid")!)).toBe(false);
-  });
 
-  it("SDD 368 T14 snapshot deny set blocks marker-less crash-window spawn/resume/restart/readiness before mutation", async () => {
-    const denied = new Set(["crash-holder"]);
-    const { manager, ledger, ws } = resumeHarness(
-      "agents:\n  crash-holder:\n    cmd: claude\n    autostart: true\n",
-      { isDeliveryLifecycleDenied: (name) => denied.has(name) },
-    );
-    // Ordinary marker-less row — only the snapshot deny set blocks it.
-    ledger.record("crash-holder", {
-      def: { cmd: "claude", kind: "agent" },
-      resume: { runtime: "claude", sessionId: "s-crash" },
-      cwd: ws,
-      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-    });
-    expect(ledger.get("crash-holder")?.delivery).toBeUndefined();
-
-    // Seed transient caches; refused restart must not clear them.
-    const internals = manager as unknown as {
-      readinessCache: Map<string, { sessionId: string; ready: boolean }>;
-      stoppingSince: Map<string, number>;
-      cleanExited: Set<string>;
-    };
-    internals.readinessCache.set("crash-holder", { sessionId: "s-crash", ready: true });
-    internals.stoppingSince.set("crash-holder", Date.now());
-    internals.cleanExited.add("crash-holder");
-
-    await expect(manager.spawn("crash-holder")).rejects.toThrow(/Delivery lifecycle is unavailable/);
-    await expect(manager.resume("crash-holder", ledger.get("crash-holder")!)).rejects.toThrow(/Delivery/);
-    await expect(manager.restart("crash-holder", { stop: "force", session: "new" })).rejects.toThrow(/Delivery/);
-    // Caches untouched after refused restart.
-    expect(internals.readinessCache.get("crash-holder")).toEqual({ sessionId: "s-crash", ready: true });
-    expect(internals.stoppingSince.has("crash-holder")).toBe(true);
-    expect(internals.cleanExited.has("crash-holder")).toBe(true);
-
-    expect(await manager.resumeReadiness("crash-holder", ledger.get("crash-holder")!)).toBe(false);
-    const pending = await manager.autostartPending();
-    expect(pending).not.toContain("crash-holder");
-
-    // Explicit deliveryJoin remains allowed even while the deny set is active for other names.
-    let joinWs = "";
-    const join = resumeHarness("agents: {}\n", {
-      isDeliveryLifecycleDenied: (name) => denied.has(name),
-      prepareDeliveryJoin: async (_name, request) => ({
-        cwd: joinWs,
-        worktree: { path: joinWs, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "n",
-        segmentId: "seg-join",
-      }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    joinWs = join.ws;
-    await join.manager.spawn("recovery", {
-      cmd: "claude",
-      deliveryJoin: { deliveryId: "d-r", role: "fixer", ownsSubset: [], expectedHead: "abc", operationId: "join-ok" },
-    });
-    expect(await join.manager.runningAgents()).toContain("recovery");
-  });
 
   it("SDD 368 T14 worktree occupancy gathers all rows and fails closed on duplicates", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-occ-"));
@@ -2581,254 +2319,18 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/live root process/);
   });
 
-  it.each([
-    ["codex", "--sandbox read-only"],
-    ["claude", "--permission-mode plan"],
-    ["grok", "--permission-mode plan"],
-  ])("SDD 368 T10 applies and persists the measured reviewer-safe %s command", async (runtime, expectedFlag) => {
-    const { manager, ledger, cmds, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn(`reviewer-${runtime}`, { cmd: runtime, parent: "boss",
-      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: `join-${runtime}` } });
-    expect(cmds.at(-1)).toContain(expectedFlag);
-    expect(ledger.get(`reviewer-${runtime}`)?.def?.cmd).toContain(expectedFlag);
-  });
 
-  it.each([
-    ["pi", "pi --exclude-tools bash,edit,write"],
-    ["env MODE=review pi -- positional", "env MODE=review pi --exclude-tools bash,edit,write -- positional"],
-    ["npx --yes pi -- positional", "npx --yes pi --exclude-tools bash,edit,write -- positional"],
-  ])("SDD 404: injects and persists Pi Delivery reviewer safety structurally: %s", async (cmd, effective) => {
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "pi-safe", segmentId: "seg-pi" }),
-      confirmDeliveryJoin: async () => undefined,
-      materializeHarness: ({ name, def }) => adapterFor(def.cmd)?.runtime === "pi"
-        ? { home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }
-        : null,
-      materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
-    });
-    await manager.spawn("pi-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "pi-review" } });
-    expect(ledger.get("pi-reviewer")?.def?.cmd).toBe(effective);
-  });
 
-  it("SDD 404: preserves an explicit canonical Pi reviewer denylist byte-for-byte", async () => {
-    const cmd = "pi --exclude-tools write,bash,edit --thinking high";
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "pi-safe", segmentId: "seg-pi" }),
-      confirmDeliveryJoin: async () => undefined,
-      materializeHarness: ({ name }) => ({ home: `/private/pi/${name}`, env: { PI_CODING_AGENT_DIR: `/private/pi/${name}`, PI_CODING_AGENT_SESSION_DIR: `/private/pi/${name}/sessions` }, args: [] }),
-      materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
-    });
-    await manager.spawn("pi-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "pi-review" } });
-    expect(ledger.get("pi-reviewer")?.def?.cmd).toBe(cmd);
-  });
 
-  it.each([
-    ["codex --sandbox \"read-only\"", "codex --sandbox \"read-only\""],
-    ["codex -s=read-only", "codex -s=read-only"],
-    ["codex -sread-only", "codex -sread-only"],
-    ["claude --permission-mode 'plan'", "claude --permission-mode 'plan'"],
-    ["grok --permission-mode=plan", "grok --permission-mode=plan"],
-  ])("SDD 368 T10 preserves an already-safe literal reviewer command byte-for-byte: %s", async (cmd, expected) => {
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("literal-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "literal" } });
-    expect(ledger.get("literal-reviewer")?.def?.cmd).toBe(expected);
-  });
 
-  it.each([
-    ["codex -- positional", "codex --sandbox read-only -- positional"],
-    ["env MODE=review codex -- positional", "env MODE=review codex --sandbox read-only -- positional"],
-    ["npx --yes codex -- positional", "npx --yes codex --sandbox read-only -- positional"],
-    ["npx -p @openai/codex codex -- positional", "npx -p @openai/codex codex --sandbox read-only -- positional"],
-    ["npx --package=@openai/codex codex -- positional", "npx --package=@openai/codex codex --sandbox read-only -- positional"],
-    ["env --argv0 reviewer codex -- positional", "env --argv0 reviewer codex --sandbox read-only -- positional"],
-    ["env -a codex -f vars.env codex -- positional", "env -a codex -f vars.env codex --sandbox read-only -- positional"],
-    ["pnpx --allow-build native-addon codex -- positional", "pnpx --allow-build native-addon codex --sandbox read-only -- positional"],
-  ])("SDD 368 T10 inserts reviewer safety immediately after the structural runtime token: %s", async (cmd, effective) => {
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("structural-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "structural" } });
-    expect(ledger.get("structural-reviewer")?.def?.cmd).toBe(effective);
-  });
 
-  it.each([
-    "codex --sandbox workspace-write",
-    "codex -s danger-full-access",
-    "codex -sworkspace-write",
-    "codex --full-auto",
-    "codex -sread-only --sandbox read-only",
-    "codex --sandbox=read-only -s read-only",
-    "codex --dangerously-bypass-approvals-and-sandbox",
-    "claude --permission-mode acceptEdits",
-    "claude --dangerously-skip-permissions",
-    "grok --permission-mode default",
-    "grok --dangerously-skip-permissions",
-    "grok --always-approve",
-    "claude --permission-mode plan --permission-mode=plan",
-    "grok --permission-mode=plan --permission-mode plan",
-    "pi --tools read,grep,find,ls",
-    "pi --no-tools",
-    "pi --no-builtin-tools",
-    "pi --exclude-tools bash,edit",
-    "pi --exclude-tools bash,edit,write --exclude-tools read",
-    "pi --exclude-tools=bash,edit,write",
-    "pi -xt bash,edit",
-  ])("SDD 368/403 refuses conflicting reviewer command before reservation or spawn: %s", async (cmd) => {
-    let prepared = false;
-    const { manager, cmds } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); },
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await expect(manager.spawn("unsafe-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "unsafe" } }))
-      .rejects.toThrow(/reviewer command/);
-    expect(prepared).toBe(false);
-    expect(cmds).toHaveLength(0);
-  });
 
-  it.each([
-    "codex | tee /tmp/review", "codex && sh", "codex; sh", "codex > /tmp/review",
-    "codex $(printf unsafe)", "codex $REVIEW_MODE", "codex *.md",
-    "env -S 'codex --'", "env --unknown codex", "env -a", "env -f codex",
-    "npx -c codex", "npx --unknown codex", "npx -p", "npx --package= codex",
-    "pnpx --shell-mode codex", "pnpx --unknown codex", "bunx --unknown codex", "bunx -p",
-    "pnpx --allow-build", "pnpx --allow-build --package pkg codex", "pnpx --allow-build= codex",
-  ])("SDD 368 T10 refuses ambiguous reviewer shell structure before reservation: %s", async (cmd) => {
-    let prepared = false;
-    const { manager } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); }, confirmDeliveryJoin: async () => undefined,
-    });
-    await expect(manager.spawn("ambiguous-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "ambiguous" } }))
-      .rejects.toThrow(/structurally ambiguous|shell expansion/);
-    expect(prepared).toBe(false);
-  });
 
-  it.each([
-    "env env codex --",
-    "env MODE=review env codex --",
-    "env -i --argv0 reviewer /usr/bin/env codex --",
-    "env env npx codex --",
-  ])("SDD 368 T10 R3 refuses nested env before reservation or spawn: %s", async (cmd) => {
-    let prepared = false;
-    const { manager, cmds } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); },
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await expect(manager.spawn("nested-env-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "nested-env" } }))
-      .rejects.toThrow(/structurally ambiguous/);
-    expect(prepared).toBe(false);
-    expect(cmds).toHaveLength(0);
-  });
 
-  it.each([
-    "npx codex@0.144.1 -- positional",
-    "npx @openai/codex -- positional",
-    "env MODE=review pnpx @scope/reviewer-cli -- positional",
-    "bunx custom-reviewer@latest -- positional",
-  ])("SDD 368 T10 A3 refuses package specs whose effective adapter cannot be proven: %s", async (cmd) => {
-    let prepared = false;
-    const { manager } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async () => { prepared = true; throw new Error("must not prepare"); }, confirmDeliveryJoin: async () => undefined,
-    });
-    await expect(manager.spawn("package-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "package" } }))
-      .rejects.toThrow(/cannot prove the runtime adapter/);
-    expect(prepared).toBe(false);
-  });
 
-  it.each([
-    ["custom-review-runtime", false],
-    ["env MODE=review custom-review-runtime", false],
-    ["npx codex -- positional", true],
-    ["npx opencode -- positional", false],
-  ])("SDD 368 T10 A3 preserves direct/env unknown and known literal launcher policy: %s", async (cmd, sandboxed) => {
-    const advisories: string[] = [];
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      notify: (message) => { advisories.push(message); },
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("policy-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "policy" } });
-    const effective = ledger.get("policy-reviewer")?.def?.cmd ?? "";
-    expect(effective.includes("--sandbox read-only")).toBe(sandboxed);
-    expect(advisories.length > 0).toBe(!sandboxed);
-  });
 
-  it("SDD 368 T10 treats bypass-looking text after -- and single-quoted control text as positional data", async () => {
-    const cmd = "codex -- '--dangerously-bypass-approvals-and-sandbox | && ; >'";
-    const { manager, ledger, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("positional-reviewer", { cmd,
-      deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "positional" } });
-    expect(ledger.get("positional-reviewer")?.def?.cmd).toBe("codex --sandbox read-only -- '--dangerously-bypass-approvals-and-sandbox | && ; >'");
-  });
 
-  it("SDD 368 T10 real env and deterministic wrappers pass the inserted sandbox argv to Codex", async () => {
-    const bin = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-reviewer-bin-"));
-    const executable = path.join(bin, "codex");
-    fs.writeFileSync(executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURE_FILE\"\n", { mode: 0o755 });
-    const wrapper = "#!/bin/sh\ncase \"$(basename \"$0\")\" in\n  npx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package|-w|--workspace) shift 2;; --package=*|--workspace=*|-y|--yes|--no|--workspaces|--include-workspace-root) shift;; --) shift; break;; *) break;; esac; done;;\n  pnpx) while [ $# -gt 0 ]; do case \"$1\" in --allow-build|--package|--reporter) shift 2;; --allow-build=*|--package=*|--reporter=*) shift;; *) break;; esac; done;;\n  bunx) while [ $# -gt 0 ]; do case \"$1\" in -p|--package) shift 2;; --package=*|--bun|--no-install|--verbose|--silent) shift;; *) break;; esac; done;;\nesac\nexec \"$@\"\n";
-    for (const name of ["npx", "pnpx", "bunx"]) fs.writeFileSync(path.join(bin, name), wrapper, { mode: 0o755 });
-    const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" }, reservationNonce: "n", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    const cases = [
-      "env --argv0 reviewer codex -- positional",
-      "npx -p @openai/codex codex -- positional",
-      "pnpx --allow-build native-addon --package @openai/codex --reporter append-only codex -- positional",
-      "bunx --no-install -p @openai/codex codex -- positional",
-    ];
-    for (const [index, raw] of cases.entries()) {
-      const capture = path.join(bin, `argv-${index}.txt`);
-      await manager.spawn(`argv-reviewer-${index}`, { cmd: raw,
-        deliveryJoin: { deliveryId: "d", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: `argv-${index}` } });
-      execFileSync("/bin/sh", ["-c", cmds.at(-1)!], { env: { ...process.env, CAPTURE_FILE: capture, PATH: `${bin}:${process.env.PATH}` } });
-      expect(fs.readFileSync(capture, "utf8").trim().split("\n").slice(0, 4)).toEqual(["--sandbox", "read-only", "--", "positional"]);
-    }
-    fs.rmSync(bin, { recursive: true, force: true });
-  });
 
-  it("SDD 368 T10 leaves unsupported reviewer runtimes unchanged with an advisory", async () => {
-    const advisories: string[] = [];
-    const { manager, cmds, ws } = resumeHarness("agents: {}\n", {
-      notify: (message) => { advisories.push(message); },
-      prepareDeliveryJoin: async (_name, request) => ({ cwd: ws,
-        worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: request.expectedHead, createdAt: "now" },
-        reservationNonce: "nonce", segmentId: "seg-t14" }),
-      confirmDeliveryJoin: async () => undefined,
-    });
-    await manager.spawn("reviewer-unknown", { cmd: "custom-review-runtime",
-      deliveryJoin: { deliveryId: "d-review", role: "reviewer", ownsSubset: [], expectedHead: "abc", operationId: "unknown" } });
-    expect(cmds.at(-1)).toContain("custom-review-runtime");
-    expect(cmds.at(-1)).not.toMatch(/--sandbox|--permission-mode/);
-    expect(advisories).toEqual([expect.stringContaining("no measured shell-level read-only mode")]);
-  });
 
   it("mint runtime (claude): spawns a NAMED session (-n) and records the name (spec 220)", async () => {
     const { manager, ledger, cmds, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -3448,27 +2950,6 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
   });
 
-  it("holds a declared soul reservation until Delivery preparation and launch settle", async () => {
-    let finish!: (prepared: { cwd: string; worktree: { path: string; branch: string; tachyonCreatedBranch: boolean; baseRef: string; createdAt: string }; reservationNonce: string; segmentId: string }) => void;
-    const pending = new Promise<Parameters<typeof finish>[0]>((resolve) => { finish = resolve; });
-    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", {
-      prepareDeliveryJoin: async () => pending,
-      confirmDeliveryJoin: async () => undefined,
-    });
-    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
-    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
-    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
-
-    const launch = manager.spawn("review-run", {
-      deliveryJoin: { deliveryId: "delivery-1", role: "reviewer", ownsSubset: [], expectedHead: "abc", declaredAgent: "reviewer", operationId: "join-1" },
-    });
-    const reservations = path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations");
-    await vi.waitFor(() => expect(fs.readdirSync(reservations)).toHaveLength(1));
-    finish({ cwd: ws, worktree: { path: ws, branch: "tachyon/delivery", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "now" }, reservationNonce: "nonce", segmentId: "segment" });
-    await launch;
-    expect(fs.readdirSync(reservations)).toEqual([]);
-  });
 
   it("resume() spawns the runtime's resume command and persists the id", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -3668,45 +3149,6 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(transcriptProbes).toBe(2);
   });
 
-  it("388: rebind readiness permanently denies Delivery and snapshot-owned rows without resolving", async () => {
-    const snapshotDenied = new Set(["snapshot-owned"]);
-    let resolutionProbes = 0;
-    let transcriptProbes = 0;
-    const h = resumeHarness(
-      "agents:\n  delivery-owned:\n    cmd: claude\n  snapshot-owned:\n    cmd: claude\n",
-      {
-        isDeliveryLifecycleDenied: (name) => snapshotDenied.has(name),
-        resolveCurrentSession: async () => {
-          resolutionProbes++;
-          return "44444444-4444-4444-4444-444444444444";
-        },
-        fileExists: () => {
-          transcriptProbes++;
-          return true;
-        },
-      },
-    );
-    const deliveryRecord = {
-      def: { cmd: "claude", kind: "agent" as const },
-      resume: { runtime: "claude" as const, sessionId: "delivery-session" },
-      cwd: h.ws,
-      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      updatedAt: "t",
-      delivery: { deliveryId: "delivery-1", segmentId: "segment-1", executionNonce: "nonce-1" },
-    };
-    const snapshotRecord = {
-      def: { cmd: "claude", kind: "agent" as const },
-      resume: { runtime: "claude" as const, sessionId: "snapshot-session" },
-      cwd: h.ws,
-      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      updatedAt: "t",
-    };
-
-    expect(await h.manager.rebindResumeReadiness("delivery-owned", deliveryRecord)).toMatchObject({ kind: "denied" });
-    expect(await h.manager.rebindResumeReadiness("snapshot-owned", snapshotRecord)).toMatchObject({ kind: "denied" });
-    expect(resolutionProbes).toBe(0);
-    expect(transcriptProbes).toBe(0);
-  });
 
   it("resume() resolves a capture runtime's id from disk", async () => {
     const { manager, cmds } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
@@ -5439,33 +4881,6 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     // t-303f2b — gated/Temporary grok must use the Bridge private GROK_HOME (same as declared), not a
     // second isolate:transcript harness home that races auth materialization.
-    it("t-303f2b: Temporary grok with Bridge materializer injects bridge GROK_HOME (no harness isolate race)", async () => {
-      const calls: string[] = [];
-      const matCalls: Array<{ name: string; isolate?: string }> = [];
-      const WT = { path: "/wt/h/deliveryMechanismLeaseGrokR1", branch: "tachyon/deliveryMechanismLeaseGrokR1", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
-      const { manager, newSessionArgs } = resumeHarness("agents: {}\n", {
-        ...GROK_BRIDGE(calls),
-        launchPreflight: { check: async () => ({ state: "supported", runtime: "grok", source: "fixture" }) },
-        resolveSpawnCwd: async () => ({ cwd: WT.path, worktree: WT, delegationBaseSha: "base" }),
-        materializeHarness: ({ name, def }) => {
-          matCalls.push({ name, isolate: def.isolate });
-          return { home: `/ws/.tachyon/harness/${name}`, env: { GROK_HOME: `/ws/.tachyon/harness/${name}/.grok` }, args: [] };
-        },
-      });
-      await manager.spawn("deliveryMechanismLeaseGrokR1", {
-        cmd: "grok --model grok-4.5 --permission-mode auto --no-subagents",
-        gate: {
-          behaviorTest: "mechanism-only lease policy never impersonates proven_empty",
-          owns: ["src/delivery/leaseService.ts"],
-        },
-        contract: { task: "lease core", context: "sdd 368", constraints: "no scope creep", doneWhen: "tests green" },
-      });
-      const envPairs = newSessionArgs.at(-1)!.filter((a) => a.startsWith("GROK_HOME="));
-      expect(envPairs).toEqual(["GROK_HOME=/ws/.tachyon/bridge-mcp/deliveryMechanismLeaseGrokR1.grok"]);
-      expect(calls).toEqual(["deliveryMechanismLeaseGrokR1"]);
-      // materializeHarness must not run for auto-isolate on grok when bridge private home is available
-      expect(matCalls).toEqual([]);
-    });
   });
 
   describe("spec 243 — per-spawn --settings session-ownership hook", () => {
@@ -6540,8 +5955,6 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
       workspaceRoot: ws,
       getConfig: () => configOf(yaml),
       ledger,
-      // Production always wires canonical Delivery storage; most unit cases do not inspect it.
-      recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
       launchPreflight: HERMETIC_PREFLIGHT,
       ...extra,
     });
@@ -7116,103 +6529,9 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(newSessionArgs).toHaveLength(1);
   });
 
-  it("gated spawn fails closed when no worktree is available (spec 362 T1)", async () => {
-    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => null,
-    });
-    await expect(
-      manager.spawn("reviewer", {
-        cmd: "claude",
-        parent: "boss",
-        contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
-        gate: { behaviorTest: "login retry fails then passes", owns: ["src"] },
-      }),
-    ).rejects.toThrow(/gated delegation requires an isolated worktree/);
-  });
 
-  it("gated spawn publishes the canonical Delivery input and returns its exact receipt", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "old-delegation-base", createdAt: "t" };
-    let recorded: Parameters<NonNullable<AgentManagerOptions["recordCanonicalDelivery"]>>[0] | undefined;
-    const receipt = canonicalSpawnReceipt(REC, "fresh-source-head");
-    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async (ctx) => {
-        expect(ctx.gate?.behaviorTest).toBe("login retry fails then passes");
-        return { cwd: REC.path, worktree: REC, delegationBaseSha: "fresh-source-head" };
-      },
-      recordCanonicalDelivery: (input) => { recorded = input; return receipt; },
-    });
-    const result = await manager.spawn("reviewer", {
-      cmd: "claude",
-      parent: "boss",
-      delegator: "boss",
-      contract: { task: "add login retry", context: "auth flow flakes", constraints: "no new deps", doneWhen: "retry behavior test passes" },
-      gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
-    });
-    expect(result).toEqual(receipt);
-    expect(recorded).toMatchObject({
-      name: "reviewer",
-      delegator: "boss",
-      baseSha: "fresh-source-head",
-      worktree: REC,
-      gate: { owns: ["src/auth.ts"], behaviorTest: "login retry fails then passes" },
-      contract: { task: "add login retry", doneWhen: "retry behavior test passes" },
-    });
-    const reviewer = (await manager.list()).find((a) => a.name === "reviewer");
-    expect(reviewer?.parent).toBeUndefined();
-    expect(reviewer?.delegator).toBe("boss");
-  });
 
-  it("composes gated onboarding with the fixed oracle path outside implementer ownership", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
-    const { manager, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async (ctx) => {
-        expect(ctx.gate).toBeDefined();
-        ctx.gate!.stubPath = "tests/product/login-retry.invariant.ts";
-        return { cwd: REC.path, worktree: REC, delegationBaseSha: "source-head" };
-      },
-    });
 
-    await manager.spawn("reviewer", {
-      cmd: "claude",
-      parent: "boss",
-      delegator: "boss",
-      contract: {
-        task: "implement login retry",
-        context: "retry behavior is missing",
-        constraints: "preserve auth semantics",
-        doneWhen: "login retry invariant passes",
-      },
-      gate: { behaviorTest: "login retry fails then passes", owns: ["src/auth.ts"] },
-    });
-
-    const cmd = newSessionArgs[0]?.at(-1) ?? "";
-    expect(cmd).toContain("at tests/product/login-retry.invariant.ts");
-    expect(cmd).toContain("Owns: src/auth.ts.");
-    expect(cmd).not.toContain("Owns: src/auth.ts, tests/product/login-retry.invariant.ts.");
-  });
-
-  it("keeps ledger and worktree visible when rejected delegation kill cannot prove the session dead", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const sessions = new Set<string>();
-    const exec = async (args: string[]): Promise<ExecResult> => {
-      const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
-      if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); return { stdout: "", stderr: "" }; }
-      if (args[2] === "has-session") { if (!sessions.has(target)) throw new Error("none"); return { stdout: "", stderr: "" }; }
-      if (args[2] === "kill-session") throw new Error("injected kill failure");
-      if (args[2] === "list-sessions") return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
-      if (args[2] === "list-panes") return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
-      return { stdout: "", stderr: "" };
-    };
-    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      tmux: new TmuxService(exec), resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
-      recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
-    });
-    const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b", owns: ["src"] } }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors[0]).toMatchObject({ message: "canonical reject" });
-    expect(ledger.get("reviewer")).toBeDefined();
-  });
 
   /**
    * t-55d4d0 — a deliberate preservation is a receipt, not a compensation failure.
@@ -7225,8 +6544,6 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
    */
   describe("t-55d4d0 compensation receipts are not compensation failures", () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const CONTRACT = { task: "t", context: "c", constraints: "x", doneWhen: "d" };
-    const GATE = { behaviorTest: "b", owns: ["src"] };
 
     /** tmux that refuses to create a session and reports none afterwards (compensation can complete). */
     function newSessionFails(): TmuxService {
@@ -7294,210 +6611,12 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
         expect((failure as Error).message).toBe("injected newSession failure");
       });
     });
-
-    describe("delegation reconciliation", () => {
-      it("THE MEASURED REPORT: a clean quarantine no longer claims compensation was incomplete", async () => {
-        const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
-          resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-          recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
-        });
-
-        const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss", contract: CONTRACT, gate: GATE })
-          .catch((error: unknown) => error);
-
-        expect(failure).toBeInstanceOf(AggregateError);
-        const agg = failure as AggregateError;
-        expect(agg.message).not.toContain("compensation was incomplete");
-        expect(agg.message).toContain("delegation reconciliation failed; compensation completed and recovery state was preserved for inspection");
-        expect(agg.errors[0]).toMatchObject({ message: "canonical reject" });
-        // The receipt survives — an operator still has to be told the checkout is on disk, and why.
-        const receipt = agg.errors.map((entry: Error) => entry.message).join("\n");
-        expect(receipt).toContain("checkout recovery state was preserved deliberately");
-        expect(receipt).toContain(REC.path);
-        expect(receipt).toContain("may have written work");
-        // Compensation genuinely completed: the ungated restart recipe is gone.
-        expect(ledger.get("reviewer")).toBeUndefined();
-      });
-
-      it("still reports incomplete compensation when the runtime cannot be proven dead", async () => {
-        const sessions = new Set<string>();
-        const tmux = new TmuxService(async (args: string[]): Promise<ExecResult> => {
-          const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
-          if (args.includes("new-session")) { sessions.add(args[args.indexOf("-s") + 1]); return { stdout: "", stderr: "" }; }
-          if (args[2] === "has-session") { if (!sessions.has(target)) throw new Error("none"); return { stdout: "", stderr: "" }; }
-          if (args[2] === "kill-session") throw new Error("injected kill failure");
-          if (args[2] === "list-sessions") return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
-          if (args[2] === "list-panes") return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n"), stderr: "" };
-          return { stdout: "", stderr: "" };
-        });
-        const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
-          tmux,
-          resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
-          recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
-        });
-
-        const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss", contract: CONTRACT, gate: GATE })
-          .catch((error: unknown) => error);
-
-        expect(failure).toBeInstanceOf(AggregateError);
-        const agg = failure as AggregateError;
-        expect(agg.message).toContain("compensation was incomplete");
-        const messages = agg.errors.map((entry: Error) => entry.message).join("\n");
-        expect(messages).toContain("failed to kill rejected delegated runtime");
-        expect(messages).toContain("may still be live");
-        // Unproven death keeps the recovery handle visible on purpose.
-        expect(ledger.get("reviewer")).toBeDefined();
-      });
-    });
   });
 
-  it("keeps the checkout quarantined but removes ungated restart authority after a dead runtime's canonical Delivery is rejected", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const removed: string[] = [];
-    let completed = 0;
-    const { manager, ledger, ws } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-      rollbackPreparedWorktree: async () => { removed.push(REC.path); },
-      recordCanonicalDelivery: async () => { throw new Error("canonical reject"); },
-      completePreparedWorktree: async () => { completed += 1; },
-    });
-    const failure = await manager.spawn("reviewer", { cmd: "claude", delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" }, gate: { behaviorTest: "b", owns: ["src"] } }).catch((error: unknown) => error);
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors[0]).toMatchObject({ message: "canonical reject" });
-    expect(removed).toEqual([]);
-    expect(ledger.get("reviewer")).toBeUndefined();
-    expect(completed).toBe(0); // delegation intent never became durable, so the quarantine lock stays.
 
-    const reloadedTmux = fakeTmux();
-    const reloaded = new AgentManager({
-      tmux: reloadedTmux.tmux,
-      wsHash: workspaceHash(ws),
-      workspaceRoot: ws,
-      getConfig: () => configOf("agents:\n  boss:\n    cmd: claude\n"),
-      ledger,
-    });
-    await reloaded.rehydrateFromLedger();
-    await expect(reloaded.restart("reviewer", { stop: "force", session: "new" })).rejects.toThrow(/no stored definition/);
-    expect(reloadedTmux.newSessionArgs).toHaveLength(0);
-  });
 
-  it("unlocks a fresh gated worktree only after ledger and canonical Delivery authority are durable", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const order: string[] = [];
-    let durableLedger: SessionLedger | undefined;
-    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-      recordCanonicalDelivery: async () => {
-        expect(durableLedger?.get("reviewer")?.worktree).toEqual(REC);
-        order.push("delegation");
-        return canonicalSpawnReceipt(REC, "b");
-      },
-      completePreparedWorktree: async (record) => {
-        expect(durableLedger?.get("reviewer")?.worktree).toEqual(REC);
-        expect(record).toEqual(REC);
-        order.push("unlock");
-      },
-    });
-    durableLedger = h.ledger;
 
-    await h.manager.spawn("reviewer", {
-      cmd: "claude",
-      delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b", owns: ["src"] },
-    });
 
-    expect(order).toEqual(["delegation", "unlock"]);
-    expect(h.sessions.has(h.manager.session("reviewer"))).toBe(true);
-  });
-
-  it("keeps a live session, durable ledger and recovery lock when final unlock fails", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    const notices: string[] = [];
-    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC, created: true, preparationLocked: true, rollbackHeadSha: "b" }),
-      recordCanonicalDelivery: async () => canonicalSpawnReceipt(REC, "b"),
-      completePreparedWorktree: async () => { throw new Error("injected unlock failure"); },
-      notify: (message) => { notices.push(message); },
-    });
-
-    await h.manager.spawn("reviewer", {
-      cmd: "claude",
-      delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b", owns: ["src"] },
-    });
-
-    expect(h.sessions.has(h.manager.session("reviewer"))).toBe(true);
-    expect(h.ledger.get("reviewer")?.worktree).toEqual(REC);
-    expect(notices).toContainEqual(expect.stringContaining("worktree remains locked for recovery"));
-    expect(notices).toContainEqual(expect.stringContaining("injected unlock failure"));
-  });
-
-  it("fails a gated launch closed when canonical Delivery storage is not wired", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
-    let completed = 0;
-    let resolved = 0;
-    const h = harness("agents:\n  boss:\n    cmd: claude\n", {
-      resolveSpawnCwd: async () => { resolved += 1; return { cwd: REC.path, worktree: REC, preparationLocked: true }; },
-      recordCanonicalDelivery: undefined,
-      completePreparedWorktree: async () => { completed += 1; },
-    });
-
-    const failure = await h.manager.spawn("reviewer", {
-      cmd: "claude",
-      delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "b", owns: ["src"] },
-    }).catch((error: unknown) => error);
-
-    expect(failure).toMatchObject({ message: "gated delegation requires canonical Delivery persistence" });
-    expect(resolved).toBe(0);
-    expect(completed).toBe(0);
-    expect(h.ledger.get("reviewer")).toBeUndefined();
-    expect(h.sessions.has(h.manager.session("reviewer"))).toBe(false);
-  });
-
-  it("preserves an advanced reused-worktree preparation when new-session fails and no pane exists", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: false, baseRef: "base", createdAt: "t" };
-    const preserved: unknown[][] = [];
-    const exec = async (args: string[]): Promise<ExecResult> => {
-      if (args.includes("new-session")) throw new Error("injected new-session failure");
-      if (args[2] === "has-session" || args[2] === "list-sessions") throw new Error("no server");
-      if (args[2] === "list-panes") return { stdout: "", stderr: "" };
-      return { stdout: "", stderr: "" };
-    };
-    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      tmux: new TmuxService(exec),
-      resolveSpawnCwd: async () => ({
-        cwd: REC.path,
-        worktree: REC,
-        created: false,
-        preparationLocked: true,
-        rollbackHeadSha: "base",
-        preparationHeadBefore: "base",
-        preparationHeadAfter: "prepared",
-      }),
-      rollbackPreparedWorktree: async (...args) => {
-        preserved.push(args);
-        throw new Error("prepared worktree recovery state was preserved");
-      },
-    });
-
-    const failure = await manager.spawn("reviewer", {
-      cmd: "claude",
-      delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
-    }).catch((error: unknown) => error);
-
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors[0]).toMatchObject({ message: "injected new-session failure" });
-    expect(preserved).toHaveLength(1);
-    expect(preserved[0]?.slice(0, 5)).toEqual([REC, "base", "base", "prepared", false]);
-    expect(ledger.get("reviewer")).toBeUndefined();
-  });
 
   it("reports locked recovery and revokes the token after a rejected launch is proven dead", async () => {
     const REC = { path: "/wt/h/codex", branch: "tachyon/codex", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
@@ -7519,50 +6638,6 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(h.ledger.get("codex")).toBeUndefined();
   });
 
-  it("never kills an ambiguous same-named pane after new-session reports failure", async () => {
-    const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: false, baseRef: "base", createdAt: "t" };
-    const sessions = new Set<string>();
-    let killCalls = 0;
-    let rollbackCalls = 0;
-    const exec = async (args: string[]): Promise<ExecResult> => {
-      const target = args[args.indexOf("-t") + 1]?.replace(/^=/, "").replace(/:$/, "");
-      if (args.includes("new-session")) {
-        sessions.add(args[args.indexOf("-s") + 1]);
-        throw new Error("duplicate session race");
-      }
-      if (args[2] === "has-session") {
-        if (!sessions.has(target)) throw new Error("none");
-        return { stdout: "", stderr: "" };
-      }
-      if (args[2] === "kill-session") { killCalls += 1; sessions.delete(target); return { stdout: "", stderr: "" }; }
-      if (args[2] === "list-sessions") return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
-      if (args[2] === "list-panes") return { stdout: [...sessions].map((name) => `${name}\t0\t`).join("\n"), stderr: "" };
-      return { stdout: "", stderr: "" };
-    };
-    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
-      tmux: new TmuxService(exec),
-      resolveSpawnCwd: async () => ({
-        cwd: REC.path,
-        worktree: REC,
-        preparationHeadBefore: "base",
-        preparationHeadAfter: "prepared",
-      }),
-      rollbackPreparedWorktree: async () => { rollbackCalls += 1; },
-    });
-
-    const failure = await manager.spawn("reviewer", {
-      cmd: "claude",
-      delegator: "boss",
-      contract: { task: "t", context: "c", constraints: "x", doneWhen: "d" },
-      gate: { behaviorTest: "cmd:node check.mjs", owns: ["src"] },
-    }).catch((error: unknown) => error);
-
-    expect(failure).toBeInstanceOf(AggregateError);
-    expect((failure as AggregateError).errors.some((error) => String(error).includes("uncertain"))).toBe(true);
-    expect(killCalls).toBe(0);
-    expect(rollbackCalls).toBe(0);
-    expect(sessions.has(manager.session("reviewer"))).toBe(true);
-  });
 
   it("rehydrates a re-discovered Temporary agent so it is restartable + re-nested", async () => {
     const { manager, ledger, ws, cmds } = harness("agents:\n  claude:\n    cmd: claude\n");
@@ -8075,7 +7150,6 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
       ledger,
       resolveCurrentSession: async () => "11111111-1111-4111-8111-111111111111",
       fileExists: () => true,
-      recordCanonicalDelivery: async (input) => canonicalSpawnReceipt(input.worktree, input.baseSha),
     });
     return { manager, ws, hash, ledger, sessions, pipedSessions, pipePaneArgs, opLog };
   }
