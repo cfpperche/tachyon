@@ -1,4 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync } from "node:fs";
+import { transformSync } from "esbuild";
 import { FLEET, READY, fleetMessage, readyMessage } from "../../src/webview/sidebar/messages.js";
 import { ROUTES, buildCatalog } from "../../scripts/webview-preview/routes.js";
 import { SAMPLE } from "../../src/sidebar/types.js";
@@ -220,5 +222,88 @@ describe("generated route catalog", () => {
     expect(def?.url).toBe("/scripts/webview-preview/index.html?view=sidebar&fixture=default");
     expect(def?.frame).toEqual({ w: 340, h: 760 });
     expect(def?.tags).toContain("sample-derived");
+  });
+});
+
+// t-fdfbd4 — THE PORTABLE PREVIEW-REFERENCE GUARD (recommendation measured in t-c55f8d, 2026-08-01).
+//
+// `test:browser` needs a system Chrome and ~96s, so `verify:full` does not run it, and for months nothing
+// else did: t-c55f8d found 17 failures on main of which SIXTEEN were one defect repeated — a test opening
+// `?view=plugins` / `?view=runtime-ops` / `dist/webview/task-studio.js` / `dist/webview/mission-control.js`
+// after the product folded every one of those standalone entry points into the Control bundle. Not one of
+// them needed a browser to be caught; they were strings pointing at doors that no longer exist.
+//
+// So the cheap half of that suite moves HERE, where it costs milliseconds and needs no Chrome: a browser
+// test may only name a view the harness can resolve and a bundle the build actually emits. The expensive
+// half — the 17th failure, a 2px `.ds-btn` line-height mismatch (t-b8b85c) — still needs real pixels, and
+// `test:browser` stays a PRE-RELEASE gate for it (README, "Development"). Deliberately NOT added to
+// verify:full: a suite nobody sustains does not stop rotting by being put in a gate, it just moves the rot
+// inside the gate, where it turns into pressure to skip.
+describe("preview references in the browser suite (t-fdfbd4)", () => {
+  // Import shape matches packageCleanGate/webviewChunkHygiene's tests: dynamic import of the ESM .mjs
+  // helper, since this tsconfig emits CommonJS.
+  let blankComments: (src: string) => string;
+  let callerFiles: (roots?: string[]) => string[];
+  let declaredWebviewBundles: (esbuildSource?: string) => Set<string>;
+  let scanPreviewReferences: (options?: { routeKeys?: Set<string>; bundles?: Set<string>; files?: string[] }) => {
+    dead: string[];
+    stale: string[];
+    knownViews: string[];
+    knownBundles: string[];
+  };
+  let files: string[];
+  let bundles: Set<string>;
+  const routeKeys = new Set(Object.keys(ROUTES));
+
+  beforeAll(async () => {
+    ({ blankComments, callerFiles, declaredWebviewBundles, scanPreviewReferences } =
+      await import("../../scripts/webview-preview/reference-scan.mjs"));
+    files = callerFiles();
+    bundles = declaredWebviewBundles();
+  });
+
+  it("scans every file that opens a preview route or loads a webview bundle", () => {
+    // test/browser is not the only caller: scripts/visual-qa/*.mjs drive the same harness by URL. Both
+    // roots are walked, so a dead route in either is caught by the same rule.
+    expect(files).toContain("test/browser/runtimeOpsView.test.ts");
+    expect(files).toContain("scripts/visual-qa/task-detail-overflow.mjs");
+    expect(files.length).toBeGreaterThan(15);
+  });
+
+  it("derives the live bundle set from esbuild.mjs, including the code-split cockpit target", () => {
+    // A canary on the derivation, not a second copy of the list: `outfile:` alone would miss cockpit.js
+    // (emitted via outdir + entryNames, with the inherited outfile deleted) and would then reject every
+    // test t-c55f8d repointed AT cockpit — a false positive that would get this guard deleted in a week.
+    expect(bundles.has("dist/webview/cockpit.js")).toBe(true);
+    expect(bundles.has("dist/webview/sidebar.js")).toBe(true);
+    // and the retired ones are genuinely absent, which is the whole premise.
+    expect(bundles.has("dist/webview/mission-control.js")).toBe(false);
+    expect(bundles.has("dist/webview/task-studio.js")).toBe(false);
+  });
+
+  it("every ?view= and dist/webview/*.js reference resolves against ROUTES and esbuild.mjs", () => {
+    const { dead } = scanPreviewReferences({ routeKeys, bundles, files });
+    expect(dead, `\n${dead.join("\n\n")}\n`).toEqual([]);
+  });
+
+  it("no waiver outlives the reference it excuses", () => {
+    const { stale } = scanPreviewReferences({ routeKeys, bundles, files });
+    expect(stale, `\n${stale.join("\n\n")}\n`).toEqual([]);
+  });
+
+  it("the comment blanker agrees with esbuild's own tokenizer on every scanned file", () => {
+    // The scan reads CODE only — the tests repointed in t-c55f8d explain the retired route in prose right
+    // above the live URL, so a scan that read comments would report the files that were already fixed.
+    // Hand-rolled lexing is the risk that buys that precision (an odd quote inside a regex literal would
+    // desync it), so the standing proof is a differential: the same tokens must fall out of esbuild's
+    // transform, which is the tokenizer this repo actually builds with.
+    const tokens = (text: string): string[] =>
+      [...text.matchAll(/[?&]view=[A-Za-z0-9_-]+|dist\/webview\/[A-Za-z0-9_.-]+\.js/g)].map((m) => m[0]).sort();
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      const loader = /\.tsx?$/.test(file) ? ("ts" as const) : ("js" as const);
+      const viaEsbuild = tokens(transformSync(source, { loader }).code);
+      expect(tokens(blankComments(source)), `${file}: comment blanker disagrees with esbuild`).toEqual(viaEsbuild);
+    }
   });
 });

@@ -154,11 +154,34 @@ npm run build        # esbuild bundle -> dist/
 npm test             # unit + integration + Product Invariants
 npm run typecheck
 npm run verify:full  # the gate a push to main has to pass
+npm run test:browser # PRE-RELEASE gate — needs a system Chrome; see below
 ```
 
 CI runs the portable core — typecheck, build, and unit including a real-tmux subset — and exposes
 Product Invariants as its own gate. The editor-host integration suites are a local gate; run them on
 tmux ≥ 3.6.
+
+### `test:browser` is a pre-release gate, not a commit gate
+
+The visual suite drives real Chrome through the dev preview harness and takes ~96s, so `verify:full`
+does **not** run it. Run it before cutting a release, alongside the clean-tree check
+`assertStableBuildSource` already enforces, and list it in the human dogfood pass. Leaving it out of
+the commit gate is a decision, not an oversight (t-c55f8d): a suite nobody sustains does not stop
+rotting by being put in a gate — the rot just moves inside the gate, where it becomes pressure to
+skip on the first hurried landing.
+
+What keeps it from rotting meanwhile is cheaper than running it. `verify:full` carries a portable,
+browser-free guard (t-fdfbd4, in `test/unit/webviewPreviewRoutes.test.ts`): every `?view=` a browser
+test or a `scripts/visual-qa` script opens must be a live key of `ROUTES`, and every
+`dist/webview/*.js` a host page loads must be an output `esbuild.mjs` declares. Both lists are
+derived from those two sources, never hand-kept. It exists because 16 of the 17 failures t-c55f8d
+found were one defect repeated — tests still knocking on entry points the product had folded into
+the Control bundle months earlier — and none of them needed a browser to be caught. It fails naming
+the dead route and the exact `file:line`. A route deliberately kept dead is waived in place with a
+`// preview-route-check: allow <token> (t-xxxxxx) — why` comment next to the reference; the guard
+also fails on a waiver whose reference is gone, so the waivers cannot rot either. What the guard
+cannot see is the pixel: the 17th failure was a 2px `.ds-btn` line-height mismatch (t-b8b85c), and
+that is exactly what the pre-release run is for.
 
 ## Support
 

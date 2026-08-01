@@ -18,6 +18,13 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // lands — deps t-54cdb2 and t-54cdb1, both still inbox as of 2026-08-01. Repointing it now would also mean
 // deciding what it covers, including the t-283149 session-inspection panel, which is design work, not a
 // mechanical fix. Left as-is so the guard's absence stays loud instead of being silently skipped.
+//
+// preview-route-check: allow view=runtime-ops (t-2a49b2) — the ONE dead preview route this repo keeps on
+// purpose. t-fdfbd4's portable guard (test/unit/webviewPreviewRoutes.test.ts) fails verify:full on any
+// browser test that opens a route ROUTES no longer has; this waiver is the human's 2026-07-31 decision
+// written where the reference lives, so the exception stays visible and dies with the file. It is checked,
+// not merely tolerated: the moment this file stops naming `view=runtime-ops` — because the route came back
+// with t-54cdb2/t-54cdb1, or because the file was repointed — the guard fails on the STALE waiver instead.
 const PREVIEW_PATH = "/scripts/webview-preview/index.html?view=runtime-ops&fixture=";
 
 interface Viewport {
