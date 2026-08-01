@@ -3,6 +3,7 @@ import {
   agentMemoryScopeSupport,
   agentMemoryScopeUnitName,
   parseAgentMemoryMax,
+  posixShellQuote,
   wrapAgentMemoryScopeCommand,
 } from "../../src/agents/agentMemoryScope.js";
 
@@ -27,6 +28,11 @@ describe("agentMemoryScope (t-0d0152)", () => {
     expect(cmd).toContain("MemoryMax=2G");
     expect(cmd).toContain("--unit='tachyon-mem-ws-agent-abc.scope'");
     expect(cmd).toContain("/bin/sh -c 'echo hi && sleep 1'");
+  });
+
+  it("posixShellQuote escapes embedded single quotes", () => {
+    expect(posixShellQuote("a")).toBe("'a'");
+    expect(posixShellQuote("it's")).toBe(`'it'\\''s'`);
   });
 
   it("reports non-linux as unsupported", () => {

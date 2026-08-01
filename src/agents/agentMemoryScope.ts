@@ -1,12 +1,14 @@
 /**
  * t-0d0152 — opt-in whole-tree MemoryMax for ordinary agent spawns via systemd --user scope.
  *
- * Separate from SDD 368 ProcessFence (Delivery kill/freeze + nonce identity). This only
- * wraps the pane command when settings.agentMemoryMax / tachyon.agentMemoryMax is set.
+ * Only wraps the pane command when settings.agentMemoryMax / tachyon.agentMemoryMax is set.
  * Fail-open when Linux/user-systemd is unavailable: callers skip the wrap.
  */
 
-import { posixShellQuote } from "./linuxProcessFence.js";
+/** POSIX single-quote escaping for arguments embedded in a shell command line. */
+export function posixShellQuote(text: string): string {
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
 
 /** systemd MemoryMax: plain bytes, K/M/G/T, or percent (e.g. 2G, 512M, 50%). */
 const MEMORY_MAX_RE = /^(?:\d+%$|\d+[KMGT]?)$/i;
@@ -35,7 +37,7 @@ export function agentMemoryScopeUnitName(wsHash: string, agentName: string, nonc
 
 /**
  * Wrap `command` in `systemd-run --user --scope` with MemoryMax.
- * Command is passed as a single sh -c payload (same pattern as wrapSystemdScopeCommand).
+ * Command is passed as a single sh -c payload.
  */
 export function wrapAgentMemoryScopeCommand(unitName: string, memoryMax: string, command: string): string {
   const max = parseAgentMemoryMax(memoryMax);
