@@ -259,7 +259,9 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
     const item = buildHumanInboxItemViewModel(vm, "saved-agent-proposal", "sp-4f1a2b");
     const refusal =
       "commit_failed: permissions.defaultMode value bypassPermissions must be authorized explicitly";
-    const html = renderStatic(ItemApp({ vm: item, dispatch: noopDispatch, error: refusal }));
+    // t-58f9e9 — the error crosses as a RECEIPT, not a bare string, so an identical refusal twice in
+    // a row is still two refusals to the component that clears its pending state.
+    const html = renderStatic(ItemApp({ vm: item, dispatch: noopDispatch, error: { message: refusal } }));
 
     expect(html).toContain('data-testid="inbox-saved-agent-error"');
     expect(html).toContain(refusal);

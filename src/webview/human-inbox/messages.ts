@@ -23,6 +23,25 @@ export { READY, readyMessage, type ReadyMessage };
 
 export const HUMAN_INBOX = "humanInbox" as const;
 export const HUMAN_INBOX_ERROR = "humanInboxError" as const;
+
+/**
+ * t-58f9e9 — one RECEIPT of a host refusal, not the refusal's text.
+ *
+ * The detail route clears its pending state when this changes, and a bare `string` cannot say
+ * "refused again" when the reason is the same one as last time: `useState` bails out on an equal
+ * value, so no re-render happens, so the effect watching it never runs. Measured in the shipped
+ * preact/hooks: the dispatcher is `t !== r && (…setState({}))`.
+ *
+ * That is not academic. A repeated refusal is the LIKELY case — it is what happens whenever the
+ * cause was not fixed between two attempts — and it left Approve and Deny disabled until the human
+ * navigated away, which is the same dead-button symptom this whole task was filed about.
+ *
+ * The object is rebuilt on every receipt so identity always changes. The type exists to stop a later
+ * simplification back to `string`, which would look tidier and restore the bug.
+ */
+export interface HumanInboxErrorReceipt {
+  message: string;
+}
 export const HUMAN_INBOX_ITEM = "humanInboxItem" as const;
 /** the opened item is gone (resolved/closed elsewhere, or never existed) — its own state, not an error */
 export const HUMAN_INBOX_ITEM_MISSING = "humanInboxItemMissing" as const;

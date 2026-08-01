@@ -5,6 +5,7 @@ import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
+import type { HumanInboxErrorReceipt } from "./messages";
 import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
 
 /**
@@ -91,7 +92,7 @@ function InboxRow({ item, dispatch }: { item: HumanInboxItem; dispatch: HumanInb
   );
 }
 
-export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?: string; dispatch: HumanInboxDispatch }) {
+export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?: HumanInboxErrorReceipt; dispatch: HumanInboxDispatch }) {
   if (!vm) {
     return (
       <div class="hi-root">
@@ -117,7 +118,7 @@ export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?:
       </div>
       {error ? (
         <div class="hi-error" role="alert">
-          <Icon name="error" /> {error}
+          <Icon name="error" /> {error.message}
         </div>
       ) : null}
       {vm.items.length === 0 ? (
@@ -350,12 +351,16 @@ function SavedAgentProposalDetail({
 }: {
   proposal: SavedAgentProposalReview;
   dispatch: HumanInboxDispatch;
-  error?: string;
+  error?: HumanInboxErrorReceipt;
 }) {
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<"approve" | "deny" | undefined>();
   // A refusal is the host's acknowledgement of the attempted decision. Success navigates away and
   // unmounts this component; failure keeps the human here and must re-enable the controls.
+  //
+  // t-58f9e9 — the dependency is the RECEIPT, which is a fresh object per refusal. It used to be the
+  // message string, and two identical refusals in a row are indistinguishable to `useState`: it bails
+  // on an equal value, nothing re-renders, this effect never runs, and both buttons stay disabled.
   useEffect(() => {
     if (error) setPending(undefined);
   }, [error]);
@@ -372,7 +377,7 @@ function SavedAgentProposalDetail({
   };
   return (
     <div class="hi-proposal" data-testid="inbox-saved-agent-proposal">
-      {error ? <div class="hi-error" role="alert" data-testid="inbox-saved-agent-error">{error}</div> : null}
+      {error ? <div class="hi-error" role="alert" data-testid="inbox-saved-agent-error">{error.message}</div> : null}
       <p class="hi-proposal-rationale">{proposal.rationale}</p>
       <dl class="hi-proposal-facts">
         <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
@@ -462,7 +467,7 @@ export function ItemApp({
   vm?: HumanInboxItemViewModel;
   missing?: { kind: HumanInboxKind; id: string };
   dispatch: HumanInboxDispatch;
-  error?: string;
+  error?: HumanInboxErrorReceipt;
 }) {
   // Gone-while-you-were-reading is its own state, never a blank document: something else resolved or
   // closed this, and saying so is the difference between "handled" and "lost".
