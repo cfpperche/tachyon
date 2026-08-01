@@ -1555,7 +1555,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(out).not.toMatch(/Bearer\s+[a-f0-9]{16,}/i);
   });
 
-  it("materializeBridgeMcpHermes writes private HERMES_HOME with Bridge yaml + auth symlink", () => {
+  it("materializeBridgeMcpHermes writes private HERMES_HOME with Bridge yaml + auth copy", () => {
     const realHermesHome = path.join(path.dirname(ws), "real-hermes");
     fs.mkdirSync(realHermesHome, { recursive: true });
     fs.writeFileSync(path.join(realHermesHome, "auth.json"), '{"tokens":{"access_token":"x"}}');
@@ -1579,8 +1579,13 @@ describe("HarnessManager materialize (fs)", () => {
     };
     const home = mgr.materializeBridgeMcpHermes("solo", bridge);
     expect(home).toBe(bridgeHermesHome(ws, "solo"));
-    expect(fs.lstatSync(path.join(home, "auth.json")).isSymbolicLink()).toBe(true);
-    expect(fs.readlinkSync(path.join(home, "auth.json"))).toBe(path.join(realHermesHome, "auth.json"));
+    const privateAuth = path.join(home, "auth.json");
+    const realAuth = path.join(realHermesHome, "auth.json");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    expect(fs.readFileSync(privateAuth, "utf8")).toBe(fs.readFileSync(realAuth, "utf8"));
+    expect(fs.statSync(privateAuth).mode & 0o777).toBe(0o600);
+    fs.writeFileSync(privateAuth, '{"tokens":{"access_token":"PRIVATE"}}');
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"tokens":{"access_token":"x"}}');
     const yaml = fs.readFileSync(path.join(home, "config.yaml"), "utf8");
     expect(yaml).toContain("tachyon_bridge");
     expect(yaml).toContain("http://127.0.0.1:9/mcp");
@@ -1628,6 +1633,11 @@ describe("HarnessManager materialize (fs)", () => {
     expect(yaml).toContain("tachyon_bridge");
     expect(yaml).not.toContain("ambient_global");
     expect(yaml).not.toContain("command: leak");
+    const privateAuth = path.join(result.home, "auth.json");
+    const realAuth = path.join(realHermesHome, "auth.json");
+    expect(fs.lstatSync(privateAuth).isSymbolicLink()).toBe(false);
+    fs.writeFileSync(privateAuth, '{"tokens":{"access_token":"PRIVATE"}}');
+    expect(fs.readFileSync(realAuth, "utf8")).toBe('{"tokens":{"access_token":"x"}}');
   });
 
   it("Hermes harness supports API-key auth without auth.json", () => {

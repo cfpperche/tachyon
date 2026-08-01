@@ -3064,7 +3064,7 @@ export class AgentManager {
    *     `config.toml` carrying `[mcp_servers.tachyon_bridge]` (`Authorization: Bearer ${TACHYON_AGENT_BRIDGE_TOKEN}`)
    *     + `auth.json` symlink, and inject `GROK_HOME=<home>`. Never mutates the user's real `~/.grok`.
    *   - hermes (non-harness) → no argv change; materialize a private HERMES_HOME with
-   *     `config.yaml` carrying `mcp_servers.tachyon_bridge` + `auth.json` symlink, inject `HERMES_HOME`.
+   *     `config.yaml` carrying `mcp_servers.tachyon_bridge` + isolated `auth.json` copy, inject `HERMES_HOME`.
    *   - pi → additively load the immutable staged `pi-bridge-extension.mjs`; URL and bearer remain env-only.
    * No-op when the Bridge URL is absent (self-heals on the next (re)start). Generalizes spec 232 (the
    * pipeline-node gate is dropped — all codex/opencode-bridge spawns get it via this one call).

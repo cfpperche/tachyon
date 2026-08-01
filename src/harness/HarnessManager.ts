@@ -2172,10 +2172,10 @@ export class HarnessManager {
               : "claude /login";
         throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
-      // t-de73e0 — Grok is measured to WRITE the credential it is handed, so it gets a copy of its
-      // own. The other runtimes keep the symlink they were measured with; the same exposure is
-      // plausible for them and is filed separately rather than changed blind here.
-      if (adapter.runtime === "grok") ensureAuthCopy(authLink, authTarget);
+      // t-de73e0 / t-1e67b4 — Grok and Hermes can write the credential they are handed, so each
+      // private home gets its own copy. Claude and Codex retain their measured symlink posture until
+      // an equivalent write-through path is confirmed for them.
+      if (adapter.runtime === "grok" || adapter.runtime === "hermes") ensureAuthCopy(authLink, authTarget);
       else ensureAuthSymlink(authLink, authTarget);
     }
 
@@ -2947,7 +2947,7 @@ export class HarnessManager {
   /**
    * Materialize a private `HERMES_HOME` for a NON-harness hermes agent and return its path
    * (injected as `HERMES_HOME`). Writes `$home/config.yaml` with Bridge `mcp_servers.tachyon_bridge`
-   * (`Authorization: Bearer ${TACH...N}`), symlinks `auth.json` when OAuth credentials exist, and
+   * (`Authorization: Bearer ${TACH...N}`), copies `auth.json` when OAuth credentials exist, and
    * symlinks `.env` when API-key credentials exist.
    * Never mutates the user's real `~/.hermes/config.yaml`. Rewritten on every (re)spawn.
    */
@@ -2959,7 +2959,9 @@ export class HarnessManager {
     const authTarget = path.join(this.realHermesHome, "auth.json");
     promoteNewerPrivateAuth(authLink, authTarget);
     if (fs.existsSync(authTarget)) {
-      ensureAuthSymlink(authLink, authTarget);
+      // Hermes persists refresh state through its auth store. Keep that write inside this agent's
+      // private home; a symlink would route the atomic replacement back to the user's credential.
+      ensureAuthCopy(authLink, authTarget);
       assertReadableHermesAuth(agent, home, authTarget);
     } else {
       // No OAuth credential is valid for API-key providers. Remove a broken/invalid private auth file

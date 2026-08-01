@@ -1154,7 +1154,7 @@ export class Workspace {
           },
         );
       },
-      // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + auth.json symlink).
+      // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + isolated auth copy).
       materializeBridgeMcpHermes: (name) => {
         const entry = this.bridgeEntry();
         return entry ? this.harness.materializeBridgeMcpHermes(name, entry) : undefined;

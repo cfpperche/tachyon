@@ -91,9 +91,10 @@ Legend (same spirit as `parity.md`):
 Tachyon does not choose a Hermes provider or model. Private-home materialization preserves the user's
 model/provider settings while adding only Tachyon-owned runtime wiring.
 
-- `auth.json` is optional: OAuth users get a validated symlink to the canonical real-home file when it
-  exists; API-key users can rely on `.env` or process environment without a false preflight failure.
-- A newer valid private OAuth file is promoted before re-linking, so refresh does not silently revert.
+- `auth.json` is optional: OAuth users get an isolated copy in the private home when it exists; API-key
+  users can rely on `.env` or process environment without a false preflight failure.
+- A newer valid private OAuth file is promoted before refreshing the copy, so refresh does not silently
+  revert and Hermes cannot write through to the canonical real-home credential.
 - `harness.inherit: none` removes ambient `mcp_servers` before adding only the declared servers and Bridge;
   model/provider settings remain available.
 - Hermes can use the same OAuth provider as another CLI, but independently refreshed token stores can still
