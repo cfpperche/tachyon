@@ -78,9 +78,33 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   explicitly targets another checkout. On completion, run `point-clear`, confirm with `point-status`,
   then remove the change worktree. The retired flags
   `--owner`, `--slot`, `--activate`, `--no-activate`, `--require-owner`, and `--all` must not return.
-- Visual/UI work requires visual evidence from the supported headless browser harness or
-  `visual-qa`; a green functional suite is not visual judgment. Do not open a desktop VS Code window
-  unless the human explicitly requests it.
+- Do not open a desktop VS Code window unless the human explicitly requests it.
+
+## Visual and UI work
+
+A green functional suite is not visual judgment. Any change a human LOOKS at — a new surface, a
+layout, a shared token, a refinement — carries visual evidence from the headless browser harness or
+the `visual-qa` skill. This lived in the verification list and kept being missed there, so it says
+how, not only that.
+
+- **Write the anchor BEFORE you build.** It states the intent the screen has to satisfy, in the
+  reader's terms, and it comes from the task's problem statement — never from what the screen ended
+  up looking like. An anchor written afterwards only proves the screenshot matches itself.
+- **Measure at least two widths.** 880 and 360 are this repo's pair. A single width hides exactly
+  the class of defect worth catching: lists whose per-row state collapses, containers with no bound,
+  rows whose alignment only holds while there is room.
+- **It is ADVISORY and never gates a merge.** It informs the person deciding. A verdict you disagree
+  with is a measurement to check, not an order to obey.
+- **The verdict is input to judgment, not the conclusion.** Measured on `t-aaad95`, where the run was
+  useful and two of its own findings were still wrong: it reported poor contrast on buttons that
+  measure 13.01, and called a legitimately `disabled` state a defect. Check what it claims before
+  acting on it.
+- **A shared token needs before AND after.** Changing something every surface uses — the button box,
+  a spacing scale — cannot be judged from the surface that motivated the change. Measure the
+  neighbours too, and anchor on NOT regressing them.
+- **If the browser is unavailable, say so in the report.** Never skip in silence and never describe
+  a screen you did not measure. "I could not run it" is information; an invented visual verdict is
+  worse than none.
 
 ## Review and reporting
 
