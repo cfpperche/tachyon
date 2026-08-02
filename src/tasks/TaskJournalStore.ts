@@ -258,12 +258,14 @@ function normalizeJournalEntry(input: unknown): JournalEntry | null {
   const row = input as Partial<JournalEntry>;
   if (typeof row.id !== "string" || typeof row.ts !== "string" || typeof row.author !== "string" || typeof row.text !== "string") return null;
   if (!/^j-[0-9a-f]{12}$/.test(row.id)) return null;
-  return {
-    id: row.id,
-    ts: row.ts,
-    author: boundedString(row.author, "author", 64),
-    text: boundedString(row.text, "text", JOURNAL_TEXT_MAX_CODEPOINTS),
-  };
+  // t-c2882f — `JOURNAL_TEXT_MAX_CODEPOINTS` is an APPEND bound, and `append` still enforces it.
+  // Re-applying it here made an entry persisted under a looser cap throw out of `read`, and the throw
+  // took the WHOLE task's journal with it (`read` reports a non-trailing throw as a corrupt line).
+  // Reading returns what is on disk; structure is still checked, size is not.
+  const author = row.author.trim();
+  const text = row.text.trim();
+  if (!author || !text) return null;
+  return { id: row.id, ts: row.ts, author, text };
 }
 
 function assertTaskId(id: string): void {

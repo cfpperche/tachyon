@@ -16,6 +16,7 @@ import {
   isTaskPriority,
   isTaskStatus,
   TASK_ID_RE,
+  TASK_STATUSES,
   ARTIFACT_REF_ROLES,
   type ArtifactRef,
   type ArtifactRefRole,
@@ -190,11 +191,20 @@ export class TaskStore {
     }
   }
 
+  /**
+   * t-c2882f — `unknown task` is reserved for a task that is genuinely NOT THERE.
+   *
+   * A record that exists on disk and cannot be served says exactly that, and names the file and the
+   * defect. The old message was factually false for the three tasks this was filed on: valid ids,
+   * valid statuses, whole content, and an answer that sent every reader looking for something that
+   * was never created instead of at the file sitting in the tasks directory.
+   */
   get(id: string): Task {
     assertTaskId(id);
-    const task = this.readTask(id);
-    if (!task) throw new Error(`unknown task '${id}'`);
-    return task;
+    const read = this.loadTask(id);
+    if (read.ok) return read.task;
+    if (read.absent) throw new Error(`unknown task '${id}'`);
+    throw new Error(unservableTaskMessage(id, this.pathFor(id), read.defect));
   }
 
   /**
@@ -219,8 +229,8 @@ export class TaskStore {
       if (name.includes(".tmp.")) continue;
       if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
       const id = name.slice(0, -".json".length);
-      const task = this.readTask(id);
-      if (task) tasks.push(task);
+      const read = this.loadTask(id);
+      if (read.ok) tasks.push(read.task);
     }
     tasks.sort(compareTasksForListing);
     return tasks;
@@ -370,13 +380,30 @@ export class TaskStore {
     return path.join(this.dir, `${id}.json`);
   }
 
-  private readTask(id: string): Task | null {
+  /**
+   * t-c2882f — a single read that distinguishes ABSENT from UNSERVABLE.
+   *
+   * The old shape caught every failure into one `null`, so "no such file" and "this record broke the
+   * reader" arrived at the caller as the same word. They are different facts and the caller does
+   * different things with them.
+   */
+  private loadTask(id: string): TaskRead {
+    let raw: string;
     try {
-      const parsed = JSON.parse(fs.readFileSync(this.pathFor(id), "utf8")) as unknown;
-      return normalizeTask(parsed, id);
-    } catch {
-      return null;
+      raw = fs.readFileSync(this.pathFor(id), "utf8");
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") return { ok: false, absent: true };
+      return { ok: false, absent: false, defect: `the file could not be read (${code ?? "unknown error"})` };
     }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch {
+      return { ok: false, absent: false, defect: "the file is not valid JSON" };
+    }
+    const result = normalizeTask(parsed, id);
+    return "task" in result ? { ok: true, task: result.task } : { ok: false, absent: false, defect: result.defect };
   }
 
   private writeTask(task: Task): void {
@@ -500,29 +527,145 @@ function assertTaskId(id: string): void {
   if (!TASK_ID_RE.test(id)) throw new Error(`invalid task id '${id}'`);
 }
 
-function normalizeTask(input: unknown, expectedId: string): Task | null {
-  if (!input || typeof input !== "object") return null;
+/** t-c2882f — what one read of a task file found. `absent` and `unservable` are DIFFERENT answers. */
+type TaskRead =
+  | { ok: true; task: Task }
+  | { ok: false; absent: true }
+  | { ok: false; absent: false; defect: string };
+
+/**
+ * t-c2882f — a task that EXISTS and cannot be served says so, and names a way forward.
+ *
+ * The message states what a read actually requires, because that is the repair: the reader enforces
+ * STRUCTURE only, so any defect it reports is in the record's shape and never in how much the record
+ * contains.
+ */
+function unservableTaskMessage(id: string, file: string, defect: string): string {
+  return (
+    `task '${id}' exists at ${file} but its record cannot be read: ${defect}. ` +
+    "Reading applies no authoring limit, so this is a defect in the record's shape rather than its size — " +
+    "a readable record needs an id matching its filename, a known status, and string title, author, createdAt and updatedAt. " +
+    "Repair the file or move it out of the tasks directory."
+  );
+}
+
+/**
+ * t-c2882f — READING a persisted Task is not AUTHORING one.
+ *
+ * This used to call `boundedString`/`optionalStringField` — the create/update validators — on every
+ * field it read back, which made an authoring cap retroactive. Three tasks written in July 2026 with
+ * bodies of 11511, 6489 and 4238 code points threw here, `readTask` swallowed the throw, and the
+ * store answered `unknown task` for records whose JSON was valid and whose content was whole. Nothing
+ * announced it, and lowering a write limit would have erased more of the board the same silent way.
+ *
+ * So the split is: STRUCTURE is enforced on read — is this a task record at all — and POLICY is not.
+ * How long a body may be is a question for the door the body came in through; `create` and `update`
+ * still ask it, unchanged. Reading is never more restrictive than writing.
+ *
+ * A field the reader cannot type at all is DROPPED (the shape `optionalEvolutionCompletion` already
+ * used), never escalated into suppressing the row: losing one malformed sub-object is recoverable,
+ * losing the task is what this task exists about.
+ */
+function normalizeTask(input: unknown, expectedId: string): { task: Task } | { defect: string } {
+  if (!input || typeof input !== "object") return { defect: "the record is not a JSON object" };
   const row = input as Partial<Task>;
-  if (row.id !== expectedId || !isTaskStatus(row.status) || typeof row.title !== "string" || typeof row.author !== "string" || typeof row.createdAt !== "string" || typeof row.updatedAt !== "string") return null;
-  if (row.priority !== undefined && !isTaskPriority(row.priority)) return null;
+  if (row.id !== expectedId) return { defect: `its recorded id is ${describeRejectedValue(row.id)}, which does not match the filename id '${expectedId}'` };
+  if (!isTaskStatus(row.status)) return { defect: `its status is ${describeRejectedValue(row.status)}, which is not one of ${TASK_STATUSES.join(", ")}` };
+  if (typeof row.title !== "string") return { defect: `its title is ${describeRejectedValue(row.title)}, which is not a string` };
+  if (typeof row.author !== "string") return { defect: `its author is ${describeRejectedValue(row.author)}, which is not a string` };
+  if (typeof row.createdAt !== "string") return { defect: `its createdAt is ${describeRejectedValue(row.createdAt)}, which is not a string` };
+  if (typeof row.updatedAt !== "string") return { defect: `its updatedAt is ${describeRejectedValue(row.updatedAt)}, which is not a string` };
+  if (row.priority !== undefined && !isTaskPriority(row.priority)) return { defect: `its priority is ${describeRejectedValue(row.priority)}, which is not an integer 0..3` };
   return {
-    id: row.id,
-    title: boundedString(row.title, "title", TASK_AUTHORING_LIMITS.title),
-    ...(typeof row.body === "string" ? optionalStringField("body", row.body, TASK_AUTHORING_LIMITS.body) : {}),
-    status: row.status,
-    ...(row.priority !== undefined ? { priority: row.priority } : {}),
-    ...(typeof row.rank === "string" ? optionalStringField("rank", row.rank, 64) : {}),
-    ...(typeof row.kind === "string" ? optionalStringField("kind", row.kind, TASK_AUTHORING_LIMITS.kind) : {}),
-    author: boundedString(row.author, "author", 64),
-    ...(typeof row.assignee === "string" ? optionalStringField("assignee", row.assignee, 64) : {}),
-    ...optionalArtifactRefs(row.artifact_refs),
-    ...optionalDeps(row.deps),
-    // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
-    ...(row.awaitingHuman !== undefined ? optionalAwaitingHuman(row.awaitingHuman) : {}),
-    ...(row.evolutionCompletion !== undefined ? optionalEvolutionCompletion(row.evolutionCompletion) : {}),
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    task: {
+      id: row.id,
+      title: row.title.trim(),
+      ...persistedStringField("body", row.body),
+      status: row.status,
+      ...(row.priority !== undefined ? { priority: row.priority } : {}),
+      ...persistedStringField("rank", row.rank),
+      ...persistedStringField("kind", row.kind),
+      author: row.author.trim(),
+      ...persistedStringField("assignee", row.assignee),
+      ...persistedArtifactRefs(row.artifact_refs),
+      ...persistedDeps(row.deps),
+      // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
+      ...(row.awaitingHuman !== undefined ? persistedAwaitingHuman(row.awaitingHuman) : {}),
+      ...(row.evolutionCompletion !== undefined ? optionalEvolutionCompletion(row.evolutionCompletion) : {}),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    },
   };
+}
+
+/**
+ * Bounded, non-echoing description of a value a read refused. Same rule `taskAuthoringLimitMessage`
+ * follows: a reader needs the shape of what went wrong, never a paste of task material.
+ */
+function describeRejectedValue(value: unknown): string {
+  if (value === undefined) return "missing";
+  if (typeof value === "string") return value.length > 40 ? `a ${value.length}-character string` : JSON.stringify(value);
+  return JSON.stringify(value) ?? typeof value;
+}
+
+/** t-c2882f — read-side string field: preserve what is persisted, cap nothing. */
+function persistedStringField<K extends "body" | "rank" | "kind" | "assignee">(key: K, value: unknown): Pick<Task, K> | {} {
+  if (typeof value !== "string") return {};
+  const out = value.trim();
+  return out ? ({ [key]: out } as Pick<Task, K>) : {};
+}
+
+/**
+ * t-c2882f — read-side artifact refs. No count cap, no length cap, and duplicates are preserved as
+ * persisted: rejecting them is the authoring door's job, and `optionalArtifactRefs` still does it.
+ */
+function persistedArtifactRefs(refs: unknown): Pick<Task, "artifact_refs"> | {} {
+  if (!Array.isArray(refs)) return {};
+  const out: ArtifactRef[] = [];
+  for (const entry of refs) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Partial<ArtifactRef>;
+    const type = typeof row.type === "string" ? row.type.trim() : "";
+    const value = typeof row.ref === "string" ? row.ref.trim() : "";
+    if (!type || !value) continue;
+    const role = typeof row.role === "string" && (ARTIFACT_REF_ROLES as readonly string[]).includes(row.role) ? (row.role as ArtifactRefRole) : undefined;
+    out.push({ type, ref: value, ...(role ? { role } : {}) });
+  }
+  return out.length ? { artifact_refs: out } : {};
+}
+
+/**
+ * t-c2882f — read-side deps. A dep id that is not well-formed is KEPT: `attentionFor` already
+ * surfaces it as `dangling_dep`, which tells the reader more than making the whole task vanish did.
+ */
+function persistedDeps(deps: unknown): Pick<Task, "deps"> | {} {
+  if (!Array.isArray(deps)) return {};
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const dep of deps) {
+    if (typeof dep !== "string") continue;
+    const id = dep.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out.length ? { deps: out } : {};
+}
+
+/** t-c2882f — read-side awaitingHuman: a malformed marker is dropped, never promoted to a suppressed task. */
+function persistedAwaitingHuman(value: unknown): Pick<Task, "awaitingHuman"> | {} {
+  if (!value || typeof value !== "object") return {};
+  const row = value as Partial<TaskAwaitingHuman>;
+  if (typeof row.reason !== "string" || typeof row.since !== "string" || !isTaskAwaitingHumanKind(row.kind)) return {};
+  const reason = row.reason.trim();
+  if (!reason) return {};
+  const candidate = row.subject as { type?: unknown; prototypeId?: unknown } | undefined;
+  const subject: TaskAwaitingHuman["subject"] | undefined =
+    candidate && typeof candidate === "object" && candidate.type === "task-prototype"
+      && typeof candidate.prototypeId === "string" && /^p-[0-9a-f]{12}$/.test(candidate.prototypeId)
+      ? { type: "task-prototype", prototypeId: candidate.prototypeId }
+      : undefined;
+  return { awaitingHuman: { reason, since: row.since, kind: row.kind, ...(subject ? { subject } : {}) } };
 }
 
 function optionalEvolutionCompletion(value: unknown): Pick<Task, "evolutionCompletion"> {
