@@ -1464,7 +1464,11 @@ export class HarnessManager {
       capabilityProjectionSha256: projection.sha256,
       sources: projection.sources,
       outputs: {
-        skills: projection.skills.map((entry) => ({ name: entry.name, sha256: entry.source.sha256 })),
+        skills: projection.skills.map((entry) => ({
+          name: entry.name,
+          sha256: entry.source.sha256,
+          origins: projection.skillOrigins?.[entry.name] ?? [{ kind: "profile", agent }],
+        })),
         mcp: Object.keys(projection.mcp).sort(),
         hooks: Object.keys(projection.hooks).sort(),
         pi: Object.fromEntries(Object.entries(projection.pi).map(([kind, entries]) => [kind, entries.map((entry) => ({ name: entry.name, sha256: entry.source.sha256 }))])),

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
@@ -1010,11 +1011,62 @@ export class AgentManager {
     return sessionName(this.opts.wsHash, name);
   }
 
-  private definitionOf(name: string): AgentDef | undefined {
+  private definitionOf(name: string, lineage = new Set<string>()): AgentDef | undefined {
+    if (lineage.has(name)) return undefined;
+    const nextLineage = new Set(lineage).add(name);
     const saved = this.opts.getConfig()?.agents[name];
     if (saved) return saved;
     const row = this.temporaryRow(name);
-    return row ? temporaryDefinitionFrom(row.def, row.worktree) : undefined;
+    if (!row) return undefined;
+    return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator, nextLineage);
+  }
+
+  /** Delegation is the explicit grant: copy only the parent's enumerated skill snapshot, never credentials. */
+  private withDelegatedToolkit(name: string, definition: AgentDef, parent: string | undefined, lineage = new Set<string>()): AgentDef {
+    const child = asAgent(definition);
+    if (!child || !parent) return definition;
+    const parentAgent = asAgent(this.definitionOf(parent, lineage));
+    const inherited = parentAgent?.profileCapabilities;
+    if (!inherited || inherited.skills.length === 0) return definition;
+    const runtime = adapterFor(child.cmd)?.runtime;
+    if (runtime !== "claude" && runtime !== "codex") {
+      throw new Error(`runtime '${runtime ?? child.cmd}' has no measured delegated skill projection`);
+    }
+    const own = child.profileCapabilities;
+    if (own && own.adapter !== runtime) {
+      throw new Error(`runtime '${runtime}' cannot consume profile capabilities for '${own.adapter}'`);
+    }
+    const skills = structuredClone(inherited.skills);
+    const skillOrigins: NonNullable<ResolvedAgentCapabilityProjection["skillOrigins"]> = Object.fromEntries(
+      skills.map((skill) => [skill.name, [{ kind: "delegator" as const, agent: parent }]]),
+    );
+    for (const selected of own?.skills ?? []) {
+      const inheritedIndex = skills.findIndex((skill) => skill.name === selected.name);
+      if (inheritedIndex >= 0 && skills[inheritedIndex]!.source.sha256 !== selected.source.sha256) {
+        throw new Error(`delegated skill '${selected.name}' conflicts with the child's profile selection`);
+      }
+      if (inheritedIndex < 0) skills.push(structuredClone(selected));
+      skillOrigins[selected.name] = [...(skillOrigins[selected.name] ?? []), { kind: "profile", agent: name }];
+    }
+    const projectionBase: Omit<ResolvedAgentCapabilityProjection, "sha256"> = {
+      schemaVersion: 1,
+      adapter: runtime,
+      sources: structuredClone([
+        ...inherited.sources.filter((source) => source.kind === "skill"),
+        ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !inherited.sources.some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
+      ]),
+      skills,
+      skillOrigins,
+      mcp: structuredClone(own?.mcp ?? {}),
+      hooks: structuredClone(own?.hooks ?? {}),
+      pi: structuredClone(own?.pi ?? { extensions: [], prompts: [], themes: [], packages: [] }),
+    };
+    const sha256 = crypto.createHash("sha256").update(JSON.stringify({
+      adapter: projectionBase.adapter,
+      skills: projectionBase.skills.map((skill) => ({ name: skill.name, sha256: skill.source.sha256 })),
+      skillOrigins: projectionBase.skillOrigins,
+    })).digest("hex");
+    return { ...child, profileCapabilities: { ...projectionBase, sha256 } };
   }
 
   /** SDD 478 — the Agent arm of a declared entry, or undefined for a terminal. Every agent-only
@@ -2262,6 +2314,7 @@ export class AgentManager {
     // into this edge; only the explicit spawn parent can create it.
     const parent = opts?.parent && opts.parent !== name ? opts.parent : undefined;
     const delegator = opts?.delegator && opts.delegator !== name ? opts.delegator : undefined;
+    def = this.withDelegatedToolkit(name, def, parent ?? delegator, new Set([name]));
     // t-f660d8 / t-d542ac — primer/doorbell identity honors the explicit runtime parent first, then
     // config `declaredOwner` only as presentation guidance when this spawn has no lineage.
     const primerParent = (opts?.parent && opts.parent !== name ? opts.parent : undefined)

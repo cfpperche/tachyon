@@ -5411,6 +5411,34 @@ describe("AgentManager — session resume (spec 209)", () => {
       await expect(h.manager.planFork("codex")).rejects.toThrow("has no native session fork");
     });
 
+    it("t-5498a6: a delegated Codex child receives the parent's enumerated skills with audited origin", async () => {
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const parent = asAgent(h.manager.defOf("claude"))!;
+      parent.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "visual-qa", kind: "skill", scope: "project", owner: "plugin:visual-qa", path: ".tachyon/plugins/visual-qa/skills/visual-qa", sha256: "b".repeat(64) }],
+        skills: [{ name: "visual-qa", source: { source: "visual-qa", sourcePath: "/captured/visual-qa", type: "tree", sha256: "b".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# Safe browser contract\n") },
+        ] } }],
+        mcp: { forbidden_secret_channel: { command: "never-inherit" } }, hooks: {},
+        pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const realCodexHome = path.join(h.ws, "real-codex");
+      fs.mkdirSync(realCodexHome);
+      fs.writeFileSync(path.join(realCodexHome, "auth.json"), "{}");
+      const harness = new HarnessManager(h.ws, path.join(h.ws, "real-claude"), {}, path.join(h.ws, "real-claude", ".claude.json"), realCodexHome);
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) =>
+        harness.materializeProfileCapabilities(name, asAgent(def)!.profileCapabilities!, adapterFor("codex")!, cwd);
+
+      await h.manager.spawn("child", { cmd: "codex", parent: "claude", reveal: false });
+
+      expect(fs.readFileSync(path.join(h.ws, ".agents", "skills", "visual-qa", "SKILL.md"), "utf8")).toContain("Safe browser contract");
+      const manifest = JSON.parse(fs.readFileSync(path.join(harnessHome(h.ws, "child"), ".tachyon-profile-capabilities", "manifest.json"), "utf8"));
+      expect(manifest.outputs.skills).toEqual([{ name: "visual-qa", sha256: "b".repeat(64), origins: [{ kind: "delegator", agent: "claude" }] }]);
+      expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "config.toml"), "utf8")).not.toContain("never-inherit");
+    });
+
     it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {
       const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
       const realGrokHome = path.join(h.ws, "real-grok");

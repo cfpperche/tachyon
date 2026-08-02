@@ -102,6 +102,8 @@ export interface ResolvedAgentCapabilityProjection {
   effectiveProfileSha256?: string;
   sources: ResolvedAgentCapabilitySource[];
   skills: Array<{ name: string; source: CapturedCapabilitySource }>;
+  /** Why each skill is in this launch snapshot. Absent on legacy/profile-only snapshots. */
+  skillOrigins?: Record<string, Array<{ kind: "profile" | "delegator"; agent: string }>>;
   mcp: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
   hooks: Record<string, unknown>;
   pi: {
