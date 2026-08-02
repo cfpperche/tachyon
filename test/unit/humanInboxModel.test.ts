@@ -93,7 +93,7 @@ describe("Human Inbox — what is waiting, and in what order", () => {
 
   it("derives the count from the rows — never a shell-side constant", () => {
     const items = build([approval()], [validation(), validation({ id: "v-2", status: "closed" })]);
-    expect(humanInboxCounts(items)).toEqual({ total: 2, approvals: 1, savedAgentProposals: 0, validations: 1, stale: 0 });
+    expect(humanInboxCounts(items)).toEqual({ total: 2, approvals: 1, savedAgentProposals: 0, savedAgentRemovals: 0, validations: 1, stale: 0 });
   });
 
   it("marks staleness without acting on it", () => {

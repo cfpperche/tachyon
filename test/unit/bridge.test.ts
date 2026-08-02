@@ -94,7 +94,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // lease. This list IS the inventory guard — a reintroduced tool fails here by name.
   // t-f638bd — 69 → 70: reconcile_task, the verb for recording an outcome that already happened.
   // t-0bebf6 — 70 → 71: acknowledge_agent, the fifth exit on the host's idle poke ("I already decided").
-  it("exposes exactly the 72 canonical tools, including the explicit Terminal operation", async () => {
+  // t-6f0377 — 71 → 72: renew_context, the agent's own compact/fresh verb.
+  // t-afe120 — 72 → 75: propose/list/cancel_saved_agent_removal_proposal (governed Saved Agent retirement).
+  it("exposes exactly the 75 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -104,6 +106,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "attach_task_prototype",
       "cancel_human_approval",
       "cancel_saved_agent_proposal",
+      "cancel_saved_agent_removal_proposal",
       "clear_human_flag",
       "close_validation",
       "complete_node",
@@ -131,6 +134,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_pending_approvals",
       "list_pins",
       "list_saved_agent_proposals",
+      "list_saved_agent_removal_proposals",
       "list_schedules",
       "list_tasks",
       "list_validations",
@@ -140,6 +144,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "notify",
       "notify_agent",
       "propose_saved_agent",
+      "propose_saved_agent_removal",
       "propose_schedule",
       "read_output",
       "reanchor_agent",

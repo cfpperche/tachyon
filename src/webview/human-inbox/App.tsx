@@ -3,6 +3,7 @@ import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ValidationOutcome } from "../../validations/types";
 import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
+import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import type { HumanInboxErrorReceipt } from "./messages";
@@ -26,6 +27,8 @@ export interface HumanInboxDispatch {
   assignValidation(id: string, assignee: string, expect: { assignee: string | null; updatedAt: string }): void;
   /** SDD 482 phase 4C — carries the DIGEST that was rendered, so a changed proposal cannot be approved. */
   decideSavedAgentProposal(id: string, digest: string, decision: "approve" | "deny", reason?: string): void;
+  /** t-afe120 — same digest binding for retirement */
+  decideSavedAgentRemoval(id: string, digest: string, decision: "approve" | "deny", reason?: string): void;
 }
 
 /** "3h" / "2d" — how long this has been waiting, which is the thing a human scans the list for. */
@@ -44,6 +47,7 @@ function KindBadge({ kind }: { kind: HumanInboxKind }) {
   // must never read as "some generic thing to click", and a proposal must never read as a validation.
   if (kind === "approval") return <Badge tone="warn">approval</Badge>;
   if (kind === "saved-agent-proposal") return <Badge tone="warn">new Saved Agent</Badge>;
+  if (kind === "saved-agent-removal") return <Badge tone="err">retire Saved Agent</Badge>;
   return <Badge tone="info">validation</Badge>;
 }
 
@@ -458,6 +462,89 @@ function SavedAgentProposalDetail({
   );
 }
 
+function SavedAgentRemovalDetail({
+  proposal,
+  dispatch,
+  error,
+}: {
+  proposal: SavedAgentRemovalProposalReview;
+  dispatch: HumanInboxDispatch;
+  error?: HumanInboxErrorReceipt;
+}) {
+  const [reason, setReason] = useState("");
+  const [pending, setPending] = useState<"approve" | "deny" | undefined>();
+  useEffect(() => {
+    if (error) setPending(undefined);
+  }, [error]);
+
+  const decide = (decision: "approve" | "deny"): void => {
+    if (pending) return;
+    setPending(decision);
+    dispatch.decideSavedAgentRemoval(
+      proposal.id,
+      proposal.digest,
+      decision,
+      decision === "deny" ? reason.trim() : undefined,
+    );
+  };
+  return (
+    <div class="hi-proposal" data-testid="inbox-saved-agent-removal">
+      {error ? <div class="hi-error" role="alert" data-testid="inbox-saved-agent-removal-error">{error.message}</div> : null}
+      <p class="hi-proposal-rationale">{proposal.rationale}</p>
+      <dl class="hi-proposal-facts">
+        <dt>Agent</dt><dd data-testid="removal-agent-name">{proposal.agentName}</dd>
+        <dt>Agent id</dt><dd class="hi-proposal-digest">{proposal.agentId ? `${proposal.agentId.slice(0, 12)}…` : "—"}</dd>
+        <dt>Profile revision</dt><dd class="hi-proposal-digest">{proposal.profileRevision ? `${proposal.profileRevision.slice(0, 16)}…` : "—"}</dd>
+        <dt>Proposed by</dt><dd>{proposal.proposer} <Badge tone="info">Bridge-resolved</Badge></dd>
+        <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
+        <dt>Digest</dt><dd class="hi-proposal-digest">{proposal.digest ? `${proposal.digest.slice(0, 16)}…` : "—"}</dd>
+      </dl>
+
+      <div class="hi-proposal-dangerous" data-testid="removal-dangerous">
+        <h3>What this retires</h3>
+        <ul>
+          {proposal.dangerous.map((entry) => (
+            <li key={entry.label}><strong>{entry.label}</strong>: {entry.detail}</li>
+          ))}
+        </ul>
+      </div>
+
+      <div class="hi-proposal-affected">
+        <h3>What approving does</h3>
+        <ul>{proposal.affected.map((entry) => <li key={entry}>{entry}</li>)}</ul>
+        <p class="hi-proposal-note" data-testid="removal-cascade-note">
+          Session is stopped first; worktree release is governed (not a raw filesystem delete); profile,
+          authority and roster move in one recoverable transaction.
+        </p>
+      </div>
+
+      <div class="hi-proposal-decide">
+        <Textarea
+          value={reason}
+          placeholder="Reason (required to deny)"
+          onInput={(e) => setReason((e.currentTarget as HTMLTextAreaElement).value)}
+        />
+        <Button
+          variant="danger"
+          data-testid="inbox-approve-saved-agent-removal"
+          disabled={proposal.baseDiverged || proposal.expired || Boolean(pending) || !proposal.digest}
+          onClick={() => decide("approve")}
+        >
+          {pending === "approve" ? "Retiring…" : "Approve and retire"}
+        </Button>
+        <Button
+          variant="default"
+          data-testid="inbox-deny-saved-agent-removal"
+          disabled={!reason.trim() || Boolean(pending)}
+          onClick={() => decide("deny")}
+        >
+          {pending === "deny" ? "Denying…" : "Deny"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ItemApp({
   vm,
   missing,
@@ -505,6 +592,8 @@ export function ItemApp({
         <ApprovalDetail item={item.detail.approval} dispatch={dispatch} />
       ) : item.detail.kind === "saved-agent-proposal" ? (
         <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
+      ) : item.detail.kind === "saved-agent-removal" ? (
+        <SavedAgentRemovalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
       ) : (
         <ValidationDetail item={item.detail.validation} dispatch={dispatch} />
       )}

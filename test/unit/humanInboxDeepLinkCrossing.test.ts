@@ -14,6 +14,8 @@ import { DURABLE_NOTICE_COMMANDS } from "../../src/workspace/noticeInbox.js";
 import { buildApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
 import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore.js";
+import { computeSavedAgentRemovalProposalDigest } from "../../src/agents/savedAgentRemovalProposal.js";
+import { savedAgentRemovalProposalPath } from "../../src/agents/savedAgentRemovalProposalStore.js";
 import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Validation } from "../../src/validations/types.js";
@@ -60,10 +62,11 @@ function workspace(): string {
   return root;
 }
 
-/** The three ids this file deep-links to, one per declared kind. */
+/** The ids this file deep-links to, one per declared kind. */
 const ITEM_ID: Record<HumanInboxKind, string> = {
   approval: "a-000001",
   "saved-agent-proposal": "sp-45042f",
+  "saved-agent-removal": "sr-45042f",
   validation: "v-1",
 };
 
@@ -98,6 +101,26 @@ function liveWorkspace(): { deps: CockpitDeps; root: string } {
   const file = savedAgentProposalPath(root, proposal.id);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(proposal)}\n`);
+
+  const removalSpec = { name: "grok-builder", rationale: "no longer needed after dogfood" };
+  const removalBase = {
+    configSha256: workspaceConfigSha256(root),
+    profileRevision: "a".repeat(64),
+    agentId: "11111111-1111-4111-8111-111111111111",
+  };
+  const removal = {
+    id: ITEM_ID["saved-agent-removal"],
+    proposer: "claude",
+    proposerKind: "agent" as const,
+    createdAt: new Date(Date.now() - 60_000).toISOString(),
+    expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    digest: computeSavedAgentRemovalProposalDigest({ proposer: "claude", spec: removalSpec, base: removalBase }),
+    base: removalBase,
+    spec: removalSpec,
+  };
+  const removalFile = savedAgentRemovalProposalPath(root, removal.id);
+  fs.mkdirSync(path.dirname(removalFile), { recursive: true });
+  fs.writeFileSync(removalFile, `${JSON.stringify(removal)}\n`);
 
   const validation: Validation = {
     id: ITEM_ID.validation,

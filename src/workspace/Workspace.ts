@@ -352,6 +352,8 @@ export interface WorkspaceDeps {
   onApprovalRequested?: (ws: Workspace, request: { id: string; requester: string }) => void;
   /** t-8e9b5e — a Saved Agent proposal needs a human, exactly like an approval does. */
   onSavedAgentProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
+  /** t-afe120 — a Saved Agent removal proposal needs a human, same doorbell doctrine as create. */
+  onSavedAgentRemovalProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
   /**
    * t-e76acc — the same affordance for a validation that lands on a human. Symmetric with the
    * approval hook above in EVERYTHING except authority: it carries a self-declared author (that is
@@ -1955,6 +1957,16 @@ export class Workspace {
         },
         onPinsChanged: () => deps.onViewsChanged("pins"),
         onSavedAgentProposed: (proposal) => deps.onSavedAgentProposed?.(this, proposal),
+        onSavedAgentRemovalProposed: (proposal) => deps.onSavedAgentRemovalProposed?.(this, proposal),
+        inspectSavedAgentProfile: async (name) => {
+          if (!this.isAgentProfileAgent(name)) return undefined;
+          try {
+            const snapshot = await this.inspectAgentProfileLifecycle(name);
+            return { agentId: snapshot.agentId, revision: snapshot.revision };
+          } catch {
+            return undefined;
+          }
+        },
         onApprovalRequested: (request) => {
           deps.onApprovalRequested?.(this, request);
           // Companion side panel: push so Approvals tab can refresh without polling.
