@@ -65,6 +65,45 @@ function RuntimePillView({ pill }: { pill: RuntimePill }) {
   );
 }
 
+/** "grok" / "grok and codex" / "grok, codex and claude" — the uncovered runtimes as a readable list. */
+function runtimeList(rts: Runtime[]): string {
+  return rts.length <= 1 ? rts.join("") : `${rts.slice(0, -1).join(", ")} and ${rts[rts.length - 1]}`;
+}
+
+/**
+ * t-fb216a — the RUNTIME-COVERAGE NOTICE. Names one fact the panel could not previously say: this workspace runs a
+ * runtime that the plugin supports and the install never covered. Until now the card's only vocabulary was the
+ * lockfile's own runtimes, so the gap was literally unrenderable — and for an enforcement-class plugin that silence
+ * means an agent starts with no gate and nobody is told.
+ *
+ * The copy states the COST of the gesture it points at, because the gesture prescribed before this change (remove,
+ * then install by source) drops the gate for the runtimes that DO have it during the window. Reinstall (t-8a062b)
+ * does not: it re-materializes the lockfile's recorded commit for every runtime the payload declares, going through
+ * the same blocking consent drawer, and never removes first — so saying "claude and codex stay installed" is a
+ * measured claim, not reassurance. A plugin with no recorded source has no Reinstall item in the ⋮ menu, so it is
+ * pointed at the install door it actually has.
+ */
+function CoverageNotice({ p }: { p: InstalledPluginVM }) {
+  const rts = p.uncoveredRuntimes ?? [];
+  if (rts.length === 0) return null;
+  const list = runtimeList(rts);
+  const them = rts.length === 1 ? "it" : "them";
+  const covered = p.runtimes.map((pill) => pill.runtime);
+  return (
+    <div class="pgap">
+      <Badge tone="warn"><Icon name="warning" /> not installed for {list}</Badge>{" "}
+      <span>
+        This workspace runs <b>{list}</b> and <b>{p.name}</b> supports {them}, but this install never covered {them}.
+        {" "}
+        {p.sourceSpec
+          ? <>Use <b>Reinstall</b> in this card's ⋮ menu — it re-materializes the recorded commit for every runtime the plugin supports, through the same consent drawer.</>
+          : <>Install it again from its source directory with {list} selected, through the same consent drawer.</>}
+        {covered.length > 0 && <> It never removes first, so {runtimeList(covered)} stay{covered.length === 1 ? "s" : ""} installed throughout.</>}
+      </span>
+    </div>
+  );
+}
+
 function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch }) {
   const badge = statusBadge(p.status);
   const run = (a: PluginAction) => {
@@ -108,6 +147,7 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
         <span>·</span>
         {p.runtimes.map((pill) => <RuntimePillView key={pill.runtime} pill={pill} />)}
       </div>
+      <CoverageNotice p={p} />
       {p.externalTools && p.externalTools.length > 0 && (
         // spec 287 — surface declared system tools (present/missing) + a persistent assisted-install affordance for a
         // missing one, so the user can resolve it WITHOUT re-opening the consent drawer. The plugin stays installed

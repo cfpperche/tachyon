@@ -1150,6 +1150,27 @@
   },
   {
     "view": "cockpit",
+    "fixture": "plugins-runtime-gap",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-runtime-gap",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "worktrees",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=worktrees",
     "frame": {

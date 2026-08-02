@@ -256,5 +256,120 @@
     ],
     "installed": [],
     "empty": true
+  },
+  "runtimeGap": {
+    "present": [
+      "claude",
+      "codex",
+      "grok"
+    ],
+    "installed": [
+      {
+        "name": "agent-browser",
+        "version": "3.1.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v2.3.1#path=agent-browser",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          },
+          {
+            "runtime": "grok",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ]
+      },
+      {
+        "name": "dep-audit",
+        "version": "0.2.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v2.3.1#path=dep-audit",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ],
+        "uncoveredRuntimes": [
+          "grok"
+        ]
+      },
+      {
+        "name": "sdd",
+        "version": "1.8.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v2.3.1#path=sdd",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ],
+        "uncoveredRuntimes": [
+          "grok"
+        ]
+      },
+      {
+        "name": "secrets-guard",
+        "version": "2.1.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v2.2.1#path=secrets-guard",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ],
+        "uncoveredRuntimes": [
+          "grok"
+        ]
+      }
+    ],
+    "empty": false
   }
 }
