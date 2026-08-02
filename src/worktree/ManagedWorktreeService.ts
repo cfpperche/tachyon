@@ -23,6 +23,7 @@ import {
   type HygieneAuthorityGranted,
   type HygieneLineageSource,
   type HygieneRelation,
+  type OwnerPresence,
 } from "./hygieneAuthority.js";
 import {
   describeToolingProjection,
@@ -77,6 +78,16 @@ export interface ManagedWorktreeServiceOpts {
    * tell; `Workspace` always wires it to `SessionLedger.clearWorktree`.
    */
   onAgentWorktreeRemoved?: (agent: string) => void;
+  /**
+   * t-621613 — does the agent an `agent` entry belongs to still exist ANYWHERE Tachyon knows
+   * (declared in tachyon.yml, live in tmux, present in the session ledger, retained by a forget
+   * receipt)? Asked only to decide whether that entry is an ORPHAN — a home with no inhabitant.
+   *
+   * Optional, and its absence is not "everyone is gone": an unwired seam answers `unknown`, which
+   * the authority module treats exactly like `present`. That is what keeps a headless/test service,
+   * and every caller that predates this, at the pre-t-621613 refusal.
+   */
+  ownerPresence?: (agent: string) => Promise<OwnerPresence>;
 }
 
 /** Where hygiene removals are recorded. Gitignored `.tachyon/`, so the shared checkout stays clean. */
@@ -487,7 +498,7 @@ export class ManagedWorktreeService {
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
     // Authority first: it is the cheap check, and a caller with no standing should not learn the
     // dirtiness of a worktree it may not touch.
-    const authority = resolveHygieneAuthority(entry, opts.actor, this.lineage());
+    const authority = resolveHygieneAuthority(entry, opts.actor, this.lineage(), await this.ownerPresenceOf(entry));
     if (!authority.allowed) return { removed: false, branchDeleted: false, error: `refused: ${authority.reason}` };
     const classification = await classifyManagedWorktree(entry, {
       git: this.git,
@@ -525,6 +536,14 @@ export class ManagedWorktreeService {
    *
    * Agent worktrees are never swept: an agent's working home is not residue, and the filter is here
    * rather than in the authority module so that a caller cannot opt into sweeping them at all.
+   *
+   * t-621613 — that stays true for ORPHAN agent entries too, which the authority module now grants
+   * on. The grant is deliberately reachable only by NAMING an entry (`removeClassified`, i.e. the
+   * Bridge's `remove_worktree` and Control → Worktrees), never by this sweep. The sweep runs
+   * unattended at activation, which is exactly when a spawning agent's registry entry can exist
+   * before its ledger row does; a roster read in that window says "absent" about an agent that is
+   * seconds old. Naming the entry is a deliberate act by someone who looked at it, and that is the
+   * difference between cleaning residue and racing a spawn.
    */
   async reconcileHygiene(opts: {
     actor: { kind: string; name?: string };
@@ -567,7 +586,7 @@ export class ManagedWorktreeService {
       branch: entry.branch,
       ...(entry.taskId ? { taskId: entry.taskId } : {}),
     };
-    const authority = resolveHygieneAuthority(entry, actor, this.lineage());
+    const authority = resolveHygieneAuthority(entry, actor, this.lineage(), await this.ownerPresenceOf(entry));
     if (!authority.allowed) return { wouldRemove: false, outcome: { ...base, reason: `refused: ${authority.reason}` } };
     let classification: WorktreeClassification;
     try {
@@ -595,6 +614,23 @@ export class ManagedWorktreeService {
 
   private messageOf(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+  }
+
+  /**
+   * t-621613 — whether this entry's home still has an inhabitant.
+   *
+   * Only an `agent` entry has one, so everything else answers `unknown` and reaches the authority
+   * module unchanged. Every failure mode collapses to `unknown` as well — no seam, no recorded
+   * agent, a probe that threw — because the grant this feeds is destructive and absence that was
+   * not measured is not absence.
+   */
+  async ownerPresenceOf(entry: ManagedWorktreeEntry): Promise<OwnerPresence> {
+    if (entry.kind !== "agent" || !entry.agent || !this.opts.ownerPresence) return "unknown";
+    try {
+      return await this.opts.ownerPresence(entry.agent);
+    } catch {
+      return "unknown";
+    }
   }
 
   private lineage(): HygieneLineageSource {

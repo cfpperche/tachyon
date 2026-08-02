@@ -2267,6 +2267,70 @@ it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove 
 });
 
 /**
+ * t-621613 — the same Control → Worktrees button, on an entry whose agent does not exist.
+ *
+ * The refusal above names Agent Studio → Forget as the way out. That door is reached BY NAME: it
+ * needs a roster row to be listed and a ledger row to plan the removal, and an orphan entry has
+ * neither — so the refusal names nothing reachable and the checkout can only be cleared by raw git
+ * plus hand-editing `.tachyon/managed-worktrees.json`, which is exactly what happened on 2026-08-02.
+ *
+ * Both halves are one case on purpose: the entry that still has an agent must go on being refused in
+ * the same words, or this stopped being an exception and became a hole.
+ */
+it("t-621613: Control → Worktrees removes an agent entry whose agent is gone, and still refuses one whose agent is not", async () => {
+  const root = gitRepoWorkspace();
+  const homeDir = mkdir();
+  const worktreeBase = mkdir();
+  const { host } = canonicalHost(root, [{ name: "reviewer" }, { name: "keeper" }], `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  const control = { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0];
+  const registerHome = (agent: string): { path: string; branch: string } => {
+    const branch = `tachyon/${agent}`;
+    const worktreePath = path.join(worktreeBase, agent);
+    execFileSync("git", ["worktree", "add", "-b", branch, worktreePath, "main"], { cwd: root, stdio: "ignore" });
+    ws.managedWorktrees.syncAgentRecord(agent, {
+      path: worktreePath,
+      branch,
+      tachyonCreatedBranch: true,
+      baseRef: execFileSync("git", ["rev-parse", "main"], { cwd: root, encoding: "utf8" }).trim(),
+      createdAt: new Date().toISOString(),
+    });
+    return { path: worktreePath, branch };
+  };
+  try {
+    // THE ORPHAN: a registry entry and a checkout for a name that is in no roster and no ledger.
+    const ghost = registerHome("ghost");
+    // THE LIVE HOME: declared in tachyon.yml, so somebody still lives there.
+    const kept = registerHome("keeper");
+    const idOf = (agent: string) => ws.managedWorktrees.list({ kind: "agent" }).find((e) => e.agent === agent)!.id;
+
+    const removed = await executeExtensionCommand(control, { action: "worktree.remove-managed", id: idOf("ghost") }) as {
+      removed: boolean; error?: string;
+    };
+
+    expect(removed.removed).toBe(true);
+    expect(fs.existsSync(ghost.path)).toBe(false);
+    expect(ws.managedWorktrees.list({ kind: "agent" }).some((e) => e.agent === "ghost")).toBe(false);
+
+    // FAIL-BEFORE for the half that must not change: this refused with the Agent Studio message
+    // before the change and still does, because `keeper` is declared.
+    const refused = await executeExtensionCommand(control, { action: "worktree.remove-managed", id: idOf("keeper") }) as {
+      removed: boolean; error?: string;
+    };
+    expect(refused.removed).toBe(false);
+    expect(refused.error).toContain("Agent Studio");
+    expect(fs.existsSync(kept.path)).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
  * t-e722ce — the plan REFUSES in the same words the transaction would, and refusing is not acting.
  *
  * A blocked step has to be distinguishable from a step that will run, and the plan must leave the

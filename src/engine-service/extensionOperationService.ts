@@ -504,7 +504,17 @@ export async function executeExtensionCommand(
       // measured on 0.56.142, and the classifier cannot catch it: `classifyManagedWorktree` never
       // reads `kind`, so an agent's checkout classifies `ready-to-remove` like any other.
       const managed = workspace.managedWorktrees.list().find((entry) => entry.id === command.id);
-      if (managed?.kind === "agent") {
+      // t-621613 — the refusal below names Agent Studio → Forget as the way out, and that door is
+      // reached BY AGENT NAME: it needs a roster row to be listed and a ledger row to plan the
+      // removal. For an entry whose agent has neither, it names nothing reachable, and the measured
+      // result was a checkout that only raw `git worktree remove` + hand-editing the registry could
+      // clear. So an entry PROVED to have no inhabitant falls through to the same
+      // classification-gated removal every change worktree takes. Only `absent` falls through;
+      // `unknown` refuses. The partial-removal worry above cannot arise here either — the ledger row
+      // that would be left owning the checkout is precisely what this entry does not have.
+      const orphaned = managed?.kind === "agent"
+        && (await workspace.managedWorktrees.ownerPresenceOf(managed)) === "absent";
+      if (managed?.kind === "agent" && !orphaned) {
         return json({
           removed: false,
           error: `'${managed.agent ?? managed.slug ?? command.id}' is an agent's worktree. `

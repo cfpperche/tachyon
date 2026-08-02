@@ -115,6 +115,60 @@ describe("hygiene authority (t-e74631)", () => {
     expect(resolveHygieneAuthority(home, { kind: "human" }, lineageOf({})).allowed).toBe(true);
   });
 
+  /**
+   * t-621613 — the one exception to the arm above, and the reason it is not a hole in it. The
+   * behavioural half (a real checkout, branch and registry entry) is worktreeOrphanAgentHome.test.ts;
+   * these cases pin the decision itself, including the two defaults that keep it narrow.
+   */
+  describe("an agent home with no inhabitant", () => {
+    const home = () => entry({ id: "mw-agent-ghost", kind: "agent", agent: "ghost", createdBy: undefined });
+
+    it("grants any agent caller once the agent is PROVED gone, and says so as `orphan`", () => {
+      const decision = resolveHygieneAuthority(home(), { kind: "agent", name: "stranger" }, lineageOf({}), "absent");
+      expect(decision).toMatchObject({ allowed: true, relation: "orphan", actor: "stranger", owner: "ghost" });
+    });
+
+    it("refuses on `present` and on `unknown` alike — absence has to be measured", () => {
+      for (const presence of ["present", "unknown"] as const) {
+        const decision = resolveHygieneAuthority(home(), { kind: "agent", name: "stranger" }, lineageOf({}), presence);
+        expect(decision.allowed, `presence '${presence}' must not grant`).toBe(false);
+        if (decision.allowed) throw new Error("unreachable");
+        expect(decision.reason).toContain("agent worktree");
+      }
+    });
+
+    it("defaults to `unknown`, so every call site that does not measure keeps the old refusal", () => {
+      expect(resolveHygieneAuthority(home(), { kind: "agent", name: "stranger" }, lineageOf({})).allowed).toBe(false);
+    });
+
+    it("reads the INHABITANT, never the creator, when deciding whose absence matters", () => {
+      // `createdBy` answers "who made this"; that agent can be long gone while the agent that LIVES
+      // here is still working. Deciding on the creator would delete a live child's home the moment
+      // its delegator finished — precisely the outcome the surrounding refusal exists to prevent.
+      // A caller measures presence of `entry.agent`; a decision that granted here would mean the
+      // module had read `createdBy` instead.
+      const delegated = entry({ id: "mw-agent-worker", kind: "agent", agent: "worker", createdBy: "dead-delegator" });
+      const live = resolveHygieneAuthority(delegated, { kind: "agent", name: "stranger" }, lineageOf({}), "present");
+      expect(live.allowed).toBe(false);
+      // And when the inhabitant IS gone, the grant names the inhabitant rather than the creator.
+      const gone = resolveHygieneAuthority(delegated, { kind: "agent", name: "stranger" }, lineageOf({}), "absent");
+      expect(gone).toMatchObject({ allowed: true, relation: "orphan", owner: "worker" });
+    });
+
+    it("refuses an agent entry that names no agent at all, even when told `absent`", () => {
+      // Nothing was measured about anybody: there is no name whose absence could have been proved.
+      const nameless = entry({ id: "mw-agent-nameless", kind: "agent", agent: undefined, createdBy: undefined });
+      expect(resolveHygieneAuthority(nameless, { kind: "agent", name: "stranger" }, lineageOf({}), "absent").allowed).toBe(false);
+    });
+
+    it("does not hand orphanhood to legacy/external principals, which are still not an identity", () => {
+      for (const kind of ["legacy", "external"]) {
+        expect(resolveHygieneAuthority(home(), { kind }, lineageOf({}), "absent").allowed).toBe(false);
+      }
+      expect(resolveHygieneAuthority(home(), { kind: "agent" }, lineageOf({}), "absent").allowed).toBe(false);
+    });
+  });
+
   describe("fail-closed on identity, because an unprovable relation is not a relation", () => {
     it("refuses when the entry records no owner at all", () => {
       // Without this an ownerless row would be removable by ANY agent — wider than the creator-only

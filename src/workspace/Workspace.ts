@@ -125,7 +125,7 @@ import { shareDependencies, auditSharedDependencies } from "../worktree/dependen
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
-import { composeHygieneLineageSource } from "../worktree/hygieneAuthority.js";
+import { composeHygieneLineageSource, type OwnerPresence } from "../worktree/hygieneAuthority.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
 import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
@@ -787,6 +787,10 @@ export class Workspace {
       // a directory that no longer existed, which no governed action could undo. Same removal, both
       // records: `clearWorktree` is a no-op for a row that never had one.
       onAgentWorktreeRemoved: (agent: string) => this.ledger.clearWorktree(agent),
+      // t-621613 — the roster question behind the ORPHAN grant, wired as a thunk for the same reason
+      // `lineage` above is: the answer changes as agents spawn and die, and a snapshot taken here
+      // would be the empty boot inventory forever.
+      ownerPresence: (agent: string) => this.agentPresence(agent),
     });
     const defaultClaudeConfigHome = realConfigHome();
     this.harness = new HarnessManager(workspaceRoot, defaultClaudeConfigHome, undefined, undefined, undefined, (message) => this.host.notify(message, "warn"));
@@ -3762,6 +3766,37 @@ export class Workspace {
         this.refreshAgentsViews();
       })
       .catch(() => { /* best-effort: never let cleanup cost an activation */ });
+  }
+
+  /**
+   * t-621613 — does Tachyon still know this agent name, anywhere?
+   *
+   * The same union `gcOrphanAgentFootprints` keeps (declared ∪ live ∪ ledger ∪ forget-retained),
+   * asked about ONE name and answering three values instead of two. `unknown` is the load-bearing
+   * one, because the caller is an authority decision that deletes a checkout: an ambiguous tmux read
+   * (`runningAgentsStrict` → null) and unreadable forget receipts both mean "could not prove
+   * absence", and a fresh engine process's empty inventory must never read as "nobody is running".
+   *
+   * Refused agents count as PRESENT: `config.agents` drops them before any roster reader sees them,
+   * but the human still declared them in tachyon.yml, and this question is about declaration and not
+   * about whether the declaration validates.
+   */
+  private async agentPresence(name: string): Promise<OwnerPresence> {
+    try {
+      if (!name) return "unknown";
+      if (this.config?.agents?.[name]) return "present";
+      if (this.refusedAgents()[name]) return "present";
+      if (this.ledger.get(name)) return "present";
+      // Corrupt receipts make a name-only absence claim unsafe — their owner cannot be recovered, so
+      // the name could be retained by one of them.
+      if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return "unknown";
+      if (agentProfileForgetRetainedNames(this.workspaceRoot).has(name)) return "present";
+      const running = await this.manager.runningAgentsStrict();
+      if (running === null) return "unknown";
+      return running.includes(name) ? "present" : "absent";
+    } catch {
+      return "unknown";
+    }
   }
 
   /**

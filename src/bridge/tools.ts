@@ -1321,6 +1321,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Remove a managed git worktree via the WorktreeManager engine (occupancy fail-closed). " +
         "Caller must own the entry (creator/agent) or be privileged. " +
+        "t-621613 — one exception, for residue nothing else can reach: an AGENT entry whose agent is " +
+        "provably gone (not declared, not live, not in the session ledger) may be removed by any " +
+        "agent caller, because there is no inhabitant left to protect. It is still classification-gated, " +
+        "so a home that is dirty, occupied or holding unlanded commits is refused like any other. " +
         "Dirty trees require confirmDirty=true. Optional deleteBranch only when Tachyon created the branch.",
       inputSchema: {
         idOrPath: z.string().min(1),

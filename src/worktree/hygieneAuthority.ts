@@ -26,7 +26,23 @@ export type HygieneRelation =
   /** The actor is a registered lineage ancestor of the owner (the delegating parent, or ITS parent). */
   | "ancestor"
   /** The workspace authority (the host human), who is nobody's descendant. */
-  | "workspace";
+  | "workspace"
+  /**
+   * t-621613 — the agent this home belongs to was PROVED not to exist anywhere Tachyon knows. There
+   * is no inhabitant left to protect, so the refusal that guards a live agent's home does not apply.
+   */
+  | "orphan";
+
+/**
+ * t-621613 — what the workspace could prove about the agent an `agent` entry's home belongs to.
+ *
+ * Three values rather than a boolean, and the third is the whole point: `unknown` is what an
+ * unwired seam, an unreadable roster or an ambiguous tmux read answers, and it must behave exactly
+ * like `present`. Absence has to be PROVED before it can grant anything — the same stance this
+ * module already takes for lineage, for the identical reason: the cost of a wrong "yes" here is
+ * someone else's working home.
+ */
+export type OwnerPresence = "present" | "absent" | "unknown";
 
 export interface HygieneAuthorityGranted {
   allowed: true;
@@ -101,11 +117,21 @@ const MAX_LINEAGE_DEPTH = 64;
  * Hierarchy applies to CHANGE worktrees only. An agent worktree is that agent's working home rather
  * than a per-task checkout, so no ancestor inherits authority over it — a parent tidying up after a
  * finished task must never be able to delete the place its child actually lives.
+ *
+ * t-621613 — that refusal has exactly one exception, and it is not a hole in it: an entry whose
+ * INHABITANT was proved not to exist. Lineage is still refused over a live agent's home; what the
+ * `orphan` arm answers is a different question — nobody lives here, so there is nobody the refusal
+ * protects. Every material lock (clean, unoccupied, contained) is still `classify.ts`'s and still
+ * has to pass, so the widest thing this grant buys is the right to ASK.
+ *
+ * `ownerPresence` defaults to `unknown`, which is why every caller that does not measure it keeps
+ * the pre-t-621613 refusal unchanged.
  */
 export function resolveHygieneAuthority(
   entry: ManagedWorktreeEntry,
   actor: HygieneActor,
   lineage: HygieneLineageSource,
+  ownerPresence: OwnerPresence = "unknown",
 ): HygieneAuthorityDecision {
   // The host human is the workspace authority and is nobody's descendant, so this arm never consults
   // lineage — an unreadable or empty lineage must not cost the human their own cleanup.
@@ -126,6 +152,15 @@ export function resolveHygieneAuthority(
   if (owner === actor.name) return { allowed: true, relation: "owner", actor: actor.name, owner };
 
   if (entry.kind !== "change") {
+    // t-621613 — the ONE case where an agent worktree is not somebody's home: the agent it belongs
+    // to is not declared, not live, not in the session ledger and not retained. Measured on
+    // `entry.agent` — the INHABITANT — and deliberately not on `ownerOf`, whose `createdBy`-first
+    // precedence answers "who made this", a question whose answer can be gone while the agent that
+    // lives here is still working. Reading the creator here would delete a live child's home the
+    // moment its delegator finished, which is the exact opposite of what this arm exists to prevent.
+    if (ownerPresence === "absent" && entry.agent) {
+      return { allowed: true, relation: "orphan", actor: actor.name, owner: entry.agent };
+    }
     return {
       allowed: false,
       reason:
