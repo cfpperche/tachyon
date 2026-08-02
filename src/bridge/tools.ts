@@ -876,9 +876,9 @@ async function dismissOwnedWorktree(
   const ports = deps.agentWorktrees;
   const record = ports?.ledger.get(name)?.worktree;
   if (!ports || !record) return undefined;
-  // `deleteBranch: true`, the same argument the engine door passes, and it is the SAFE delete:
-  // `WorktreeManager.remove` runs `git branch -d`, so a branch holding commits that are not merged
-  // survives and the receipt says so. That is the only recoverable work this step can preserve.
+  // `deleteBranch: true`, the same argument the engine door passes. The shared cascade soft-removes
+  // the checkout (dirty files make every end-of-life door refuse) and runs `git branch -d`, so a
+  // branch holding commits that are not merged survives and the receipt says so.
   const receipt = await removeAgentWorktree(ports, name, true);
   const released = {
     path: record.path,

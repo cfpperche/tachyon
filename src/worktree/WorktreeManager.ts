@@ -866,6 +866,18 @@ export class WorktreeManager {
         const status = await this.git(["status", "--porcelain=v1", "--untracked-files=all"], rec.path);
         if (status.code !== 0) {
           if (!force) {
+            // Preserve t-05dff5's idempotent door: a path already disclaimed by both Git and disk
+            // has no dirty checkout to protect. Prove that state before treating a failed status
+            // probe as unknown dirtiness; permission/lock failures still refuse below.
+            const absent = await this.probeAbsence(rec.path);
+            if (absent) {
+              return {
+                removed: false,
+                branchDeleted: false,
+                error: status.stderr.trim() || status.stdout.trim(),
+                absent,
+              };
+            }
             return {
               removed: false,
               branchDeleted: false,

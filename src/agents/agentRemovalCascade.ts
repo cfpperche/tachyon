@@ -67,7 +67,13 @@ export interface AgentWorktreeRemovalPorts {
     get(agent: string): { worktree?: WorktreeRecord } | undefined;
     clearWorktree(agent: string): void;
   };
-  worktrees: { remove(rec: WorktreeRecord, deleteBranch: boolean): Promise<WorktreeRemovalResult> };
+  worktrees: {
+    remove(
+      rec: WorktreeRecord,
+      deleteBranch: boolean,
+      opts: { force: false; refuseUnlessForceIfDirty: true },
+    ): Promise<WorktreeRemovalResult>;
+  };
   managedWorktrees: { syncAgentRecord(agent: string, rec: WorktreeRecord | null): void };
 }
 
@@ -90,6 +96,13 @@ export interface AgentWorktreeRemovalReceipt {
  * worktree remove` failing with `is not a working tree` and threw BEFORE clearing the ledger, so
  * the row kept owning a directory that did not exist and nothing could release it — forget refused
  * ("still owns a worktree"), and every retry of this action failed the same way.
+ *
+ * Unlike a confirmed worktree deletion plan, none of the four agent end-of-life doors (UI delete,
+ * Bridge dismiss, Agent Studio Forget, Bridge kill) previews uncommitted files. They therefore all
+ * use a soft removal and refuse on dirty or unmeasurable state. This deliberately shares the
+ * failed-launch rollback's invariant — never erase a write the human has not seen — while differing
+ * in outcome: a clean deliberate dismissal finishes cleanup; an unexpected failed launch preserves
+ * its checkout regardless, because a time-of-check/time-of-use gap could hide an ignored write.
  *
  * A proved-absent checkout is not a failure: what this action promises is already true, so it
  * finishes the promise — clear the ledger, drop the registry record — and says so in the receipt
@@ -122,7 +135,10 @@ export async function removeAgentWorktree(
     }
   }
   await ports.manager.releaseOwnedWorktreeForRemoval(agent, record.path);
-  const result = await ports.worktrees.remove(record, deleteBranch);
+  const result = await ports.worktrees.remove(record, deleteBranch, {
+    force: false,
+    refuseUnlessForceIfDirty: true,
+  });
   if (!result.removed && !result.absent) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
   ports.ledger.clearWorktree(agent);
   ports.managedWorktrees.syncAgentRecord(agent, null);
