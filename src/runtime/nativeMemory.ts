@@ -172,10 +172,9 @@ export interface RuntimeNativeMemoryCapabilityV1 {
 const RESEARCH = "docs/research/runtime-native-memory-parity-t-d4c42e.md";
 
 /**
- * Every axis here is `declared` or `unsupported`, and that is the finding rather than an omission:
- * as of the measurement, Tachyon had verified NOTHING behaviorally about runtime memory. The
- * research says so in as many words for each runtime ("disable `declared`; enable/injection behavior
- * not verified by Tachyon").
+ * Evidence is promoted axis by axis, only at the exact runtime version named by each entry. A
+ * documented claim remains `declared`; a behavioral observation may promote only the claim that the
+ * observation actually exercised.
  */
 export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNativeMemoryCapabilityV1>> = {
   claude: {
@@ -186,11 +185,14 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     defaultState: "enabled",
     evidence: {
       inventory: "declared",
-      disable: "declared",
-      enable: "declared",
+      // Three matched live arms on 2026-07-28 established the oracle with memory enabled, then
+      // suppressed the planted marker independently through the canonical settings control and the
+      // documented environment control. Same marker, prompt, model and private home in every arm.
+      disable: "verified",
+      enable: "verified",
       injection: "declared",
       mutation: "declared",
-      isolation: "declared",
+      isolation: "verified",
     },
     control: { detect: "config", disable: "config", enable: "config", purge: "native-command", export: "files" },
     // The first 200 lines OR 25 KiB of MEMORY.md load at every new conversation; topic files are read
@@ -198,15 +200,16 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
     injection: { mode: "mixed", bound: { kind: "lines", value: 200 } },
     mutation: { modes: ["agent-tool", "background-extraction"] },
     storage: { owner: "runtime", scope: "repository", privateHomeBound: true, aliasesWorktrees: true },
-    // Tachyon's fork creates a distinct private home and copies only the selected projection, so the
-    // store does not travel — but nothing has proven that behaviorally, hence the capability is still
-    // `declared` on every axis above.
+    // Only `fresh` was exercised by the live measurement. Restart/resume/fork remain documented
+    // lifecycle claims, not behavioral findings, and must not be inferred from the isolation arm.
     lifecycle: { fresh: "retain", restart: "retain", resume: "retain", fork: "reset" },
     sources: [
       { kind: "runtime-doc", ref: "https://code.claude.com/docs/en/memory" },
       { kind: "runtime-doc", ref: "https://code.claude.com/docs/en/env-vars" },
       { kind: "installed-source", ref: "src/harness/HarnessManager.ts" },
+      { kind: "installed-source", ref: "src/runtime/adapters/claudeMemory.ts" },
       { kind: "installed-source", ref: RESEARCH },
+      { kind: "behavioral-test", ref: `${RESEARCH}#claude-2026-07-28-live` },
     ],
   },
   codex: {

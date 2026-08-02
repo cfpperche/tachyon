@@ -20,9 +20,8 @@ import {
  * consequence of that: each axis is independent, `verified` never comes from configuration, and every
  * "we could not prove it" renders as BLOCKED rather than as silence.
  *
- * The registry is authored entirely at `declared`/`unsupported`, which is the honest state of the
- * product as measured — so these tests double as the proof that nothing was quietly upgraded while
- * being typed.
+ * Promotions are pinned to the behavioral evidence that supports each individual axis; gaps stay
+ * declared and continue to fail closed.
  */
 const claude = () => nativeMemoryCapability("claude")!;
 
@@ -83,12 +82,24 @@ describe("the registry records what was measured, at the version it was measured
     }
   });
 
-  it("t-325794: grok's disable is the only promotion so far, and it is sourced", () => {
+  it("t-560797: records exactly the measured Claude promotions, and sources them", () => {
     const promoted = Object.entries(RUNTIME_NATIVE_MEMORY_REGISTRY)
       .flatMap(([adapter, capability]) => MEMORY_EVIDENCE_AXES
         .filter((axis) => capability.evidence[axis] === "verified")
         .map((axis) => `${adapter}.${axis}`));
-    expect(promoted).toEqual(["grok.disable"]);
+    expect(promoted).toEqual(["claude.disable", "claude.enable", "claude.isolation", "grok.disable"]);
+    expect(claude().evidence).toEqual({
+      inventory: "declared",
+      disable: "verified",
+      enable: "verified",
+      injection: "declared",
+      mutation: "declared",
+      isolation: "verified",
+    });
+    expect(claude().sources).toContainEqual({
+      kind: "behavioral-test",
+      ref: "docs/research/runtime-native-memory-parity-t-d4c42e.md#claude-2026-07-28-live",
+    });
     expect(nativeMemoryCapability("grok")!.sources.map((s) => s.ref).join(" "))
       .toContain("disable-verified");
   });
@@ -190,14 +201,14 @@ describe("resolution fails closed", () => {
   });
 
   it("rule 1: `disabled` needs VERIFIED disable — authored bytes are not evidence", () => {
-    const outcome = resolveMemoryPolicy({ adapter: "claude", requested: "disabled", observedVersion: "2.1.220" });
+    const outcome = resolveMemoryPolicy({ adapter: "codex", requested: "disabled", observedVersion: "0.145.0" });
     expect(outcome.status).toBe("blocked");
     expect(outcome.reasons[0]).toContain("only proves Tachyon authored bytes");
   });
 
   it("rule 4: memory ON by default plus unverifiable disable blocks readiness, loudly", () => {
     // The failure this prevents: rendering as `Ready` while nobody can say whether memory is off.
-    const outcome = resolveMemoryPolicy({ adapter: "claude", requested: "disabled", observedVersion: "2.1.220" });
+    const outcome = resolveMemoryPolicy({ adapter: "hermes", requested: "disabled", observedVersion: "0.18.2" });
     expect(outcome.reasons.join(" ")).toContain("blocked rather than Ready");
     // Codex measured OFF by default, so it blocks WITHOUT that second sentence — the distinction is
     // the point: both are unverified, only one is dangerous today.
@@ -298,12 +309,20 @@ describe("resolution fails closed", () => {
     // If this ever passes for a runtime, it is because someone ran the verifier and promoted evidence,
     // which is exactly the intended path. t-325794 walked that path for grok — the FIRST promotion —
     // so grok is now listed below rather than here, and the guarantee for the rest is unchanged.
-    for (const adapter of ["claude", "codex", "hermes"]) {
+    for (const adapter of ["codex", "hermes"]) {
       const capability = nativeMemoryCapability(adapter)!;
       expect(capability.evidence.disable, `${adapter} is unverified`).not.toBe("verified");
       const outcome = resolveMemoryPolicy({ adapter, requested: "disabled", observedVersion: capability.runtimeVersion });
       expect(outcome.status, `${adapter} should still be blocked`).toBe("blocked");
     }
+  });
+
+  it("t-560797: allows Claude's disabled request but keeps runtime-managed blocked", () => {
+    const capability = claude();
+    expect(resolveMemoryPolicy({ adapter: "claude", requested: "disabled", observedVersion: capability.runtimeVersion }).status)
+      .toBe("allowed");
+    expect(resolveMemoryPolicy({ adapter: "claude", requested: "runtime-managed", observedVersion: capability.runtimeVersion }).status)
+      .toBe("blocked");
   });
 
   it("t-325794: allows grok's disabled request, and ONLY on the version the evidence names", () => {
