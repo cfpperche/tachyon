@@ -139,6 +139,8 @@ const INBOX_REVIEW_TARGET: Record<HumanInboxKind, (workspaceHash: string, id: st
   validation: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "validation", id }],
   "saved-agent-proposal": (workspaceHash, id) =>
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-proposal", id }],
+  "saved-agent-removal": (workspaceHash, id) =>
+    ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-removal", id }],
 };
 
 /**
@@ -213,6 +215,24 @@ export function routeSavedAgentProposal(
     id: proposal.id,
     message: host.t(
       "Saved Agent proposal {0} — '{1}' proposed by '{2}'",
+      proposal.id,
+      proposal.name,
+      proposal.proposer,
+    ),
+  });
+}
+
+/** t-afe120 — removal proposals share the create proposal's doorbell doctrine. */
+export function routeSavedAgentRemovalProposal(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  proposal: { id: string; name: string; proposer: string },
+): void {
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "saved-agent-removal",
+    id: proposal.id,
+    message: host.t(
+      "Saved Agent removal proposal {0} — retire '{1}' (from '{2}')",
       proposal.id,
       proposal.name,
       proposal.proposer,
@@ -326,6 +346,9 @@ export async function startDaemonEngineService(
       },
       onSavedAgentProposed: (proposalWorkspace, proposal) => {
         routeSavedAgentProposal(host, proposalWorkspace.wsHash, proposal);
+      },
+      onSavedAgentRemovalProposed: (proposalWorkspace, proposal) => {
+        routeSavedAgentRemovalProposal(host, proposalWorkspace.wsHash, proposal);
       },
       onHumanValidationPending: (validationWorkspace, validation) => {
         routeHumanValidationPending(host, validationWorkspace.wsHash, validation);

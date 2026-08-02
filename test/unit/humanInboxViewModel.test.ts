@@ -47,7 +47,7 @@ describe("Human Inbox view model — one list, one count", () => {
     const vm = build([approval("a-1"), approval("a-2")], [validation("v-1"), validation("v-2", { executor: "agent" })]);
     // the agent-executor validation is not a human's decision and never enters the inbox
     expect(vm.items.map((i) => i.id)).toEqual(["a-1", "a-2", "v-1"]);
-    expect(vm.counts).toEqual({ total: 3, approvals: 2, savedAgentProposals: 0, validations: 1, stale: 0 });
+    expect(vm.counts).toEqual({ total: 3, approvals: 2, savedAgentProposals: 0, savedAgentRemovals: 0, validations: 1, stale: 0 });
   });
 
   it("carries the workspace identity onto the view model the route is keyed by", () => {
@@ -57,7 +57,7 @@ describe("Human Inbox view model — one list, one count", () => {
   });
 
   it("an empty inbox is a zeroed count, not an absent one", () => {
-    expect(build([], []).counts).toEqual({ total: 0, approvals: 0, savedAgentProposals: 0, validations: 0, stale: 0 });
+    expect(build([], []).counts).toEqual({ total: 0, approvals: 0, savedAgentProposals: 0, savedAgentRemovals: 0, validations: 0, stale: 0 });
   });
 });
 

@@ -45,6 +45,7 @@ import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
 import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
+import { approveSavedAgentRemovalProposal } from "./agents/savedAgentRemovalProposalCommit.js";
 import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
@@ -1570,6 +1571,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           authorizeSkill: async ({ agentName, skillName }) => {
             const result = await ws.authorizeAgentSkill(agentName, skillName);
             return result.ok ? { ok: true } : { ok: false, error: result.error };
+          },
+          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+        },
+      });
+    },
+    /**
+     * t-afe120 — host-only commit for Saved Agent removal. Reaches the SAME studio-lifecycle forget
+     * door Agent Studio uses (cascade: stop → governed worktree → profile+authority+roster).
+     */
+    approveSavedAgentRemoval: async ({ workspaceRoot, proposalId, approvedDigest }) => {
+      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+      return approveSavedAgentRemovalProposal({
+        workspaceRoot,
+        proposalId,
+        approvedDigest,
+        approvedBy: "human",
+        nowMs: Date.now(),
+        ports: {
+          forgetSavedAgent: async ({ agentName, expectedRevision }) => {
+            const result = await ws.commitAgentProfileStudioLifecycle({
+              schemaVersion: 1,
+              operation: "forget",
+              agentName,
+              expectedRevision,
+              confirmation: agentName,
+            });
+            if (result.kind === "refused") {
+              throw new Error(`${result.code}: ${result.message}`);
+            }
+            if (result.kind !== "forgotten") {
+              throw new Error(`unexpected lifecycle result '${result.kind}' for Saved Agent removal`);
+            }
+            // The cascade does not surface a separate txid on the forgotten receipt; the agentId is the
+            // durable identity that was retired. Bind revision to the approved one for the receipt.
+            return { txid: result.agentId, revision: expectedRevision };
+          },
+          readTargetIdentity: async (agentName) => {
+            try {
+              const snapshot = await ws.inspectAgentProfileStudio(agentName);
+              return { agentId: snapshot.agentId, revision: snapshot.revision };
+            } catch {
+              return undefined;
+            }
           },
           readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
           currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),

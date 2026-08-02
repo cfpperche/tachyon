@@ -31,8 +31,9 @@ import type { ApprovalViewItem } from "../webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../webview/validations/viewModel.js";
 import type { ArtifactRef } from "../tasks/types.js";
 import type { SavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
+import type { SavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
 
-export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "validation"] as const;
+export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "saved-agent-removal", "validation"] as const;
 export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
 
 /**
@@ -45,8 +46,15 @@ export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
  * authority, which no validation does and which outlives the session an approval unblocks. So it
  * ranks below the thing that is stuck and above the thing that is merely waiting to be read. This
  * orders the list; it grants nothing.
+ *
+ * A removal proposal ranks with create proposals: same durable authority weight, opposite direction.
  */
-const KIND_SEVERITY: Record<HumanInboxKind, number> = { approval: 0, "saved-agent-proposal": 1, validation: 2 };
+const KIND_SEVERITY: Record<HumanInboxKind, number> = {
+  approval: 0,
+  "saved-agent-proposal": 1,
+  "saved-agent-removal": 1,
+  validation: 2,
+};
 
 /**
  * The kind-specific half of a row. A discriminated union rather than a flattened record: it is what
@@ -55,6 +63,7 @@ const KIND_SEVERITY: Record<HumanInboxKind, number> = { approval: 0, "saved-agen
 export type HumanInboxDetail =
   | { kind: "approval"; approval: ApprovalViewItem }
   | { kind: "saved-agent-proposal"; proposal: SavedAgentProposalReview }
+  | { kind: "saved-agent-removal"; proposal: SavedAgentRemovalProposalReview }
   | { kind: "validation"; validation: ValidationViewItem };
 
 /** One row. The shared fields are only what a LIST needs; anything else lives on the `detail` arm. */
@@ -97,6 +106,9 @@ export interface HumanInboxInput {
    * "someone edited this" is distinguishable from "it was withdrawn".
    */
   untrustedSavedAgentProposals?: readonly { id: string; reason: string }[];
+  /** t-afe120 — live Saved Agent removal proposals */
+  savedAgentRemovals?: readonly SavedAgentRemovalProposalReview[];
+  untrustedSavedAgentRemovals?: readonly { id: string; reason: string }[];
 }
 
 /** The product's answer when a workspace configures nothing. */
@@ -251,6 +263,62 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
     });
   }
 
+  for (const proposal of input.savedAgentRemovals ?? []) {
+    if (proposal.expired) continue;
+    items.push({
+      id: proposal.id,
+      kind: "saved-agent-removal",
+      title: `retire Saved Agent '${proposal.agentName}'`,
+      requester: proposal.proposer,
+      requesterTrust: "bridge-resolved",
+      createdAt: proposal.createdAt,
+      wsHash: input.wsHash,
+      folder: input.folder,
+      stale: isStale(proposal.createdAt),
+      artifacts: [],
+      ...(proposal.baseDiverged
+        ? { warning: "the workspace config changed since this removal proposal was made — it can no longer be committed as reviewed" }
+        : {}),
+      detail: { kind: "saved-agent-removal", proposal },
+    });
+  }
+
+  for (const untrusted of input.untrustedSavedAgentRemovals ?? []) {
+    items.push({
+      id: untrusted.id,
+      kind: "saved-agent-removal",
+      title: `unreadable Saved Agent removal proposal '${untrusted.id}'`,
+      requester: "unknown",
+      requesterTrust: "self-declared",
+      createdAt: new Date(0).toISOString(),
+      wsHash: input.wsHash,
+      folder: input.folder,
+      stale: false,
+      artifacts: [],
+      warning: `this removal proposal file could not be read or failed its digest check: ${untrusted.reason}`,
+      detail: {
+        kind: "saved-agent-removal",
+        proposal: {
+          id: untrusted.id,
+          proposer: "unknown",
+          proposerTrust: "bridge-resolved",
+          digest: "",
+          createdAt: new Date(0).toISOString(),
+          expiresAt: new Date(0).toISOString(),
+          expired: false,
+          agentName: "(unreadable)",
+          agentId: "",
+          profileRevision: "",
+          rationale: untrusted.reason,
+          dangerous: [{ label: "unreadable", detail: "this file cannot be trusted and must not be approved" }],
+          affected: [],
+          baseConfigSha256: "",
+          baseDiverged: true,
+        },
+      },
+    });
+  }
+
   for (const validation of input.validations) {
     if (!validationAwaitsHuman(validation)) continue;
     items.push({
@@ -281,6 +349,8 @@ export interface HumanInboxCounts {
   approvals: number;
   /** SDD 482 phase 4C — counted separately because approving one creates durable authority. */
   savedAgentProposals: number;
+  /** t-afe120 — counted separately because approving one retires durable authority. */
+  savedAgentRemovals: number;
   validations: number;
   stale: number;
 }
@@ -291,6 +361,7 @@ export function humanInboxCounts(items: readonly HumanInboxItem[]): HumanInboxCo
     total: items.length,
     approvals: items.filter((i) => i.kind === "approval").length,
     savedAgentProposals: items.filter((i) => i.kind === "saved-agent-proposal").length,
+    savedAgentRemovals: items.filter((i) => i.kind === "saved-agent-removal").length,
     validations: items.filter((i) => i.kind === "validation").length,
     stale: items.filter((i) => i.stale).length,
   };

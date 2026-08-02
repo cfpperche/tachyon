@@ -116,6 +116,7 @@ import {
   closeInboxValidationAction,
   assignInboxValidationAction,
   decideSavedAgentProposalAction,
+  decideSavedAgentRemovalAction,
 } from "../human-inbox/messages";
 import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
@@ -644,6 +645,8 @@ function CockpitRoot() {
       // this pane rendered is refused rather than approved from a stale view.
       decideSavedAgentProposal: (id, digest, decision, reason) =>
         post(decideSavedAgentProposalAction(id, digest, decision, reason)),
+      decideSavedAgentRemoval: (id, digest, decision, reason) =>
+        post(decideSavedAgentRemovalAction(id, digest, decision, reason)),
     }),
     [],
   );

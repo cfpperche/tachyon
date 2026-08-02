@@ -8,6 +8,11 @@ import {
   readLiveSavedAgentProposalQueue,
   recordSavedAgentProposal,
 } from "../agents/savedAgentProposalStore.js";
+import {
+  cancelSavedAgentRemovalProposal,
+  readLiveSavedAgentRemovalProposalQueue,
+  recordSavedAgentRemovalProposal,
+} from "../agents/savedAgentRemovalProposalStore.js";
 import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "../agents/agentRemovalCascade.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
@@ -382,6 +387,16 @@ export interface BridgeDeps {
    * not wait, it died.
    */
   onSavedAgentProposed?: (proposal: { id: string; name: string; proposer: string }) => void;
+  /**
+   * t-afe120 — fired after a Saved Agent REMOVAL proposal is recorded. Same doorbell doctrine as
+   * create proposals: a pending removal that rings nothing expires unseen.
+   */
+  onSavedAgentRemovalProposed?: (proposal: { id: string; name: string; proposer: string }) => void;
+  /**
+   * t-afe120 — inspect a profile-backed Saved Agent for removal proposals. Returns identity facts the
+   * digest binds to; undefined when the name is not a canonical profile agent.
+   */
+  inspectSavedAgentProfile?: (name: string) => Promise<{ agentId: string; revision: string } | undefined>;
   /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
   onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
   /** Human-facing task mutation event sink. Best-effort; separate from assignee pane notices. */
@@ -1844,7 +1859,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (info.lifetime === "saved") {
           return fail(new Error(
             `agent '${name}' is a Saved Agent (declared in tachyon.yml) and cannot be dismissed through the Bridge; ` +
-            "remove it from tachyon.yml instead",
+            "use propose_saved_agent_removal for a human-approved retirement, or remove it from Agent Studio",
           ));
         }
         if (info.running) return fail(new Error(`agent '${name}' is still running; use kill_agent first, then dismiss_agent if it remains listed`));
@@ -2142,6 +2157,138 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           nowMs: Date.now(),
         });
         return ok(result.cancelled ? `proposal '${id}' cancelled` : `proposal '${id}' was already gone`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  /**
+   * t-afe120 — the ONLY agent-facing entry to Saved Agent retirement. Symmetric with propose_saved_agent:
+   * records a digest-bound request; human approval runs the host-side forget cascade. Does NOT loosen
+   * dismiss_agent (which correctly refuses Saved Agents).
+   */
+  mcp.registerTool(
+    "propose_saved_agent_removal",
+    {
+      description:
+        "Propose that a human RETIRE a Saved Agent (profile-backed roster entry). This does NOT remove anything: it " +
+        "records a typed, digest-bound proposal for Human Inbox review. Requires the caller's profile to hold " +
+        "'grants.proposeSavedAgent' — same capability as proposing creation. On human approval the host stops the " +
+        "session, releases any governed worktree, and retires profile+authority+roster through the same cascade as " +
+        "Agent Studio Forget. Temporary entries use kill_agent + dismiss_agent instead. You cannot propose removing yourself.",
+      inputSchema: {
+        name: AGENT_NAME.describe("Saved Agent roster name to retire"),
+        rationale: z.string().min(1).max(4000).describe("why this agent should be removed — shown to the human verbatim"),
+      },
+    },
+    async (input) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error(
+            "CALLER_REQUIRED: propose_saved_agent_removal requires a Bridge-resolved agent caller; a proposal is bound to the " +
+            "proposer's profile grant, and a caller without a profile has no grant to check",
+          ));
+        }
+        const proposer = caller.name;
+        const info = await managedEntry(deps, input.name);
+        const profile = deps.inspectSavedAgentProfile
+          ? await deps.inspectSavedAgentProfile(input.name)
+          : undefined;
+        const admission = recordSavedAgentRemovalProposal({
+          workspaceRoot: deps.workspaceRoot,
+          proposer,
+          proposerProfile: { grants: readAgentProfileGrants(deps.workspaceRoot, proposer) },
+          spec: { name: input.name, rationale: input.rationale },
+          base: { configSha256: workspaceConfigSha256(deps.workspaceRoot) },
+          target: {
+            ...(profile ? { profile } : {}),
+            ...(info?.lifetime === "temporary" ? { temporary: true } : {}),
+          },
+          nowMs: Date.now(),
+        });
+        if (!admission.ok) return fail(new Error(`${admission.code}: ${admission.reason}`));
+        if (!admission.collapsedOnto) {
+          try {
+            deps.onSavedAgentRemovalProposed?.({
+              id: admission.proposal.id,
+              name: input.name,
+              proposer,
+            });
+          } catch { /* observation only */ }
+        }
+        return ok(JSON.stringify({
+          id: admission.proposal.id,
+          digest: admission.proposal.digest,
+          expiresAt: admission.proposal.expiresAt,
+          collapsedOnto: admission.collapsedOnto,
+          agent: input.name,
+          state: "pending human review; nothing is removed until a human approves this exact digest",
+        }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "list_saved_agent_removal_proposals",
+    {
+      description:
+        "List this workspace's live (unexpired) Saved Agent removal proposals. Read-only. Rows carry the proposer, the " +
+        "digest a human approval would be bound to, the target agent, and the expiry.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const queue = readLiveSavedAgentRemovalProposalQueue(deps.workspaceRoot, Date.now());
+        return ok(JSON.stringify({
+          proposals: queue.proposals.map((p) => ({
+            id: p.id,
+            proposer: p.proposer,
+            digest: p.digest,
+            createdAt: p.createdAt,
+            expiresAt: p.expiresAt,
+            spec: p.spec,
+            base: {
+              agentId: p.base.agentId,
+              profileRevision: p.base.profileRevision.slice(0, 16) + "…",
+            },
+          })),
+          unreadable: queue.unreadable,
+        }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "cancel_saved_agent_removal_proposal",
+    {
+      description:
+        "Withdraw a Saved Agent removal proposal you made. Only the proposer may cancel its own proposal. Cancelling " +
+        "an id that is already gone succeeds, so a retry after a crash converges instead of failing.",
+      inputSchema: {
+        id: z.string().regex(/^sr-[0-9a-f]{6}$/, "removal proposal id must be sr-<6hex>"),
+        reason: z.string().min(1).max(500).describe("short audit reason, recorded in the witness log"),
+      },
+    },
+    async ({ id, reason }) => {
+      try {
+        const caller = deps.caller ?? { kind: "legacy" as const };
+        if (caller.kind !== "agent" || !caller.name) {
+          return fail(new Error("CALLER_REQUIRED: cancel_saved_agent_removal_proposal requires a Bridge-resolved agent caller"));
+        }
+        const result = cancelSavedAgentRemovalProposal({
+          workspaceRoot: deps.workspaceRoot,
+          id,
+          by: caller.name,
+          reason,
+          nowMs: Date.now(),
+        });
+        return ok(result.cancelled ? `removal proposal '${id}' cancelled` : `removal proposal '${id}' was already gone`);
       } catch (err) {
         return fail(err);
       }

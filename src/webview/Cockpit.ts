@@ -78,6 +78,12 @@ import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-
 import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
 import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
+import { readLiveSavedAgentRemovalProposalQueue } from "../agents/savedAgentRemovalProposalStore.js";
+import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
+import {
+  denySavedAgentRemovalProposal,
+  type SavedAgentRemovalCommitResult,
+} from "../agents/savedAgentRemovalProposalCommit.js";
 import { workspaceConfigSha256 } from "../config/agentProfileGrants.js";
 import {
   humanInboxMessage,
@@ -334,6 +340,12 @@ export interface CockpitDeps {
     proposalId: string;
     approvedDigest: string;
   }) => Promise<SavedAgentCommitResult>;
+  /** t-afe120 — host-only retirement commit through the forget cascade */
+  approveSavedAgentRemoval?: (input: {
+    workspaceRoot: string;
+    proposalId: string;
+    approvedDigest: string;
+  }) => Promise<SavedAgentRemovalCommitResult>;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
@@ -1423,14 +1435,24 @@ export async function openCockpit(
       // from "it was withdrawn".
       ...(() => {
         const queue = readLiveSavedAgentProposalQueue(approvalWs.workspaceRoot, Date.now());
+        const removals = readLiveSavedAgentRemovalProposalQueue(approvalWs.workspaceRoot, Date.now());
+        const configSha = workspaceConfigSha256(approvalWs.workspaceRoot);
+        const nowMs = Date.now();
         return {
           savedAgentProposals: queue.proposals.map((proposal) =>
             buildSavedAgentProposalReview({
               proposal,
-              currentConfigSha256: workspaceConfigSha256(approvalWs.workspaceRoot),
-              nowMs: Date.now(),
+              currentConfigSha256: configSha,
+              nowMs,
             })),
           untrustedSavedAgentProposals: queue.unreadable,
+          savedAgentRemovals: removals.proposals.map((proposal) =>
+            buildSavedAgentRemovalProposalReview({
+              proposal,
+              currentConfigSha256: configSha,
+              nowMs,
+            })),
+          untrustedSavedAgentRemovals: removals.unreadable,
         };
       })(),
       // t-e4f662 — this workspace's own threshold; absent falls through to the product default.
@@ -2242,7 +2264,7 @@ export async function openCockpit(
       await sendInboxItem();
       return true;
     }
-    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation" || m.kind === "saved-agent-proposal")) {
+    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation" || m.kind === "saved-agent-proposal" || m.kind === "saved-agent-removal")) {
       const sources = inboxSources();
       if (!sources) return true;
       const kind = m.kind;
@@ -2295,6 +2317,40 @@ export async function openCockpit(
           // of failure that teaches a human their approval is decorative.
           if (!result) {
             live.webview.postMessage(humanInboxErrorMessage("This window cannot commit Saved Agent proposals."));
+            return true;
+          }
+          if (!result.ok) {
+            live.webview.postMessage(humanInboxErrorMessage(`${result.code}: ${result.reason}`));
+            return true;
+          }
+        } else {
+          return true;
+        }
+        await returnToInbox();
+      } catch (err) {
+        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return true;
+    }
+    if (m.type === "decideSavedAgentRemoval" && typeof m.id === "string" && typeof m.digest === "string") {
+      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : undefined;
+      const sources = inboxSources(wsHash);
+      if (!sources) {
+        live.webview.postMessage(humanInboxErrorMessage("Saved Agent removal proposals are not available for this workspace."));
+        return true;
+      }
+      const workspaceRoot = sources.approvalWs.workspaceRoot;
+      try {
+        if (m.decision === "deny") {
+          denySavedAgentRemovalProposal({
+            workspaceRoot, proposalId: m.id, deniedBy: "human",
+            reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
+            nowMs: Date.now(),
+          });
+        } else if (m.decision === "approve") {
+          const result = await deps.approveSavedAgentRemoval?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });
+          if (!result) {
+            live.webview.postMessage(humanInboxErrorMessage("This window cannot commit Saved Agent removals."));
             return true;
           }
           if (!result.ok) {
