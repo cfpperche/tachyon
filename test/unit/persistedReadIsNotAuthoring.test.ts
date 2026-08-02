@@ -19,6 +19,8 @@ import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { JOURNAL_TEXT_MAX_CODEPOINTS, TaskJournalStore } from "../../src/tasks/TaskJournalStore.js";
 import { TASK_AUTHORING_LIMITS } from "../../src/tasks/taskAuthoring.js";
+import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
+import { projectMissionControlBoard } from "../../src/runtime-api/missionControlProjection.js";
 import { projectTaskDetail } from "../../src/runtime-api/taskDetailProjection.js";
 import { projectTaskStudio } from "../../src/runtime-api/taskStudioProjection.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
@@ -118,6 +120,23 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
     expect(detail.task.body).toBe(body);
     expect(detail.task.title).toHaveLength(TASK_AUTHORING_LIMITS.title + 1);
     expect(detail.task.artifact_refs).toHaveLength(TASK_AUTHORING_LIMITS.artifactRefs + 2);
+  });
+
+  /**
+   * The board is the door where this defect costs the most: it validates the WHOLE projection in one
+   * pass, so one oversize task threw `task body is invalid` and took every other row with it. That
+   * also makes it the regression this change had to avoid — while the store silently dropped the
+   * record, the board still rendered without it, and serving the record correctly is exactly what
+   * breaks a board that cannot carry it. The neighbour row is asserted for that reason.
+   */
+  it("carries an oversize record through the Mission Control board without dropping its neighbours", () => {
+    persistTask("t-aaaaaa", { body: "small", title: "an ordinary neighbour" });
+    persistTask("t-1d9d15", { body: "B".repeat(11_511) });
+    const store = new TaskStore(root);
+
+    const board = projectMissionControlBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
+    expect(board.views.map((v) => v.task.id).sort()).toEqual(["t-1d9d15", "t-aaaaaa"]);
+    expect(board.views.find((v) => v.task.id === "t-1d9d15")?.task.body).toHaveLength(11_511);
   });
 
   it("carries an oversize record through the Task Studio projection", () => {
