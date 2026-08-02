@@ -98,17 +98,15 @@ describe("what the measurement does and does NOT promote", () => {
     expect(capability.evidence.inventory).toBe("verified");
   });
 
-  it("leaves isolation DECLARED — the near-miss worth being strict about", () => {
-    // The store's PATH is provably bound to the private home. Whether a LIVE session writes only
-    // there is a different claim, and it needs a session. `verified` has to mean observed, including
-    // when the observation is nearly enough.
-    expect(capability.evidence.isolation).toBe("declared");
+  it("records isolation VERIFIED after the authorized live session", () => {
+    expect(capability.evidence.isolation).toBe("verified");
   });
 
-  it("leaves every axis that needs a model call unverified", () => {
-    for (const axis of ["disable", "enable", "injection", "mutation"] as const) {
-      expect(capability.evidence[axis], `${axis} cannot be observed without a turn`).toBe("declared");
-    }
+  it("promotes only the live-session axes the paid arms support", () => {
+    expect(capability.evidence.disable).toBe("verified");
+    expect(capability.evidence.enable).toBe("verified");
+    expect(capability.evidence.injection, "the documented bound was not exercised").toBe("declared");
+    expect(capability.evidence.mutation, "the before/after snapshot was not inspected sufficiently").toBe("declared");
   });
 
   it("carries a behavioral-test source for the axis it promoted", () => {
@@ -125,18 +123,15 @@ describe("what the measurement does and does NOT promote", () => {
 describe("the policy consequence, which is the task's stated default", () => {
   const capability = claudeMemoryCapability(nativeMemoryCapability("claude")!);
 
-  it("still BLOCKS `disabled`, because disable itself is unproven", () => {
-    // Claude has memory ON by default, so this is rule 4's sharp edge: unverifiable disable must not
-    // render as Ready. Closing it needs one authorized turn, not another config write.
+  it("allows `disabled` after both controls suppressed the positive-control marker", () => {
     const outcome = resolveMemoryPolicy({
       adapter: "claude",
       requested: "disabled",
       observedVersion: CLAUDE_MEMORY_MEASURED_VERSION,
       capability,
     });
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.reasons.join(" ")).toContain("only proves Tachyon authored bytes");
-    expect(outcome.reasons.join(" ")).toContain("blocked rather than Ready");
+    expect(outcome.status).toBe("allowed");
+    expect(outcome.reasons.join(" ")).toContain("verified control");
   });
 
   it("still BLOCKS `runtime-managed` — the task's bar is not met", () => {

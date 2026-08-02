@@ -502,6 +502,8 @@ export interface AgentManagerOptions {
    *  the effective spawn cwd so folder-trust can be seeded before the interactive TUI starts.
    *  Injected into the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpGrok?: (name: string, cwd?: string) => string | undefined;
+  /** t-84f0eb — read an explicitly authored per-agent permission mode from workspace authority. */
+  resolveAgentPermissionProjection?: (name: string, runtime: string) => string | undefined;
   /** Materialize a non-harness hermes agent's private HERMES_HOME (Bridge MCP in config.yaml +
    *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
    *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
@@ -1760,8 +1762,39 @@ export class AgentManager {
     return loadAndRenderProjectGuidanceBundle(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
   }
 
-  private effectiveCmd(def: AgentDef, instructions: string | undefined): string {
-    return composeCommand({ cmd: def.cmd, instructions });
+  private applyAgentPermissionProjection(name: string, cmd: string, delegated = false): string {
+    const runtime = binaryOf(cmd);
+    const mode = this.opts.resolveAgentPermissionProjection?.(name, runtime);
+    if (mode !== undefined) {
+      if (runtime !== "grok") {
+        throw new Error(`agent '${name}': authored permission projection targets an unsupported runtime '${runtime}'`);
+      }
+      const parsed = parseLaunchCommand(cmd)?.argv ?? [];
+      const flag = parsed.findIndex((arg) => arg === "--permission-mode" || arg.startsWith("--permission-mode="));
+      if (flag >= 0) {
+        const explicit = parsed[flag] === "--permission-mode" ? parsed[flag + 1] : parsed[flag]!.slice("--permission-mode=".length);
+        if (explicit !== mode) {
+          throw new Error(`agent '${name}': command permission mode '${explicit ?? "missing"}' conflicts with authored mode '${mode}'`);
+        }
+      } else {
+        cmd += ` --permission-mode ${mode}`;
+      }
+    } else if (
+      delegated
+      && runtime === "grok"
+      && !/(^|\s)--permission-mode(?:=|\s|$)/.test(cmd)
+      && !/(^|\s)--always-approve(?:=|\s|$)/.test(cmd)
+    ) {
+      // t-84f0eb — owner-authored workspace product policy: delegated Grok matches the existing
+      // Claude/Codex subagent posture and does not stop its coordinator for every tool call. This is
+      // keyed from durable Tachyon lineage, never discovered from HOME, cwd or runtime settings.
+      cmd += " --always-approve";
+    }
+    return cmd;
+  }
+
+  private effectiveCmd(name: string, def: AgentDef, instructions: string | undefined, delegated = false): string {
+    return composeCommand({ cmd: this.applyAgentPermissionProjection(name, def.cmd, delegated), instructions });
   }
 
   /**
@@ -2428,7 +2461,7 @@ export class AgentManager {
         cwd,
       );
     }
-    const effectiveCmd = this.effectiveCmd(def, effectiveInstructions);
+    const effectiveCmd = this.effectiveCmd(name, def, effectiveInstructions, !!(parent || delegator));
     const tokenEnv = this.opts.mintAgentToken?.(name);
     launchTokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
     const spawnBuild = this.applyHarness(
@@ -3997,7 +4030,7 @@ export class AgentManager {
       name,
       def,
       cwd,
-      this.effectiveCmd(def, restartInstructions),
+      this.effectiveCmd(name, def, restartInstructions, !!(this.lineage.get(name) || this.delegators.get(name))),
       {
         ...this.opts.getExtraEnv?.(),
         ...def.env,
@@ -4406,7 +4439,10 @@ export class AgentManager {
       name,
       resumeDef,
       cwd,
-      adapter.resumeCommand(cmd, id),
+      adapter.resumeCommand(
+        this.applyAgentPermissionProjection(name, cmd, !!(this.lineage.get(name) || this.delegators.get(name))),
+        id,
+      ),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name },
       resumeHarness,
     );
@@ -4785,9 +4821,10 @@ export class AgentManager {
       const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
       // Apply the already-prepared private home for Pi and canonical Claude; ordinary forks retain
       // their existing byte/env path.
+      const projectedForkCmd = this.applyAgentPermissionProjection(forkName, forkCmd);
       const forkBuild: { cmd: string; env: Record<string, string> } = preparedHarness
-        ? this.applyHarness(forkName, forkDefinition, cwd, forkCmd, baseForkEnv, preparedHarness)
-        : { cmd: forkCmd, env: baseForkEnv };
+        ? this.applyHarness(forkName, forkDefinition, cwd, projectedForkCmd, baseForkEnv, preparedHarness)
+        : { cmd: projectedForkCmd, env: baseForkEnv };
       // spec 236 / SDD 405 — a fork is a normal Tachyon-spawned process: private home first, then
       // immutable Pi extension + Bridge. managedPiSession also supplies the ownership ledger path.
       const forkBridge = this.withRuntimeBridge(

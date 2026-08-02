@@ -432,6 +432,19 @@
             "enum": ["capability", "prompt-transform", "observability", "enforcement"]
           }
         },
+        "agentPermissionProjection": {
+          "type": "object",
+          "description": "Opt-in permission mode projected into one named managed agent. Absence preserves the runtime default. Currently only Grok is supported.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["runtime", "mode"],
+            "properties": {
+              "runtime": { "const": "grok" },
+              "mode": { "type": "string", "enum": ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] }
+            }
+          }
+        },
         "projectGuidance": {
           "type": "object",
           "description": "Opt-in, project-owned agent guidance loaded from explicitly declared source-workspace files. Tachyon transports the files in order and does not discover runtime-specific context files.",

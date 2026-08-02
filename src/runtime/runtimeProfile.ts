@@ -439,7 +439,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       source: "measured",
       verified: false,
       verifiedAt: "2026-07-25",
-      notes: "Grok 0.2.112 accepts every listed --permission-mode value and rejects invalid input. Canonical HOME isolation excludes ambient Claude settings, but no authored permission-policy projection exists yet; never infer --always-approve or bypassPermissions.",
+      notes: "Grok 0.2.112 accepts every listed --permission-mode value and rejects invalid input. Canonical HOME isolation excludes ambient Claude settings. t-84f0eb adds an opt-in per-agent workspace authority and projects the owner's authored --always-approve default only for delegated subagents; top-level absence preserves Grok's default and no value is inherited from the environment.",
     },
     composer: {
       tailLines: 8,

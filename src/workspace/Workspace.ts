@@ -995,6 +995,18 @@ export class Workspace {
           },
         );
       },
+      // t-84f0eb — authority is the workspace config, keyed by the exact managed agent name. No
+      // environment, parent command or runtime-home setting participates, and absence stays off.
+      resolveAgentPermissionProjection: (name, runtime) => {
+        const authored = this.config?.settings.agentPermissionProjection?.[name];
+        if (!authored) return undefined;
+        if (authored.runtime !== runtime) {
+          throw new Error(
+            `agent '${name}': settings.agentPermissionProjection targets '${authored.runtime}', not '${runtime}'`,
+          );
+        }
+        return authored.mode;
+      },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + isolated auth copy).
       materializeBridgeMcpHermes: (name) => {
         const entry = this.bridgeEntry();
@@ -1986,6 +1998,9 @@ export class Workspace {
         listEvidence: (agent) => this.listEvidence(agent),
         // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
         reanchor: async (agent) => this.reanchor(agent),
+        // t-0bebf6 — the fifth exit on the idle poke. It answers the SAME monitor that authored the
+        // line, so the acknowledgement and the notice cannot drift into two views of one child.
+        acknowledgeIdlePoke: (agent) => this.temporaryBackstop.acknowledge(agent),
         continueTask: (input) => this.continueTaskAcrossRuntime(input),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
