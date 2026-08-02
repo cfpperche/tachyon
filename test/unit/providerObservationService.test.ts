@@ -41,8 +41,9 @@ function fakeSource(
   provider: RuntimeObservabilityProviderV1,
   source: ProviderSourceKindV1,
   handler: SourceHandler,
+  channel: ProviderObservationSource["channel"] = { acquisition: "control-plane", mechanism: "fixture" },
 ): ProviderObservationSource {
-  return { provider, source, observe: handler };
+  return { provider, source, channel, observe: handler };
 }
 
 const START = Date.parse("2026-07-14T21:45:00.000Z");

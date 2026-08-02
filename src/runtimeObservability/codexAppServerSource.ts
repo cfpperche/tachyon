@@ -63,6 +63,11 @@ export interface CodexAppServerSourceOptions {
 export class CodexAppServerObservationSource implements ProviderObservationSource {
   readonly provider = "codex" as const;
   readonly source = "cli" as const;
+  /** t-458497 — Codex answers a machine request for its own limits; nothing here reads a rendered surface. */
+  readonly channel = {
+    acquisition: "control-plane",
+    mechanism: "codex app-server JSON-RPC account/rateLimits/read over stdio",
+  } as const;
 
   private readonly timeoutMs: number;
   private readonly spawn: CodexAppServerSpawn;

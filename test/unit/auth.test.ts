@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(75); // t-6f0377 renew_context (71 → 72), t-afe120 the three removal-proposal tools (72 → 75); bridge.test.ts holds the by-name inventory.
+      expect(tools.length).toBe(76); // t-6f0377 renew_context (71 → 72), t-afe120 the three removal-proposal tools (72 → 75), t-458497 runtime_condition (75 → 76); bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(75); // t-6f0377 renew_context (71 → 72), t-afe120 the three removal-proposal tools (72 → 75); bridge.test.ts holds the by-name inventory.
+      expect((await client.listTools()).tools.length).toBe(76); // t-6f0377 renew_context (71 → 72), t-afe120 the three removal-proposal tools (72 → 75), t-458497 runtime_condition (75 → 76); bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();

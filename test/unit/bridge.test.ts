@@ -16,6 +16,7 @@ import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
+import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "../../src/runtimeOps/runtimeCondition.js";
 import type { NoticeSourceMetadata } from "../../src/bridge/tools.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -96,7 +97,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-0bebf6 — 70 → 71: acknowledge_agent, the fifth exit on the host's idle poke ("I already decided").
   // t-6f0377 — 71 → 72: renew_context, the agent's own compact/fresh verb.
   // t-afe120 — 72 → 75: propose/list/cancel_saved_agent_removal_proposal (governed Saved Agent retirement).
-  it("exposes exactly the 75 canonical tools, including the explicit Terminal operation", async () => {
+  // t-458497 — 75 → 76: runtime_condition, the two-axis read on what condition each runtime is in.
+  it("exposes exactly the 76 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -159,6 +161,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "run_command",
       "run_host_action",
       "run_runbook",
+      "runtime_condition",
       "set_continuity",
       "set_project_handoff",
       "spawn_agent",
@@ -303,6 +306,38 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       validateCompleteNode(input, (rid, nid) =>
         rid === "run-1" && nid === "implement" ? { nonce: "secret-123", status: "running", alreadySignalled: false } : null,
       ),
+    // t-458497 — the derived runtime-condition projection, built from the same registries the product
+    // reads, with a synthetic quota channel inventory: codex has a control-plane source, claude has a
+    // rendered-surface one, and grok deliberately has NONE.
+    runtimeCondition: () =>
+      projectRuntimeCondition({
+        generatedAt: "2026-08-02T18:00:00.000Z",
+        channels: [
+          { provider: "codex", source: "cli", channel: { acquisition: "control-plane", mechanism: "app-server" } },
+          { provider: "claude", source: "cli", channel: { acquisition: "rendered-surface", mechanism: "status line" } },
+        ],
+        preferences: {
+          codex: { scope: { kind: "provider-account", provider: "codex", key: "ps_0123456789abcdef" }, sources: ["cli"] },
+          claude: { scope: { kind: "provider-account", provider: "claude", key: "ps_fedcba9876543210" }, sources: ["cli"] },
+        },
+        observations: {
+          claude: {
+            schemaVersion: 1,
+            collector: { id: "fixture", version: "1.0.0" },
+            generatedAt: "2026-08-02T18:00:00.000Z",
+            facts: [{
+              kind: "provider-quota",
+              scope: { kind: "provider-account", provider: "claude", key: "ps_fedcba9876543210" },
+              source: "cli",
+              confidence: "exact",
+              observedAt: "2026-08-02T17:59:00.000Z",
+              freshness: { state: "fresh" },
+              windows: [{ name: "session", usedPercent: 12, windowMinutes: 300, resetsAt: "2026-08-02T22:00:00.000Z" }],
+            }],
+            diagnostics: [],
+          },
+        },
+      }),
     runHostAction: async (input) => {
       hostActionCalls.push(input);
       return {
@@ -380,6 +415,43 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
 
 
+
+  // t-458497 — the read door. An agent deciding where to send work asks over the Bridge and gets the
+  // two axes SEPARATED, with the absence of a quota channel stated by name instead of implied.
+  it("runtime_condition answers both axes over the Bridge and names a missing quota channel", async () => {
+    const all = await client.callTool({ name: "runtime_condition", arguments: {} });
+    const report = JSON.parse((all.content as Array<{ text: string }>)[0].text);
+    expect(report.axes.configuration).toBeTruthy();
+    expect(report.axes.capacity).toBeTruthy();
+
+    const grok = await client.callTool({ name: "runtime_condition", arguments: { runtime: "grok" } });
+    const one = JSON.parse((grok.content as Array<{ text: string }>)[0].text);
+    expect(one.runtimes).toHaveLength(1);
+    // Manageable and measured on the configuration axis...
+    expect(one.runtimes[0].configuration.manageable.state).toBe("manageable");
+    expect(one.runtimes[0].configuration.measured.state).toBe("measured");
+    // ...and, on the capacity axis, an absence said by name rather than a zero.
+    expect(one.runtimes[0].capacity.channel).toMatchObject({ state: "absent", says: NO_QUOTA_CHANNEL });
+    expect(one.runtimes[0].capacity.quota).toMatchObject({ state: "no-quota-channel", says: NO_QUOTA_CHANNEL });
+    expect(JSON.stringify(one.runtimes[0].capacity)).not.toContain("usedPercent");
+
+    // The fragile channel is labelled, not silently equated with the firm one.
+    const claude = await client.callTool({ name: "runtime_condition", arguments: { runtime: "claude" } });
+    const quota = JSON.parse((claude.content as Array<{ text: string }>)[0].text).runtimes[0].capacity;
+    expect(quota.channel).toMatchObject({ acquisition: "rendered-surface", integrity: "best-effort" });
+    expect(quota.quota).toMatchObject({ state: "observed", integrity: "best-effort" });
+    expect(quota.quota.windows[0]).toMatchObject({ usedPercent: 12, resetsAt: "2026-08-02T22:00:00.000Z" });
+
+    // Every field names where it came from — the projection authors no runtime list of its own.
+    const codex = JSON.parse(
+      ((await client.callTool({ name: "runtime_condition", arguments: { runtime: "codex" } })).content as Array<{ text: string }>)[0].text,
+    ).runtimes[0];
+    expect(codex.configuration.manageable.origin.registry).toBe("SUPPORTED_AGENT_RUNTIMES");
+    expect(codex.configuration.measured.origin.registry).toBe("RUNTIME_NATIVE_MEMORY_REGISTRY");
+
+    const missing = await client.callTool({ name: "runtime_condition", arguments: { runtime: "nope" } });
+    expect(missing.isError).toBe(true);
+  });
 
   it("emits notifications/tools/list_changed to established MCP sessions", async () => {
     const changed = new Promise<void>((resolve, reject) => {

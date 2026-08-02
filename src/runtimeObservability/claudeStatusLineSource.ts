@@ -81,6 +81,15 @@ export interface ClaudeStatusLineSourceOptions {
 export class ClaudeStatusLineObservationSource implements ProviderObservationSource {
   readonly provider = "claude" as const;
   readonly source = "cli" as const;
+  /**
+   * t-458497 — the quota comes from the status line Claude Code renders for a human, captured and
+   * parsed. `claude auth status --json` is a machine channel but returns identity and subscription
+   * type, never quota, so it cannot carry this axis and the acquisition stays `rendered-surface`.
+   */
+  readonly channel = {
+    acquisition: "rendered-surface",
+    mechanism: "status-line capture from a running Claude Code session (claude auth status --json returns identity, never quota)",
+  } as const;
 
   private readonly readCapture: ClaudeStatusLineCaptureReader;
   private readonly timeoutMs: number;
