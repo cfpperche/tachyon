@@ -168,13 +168,13 @@ function projectNote(value: unknown): HandoffNoteProjectionV1 | undefined {
     const ts = canonicalizeHandoffTimestamp(input.ts);
     if (input.kind !== "completed" && input.kind !== "blocked" && input.kind !== "decision"
       && input.kind !== "gotcha" && input.kind !== "next") throw invalid("handoff note kind is invalid");
-    if (!Array.isArray(input.evidence) || input.evidence.length > 20) throw invalid("handoff note evidence exceeds its limit");
+    if (!Array.isArray(input.evidence)) throw invalid("handoff note evidence is invalid");
     return {
       ts,
       agent: boundedString(input.agent, 1, 128, "handoff note agent"),
       kind: input.kind,
-      summary: boundedString(input.summary, 1, 2_000, "handoff note summary"),
-      evidence: input.evidence.map((item) => boundedString(item, 0, 400, "handoff note evidence")),
+      summary: unboundedString(input.summary, 1, "handoff note summary"),
+      evidence: input.evidence.map((item) => unboundedString(item, 0, "handoff note evidence")),
     };
   } catch {
     return undefined;
@@ -233,6 +233,11 @@ function exactRecord(value: unknown, keys: string[], label: string): Record<stri
 
 function boundedString(value: unknown, min: number, max: number, label: string): string {
   if (typeof value !== "string" || value.length < min || value.length > max) throw invalid(`${label} is invalid`);
+  return value;
+}
+
+function unboundedString(value: unknown, min: number, label: string): string {
+  if (typeof value !== "string" || value.length < min) throw invalid(`${label} is invalid`);
   return value;
 }
 

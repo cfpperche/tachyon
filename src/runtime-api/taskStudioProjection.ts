@@ -11,7 +11,7 @@ import {
 } from "./taskDetailProjection.js";
 import {
   isTiptapDoc,
-  richDocAttachmentV1Schema,
+  persistedRichDocAttachmentV1Schema,
 } from "./richDocWire.js";
 
 const TASK_ID_RE = /^t-[0-9a-f]{6}$/;
@@ -33,7 +33,7 @@ const dependency = z.object({
   if (!value.missing && value.title === undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "live dependency is missing its title" });
 });
 
-export const taskStudioAttachmentV1Schema = richDocAttachmentV1Schema;
+export const taskStudioAttachmentV1Schema = persistedRichDocAttachmentV1Schema;
 export { isTiptapDoc } from "./richDocWire.js";
 
 const projection = z.object({

@@ -29,6 +29,24 @@ import { projectMissionControlBoard } from "../../src/runtime-api/missionControl
 import { projectTaskDetail } from "../../src/runtime-api/taskDetailProjection.js";
 import { projectTaskStudio } from "../../src/runtime-api/taskStudioProjection.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import {
+  SELECTED_MEMORY_MAX_ENTRIES,
+  SELECTED_MEMORY_MAX_ENTRY_BYTES,
+  persistedSelectedMemoryManifestSchema,
+  selectedMemoryManifestSchema,
+} from "../../src/memory/domain.js";
+import { parseHandoffViewV1 } from "../../src/runtime-api/handoffProjection.js";
+import {
+  persistedRichDocAttachmentV1Schema,
+  richDocAttachmentV1Schema,
+} from "../../src/runtime-api/richDocWire.js";
+import { parsePinStudioProjectionV1 } from "../../src/runtime-api/pinStudioProjection.js";
+import {
+  PIN_STUDIO_TITLE_MAX_CHARS,
+  parsePinStudioStagedPayloadV1,
+} from "../../src/runtime-api/pinStudioCommands.js";
+import { PinStore, normalizePinTags } from "../../src/pins/PinStore.js";
+import { resolveSoul, SOUL_MAX_CHARS, validateSoulBytes } from "../../src/agents/soul.js";
 
 let root: string;
 
@@ -350,5 +368,91 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
 
     await expect(store.create({ title: "author it", author: "claude", instructions }))
       .rejects.toThrow(/instructions/);
+  });
+
+  it("serves selected-memory manifest sizes from disk while its authoring schema still refuses them", () => {
+    const entry = (index: number) => ({
+      id: `memory-00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      path: `active/memory-00000000-0000-4000-8000-${String(index).padStart(12, "0")}.md`,
+      sha256: "a".repeat(64), bytes: index === 0 ? SELECTED_MEMORY_MAX_ENTRY_BYTES + 1 : 0,
+      sourceCandidateId: `candidate-00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+      sourcePrincipal: "human", sourceKind: "human", approvedBy: "human", approvedAt: "2026-07-09T00:00:00.000Z",
+    });
+    const manifest = {
+      schemaVersion: 1, activationId: "activation", agentId: "00000000-0000-4000-8000-000000000001",
+      agentName: "Ada", version: 1,
+      entries: Array.from({ length: SELECTED_MEMORY_MAX_ENTRIES + 1 }, (_, index) => entry(index)),
+      updatedAt: "2026-07-09T00:00:00.000Z",
+    };
+
+    expect(persistedSelectedMemoryManifestSchema.parse(manifest).entries).toHaveLength(SELECTED_MEMORY_MAX_ENTRIES + 1);
+    expect(selectedMemoryManifestSchema.safeParse(manifest).success).toBe(false);
+  });
+
+  it("keeps persisted handoff note text and evidence whole while the append door remains bounded", () => {
+    const summary = "S".repeat(2_001);
+    const evidence = Array.from({ length: 21 }, (_, index) => `${index}:${"E".repeat(401)}`);
+    const parsed = parseHandoffViewV1({
+      schemaVersion: 1,
+      handoff: {
+        canonicalRelativePath: ".tachyon/HANDOFF.md", exists: true, body: "body", staleness: "fresh",
+        pendingCount: 1, updatedAt: "2026-07-09T00:00:00.000Z", updatedBy: "agent",
+        revision: "a".repeat(16),
+        notes: [{ ts: "2026-07-09T00:00:00.000Z", agent: "Ada", kind: "next", summary, evidence }],
+        distillTargets: [],
+      },
+    });
+    expect(parsed.handoff.notes[0]).toMatchObject({ summary, evidence });
+
+    // append_project_handoff_note's public authoring contract remains 2,000 / 20 / 400.
+    expect(summary.length).toBeGreaterThan(2_000);
+    expect(evidence).toHaveLength(21);
+    expect(evidence[0]!.length).toBeGreaterThan(400);
+  });
+
+  it("serves persisted rich-doc attachment metadata whole while command authoring still refuses it", () => {
+    const attachment = {
+      id: "att-abcdef", kind: "image", blobRef: "a".repeat(64), mediaType: "image/png",
+      name: "N".repeat(501), size: 10 * 1024 * 1024 + 1, createdAt: "2026-07-09T00:00:00.000Z",
+      source: "import", visibility: "local",
+    };
+    expect(persistedRichDocAttachmentV1Schema.parse(attachment)).toEqual(attachment);
+    expect(richDocAttachmentV1Schema.safeParse(attachment).success).toBe(false);
+  });
+
+  it("serves a persisted Pin Studio title above its save cap while save authoring still refuses it", () => {
+    const title = "T".repeat(PIN_STUDIO_TITLE_MAX_CHARS + 1);
+    const projection = parsePinStudioProjectionV1({
+      schemaVersion: 1, pinId: "p-abcdef", title, tags: [], doc: null, attachments: [],
+    });
+    expect(projection.title).toBe(title);
+    expect(() => parsePinStudioStagedPayloadV1("save", Buffer.from(JSON.stringify({
+      schemaVersion: 1,
+      patch: { title, tags: [], doc: { type: "doc", content: [] }, attachments: [], docDirty: false },
+    })))).toThrow();
+  });
+
+  it("does not truncate persisted pin tags, while authoring normalization keeps both caps", () => {
+    const tags = ["L".repeat(33), ...Array.from({ length: 12 }, (_, index) => `tag-${index}`)];
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "pins.json"), `${JSON.stringify({ pins: [{
+      id: "p-abcdef", text: "pin", by: "human", createdAt: "2026-07-09T00:00:00.000Z", done: false, tags,
+    }] })}\n`, "utf8");
+
+    expect(new PinStore(root).list()[0]!.tags).toEqual(tags.map((tag) => tag.toLowerCase()));
+    expect(normalizePinTags(tags)).toEqual(tags.slice(1, 13));
+  });
+
+  it("resolves a persisted soul above the character cap while import/create validation still refuses it", async () => {
+    const body = "S".repeat(SOUL_MAX_CHARS + 1);
+    const dir = path.join(root, ".tachyon", "agents", "Ada");
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(dir, "SOUL.md"), body, { mode: 0o600 });
+    fs.writeFileSync(path.join(dir, "profile.json"), JSON.stringify({
+      schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "Ada", state: "active",
+    }), { mode: 0o600 });
+
+    expect((await resolveSoul(root, "Ada")).body).toBe(body);
+    expect(() => validateSoulBytes(Buffer.from(body))).toThrow(/too-many-chars|Unicode scalar/);
   });
 });

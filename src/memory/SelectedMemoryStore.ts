@@ -5,12 +5,14 @@ import path from "node:path";
 import { isValidAgentName } from "../config/nameValidation.js";
 import {
   SELECTED_MEMORY_MAX_ENTRY_BYTES,
+  SELECTED_MEMORY_MAX_ENTRIES,
   SELECTED_MEMORY_MAX_TOTAL_BYTES,
   selectedMemoryActiveDigest,
   selectedMemoryCandidateBytes,
   selectedMemoryCandidateSchema,
   selectedMemoryManifestBytes,
   selectedMemoryManifestSchema,
+  persistedSelectedMemoryManifestSchema,
   selectedMemorySha256,
   type SelectedMemoryActiveState,
   type SelectedMemoryCandidate,
@@ -235,7 +237,7 @@ export class SelectedMemoryStore {
         || selectedMemorySha256(selectedMemoryCandidateBytes(candidate)) !== input.expectedCandidateSha256) {
         throw new SelectedMemoryStoreError("selected-memory candidate or active version changed before promotion");
       }
-      if (prior.manifest.entries.length >= 128) throw new SelectedMemoryStoreError("selected-memory entry bound is exhausted");
+      if (prior.manifest.entries.length >= SELECTED_MEMORY_MAX_ENTRIES) throw new SelectedMemoryStoreError("selected-memory entry bound is exhausted");
       const approvedAt = this.now();
       const id = `memory-${this.uuid()}`;
       const contentBytes = Buffer.from(candidate.content, "utf8");
@@ -320,7 +322,7 @@ export class SelectedMemoryStore {
     try { manifestBytes = await this.readAnchoredFile(agentName, ["manifest.json"], 256 * 1024, "selected-memory manifest"); }
     catch (error) { throw new SelectedMemoryStoreError(`selected-memory manifest is missing or unsafe: ${error instanceof Error ? error.message : String(error)}`); }
     let manifest: SelectedMemoryManifest;
-    try { manifest = selectedMemoryManifestSchema.parse(JSON.parse(parseUtf8(manifestBytes, "selected-memory manifest"))); }
+    try { manifest = persistedSelectedMemoryManifestSchema.parse(JSON.parse(parseUtf8(manifestBytes, "selected-memory manifest"))); }
     catch { throw new SelectedMemoryStoreError("selected-memory manifest is malformed"); }
     if (manifest.agentName !== agentName) throw new SelectedMemoryStoreError("selected-memory manifest belongs to another agent");
     const contents: SelectedMemoryActiveState["contents"] = [];
