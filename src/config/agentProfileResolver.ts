@@ -673,27 +673,46 @@ function projectionDigestInput(projection: Omit<ResolvedAgentCapabilityProjectio
 }
 
 /**
- * t-b0cfd4 sweep — the diagnostics BELOW are still whole-agent refusals, and they have the same
- * shape as the one this task fixed. Named here rather than left to be rediscovered:
+ * t-dfc4de — per-capability refusals withhold the capability; they do not refuse the agent.
  *
- *   - `profile/capability` for a payload that captured cleanly but does not validate — a skill tree
- *     with no root SKILL.md, an MCP or hook declaration that does not parse, a Pi resource of the
- *     wrong file type. A plugin update can reach the first one: re-authorize a tree that lost its
- *     SKILL.md and the agent goes invalid with re-authorization as the thing that caused it.
- *   - `profile/capability-authority` for a selection with no exact host grant.
- *   - `profile/capability-collision` for two capabilities claiming one delivered name.
+ * A refusal must be the size of what it protects. Capture failures already withhold (t-b0cfd4).
+ * The cases that still lived here as whole-agent errors are the same shape, one item at a time:
  *
- * Each is about ONE capability, so under the owner's rule each should cost that capability and not
- * the agent. They are deliberately NOT changed here: a capture failure has one obvious meaning
- * ("these bytes do not reach the agent"), while "withheld" for a half-parsed hook block or for a
- * collision means choosing which of two claimants survives — a separate decision per case, and one
- * that should be made with its own guard rather than folded into this commit. Follow-up: t-dfc4de.
+ *   - `profile/capability` — payload captured cleanly but does not validate (skill tree with no
+ *     root SKILL.md, MCP/hook that does not parse, Pi resource of the wrong type, adapter-
+ *     incompatible selection for that one id, missing captured payload, product scope without a
+ *     V1 resolver).
+ *   - `profile/capability-authority` — selection with no exact host-custodied grant.
+ *   - `profile/capability-collision` — two capabilities claim one delivered name, OR the same
+ *     reference id is selected more than once, OR an MCP name is reserved for the Bridge.
+ *
+ * ## Collision decision (withhold BOTH)
+ *
+ * When two claimants race for one delivered name, withholding only the second would silently pick
+ * the first as winner and hide the conflict from the human who has to rename or deselect. Withholding
+ * both is the honest answer: neither reaches the agent, the notice names the collision, and the
+ * repair is "make the name unique". Choosing a winner is a profile-author decision, not a resolver
+ * one.
+ *
+ * ## Where whole-agent refusal stays correct
+ *
+ * This function no longer fails the profile for the cases above. Whole-agent refusal remains correct
+ * OUTSIDE this function, when the failure is about what the agent *is* rather than one tool it has:
+ *
+ *   - profile parse / schema / unsupported version / missing agentId (`parseAgentProfile`)
+ *   - host authority boundary on the profile head (`authorityErrors`)
+ *   - double authority (canonical + legacy at once)
+ *   - non-capability reference failures (instructions, evolution, setup) — those define the agent
+ *   - inheritance / native attestation / provenance coverage failures
+ *
+ * Those are not "one capability costs itself"; resolving them wrong would produce a different agent
+ * or an unattested one, not a smaller one.
  */
 function resolveCapabilities(
   profile: AgentProfileV1,
   references: readonly ResolvedProfileReference[],
   authority: AgentProfileAuthoritySnapshot,
-): { projection?: ResolvedAgentCapabilityProjection; errors: AgentProfileDiagnostic[] } {
+): { projection?: ResolvedAgentCapabilityProjection; errors: AgentProfileDiagnostic[]; withheld: WithheldCapability[] } {
   const selected = profile.capabilities;
   const ids = [
     ...(selected?.skills ?? []),
@@ -704,64 +723,157 @@ function resolveCapabilities(
     ...(selected?.pi?.themes ?? []),
     ...(selected?.pi?.packages ?? []),
   ];
-  if (ids.length === 0) return { errors: [] };
-  const errors: AgentProfileDiagnostic[] = [];
-  const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
-  for (const id of [...new Set(duplicateIds)].sort(compareText)) {
-    errors.push(diagnostic("profile/capability-collision", "agent.yml", `capability reference ${JSON.stringify(id)} is selected more than once`, "capabilities"));
-  }
-  const adapter = profile.runtime.adapter;
-  if (adapter !== "claude" && adapter !== "codex" && adapter !== "pi") {
-    errors.push(diagnostic("profile/capability", "runtime adapter", `adapter ${JSON.stringify(adapter)} has no measured profile capability projection`, "runtime.adapter"));
-    return { errors };
-  }
-  const hasPi = Object.values(selected?.pi ?? {}).some((value) => (value?.length ?? 0) > 0);
-  if ((adapter === "claude" || adapter === "codex") && hasPi) {
-    errors.push(diagnostic("profile/capability", "runtime adapter", `Pi resources are not supported by the ${adapter} projection`, "capabilities.pi"));
-  }
-  if (adapter === "pi" && ((selected?.mcp?.length ?? 0) > 0 || (selected?.hooks?.length ?? 0) > 0)) {
-    errors.push(diagnostic("profile/capability", "runtime adapter", "Pi profile projections support skills and explicit Pi resources, not MCP or hooks", "capabilities"));
-  }
+  if (ids.length === 0) return { errors: [], withheld: [] };
 
   const byId = new Map(references.map((reference) => [reference.id, reference]));
   const grants = new Map((authority.capabilityGrants ?? []).map((grant) => [grant.referenceId, grant]));
-  const sources: ResolvedAgentCapabilitySource[] = [];
-  const skills: ResolvedAgentCapabilityProjection["skills"] = [];
-  const mcp: ResolvedAgentCapabilityProjection["mcp"] = {};
-  const hooks: ResolvedAgentCapabilityProjection["hooks"] = {};
-  const pi: ResolvedAgentCapabilityProjection["pi"] = { extensions: [], prompts: [], themes: [], packages: [] };
-  const claims = new Map<string, string>();
+  const withheld = new Map<string, WithheldCapability>();
+  const markWithheld = (entry: WithheldCapability): void => {
+    if (!withheld.has(entry.referenceId)) withheld.set(entry.referenceId, entry);
+  };
+  const withholdId = (id: string, code: AgentProfileDiagnosticCode, detail: string, fallbackPath = "agent.yml"): void => {
+    const reference = byId.get(id);
+    if (reference) {
+      markWithheld(withheldFromDiagnostic(reference, code, detail));
+      return;
+    }
+    markWithheld({
+      referenceId: id,
+      name: id,
+      kind: "capability",
+      path: fallbackPath,
+      code,
+      detail,
+    });
+  };
 
+  const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+  for (const id of [...new Set(duplicateIds)].sort(compareText)) {
+    withholdId(id, "profile/capability-collision", `capability reference ${JSON.stringify(id)} is selected more than once`);
+  }
+
+  const adapter = profile.runtime.adapter;
+  if (adapter !== "claude" && adapter !== "codex" && adapter !== "pi") {
+    for (const id of [...new Set(ids)].sort(compareText)) {
+      withholdId(
+        id,
+        "profile/capability",
+        `adapter ${JSON.stringify(adapter)} has no measured profile capability projection`,
+        "runtime adapter",
+      );
+    }
+    return { errors: [], withheld: [...withheld.values()] };
+  }
+
+  const piIds = [
+    ...(selected?.pi?.extensions ?? []),
+    ...(selected?.pi?.prompts ?? []),
+    ...(selected?.pi?.themes ?? []),
+    ...(selected?.pi?.packages ?? []),
+  ];
+  if ((adapter === "claude" || adapter === "codex") && piIds.length > 0) {
+    for (const id of [...new Set(piIds)].sort(compareText)) {
+      withholdId(id, "profile/capability", `Pi resources are not supported by the ${adapter} projection`, "capabilities.pi");
+    }
+  }
+  if (adapter === "pi") {
+    for (const id of [...new Set([...(selected?.mcp ?? []), ...(selected?.hooks ?? [])])].sort(compareText)) {
+      withholdId(
+        id,
+        "profile/capability",
+        "Pi profile projections support skills and explicit Pi resources, not MCP or hooks",
+        "capabilities",
+      );
+    }
+  }
+
+  type PendingSkill = { referenceId: string; name: string; source: CapturedCapabilitySource };
+  type PendingMcp = {
+    referenceId: string;
+    name: string;
+    server: ResolvedAgentCapabilityProjection["mcp"][string];
+  };
+  type PendingHook = { referenceId: string; event: string; value: unknown };
+  type PendingPi = { referenceId: string; name: string; source: CapturedCapabilitySource };
+
+  const pendingSkills: PendingSkill[] = [];
+  const pendingMcp: PendingMcp[] = [];
+  const pendingHooks: PendingHook[] = [];
+  const pendingPi: Record<keyof ResolvedAgentCapabilityProjection["pi"], PendingPi[]> = {
+    extensions: [],
+    prompts: [],
+    themes: [],
+    packages: [],
+  };
+  const deliveredSourceIds = new Set<string>();
+  const claims = new Map<string, string>();
+  /**
+   * A delivered name that already collided stays unavailable for the rest of the resolve. Releasing
+   * it would hand the name to the NEXT claimant, so three capabilities racing for one name would
+   * withhold the first two and silently deliver the third — the exact silent winner this rule
+   * exists to prevent, just one claimant further along.
+   */
+  const collided = new Set<string>();
+
+  /** Reserve a delivered name. On collision, withhold EVERY claimant — never pick a silent winner. */
   const claim = (namespace: string, name: string, referenceId: string): boolean => {
+    if (withheld.has(referenceId)) return false;
     const key = `${namespace}:${name.normalize("NFC").toLocaleLowerCase("en-US")}`;
-    const prior = claims.get(key);
-    if (prior) {
-      errors.push(diagnostic("profile/capability-collision", "capability projection", `${namespace} name ${JSON.stringify(name)} collides between ${JSON.stringify(prior)} and ${JSON.stringify(referenceId)}`, `capabilities.${namespace}`));
+    if (collided.has(key)) {
+      withholdId(
+        referenceId,
+        "profile/capability-collision",
+        `${namespace} name ${JSON.stringify(name)} is claimed by more than one capability`,
+        "capability projection",
+      );
       return false;
     }
-    claims.set(key, referenceId);
-    return true;
+    const prior = claims.get(key);
+    if (prior && prior !== referenceId) {
+      const detail = `${namespace} name ${JSON.stringify(name)} collides between ${JSON.stringify(prior)} and ${JSON.stringify(referenceId)}`;
+      withholdId(prior, "profile/capability-collision", detail, "capability projection");
+      withholdId(referenceId, "profile/capability-collision", detail, "capability projection");
+      claims.delete(key);
+      collided.add(key);
+      return false;
+    }
+    if (!prior) claims.set(key, referenceId);
+    return !withheld.has(referenceId);
   };
+
   const get = (id: string): ResolvedProfileReference | undefined => {
+    if (withheld.has(id)) return undefined;
     const reference = byId.get(id);
     if (!reference?.capturedCapability) {
-      errors.push(diagnostic("profile/capability", reference?.path ?? "agent.yml", `selected capability ${JSON.stringify(id)} has no owner-captured payload`, `capabilities.${id}`));
+      withholdId(id, "profile/capability", `selected capability ${JSON.stringify(id)} has no owner-captured payload`);
       return undefined;
     }
     if (reference.scope === "product") {
-      errors.push(diagnostic("profile/capability", reference.path, `product-scoped capability ${JSON.stringify(id)} has no registered V1 payload resolver`, `capabilities.${id}`));
+      markWithheld(withheldFromDiagnostic(
+        reference,
+        "profile/capability",
+        `product-scoped capability ${JSON.stringify(id)} has no registered V1 payload resolver`,
+      ));
       return undefined;
     }
-    sources.push(sourceSummary(reference));
     return reference;
   };
+
   const requireGrant = (reference: ResolvedProfileReference, kind: AgentCapabilityGrant["kind"], hookClass?: AgentCapabilityHookClass): boolean => {
     const grant = grants.get(reference.id);
     if (!grant || grant.sourceSha256 !== reference.resolvedSha256 || grant.adapter !== adapter || grant.kind !== kind || grant.hookClass !== hookClass) {
-      errors.push(diagnostic("profile/capability-authority", reference.path, `capability ${JSON.stringify(reference.id)} lacks an exact host-custodied ${kind} grant`, `capabilities.${reference.id}`));
+      markWithheld(withheldFromDiagnostic(
+        reference,
+        "profile/capability-authority",
+        `capability ${JSON.stringify(reference.id)} lacks an exact host-custodied ${kind} grant`,
+      ));
       return false;
     }
     return true;
+  };
+
+  const markDelivered = (reference: ResolvedProfileReference): void => {
+    deliveredSourceIds.add(reference.id);
   };
 
   for (const id of selected?.skills ?? []) {
@@ -770,12 +882,19 @@ function resolveCapabilities(
     const captured = reference.capturedCapability!;
     const hasSkill = captured.type === "tree" && captured.entries.some((entry) => entry.type === "file" && entry.path === "SKILL.md");
     if (!hasSkill) {
-      errors.push(diagnostic("profile/capability", reference.path, `skill ${JSON.stringify(id)} must be a directory tree with a root SKILL.md`, `capabilities.skills`));
+      markWithheld(withheldFromDiagnostic(
+        reference,
+        "profile/capability",
+        `skill ${JSON.stringify(id)} must be a directory tree with a root SKILL.md`,
+      ));
       continue;
     }
     const name = path.posix.basename(reference.path);
     if (adapter === "claude" && !requireGrant(reference, "skill")) continue;
-    if (claim("skills", name, id)) skills.push({ name, source: captured });
+    if (claim("skills", name, id)) {
+      pendingSkills.push({ referenceId: id, name, source: captured });
+      markDelivered(reference);
+    }
   }
 
   for (const id of selected?.mcp ?? []) {
@@ -783,15 +902,24 @@ function resolveCapabilities(
     if (!reference || (adapter !== "claude" && adapter !== "codex")) continue;
     const parsed = parseCapabilityYaml(reference, capabilityMcpSchema);
     if (typeof parsed === "string") {
-      errors.push(diagnostic("profile/capability", reference.path, `MCP declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.mcp`));
+      markWithheld(withheldFromDiagnostic(reference, "profile/capability", `MCP declaration ${JSON.stringify(id)} ${parsed}`));
       continue;
     }
     if (["tachyon", "tachyon_bridge"].includes(parsed.name)) {
-      errors.push(diagnostic("profile/capability-collision", reference.path, `MCP name ${JSON.stringify(parsed.name)} is reserved for the Tachyon Bridge`, `capabilities.mcp`));
+      markWithheld(withheldFromDiagnostic(
+        reference,
+        "profile/capability-collision",
+        `MCP name ${JSON.stringify(parsed.name)} is reserved for the Tachyon Bridge`,
+      ));
       continue;
     }
     if (!requireGrant(reference, "mcp") || !claim("mcp", parsed.name, id)) continue;
-    mcp[parsed.name] = { command: parsed.command, ...(parsed.args ? { args: parsed.args } : {}), ...(parsed.env ? { env: parsed.env } : {}) };
+    pendingMcp.push({
+      referenceId: id,
+      name: parsed.name,
+      server: { command: parsed.command, ...(parsed.args ? { args: parsed.args } : {}), ...(parsed.env ? { env: parsed.env } : {}) },
+    });
+    markDelivered(reference);
   }
 
   for (const id of selected?.hooks ?? []) {
@@ -799,20 +927,29 @@ function resolveCapabilities(
     if (!reference || (adapter !== "claude" && adapter !== "codex")) continue;
     const parsed = parseCapabilityYaml(reference, capabilityHookSchema);
     if (typeof parsed === "string") {
-      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} ${parsed}`, `capabilities.hooks`));
+      markWithheld(withheldFromDiagnostic(reference, "profile/capability", `hook declaration ${JSON.stringify(id)} ${parsed}`));
       continue;
     }
     const normalized = adapter === "claude"
       ? parseClaudeHooksBlock(JSON.stringify(parsed.hooks))
       : parseCodexHooksBlock(JSON.stringify(parsed.hooks));
     if (!normalized.hooks) {
-      errors.push(diagnostic("profile/capability", reference.path, `hook declaration ${JSON.stringify(id)} is not a valid ${adapter} hook block: ${normalized.errors.join("; ")}`, `capabilities.hooks`));
+      markWithheld(withheldFromDiagnostic(
+        reference,
+        "profile/capability",
+        `hook declaration ${JSON.stringify(id)} is not a valid ${adapter} hook block: ${normalized.errors.join("; ")}`,
+      ));
       continue;
     }
     if (!requireGrant(reference, "hook", parsed.class)) continue;
+    let deliveredAny = false;
     for (const [event, value] of Object.entries(normalized.hooks).sort(([left], [right]) => compareText(left, right))) {
-      if (claim("hooks", event, id)) hooks[event] = value;
+      if (claim("hooks", event, id)) {
+        pendingHooks.push({ referenceId: id, event, value });
+        deliveredAny = true;
+      }
     }
+    if (deliveredAny && !withheld.has(id)) markDelivered(reference);
   }
 
   const addPi = (idsForKind: readonly string[], target: keyof ResolvedAgentCapabilityProjection["pi"], kind: AgentCapabilityGrant["kind"] | undefined, validate: (reference: ResolvedProfileReference) => string | undefined) => {
@@ -821,12 +958,19 @@ function resolveCapabilities(
       if (!reference || adapter !== "pi") continue;
       const invalid = validate(reference);
       if (invalid) {
-        errors.push(diagnostic("profile/capability", reference.path, `${target} capability ${JSON.stringify(id)} ${invalid}`, `capabilities.pi.${target}`));
+        markWithheld(withheldFromDiagnostic(
+          reference,
+          "profile/capability",
+          `${target} capability ${JSON.stringify(id)} ${invalid}`,
+        ));
         continue;
       }
       if (kind && !requireGrant(reference, kind)) continue;
       const name = path.posix.basename(reference.path);
-      if (claim(`pi.${target}`, name, id)) pi[target].push({ name, source: reference.capturedCapability! });
+      if (claim(`pi.${target}`, name, id)) {
+        pendingPi[target].push({ referenceId: id, name, source: reference.capturedCapability! });
+        markDelivered(reference);
+      }
     }
   };
   const extensionValid = (reference: ResolvedProfileReference): string | undefined => {
@@ -957,28 +1101,90 @@ function resolveCapabilities(
   addPi(selected?.pi?.themes ?? [], "themes", undefined, themeValid);
   addPi(selected?.pi?.packages ?? [], "packages", "pi-package", packageValid);
   for (const id of selected?.pi?.packages ?? []) {
+    if (withheld.has(id)) continue;
     const reference = byId.get(id);
     if (!reference?.capturedCapability || adapter !== "pi" || packageValid(reference)
-      || !pi.packages.some((entry) => entry.source === reference.capturedCapability)) continue;
+      || !pendingPi.packages.some((entry) => entry.referenceId === id && !withheld.has(id))) continue;
     for (const resource of packageClaims(reference).claims ?? []) claim(resource.namespace, resource.name, id);
   }
 
-  if (errors.length > 0) return { errors };
-  sources.sort((left, right) => compareText(`${left.scope}:${left.owner}:${left.referenceId}`, `${right.scope}:${right.owner}:${right.referenceId}`));
-  skills.sort((left, right) => compareText(left.name, right.name));
-  for (const values of Object.values(pi)) values.sort((left, right) => compareText(left.name, right.name));
+  // Drop anything that collision-withholding invalidated after it was staged as pending.
+  const keep = (referenceId: string): boolean => !withheld.has(referenceId);
+  for (const id of withheld.keys()) deliveredSourceIds.delete(id);
+
+  const skills = pendingSkills
+    .filter((entry) => keep(entry.referenceId))
+    .map(({ name, source }) => ({ name, source }))
+    .sort((left, right) => compareText(left.name, right.name));
+  const mcp = Object.fromEntries(
+    pendingMcp
+      .filter((entry) => keep(entry.referenceId))
+      .sort((left, right) => compareText(left.name, right.name))
+      .map((entry) => [entry.name, entry.server]),
+  );
+  const hooks = Object.fromEntries(
+    pendingHooks
+      .filter((entry) => keep(entry.referenceId))
+      .sort((left, right) => compareText(left.event, right.event))
+      .map((entry) => [entry.event, entry.value]),
+  );
+  const pi: ResolvedAgentCapabilityProjection["pi"] = {
+    extensions: [],
+    prompts: [],
+    themes: [],
+    packages: [],
+  };
+  for (const target of ["extensions", "prompts", "themes", "packages"] as const) {
+    pi[target] = pendingPi[target]
+      .filter((entry) => keep(entry.referenceId))
+      .map(({ name, source }) => ({ name, source }))
+      .sort((left, right) => compareText(left.name, right.name));
+  }
+
+  const sources = [...deliveredSourceIds]
+    .map((id) => byId.get(id))
+    .filter((reference): reference is ResolvedProfileReference => reference !== undefined)
+    .map(sourceSummary)
+    .sort((left, right) => compareText(`${left.scope}:${left.owner}:${left.referenceId}`, `${right.scope}:${right.owner}:${right.referenceId}`));
+
+  const withheldList = [...withheld.values()].sort((left, right) => compareText(left.referenceId, right.referenceId));
+  const deliveredAnything = sources.length > 0
+    || skills.length > 0
+    || Object.keys(mcp).length > 0
+    || Object.keys(hooks).length > 0
+    || Object.values(pi).some((values) => values.length > 0);
+  if (!deliveredAnything) return { errors: [], withheld: withheldList };
+
   const withoutDigest: Omit<ResolvedAgentCapabilityProjection, "sha256"> = {
     schemaVersion: 1,
     adapter,
     sources,
     skills,
-    mcp: Object.fromEntries(Object.entries(mcp).sort(([left], [right]) => compareText(left, right))),
-    hooks: Object.fromEntries(Object.entries(hooks).sort(([left], [right]) => compareText(left, right))),
+    mcp,
+    hooks,
     pi,
   };
   return {
     projection: { ...withoutDigest, sha256: sha256(stableJson(projectionDigestInput(withoutDigest))) },
     errors: [],
+    withheld: withheldList,
+  };
+}
+
+/** t-dfc4de — a resolveCapabilities diagnostic restated as a withheld capability. */
+function withheldFromDiagnostic(
+  reference: Pick<AgentProfileReferenceV1, "id" | "kind" | "path" | "version">,
+  code: AgentProfileDiagnosticCode,
+  detail: string,
+): WithheldCapability {
+  return {
+    referenceId: reference.id,
+    name: path.posix.basename(reference.path),
+    kind: reference.kind,
+    path: reference.path,
+    code,
+    ...(reference.version ? { version: reference.version } : {}),
+    detail,
   };
 }
 
@@ -1304,17 +1510,23 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
 
     const parsed = parseAgentProfile(canonical!);
     if (!parsed.profile) return failure(parsed.errors, warnings);
-    // t-b0cfd4 — withholding is applied to the SELECTION, in two passes, before anything is derived
-    // from it. The owner's withholdings (project-scoped bytes it could not capture) come in as ids;
-    // this resolver adds the profile-local ones it discovers while resolving. Everything downstream —
-    // the normalized definition, its provenance, the capability projection and the effective digest —
-    // is then computed from one profile that already reflects what the agent actually gets.
+    // t-b0cfd4 / t-dfc4de — withholding is applied to the SELECTION, in three passes, before the
+    // effective definition is sealed. (1) Owner withholdings (project-scoped bytes it could not
+    // capture). (2) Profile-local capture failures discovered while resolving references. (3)
+    // resolveCapabilities withholdings (invalid payload, missing grant, name collision). Everything
+    // downstream — normalized definition, provenance, capability projection, effective digest — is
+    // then computed from one profile that already reflects what the agent actually gets.
     const selected = withoutSelectedCapabilities(parsed.profile, input.withheldCapabilities ?? []);
     const referenceResult = resolveReferences(canonical!, selected, input.externalReferences);
-    const profile = withoutSelectedCapabilities(selected, referenceResult.withheld.map((entry) => entry.referenceId));
+    const afterCapture = withoutSelectedCapabilities(selected, referenceResult.withheld.map((entry) => entry.referenceId));
+    const capabilityResult = resolveCapabilities(afterCapture, referenceResult.references, input.authority);
+    const capabilityWithheldIds = new Set(capabilityResult.withheld.map((entry) => entry.referenceId));
+    const profile = withoutSelectedCapabilities(afterCapture, [...capabilityWithheldIds]);
+    // Captured-but-undeliverable refs leave the delivered set the same way uncaptured ones never
+    // entered it: the agent does not carry sources it was not given.
+    const deliveredReferences = referenceResult.references.filter((reference) => !capabilityWithheldIds.has(reference.id));
     const definition = canonicalDefinition(profile);
-    const inheritance = applyInheritance(profile, definition, input, referenceResult.references);
-    const capabilityResult = resolveCapabilities(profile, referenceResult.references, input.authority);
+    const inheritance = applyInheritance(profile, definition, input, deliveredReferences);
     const errors = [
       ...referenceResult.errors,
       ...inheritance.errors,
@@ -1327,11 +1539,12 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
       { field: "agentId", sourceKind: "profile" as const, source: canonical!.source, sha256: canonical!.sha256 },
       ...(profile.displayName ? [{ field: "displayName", sourceKind: "profile" as const, source: canonical!.source, sha256: canonical!.sha256 }] : []),
       ...provenanceFor(canonicalDefinition(profile), "profile", canonical!.source, canonical!.sha256),
-      ...referenceResult.provenance,
+      ...referenceResult.provenance.filter((entry) => !entry.referenceId || !capabilityWithheldIds.has(entry.referenceId)),
       ...inheritance.provenance,
     ];
     const coverage = provenanceCoverageErrors(definition, provenance);
     if (coverage.length > 0) return failure(coverage, warnings);
+    const allWithheld = [...referenceResult.withheld, ...capabilityResult.withheld];
     return {
       ok: true,
       value: finalize(
@@ -1341,10 +1554,10 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
         canonical!.sha256,
         definition,
         provenance,
-        referenceResult.references,
+        deliveredReferences,
         profile,
         capabilityResult.projection,
-        referenceResult.withheld,
+        allWithheld,
       ),
       warnings,
     };

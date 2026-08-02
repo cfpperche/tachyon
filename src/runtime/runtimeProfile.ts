@@ -369,8 +369,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "approval_policy at its default does NOT cover — a read-only Bridge-shaped tool still stopped at 'Allow the <server> MCP server to run tool …?' until " +
         "that per-server key was set to approve. t-aaa2c6 projects all three by CLASS for a delegated child only; top-level absence preserves Codex's defaults, " +
         "an authored profile's own approval_policy/sandbox_mode is never widened, and no value is inherited from the environment. " +
-        "NOT governed by any of them: the startup directory-trust prompt, which is exact-path `projects.\"<path>\".trust_level` (measured: NOT prefix-inherited) " +
-        "and is already written for canonical Codex homes; and third-party MCP servers, which keep Codex's default posture because Tachyon does not vouch for them. " +
+        "t-171cb2 closes the fourth measured door — the startup directory-trust prompt — on the same class boundary: exact-path " +
+        "`projects.\"<path>\".trust_level` (measured: NOT prefix-inherited, NOT governable via argv `-c`) is written into the private " +
+        "CODEX_HOME/config.toml for a delegated child only, for workspace root + the exact spawn cwd (the new worktree path known at " +
+        "materialize time). Ambient projects tables from the human's `~/.codex` are stripped on that path so trust does not leak; " +
+        "top-level and declared keep today's seed-only home. Canonical Codex homes already wrote the same blocks (materializeCanonicalCodexProfileHome). " +
+        "Third-party MCP servers keep Codex's default posture because Tachyon does not vouch for them. " +
         "Measured on the same build: `--full-auto` is REJECTED (\"unexpected argument\"), while `--yolo` still parses although --help documents neither; " +
         "the documented one-token form is --dangerously-bypass-approvals-and-sandbox. What --yolo grants was not measured and is not relied on here.",
     },

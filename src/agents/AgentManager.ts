@@ -731,7 +731,12 @@ export interface AgentManagerOptions {
    * harness / the runtime doesn't support one. Owned by Workspace (it has the HarnessManager). Called
    * on EVERY spawn path (spawn/restart/resume/fork) so isolation never silently drops (H3).
    */
-  materializeHarness?: (ctx: { name: string; def: AgentEntry; cwd: string }) => MaterializedHarness | null;
+  /**
+   * t-171cb2 — `delegated` is true when this launch has runtime lineage (parent or delegator).
+   * Materializers use it for class-scoped authority (e.g. Codex directory trust) that must not
+   * apply to top-level or declared agents.
+   */
+  materializeHarness?: (ctx: { name: string; def: AgentEntry; cwd: string; delegated?: boolean }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
   /** Remove a managed Pi agent's private transcript namespace at ephemeral end-of-life. */
@@ -2128,7 +2133,12 @@ export class AgentManager {
    * spawn, so spawn/restart/resume/fork are all isolated identically. No-op for an agent without a
    * harness, or when no materializer is wired. Pass the ORIGINAL declared def (it carries `harness`).
    */
-  private materializeRuntimeHarness(name: string, def: AgentDef | undefined, cwd: string): MaterializedHarness | null {
+  private materializeRuntimeHarness(
+    name: string,
+    def: AgentDef | undefined,
+    cwd: string,
+    delegated = false,
+  ): MaterializedHarness | null {
     const isolation = def ? isolationMechanismForCommand(def.cmd) : undefined;
     // A private config home is an Agent capability: a terminal has no harness, no transcript
     // isolation and no canonical profile to project, so the narrowing decides it here.
@@ -2140,7 +2150,7 @@ export class AgentManager {
     // A private config home is materialized for the Agent arm only, so the materializer receives an
     // AgentEntry and never has to ask what it was handed.
     if (!agent || !needsPrivateHome || !this.opts.materializeHarness) return null;
-    return this.opts.materializeHarness({ name, def: agent, cwd });
+    return this.opts.materializeHarness({ name, def: agent, cwd, delegated });
   }
 
   private applyHarness(
@@ -2753,7 +2763,7 @@ export class AgentManager {
     const runtimeHome = harnessHome(this.opts.workspaceRoot, name);
     const runtimeHomeExisted = fs.existsSync(runtimeHome);
     try {
-      preparedRuntimeHarness = this.materializeRuntimeHarness(name, def, cwd);
+      preparedRuntimeHarness = this.materializeRuntimeHarness(name, def, cwd, !!(parent || delegator));
     } finally {
       createdRuntimeHome = !runtimeHomeExisted && fs.existsSync(runtimeHome);
     }
@@ -4268,7 +4278,12 @@ export class AgentManager {
         preparationLocked = resolved.preparationLocked === true;
       }
     }
-    const restartHarness = this.materializeRuntimeHarness(name, def, cwd);
+    const restartHarness = this.materializeRuntimeHarness(
+      name,
+      def,
+      cwd,
+      !!(restartParent || this.delegators.get(name)),
+    );
     await this.assertLaunchPreflight(
       name,
       def.cmd,
@@ -4732,7 +4747,8 @@ export class AgentManager {
       && path.resolve(configHome) !== path.resolve(defaultClaudeHome)
       ? { [adapter.harness.configHomeEnv]: configHome }
       : {};
-    const resumeHarness = this.materializeRuntimeHarness(name, resumeDef, cwd);
+    const resumeDelegated = !!(this.lineage.get(name) || this.delegators.get(name));
+    const resumeHarness = this.materializeRuntimeHarness(name, resumeDef, cwd, resumeDelegated);
     await this.assertLaunchPreflight(
       name,
       cmd,
@@ -4748,7 +4764,7 @@ export class AgentManager {
         this.applyAgentPermissionProjection(
           name,
           cmd,
-          !!(this.lineage.get(name) || this.delegators.get(name)),
+          resumeDelegated,
           resumeDef?.profileNativeConfig?.permissions,
         ),
         id,

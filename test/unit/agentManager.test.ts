@@ -6069,6 +6069,91 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(narrow).not.toContain("approval_policy");
     });
 
+    // t-171cb2 — directory trust is the fourth door. Fail-before: without exactTrustCwd on the
+    // delegated materialize path, a new worktree path never lands in private config.toml and Codex
+    // stops at "Do you trust the contents of this directory?" before any work.
+    it("t-171cb2: delegated Codex gets exact-path trust for its worktree cwd; top-level/declared do not", async () => {
+      const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-trustdir-"));
+      dirs.push(base);
+      const realHome = path.join(base, "realhome");
+      const realCodexHome = path.join(base, "realcodex");
+      fs.mkdirSync(realHome, { recursive: true });
+      fs.mkdirSync(realCodexHome, { recursive: true });
+      fs.writeFileSync(path.join(realCodexHome, "auth.json"), "{}");
+      const ambientSibling = path.join(base, "ambient-sibling");
+      fs.writeFileSync(path.join(realCodexHome, "config.toml"), [
+        'model = "ambient-from-human"',
+        "",
+        `[projects.${JSON.stringify(ambientSibling)}]`,
+        'trust_level = "trusted"',
+        "",
+      ].join("\n"));
+
+      let harnessMgr: HarnessManager;
+      // Mirrors Workspace.ts: Temporary codex is auto-isolate:transcript; delegated passes exactTrustCwd.
+      const materializeHarness = ({ name, def, cwd, delegated }: {
+        name: string;
+        def: { cmd: string; isolate?: string; profileLifecycle?: unknown; profileNativeConfig?: unknown };
+        cwd: string;
+        delegated?: boolean;
+      }) => {
+        const adapter = adapterFor(def.cmd);
+        if (!harnessable(adapter) || !adapter) return null;
+        if (adapter.runtime !== "codex") return null;
+        if (def.isolate === "transcript") {
+          return harnessMgr.materializeHomeOnly(name, adapter, cwd, {
+            ...(delegated ? { exactTrustCwd: cwd } : {}),
+          });
+        }
+        return harnessMgr.materializeHomeOnly(name, adapter, cwd, {
+          inheritNativeConfig: def.profileLifecycle === undefined,
+          ...(delegated ? { exactTrustCwd: cwd } : {}),
+        });
+      };
+
+      const worktreePath = (name: string) => path.join(base, "wt", name);
+      const { manager, ws } = resumeHarness(
+        "agents:\n  boss:\n    cmd: claude\n  declared:\n    cmd: codex\n",
+        {
+          materializeHarness: materializeHarness as never,
+          resolveSpawnCwd: async (ctx: { name: string }) => {
+            const p = worktreePath(ctx.name);
+            fs.mkdirSync(p, { recursive: true });
+            return {
+              cwd: p,
+              worktree: { path: p, branch: `tachyon/${ctx.name}`, tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" },
+            };
+          },
+        },
+      );
+      harnessMgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"), realCodexHome);
+
+      await manager.spawn("writer", { cmd: "codex", parent: "boss", worktree: true });
+      const delegatedToml = fs.readFileSync(path.join(harnessHome(ws, "writer"), "config.toml"), "utf8");
+      const writerCwd = worktreePath("writer");
+      expect(delegatedToml).toContain(`[projects.${JSON.stringify(path.resolve(ws))}]\ntrust_level = "trusted"`);
+      expect(delegatedToml).toContain(`[projects.${JSON.stringify(path.resolve(writerCwd))}]\ntrust_level = "trusted"`);
+      expect(delegatedToml).not.toContain(JSON.stringify(ambientSibling));
+      expect(delegatedToml).toContain("ambient-from-human");
+
+      // restart is the same actor arriving through another door — trust must be re-written.
+      await manager.restart("writer", { stop: "force", session: "new" });
+      const afterRestart = fs.readFileSync(path.join(harnessHome(ws, "writer"), "config.toml"), "utf8");
+      expect(afterRestart).toContain(`[projects.${JSON.stringify(path.resolve(writerCwd))}]\ntrust_level = "trusted"`);
+
+      // Top-level Temporary Codex keeps today's seed: ambient projects stay, no auto worktree trust.
+      await manager.spawn("top-level-codex", { cmd: "codex" });
+      const topToml = fs.readFileSync(path.join(harnessHome(ws, "top-level-codex"), "config.toml"), "utf8");
+      expect(topToml).toContain(JSON.stringify(ambientSibling));
+      expect(topToml).not.toContain(JSON.stringify(path.resolve(worktreePath("top-level-codex"))));
+
+      // Declared agent without a parent: same as today.
+      await manager.spawn("declared");
+      const declaredToml = fs.readFileSync(path.join(harnessHome(ws, "declared"), "config.toml"), "utf8");
+      expect(declaredToml).toContain(JSON.stringify(ambientSibling));
+      expect(declaredToml).not.toContain(JSON.stringify(path.resolve(worktreePath("declared"))));
+    });
+
     it("SDD 369 T3 passes the effective cwd and private Claude config home to capture materialization", async () => {
       const details: Array<{ name: string; ownershipOnly: boolean; cwd?: string; configHome?: string }> = [];
       const { manager, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
