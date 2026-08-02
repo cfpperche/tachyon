@@ -117,6 +117,13 @@ export type NoticeDeliveryResult = {
   queued?: number;
   /** Why confirmation failed, propagated from the tmux submit receipt. */
   submitReason?: string;
+  /**
+   * t-a53dd9 — set when the wait is on a HUMAN, not on the recipient's turn. A queue held because the
+   * recipient is mid-turn ends by itself in seconds; one held because a person is typing into that
+   * pane ends when they submit, or at the TTL with the loss reported to them. The sender is told
+   * which, because "queued" alone is what makes a doorbell that never lands look like one that did.
+   */
+  heldFor?: "human-draft";
 };
 /**
  * t-fb1453 — one definition, imported rather than restated. The second copy that used to live here
@@ -365,8 +372,16 @@ export interface BridgeDeps {
    * Checked at call time when tab tools are enabled; not used to hide tools from the list.
    */
   companionBrowserPaired?: () => boolean;
-  /** True when the target has a profile-backed non-empty composer draft. */
+  /** True when the target has a profile-backed non-empty composer draft, as of the last attention poll. */
   composerOccupiedOf?: (agent: string) => boolean | undefined;
+  /**
+   * t-a53dd9 — the same question asked of the pane NOW rather than of the poll. Callers that are
+   * about to WRITE into someone else's terminal must prefer this: the cached answer can be seconds
+   * old, and the state it misses is a human who started typing since the last capture. Resolves
+   * `undefined` for a runtime with no declared composer, which means "cannot answer" — fall back to
+   * `composerOccupiedOf`, never to "clear".
+   */
+  composerDraftNow?: (agent: string) => Promise<boolean | undefined>;
   /** spec 341 — semantic agent notice delivery; queues unsafe recipients instead of raw pane submit. */
   deliverNotice?: (target: string, line: string, metadata?: NoticeSourceMetadata) => Promise<NoticeDeliveryResult>;
   /**
@@ -3932,7 +3947,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (state === "working" || state === "throttled") {
           return fail(new Error(`recipient '${name}' is busy (${state}) — refused-busy: use notify_agent or wait for idle`));
         }
-        if (deps.composerOccupiedOf?.(name) && !(answering && state === "needs-input")) {
+        // t-a53dd9 — write_input is the OTHER door onto the same pane, and it was reading the same
+        // stale poll that let a notice land on top of the owner's half-typed message. It keeps
+        // refusing rather than queueing (a direct command gesture must not silently change when it
+        // lands), but it now refuses on what the pane says now.
+        const composerOccupied = (await deps.composerDraftNow?.(name)) ?? deps.composerOccupiedOf?.(name);
+        if (composerOccupied && !(answering && state === "needs-input")) {
           return fail(new Error(`recipient '${name}' has a non-empty composer draft — refused-composer: use notify_agent or wait for the composer to clear`));
         }
         if (typeof deps.tmux.sendSubmittedLine === "function") {
@@ -3973,8 +3993,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "only wakes on input that starts a turn. Busy recipients may be queued until idle. Also REFUSED " +
         "(receipt: refused-not-ready, t-f87651) while the recipient is still bootstrapping (runtime not ready). " +
         "Targets must be running AGENTS " +
-        "(not terminals) and not yourself. Best-effort pane input, not durable history, and still unsafe for a recipient " +
-        "actively being typed into by a human.",
+        "(not terminals) and not yourself. Best-effort pane input, not durable history. " +
+        "A recipient whose composer holds a human draft is HELD, not written over (t-a53dd9, receipt: held-human-draft): " +
+        "the check is taken against the pane at the moment of delivery, not from the attention poll, and the notice is " +
+        "delivered when the draft clears — or expires with the loss reported to the human. Two residues remain, both " +
+        "measured rather than assumed: a keystroke landing between that read and the write is still possible (tmux has no " +
+        "compare-and-write), and a runtime with no declared composer region offers no draft signal at all, so for those " +
+        "the delivery is as unguarded as it ever was — see docs/runtimes/parity.md for which runtimes those are.",
       inputSchema: {
         to: AGENT_NAME.describe("the recipient agent's name"),
         summary: z.string().min(1).max(4000).describe(
@@ -4060,7 +4085,18 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
               ` — the notice may be staged in their composer unsent; verify with read_output('${to}') and re-send if it is still there`,
           );
         }
-        return ok(result.status === "queued" ? `queued '${to}' for idle delivery${suffix}` : `notified '${to}'${suffix}`);
+        if (result.status === "queued") {
+          // t-a53dd9 — name the human when the human is the reason. This wait ends on a person, not
+          // on a turn, so the sender is told what it is waiting for and what happens if it never
+          // clears; the alternative is the silent variant of this bug, where the doorbell simply
+          // never arrives and nothing anywhere says so.
+          return ok(
+            result.heldFor === "human-draft"
+              ? `queued '${to}': a human is typing in that pane — the notice is held (receipt: held-human-draft) and delivered when the draft clears, or it expires and the loss is reported to the human${suffix}`
+              : `queued '${to}' for idle delivery${suffix}`,
+          );
+        }
+        return ok(`notified '${to}'${suffix}`);
       } catch (err) {
         return fail(err);
       }

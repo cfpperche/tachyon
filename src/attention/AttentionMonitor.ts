@@ -791,16 +791,59 @@ export class AttentionMonitor {
   }
 
   private isComposerOnlyChange(agent: string, previous: string, next: string): boolean {
-    const cmd = this.io.cmdOf?.(agent) ?? "";
-    const runtime = cmd ? runtimeOf(cmd) : null;
-    const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
+    const composer = this.composerProfileOf(agent);
     return composer ? isChangeConfinedToComposer(previous, next, composer) : false;
   }
 
-  private async composerSnapshot(agent: string, content: string): Promise<{ composerOccupied: boolean; composerEvidence: boolean }> {
+  private composerProfileOf(agent: string) {
     const cmd = this.io.cmdOf?.(agent) ?? "";
     const runtime = cmd ? runtimeOf(cmd) : null;
-    const composer = runtime ? runtimeProfile(runtime)?.composer : undefined;
+    return runtime ? runtimeProfile(runtime)?.composer : undefined;
+  }
+
+  /**
+   * t-a53dd9 — the human-draft signal read AT THE MOMENT OF INJECTION, not from the poll.
+   *
+   * `stateOf(agent).composerOccupied` is a CACHED reading. It is recomputed only when a tick captures
+   * the pane, and a tick captures at most every ATTENTION_POLL_MS (3s), skips panes whose
+   * `#{window_activity}` has not moved (`shouldCapture`), and keeps serving the last value while a
+   * slow pass is over its deadline (`stale`). Every consumer that guarded a pane WRITE with that
+   * value was therefore asking "was a draft there up to several seconds ago?" while the write happens
+   * now — and on 2026-08-02 the answer diverged in the direction that costs the most: the workspace
+   * owner was typing into the `claude` coordinator pane, a `notify_agent` doorbell read the pre-typing
+   * snapshot as free, and the injected line was submitted together with his half-written message.
+   *
+   * This closes the window to a single capture→write round-trip (measured in tens of ms) instead of
+   * the poll interval. It cannot close it completely: tmux has no compare-and-write, so a keystroke
+   * landing between this capture and the send is still possible. That residue is the honest bound and
+   * is stated in `notify_agent`'s description rather than papered over.
+   *
+   * Return values are three-valued ON PURPOSE and callers must not flatten them:
+   *   - `true` / `false`  — measured now, from this runtime's declared composer region.
+   *   - `undefined`       — NO OBSERVABLE SIGNAL: the entry is a terminal (`cmdOf` returns null for
+   *                         those), the runtime is unrecognized, or its profile declares no composer.
+   *                         An undefined is not "the composer is clear"; it is "this runtime cannot
+   *                         answer", and the caller falls back to the cached poll rather than
+   *                         inventing a shape for a runtime nobody measured.
+   * An unreadable pane (capture threw) also degrades to the last cached reading: failing to read a
+   * pane is never evidence that the human stopped typing in it.
+   */
+  async probeComposerOccupied(agent: string): Promise<boolean | undefined> {
+    if (!this.composerProfileOf(agent)) return undefined;
+    let content: string;
+    try {
+      content = (await this.io.capturePane(agent)).replace(/\s+$/, "");
+    } catch {
+      return this.snaps.get(agent)?.composerOccupied;
+    }
+    // Deliberately routed through the SAME reader the tick uses (escaped capture for runtimes with a
+    // measured suggestion rule, plain otherwise). A second copy of this decision is how one runtime
+    // ends up measured once and fixed twice.
+    return (await this.composerSnapshot(agent, content)).composerOccupied;
+  }
+
+  private async composerSnapshot(agent: string, content: string): Promise<{ composerOccupied: boolean; composerEvidence: boolean }> {
+    const composer = this.composerProfileOf(agent);
     if (!composer) return { composerOccupied: false, composerEvidence: false };
     if (composer.ansiEmptyContentStyle && this.io.capturePaneEscaped) {
       try {

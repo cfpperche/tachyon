@@ -1978,6 +1978,10 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     panes.set(session, "done\n\n❯ ");
     vi.setSystemTime(1_011_000);
     await ws.monitor.tick();
+    // t-a53dd9 — the flush now re-reads the composer FROM THE PANE before it writes, so the drain
+    // takes one more async round-trip than it used to. Nothing about the expectations below changed;
+    // the pass just has more hops to make.
+    await flushMicrotasks();
     await flushMicrotasks();
 
     expect(ws.monitor.stateOf("b")).toMatchObject({ state: "idle", composerOccupied: false });
