@@ -505,7 +505,7 @@ async function ensureAgentProfileDir(workspaceRoot: string, name: string): Promi
   return assertAgentProfileDir(workspaceRoot, name);
 }
 
-function decodeSoul(bytes: Buffer): { body: string; chars: number } {
+function decodeSoul(bytes: Buffer, enforceAuthoringLimit = true): { body: string; chars: number } {
   let body: string;
   try {
     body = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
@@ -515,7 +515,7 @@ function decodeSoul(bytes: Buffer): { body: string; chars: number } {
   if (body.includes("\0")) throw new SoulError("soul/invalid-utf8", "Soul must not contain NUL bytes");
   if (body.trim().length === 0) throw new SoulError("soul/empty", "Soul must contain non-whitespace text");
   const chars = Array.from(body).length;
-  if (chars > SOUL_MAX_CHARS) {
+  if (enforceAuthoringLimit && chars > SOUL_MAX_CHARS) {
     throw new SoulError("soul/too-many-chars", `Soul contains ${chars} Unicode scalar values and ${bytes.length} bytes; maximum is ${SOUL_MAX_CHARS} scalars and ${SOUL_MAX_BYTES} bytes`);
   }
   return { body, chars };
@@ -536,7 +536,7 @@ export async function resolveSoul(workspaceRoot: string, name: string, expectedA
     const handle = await openNoFollow(source);
     try {
       const { bytes: first } = await readStableHandle(handle, source);
-      const { body, chars } = decodeSoul(first);
+      const { body, chars } = decodeSoul(first, false);
       return {
         source: path.relative(path.resolve(workspaceRoot), source).split(path.sep).join("/"),
         profileId: manifest.profileId,

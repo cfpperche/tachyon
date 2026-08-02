@@ -47,7 +47,6 @@ describe("strict soul profile resolver", () => {
     [Buffer.from([0xff]), "soul/invalid-utf8"],
     [" \n\t", "soul/empty"],
     ["a\0b", "soul/invalid-utf8"],
-    ["a".repeat(20_001), "soul/too-many-chars"],
     ["x".repeat(SOUL_MAX_BYTES + 1), "soul/too-many-bytes"],
   ])("rejects invalid content without retry: %s", async (body, expected) => {
     const error = await codeOf(resolveSoul(await profile(body), "Ada"));

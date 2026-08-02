@@ -11,26 +11,33 @@ export const SELECTED_MEMORY_MAX_RENDERED_BYTES = 2 * 1024 * 1024;
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
 const entryId = z.string().regex(/^memory-[0-9a-f-]{36}$/);
 
-export const selectedMemoryEntrySchema = z.object({
+const selectedMemoryEntryShape = {
   id: entryId,
   path: z.string().regex(/^active\/memory-[0-9a-f-]{36}\.md$/),
   sha256: digest,
-  bytes: z.number().int().min(0).max(SELECTED_MEMORY_MAX_ENTRY_BYTES),
+  bytes: z.number().int().min(0),
   sourceCandidateId: z.string().regex(/^candidate-[0-9a-f-]{36}$/),
   sourcePrincipal: z.string().min(1).max(256),
   sourceKind: z.enum(["human", "agent", "system"]),
   approvedBy: z.string().min(1).max(256),
   approvedAt: z.string().datetime(),
+};
+
+export const persistedSelectedMemoryEntrySchema = z.object(selectedMemoryEntryShape).strict();
+export const selectedMemoryEntrySchema = z.object({
+  ...selectedMemoryEntryShape,
+  bytes: selectedMemoryEntryShape.bytes.max(SELECTED_MEMORY_MAX_ENTRY_BYTES),
 }).strict();
 export type SelectedMemoryEntry = z.infer<typeof selectedMemoryEntrySchema>;
 
-export const selectedMemoryManifestSchema = z.object({
+function manifestSchema(entry: typeof selectedMemoryEntrySchema, authoring: boolean) {
+  return z.object({
   schemaVersion: z.literal(SELECTED_MEMORY_SCHEMA_VERSION),
   activationId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,255}$/),
   agentId: z.string().uuid(),
   agentName: z.string().regex(AGENT_NAME_PATTERN),
   version: z.number().int().min(0),
-  entries: z.array(selectedMemoryEntrySchema).max(SELECTED_MEMORY_MAX_ENTRIES),
+  entries: authoring ? z.array(entry).max(SELECTED_MEMORY_MAX_ENTRIES) : z.array(entry),
   updatedAt: z.string().datetime(),
 }).strict().superRefine((manifest, ctx) => {
   const ids = new Set<string>();
@@ -46,10 +53,13 @@ export const selectedMemoryManifestSchema = z.object({
     paths.add(canonicalPath);
     total += entry.bytes;
   }
-  if (total > SELECTED_MEMORY_MAX_TOTAL_BYTES) {
+  if (authoring && total > SELECTED_MEMORY_MAX_TOTAL_BYTES) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["entries"], message: "selected memory exceeds its total byte bound" });
   }
-});
+  });
+}
+export const selectedMemoryManifestSchema = manifestSchema(selectedMemoryEntrySchema, true);
+export const persistedSelectedMemoryManifestSchema = manifestSchema(persistedSelectedMemoryEntrySchema, false);
 export type SelectedMemoryManifest = z.infer<typeof selectedMemoryManifestSchema>;
 
 export const selectedMemoryCandidateSchema = z.object({

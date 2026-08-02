@@ -4,17 +4,16 @@ import type { PinStore } from "../pins/PinStore.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import {
   isTiptapDoc,
-  richDocAttachmentV1Schema,
+  persistedRichDocAttachmentV1Schema,
 } from "./richDocWire.js";
-import { PIN_STUDIO_TITLE_MAX_CHARS } from "./pinStudioCommands.js";
 
 const projection = z.object({
   schemaVersion: z.literal(1),
   pinId: z.string().regex(/^p-[0-9a-f]{6}$/),
-  title: z.string().min(1).max(PIN_STUDIO_TITLE_MAX_CHARS),
+  title: z.string().min(1),
   tags: z.array(z.string().min(1).max(32)).max(12),
   doc: z.union([z.custom<TiptapJSON>(isTiptapDoc, "invalid bounded Tiptap document"), z.null()]),
-  attachments: z.array(richDocAttachmentV1Schema).max(500),
+  attachments: z.array(persistedRichDocAttachmentV1Schema).max(500),
 }).strict().superRefine((value, context) => {
   if (new Set(value.tags).size !== value.tags.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate pin tags" });

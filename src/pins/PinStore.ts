@@ -313,24 +313,24 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-export function normalizePinTags(input: unknown): string[] {
+export function normalizePinTags(input: unknown, authoring = true): string[] {
   if (!Array.isArray(input)) return [];
   const out: string[] = [];
   const seen = new Set<string>();
   for (const value of input) {
     if (typeof value !== "string") continue;
     const tag = value.normalize("NFKC").trim().replace(/^#+/, "").replace(/\s+/g, "-").toLowerCase();
-    if (!tag || tag.length > 32 || seen.has(tag)) continue;
+    if (!tag || (authoring && tag.length > 32) || seen.has(tag)) continue;
     seen.add(tag);
     out.push(tag);
-    if (out.length >= 12) break;
+    if (authoring && out.length >= 12) break;
   }
   return out;
 }
 
 function normalizePinRecord(value: unknown): Pin {
   const pin = value as Pin;
-  const tags = normalizePinTags((pin as { tags?: unknown }).tags);
+  const tags = normalizePinTags((pin as { tags?: unknown }).tags, false);
   if (tags.length > 0) return { ...pin, tags };
   const { tags: _tags, ...rest } = pin as Pin & { tags?: unknown };
   return rest;

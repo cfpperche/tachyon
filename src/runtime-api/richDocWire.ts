@@ -12,39 +12,46 @@ const MAX_DOC_DEPTH = 64;
 const timestamp = z.string().max(64).refine((value) => Number.isFinite(Date.parse(value)), "invalid timestamp");
 const nonEmptyText = (max: number) => z.string().min(1).max(max);
 
-const imageAttachment = z.object({
+function attachmentName(authoring: boolean) { return authoring ? nonEmptyText(500) : z.string().min(1); }
+function attachmentSize(max: number, authoring: boolean, positive = false) {
+  const base = positive ? z.number().int().positive() : z.number().int().nonnegative();
+  return authoring ? base.max(max) : base;
+}
+
+function imageAttachmentSchema(authoring: boolean) { return z.object({
   id: z.string().regex(ATTACHMENT_ID_RE),
   kind: z.literal("image"),
   blobRef: z.string().regex(SHA256_RE),
   mediaType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif"]),
-  name: nonEmptyText(500),
-  size: z.number().int().nonnegative().max(RICH_DOC_IMAGE_MAX_BYTES),
+  name: attachmentName(authoring),
+  size: attachmentSize(RICH_DOC_IMAGE_MAX_BYTES, authoring),
   width: z.number().int().positive().max(1_000_000).optional(),
   height: z.number().int().positive().max(1_000_000).optional(),
   createdAt: timestamp,
   source: z.enum(["paste", "drop", "import"]),
   visibility: z.literal("local"),
-}).strict();
+}).strict(); }
 
-const sketchAttachment = z.object({
+function sketchAttachmentSchema(authoring: boolean) { return z.object({
   id: z.string().regex(ATTACHMENT_ID_RE),
   kind: z.literal("excalidraw"),
-  name: nonEmptyText(500),
+  name: attachmentName(authoring),
   sceneBlobRef: z.string().regex(SHA256_RE),
   previewBlobRef: z.string().regex(SHA256_RE),
   sceneMediaType: z.literal("application/vnd.tachyon.excalidraw+json"),
   previewMediaType: z.literal("image/png"),
-  sceneSize: z.number().int().positive().max(64 * 1024 * 1024),
-  previewSize: z.number().int().nonnegative().max(RICH_DOC_IMAGE_MAX_BYTES),
+  sceneSize: attachmentSize(64 * 1024 * 1024, authoring, true),
+  previewSize: attachmentSize(RICH_DOC_IMAGE_MAX_BYTES, authoring),
   elementCount: z.number().int().nonnegative().max(1_000_000),
   createdAt: timestamp,
   updatedAt: timestamp,
   source: z.enum(["blank", "annotate-image"]),
   baseImageAttachmentId: z.string().regex(ATTACHMENT_ID_RE).optional(),
   visibility: z.literal("local"),
-}).strict();
+}).strict(); }
 
-export const richDocAttachmentV1Schema = z.discriminatedUnion("kind", [imageAttachment, sketchAttachment]);
+export const richDocAttachmentV1Schema = z.discriminatedUnion("kind", [imageAttachmentSchema(true), sketchAttachmentSchema(true)]);
+export const persistedRichDocAttachmentV1Schema = z.discriminatedUnion("kind", [imageAttachmentSchema(false), sketchAttachmentSchema(false)]);
 
 export interface RichDocImagePayloadV1 {
   schemaVersion: 1;
