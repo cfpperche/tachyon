@@ -6057,6 +6057,29 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     return { manager, ledger, sessions, cmds, newSessionArgs, tmux, ws };
   }
 
+  it("persists a delegator at spawn and restores that display lineage after a host reload (t-bae303)", async () => {
+    const h = harness("agents:\n  boss:\n    cmd: claude\n  reviewer:\n    cmd: claude\n");
+
+    // The Bridge supplies `delegator` for a delegated launch. It is deliberately distinct from the
+    // runtime parent edge, but it must survive the manager instance that accepted the launch.
+    await h.manager.spawn("reviewer", { delegator: "boss" });
+    expect(h.ledger.get("reviewer")?.def).toMatchObject({ delegator: "boss" });
+
+    // A new manager has no in-memory delegator map. The durable ledger is the only input that can
+    // put the reviewer back beneath its delegator in the sidebar and in later primer rendering.
+    const reloaded = new AgentManager({
+      tmux: h.tmux,
+      wsHash: workspaceHash(h.ws),
+      workspaceRoot: h.ws,
+      getConfig: () => configOf("agents:\n  boss:\n    cmd: claude\n  reviewer:\n    cmd: claude\n"),
+      ledger: h.ledger,
+    });
+    await reloaded.rehydrateFromLedger();
+
+    expect(reloaded.delegatorOf("reviewer")).toBe("boss");
+    expect((await reloaded.list()).find((entry) => entry.name === "reviewer")?.delegator).toBe("boss");
+  });
+
   it("SDD 370 fails delegated explicit models closed when the runtime has no catalog adapter", async () => {
     const h = harness("agents:\n  boss:\n    cmd: claude\n");
 
