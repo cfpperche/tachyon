@@ -58,6 +58,7 @@ import {
   normalizeField,
   type SpawnContract,
 } from "./spawnContract.js";
+import { decideSpawnTaskClaim, type SpawnTaskClaimDecision } from "./spawnTaskClaim.js";
 import type { ProbeService } from "../probe/ProbeService.js";
 import { runningEnvelope, type ProbeEnvelope } from "../probe/taxonomy.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "./notifyAgent.js";
@@ -1044,6 +1045,34 @@ function emitTaskNotification(deps: BridgeDeps, event: TaskNotificationEvent): v
   }
 }
 
+/**
+ * t-48f504 — undo a board claim whose launch then failed, returning the row to exactly the status and
+ * assignee the claim decision read.
+ *
+ * Best-effort by construction, and loud when it cannot: the caller is already being handed the spawn
+ * failure, and replacing that with a rollback error would hide the thing it actually asked about. But
+ * a claim left standing for an agent that does not exist is a board that lies, so the human hears it
+ * through `notify` rather than nowhere.
+ */
+async function releaseSpawnClaim(deps: BridgeDeps, claimed: Task, prior: Task): Promise<void> {
+  try {
+    const released = await deps.tasks.update(claimed.id, {
+      status: prior.status,
+      assignee: prior.assignee ?? null,
+      expect: { updatedAt: claimed.updatedAt },
+    });
+    deps.onTasksChanged?.({ reason: "task-mutated", id: released.id });
+    emitTaskNotification(deps, { type: "statusChanged", task: released, actor: taskNotificationActor(deps), from: "active", to: prior.status });
+  } catch (error) {
+    deps.notify(
+      `task '${claimed.id}' was claimed for agent '${claimed.assignee ?? "?"}' whose spawn then failed, and the claim ` +
+        `could not be released (${error instanceof Error ? error.message : String(error)}); the board shows work for an ` +
+        "agent that is not running — return it to " + `'${prior.status}' by hand`,
+      "warn",
+    );
+  }
+}
+
 // t-384a3f — the Bridge is stateless-per-request (registerTools runs once per POST, see Bridge.ts's
 // createMcp), so the concurrency gate can't live as a local inside registerTools — it would reset on
 // every call and cap nothing. Keyed by AgentManager (one stable instance per workspace/Bridge, same
@@ -1461,6 +1490,12 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
+        "BOARD CLAIM: pass claim_task=<t-xxxxxx> to launch the agent FOR a triaged board task — the task moves to " +
+        "active with this agent as assignee in the same operation, so the brief you write and the work the agent " +
+        "reads off the board are one fact instead of two that can disagree. A task this agent cannot hold (still in " +
+        "inbox, closed, or assigned to someone else) is refused HERE, naming the reason, instead of launching an " +
+        "agent that discovers it a turn later. Triage stays a separate, human decision: an inbox task is never " +
+        "claimed by spawning at it. " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
         "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
         "Subject to the maxAgents guardrail.",
@@ -1509,9 +1544,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           .string()
           .optional()
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
+        // t-48f504 — the board claim. Deliberately a task ID and not another prose slot: `task` above is
+        // the directive and can say anything, which is exactly why it could never bind a spawn to the board.
+        claim_task: TASK_ID.optional().describe(
+          "board task this agent is launched FOR — moved to active with this agent as assignee in the same "
+          + "operation, so the spawn contract and the agent's work-on-record cannot disagree. Must already be "
+          + "triaged (or already active and held by this same agent); inbox is refused because triage is a human "
+          + "decision, and a closed or someone-else's task is refused by name.",
+        ),
       },
     },
-    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason }) => {
+    async ({ name, cmd, cwd, instructions, parent, worktree, task, context, constraints, deliverable, done_when, skip_contract_reason, claim_task }) => {
       try {
         const isTemporaryAiAgent = !!cmd;
         // t-c861e5 — starting a declared Saved Agent is an activation, not a delegation. The
@@ -1562,6 +1605,26 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (cmd) {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
+        }
+        // t-48f504 — DECIDE the board claim here, APPLY it just before the launch (below).
+        //
+        // Splitting the two is the whole point of the measured incident: the spawn SUCCEEDED three
+        // times at work the child could not hold, so the refusal arrived a launch and a 13KB brief
+        // later, from the child. Deciding at the entry makes an unreachable contract cost a tool call.
+        // Applying late means a spawn refused for any other reason (contract gate, manager) leaves the
+        // board untouched — a claim written for an agent that never started would be a fresh instance
+        // of exactly the two-records-disagree defect this parameter removes.
+        let claimPlan: { prior: Task; decision: SpawnTaskClaimDecision } | undefined;
+        if (claim_task !== undefined) {
+          let boardTask: Task;
+          try {
+            boardTask = deps.tasks.get(claim_task);
+          } catch (error) {
+            return fail(new Error(`spawn_agent cannot claim '${claim_task}': ${(error as Error).message}`));
+          }
+          const decision = decideSpawnTaskClaim(boardTask, name);
+          if (decision.kind === "refuse") return fail(new Error(decision.reason));
+          claimPlan = { prior: boardTask, decision };
         }
         // t-d06da3 — a `isTemporaryAiAgent && worktree === true` refusal used to stand here, and it is
         // gone. Two measured reasons, both recorded in spec 484:
@@ -1627,28 +1690,61 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
         }
-        // reveal:false — spawning a child must not steal the human's editor focus (F3);
-        // the child shows in the tree (nested under parent), opened on demand.
-        await deps.manager.spawn(name, {
-          cmd,
-          // M9 — this door only ever asks for an Agent, and says so instead of letting the manager
-          // work it out from the command string.
-          kind: "agent",
-          cwd,
-          // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
-          // Keep it in the instructions layer so the startup manifest truthfully reports no task.
-          instructions: isTemporaryAiAgent
-            ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? brief : undefined)
-            : brief,
-          taskBrief: isTemporaryAiAgent
-            ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? undefined : brief)
-            : undefined,
-          parent,
-          worktree,
-          reveal: false,
-          contract,
-          contractSkipReason: skip_contract_reason,
-        });
+        // t-48f504 — the claim, in ONE store transaction: `triaged -> active` and `assignee` move
+        // together, which `assertTransition` accepts as a unit ("active tasks require assignee"). The
+        // window the incident fell into — a task active but not yet assigned, or assigned but not yet
+        // active — cannot exist here, because there is no intermediate write.
+        //
+        // It goes through the store directly rather than through `update_task`, whose SDD-370 guard
+        // refuses assigning to an agent whose runtime is not ready. That guard is right for the tool
+        // and wrong here: the launch three lines down is what makes the runtime ready, so the claim
+        // is the one assignment that must precede readiness. The CAS on `updatedAt` keeps it honest
+        // against a concurrent board writer between the decision above and this write.
+        const claimed = claimPlan?.decision.kind === "claim"
+          ? await deps.tasks.update(claim_task!, {
+              status: "active",
+              assignee: name,
+              expect: { updatedAt: claimPlan.prior.updatedAt },
+              ...(deps.caller?.kind === "agent" && deps.caller.name ? { actor: deps.caller.name } : {}),
+            })
+          : undefined;
+        if (claimed) {
+          deps.onTasksChanged?.({ reason: "task-mutated", id: claimed.id });
+          const claimActor = taskNotificationActor(deps);
+          emitTaskNotification(deps, { type: "assigned", task: claimed, actor: claimActor, from: claimPlan?.prior.assignee, to: name });
+          emitTaskNotification(deps, { type: "statusChanged", task: claimed, actor: claimActor, from: claimPlan!.prior.status, to: "active" });
+        }
+        try {
+          // reveal:false — spawning a child must not steal the human's editor focus (F3);
+          // the child shows in the tree (nested under parent), opened on demand.
+          await deps.manager.spawn(name, {
+            cmd,
+            // M9 — this door only ever asks for an Agent, and says so instead of letting the manager
+            // work it out from the command string.
+            kind: "agent",
+            cwd,
+            // A contract-skipped idle spawn has operational waiting guidance, not an execution brief.
+            // Keep it in the instructions layer so the startup manifest truthfully reports no task.
+            instructions: isTemporaryAiAgent
+              ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? brief : undefined)
+              : brief,
+            taskBrief: isTemporaryAiAgent
+              ? (skip_contract_reason !== undefined && !suppliedTaskBrief ? undefined : brief)
+              : undefined,
+            parent,
+            worktree,
+            reveal: false,
+            contract,
+            contractSkipReason: skip_contract_reason,
+          });
+        } catch (spawnError) {
+          // A claim that outlives its failed launch is the defect wearing the other face: the board
+          // would hold `active`/assigned work for an agent that does not exist, and the next reader —
+          // human or a restart of the same name — would believe it. Put the row back exactly as the
+          // decision above found it, and say so if even that fails.
+          if (claimed) await releaseSpawnClaim(deps, claimed, claimPlan!.prior);
+          throw spawnError;
+        }
         const session = deps.manager.session(name);
         const state = deps.manager.kindOf(name) !== "agent" || await deps.manager.isReady(name) ? "ready" : "starting";
         return ok(JSON.stringify({ agent: name, session, state }, null, 2));
