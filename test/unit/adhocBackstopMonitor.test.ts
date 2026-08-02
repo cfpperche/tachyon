@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { MAX_WORKING_STALL_MS, type AgentAttention } from "../../src/attention/AttentionMonitor.js";
-import { TemporaryBackstopMonitor } from "../../src/workspace/TemporaryBackstopMonitor.js";
+import {
+  TemporaryBackstopMonitor,
+  ACKNOWLEDGED_ESCALATION_MULTIPLES,
+  acknowledgedCheckInMs,
+} from "../../src/workspace/TemporaryBackstopMonitor.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
 const agent = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntryInfo => ({
@@ -128,6 +132,140 @@ describe("TemporaryBackstopMonitor", () => {
     await f.monitor.tick();
     // Remapped to idle path — may still idle-nudge after 10m, never "still listed as working"
     expect(f.delivered.every((d) => !d.line.includes("still listed as working"))).toBe(true);
+  });
+
+  /**
+   * t-0bebf6 — the fifth exit.
+   *
+   * Observed with seven delegated children: six pokes in an hour for children the coordinator had
+   * already inspected and deliberately decided to leave running. The line named four exits — inspect,
+   * dismiss, resume, re-delegate — and none of them means "I know". With nothing to answer, the
+   * coordinator started reading the line as expected noise, which is how a legitimate alert dies.
+   *
+   * These guards are behavioural on both halves, because either half alone is a worse product: a
+   * silence that never lifts is blindness, and a notice that returns in the SAME words teaches the
+   * reader to skip it again.
+   */
+  it("t-0bebf6: an acknowledged idle child is not asked about again in the same state", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "parked"));
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(1);
+    expect(f.delivered[0].line, "the poke never offered the fifth exit").toContain("acknowledge_agent('child')");
+
+    const receipt = f.monitor.acknowledge("child");
+    expect(receipt).toMatchObject({ agent: "child", reason: "idle", idleMs: 11 * 60_000 });
+    expect(receipt?.nextCheckInMs, "the deferral did not say when it lapses").toBe(40 * 60_000);
+
+    // Half an hour of further passes over the same parked child, exactly the shape that produced six
+    // identical lines: the coordinator has answered, so there is nothing left to ask.
+    for (const minutes of [12, 15, 20, 35]) {
+      f.setNow(1_000_000 + minutes * 60_000);
+      await f.monitor.tick();
+    }
+    expect(f.delivered, "the acknowledged child was asked about again").toHaveLength(1);
+  });
+
+  it("t-0bebf6: a child that produces output after the acknowledgement is reported again, not repeated", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "e1"));
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+    f.monitor.acknowledge("child");
+
+    // It emitted something, then went quiet again past the threshold — a real move, so it is a live
+    // question again. Before t-0bebf6 this arrived as the FIRST line, word for word.
+    f.attention.set("child", att("idle", 1_700_000, "e2"));
+    f.setNow(1_700_000 + 11 * 60_000);
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(2);
+    expect(f.delivered[1].line, "the second notice repeated the first verbatim").not.toBe(f.delivered[0].line);
+    expect(f.delivered[1].line).toContain("acknowledged idle at 11m");
+    expect(f.delivered[1].line).toContain("has produced new output since");
+    // The acknowledgement covered the old state, so the child is an open question and the exit is re-offered.
+    expect(f.delivered[1].line).toContain("acknowledge_agent('child')");
+  });
+
+  it("t-0bebf6: an acknowledged child that stays idle far longer surfaces once, naming the ladder", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "parked"));
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+    f.monitor.acknowledge("child");
+
+    // 4× the window later: staying idle four times longer than what was acknowledged IS a change.
+    f.setNow(1_000_000 + 41 * 60_000);
+    await f.monitor.tick();
+    expect(f.delivered, "an acknowledgement became permanent silence").toHaveLength(2);
+    expect(f.delivered[1].line).toContain("acknowledged idle at 11m");
+    expect(f.delivered[1].line).toContain("still idle and now silent for 41m");
+    expect(f.delivered[1].line, "the backoff is not legible from the line").toContain("next check-in at 2h40m");
+
+    // And the rung moved: the next hour is quiet again, without a second acknowledgement.
+    f.setNow(1_000_000 + 100 * 60_000);
+    await f.monitor.tick();
+    expect(f.delivered).toHaveLength(2);
+  });
+
+  it("t-0bebf6: an acknowledged idle child that flips to a working stall is reported, naming the flip", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "same"));
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+    f.monitor.acknowledge("child");
+
+    f.attention.set("child", att("working", 1_000_000, "same"));
+    f.setNow(1_000_000 + MAX_WORKING_STALL_MS + 1);
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(2);
+    expect(f.delivered[1].line).toContain("acknowledged idle at 11m");
+    expect(f.delivered[1].line).toContain("now listed as working with no output");
+    expect(f.delivered[1].line).toContain("acknowledge_agent('child')");
+  });
+
+  it("t-0bebf6: acknowledging a child nobody was asked about is a no-op, never a pre-emptive mute", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "e1"));
+    expect(f.monitor.acknowledge("child")).toBeNull();
+
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+    expect(f.delivered, "a mute was taken before the first question").toHaveLength(1);
+  });
+
+  it("t-0bebf6: an acknowledgement does not outlive the child it was about", async () => {
+    const f = fixture();
+    f.attention.set("child", att("idle", 1_000_000, "same"));
+    f.setNow(1_000_000 + 11 * 60_000);
+    await f.monitor.tick();
+    f.monitor.acknowledge("child");
+
+    // Re-delegate/restart: the same name, a different run. The decision was about the old one.
+    f.monitor.reset("child");
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(2);
+    expect(f.delivered[1].line).toContain("has been idle for 11m with no new output");
+  });
+
+  it("t-0bebf6: the escalation ladder is declared once and never reaches permanent silence", () => {
+    const threshold = 10 * 60_000;
+    expect(ACKNOWLEDGED_ESCALATION_MULTIPLES).toEqual([4, 16, 64]);
+    expect(acknowledgedCheckInMs(threshold, 0)).toBe(40 * 60_000);
+    expect(acknowledgedCheckInMs(threshold, 1)).toBe(160 * 60_000);
+    expect(acknowledgedCheckInMs(threshold, 2)).toBe(640 * 60_000);
+    // Past the last rung the spacing REPEATS. Every step is finite and strictly increasing, so an
+    // acknowledged child idle overnight still comes back — the deferral never becomes a mute.
+    for (let step = 1; step < 40; step++) {
+      expect(acknowledgedCheckInMs(threshold, step)).toBeGreaterThan(acknowledgedCheckInMs(threshold, step - 1));
+      expect(Number.isFinite(acknowledgedCheckInMs(threshold, step))).toBe(true);
+    }
+    // The ladder is shaped by the CONFIGURED window, not by ten hard-coded minutes.
+    expect(acknowledgedCheckInMs(2 * 60_000, 0)).toBe(8 * 60_000);
   });
 
   it("t-9552f3: completion-hinted working still allows idle-style nudge after threshold", async () => {
