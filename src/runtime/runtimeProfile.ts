@@ -351,6 +351,11 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "sandbox_mode:read-only",
         "sandbox_mode:workspace-write",
         "sandbox_mode:danger-full-access",
+        // t-aaa2c6 — the third door, per MCP server, measured separately from approval_policy.
+        "mcp_tool_approval:auto",
+        "mcp_tool_approval:prompt",
+        "mcp_tool_approval:writes",
+        "mcp_tool_approval:approve",
       ],
       source: "measured",
       verified: true,
