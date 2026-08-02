@@ -773,12 +773,25 @@ describe("loadProfileAwareConfig", () => {
       hooks: { PostToolUseFailure: expect.any(Array) },
     });
 
+    // t-dfc4de — a missing skill grant withholds the skill; MCP and hooks that do have grants still
+    // land, and the config stays valid so Agent Studio remains the repair path.
     const denied = load(root, authority(bytes, {
       runtimeInspector: { ...CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR },
       capabilityGrants: claudeAuthority.capabilityGrants?.filter((grant) => grant.kind !== "skill"),
     }));
-    expect(denied.config).toBeUndefined();
-    expect(denied.errors.join("\n")).toContain("lacks an exact host-custodied skill grant");
+    expect(denied.errors).toEqual([]);
+    expect(denied.config).toBeDefined();
+    const deniedAgent = asAgent(denied.config?.agents.codex);
+    expect(deniedAgent?.profileCapabilities?.skills ?? []).toEqual([]);
+    expect(deniedAgent?.profileCapabilities?.mcp?.docs).toEqual({
+      command: "node", args: ["docs.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" },
+    });
+    expect(deniedAgent?.profileWithheldCapabilities).toEqual([
+      expect.objectContaining({ referenceId: "review", code: "profile/capability-authority" }),
+    ]);
+    expect(denied.warnings.some((warning) =>
+      warning.includes("review") && warning.includes("withheld") && warning.includes("authorize"),
+    )).toBe(true);
   });
 
   it("rejects a Claude profile when authority selects another runtime inspector", () => {
@@ -1067,7 +1080,8 @@ describe("loadProfileAwareConfig", () => {
     });
   });
 
-  it("rejects Pi package resources that collide with an explicit runtime resource", () => {
+  it("withholds BOTH Pi claimants when a package resource collides with an explicit runtime resource", () => {
+    // t-dfc4de — collision withholds both sides; the agent still loads so the human can rename.
     const root = temporaryRoot("tachyon-agent-profile-pi-collision-");
     const directory = path.join(root, ".tachyon", "agents", "pi-collision");
     const packageRoot = path.join(directory, "capabilities", "review-package");
@@ -1100,7 +1114,18 @@ describe("loadProfileAwareConfig", () => {
       }]]),
     });
 
-    expect(result.errors.some((error) => error.includes("profile/capability-collision") && error.includes("review.md"))).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.config?.agents["pi-collision"]).toBeDefined();
+    const agent = asAgent(result.config?.agents["pi-collision"]);
+    expect(agent?.profileCapabilities?.pi.prompts ?? []).toEqual([]);
+    expect(agent?.profileCapabilities?.pi.packages ?? []).toEqual([]);
+    expect(agent?.profileWithheldCapabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ referenceId: "explicit-prompt", code: "profile/capability-collision" }),
+      expect.objectContaining({ referenceId: "review-package", code: "profile/capability-collision" }),
+    ]));
+    expect(result.warnings.some((warning) =>
+      warning.includes("collides") && warning.includes("withheld") && warning.includes("Both claimants"),
+    )).toBe(true);
   });
   it("loads a profile and retains its trusted source metadata beside terminals", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
