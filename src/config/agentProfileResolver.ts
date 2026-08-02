@@ -96,7 +96,7 @@ export interface ResolvedAgentCapabilitySource {
 
 export interface ResolvedAgentCapabilityProjection {
   schemaVersion: 1;
-  adapter: "claude" | "codex" | "pi";
+  adapter: "claude" | "codex" | "grok" | "pi";
   sha256: string;
   /** Added only to the launch copy after the complete profile digest is known. */
   effectiveProfileSha256?: string;

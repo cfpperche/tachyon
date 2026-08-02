@@ -78,6 +78,8 @@ import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOut
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
+import { inspectCapabilitySourceAtRoot } from "../config/agentCapabilitySource.js";
+import { LOCKFILE_REL_PATH, parseLockfile } from "../plugins/lockfile.js";
 
 /** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
  *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes
@@ -1026,10 +1028,10 @@ export class AgentManager {
     const child = asAgent(definition);
     if (!child || !parent) return definition;
     const parentAgent = asAgent(this.definitionOf(parent, lineage));
-    const inherited = parentAgent?.profileCapabilities;
+    const inherited = parentAgent ? this.delegableToolkit(parentAgent) : undefined;
     if (!inherited || inherited.skills.length === 0) return definition;
     const runtime = adapterFor(child.cmd)?.runtime;
-    if (runtime !== "claude" && runtime !== "codex") {
+    if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok") {
       throw new Error(`runtime '${runtime ?? child.cmd}' has no measured delegated skill projection`);
     }
     const own = child.profileCapabilities;
@@ -1067,6 +1069,66 @@ export class AgentManager {
       skillOrigins: projectionBase.skillOrigins,
     })).digest("hex");
     return { ...child, profileCapabilities: { ...projectionBase, sha256 } };
+  }
+
+  /**
+   * The delegator's toolkit has two explicit grant doors: profile selection and installed plugins.
+   * The plugin lockfile is the authority boundary: never scan a runtime home for ambient skills, and
+   * only capture a skill-dir target that the installer recorded for this parent's measured runtime.
+   * Capturing the recorded target (rather than asking whether the child runtime directory exists)
+   * also keeps delegation independent from plugin runtime detection/materialization ordering.
+   */
+  private delegableToolkit(agent: AgentEntry): ResolvedAgentCapabilityProjection | undefined {
+    const declared = agent.profileCapabilities;
+    const runtime = adapterFor(agent.cmd)?.runtime;
+    if (!runtime) return declared;
+    if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok" && runtime !== "pi") return declared;
+    let raw: string;
+    try {
+      raw = fs.readFileSync(path.join(this.opts.workspaceRoot, LOCKFILE_REL_PATH), "utf8");
+    } catch {
+      return declared;
+    }
+    const parsed = parseLockfile(raw);
+    if (!parsed.lockfile) return declared;
+
+    const skills = structuredClone(declared?.skills ?? []);
+    const sources = structuredClone((declared?.sources ?? []).filter((source) => source.kind === "skill"));
+    for (const plugin of Object.values(parsed.lockfile.plugins).sort((left, right) => left.name.localeCompare(right.name))) {
+      for (const target of plugin.targets
+        .filter((candidate) => candidate.kind === "skill-dir" && candidate.runtime === runtime)
+        .sort((left, right) => left.file.localeCompare(right.file))) {
+        const skillName = path.posix.basename(target.file);
+        const captured = inspectCapabilitySourceAtRoot(this.opts.workspaceRoot, target.file);
+        const existing = skills.find((skill) => skill.name === skillName);
+        if (existing && existing.source.sha256 !== captured.sha256) {
+          throw new Error(`plugin skill '${skillName}' conflicts with the parent's profile selection`);
+        }
+        if (!existing) skills.push({ name: skillName, source: captured });
+        const referenceId = `plugin:${plugin.name}:${skillName}`;
+        if (!sources.some((source) => source.referenceId === referenceId && source.sha256 === captured.sha256)) {
+          sources.push({
+            referenceId,
+            kind: "skill",
+            scope: "project",
+            owner: `plugin:${plugin.name}`,
+            path: target.file,
+            sha256: captured.sha256,
+          });
+        }
+      }
+    }
+    if (skills.length === 0) return declared;
+    return {
+      schemaVersion: 1,
+      adapter: declared?.adapter ?? runtime,
+      sha256: declared?.sha256 ?? "",
+      sources,
+      skills,
+      mcp: structuredClone(declared?.mcp ?? {}),
+      hooks: structuredClone(declared?.hooks ?? {}),
+      pi: structuredClone(declared?.pi ?? { extensions: [], prompts: [], themes: [], packages: [] }),
+    };
   }
 
   /** SDD 478 — the Agent arm of a declared entry, or undefined for a terminal. Every agent-only

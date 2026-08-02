@@ -1362,6 +1362,12 @@ export class HarnessManager {
     if (adapter.runtime === "claude") {
       return this.materializeCanonicalClaudeProfileHome(agent, adapter, { capabilities: projection }, cwd, bridgeEntry);
     }
+    if (adapter.runtime === "grok") {
+      const home = this.materializeBridgeMcpGrok(agent, bridgeEntry ?? {}, cwd);
+      this.replaceCapturedSkillTree(agent, home, projection);
+      this.writeProfileCapabilityManifest(agent, home, projection);
+      return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
+    }
     if (adapter.runtime !== "codex") {
       throw new HarnessUnavailableError(agent, `runtime '${adapter.runtime}' has no measured profile capability projection`);
     }

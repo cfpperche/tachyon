@@ -5439,6 +5439,38 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "config.toml"), "utf8")).not.toContain("never-inherit");
     });
 
+    it("t-b505b3: a delegated child receives lockfile-granted plugin skills, but invents none without a grant", async () => {
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n  bare:\n    cmd: codex\n", { fileExists: () => true });
+      const skillDir = path.join(h.ws, ".claude", "skills", "visual-qa");
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(path.join(skillDir, "SKILL.md"), "# Plugin-granted visual QA\n");
+      fs.mkdirSync(path.join(h.ws, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          "visual-qa": {
+            name: "visual-qa", version: "1.0.0", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/visual-qa" }],
+          },
+        },
+      }));
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("plugin-child", { cmd: "grok", delegator: "claude", reveal: false });
+      await h.manager.spawn("bare-child", { cmd: "codex", parent: "bare", reveal: false });
+
+      const inherited = projections.get("plugin-child")!;
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["visual-qa"]);
+      expect(Buffer.from(inherited.skills[0]?.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
+        .toBe("# Plugin-granted visual QA\n");
+      expect(inherited.skillOrigins).toEqual({ "visual-qa": [{ kind: "delegator", agent: "claude" }] });
+      expect(projections.get("bare-child")).toBeUndefined();
+    });
+
     it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {
       const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
       const realGrokHome = path.join(h.ws, "real-grok");
