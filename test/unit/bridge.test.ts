@@ -540,7 +540,56 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const fullParsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
     expect(fullParsed.task).toMatchObject({ id: task.id, body: "Full implementation detail", status: "triaged", assignee: "codex" });
     expect(fullParsed.journal).toEqual([]);
+    // t-ab7708 — an empty journal is still declared, so "nothing came back" never has to be guessed at.
+    expect(fullParsed.journalWindow).toMatchObject({ mode: "tail", returned: 0, total: 0, truncated: false });
     expect(taskChanges).toBeGreaterThanOrEqual(3);
+  });
+
+  it("get_task windows the journal by bytes, declares what it withheld, and hands back the whole log on request", async () => {
+    const created = await client.callTool({ name: "create_task", arguments: { title: "journal cost", agent: "claude" } });
+    const { id } = JSON.parse((created.content as Array<{ text: string }>)[0].text);
+    for (let i = 0; i < 20; i++) {
+      tasks.journal.append(id, { author: "claude", text: `entry ${i} ${"z".repeat(700)}`, now: `2026-08-02T00:00:${String(i).padStart(2, "0")}.000Z` });
+    }
+    const read = async (args: Record<string, unknown>) =>
+      JSON.parse(((await client.callTool({ name: "get_task", arguments: { id, ...args } })).content as Array<{ text: string }>)[0].text);
+
+    // Default: bounded, newest-first, and never quiet about it.
+    const tail = await read({});
+    expect(tail.journal.length).toBeGreaterThan(0);
+    expect(tail.journal.length).toBeLessThan(20);
+    expect(tail.journalCount).toBe(20);
+    expect(tail.journalWindow).toMatchObject({ mode: "tail", total: 20, returned: tail.journal.length, truncated: true, maxBytes: 4096 });
+    expect(tail.journalWindow.note).toContain('journal="all"');
+    // The tail is the END of the log — execution context, where the newest entry is the one that matters.
+    expect(tail.journal.at(-1).text).toContain("entry 19");
+    expect(JSON.stringify(tail).length).toBeLessThan(JSON.stringify(await read({ journal: "all" })).length);
+
+    // The declared escape hatch actually delivers the whole journal.
+    const all = await read({ journal: "all" });
+    expect(all.journal).toHaveLength(20);
+    expect(all.journalWindow).toMatchObject({ mode: "all", returned: 20, total: 20, truncated: false });
+    expect(all.journalWindow.note).toBeUndefined();
+
+    // State only, and it still says the 20 entries exist.
+    const none = await read({ journal: "none" });
+    expect(none.journal).toEqual([]);
+    expect(none.journalCount).toBe(20);
+    expect(none.journalWindow).toMatchObject({ mode: "none", total: 20, truncated: true });
+
+    // journalOffset walks the whole log forward, one bounded page at a time.
+    const walked: string[] = [];
+    for (let offset = 0, guard = 0; offset < 20 && guard < 40; guard++) {
+      const page = await read({ journalOffset: offset });
+      expect(page.journal.length).toBeGreaterThan(0);
+      walked.push(...page.journal.map((e: { text: string }) => e.text));
+      offset = page.journalWindow.offset + page.journalWindow.returned;
+    }
+    expect(walked).toEqual(all.journal.map((e: { text: string }) => e.text));
+
+    const past = await read({ journalOffset: 99 });
+    expect(past.journal).toEqual([]);
+    expect(past.journalWindow.note).toContain("beyond the 20 entries");
   });
 
   it("create_task rejects oversized authoring input atomically with decomposition guidance", async () => {

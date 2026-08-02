@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { TaskJournalStore } from "./TaskJournalStore.js";
+import { sliceJournal, TaskJournalStore } from "./TaskJournalStore.js";
 import { compareTasksForListing } from "./listOrder.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
@@ -33,7 +33,14 @@ import {
   type TaskUpdateExpect,
   type TaskUpdateInput,
   type TaskView,
+  type JournalMode,
 } from "./types.js";
+
+/** t-ab7708 — a journal read is either whole (`includeJournal`) or windowed (`journalWindow`). */
+export interface TaskViewOptions {
+  includeJournal?: boolean;
+  journalWindow?: { mode: JournalMode; offset?: number; maxBytes?: number };
+}
 
 /** spec 335 (Gated v1.1) — input for `TaskStore.reorderLane`: the target lane's FULL membership in its final
  *  desired order (dragged task included), plus a per-task CAS `updatedAt` expectation from the snapshot the
@@ -190,7 +197,12 @@ export class TaskStore {
     return task;
   }
 
-  getView(id: string, options: { includeJournal?: boolean } = {}): TaskView {
+  /**
+   * `includeJournal` materializes the whole log — what Task Detail renders, because a human
+   * scrolling a tab is not paying per token. `journalWindow` (t-ab7708) bounds it instead and says
+   * what it withheld; that is the shape the Bridge tool reads through.
+   */
+  getView(id: string, options: TaskViewOptions = {}): TaskView {
     const task = this.get(id);
     return this.viewFor(task, this.listRaw(), options);
   }
@@ -383,13 +395,19 @@ export class TaskStore {
     }
   }
 
-  private viewFor(task: Task, allTasks: Task[], options: { includeJournal?: boolean } = {}): TaskView {
+  private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}): TaskView {
     const derived = this.derive(task);
     const attention = attentionFor(task, allTasks, derived);
-    const journalCount = this.journal.count(task.id);
+    const wantsJournal = options.includeJournal || options.journalWindow !== undefined;
+    // Read once: count and window come from the same materialization, so a concurrent append
+    // cannot make the declared total disagree with the entries beside it.
+    const entries = wantsJournal ? this.journal.read(task.id) : undefined;
+    const journalCount = entries ? entries.length : this.journal.count(task.id);
+    const sliced = entries && options.journalWindow ? sliceJournal(entries, options.journalWindow) : undefined;
     return {
       task,
-      ...(options.includeJournal ? { journal: this.journal.read(task.id) } : {}),
+      ...(entries ? { journal: sliced ? sliced.entries : entries } : {}),
+      ...(sliced ? { journalWindow: sliced.window } : {}),
       journalCount,
       ...(derived ? { derived } : {}),
       ...(attention.length ? { attention } : {}),

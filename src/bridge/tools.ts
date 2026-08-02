@@ -3877,12 +3877,36 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "get_task",
     {
-      description: "Read one full Task plus derived attention metadata and the materialized append-only journal. The persisted task JSON never stores derived metadata or journal entries.",
-      inputSchema: { id: TASK_ID.describe("task id from list_tasks or next_task") },
+      description:
+        "Read one full Task plus derived attention metadata and a bounded window of the materialized " +
+        "append-only journal. The persisted task JSON never stores derived metadata or journal entries. " +
+        "The journal is capped by BYTES, newest first, and `journalWindow` in every response declares how " +
+        "many of how many entries came back — pass journal:\"all\" for the whole log, or page with " +
+        "journalOffset.",
+      inputSchema: {
+        id: TASK_ID.describe("task id from list_tasks or next_task"),
+        journal: z
+          .enum(["tail", "all", "none"])
+          .default("tail")
+          .describe(
+            "how much journal to materialize: 'tail' (default) the most recent entries that fit the byte cap, " +
+              "'all' every entry regardless of size, 'none' just the count. The response always reports the total.",
+          ),
+        journalOffset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe("with journal:'tail', page FORWARD from this entry index instead of reading the newest; omit for the newest"),
+      },
     },
-    async ({ id }) => {
+    async ({ id, journal = "tail", journalOffset }) => {
       try {
-        const view = deps.tasks.getView(id, { includeJournal: true });
+        // t-ab7708: measured over the harness transcripts, the journal was 66.6% of this tool's cost
+        // and 90%+ of its worst calls, entering whole and uncapped every time. It is windowed now, and
+        // the window announces itself — truncation that declares itself is not a lie, and the caller
+        // reads how to get the rest in the same breath.
+        const view = deps.tasks.getView(id, { journalWindow: { mode: journal, offset: journalOffset } });
         const prototypes = new TaskPrototypeStore(deps.workspaceRoot, id).read();
         return ok(JSON.stringify({ ...view, prototypes: prototypeBridgeView(prototypes) }, null, 2));
       } catch (err) {

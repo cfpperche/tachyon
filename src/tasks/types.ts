@@ -56,6 +56,31 @@ export interface JournalEntry {
   text: string;
 }
 
+export type JournalMode = "tail" | "all" | "none";
+
+/**
+ * t-ab7708 — what a reader got, and what it did not get. `get_task` used to materialize every
+ * journal entry unconditionally; measured across the harness transcripts the journal was 66.6% of
+ * the tool's total cost and 90%+ of its worst calls. A window that bounds the payload is only
+ * honest if the response says so, so this rides along with every journal read: `total` and
+ * `returned` always, `truncated` whenever anything was withheld, and a `note` naming the argument
+ * that fetches the rest.
+ */
+export interface JournalWindow {
+  mode: JournalMode;
+  /** entries in this response */
+  returned: number;
+  /** entries the journal holds */
+  total: number;
+  /** index of the first returned entry within the full journal */
+  offset: number;
+  truncated: boolean;
+  /** byte ceiling applied to this window; absent when no ceiling was in play */
+  maxBytes?: number;
+  /** present only when something was withheld; names how to reach it */
+  note?: string;
+}
+
 export type SddStatus = "draft" | "in-progress" | "shipped" | "shipped-partial" | "superseded" | "abandoned" | "deferred";
 
 export interface SddDerivedStage {
@@ -87,6 +112,7 @@ export interface TaskView {
   task: Task;
   journal?: JournalEntry[];
   journalCount?: number;
+  journalWindow?: JournalWindow;
   derived?: TaskDerived;
   attention?: TaskAttention[];
 }
