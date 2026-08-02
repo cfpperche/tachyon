@@ -738,6 +738,44 @@ describe("detectRuntimes", () => {
     expect([...detectRuntimes(makeWorkspace(["grok"]))]).toEqual(["grok"]);
     expect([...detectRuntimes(makeWorkspace(["claude", "grok"]))].sort()).toEqual(["claude", "grok"]);
   });
+
+  it("t-18d40c — detects a declared Grok agent before its private home exists", async () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".tachyon/config.lkg.json"), JSON.stringify({
+      schemaVersion: 1,
+      savedAt: "2026-08-02T00:00:00.000Z",
+      sourceFile: "tachyon.yml",
+      agents: [{ name: "grok-builder", kind: "agent", cmd: "grok --model grok-code-fast-1" }],
+    }));
+
+    expect(fs.existsSync(path.join(ws, ".grok"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".tachyon/bridge-mcp/grok-builder.grok"))).toBe(false);
+    expect([...detectRuntimes(ws)]).toEqual(["grok"]);
+
+    const res = await install(makePlugin({ runtimes: ["grok"] }), ws);
+    expect(res.errors).toEqual([]);
+    expect(readJson(LOCK(ws)).plugins.sdd).toEqual(expect.objectContaining({
+      runtimes: ["grok"],
+      targets: [expect.objectContaining({ runtime: "grok" })],
+    }));
+  });
+
+  it("t-18d40c — does not install Grok for a workspace whose roster does not use it", async () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".tachyon/config.lkg.json"), JSON.stringify({
+      schemaVersion: 1,
+      savedAt: "2026-08-02T00:00:00.000Z",
+      sourceFile: "tachyon.yml",
+      agents: [{ name: "claude-only", kind: "agent", cmd: "claude" }],
+    }));
+
+    expect(detectRuntimes(ws).has("grok")).toBe(false);
+    const res = await install(makePlugin({ runtimes: ["grok"] }), ws);
+    expect(res.errors).toEqual([expect.stringMatching(/nothing to install/)]);
+    expect(fs.existsSync(LOCK(ws))).toBe(false);
+  });
 });
 
 describe("t-2f99e7 — grok install door", () => {
