@@ -9,6 +9,8 @@ import {
   type ObservationConfidenceV1,
   type ObservationFreshnessV1,
   type ProviderAccountObservationScopeV1,
+  type ProviderConfigurationCompatCellV1,
+  type ProviderConfigurationFactV1,
   type ProviderObservationScopeV1,
   type ProviderQuotaFactV1,
   type ProviderQuotaWindowV1,
@@ -23,8 +25,11 @@ const MAX_FACTS = 512;
 const MAX_DIAGNOSTICS = 64;
 const MAX_WINDOWS = 3;
 const MAX_WINDOW_MINUTES = 525_600;
+const MAX_CONFIG_LAYER_ROLES = 16;
+const MAX_MCP_SERVER_NAMES = 64;
+const MAX_COMPAT_CELLS = 32;
 
-const PROVIDERS: ReadonlySet<string> = new Set<RuntimeObservabilityProviderV1>(["codex", "claude"]);
+const PROVIDERS: ReadonlySet<string> = new Set<RuntimeObservabilityProviderV1>(["codex", "claude", "grok"]);
 const PROVIDER_SOURCES: ReadonlySet<string> = new Set<ProviderSourceKindV1>(["oauth", "cli"]);
 const CONFIDENCE: ReadonlySet<string> = new Set<ObservationConfidenceV1>(["exact", "estimated", "unknown"]);
 const WINDOW_NAMES: ReadonlySet<string> = new Set<ProviderQuotaWindowV1["name"]>(["session", "weekly", "tertiary"]);
@@ -52,6 +57,7 @@ const SAFE_RUNTIME = /^[a-z0-9][a-z0-9._-]{0,63}$/u;
 const SAFE_COLLECTOR_ID = /^[a-z][a-z0-9-]{0,63}$/u;
 const SAFE_VERSION = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/u;
 const SAFE_PROVIDER_SCOPE_KEY = /^ps_[0-9a-f]{16,64}$/u;
+const SAFE_CONFIG_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u;
 const RFC3339_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,3}))?Z$/u;
 
 export type CollectorValidationIssueCode =
@@ -157,6 +163,7 @@ function parseFact(raw: unknown, path: string): RuntimeObservationFactV1 {
   switch (value.kind) {
     case "native-usage": return parseNativeUsage(value, path);
     case "provider-quota": return parseProviderQuota(value, path);
+    case "provider-configuration": return parseProviderConfiguration(value, path);
     case "provider-unavailable": return parseProviderUnavailable(value, path);
     default: return fail("INVALID_FACT", `${path}.kind`);
   }
@@ -205,6 +212,69 @@ function parseProviderQuota(value: Record<string, unknown>, path: string): Provi
     observedAt,
     freshness: parseFreshness(value.freshness, `${path}.freshness`, observedAt),
     windows,
+  };
+}
+
+function parseProviderConfiguration(value: Record<string, unknown>, path: string): ProviderConfigurationFactV1 {
+  const observedAt = timestamp(value.observedAt, `${path}.observedAt`, "INVALID_FACT");
+  const runtime = value.runtime;
+  if (runtime !== "grok") fail("INVALID_FACT", `${path}.runtime`);
+  const quotaChannel = record(value.quotaChannel, `${path}.quotaChannel`, "INVALID_FACT");
+  if (quotaChannel.state !== "unsupported" || quotaChannel.reason !== "no-quota-channel") {
+    fail("INVALID_FACT", `${path}.quotaChannel`);
+  }
+  const rawRoles = array(value.configLayerRoles, `${path}.configLayerRoles`, MAX_CONFIG_LAYER_ROLES, "INVALID_FACT");
+  const configLayerRoles = rawRoles.map((role, index) => (
+    patternedString(role, `${path}.configLayerRoles[${index}]`, 64, SAFE_CONFIG_TOKEN, "INVALID_FACT")
+  ));
+  const rawMcp = array(value.mcpServerNames, `${path}.mcpServerNames`, MAX_MCP_SERVER_NAMES, "INVALID_FACT");
+  const mcpServerNames = rawMcp.map((name, index) => (
+    patternedString(name, `${path}.mcpServerNames[${index}]`, 64, SAFE_CONFIG_TOKEN, "INVALID_FACT")
+  ));
+  const rawCompat = array(value.externalCompat, `${path}.externalCompat`, MAX_COMPAT_CELLS, "INVALID_FACT");
+  const externalCompat = rawCompat.map((cell, index) => (
+    parseCompatCell(cell, `${path}.externalCompat[${index}]`)
+  ));
+
+  const fact: ProviderConfigurationFactV1 = {
+    kind: "provider-configuration",
+    scope: parseAgentScope(value.scope, `${path}.scope`),
+    runtime: "grok",
+    source: providerSource(value.source, `${path}.source`),
+    confidence: confidence(value.confidence, `${path}.confidence`),
+    observedAt,
+    freshness: parseFreshness(value.freshness, `${path}.freshness`, observedAt),
+    quotaChannel: { state: "unsupported", reason: "no-quota-channel" },
+    configLayerRoles,
+    mcpServerNames,
+    externalCompat,
+  };
+
+  if (value.grokVersion !== undefined) {
+    fact.grokVersion = patternedString(value.grokVersion, `${path}.grokVersion`, 64, SAFE_VERSION, "INVALID_FACT");
+  }
+  if (value.projectTrusted !== undefined) {
+    if (typeof value.projectTrusted !== "boolean") fail("INVALID_FACT", `${path}.projectTrusted`);
+    fact.projectTrusted = value.projectTrusted;
+  }
+  if (value.permissionsLoaded !== undefined) {
+    fact.permissionsLoaded = nonNegativeSafeInteger(
+      value.permissionsLoaded,
+      `${path}.permissionsLoaded`,
+      "INVALID_FACT",
+    );
+  }
+  return fact;
+}
+
+function parseCompatCell(raw: unknown, path: string): ProviderConfigurationCompatCellV1 {
+  const value = record(raw, path, "INVALID_FACT");
+  if (typeof value.enabled !== "boolean") fail("INVALID_FACT", `${path}.enabled`);
+  return {
+    vendor: patternedString(value.vendor, `${path}.vendor`, 64, SAFE_CONFIG_TOKEN, "INVALID_FACT"),
+    surface: patternedString(value.surface, `${path}.surface`, 64, SAFE_CONFIG_TOKEN, "INVALID_FACT"),
+    enabled: value.enabled,
+    source: patternedString(value.source, `${path}.source`, 64, SAFE_CONFIG_TOKEN, "INVALID_FACT"),
   };
 }
 

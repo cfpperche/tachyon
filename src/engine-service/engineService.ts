@@ -335,7 +335,11 @@ export async function startDaemonEngineService(
       ],
       {
         state: providerState,
-        onPreferenceChanged: (provider) => claudeStatusLineCapture.clearProvider(provider),
+        onPreferenceChanged: (provider) => {
+          if (provider === "claude" || provider === "codex") {
+            claudeStatusLineCapture.clearProvider(provider);
+          }
+        },
       },
     );
     const observationsForCondition = providerObservations;

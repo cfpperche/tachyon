@@ -1,4 +1,5 @@
 import type {
+  AgentObservationScopeV1,
   CollectorEnvelopeV1,
   ProviderAccountObservationScopeV1,
   ProviderSourceKindV1,
@@ -6,6 +7,7 @@ import type {
 } from "./types.js";
 
 export const PROVIDER_QUOTA_READ_CAPABILITY = "provider-quota-read" as const;
+export const PROVIDER_CONFIGURATION_READ_CAPABILITY = "provider-configuration-read" as const;
 
 /**
  * A grant is deliberately explicit and source-bound. The host may construct `granted` only from a persisted,
@@ -16,6 +18,15 @@ export type ProviderObservationGrantV1 =
   | {
       state: "granted";
       capability: typeof PROVIDER_QUOTA_READ_CAPABILITY;
+      source: ProviderSourceKindV1;
+      consent: "explicit-user";
+    };
+
+export type ConfigurationObservationGrantV1 =
+  | { state: "disabled" }
+  | {
+      state: "granted";
+      capability: typeof PROVIDER_CONFIGURATION_READ_CAPABILITY;
       source: ProviderSourceKindV1;
       consent: "explicit-user";
     };
@@ -46,6 +57,26 @@ export interface ProviderQuotaChannelV1 {
   readonly mechanism: string;
 }
 
+/**
+ * t-032f08 — configuration observation is agent-scoped, and that is the whole reason it cannot reuse
+ * the quota request above: private homes (e.g. GROK_HOME) differ per agent, so a provider-account
+ * grant alone cannot select the home that must be inspected. The two axes travel separately.
+ */
+export interface ConfigurationObservationRequestV1 {
+  scope: AgentObservationScopeV1;
+  /** Absolute path of the observed agent's private runtime home (GROK_HOME). Never the workspace ambient home. */
+  grokHome: string;
+  /** Working directory for project-layer discovery. When omitted the child inherits the adapter process cwd. */
+  cwd?: string;
+  /**
+   * When true (default), co-bind `HOME` to `grokHome` so inspect cannot read ambient `$HOME/.claude` /
+   * `$HOME/.grok` layers that do not belong to the observed agent.
+   */
+  coBindHome?: boolean;
+  grant: ConfigurationObservationGrantV1;
+  signal?: AbortSignal;
+}
+
 /** Narrow read-only source contract. It is not a generic CLI, HTTP, file, or plugin execution seam. */
 export interface ProviderObservationSource {
   readonly provider: RuntimeObservabilityProviderV1;
@@ -53,4 +84,11 @@ export interface ProviderObservationSource {
   /** t-458497 — self-declared acquisition kind; the ONLY place a channel's fragility is authored. */
   readonly channel: ProviderQuotaChannelV1;
   observe(request: ProviderObservationRequestV1): Promise<CollectorEnvelopeV1>;
+}
+
+/** Configuration-axis source. Must never emit `provider-quota` facts; quota absence is declared by name. */
+export interface ConfigurationObservationSource {
+  readonly runtime: "grok";
+  readonly source: ProviderSourceKindV1;
+  observe(request: ConfigurationObservationRequestV1): Promise<CollectorEnvelopeV1>;
 }

@@ -82,7 +82,8 @@ export class ProviderObservationPreferences {
     provider: RuntimeObservabilityProviderV1,
     input: ProviderObservationPreferenceInputV1,
   ): Promise<ProviderObservationPreferenceV1 | undefined> {
-    if (!PROVIDERS.includes(provider) || !record(input)) {
+    // Quota preferences remain Codex/Claude-only; Grok configuration uses a separate axis/source.
+    if (!(PROVIDERS as readonly string[]).includes(provider) || !record(input)) {
       throw new TypeError("provider observation preference is invalid");
     }
     const current = this.read();
