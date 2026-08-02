@@ -1762,7 +1762,7 @@ export class AgentManager {
     return loadAndRenderProjectGuidanceBundle(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
   }
 
-  private applyAgentPermissionProjection(name: string, cmd: string): string {
+  private applyAgentPermissionProjection(name: string, cmd: string, delegated = false): string {
     const runtime = binaryOf(cmd);
     const mode = this.opts.resolveAgentPermissionProjection?.(name, runtime);
     if (mode !== undefined) {
@@ -1779,12 +1779,22 @@ export class AgentManager {
       } else {
         cmd += ` --permission-mode ${mode}`;
       }
+    } else if (
+      delegated
+      && runtime === "grok"
+      && !/(^|\s)--permission-mode(?:=|\s|$)/.test(cmd)
+      && !/(^|\s)--always-approve(?:=|\s|$)/.test(cmd)
+    ) {
+      // t-84f0eb — owner-authored workspace product policy: delegated Grok matches the existing
+      // Claude/Codex subagent posture and does not stop its coordinator for every tool call. This is
+      // keyed from durable Tachyon lineage, never discovered from HOME, cwd or runtime settings.
+      cmd += " --always-approve";
     }
     return cmd;
   }
 
-  private effectiveCmd(name: string, def: AgentDef, instructions: string | undefined): string {
-    return composeCommand({ cmd: this.applyAgentPermissionProjection(name, def.cmd), instructions });
+  private effectiveCmd(name: string, def: AgentDef, instructions: string | undefined, delegated = false): string {
+    return composeCommand({ cmd: this.applyAgentPermissionProjection(name, def.cmd, delegated), instructions });
   }
 
   /**
@@ -2451,7 +2461,7 @@ export class AgentManager {
         cwd,
       );
     }
-    const effectiveCmd = this.effectiveCmd(name, def, effectiveInstructions);
+    const effectiveCmd = this.effectiveCmd(name, def, effectiveInstructions, !!(parent || delegator));
     const tokenEnv = this.opts.mintAgentToken?.(name);
     launchTokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
     const spawnBuild = this.applyHarness(
@@ -3990,7 +4000,7 @@ export class AgentManager {
       name,
       def,
       cwd,
-      this.effectiveCmd(name, def, restartInstructions),
+      this.effectiveCmd(name, def, restartInstructions, !!(this.lineage.get(name) || this.delegators.get(name))),
       {
         ...this.opts.getExtraEnv?.(),
         ...def.env,
@@ -4399,7 +4409,10 @@ export class AgentManager {
       name,
       resumeDef,
       cwd,
-      adapter.resumeCommand(this.applyAgentPermissionProjection(name, cmd), id),
+      adapter.resumeCommand(
+        this.applyAgentPermissionProjection(name, cmd, !!(this.lineage.get(name) || this.delegators.get(name))),
+        id,
+      ),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name },
       resumeHarness,
     );

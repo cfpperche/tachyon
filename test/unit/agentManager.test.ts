@@ -5702,7 +5702,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
     });
 
-    it("t-84f0eb: projects an authored Grok permission mode into a delegated spawn and preserves absence", async () => {
+    it("t-84f0eb: projects an authored Grok mode, defaults delegated Grok to always-approve, and leaves top-level absent", async () => {
       const worktree = { path: "/wt/reader", branch: "tachyon/reader", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
       const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
         resolveAgentPermissionProjection: (name: string, runtime: string) =>
@@ -5714,7 +5714,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(cmds.at(-1)).toContain("--permission-mode auto");
 
       await manager.spawn("unconfigured", { cmd: "grok", parent: "boss", worktree: true });
+      expect(cmds.at(-1)).toContain("--always-approve");
+      await manager.restart("unconfigured", { stop: "force", session: "new" });
+      expect(cmds.at(-1)).toContain("--always-approve");
+
+      await manager.spawn("top-level", { cmd: "grok" });
       expect(cmds.at(-1)).not.toContain("--permission-mode");
+      expect(cmds.at(-1)).not.toContain("--always-approve");
     });
 
     it("t-84f0eb: refuses a named permission projection when the managed runtime is not covered", async () => {
