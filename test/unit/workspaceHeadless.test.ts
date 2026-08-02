@@ -422,6 +422,34 @@ async function makeWorkspace(
   return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
 
+it("t-6f0377 defers one replaceable context-renewal gesture until idle", async () => {
+  const { ws, sent } = await makeWorkspace(() => {}, { bRuntime: "codex" });
+  await ws.manager.spawn("b");
+  const subject = ws as unknown as {
+    requestContextCompaction(agent: string): Promise<{ status: string; replaced?: string }>;
+    requestFreshContext(agent: string): Promise<{ status: string; replaced?: string }>;
+    recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
+  };
+
+  expect(await subject.requestContextCompaction("b")).toEqual({ status: "pending" });
+  expect(sent.get(ws.manager.session("b"))).not.toBe("/compact");
+  expect(await subject.requestFreshContext("b")).toEqual({ status: "pending", replaced: "compact" });
+
+  await subject.recoverOnIdle("b", false);
+  expect(sent.get(ws.manager.session("b"))).toBe("/new");
+  await subject.recoverOnIdle("b", false);
+  expect(sent.get(ws.manager.session("b"))).toBe("/new");
+  ws.dispose();
+});
+
+it("t-6f0377 refuses an unmeasured runtime by name", async () => {
+  const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "other", spec: { runtime: "pi" } }] });
+  await ws.manager.spawn("other");
+  const subject = ws as unknown as { requestContextCompaction(agent: string): Promise<unknown> };
+  await expect(subject.requestContextCompaction("other")).rejects.toThrow(/runtime 'pi'.*no measured compact gesture/);
+  ws.dispose();
+});
+
 it("rejects an invalid reload and retains the prior known-good config", async () => {
   // SDD 478 M7 — this used to prove the point with `soul: SOUL.md` on an inline agent. Neither half
   // of that is expressible now: `agents:` takes a profile pointer, and a canonical profile cannot

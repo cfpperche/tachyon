@@ -150,7 +150,10 @@ export class TmuxAttachClient {
       if (!this.disposed) {
         this.handlers.onExit(
           typeof exitCode === "number" ? exitCode : null,
-          typeof signal === "number" ? signal : null,
+          // node-pty reports signal 0 for "no signal" — a clean detach (another client attached
+          // with `-d`) arrives as {exitCode: 0, signal: 0}. Passing that 0 through made the pane
+          // say "attach ended (signal 0)", which reads as a kill. 0 is the absence of a signal.
+          typeof signal === "number" && signal > 0 ? signal : null,
         );
       }
     });

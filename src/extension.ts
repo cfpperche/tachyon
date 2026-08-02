@@ -116,6 +116,7 @@ import type { InspectedSession } from "./runtimeOps/sessionInspection.js";
 import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
 import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
+import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
 import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
@@ -1154,6 +1155,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
   context.subscriptions.push({ dispose: () => approvalPanels.dispose() });
 
+  // t-feaaea — one exclusive tmux client per session. Both viewports attach with `-d`, so without
+  // an arbiter the second one evicts the first mid-redraw: dot fill, then `attach ended`.
+  const sessionViewports = new SessionViewportRegistry();
   const makeServerInspectorDeps = (): InspectorDeps => {
     const folderByHash = () => new Map(workspaces().map((ws) => [ws.wsHash, ws.folderName]));
     const tmuxWorkspace = (): WorkspaceShellHandle => {
@@ -1195,6 +1199,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         existing.show(false);
         return;
       }
+      // Inspector is a third door onto the same sessions — it claims like any other viewport, or a
+      // human debugging a session silently evicts that agent's pane (t-feaaea).
+      sessionViewports.claim(session, "terminal", () => {
+        termBySession.get(session)?.dispose();
+        termBySession.delete(session);
+      });
       const terminal = vscode.window.createTerminal({
         name: session,
         iconPath: new vscode.ThemeIcon("zap"),
@@ -1208,7 +1218,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     context.subscriptions.push(
       vscode.window.onDidCloseTerminal((t) => {
-        for (const [s, term] of termBySession) if (term === t) termBySession.delete(s);
+        for (const [s, term] of termBySession) {
+          if (term !== t) continue;
+          termBySession.delete(s);
+          sessionViewports.release(s, "terminal");
+        }
       }),
     );
     const killExpected = async (row: PaneSnapshot): Promise<void> => {
@@ -1921,11 +1935,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         console.debug(`[tachyon] terminal close intent unavailable: ${error instanceof Error ? error.message : String(error)}`);
       });
     },
+    sessionViewports,
   );
   context.subscriptions.push({ dispose: () => terminals.dispose() });
 
   // t-610355 — layer-2 first-party agent pane (webview + xterm). Additive; layer-1 integrated terminal stays default.
-  const agentPanes = new AgentPanePanelManager(context.extensionUri);
+  const agentPanes = new AgentPanePanelManager(context.extensionUri, sessionViewports);
   context.subscriptions.push({ dispose: () => agentPanes.dispose() });
   const openAgentPane = async (agent: string, hash?: string): Promise<void> => {
     const ws = targetOf(hash);
@@ -1963,6 +1978,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           await terminalTmux.sendKeys(session, text, false);
         }
       },
+      // Detached pane: "is my agent gone, or only the window onto it?" — tmux answers that.
+      sessionAlive: async (session) => terminalTmux.hasSession(session),
       openTemplateInject: async (agentName) => injectPromptTemplateFlow(ws, agentName),
       createPinFromSelection: async (text, agentName) => {
         const title = pinTitleFromSelection(text, agentName);

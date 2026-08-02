@@ -98,6 +98,12 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const [flash, setFlash] = useState<string | null>(null);
   /** True while xterm has an active (non-empty) selection — visual affordance only. */
   const [hasSelection, setHasSelection] = useState(false);
+  /**
+   * t-feaaea — the pane lost its tmux client. `sessionAlive` is the difference between "your agent
+   * is still running, take the view back" and "the agent is gone", and the human must not have to
+   * guess which one happened from an exit code.
+   */
+  const [detached, setDetached] = useState<{ sessionAlive: boolean; reason?: string } | null>(null);
 
   useEffect(() => {
     const el = termHostRef.current;
@@ -230,12 +236,22 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         setFlash(msg.message);
         return;
       }
+      if (msg.type === "agent-pane/attach-state") {
+        if (msg.state === "attached") {
+          setDetached(null);
+        } else {
+          setDetached({ sessionAlive: msg.sessionAlive === true, ...(msg.reason ? { reason: msg.reason } : {}) });
+        }
+        return;
+      }
       if (msg.type === "agent-pane/exit") {
         setStatus("detached");
+        // Say what ended (the view) and never dress a clean detach up as a kill; the banner below
+        // carries the recovery, so this line stays a transcript timestamp, not an instruction.
         term.writeln(
-          "\r\n\x1b[33m[Tachyon] attach ended"
+          "\r\n\x1b[33m[Tachyon] terminal view detached"
           + (msg.signal ? ` (signal ${msg.signal})` : msg.code !== null && msg.code !== undefined ? ` (code ${msg.code})` : "")
-          + " — reopen the agent pane (sidebar terminal icon).\x1b[0m",
+          + ".\x1b[0m",
         );
       }
     });
@@ -271,6 +287,24 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
     postMessage(mode === "stage" ? { type: "agent-pane/stage", text } : { type: "agent-pane/submit", text });
   };
 
+  const reattach = () => {
+    // A detach can freeze tmux's dot fill on screen — the padding it painted while another client
+    // owned the window (measured: 8836 `·` in one redraw). tmux redraws everything on attach, so
+    // resetting first means the fresh screen lands on a clean grid instead of over the artifacts.
+    termRef.current?.reset();
+    setDetached(null);
+    setStatus("reattaching…");
+    postMessage({ type: "agent-pane/reattach" });
+  };
+
+  const detachedText = !detached
+    ? ""
+    : detached.reason === "handoff"
+      ? "The integrated terminal has this session now. The agent kept running — reattach to bring it back here."
+      : detached.sessionAlive
+        ? "This pane lost its view of the session. The agent kept running — reattach to bring it back."
+        : "This pane is detached and the agent session is no longer running.";
+
   const pinSelection = () => {
     void (async () => {
       const term = termRef.current;
@@ -301,6 +335,23 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         <span class="agent-pane__agent" title={agent}>{agent}</span>
         <span class="agent-pane__status" title={status}>{status}</span>
       </header>
+
+      {detached ? (
+        <div class="agent-pane__detached" role="status">
+          <span class="agent-pane__detached-text">{detachedText}</span>
+          <button
+            type="button"
+            class="agent-pane__btn agent-pane__btn--primary"
+            disabled={!detached.sessionAlive}
+            title={detached.sessionAlive
+              ? "Attach this pane to the agent's tmux session again"
+              : "The session is gone — there is nothing left to attach to"}
+            onClick={reattach}
+          >
+            Reattach
+          </button>
+        </div>
+      ) : null}
 
       <div class="agent-pane__term" ref={termHostRef} />
 

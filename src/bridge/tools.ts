@@ -424,6 +424,10 @@ export interface BridgeDeps {
   listEvidence?: (agent: string) => Promise<EvidenceView[]>;
   /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
   reanchor?: (agent: string) => Promise<void>;
+  /** t-6f0377 — cheap, non-destructive self-context renewal, deferred by the host until idle. */
+  requestContextCompaction?: (agent: string) => Promise<{ status: "pending"; replaced?: "compact" | "fresh" }>;
+  /** t-6f0377 — destructive fresh-context renewal. Kept as a separate port so it cannot be selected accidentally. */
+  requestFreshContext?: (agent: string) => Promise<{ status: "pending"; replaced?: "compact" | "fresh" }>;
   /**
    * t-0bebf6 — answer the host's idle/stall poke about a child: "inspected, decided, leave it".
    * Returns null when there is no outstanding poke for that child, which is what keeps the door from
@@ -510,6 +514,25 @@ export interface VerifyHandoff {
   stale: boolean;
   /** spec 273 — a compact, mechanical summary of the worktree's NON-BINARY evidence (additive; never gates) */
   evidence?: EvidenceSummary;
+}
+
+export function contextRenewalRequestRefusal(input: {
+  agent: string;
+  mode: "compact" | "fresh";
+  composerOccupied: boolean;
+  pendingApprovalId?: string;
+  attention?: string;
+  continuityExists: boolean;
+}): string | undefined {
+  if (input.composerOccupied) return `renew_context refused for '${input.agent}': the composer contains a draft`;
+  if (input.pendingApprovalId) return `renew_context refused for '${input.agent}': human approval '${input.pendingApprovalId}' is pending`;
+  if (input.attention === "needs-input" || input.attention === "throttled") {
+    return `renew_context refused for '${input.agent}': attention state is '${input.attention}'`;
+  }
+  if (input.mode === "fresh" && !input.continuityExists) {
+    return `fresh context refused for '${input.agent}': no continuity brief exists`;
+  }
+  return undefined;
 }
 
 /** spec 273 — the input to attach_evidence (producer is self-declared, per the bridge's caller model). */
@@ -4721,6 +4744,46 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             lag,
           }),
         );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "renew_context",
+    {
+      description:
+        "Renew YOUR OWN runtime context after this turn becomes idle. mode='compact' preserves a summary; " +
+        "mode='fresh' destroys conversational context and is refused without a continuity brief. The pending " +
+        "intent is replaceable, so repeated calls produce one gesture, never a queue.",
+      inputSchema: { mode: z.enum(["compact", "fresh"]) },
+    },
+    async ({ mode }) => {
+      try {
+        const selfActor = resolveDeclaredActor(deps, undefined);
+        if (!selfActor.ok) return fail(new Error(selfActor.message));
+        if (!selfActor.name) return fail(new Error("renew_context requires a resolvable agent identity"));
+        const self = selfActor.name;
+        const pendingApproval = listPendingApprovalRequests(deps.workspaceRoot).find((row) => row.requester === self);
+        const brief = mode === "fresh" ? deps.continuity?.read(self) : undefined;
+        const refusal = contextRenewalRequestRefusal({
+          agent: self,
+          mode,
+          composerOccupied: deps.composerOccupiedOf?.(self) === true,
+          pendingApprovalId: pendingApproval?.id,
+          attention: deps.attentionOf?.(self),
+          continuityExists: !!brief,
+        });
+        if (refusal) return fail(new Error(refusal));
+
+        if (mode === "compact") {
+          if (!deps.requestContextCompaction) return fail(new Error("context compaction is not available on this Bridge"));
+          return ok(JSON.stringify(await deps.requestContextCompaction(self)));
+        }
+
+        if (!deps.requestFreshContext) return fail(new Error("fresh context renewal is not available on this Bridge"));
+        return ok(JSON.stringify(await deps.requestFreshContext(self)));
       } catch (err) {
         return fail(err);
       }

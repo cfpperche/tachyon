@@ -5,7 +5,8 @@
  * Slice 2: inject markers (webview) + selection → Pin.
  */
 import * as vscode from "vscode";
-import { TmuxAttachClient } from "../presentation/TmuxAttachClient.js";
+import { TmuxAttachClient, type PtySpawn } from "../presentation/TmuxAttachClient.js";
+import type { SessionViewportRegistry } from "../presentation/sessionViewport.js";
 import { resolveAgentPaneFontMetrics } from "../presentation/agentPaneFont.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { panelIcon } from "./shared/panelIcon.js";
@@ -39,6 +40,10 @@ export interface AgentPaneOpenArgs {
   openTemplateInject: (agent: string) => Promise<boolean>;
   /** Create a project pin from selected terminal text. */
   createPinFromSelection: (text: string, agent: string) => Promise<{ id: string }>;
+  /** Is the tmux session still running? Answers "did I lose the view or the work?" (t-feaaea). */
+  sessionAlive?: (session: string) => Promise<boolean>;
+  /** Test seam mirroring `TmuxAttachClientOptions.ptySpawn`; production loads node-pty. */
+  ptySpawn?: PtySpawn;
 }
 
 interface LivePane {
@@ -52,18 +57,29 @@ interface LivePane {
   lastCols: number;
   lastRows: number;
   started: boolean;
+  /**
+   * The pane held a client and lost it (handoff or clean exit). It must then stay detached until
+   * the human presses Reattach — otherwise the next resize event silently re-claims the session and
+   * closes the terminal they just opened, ping-ponging the two viewports (t-feaaea).
+   */
+  detached: boolean;
 }
 
 export class AgentPanePanelManager {
   private readonly byAgent = new Map<string, LivePane>();
   private disposed = false;
 
-  constructor(private readonly extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly extensionUri: vscode.Uri,
+    /** t-feaaea — one exclusive tmux client per session, shared with layer-1 `Terminals`. */
+    private readonly viewports?: SessionViewportRegistry,
+  ) {}
 
   dispose(): void {
     this.disposed = true;
     for (const live of this.byAgent.values()) {
       live.attach?.dispose();
+      this.viewports?.release(live.session, "pane");
       live.panel.dispose();
     }
     this.byAgent.clear();
@@ -111,6 +127,7 @@ export class AgentPanePanelManager {
       lastCols: 0,
       lastRows: 0,
       started: false,
+      detached: false,
     };
     this.byAgent.set(args.agent, live);
 
@@ -136,6 +153,24 @@ export class AgentPanePanelManager {
       void panel.webview.postMessage(msg);
     };
 
+    /**
+     * Another viewport (the integrated terminal) is taking this session — let go of our tmux
+     * client BEFORE it attaches. Deliberate handoff, so the human sees "the terminal has it",
+     * not a redraw full of `·` followed by a client eviction (t-feaaea).
+     */
+    const releaseToTerminal = () => {
+      if (!live.attach && !live.started) return;
+      live.attach?.dispose();
+      live.attach = null;
+      live.started = false;
+      live.detached = true;
+      post({
+        type: "agent-pane/status",
+        status: vscode.l10n.t("detached — the integrated terminal has this session"),
+      });
+      post({ type: "agent-pane/attach-state", state: "detached", reason: "handoff", sessionAlive: true });
+    };
+
     const startAttach = (cols: number, rows: number) => {
       if (live.started && live.attach?.alive) {
         live.attach.resize(cols, rows);
@@ -145,18 +180,39 @@ export class AgentPanePanelManager {
         return;
       }
 
+      // Take the session before spawning a client: any layer-1 terminal on it closes first, so the
+      // two clients never coexist — that overlap is what paints the dot fill (t-feaaea).
+      this.viewports?.claim(args.session, "pane", releaseToTerminal);
+
       live.attach?.dispose();
       const attach = new TmuxAttachClient({
         onData: (chunk) => post({ type: "agent-pane/data", data: chunk }),
         onExit: (code, signal) => {
           live.attach = null;
           live.started = false;
+          live.detached = true;
           post({
             type: "agent-pane/exit",
             code,
             signal: signal !== null && signal !== undefined ? String(signal) : null,
           });
-          post({ type: "agent-pane/status", status: "detached" });
+          // "Is the work gone, or only the window onto it?" — the pane must answer that before it
+          // asks the human to do anything. A clean detach leaves the agent running.
+          void (async () => {
+            let alive = false;
+            try {
+              alive = args.sessionAlive ? await args.sessionAlive(args.session) : false;
+            } catch {
+              alive = false;
+            }
+            post({
+              type: "agent-pane/status",
+              status: alive
+                ? vscode.l10n.t("detached — the agent session is still running")
+                : vscode.l10n.t("detached — the agent session ended"),
+            });
+            post({ type: "agent-pane/attach-state", state: "detached", reason: "ended", sessionAlive: alive });
+          })();
         },
         onError: (err) => {
           post({ type: "agent-pane/status", status: `error: ${err.message}` });
@@ -172,9 +228,12 @@ export class AgentPanePanelManager {
           cols,
           rows,
           exclusive: true,
+          ...(args.ptySpawn ? { ptySpawn: args.ptySpawn } : {}),
         });
         live.started = true;
+        live.detached = false;
         post({ type: "agent-pane/status", status: "attached" });
+        post({ type: "agent-pane/attach-state", state: "attached" });
         void args.resizeSession(args.session, cols, rows).catch(() => {
           /* best-effort */
         });
@@ -188,6 +247,8 @@ export class AgentPanePanelManager {
 
     const maybeStart = () => {
       if (!live.ready) return;
+      // Never re-claim the session on a mere resize — reattach is a human decision (t-feaaea).
+      if (live.detached) return;
       if (live.lastCols < 2 || live.lastRows < 1) return;
       startAttach(live.lastCols, live.lastRows);
     };
@@ -256,6 +317,14 @@ export class AgentPanePanelManager {
         }
         return;
       }
+      if (msg.type === "agent-pane/reattach") {
+        // The pane lost only its client; the session kept running. Reclaiming it here (rather than
+        // making the human reopen the pane) is the whole point of t-feaaea.
+        if (live.lastCols < 2 || live.lastRows < 1) return;
+        live.detached = false;
+        startAttach(live.lastCols, live.lastRows);
+        return;
+      }
       if (msg.type === "agent-pane/stage") {
         void handleDelivery("stage", msg.text);
         return;
@@ -298,6 +367,7 @@ export class AgentPanePanelManager {
 
     panel.onDidDispose(() => {
       live.attach?.dispose();
+      this.viewports?.release(args.session, "pane");
       this.byAgent.delete(args.agent);
     });
   }

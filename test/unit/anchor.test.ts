@@ -1,9 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { detectCompaction, compactionRuntimes } from "../../src/anchor/compaction.js";
+import { contextRenewalGesture, detectCompaction, compactionRuntimes } from "../../src/anchor/compaction.js";
 
 describe("compaction detection (spec 216 Part C)", () => {
   it("covers claude + codex only (D-C)", () => {
     expect(compactionRuntimes().sort()).toEqual(["claude", "codex"]);
+  });
+
+  it("keeps measured renewal gestures fail-closed by runtime", () => {
+    expect(contextRenewalGesture("claude", "compact")).toBe("/compact");
+    expect(contextRenewalGesture("claude", "fresh")).toBe("/clear");
+    expect(contextRenewalGesture("codex", "fresh")).toBe("/new");
+    expect(contextRenewalGesture("grok", "fresh")).toBe("/new");
+    expect(contextRenewalGesture("gemini", "compact")).toBeUndefined();
   });
 
   it("detects a claude compaction banner", () => {
