@@ -111,6 +111,19 @@ export class RuntimeSlackMonitor {
           });
           continue;
         }
+        if (window.usedPercent >= QUOTA_PRESSURE_PERCENT) {
+          // Still under pressure. Re-anchor on the LATEST such reading so the eventual line compares
+          // against what was true just before the relief — and so a reset time the channel revised
+          // (a window that rolled while still full) is the one quoted, never a superseded one.
+          windows.set(window.name, {
+            usedPercent: window.usedPercent,
+            observedAt: quota.observedAt,
+            resetsAt: window.resetsAt,
+          });
+          continue;
+        }
+        // Between the two lines: armed, but not yet a relief worth a line. Left untouched on purpose —
+        // this gap is what stops a value hovering at the boundary from ringing twice.
         if (window.usedPercent > QUOTA_RELIEF_PERCENT) continue;
         windows.delete(window.name);
         lines.push(reliefLine(runtime.runtime, window, armed, quota.observedAt, integrity));

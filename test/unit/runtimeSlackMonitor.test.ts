@@ -155,6 +155,24 @@ describe("RuntimeSlackMonitor", () => {
     expect(codexLine).not.toContain("best-effort");
   });
 
+  it("re-anchors on the latest pressured reading, so a revised reset time is the one quoted", async () => {
+    const f = fixture();
+    f.observe("codex", PRESSURED, [{ name: "session", usedPercent: 99, resetsAt: "2026-08-02T14:00:00.000Z" }]);
+    await f.monitor.tick();
+    // The window rolled and refilled while still full: the earlier reset time is now superseded.
+    f.observe("codex", "2026-08-02T14:30:00.000Z", [{ name: "session", usedPercent: 93, resetsAt: "2026-08-02T19:00:00.000Z" }]);
+    await f.monitor.tick();
+    expect(f.delivered).toHaveLength(0);
+
+    f.observe("codex", "2026-08-02T19:05:00.000Z", [{ name: "session", usedPercent: 6 }]);
+    await f.monitor.tick();
+
+    expect(f.delivered).toHaveLength(1);
+    expect(f.delivered[0].line).toContain("2026-08-02T19:00:00.000Z as the reset");
+    expect(f.delivered[0].line).not.toContain("2026-08-02T14:00:00.000Z");
+    expect(f.delivered[0].line).toContain("down from 93%");
+  });
+
   it("stays silent when the relief was never preceded by an observed pressure", async () => {
     const f = fixture();
     f.observe("codex", RELIEVED, [{ name: "session", usedPercent: 4 }]);
