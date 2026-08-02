@@ -163,10 +163,14 @@ describe("resolveAgentProfile", () => {
     }));
     const profilePath = path.join(root, ".tachyon", "agents", "codex", "agent.yml");
     const baseAuthority = { revision: "test-profile-r1", canonical: { state: "present" as const, sha256: digest(fs.readFileSync(profilePath)) }, runtimeInspector: INSPECTOR };
-    const denied = resolve(root, { authority: baseAuthority });
-    expect(denied.ok).toBe(false);
-    if (denied.ok) throw new Error("expected denial");
-    expect(denied.errors.filter((error) => error.code === "profile/capability-authority")).toHaveLength(2);
+    // t-dfc4de — missing grants withhold those capabilities; the agent still resolves.
+    const denied = expectSuccess(resolve(root, { authority: baseAuthority }));
+    expect(denied.capabilityProjection).toBeUndefined();
+    expect(denied.withheldCapabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ referenceId: "docs-mcp", code: "profile/capability-authority" }),
+      expect.objectContaining({ referenceId: "guard-hook", code: "profile/capability-authority" }),
+    ]));
+    expect(denied.withheldCapabilities).toHaveLength(2);
 
     const value = expectSuccess(resolve(root, { authority: { ...baseAuthority, capabilityGrants: [
       { referenceId: "docs-mcp", sourceSha256: digest(mcp), adapter: "codex", kind: "mcp" },
@@ -175,6 +179,7 @@ describe("resolveAgentProfile", () => {
     expect(value.capabilityProjection?.mcp.docs).toEqual({ command: "node", args: ["server.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } });
     expect(value.capabilityProjection?.hooks.PreToolUse).toBeDefined();
     expect(JSON.stringify(value.capabilityProjection)).not.toContain("ambient-secret");
+    expect(value.withheldCapabilities).toBeUndefined();
 
     const invalidHook = hook.replace("PreToolUse", "MadeUpEvent");
     fs.writeFileSync(path.join(directory, "hook.yml"), invalidHook);
@@ -186,7 +191,8 @@ describe("resolveAgentProfile", () => {
       ],
     }));
     const invalidProfile = path.join(root, ".tachyon", "agents", "codex", "agent.yml");
-    const rejected = resolve(root, { authority: {
+    // t-dfc4de — a half-parsed hook costs the hook, not the agent; sibling MCP still delivers.
+    const rejected = expectSuccess(resolve(root, { authority: {
       revision: "test-profile-r1",
       canonical: { state: "present", sha256: digest(fs.readFileSync(invalidProfile)) },
       runtimeInspector: INSPECTOR,
@@ -194,10 +200,16 @@ describe("resolveAgentProfile", () => {
         { referenceId: "docs-mcp", sourceSha256: digest(mcp), adapter: "codex", kind: "mcp" },
         { referenceId: "guard-hook", sourceSha256: digest(invalidHook), adapter: "codex", kind: "hook", hookClass: "enforcement" },
       ],
-    } });
-    expect(rejected.ok).toBe(false);
-    if (rejected.ok) throw new Error("expected hook rejection");
-    expect(rejected.errors.some((error) => error.code === "profile/capability" && error.message.includes("MadeUpEvent"))).toBe(true);
+    } }));
+    expect(rejected.capabilityProjection?.mcp.docs).toEqual({ command: "node", args: ["server.js"], env: { DOCS_TOKEN: "${DOCS_TOKEN}" } });
+    expect(rejected.capabilityProjection?.hooks).toEqual({});
+    expect(rejected.withheldCapabilities).toEqual([
+      expect.objectContaining({
+        referenceId: "guard-hook",
+        code: "profile/capability",
+        detail: expect.stringContaining("MadeUpEvent"),
+      }),
+    ]);
   });
 
   // t-b0cfd4 — the tree is still never captured; what changed is that refusing it no longer refuses
@@ -221,7 +233,9 @@ describe("resolveAgentProfile", () => {
     expect(result.value.withheldCapabilities).toMatchObject([{ referenceId: "unsafe-skill", code: "profile/unsafe-path" }]);
   });
 
-  it("rejects destination-name collisions after scope/path normalization", () => {
+  it("withholds BOTH claimants when destination names collide after normalization", () => {
+    // t-dfc4de — picking the first as winner would hide the conflict. Both stay out until a human
+    // renames or deselects so only one capability claims the delivered name.
     const root = workspace();
     const first = path.join(profileDir(root), "capabilities", "one", "Research");
     const second = path.join(profileDir(root), "capabilities", "two", "research");
@@ -236,10 +250,46 @@ describe("resolveAgentProfile", () => {
         { id: "second-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/two/research", mode: "pinned", sha256: treeDigest(second) },
       ],
     }));
-    const result = resolve(root);
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected collision");
-    expect(result.errors.some((error) => error.code === "profile/capability-collision")).toBe(true);
+    const result = expectSuccess(resolve(root));
+    expect(result.capabilityProjection).toBeUndefined();
+    expect(result.definition.capabilities?.skills ?? []).toEqual([]);
+    expect(result.withheldCapabilities).toEqual(expect.arrayContaining([
+      expect.objectContaining({ referenceId: "first-skill", code: "profile/capability-collision" }),
+      expect.objectContaining({ referenceId: "second-skill", code: "profile/capability-collision" }),
+    ]));
+    expect(result.withheldCapabilities).toHaveLength(2);
+  });
+
+  it("withholds a THIRD claimant of a name that already collided, instead of handing it the name", () => {
+    // Releasing the key after the first collision would make the rule "the third one wins" — the same
+    // silent winner, one claimant further along. A collided name stays unavailable for the whole resolve.
+    const root = workspace();
+    const directories = ["one/Research", "two/research", "three/RESEARCH"].map((rel) => {
+      const directory = path.join(profileDir(root), "capabilities", ...rel.split("/"));
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, "SKILL.md"), `skill ${rel}\n`);
+      return { rel, directory };
+    });
+    writeProfile(root, canonical({
+      capabilities: { skills: ["first-skill", "second-skill", "third-skill"] },
+      references: directories.map(({ rel, directory }, index) => ({
+        id: ["first-skill", "second-skill", "third-skill"][index]!,
+        kind: "skill" as const,
+        scope: "profile" as const,
+        owner: AGENT_ID,
+        path: `capabilities/${rel}`,
+        mode: "pinned" as const,
+        sha256: treeDigest(directory),
+      })),
+    }));
+
+    const result = expectSuccess(resolve(root));
+    expect(result.capabilityProjection).toBeUndefined();
+    expect(result.definition.capabilities?.skills ?? []).toEqual([]);
+    const withheld = result.withheldCapabilities ?? [];
+    expect(withheld.map((entry) => entry.referenceId).sort())
+      .toEqual(["first-skill", "second-skill", "third-skill"]);
+    for (const entry of withheld) expect(entry.code).toBe("profile/capability-collision");
   });
 
   it("does not open an unselected capability reference", () => {
@@ -728,5 +778,84 @@ describe("resolveAgentProfile", () => {
     } finally {
       locale.mockRestore();
     }
+  });
+});
+
+/**
+ * t-dfc4de — resolveCapabilities per-capability refusals withhold; they do not refuse the agent.
+ *
+ * Fail-before on both sides: the field-reachable validation miss withholds one skill and leaves the
+ * sibling; profile-identity failures still refuse the whole agent.
+ */
+describe("t-dfc4de — resolveCapabilities withholds one capability, not the agent", () => {
+  it("withholds a skill tree that captured cleanly but has no root SKILL.md, and delivers its sibling", () => {
+    // Field path: re-authorize a plugin tree that lost SKILL.md. Capture succeeds (bytes match pin);
+    // validation used to mark the whole agent config-invalid with re-authorization as the cause.
+    const root = workspace();
+    const good = path.join(profileDir(root), "capabilities", "good");
+    const broken = path.join(profileDir(root), "capabilities", "broken");
+    fs.mkdirSync(good, { recursive: true });
+    fs.mkdirSync(broken, { recursive: true });
+    fs.writeFileSync(path.join(good, "SKILL.md"), "# good\n");
+    fs.writeFileSync(path.join(broken, "README.md"), "not a skill\n");
+    const goodSha = treeDigest(good);
+    const brokenSha = treeDigest(broken);
+    writeProfile(root, canonical({
+      capabilities: { skills: ["good-skill", "broken-skill"] },
+      references: [
+        { id: "good-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/good", mode: "pinned", sha256: goodSha },
+        { id: "broken-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/broken", mode: "pinned", sha256: brokenSha },
+      ],
+    }));
+
+    const value = expectSuccess(resolve(root));
+    expect(value.capabilityProjection?.skills.map((skill) => skill.name)).toEqual(["good"]);
+    expect(value.definition.capabilities?.skills).toEqual(["good-skill"]);
+    expect(value.references.map((reference) => reference.id)).toEqual(["good-skill"]);
+    expect(value.withheldCapabilities).toEqual([{
+      referenceId: "broken-skill",
+      name: "broken",
+      kind: "skill",
+      path: "capabilities/broken",
+      code: "profile/capability",
+      detail: expect.stringContaining("SKILL.md"),
+    }]);
+  });
+
+  it("still refuses the whole agent when a non-capability reference fails — that defines the agent", () => {
+    // Inverse of the withhold rule: instructions are part of what the agent IS, not one tool it has.
+    const root = workspace();
+    writeProfile(root, canonical({
+      prompt: { instructions: "persistent-instructions" },
+      references: [{
+        id: "persistent-instructions",
+        kind: "instructions",
+        scope: "profile",
+        owner: AGENT_ID,
+        path: "instructions.md",
+        mode: "pinned",
+        sha256: digest("missing on purpose"),
+      }],
+    }));
+    const result = resolve(root);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected whole-agent refusal for instructions");
+    expect(result.errors.some((error) => error.field === "references.persistent-instructions")).toBe(true);
+    expect(result.errors.every((error) => error.code !== "profile/capability")).toBe(true);
+  });
+
+  it("still refuses the whole agent when the profile head does not match host authority", () => {
+    const root = workspace();
+    writeProfile(root, canonical({}));
+    const result = resolve(root, {
+      authority: {
+        revision: "test-profile-r1",
+        canonical: { state: "present", sha256: "f".repeat(64) },
+        runtimeInspector: INSPECTOR,
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected authority refusal");
+    expect(result.errors.some((error) => error.code === "profile/authority-boundary")).toBe(true);
   });
 });

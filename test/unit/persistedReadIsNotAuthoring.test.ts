@@ -40,7 +40,8 @@ import {
   persistedRichDocAttachmentV1Schema,
   richDocAttachmentV1Schema,
 } from "../../src/runtime-api/richDocWire.js";
-import { parsePinStudioProjectionV1 } from "../../src/runtime-api/pinStudioProjection.js";
+import { parsePinStudioProjectionV1, projectPinStudio } from "../../src/runtime-api/pinStudioProjection.js";
+import { parseSidebarViewV1 } from "../../src/runtime-api/sidebarProjection.js";
 import {
   PIN_STUDIO_TITLE_MAX_CHARS,
   parsePinStudioStagedPayloadV1,
@@ -440,6 +441,30 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
     }] })}\n`, "utf8");
 
     expect(new PinStore(root).list()[0]!.tags).toEqual(tags.map((tag) => tag.toLowerCase()));
+    expect(normalizePinTags(tags)).toEqual(tags.slice(1, 13));
+  });
+
+  it("serves persisted pin tags above both authoring caps in Pin Studio and Sidebar", () => {
+    const tags = ["L".repeat(33), ...Array.from({ length: 12 }, (_, index) => `tag-${index}`)];
+    const persistedTags = tags.map((tag) => tag.toLowerCase());
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "pins.json"), `${JSON.stringify({ pins: [{
+      id: "p-abcdef", text: "pin", by: "human", createdAt: "2026-07-09T00:00:00.000Z", done: false, tags,
+    }] })}\n`, "utf8");
+
+    const store = new PinStore(root);
+    expect(projectPinStudio(store, "p-abcdef").tags).toEqual(persistedTags);
+    expect(parseSidebarViewV1({
+      schemaVersion: 1,
+      fleet: {
+        folder: { hash: "hash", name: "workspace" }, bridge: { port: "1234", connected: true },
+        agents: [], terminals: [], pipelines: [], schedules: [], commands: [], runbooks: [],
+        pins: [{ id: "p-abcdef", text: "pin", done: false, by: "human", tags: persistedTags }],
+        notices: [], proposals: [],
+        handoff: { exists: false, staleness: "fresh", pendingCount: 0 },
+      },
+    }).fleet.pins[0]!.tags).toEqual(persistedTags);
+
     expect(normalizePinTags(tags)).toEqual(tags.slice(1, 13));
   });
 

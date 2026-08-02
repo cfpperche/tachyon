@@ -187,7 +187,7 @@ const fleet = z.object({
     text: text(2_000, 1),
     done: z.boolean(),
     by: text(128, 1).optional(),
-    tags: z.array(text(32, 1)).max(12),
+    tags: z.array(z.string().min(1)),
     detail: z.boolean().optional(),
     attachmentCount: count.optional(),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
