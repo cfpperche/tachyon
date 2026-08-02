@@ -72,7 +72,7 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
     else if (a === "reinstall") dispatch.reinstall(p.name);
     else dispatch.remove(p.name);
   };
-  // spec 342 Pilot A — the secondary/conditional actions (Check/Docs/Config) collapse into a KitDropdown
+  // spec 342 Pilot A — the secondary/conditional actions (Reinstall/Check/Docs/Config) collapse into a KitDropdown
   // overflow menu; the primary status action (Update/Reinstall/Remove) stays a direct, visible Button —
   // unchanged dispatch calls either way, just a less cluttered card header for plugins with several
   // conditional actions.
@@ -93,6 +93,7 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
                 <IconButton name="kebab-vertical" title={`More actions for ${p.name}`} />
               </KitDropdownTrigger>
               <KitDropdownContent align="end">
+                {p.sourceSpec && <KitDropdownItem onSelect={() => dispatch.reinstall(p.name)}>Reinstall</KitDropdownItem>}
                 {p.sourceSpec && <KitDropdownItem onSelect={() => dispatch.checkPluginUpdate(p.name)}>Check for updates</KitDropdownItem>}
                 {p.docsUrl && <KitDropdownItem onSelect={() => dispatch.openDocs(p.name)}>Docs</KitDropdownItem>}
                 {p.config && <KitDropdownItem onSelect={() => dispatch.openConfig(p.name)}>Config</KitDropdownItem>}

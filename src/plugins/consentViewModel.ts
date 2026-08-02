@@ -411,6 +411,15 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
   };
 }
 
+/** The reinstall door intentionally uses the complete install consent surface; only its framing differs. */
+export function buildReinstallConsent(preview: InstallPreview, provenance?: InstallProvenance, present: ReadonlySet<Runtime> = new Set()): ConsentVM {
+  return {
+    ...buildInstallConsent(preview, provenance, present),
+    title: `Reinstall ${preview.manifest.name}@${preview.manifest.version}`,
+    confirmLabel: "Reinstall",
+  };
+}
+
 /**
  * Build the consent VM for an update (or a force-reinstall over drift). `forceReinstall` frames a conflict/drift
  * re-materialize. The install plan + provenance come from the UpdatePreview.

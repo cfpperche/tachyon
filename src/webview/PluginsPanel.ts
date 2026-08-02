@@ -29,7 +29,7 @@ import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type Provisio
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
 import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
-import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
+import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
 export const PLUGINS_VIEW_TYPE = "tachyonPlugins";
 
@@ -41,7 +41,7 @@ export interface PluginsPanelState {
 
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
 type PendingOp =
-  | { kind: "install"; plugin: LoadedPlugin; preview: InstallPreview; provenance?: InstallProvenance }
+  | { kind: "install"; plugin: LoadedPlugin; preview: InstallPreview; provenance?: InstallProvenance; reinstall?: boolean }
   | { kind: "update"; plugin: LoadedPlugin; provenance?: InstallProvenance; force: boolean; fingerprint: string }
   | { kind: "remove"; name: string; fingerprint: string };
 
@@ -79,6 +79,14 @@ interface InboundMsg {
 
 function trueActions(input: Record<string, boolean>): Record<string, true> {
   return Object.fromEntries(Object.entries(input).filter(([, confirmed]) => confirmed).map(([key]) => [key, true as const]));
+}
+
+/** Replace only the ref portion of a validated lockfile source spec, preserving an optional monorepo subdir. */
+export function sourceSpecAtCommit(spec: string, commit: string): string {
+  const hash = spec.indexOf("#");
+  const fragment = hash >= 0 ? spec.slice(hash) : "";
+  const base = hash >= 0 ? spec.slice(0, hash) : spec;
+  return `${base.slice(0, base.lastIndexOf("@") + 1)}${commit}${fragment}`;
 }
 
 /** spec 287 — render a best-effort download-progress event as a busy label ("Downloading model… 42 / 148 MB").
@@ -178,7 +186,7 @@ export class PluginsPanelManager {
         if (m.name) await this.guard(io, () => this.previewUpdateOp(ws, m.name as string, io, false));
         return;
       case "reinstall":
-        if (m.name) await this.guard(io, () => this.previewUpdateOp(ws, m.name as string, io, true));
+        if (m.name) await this.guard(io, () => this.previewReinstallOp(ws, m.name as string, io));
         return;
       case "remove":
         if (m.name) await this.guard(io, () => this.previewRemoveOp(ws, m.name as string, io));
@@ -284,6 +292,46 @@ export class PluginsPanelManager {
     io.postConsent(buildInstallConsent(preview, loaded.provenance, present));
   }
 
+  /** Reinstall is a fresh, consent-gated install over the current materialization, not an update. It deliberately
+   * selects every runtime declared by the pinned payload, repairing runtime-set gaps left by older installs.
+   *
+   * Supply-chain decision: fetch the lockfile's resolved commit, rather than re-resolving its human-readable ref.
+   * A tag can move; reinstall means re-materialize the exact bytes already approved, while Update remains the
+   * explicit door for resolving newer bytes. We restore the original source spec in provenance so the next Update
+   * still tracks the same ref; the drawer separately displays the concrete resolved commit.
+   *
+   * Availability decision: this goes straight through applyInstall. It never removes the existing plugin first;
+   * applyInstall stages and verifies the payload before promotion and activates settings last, so a resolve,
+   * preflight, provision, or consent failure leaves the existing Claude/Codex enforcement in place.
+   */
+  private async previewReinstallOp(ws: WorkspaceGitPresentationTarget, name: string, io: PanelIO): Promise<void> {
+    const entry = this.lockfile(ws)?.plugins[name];
+    if (!entry?.source) { io.postResult(false, `'${name}' has no recorded source to reinstall.`); return; }
+    const pinnedSpec = sourceSpecAtCommit(entry.source.spec, entry.source.resolvedCommit);
+    io.postBusy(`Resolving ${entry.source.resolvedCommit.slice(0, 12)}…`);
+    let loaded;
+    try {
+      loaded = await loadPluginFromSource(pinnedSpec, this.gitRun(ws));
+    } catch (e) {
+      io.postResult(false, `Could not resolve '${entry.source.spec}' at ${entry.source.resolvedCommit.slice(0, 12)}: ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    if (!loaded.plugin || !loaded.provenance) {
+      io.postResult(false, `Could not load '${entry.source.spec}' at ${entry.source.resolvedCommit.slice(0, 12)}: ${loaded.errors.join("; ")}`);
+      return;
+    }
+    // Keep the update-facing spec/ref, but retain the freshly verified integrity and exact commit.
+    const provenance: InstallProvenance = { ...loaded.provenance, source: entry.source };
+    const present = detectRuntimes(ws.workspaceRoot);
+    const target = new Set(loaded.plugin.manifest.runtimes);
+    const gitState = await this.gitState(ws, loaded.plugin);
+    const toolPlan = await this.toolPlan(loaded.plugin);
+    const dataPlan = Object.keys(loaded.plugin.manifest.data).length > 0 ? await gatherDataPlan(loaded.plugin) : undefined;
+    const preview = previewInstall(loaded.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
+    io.setPending({ kind: "install", plugin: loaded.plugin, preview, provenance, reinstall: true });
+    io.postConsent(buildReinstallConsent(preview, provenance, present));
+  }
+
   /**
    * spec 285 — the ASSISTED INSTALL of an external tool: a privileged, consent-gated terminal action. Builds the
    * host-PM install argv (validated), shows a strong modal ack (runs the system package manager, possibly as root;
@@ -366,7 +414,7 @@ export class PluginsPanelManager {
     const dataPlan = Object.keys(op.plugin.manifest.data).length > 0 ? await gatherDataPlan(op.plugin) : undefined;
     const preview = previewInstall(op.plugin, ws.workspaceRoot, target, gitState, toolPlan, dataPlan);
     io.setPending({ ...op, preview });
-    io.postConsent(buildInstallConsent(preview, op.provenance, present));
+    io.postConsent(op.reinstall ? buildReinstallConsent(preview, op.provenance, present) : buildInstallConsent(preview, op.provenance, present));
   }
 
   /** spec 264 — gather the (async) git-hook state for a plugin that ships git-hooks; undefined otherwise. The
@@ -464,7 +512,8 @@ export class PluginsPanelManager {
       // fingerprint that was just verified), NOT detectRuntimes.
       const r = await applyInstall(op.plugin, op.preview, ws.workspaceRoot, new Set(op.preview.targetRuntimes), { provenance: op.provenance, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)), git: this.gitRun(ws) });
       const into = r.runtimes.length > 0 ? ` into ${r.runtimes.join(", ")}` : "";
-      io.postResult(r.installed, r.installed ? `Installed ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
+      const verb = op.reinstall ? "Reinstalled" : "Installed";
+      io.postResult(r.installed, r.installed ? `${verb} ${op.plugin.manifest.name}${into}.` : r.errors.join("; "));
       // spec 270 — a configurable plugin: take the human straight to its config right after a successful install.
       if (r.installed) await this.openConfigFile(ws, op.plugin.manifest.name);
     } else if (op.kind === "update") {
