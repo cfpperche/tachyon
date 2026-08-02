@@ -18,6 +18,7 @@ export { openingPromptCapability, resolveBinary } from "../agents/openingPromptC
 import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
 import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 
@@ -476,6 +477,16 @@ export interface TachyonConfig {
     anchor?: { auto?: boolean };
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
     bridgeGuidance?: boolean;
+    /**
+     * t-09edf2 — the workspace's explicit statement about installed-plugin hooks reaching an agent's own
+     * session: plugin name → the class the human assigns it. ONLY `enforcement` is projected, and only on
+     * gate events (`PreToolUse`); every other class and every unclassified plugin projects nothing.
+     *
+     * This key exists because the standing ruling is that an agent in its own worktree inherits workspace
+     * configuration only when the human says so. Naming the plugin here IS that statement — which is why
+     * absence means "not projected" rather than "projected by default".
+     */
+    agentHookProjection?: Record<string, ProjectedHookClass>;
     /** spec 219 — clean clipboard copy: "auto" (default) wires a UTF-8 copy-mode helper; "off" leaves OSC 52 */
     clipboard?: "auto" | "off";
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
@@ -1765,6 +1776,25 @@ export function parseConfig(yamlText: string): ParseResult {
         if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") errors.push("settings.clipboard: must be 'auto' or 'off'");
         else settings.clipboard = raw.settings.clipboard;
       }
+      if (raw.settings.agentHookProjection !== undefined) {
+        // t-09edf2 — refused, never partially accepted: this key decides whether a gate reaches an agent
+        // session, and a half-parsed policy would silently drop the plugin the human named.
+        if (!isPlainObject(raw.settings.agentHookProjection)) {
+          errors.push("settings.agentHookProjection: must be a mapping of plugin name → hook class");
+        } else {
+          const out: Record<string, ProjectedHookClass> = {};
+          let sound = true;
+          for (const [plugin, value] of Object.entries(raw.settings.agentHookProjection)) {
+            if (!AGENT_HOOK_PROJECTION_CLASSES.includes(value as ProjectedHookClass)) {
+              errors.push(`settings.agentHookProjection.${plugin}: must be one of ${AGENT_HOOK_PROJECTION_CLASSES.join(", ")}`);
+              sound = false;
+              continue;
+            }
+            out[plugin] = value as ProjectedHookClass;
+          }
+          if (sound && Object.keys(out).length > 0) settings.agentHookProjection = out;
+        }
+      }
       if (raw.settings.handoff !== undefined) {
         if (!isPlainObject(raw.settings.handoff)) {
           errors.push("settings.handoff: must be a mapping with 'path'");
@@ -1896,7 +1926,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "agentHookProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }

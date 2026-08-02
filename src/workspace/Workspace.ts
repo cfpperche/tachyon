@@ -255,7 +255,8 @@ import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
 import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
 import { agentLogId } from "../activity/logStore.js";
-import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile } from "../activity/sessionOwners.js";
+import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
+import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
 import { writePrivateFileAtomic } from "../agents/derivedFile.js";
 import {
@@ -1020,12 +1021,16 @@ export class Workspace {
               cwd: opts?.cwd ?? this.workspaceRoot,
               configHome: opts?.configHome,
             }),
+          ...this.projectedSessionHooks("claude", name),
         },
       ), // spec 245/312
       materializeCodexSessionStartHookConfig: (name, opts) => this.harness.materializeCodexSessionStartHookConfig(
         name,
         opts?.ownershipOnly ? undefined : this.handoffStore.canonicalPath,
-        { silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name) },
+        {
+          silentPersistence: !opts?.ownershipOnly && this.silentPersistenceHooksDesired(name),
+          ...this.projectedSessionHooks("codex", name),
+        },
       ), // spec 303/312
       onSessionHooksInjected: (name, injected) => {
         const active = injected && this.silentPersistenceHooksDesired(name);
@@ -3985,6 +3990,37 @@ export class Workspace {
     if (!def || managesOwnSession(def.cmd)) return false;
     const binary = binaryOf(def.cmd);
     return binary === "claude" || binary === "codex";
+  }
+
+  /**
+   * t-09edf2 — the workspace's projected `enforcement` gate hooks for one about-to-spawn session.
+   *
+   * Recomputed on EVERY door (create, restart, resume, fork) because both callers run on every spawn:
+   * there is no cached plan that could go stale, and a plugin installed or reclassified between two
+   * spawns is picked up by the next one without touching the live session it cannot safely reach.
+   *
+   * Reads the AUTHORITY lockfile (`this.workspaceRoot`), never the agent's cwd — which is the whole
+   * point for a delegated worktree, and why crash-recovery reproduces the same projection instead of
+   * importing whatever settings happen to sit in the directory it woke up in.
+   */
+  private projectedSessionHooks(runtime: string, agent: string): { projectedHooks?: Record<string, OwnershipHookGroup[]> } {
+    const policy = this.config?.settings.agentHookProjection;
+    if (!policy || Object.keys(policy).length === 0) return {};
+    const plan = planProjectedPluginHooks({
+      plugins: readHookProjectionCandidates(this.workspaceRoot),
+      runtime,
+      policy,
+    });
+    // Only what the human ASKED for and did not get is worth a toast. An unclassified plugin is the
+    // default state, not an incident, and reporting all thirteen of them on every spawn would train the
+    // reader to ignore the line that matters.
+    for (const entry of plan.withheld.filter((withheldEntry) => policy[withheldEntry.plugin] !== undefined)) {
+      this.host.notify(
+        this.t("agent '{0}': plugin '{1}' hooks were not projected into its session — {2}", agent, entry.plugin, entry.reason),
+        "warn",
+      );
+    }
+    return Object.keys(plan.hooks).length > 0 ? { projectedHooks: plan.hooks } : {};
   }
 
   private silentPersistenceHookStatePath(): string {

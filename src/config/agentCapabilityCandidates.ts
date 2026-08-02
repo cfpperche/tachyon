@@ -57,6 +57,12 @@ export interface AuthorizablePlugin {
   /**
    * Target kinds this plugin also exposes that no capability grant can currently carry —
    * `settings-hook`, `view`. Present so the refusal can name them.
+   *
+   * t-09edf2 — "no GRANT can carry it" is not the same as "it never reaches an agent". A plugin's
+   * `settings-hook` may still be projected into every session of a runtime through
+   * `plugins/agentHookProjection.ts`, when the workspace classifies the plugin `enforcement` in
+   * `settings.agentHookProjection`. That is a workspace-wide decision about a GATE, deliberately not a
+   * per-agent capability, so it does not make this plugin authorizable here.
    */
   ungrantableKinds: string[];
   /** False when this plugin cannot be authorized for this agent; `reason` says why. */

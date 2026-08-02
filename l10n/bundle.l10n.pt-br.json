@@ -642,5 +642,6 @@
   "Tachyon wrote {0} setting(s) you had in VS Code into {1} ({2}) — review it before committing.": "O Tachyon escreveu {0} configuração(ões) que você tinha no VS Code em {1} ({2}) — revise antes de commitar.",
   "The Tachyon agent pane is turned off in Tachyon settings — the integrated terminal is still available from the sidebar.": "O painel de agente do Tachyon está desligado nas configurações do Tachyon — o terminal integrado continua disponível pela sidebar.",
   "Tachyon settings were refused and the last known good is in use: {0}": "As configurações do Tachyon foram recusadas e a última versão válida está em uso: {0}",
-  "Could not open Tachyon settings: {0}": "Não foi possível abrir as configurações do Tachyon: {0}"
+  "Could not open Tachyon settings: {0}": "Não foi possível abrir as configurações do Tachyon: {0}",
+  "agent '{0}': plugin '{1}' hooks were not projected into its session — {2}": "agente '{0}': os hooks do plugin '{1}' não foram projetados na sessão dele — {2}"
 }

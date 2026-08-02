@@ -22,6 +22,19 @@ settings:
   # a fleet that parks work on purpose (a mark that is always on has stopped being a signal).
   humanInbox:
     staleAfterHours: 24
+  # t-09edf2 — which installed plugins' hooks reach an AGENT'S OWN session, named one by one.
+  #
+  # An agent in its own worktree inherits nothing from the workspace unless you say so, and this key is
+  # how you say so for a plugin's PreToolUse gate. It exists because `secrets-guard`'s layer 2 (the
+  # shape-gate that refuses `git commit --no-verify`) lives in `.claude/settings.json` /
+  # `.codex/hooks.json` of THIS checkout — files a delegated worktree does not have, and that a Claude
+  # agent running with `--setting-sources user` would not read even if it did. Layer 1 (pre-commit +
+  # gitleaks) is unaffected: it rides `core.hooksPath`, which every worktree already shares.
+  #
+  # Only `enforcement` is projected, and only on gate events (`PreToolUse`) — classification buys
+  # refusal, never reach: a listed plugin still cannot push prompt text or a capability into a session.
+  agentHookProjection:
+    secrets-guard: enforcement
   # t-585d5c — how long a parented agent may sit idle before Tachyon nudges its parent. MINUTES.
   # Default 10, which is slow for a release cut or a wide parallel squad; lower it when you are
   # watching several children at once. `never` turns the nudge off; `0` is refused, because it reads

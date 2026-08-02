@@ -43,6 +43,7 @@ import {
   SESSION_CONTINUITY_POINTER_SOURCE,
   SESSION_HANDOFF_POINTER_SOURCE,
   SESSION_OWNER_RECORDER_SOURCE,
+  type OwnershipHookGroup,
 } from "../activity/sessionOwners.js";
 import { renderCodexMcpBlock } from "../plugins/adapters/codex.js";
 import { setCodexMcpServer, setOpencodeMcpServer, expectedAgentOpencodeEntry } from "../registration/adapters.js";
@@ -3015,6 +3016,8 @@ export class HarnessManager {
       silentPersistence?: boolean;
       skipDangerousModePermissionPrompt?: boolean;
       statusLine?: { type: "command"; command: string; padding?: number };
+      /** t-09edf2 — the workspace's projected `enforcement` gate hooks for this session. */
+      projectedHooks?: Record<string, OwnershipHookGroup[]>;
     } = {},
   ): string {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
@@ -3049,6 +3052,7 @@ export class HarnessManager {
     const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {
       skipDangerousModePermissionPrompt: opts.skipDangerousModePermissionPrompt,
       statusLine: opts.statusLine,
+      ...(opts.projectedHooks ? { projectedHooks: opts.projectedHooks } : {}),
     });
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -3060,7 +3064,15 @@ export class HarnessManager {
    * spec 303 — Codex has native lifecycle hooks, but no Claude-style `--settings` file layer. Inject
    * session-scoped `-c key=value` overrides instead; Codex merges them with workspace/user hooks.
    */
-  materializeCodexSessionStartHookConfig(agent: string, handoffPath?: string, opts: { silentPersistence?: boolean } = {}): string | string[] {
+  materializeCodexSessionStartHookConfig(
+    agent: string,
+    handoffPath?: string,
+    opts: {
+      silentPersistence?: boolean;
+      /** t-09edf2 — the workspace's projected `enforcement` gate hooks for this session. */
+      projectedHooks?: Record<string, OwnershipHookGroup[]>;
+    } = {},
+  ): string | string[] {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
@@ -3084,7 +3096,7 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
-    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks);
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

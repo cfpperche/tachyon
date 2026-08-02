@@ -17,6 +17,17 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+/**
+ * One hook group as both runtimes model it. Shaped identically to `plugins/adapters/hooks.ts`'s
+ * `HookGroup` on purpose — that module owns validation of untrusted blocks, this one only renders what
+ * has already been validated, and duplicating the field list here keeps the activity layer from
+ * importing the plugin engine.
+ */
+export interface OwnershipHookGroup {
+  matcher?: string;
+  hooks: { type: string; command: string; statusMessage?: string }[];
+}
+
 export interface OwnerRow {
   agent: string;
   sessionId: string;
@@ -357,8 +368,25 @@ function q(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
+/**
+ * A TOML basic string. Control characters are ESCAPED rather than passed through: a `-c key=value`
+ * override is parsed as TOML, and a raw newline inside a quoted value would end the value and hand the
+ * remainder to Codex as config of its own. Tachyon's own commands never contain one; a projected plugin
+ * hook command (t-09edf2) comes from the lockfile, so this is the boundary that must not assume.
+ */
 function tomlString(s: string): string {
-  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  let out = '"';
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (ch === "\\") out += "\\\\";
+    else if (ch === '"') out += '\\"';
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else if (code < 0x20 || code === 0x7f) out += `\\u${code.toString(16).padStart(4, "0")}`;
+    else out += ch;
+  }
+  return `${out}"`;
 }
 
 const PERSISTENCE_LEDGER_RETENTION_SOURCE = `const PERSISTENCE_LEDGER_MAX_ROWS = 2000;
@@ -426,9 +454,16 @@ export function buildOwnershipSettings(
   opts: {
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
+    /**
+     * t-09edf2 — event → groups the workspace deliberately projects into THIS session (an installed
+     * plugin's `enforcement` gate hook). Merged alongside the lifecycle hooks rather than through them:
+     * `--settings` is an additive layer, so this is the one channel every Claude agent reads on every
+     * door — including a delegated worktree whose cwd has no `.claude/` tree at all.
+     */
+    projectedHooks?: Record<string, OwnershipHookGroup[]>;
   } = {},
 ): {
-  hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
+  hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
   skipDangerousModePermissionPrompt?: boolean;
   statusLine?: { type: "command"; command: string; padding?: number };
 } {
@@ -440,7 +475,7 @@ export function buildOwnershipSettings(
   if (pointer) hooks.push({ type: "command", command: `node ${q(pointer.pointerPath)} ${q(pointer.handoffPath)}${pointerFailureArgs}` });
   if (persistence) hooks.push({ type: "command", command: `node ${q(persistence.continuityPointerPath)} ${q(agent)} ${q(persistence.continuityPath)} ${q(persistence.failureFile)}` });
   const settings: {
-    hooks: { SessionStart: { matcher?: string; hooks: { type: string; command: string }[] }[]; Stop?: { matcher?: string; hooks: { type: string; command: string }[] }[] };
+    hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
   } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
@@ -448,6 +483,12 @@ export function buildOwnershipSettings(
   if (opts.statusLine) settings.statusLine = { ...opts.statusLine };
   if (persistence) {
     settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` }] }];
+  }
+  // t-09edf2 — projected gate hooks land on their OWN events; SessionStart/Stop are Tachyon's lifecycle
+  // channel and are never merged into, so a policy change can neither displace nor duplicate ownership.
+  for (const [event, groups] of Object.entries(opts.projectedHooks ?? {}).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) {
+    if (event === "SessionStart" || event === "Stop" || groups.length === 0) continue;
+    settings.hooks[event] = [...(settings.hooks[event] ?? []), ...groups];
   }
   return settings;
 }
@@ -460,6 +501,13 @@ export function buildCodexSessionStartHookConfig(
   ownersFile: string,
   pointer?: { pointerPath: string; handoffPath: string },
   persistence?: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string },
+  /**
+   * t-09edf2 — event → groups the workspace deliberately projects into THIS session. Codex has no
+   * `--settings` layer, so its equivalent channel is one more `-c hooks.<Event>=[…]` override on the
+   * same argv that already carries the lifecycle hooks (and is already covered by the scoped
+   * `--dangerously-bypass-hook-trust`). Reaches a delegated worktree, which has no `.codex/hooks.json`.
+   */
+  projectedHooks?: Record<string, OwnershipHookGroup[]>,
 ): string | string[] {
   const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
@@ -480,9 +528,32 @@ export function buildCodexSessionStartHookConfig(
     startEntries.push(`{matcher="startup|resume|clear",hooks=[${pointerHooks.join(",")}]}`);
   }
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
-  if (!persistence) return start;
+  const projected = renderCodexProjectedHookConfig(projectedHooks);
+  if (!persistence) return projected.length > 0 ? [start, ...projected] : start;
   const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
-  return [start, stop];
+  return [start, stop, ...projected];
+}
+
+/**
+ * Render each projected event as its own `-c hooks.<Event>=[…]` override.
+ *
+ * SessionStart/Stop are skipped for the same reason they are on the Claude side: those two are
+ * Tachyon's lifecycle channel, and a `-c` override of the same key would REPLACE the ownership hooks
+ * rather than join them, silently turning Activity off to install a gate.
+ */
+function renderCodexProjectedHookConfig(projectedHooks?: Record<string, OwnershipHookGroup[]>): string[] {
+  const out: string[] = [];
+  for (const [event, groups] of Object.entries(projectedHooks ?? {}).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))) {
+    if (event === "SessionStart" || event === "Stop" || groups.length === 0) continue;
+    const rendered = groups.map((group) => {
+      const commands = group.hooks.map((hook) =>
+        `{type=${tomlString(hook.type)},command=${tomlString(hook.command)}${hook.statusMessage === undefined ? "" : `,statusMessage=${tomlString(hook.statusMessage)}`}}`);
+      const matcher = group.matcher === undefined ? "" : `matcher=${tomlString(group.matcher)},`;
+      return `{${matcher}hooks=[${commands.join(",")}]}`;
+    });
+    out.push(`hooks.${event}=[${rendered.join(",")}]`);
+  }
+  return out;
 }
 
 /** The standalone recorder. Reads the SessionStart hook payload on stdin and appends ONE ownership row.

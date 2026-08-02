@@ -449,6 +449,24 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).errors.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
   });
 
+  // t-09edf2 — settings.agentHookProjection: which installed plugins' hooks reach an agent's own session
+  it("parses settings.agentHookProjection as plugin name → hook class", () => {
+    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: claude\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    watcher: observability\n`);
+    expect(errors).toEqual([]);
+    expect(config?.settings.agentHookProjection).toEqual({ "secrets-guard": "enforcement", watcher: "observability" });
+  });
+  it("refuses an unknown hook class WHOLE rather than keeping the entries it understood", () => {
+    // Half a policy is the failure mode this key exists to prevent: the human would read a green load as
+    // "the gate is on" while the plugin they typo'd projects nothing.
+    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    other: gate\n`);
+    expect(errors.some((e) => e.includes("agentHookProjection.other: must be one of"))).toBe(true);
+    expect(config?.settings.agentHookProjection).toBeUndefined();
+  });
+  it("rejects a non-mapping settings.agentHookProjection", () => {
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection: enforcement\n`)
+      .errors.some((e) => e.includes("agentHookProjection: must be a mapping"))).toBe(true);
+  });
+
   // spec 219 — settings.clipboard enum
   it("parses settings.clipboard auto/off and rejects other values", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: auto\n`).config?.settings.clipboard).toBe("auto");
