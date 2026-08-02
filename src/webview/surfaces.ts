@@ -44,6 +44,8 @@ export interface WebviewSurface {
 }
 
 export const WEBVIEW_SURFACES: WebviewSurface[] = [
+  // t-6e2952 — Control launcher (first sidebar tab): phone grid that opens Control sections via openCockpit.
+  { viewId: "tachyonControlLauncher", view: "control-launcher", hostFile: "src/webview/ControlLauncherProvider.ts", mode: "live", converted: true, editorHome: "sidebar" },
   // already preact (the 5 that established the convention)
   { viewId: "tachyonSidebar", view: "sidebar", hostFile: "src/webview/SidebarPrototype.ts", mode: "live", converted: true, editorHome: "sidebar" },
   // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Activity panel was retired: it's a

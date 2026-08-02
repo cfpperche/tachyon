@@ -35,6 +35,8 @@ import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { ControlLauncherProvider } from "./webview/ControlLauncherProvider.js";
+import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -2359,6 +2361,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
+  // t-6e2952 — Control launcher is the FIRST sidebar view (package.json views order); fleet + plugins follow.
+  const controlLauncher = new ControlLauncherProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(ControlLauncherProvider.viewType, controlLauncher, {
+      webviewOptions: { retainContextWhenHidden: true },
+    }),
+  );
   // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
@@ -2596,8 +2605,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
     vscode.commands.registerCommand("tachyon.inspectServer", () => openCockpit(makeCockpitDeps(), { section: "tmux" })),
-    // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; sidebar header button + palette ----
-    vscode.commands.registerCommand("tachyon.openControl", () => openCockpit(makeCockpitDeps())),
+    // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; palette + launcher tiles ----
+    // t-6e2952 — optional section opens/navigates the singleton Control (no second panel). The
+    // sidebar header view/title button was removed; the launcher tab is the primary door.
+    vscode.commands.registerCommand("tachyon.openControl", (section?: unknown) => {
+      if (typeof section === "string" && section.trim()) {
+        return openCockpit(makeCockpitDeps(), { section: resolveCockpitSection(section) });
+      }
+      return openCockpit(makeCockpitDeps());
+    }),
     // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
