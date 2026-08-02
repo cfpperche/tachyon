@@ -103,6 +103,21 @@ export const codexSessionReader: RuntimeSessionReader = {
         hostAuthored: entry.key.startsWith(HOST_AUTHORED_PREFIX),
       }));
 
+    // t-aaa2c6 — a delegated child now receives `approval_policy`, `sandbox_mode` and the Bridge's
+    // MCP tool-approval mode as `-c` overrides, which is the same channel the hooks already ride.
+    // Reading only the file would render those keys as "not delivered to this agent" while the
+    // session is demonstrably running under them — the precise lie this panel exists to end. An
+    // override also WINS over the file, so it replaces the row rather than adding a second one.
+    for (const override of overrides) {
+      for (const entry of flattenConfig(override)) {
+        if (entry.key.startsWith("hooks.") || isLedgerKey(entry.key)) continue;
+        const existing = settings.findIndex((setting) => setting.key === entry.key);
+        const row: FoundSetting = { key: entry.key, value: entry.value, hostAuthored: false };
+        if (existing >= 0) settings[existing] = row;
+        else settings.push(row);
+      }
+    }
+
     const realHome = env?.HOME ?? process.env.HOME;
     const globalKeys = realHome
       ? flattenConfig(readToml(path.join(realHome, ".codex", "config.toml")) ?? {})

@@ -434,15 +434,31 @@
         },
         "agentPermissionProjection": {
           "type": "object",
-          "description": "Opt-in permission mode projected into one named managed agent. Absence preserves the runtime default. Currently only Grok is supported.",
+          "description": "Opt-in permission posture projected into one named managed agent. Absence preserves the runtime/class default. Grok takes one --permission-mode word; Codex takes one key per measured door (command approval, write sandbox, Bridge MCP tool approval).",
           "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["runtime", "mode"],
-            "properties": {
-              "runtime": { "const": "grok" },
-              "mode": { "type": "string", "enum": ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] }
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["runtime", "mode"],
+                "properties": {
+                  "runtime": { "const": "grok" },
+                  "mode": { "type": "string", "enum": ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["runtime"],
+                "minProperties": 2,
+                "properties": {
+                  "runtime": { "const": "codex" },
+                  "approvalPolicy": { "type": "string", "enum": ["untrusted", "on-failure", "on-request", "never"] },
+                  "sandboxMode": { "type": "string", "enum": ["read-only", "workspace-write", "danger-full-access"] },
+                  "bridgeToolApproval": { "type": "string", "enum": ["auto", "prompt", "writes", "approve"] }
+                }
+              }
+            ]
           }
         },
         "projectGuidance": {

@@ -62,7 +62,9 @@ export function quickAddChips(detected: string[]): QuickAddChip[] {
 /** Per-runtime flag suggestions shown as toggle chips under the command field. */
 export const FLAG_SUGGESTIONS: Record<string, string[]> = {
   claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"],
-  codex: ["--yolo", "--model", "--full-auto"],
+  // t-aaa2c6 — `--full-auto` is rejected by codex-cli 0.146.0 ("unexpected argument"); suggesting it
+  // handed the human a command that cannot launch. `--sandbox` is what that chip was reaching for.
+  codex: ["--yolo", "--model", "--sandbox"],
   agy: ["--dangerously-skip-permissions", "--model", "--sandbox", "--continue"],
   gemini: ["--yolo"],
   opencode: [],

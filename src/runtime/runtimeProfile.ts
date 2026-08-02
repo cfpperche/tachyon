@@ -351,13 +351,28 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "sandbox_mode:read-only",
         "sandbox_mode:workspace-write",
         "sandbox_mode:danger-full-access",
+        // t-aaa2c6 — the third door, per MCP server, measured separately from approval_policy.
+        "mcp_tool_approval:auto",
+        "mcp_tool_approval:prompt",
+        "mcp_tool_approval:writes",
+        "mcp_tool_approval:approve",
       ],
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-25",
+      verifiedAt: "2026-08-02",
       notes:
         "Canonical profiles regenerate the selected approval_policy and sandbox_mode in private CODEX_HOME/config.toml on fresh/restart/resume " +
-        "(t-1a3d50). Codex CLI 0.145.0 accepted every declared key/value under --strict-config. This does not apply a policy to legacy arbitrary commands.",
+        "(t-1a3d50). Codex CLI 0.145.0 accepted every declared key/value under --strict-config. This does not apply a policy to legacy arbitrary commands. " +
+        "t-aaa2c6 measured codex-cli 0.146.0 and found THREE independent approval doors, not one: approval_policy is COMMAND approval; sandbox_mode is the " +
+        "WRITE door (under workspace-write, `git add` in a Tachyon worktree fails on <repo>/.git/worktrees/<agent>/index.lock, because the worktree's git " +
+        "directory sits outside its own cwd); and mcp_servers.<server>.default_tools_approval_mode (auto|prompt|writes|approve) is MCP TOOL approval, which " +
+        "approval_policy at its default does NOT cover — a read-only Bridge-shaped tool still stopped at 'Allow the <server> MCP server to run tool …?' until " +
+        "that per-server key was set to approve. t-aaa2c6 projects all three by CLASS for a delegated child only; top-level absence preserves Codex's defaults, " +
+        "an authored profile's own approval_policy/sandbox_mode is never widened, and no value is inherited from the environment. " +
+        "NOT governed by any of them: the startup directory-trust prompt, which is exact-path `projects.\"<path>\".trust_level` (measured: NOT prefix-inherited) " +
+        "and is already written for canonical Codex homes; and third-party MCP servers, which keep Codex's default posture because Tachyon does not vouch for them. " +
+        "Measured on the same build: `--full-auto` is REJECTED (\"unexpected argument\"), while `--yolo` still parses although --help documents neither; " +
+        "the documented one-token form is --dangerously-bypass-approvals-and-sandbox. What --yolo grants was not measured and is not relied on here.",
     },
     composer: {
       tailLines: 8,

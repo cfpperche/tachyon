@@ -81,7 +81,9 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.composer?.promptLine?.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);
-    expect(profile?.permission).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
+    expect(profile?.permission).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-08-02" });
+    // t-aaa2c6 — Codex's posture is THREE doors, and the profile has to say all three or the next
+    // reader derives the missing one by analogy, which is how this defect was built.
     expect(profile?.permission?.modes).toEqual([
       "approval_policy:untrusted",
       "approval_policy:on-failure",
@@ -90,8 +92,13 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       "sandbox_mode:read-only",
       "sandbox_mode:workspace-write",
       "sandbox_mode:danger-full-access",
+      "mcp_tool_approval:auto",
+      "mcp_tool_approval:prompt",
+      "mcp_tool_approval:writes",
+      "mcp_tool_approval:approve",
     ]);
     expect(profile?.permission?.notes).toContain("private CODEX_HOME/config.toml");
+    expect(profile?.permission?.notes).toContain("default_tools_approval_mode");
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 
