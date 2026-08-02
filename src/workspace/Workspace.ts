@@ -279,6 +279,12 @@ import { BridgeSlowRequestToastPolicy } from "./bridgeSlowRequestPolicy.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
 import { hostActionTouchesHostUi } from "../externalTools/filters.js";
 import type { ClaudeStatusLineCaptureTransport } from "../runtimeObservability/claudeStatusLineCapture.js";
+import {
+  projectRuntimeCondition,
+  type RuntimeConditionInputV1,
+  type RuntimeConditionReportV1,
+} from "../runtimeOps/runtimeCondition.js";
+import { RuntimeSlackMonitor } from "./RuntimeSlackMonitor.js";
 
 const ATTENTION_POLL_MS = 3000;
 
@@ -362,6 +368,16 @@ export interface WorkspaceDeps {
   onHumanValidationPending?: (ws: Workspace, validation: { id: string; title: string; author: string }) => void;
   /** Optional extension-global Claude quota transport. It remains inert unless machine-local consent enables it. */
   claudeStatusLineCapture?: Pick<ClaudeStatusLineCaptureTransport, "materialize">;
+  /**
+   * t-458497 — the CACHED provider-observation state the runtime-condition projection reads.
+   *
+   * A synchronous accessor by contract: it hands over what the observation service already holds and
+   * must never collect, because both consumers (the `runtime_condition` Bridge tool and the slack
+   * doorbell) run on paths where starting a runtime process to answer would be a new measurement.
+   * Absent when no observation service is wired — the projection then reports the quota channel as
+   * `unknown` rather than claiming the runtimes have none.
+   */
+  runtimeQuotaObservations?: () => Omit<RuntimeConditionInputV1, "generatedAt">;
   /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
   piBridgeExtensionPath?: string;
   /**
@@ -534,6 +550,8 @@ export class Workspace {
   private readonly temporaryBackstop: TemporaryBackstopMonitor;
   /** t-875700 — host-fallback for gated omit-doorbell. */
   private readonly gatedCompletion: GatedCompletionMonitor;
+  /** t-458497 — pokes the coordinator when a runtime's quota window comes back with room. */
+  private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
   private readonly completionHints = new CompletionHintStore();
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
@@ -1454,6 +1472,15 @@ export class Workspace {
       () => idleNotifyThresholdMs(this.config?.settings.agentNotifications?.idleAfterMinutes),
     );
 
+    // t-458497 — the doorbell half of runtime condition. It reads the SAME projection the
+    // `runtime_condition` Bridge tool answers from, so what an agent is told and what it can ask
+    // cannot drift into two accounts of one runtime.
+    this.runtimeSlack = new RuntimeSlackMonitor({
+      condition: () => this.runtimeCondition(),
+      listEntries: () => this.manager.list(),
+      deliverNotice: (agent, line, metadata) => this.deliverNotice(agent, line, metadata),
+    });
+
     this.gatedCompletion = new GatedCompletionMonitor({
       listGatedFacts: () => this.listGatedCompletionFacts(),
       listEntries: () => this.manager.list(),
@@ -2028,6 +2055,9 @@ export class Workspace {
         // t-0bebf6 — the fifth exit on the idle poke. It answers the SAME monitor that authored the
         // line, so the acknowledgement and the notice cannot drift into two views of one child.
         acknowledgeIdlePoke: (agent) => this.temporaryBackstop.acknowledge(agent),
+        // t-458497 — the read door onto runtime condition. Same projection the slack doorbell speaks
+        // from, so the answer to "can I delegate to claude?" is one fact with two ways in.
+        runtimeCondition: () => this.runtimeCondition(),
         continueTask: (input) => this.continueTaskAcrossRuntime(input),
         // spec 230 — a pipeline node signals completion (per-node nonce auth).
         completeNode: (input) => this.pipelines.completeSignal(input),
@@ -4412,6 +4442,20 @@ export class Workspace {
   }
 
   /** t-fb1453 — `origin` is a parameter with no default on purpose: see NoticeQueue's ChildBoundNoticeMetadata. */
+  /**
+   * t-458497 — the derived two-axis runtime condition, from cached state only.
+   *
+   * One accessor for both doors (the Bridge tool and the slack doorbell). Cheap enough to call on the
+   * heartbeat: it reads registries that are frozen at module load plus the observation service's
+   * already-collected snapshot, and starts nothing.
+   */
+  runtimeCondition(): RuntimeConditionReportV1 {
+    return projectRuntimeCondition({
+      generatedAt: new Date().toISOString(),
+      ...(this.deps.runtimeQuotaObservations?.() ?? {}),
+    });
+  }
+
   private sourceNoticeMetadata(agent: string, origin: NoticeOrigin): NoticeQueueMetadata {
     return { origin, sourceChild: agent, sourceIncarnation: this.agentIncarnations.get(agent) };
   }
@@ -5686,6 +5730,7 @@ export class Workspace {
     this.scheduler.tick(); // fires anything due (workspace-open scope)
     await this.monitor.tick();
     await this.temporaryBackstop.tick();
+    await this.runtimeSlack.tick().catch(() => undefined);
     await this.gatedCompletion.tick().catch(() => undefined);
     // States with durations ("idle 2m") need periodic re-render even without transitions.
     this.refreshAgentsViews();

@@ -338,8 +338,17 @@ export async function startDaemonEngineService(
         onPreferenceChanged: (provider) => claudeStatusLineCapture.clearProvider(provider),
       },
     );
+    const observationsForCondition = providerObservations;
     workspace = await Workspace.createDaemon(canonicalRoot, {
       host,
+      // t-458497 — the cached provider-observation state the runtime-condition projection reads. The
+      // channel inventory comes from the sources registered just above, so "grok has no quota
+      // channel" is the ABSENCE of a grok source here rather than a name written down somewhere.
+      runtimeQuotaObservations: () => ({
+        channels: observationsForCondition.describeChannels(),
+        preferences: providerPreferences.all(),
+        observations: observationsForCondition.snapshot(),
+      }),
       onViewsChanged: (view) => host.onViewsChanged(view),
       onApprovalRequested: (approvalWorkspace, request) => {
         routeHumanApprovalRequest(host, approvalWorkspace.wsHash, request);

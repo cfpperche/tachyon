@@ -11,6 +11,7 @@ import type {
 import {
   PROVIDER_QUOTA_READ_CAPABILITY,
   type ProviderObservationSource,
+  type ProviderQuotaChannelV1,
 } from "./source.js";
 import {
   ProviderObservationPreferences,
@@ -61,6 +62,16 @@ export interface ProviderObservationServiceOptions {
   staleAfterMs?: number;
   /** Revoke passive capture and remove reduced observations when a grant changes or is disabled. */
   onPreferenceChanged?: (provider: RuntimeObservabilityProviderV1) => void | Promise<void>;
+}
+
+/**
+ * t-458497 — one registered source, described. A provider ABSENT from this list has no quota channel
+ * at all, which is a fact this service can state and no table of runtime names can.
+ */
+export interface ProviderQuotaChannelDescriptorV1 {
+  provider: RuntimeObservabilityProviderV1;
+  source: ProviderSourceKindV1;
+  channel: ProviderQuotaChannelV1;
 }
 
 export interface ProviderObservationChangeV1 {
@@ -183,6 +194,23 @@ export class ProviderObservationService {
     return preference
       ? unavailableEnvelope(preference.scope, "not-observed", this.timestamp(), preference.sources[0])
       : unavailableEnvelope(providerScope(provider), "source-disabled", this.timestamp());
+  }
+
+  /**
+   * t-458497 — the quota channels this host actually has, derived from the sources handed to the
+   * constructor.
+   *
+   * Deliberately NOT a list of provider names: the wiring in `engineService` decides what exists, and
+   * a reader asking "does Grok have a quota channel?" gets its answer from the absence of a Grok
+   * source here rather than from a table that would have to remember to say no. Order is the
+   * registration order, which is also the order the constructor rejected duplicates in.
+   */
+  describeChannels(): ProviderQuotaChannelDescriptorV1[] {
+    return [...this.sources.values()].map((source) => ({
+      provider: source.provider,
+      source: source.source,
+      channel: { ...source.channel },
+    }));
   }
 
   snapshot(): Partial<Record<RuntimeObservabilityProviderV1, CollectorEnvelopeV1>> {

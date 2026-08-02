@@ -46,6 +46,7 @@ import {
   waitOutputConcurrencyRefusalMessage,
 } from "./waitForOutput.js";
 import type { BackstopAcknowledgement } from "../workspace/TemporaryBackstopMonitor.js";
+import { NO_QUOTA_CHANNEL, type RuntimeConditionReportV1 } from "../runtimeOps/runtimeCondition.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import { composerProfileFor } from "../runtime/composerRegion.js";
@@ -449,6 +450,13 @@ export interface BridgeDeps {
    * doubling as a pre-emptive mute. Enables acknowledge_agent.
    */
   acknowledgeIdlePoke?: (agent: string) => BackstopAcknowledgement | null;
+  /**
+   * t-458497 — the derived runtime-condition projection (`projectRuntimeCondition`). Enables
+   * runtime_condition. A CACHED read by contract: it must never collect from a provider, because a
+   * Bridge tool that spawns a runtime process to answer a question is a measurement door wearing a
+   * read door's name.
+   */
+  runtimeCondition?: () => RuntimeConditionReportV1;
   /** t-7551f9 — continue unfinished task on another agent (new session + focused handoff). */
   continueTask?: (input: {
     fromAgent: string;
@@ -1938,6 +1946,44 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
           nextCheckInMinutes: receipt.nextCheckInMs === null ? null : Math.round(receipt.nextCheckInMs / 60_000),
           note: "silent until this child changes state, produces new output, or reaches the next check-in",
         }, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "runtime_condition",
+    {
+      description:
+        "What condition is each runtime in — read before deciding WHERE to send work. Answers two "
+        + "INDEPENDENT axes and never merges them: configuration/capability (is this runtime manageable, "
+        + "and how much of that was measured rather than merely documented) and capacity (how much quota "
+        + `is left right now). A runtime with no live quota source says '${NO_QUOTA_CHANNEL}' by name — it is `
+        + "never reported as zero used and never left silent, because an absence that looks like data is "
+        + "worse than an absence. A quota read off a surface rendered for a human is labelled best-effort. "
+        + "Every field carries the registry it was derived from; this tool authors no runtime list of its "
+        + "own. Purely cached: it reads what Tachyon already collected and starts no runtime process. You "
+        + "do not have to poll it — when a runtime's slack comes back, Tachyon pokes the coordinator.",
+      inputSchema: {
+        runtime: z
+          .string()
+          .max(64)
+          .optional()
+          .describe("report on one runtime only (e.g. 'claude'); omit for every runtime Tachyon knows"),
+      },
+    },
+    async ({ runtime }) => {
+      try {
+        if (!deps.runtimeCondition) return fail(new Error("runtime_condition is not available on this Bridge"));
+        const report = deps.runtimeCondition();
+        if (!runtime) return ok(JSON.stringify(report, null, 2));
+        const selected = report.runtimes.find((entry) => entry.runtime === runtime);
+        if (!selected) {
+          const known = report.runtimes.map((entry) => entry.runtime).join(", ");
+          return fail(new Error(`no runtime '${runtime}' — Tachyon knows: ${known}`));
+        }
+        return ok(JSON.stringify({ ...report, runtimes: [selected] }, null, 2));
       } catch (err) {
         return fail(err);
       }
