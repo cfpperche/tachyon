@@ -1092,11 +1092,27 @@ export class AgentManager {
   private readyAgents = new Set<string>();
   /** A launched AI runtime remains provisional until the common observation policy sees a ready affordance. */
   private provisionalAgents = new Set<string>();
+  /**
+   * t-b51923 — `buildSidebarFleet` asks `canFork` for every agent on each presentation refresh. The
+   * measured production chain is canFork → defOf → definitionOf → withDelegatedToolkit →
+   * delegableToolkit, so a stable withheld grant used to raise the same human warning about 15 times
+   * per second per running agent. The warning is legitimate (it explains why approved bytes did not
+   * cross), but its CONDITION is edge-triggered: a new digest/error warns once, repeated projection
+   * reads do not. Keys include the changing evidence so a later, genuinely different withholding is
+   * visible rather than silenced for the manager lifetime.
+   */
+  private readonly notifiedDelegatedToolkitConditions = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {
     cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
     this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
+  }
+
+  private notifyDelegatedToolkitCondition(key: string, message: string): void {
+    if (this.notifiedDelegatedToolkitConditions.has(key)) return;
+    this.notifiedDelegatedToolkitConditions.add(key);
+    this.opts.notify?.(message, "warn");
   }
 
   private get prefix(): string {
@@ -1141,6 +1157,7 @@ export class AgentManager {
     for (const selected of own?.skills ?? []) {
       const inheritedIndex = skills.findIndex((skill) => skill.name === selected.name);
       if (inheritedIndex >= 0 && skills[inheritedIndex]!.source.sha256 !== selected.source.sha256) {
+        const inheritedSha256 = skills[inheritedIndex]!.source.sha256;
         // t-b0cfd4 — the FOURTH site of the same shape, found by sweeping for it rather than by
         // waiting for it: one skill the parent and the child pinned at different content used to
         // throw here, and this throw aborts the whole spawn. Both sides are approved bytes, so
@@ -1153,11 +1170,11 @@ export class AgentManager {
         skills[inheritedIndex] = structuredClone(selected);
         skillOrigins[selected.name] = [];
         withheldFromDelegator.add(selected.name);
-        this.opts.notify?.(
+        this.notifyDelegatedToolkitCondition(
+          `profile-conflict:${parent}:${name}:${selected.name}:${inheritedSha256}:${selected.source.sha256}`,
           `delegated toolkit withheld '${parent}'s '${selected.name}' from '${name}': the two pin different content `
           + "under one name, and the child's own profile selection is the authored choice. "
           + `Reauthorize it for one of the two in Agent Studio → Runtime tooling if they should match.`,
-          "warn",
         );
       }
       if (inheritedIndex < 0) skills.push(structuredClone(selected));
@@ -1222,10 +1239,11 @@ export class AgentManager {
         .sort((left, right) => left.file.localeCompare(right.file))) {
         const skillName = path.posix.basename(target.file);
         if (withheldByProfile.has(skillName)) {
-          this.opts.notify?.(
+          const withheld = (agent.profileWithheldCapabilities ?? []).find((entry) => entry.name === skillName);
+          this.notifyDelegatedToolkitCondition(
+            `profile-withheld:${agentName}:${skillName}:${withheld?.expectedSha256 ?? ""}:${withheld?.consumedSha256 ?? ""}`,
             `delegated toolkit withheld '${skillName}': '${agentName}' does not hold it either — its content changed `
             + "since it was authorized. Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
-            "warn",
           );
           continue;
         }
@@ -1241,10 +1259,11 @@ export class AgentManager {
         try {
           captured = inspectCapabilitySourceAtRoot(this.opts.workspaceRoot, target.file);
         } catch (error) {
-          this.opts.notify?.(
+          const detail = error instanceof Error ? error.message : String(error);
+          this.notifyDelegatedToolkitCondition(
+            `capture-failed:${agentName}:${plugin.name}:${skillName}:${detail}`,
             `delegated toolkit withheld skill '${skillName}' from plugin '${plugin.name}': `
-            + `${error instanceof Error ? error.message : String(error)} — the child spawns without it`,
-            "warn",
+            + `${detail} — the child spawns without it`,
           );
           continue;
         }
@@ -1260,11 +1279,11 @@ export class AgentManager {
           // The parent's own copy still crosses: those bytes ARE approved. Only the plugin's newer
           // ones are held back, by name, and the spawn continues — a child missing one tool is
           // recoverable, and re-pinning stays a human gesture in Agent Studio.
-          this.opts.notify?.(
+          this.notifyDelegatedToolkitCondition(
+            `plugin-conflict:${agentName}:${plugin.name}:${skillName}:${existing.source.sha256}:${captured.sha256}`,
             `delegated toolkit withheld plugin '${plugin.name}'s '${skillName}': its content differs from the copy `
             + `'${agentName}' authorized, and the child receives only approved bytes. `
             + "Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
-            "warn",
           );
           continue;
         }

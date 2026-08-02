@@ -5619,10 +5619,16 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
 
+      // Production reaches this projection from
+      // canFork → defOf → definitionOf → withDelegatedToolkit → delegableToolkit on every
+      // sidebar fleet build. A stable authorization condition is still one human warning, however
+      // often the presentation asks whether the same child can fork.
+      for (let evaluation = 0; evaluation < 30; evaluation++) h.manager.defOf("child");
+
       const inherited = projections.get("child")!;
       // The child spawned, with everything except the one capability nobody re-approved.
       expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
-      expect(warnings.some((line) => line.includes("agent-browser") && line.includes("Reauthorize"))).toBe(true);
+      expect(warnings.filter((line) => line.includes("agent-browser") && line.includes("Reauthorize"))).toHaveLength(1);
     });
 
     it("t-b0cfd4: two profiles pinning one name at different content withhold the delegated copy instead of aborting the spawn", async () => {
