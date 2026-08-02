@@ -480,13 +480,9 @@ function grokGuardCommand(authority: string): string {
 }
 
 /**
- * A grok `settings-hook` target, hand-built rather than read from the lockfile.
- *
- * Not a shortcut — the lockfile CANNOT carry one yet (`manifest.SUPPORTED_RUNTIMES` is claude+codex, so
- * `parseLockfile` rejects `runtime: "grok"`), which is the install-side half of this gap and its own
- * follow-up. `HookProjectionCandidate` types `runtime` as a plain string precisely so a caller may pass a
- * hand-built record, and the test below pins that the lockfile door is still shut, so this cannot quietly
- * become a claim that installing works.
+ * A grok `settings-hook` target, hand-built for plan-shape tests that do not need a full lockfile round-trip.
+ * The install door itself is pinned separately: a real lockfile with `runtime: "grok"` yields candidates
+ * (t-2f99e7 — "the install door is open").
  */
 function grokCandidate(
   authority: string,
@@ -658,10 +654,12 @@ describe("t-836be3 — what the Grok plan accepts, and what it refuses", () => {
     expect(plan.withheld).toEqual([{ plugin: "secrets-guard", reason: "installs no grok settings-hook — its manifest declares no grok block" }]);
   });
 
-  it("the install door is still shut: a lockfile naming a grok target yields no grok candidate", () => {
-    // The remaining half of the gap, pinned so it cannot be mistaken for working. When
-    // `manifest.SUPPORTED_RUNTIMES` gains grok this fails, and whoever lands it updates this line.
+  it("the install door is open: a lockfile naming a grok target yields a grok candidate and projects", () => {
+    // t-2f99e7 — was the closed-door pin ("yields no grok candidate"). Same strength, opposite
+    // polarity: parseLockfile must accept runtime:"grok", readHookProjectionCandidates must surface
+    // it, and planProjectedPluginHooks must project PreToolUse for an enforcement-classified plugin.
     const authority = makeTempDir("tachyon-guard-grok-lock-");
+    const command = "exit 2";
     fs.mkdirSync(path.join(authority, ".tachyon"), { recursive: true });
     fs.writeFileSync(path.join(authority, ".tachyon", "plugins.lock.json"), `${JSON.stringify({
       schemaVersion: 1,
@@ -670,11 +668,81 @@ describe("t-836be3 — what the Grok plan accepts, and what it refuses", () => {
           name: "secrets-guard",
           version: "2.0.4",
           runtimes: ["grok"],
-          targets: [{ runtime: "grok", kind: "settings-hook", file: ".grok/hooks/secrets-guard.json", ref: "PreToolUse", removal: [{ hooks: [{ type: "command", command: "exit 2" }] }] }],
+          targets: [{
+            runtime: "grok",
+            kind: "settings-hook",
+            file: ".grok/hooks/tachyon-plugins.json",
+            ref: "PreToolUse",
+            removal: [{ matcher: "Bash", hooks: [{ type: "command", command }] }],
+          }],
         },
       },
     }, null, 2)}\n`);
-    expect(readHookProjectionCandidates(authority)).toEqual([]);
-    expect(planFor("grok", { authority }).hooks).toEqual({});
+    const candidates = readHookProjectionCandidates(authority);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]!.name).toBe("secrets-guard");
+    expect(candidates[0]!.targets.some((t) => t.runtime === "grok" && t.kind === "settings-hook")).toBe(true);
+    const plan = planFor("grok", { authority });
+    expect(plan.projected).toEqual([{ plugin: "secrets-guard", version: "2.0.4", event: "PreToolUse", groups: 1 }]);
+    expect(onlyCommand(plan.hooks.PreToolUse as OwnershipHookGroup[])).toBe(command);
+  });
+
+  it("lockfile → plan → Grok envelope: --no-verify is refused (install door, not hand-built candidate)", () => {
+    // Fail-before was the closed-door pin above: with SUPPORTED_RUNTIMES without grok, parseLockfile
+    // dropped the target and candidates stayed empty. This is the behavioral half — a real Grok
+    // camelCase payload against a gate that reads toolInput (not tool_input).
+    const authority = makeTempDir("tachyon-guard-grok-e2e-");
+    const dir = path.join(authority, ".tachyon", "plugins", "secrets-guard", "grok");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "guard.cjs"), GROK_GUARD_SOURCE);
+    const command = grokGuardCommand(authority);
+    fs.mkdirSync(path.join(authority, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(authority, ".tachyon", "plugins.lock.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      plugins: {
+        "secrets-guard": {
+          name: "secrets-guard",
+          version: "2.0.4",
+          runtimes: ["grok"],
+          targets: [{
+            runtime: "grok",
+            kind: "settings-hook",
+            file: ".grok/hooks/tachyon-plugins.json",
+            ref: "PreToolUse",
+            removal: [{ matcher: "Bash", hooks: [{ type: "command", command }] }],
+          }],
+        },
+      },
+    }, null, 2)}\n`);
+    const plan = planFor("grok", { authority });
+    const gate = onlyCommand(plan.hooks.PreToolUse as OwnershipHookGroup[]);
+    const refused = spawnSync("sh", ["-c", gate], {
+      input: grokPayload("git commit --no-verify -m 'wip'"),
+      cwd: fixture.worktree,
+      encoding: "utf8",
+    });
+    expect(refused.status).toBe(2);
+    expect(refused.stderr).toContain("--no-verify");
+    const allowed = spawnSync("sh", ["-c", gate], {
+      input: grokPayload("git commit -m 'ordinary'"),
+      cwd: fixture.worktree,
+      encoding: "utf8",
+    });
+    expect(allowed.status).toBe(0);
+  });
+
+  it("a Claude-shaped guard fed a Grok payload fails open — derivation is not free", () => {
+    // Measured fact pinned as a regression test: secrets-guard's claude dialect reads
+    // `.tool_input.command`; Grok sends `toolInput`. Exit 0 on a --no-verify payload is the hole.
+    const authority = makeTempDir("tachyon-guard-dialect-");
+    const dir = path.join(authority, ".tachyon", "plugins", "secrets-guard", "claude");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "guard.cjs"), GUARD_SOURCE); // tool_input dialect
+    const script = path.join(dir, "guard.cjs");
+    const result = spawnSync("sh", ["-c", `node '${script}'`], {
+      input: grokPayload("git commit --no-verify -m 'wip'"),
+      encoding: "utf8",
+    });
+    expect(result.status).toBe(0); // silent allow — why a grok block must be its own, not derived
   });
 });

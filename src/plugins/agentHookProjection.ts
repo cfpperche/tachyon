@@ -59,9 +59,11 @@
  * source, and a `PreToolUse` `deny` from it blocks the tool call even under `--yolo`
  * (`permissionMode=bypassPermissions`) — `git commit --no-verify` never reached the Git binary.
  *
- * What is NOT fixed by adding Grok here, and must not be papered over: a plugin still cannot DECLARE a
- * grok block (`manifest.SUPPORTED_RUNTIMES` is claude+codex), so no lockfile target carries
- * `runtime: "grok"` and this plan stays empty for every installed plugin until that lands.
+ * t-2f99e7 opened the install door: `SUPPORTED_RUNTIMES` includes grok, so a lockfile may carry
+ * `runtime: "grok"` settings-hook targets and `readHookProjectionCandidates` surfaces them. A plugin
+ * that has not yet shipped a grok block still withholds with the honest "manifest declares no grok
+ * block" reason — the channel is no longer permanently empty for every installed plugin, only for
+ * those that have not declared the dialect.
  *
  * And the tempting shortcut is refused on purpose: Grok reads claude-SHAPED hook JSON, so deriving its
  * groups from a plugin's `claude` block looks free. It is not. Grok's PreToolUse envelope is camelCase
