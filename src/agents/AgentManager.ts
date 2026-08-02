@@ -1099,7 +1099,25 @@ export class AgentManager {
         .filter((candidate) => candidate.kind === "skill-dir" && candidate.runtime === runtime)
         .sort((left, right) => left.file.localeCompare(right.file))) {
         const skillName = path.posix.basename(target.file);
-        const captured = inspectCapabilitySourceAtRoot(this.opts.workspaceRoot, target.file);
+        // t-b505b3 follow-up — one uncapturable grant must not cost the caller the whole spawn.
+        // `inspectCapabilitySourceAtRoot` throws per SOURCE (too-large, unsafe-path, io, …), and
+        // before the delegated toolkit existed nothing here was captured, so those throws had no
+        // reachable caller. Now they do: `product-foundation` is a legitimate 8.1 MiB plugin skill
+        // against a 1 MiB capture cap, and letting it propagate refused EVERY delegation in the
+        // workspace, for every runtime. Withhold the one grant BY NAME — the same shape
+        // `planProjectedPluginHooks` uses — instead of failing the delegation closed: the child
+        // losing one tool it may not need is recoverable, being unable to exist is not.
+        let captured: ReturnType<typeof inspectCapabilitySourceAtRoot>;
+        try {
+          captured = inspectCapabilitySourceAtRoot(this.opts.workspaceRoot, target.file);
+        } catch (error) {
+          this.opts.notify?.(
+            `delegated toolkit withheld skill '${skillName}' from plugin '${plugin.name}': `
+            + `${error instanceof Error ? error.message : String(error)} — the child spawns without it`,
+            "warn",
+          );
+          continue;
+        }
         const existing = skills.find((skill) => skill.name === skillName);
         if (existing && existing.source.sha256 !== captured.sha256) {
           throw new Error(`plugin skill '${skillName}' conflicts with the parent's profile selection`);

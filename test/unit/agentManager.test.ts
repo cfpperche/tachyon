@@ -5471,6 +5471,50 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(projections.get("bare-child")).toBeUndefined();
     });
 
+    it("t-b505b3: an uncapturable grant is withheld by name and the child still spawns", async () => {
+      // Measured in the field on 0.56.152: `product-foundation` is a legitimate 8.1 MiB plugin skill
+      // against a 1 MiB capture cap, and the throw refused EVERY delegation in the workspace — grok
+      // and codex alike. Losing one tool is recoverable; being unable to spawn at all is not.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const small = path.join(h.ws, ".claude", "skills", "visual-qa");
+      fs.mkdirSync(small, { recursive: true });
+      fs.writeFileSync(path.join(small, "SKILL.md"), "# small\n");
+      const huge = path.join(h.ws, ".claude", "skills", "product-foundation");
+      fs.mkdirSync(huge, { recursive: true });
+      fs.writeFileSync(path.join(huge, "SKILL.md"), "x".repeat(2 * 1024 * 1024));
+      fs.mkdirSync(path.join(h.ws, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          "product-foundation": {
+            name: "product-foundation", version: "1.0.0", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/product-foundation" }],
+          },
+          "visual-qa": {
+            name: "visual-qa", version: "1.0.0", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/visual-qa" }],
+          },
+        },
+      }));
+      const warnings: string[] = [];
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
+
+      // The spawn happened at all — that is the regression this guards.
+      const inherited = projections.get("child")!;
+      // The capturable grant still crosses; only the oversized one is dropped.
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["visual-qa"]);
+      // Withheld BY NAME, never silently: the caller can see which tool the child lacks and why.
+      expect(warnings.some((line) => line.includes("product-foundation") && line.includes("withheld"))).toBe(true);
+    });
+
     it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {
       const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
       const realGrokHome = path.join(h.ws, "real-grok");
