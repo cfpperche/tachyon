@@ -204,6 +204,25 @@
     ]
   },
   {
+    "view": "control-launcher",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=control-launcher&fixture=default",
+    "frame": {
+      "w": 340,
+      "h": 640
+    },
+    "tags": [
+      "sample-derived"
+    ],
+    "title": "Control Launcher",
+    "aliases": [
+      "control launcher",
+      "launcher",
+      "control tab",
+      "section grid"
+    ]
+  },
+  {
     "view": "cockpit",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",

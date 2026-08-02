@@ -485,6 +485,12 @@
     "views": {
       "tachyon": [
         {
+          "id": "tachyonControlLauncher",
+          "name": "%view.controlLauncher%",
+          "type": "webview",
+          "icon": "$(dashboard)"
+        },
+        {
           "id": "tachyonSidebarPrototype",
           "name": "%view.tachyon%",
           "type": "webview",
@@ -499,13 +505,6 @@
       ]
     },
     "menus": {
-      "view/title": [
-        {
-          "command": "tachyon.openControl",
-          "when": "view == tachyonSidebarPrototype",
-          "group": "navigation@1"
-        }
-      ],
       "commandPalette": [
         {
           "command": "tachyon.openProbes",

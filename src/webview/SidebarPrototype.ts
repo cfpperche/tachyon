@@ -174,7 +174,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    // t-38c2a1 — version + Control live only in native view chrome (title + view/title menu).
+    // t-38c2a1 — version in native view title. t-6e2952 — Control moved to the launcher sidebar tab
+    // (tachyonControlLauncher); the view/title openControl button is gone.
     this.applyNativeTitle(view);
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
