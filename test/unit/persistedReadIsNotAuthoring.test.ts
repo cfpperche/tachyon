@@ -19,6 +19,8 @@ import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { JOURNAL_TEXT_MAX_CODEPOINTS, TaskJournalStore } from "../../src/tasks/TaskJournalStore.js";
 import { TASK_AUTHORING_LIMITS } from "../../src/tasks/taskAuthoring.js";
+import { projectTaskDetail } from "../../src/runtime-api/taskDetailProjection.js";
+import { projectTaskStudio } from "../../src/runtime-api/taskStudioProjection.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 
 let root: string;
@@ -95,6 +97,36 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
       .rejects.toThrow(`create_task kind received ${TASK_AUTHORING_LIMITS.kind + 1} code points`);
     await expect(store.create({ title: "ok", author: "claude", artifact_refs: refs }))
       .rejects.toThrow(`create_task artifact_refs received ${refs.length} entries; maximum ${TASK_AUTHORING_LIMITS.artifactRefs}`);
+  });
+
+  /**
+   * The store was only the first door. The HUMAN reaches the same records through the webview
+   * projections, which re-encoded the same authoring numbers in their wire schemas — so all three
+   * tasks still threw `expected 1-4000 code points` on the way to Task Detail with the store already
+   * fixed. Measured, not assumed. Same actor-times-trigger question the repo guidance asks.
+   */
+  it("carries an oversize record through the Task Detail projection", () => {
+    const body = "B".repeat(11_511);
+    persistTask("t-1d9d15", {
+      body,
+      kind: "k".repeat(TASK_AUTHORING_LIMITS.kind + 1),
+      title: "T".repeat(TASK_AUTHORING_LIMITS.title + 1),
+      artifact_refs: Array.from({ length: TASK_AUTHORING_LIMITS.artifactRefs + 2 }, (_, i) => ({ type: "file", ref: `docs/${i}.md` })),
+    });
+
+    const detail = projectTaskDetail(new TaskStore(root), root, "t-1d9d15");
+    expect(detail.task.body).toBe(body);
+    expect(detail.task.title).toHaveLength(TASK_AUTHORING_LIMITS.title + 1);
+    expect(detail.task.artifact_refs).toHaveLength(TASK_AUTHORING_LIMITS.artifactRefs + 2);
+  });
+
+  it("carries an oversize record through the Task Studio projection", () => {
+    const body = "B".repeat(11_511);
+    persistTask("t-1d9d15", { body, kind: "bug" });
+
+    const studio = projectTaskStudio(new TaskStore(root), root, "t-1d9d15");
+    expect(studio.bodyBaseline).toBe(body);
+    expect(studio.taskId).toBe("t-1d9d15");
   });
 
   it("names a task that exists but cannot be served, instead of calling it unknown", () => {

@@ -635,8 +635,12 @@ function persistedArtifactRefs(refs: unknown): Pick<Task, "artifact_refs"> | {} 
 }
 
 /**
- * t-c2882f — read-side deps. A dep id that is not well-formed is KEPT: `attentionFor` already
- * surfaces it as `dangling_dep`, which tells the reader more than making the whole task vanish did.
+ * t-c2882f — read-side deps. No count cap; a malformed entry is dropped rather than escalated into
+ * suppressing the task, which is the same rule the other read helpers here follow.
+ *
+ * A dep is a LINK, and `TASK_ID_RE` is what makes it one: both projections type `dependency.id` as a
+ * task id, so a string that cannot be a task id cannot be rendered as a dependency by anything
+ * downstream. Keeping it would trade one unreachable task for one unopenable Task Detail panel.
  */
 function persistedDeps(deps: unknown): Pick<Task, "deps"> | {} {
   if (!Array.isArray(deps)) return {};
@@ -645,7 +649,7 @@ function persistedDeps(deps: unknown): Pick<Task, "deps"> | {} {
   for (const dep of deps) {
     if (typeof dep !== "string") continue;
     const id = dep.trim();
-    if (!id || seen.has(id)) continue;
+    if (!TASK_ID_RE.test(id) || seen.has(id)) continue;
     seen.add(id);
     out.push(id);
   }

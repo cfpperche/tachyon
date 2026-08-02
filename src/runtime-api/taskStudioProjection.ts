@@ -20,13 +20,13 @@ const taskId = z.string().regex(TASK_ID_RE);
 const timestamp = z.string().max(64).refine((value) => Number.isFinite(Date.parse(value)), "invalid timestamp");
 const priority = z.union(TASK_PRIORITIES.map((value) => z.literal(value)) as [z.ZodLiteral<0>, z.ZodLiteral<1>, z.ZodLiteral<2>, z.ZodLiteral<3>]);
 const artifactRef = z.object({
-  type: nonEmptyText(64),
-  ref: nonEmptyText(500),
+  type: persistedText(),
+  ref: persistedText(),
   role: z.enum(["deliverable", "relation"]).optional(),
 }).strict();
 const dependency = z.object({
   id: taskId,
-  title: nonEmptyText(300).optional(),
+  title: persistedText().optional(),
   missing: z.boolean(),
 }).strict().superRefine((value, context) => {
   if (value.missing && value.title !== undefined) context.addIssue({ code: z.ZodIssueCode.custom, message: "missing dependency carries a title" });
@@ -39,15 +39,20 @@ export { isTiptapDoc } from "./richDocWire.js";
 const projection = z.object({
   schemaVersion: z.literal(1),
   taskId,
-  title: z.string().max(300),
-  kind: nonEmptyText(64).optional(),
+  // t-c2882f — `title` is deliberately the one field that may be EMPTY here: a pre-minted new-task id
+  // projects an empty studio. Its upper bound is gone for the same reason the others' are.
+  title: z.string(),
+  kind: persistedText().optional(),
   priority: priority.optional(),
-  assignee: nonEmptyText(64).optional(),
+  assignee: persistedText().optional(),
   deps: z.array(dependency).max(500),
-  artifact_refs: z.array(artifactRef).max(10),
+  artifact_refs: z.array(artifactRef),
   doc: z.custom<TiptapJSON>(isTiptapDoc, "invalid bounded Tiptap document"),
   attachments: z.array(taskStudioAttachmentV1Schema).max(500),
-  bodyBaseline: z.string().max(4_000).optional(),
+  // t-c2882f — the baseline is a copy of `task.body` as persisted, so it carries whatever the store
+  // serves. Capping it here made an oversize task unopenable in the editor as well as invisible on
+  // the board; the AUTHORING limit still refuses the save, which is the door that decides size.
+  bodyBaseline: z.string().optional(),
   anchor: z.enum(["load", "reimport", "read-only"]),
   anchorError: nonEmptyText(2_000).optional(),
   expectUpdatedAt: timestamp.optional(),
@@ -139,6 +144,16 @@ export function projectTaskStudio(
 
 function nonEmptyText(max: number): z.ZodType<string> {
   return z.string().min(1).max(max);
+}
+
+/**
+ * t-c2882f — a field carrying PERSISTED content: non-empty, and bounded by nothing else.
+ *
+ * `anchorError` above stays `nonEmptyText` deliberately — that string is composed by `decideAnchor`,
+ * not read off disk, so a bound on it bounds this projection's own output rather than the past.
+ */
+function persistedText(): z.ZodType<string> {
+  return z.string().min(1);
 }
 
 function emptyDoc(): TiptapJSON {
