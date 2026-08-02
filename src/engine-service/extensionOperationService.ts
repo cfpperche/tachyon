@@ -856,6 +856,8 @@ async function inspectAgent(workspace: Workspace, agent: string): Promise<JsonVa
   const worktreeStatus = record?.worktree
     ? await workspace.worktrees.status(record.worktree.path, record.worktree.baseRef)
     : undefined;
+  // t-6c8cb4 — do not reintroduce `declared` here. It was config-roster membership on the wire
+  // with zero readers (agentInspection callers use descendants/worktree/status only).
   return json({
     agent: agents.find((entry) => entry.name === agent) ?? null,
     state: states.get(agent) ?? null,
@@ -863,7 +865,6 @@ async function inspectAgent(workspace: Workspace, agent: string): Promise<JsonVa
     record: record ?? null,
     worktreeStatus: worktreeStatus ?? null,
     resumable: record ? isResumable(record) : false,
-    declared: workspace.config?.agents[agent] !== undefined,
   });
 }
 

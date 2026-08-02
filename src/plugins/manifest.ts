@@ -25,8 +25,8 @@ const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_STR = 1024; // any single free-form string (description, a path, a range)
 const MAX_LIST = 64; // runtimes / dependencies entries
 
-/** Runtimes Tachyon can wire a plugin block into. v1 = claude + codex; gemini is deferred to v2. */
-export const SUPPORTED_RUNTIMES = ["claude", "codex"] as const;
+/** Runtimes Tachyon can wire a plugin block into. v1 = claude + codex + grok; gemini is deferred to v2. */
+export const SUPPORTED_RUNTIMES = ["claude", "codex", "grok"] as const;
 export type Runtime = (typeof SUPPORTED_RUNTIMES)[number];
 
 /** Known but not-yet-supported — declared so we give a precise "deferred" error, not "unknown runtime". */

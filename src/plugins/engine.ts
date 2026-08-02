@@ -31,6 +31,7 @@ import {
 } from "./adapters/hooks.js";
 import { parseClaudeHooksBlock } from "./adapters/claude.js";
 import { parseCodexHooksBlock } from "./adapters/codex.js";
+import { parseGrokHooksBlock } from "./adapters/grok.js";
 import { readFile, atomicWrite } from "./fsx.js";
 import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
@@ -100,6 +101,9 @@ interface AdapterSpec {
 const ADAPTERS: Record<Runtime, AdapterSpec> = {
   claude: { settingsRel: ".claude/settings.json", parseBlock: parseClaudeHooksBlock, skillsRel: ".claude/skills", mcpRel: ".mcp.json" },
   codex: { settingsRel: ".codex/hooks.json", parseBlock: parseCodexHooksBlock, skillsRel: ".agents/skills", mcpRel: ".codex/config.toml" },
+  // t-2f99e7 — guide-measured layout (see adapters/grok.ts). mcpRel is null: Grok's project MCP
+  // schema is not the codex codec; hooks + skills install without inventing a wrong MCP path.
+  grok: { settingsRel: ".grok/hooks/tachyon-plugins.json", parseBlock: parseGrokHooksBlock, skillsRel: ".grok/skills", mcpRel: null },
 };
 
 /**
@@ -275,6 +279,7 @@ export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
   const present = new Set<Runtime>();
   if (fs.existsSync(path.join(workspaceRoot, ".claude"))) present.add("claude");
   if (fs.existsSync(path.join(workspaceRoot, ".codex"))) present.add("codex");
+  if (fs.existsSync(path.join(workspaceRoot, ".grok"))) present.add("grok");
   return present;
 }
 
@@ -655,7 +660,9 @@ function validMcpDest(runtime: Runtime, file: string): boolean {
  *  the same boundary skills/hooks rely on; tampering the lockfile needs the same access as editing the config. */
 function validMcpRemoval(runtime: Runtime, ref: string, removal: unknown): boolean {
   if (runtime === "claude") return typeof removal === "object" && removal !== null && !Array.isArray(removal);
-  return typeof removal === "string" && removal.startsWith(`[mcp_servers.${ref}]`);
+  if (runtime === "codex") return typeof removal === "string" && removal.startsWith(`[mcp_servers.${ref}]`);
+  // grok: no project MCP install path yet (ADAPTERS.grok.mcpRel is null).
+  return false;
 }
 
 // ── lockfile prior-state reconstruction (runtime-keyed) ─────────────────────
