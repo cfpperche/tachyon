@@ -873,18 +873,39 @@ export class WorktreeManager {
     },
   ): Promise<WorktreeRemovalResult> {
     return this.withLock(rec.path, async () => {
+      // t-dcdb7f — occupancy refusals name a reachable exit (or that only a human can wire the seam).
+      // Occupancy cannot be forced past; confirmDirty only covers dirtiness, never a live cwd.
       if (!this.opts.occupancy) {
-        return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: no occupancy probe configured` };
+        return {
+          removed: false,
+          branchDeleted: false,
+          error:
+            `worktree occupancy unknown for ${rec.path}: no occupancy probe configured` +
+            " — requires host wiring (human); cannot force past occupancy",
+        };
       }
       let occ: WorktreeOccupancy | undefined;
       try {
         occ = await this.opts.occupancy(rec.path);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        return { removed: false, branchDeleted: false, error: `worktree occupancy unknown for ${rec.path}: ${msg}` };
+        return {
+          removed: false,
+          branchDeleted: false,
+          error:
+            `worktree occupancy unknown for ${rec.path}: ${msg}` +
+            "; retry once occupancy is measurable — cannot force past occupancy",
+        };
       }
       if (occ) {
-        return { removed: false, branchDeleted: false, error: `worktree is ${occ.state === "dirty" ? "quarantined by" : "occupied by"} agent '${occ.agent}' (cwd ${occ.cwd})` };
+        const relation = occ.state === "dirty" ? "quarantined by" : "occupied by";
+        return {
+          removed: false,
+          branchDeleted: false,
+          error:
+            `worktree is ${relation} agent '${occ.agent}' (cwd ${occ.cwd})` +
+            `; stop agent '${occ.agent}' (kill_agent) or wait until it leaves this worktree`,
+        };
       }
       // Legacy default force=true (opts omitted). Managed Bridge passes force explicitly.
       let force = opts?.force !== false;
