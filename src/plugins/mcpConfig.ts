@@ -42,25 +42,32 @@ export function readMcpConfig(workspaceRoot: string, runtime: Runtime, rel: stri
 /** The rendered representation of a server for `runtime` — the merged config entry AND the lockfile removal
  *  identity (claude: the `mcpServers.<name>` object; codex: the `[mcp_servers.<name>]` block text). */
 export function renderMcp(runtime: Runtime, server: McpServer): unknown {
-  return runtime === "claude" ? renderClaudeMcpEntry(server) : renderCodexMcpBlock(server);
+  if (runtime === "claude") return renderClaudeMcpEntry(server);
+  if (runtime === "codex") return renderCodexMcpBlock(server);
+  // grok has no project MCP install path (engine ADAPTERS.grok.mcpRel is null); never invent a codex shape.
+  throw new Error(`renderMcp: runtime '${runtime}' has no plugin MCP codec`);
 }
 
 /** Merge a server into the runtime's MCP config text (render + place by name). */
 export function setMcpServer(runtime: Runtime, configText: string | undefined, server: McpServer): string {
-  return runtime === "claude"
-    ? setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server))
-    : setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server));
+  if (runtime === "claude") return setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server));
+  if (runtime === "codex") return setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server));
+  throw new Error(`setMcpServer: runtime '${runtime}' has no plugin MCP codec`);
 }
 
 /** Remove a server by name from the runtime's MCP config text. */
 export function removeMcpServerText(runtime: Runtime, configText: string | undefined, name: string): string {
-  return runtime === "claude" ? removeClaudeMcpServer(configText, name) : removeCodexMcpServer(configText, name);
+  if (runtime === "claude") return removeClaudeMcpServer(configText, name);
+  if (runtime === "codex") return removeCodexMcpServer(configText, name);
+  throw new Error(`removeMcpServerText: runtime '${runtime}' has no plugin MCP codec`);
 }
 
 /** The current on-disk representation of server `name` (for content-aware removal: an edited server ≠ what we
  *  recorded → leave it as an orphan, never clobber a user's edit). */
 export function currentMcp(runtime: Runtime, configText: string | undefined, name: string): unknown {
-  return runtime === "claude" ? getClaudeMcpServer(configText, name) : getCodexMcpServerBlock(configText, name);
+  if (runtime === "claude") return getClaudeMcpServer(configText, name);
+  if (runtime === "codex") return getCodexMcpServerBlock(configText, name);
+  throw new Error(`currentMcp: runtime '${runtime}' has no plugin MCP codec`);
 }
 
 /** Compare two rendered MCP representations (claude entry object / codex block string) structurally. */
