@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs";
-import path from "node:path";
 import { registerTools } from "../../src/bridge/tools.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
@@ -53,6 +51,7 @@ interface DismissWorld {
   registry: Map<string, WorktreeRecord | null>;
   dismiss: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>;
   kill: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>;
+  uiRemove: () => Promise<unknown>;
 }
 
 /**
@@ -97,28 +96,29 @@ function dismissWorld(opts: {
     dismissTemporary: () => { events.push("dismiss-row"); ledger.delete("child"); },
   };
   const mcp = new ToolCapture();
+  const agentWorktrees = {
+    manager,
+    ledger: {
+      get: (agent: string) => ledger.get(agent),
+      clearWorktree: (agent: string) => { events.push("ledger-clear"); const row = ledger.get(agent); if (row) delete row.worktree; },
+    },
+    worktrees: {
+      remove: async (rec: WorktreeRecord, deleteBranch: boolean, removeOpts: { force: boolean; refuseUnlessForceIfDirty: boolean }) => {
+        events.push(`git-remove ${rec.path} deleteBranch=${deleteBranch} force=${removeOpts.force} probeDirty=${removeOpts.refuseUnlessForceIfDirty}`);
+        if (opts.dirty) return { removed: false, branchDeleted: false, error: `worktree is dirty at ${rec.path}; pass confirmDirty=true to force-remove uncommitted work` };
+        return { removed: true, branchDeleted: opts.branchDeleted ?? true };
+      },
+    },
+    managedWorktrees: {
+      syncAgentRecord: (agent: string, rec: WorktreeRecord | null) => { events.push("registry-sync"); registry.set(agent, rec); },
+    },
+  };
   registerTools(mcp as never, {
     workspaceRoot: "/repo",
     caller: { kind: "agent", name: "ada" },
     notify: (message: string, level: string) => { notices.push({ message, level }); },
     manager,
-    agentWorktrees: {
-      manager,
-      ledger: {
-        get: (agent: string) => ledger.get(agent),
-        clearWorktree: (agent: string) => { events.push("ledger-clear"); const row = ledger.get(agent); if (row) delete row.worktree; },
-      },
-      worktrees: {
-        remove: async (rec: WorktreeRecord, deleteBranch: boolean, removeOpts: { force: boolean; refuseUnlessForceIfDirty: boolean }) => {
-          events.push(`git-remove ${rec.path} deleteBranch=${deleteBranch} force=${removeOpts.force} probeDirty=${removeOpts.refuseUnlessForceIfDirty}`);
-          if (opts.dirty) return { removed: false, branchDeleted: false, error: `worktree is dirty at ${rec.path}; pass confirmDirty=true to force-remove uncommitted work` };
-          return { removed: true, branchDeleted: opts.branchDeleted ?? true };
-        },
-      },
-      managedWorktrees: {
-        syncAgentRecord: (agent: string, rec: WorktreeRecord | null) => { events.push("registry-sync"); registry.set(agent, rec); },
-      },
-    },
+    agentWorktrees,
   } as never);
   return {
     events,
@@ -127,69 +127,37 @@ function dismissWorld(opts: {
     registry,
     dismiss: mcp.handlers.get("dismiss_agent")!,
     kill: mcp.handlers.get("kill_agent")!,
+    uiRemove: () => executeExtensionCommand(
+      { workspace: agentWorktrees, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+      { action: "worktree.remove", agent: "child" } as Parameters<typeof executeExtensionCommand>[1],
+    ),
   };
 }
 
-describe("t-fda8b4 — all four Temporary end-of-life doors carry the safe worktree step", () => {
+describe("t-46554c — Temporary end-of-life doors prove their worktree effects", () => {
   /**
-   * Local topology guard in the shape of taskStoreSinkWiring.test.ts: enumerate the four known doors
-   * around the critical sink. This intentionally does not regex the whole repository — most raw kills
-   * are honest stop/restart operations, while these four named triggers mean permanent removal.
+   * The sidebar's Remove command was measured before this test was written. For an agent that owns a
+   * checkout it first executes `worktree.remove`; only after that succeeds does it execute
+   * `config.agent.delete` with `removeWorktree: false`. Thus the call inside deleteConfiguredAgent is
+   * not the UI door at all. Exercise the operation the human really invokes, including the shared
+   * soft-removal arguments and both durable ownership records.
    */
-  const sources = () => ({
-    bridge: fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8"),
-    operations: fs.readFileSync(path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"), "utf8"),
-    workspace: fs.readFileSync(path.join(process.cwd(), "src/workspace/Workspace.ts"), "utf8"),
-  });
-  const door = (source: string, start: string, end: string): string => {
-    const from = source.indexOf(start);
-    const to = source.indexOf(end, from + start.length);
-    expect(from, `missing door ${start}`).toBeGreaterThanOrEqual(0);
-    expect(to, `missing end marker ${end}`).toBeGreaterThan(from);
-    return source.slice(from, to);
-  };
+  it("UI Remove deletes checkout, branch and both ownership records through its real first operation", async () => {
+    const world = dismissWorld();
 
-  it("UI delete carries the shared safe removal", () => {
-    const { operations } = sources();
-    expect(door(operations, "async function deleteConfiguredAgent(", "async function promoteAgent("))
-      .toContain("removeAgentWorktree(workspace, agent, true)");
-  });
+    const result = await world.uiRemove();
 
-  it("Bridge dismiss carries the shared safe removal", () => {
-    const { bridge } = sources();
-    expect(door(bridge, '"dismiss_agent",', '"restart_agent",'))
-      .toContain("dismissOwnedWorktree(deps, name)");
-  });
-
-  it("Agent Studio Forget carries the shared safe removal", () => {
-    const { workspace } = sources();
-    expect(door(workspace, "async forgetAgentProfileAgentCascade(", "/** Recoverable retirement"))
-      .toContain("removeAgentWorktree(this, name, true)");
-  });
-
-  it("Bridge kill carries the shared safe removal", () => {
-    const { bridge } = sources();
-    expect(door(bridge, '"kill_agent",', '"dismiss_agent",'))
-      .toContain("dismissOwnedWorktree(deps, name)");
-  });
-
-  it("the shared sink refuses dirty or unmeasurable checkouts without force", () => {
-    const cascade = fs.readFileSync(path.join(process.cwd(), "src/agents/agentRemovalCascade.ts"), "utf8");
-    expect(cascade).toContain("force: false");
-    expect(cascade).toContain("refuseUnlessForceIfDirty: true");
-  });
-
-  it("enumerates UI delete, Bridge dismiss, Agent Studio Forget, and Bridge kill", () => {
-    const { bridge, operations, workspace } = sources();
-
-    expect(door(operations, "async function deleteConfiguredAgent(", "async function promoteAgent("))
-      .toContain("removeAgentWorktree(workspace, agent, true)");
-    expect(door(bridge, '"dismiss_agent",', '"restart_agent",'))
-      .toContain("dismissOwnedWorktree(deps, name)");
-    expect(door(workspace, "async forgetAgentProfileAgentCascade(", "/** Recoverable retirement"))
-      .toContain("removeAgentWorktree(this, name, true)");
-    expect(door(bridge, '"kill_agent",', '"dismiss_agent",'))
-      .toContain("dismissOwnedWorktree(deps, name)");
+    expect(result).toMatchObject({ removed: true, branchDeleted: true });
+    expect(world.events).toEqual([
+      "probe",
+      "kill",
+      "probe",
+      "release",
+      "git-remove /checkouts/child deleteBranch=true force=false probeDirty=true",
+      "ledger-clear",
+      "registry-sync",
+    ]);
+    expect(world.registry.get("child")).toBeNull();
   });
 
   it("Bridge kill removes checkout, branch, registry and row through the shared cascade", async () => {
@@ -214,6 +182,10 @@ describe("t-fda8b4 — all four Temporary end-of-life doors carry the safe workt
 });
 
 describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => {
+  // Reachability measurement: a RUNNING Temporary cannot arrive here owning its checkout because
+  // kill_agent collects it through the kill door first. A finished child, however, remains as the
+  // stopped/postmortem row modelled by dismissWorld's default inventory, and that is the real
+  // dismiss_agent path exercised below.
   it("runs the SHARED cascade before the row is dropped, and leaves neither record claiming the checkout", async () => {
     const world = dismissWorld();
 
