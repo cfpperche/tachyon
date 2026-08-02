@@ -807,17 +807,34 @@ function resolveCapabilities(
   };
   const deliveredSourceIds = new Set<string>();
   const claims = new Map<string, string>();
+  /**
+   * A delivered name that already collided stays unavailable for the rest of the resolve. Releasing
+   * it would hand the name to the NEXT claimant, so three capabilities racing for one name would
+   * withhold the first two and silently deliver the third — the exact silent winner this rule
+   * exists to prevent, just one claimant further along.
+   */
+  const collided = new Set<string>();
 
-  /** Reserve a delivered name. On collision, withhold BOTH claimants — never pick a silent winner. */
+  /** Reserve a delivered name. On collision, withhold EVERY claimant — never pick a silent winner. */
   const claim = (namespace: string, name: string, referenceId: string): boolean => {
     if (withheld.has(referenceId)) return false;
     const key = `${namespace}:${name.normalize("NFC").toLocaleLowerCase("en-US")}`;
+    if (collided.has(key)) {
+      withholdId(
+        referenceId,
+        "profile/capability-collision",
+        `${namespace} name ${JSON.stringify(name)} is claimed by more than one capability`,
+        "capability projection",
+      );
+      return false;
+    }
     const prior = claims.get(key);
     if (prior && prior !== referenceId) {
       const detail = `${namespace} name ${JSON.stringify(name)} collides between ${JSON.stringify(prior)} and ${JSON.stringify(referenceId)}`;
       withholdId(prior, "profile/capability-collision", detail, "capability projection");
       withholdId(referenceId, "profile/capability-collision", detail, "capability projection");
       claims.delete(key);
+      collided.add(key);
       return false;
     }
     if (!prior) claims.set(key, referenceId);

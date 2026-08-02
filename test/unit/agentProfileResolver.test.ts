@@ -260,6 +260,38 @@ describe("resolveAgentProfile", () => {
     expect(result.withheldCapabilities).toHaveLength(2);
   });
 
+  it("withholds a THIRD claimant of a name that already collided, instead of handing it the name", () => {
+    // Releasing the key after the first collision would make the rule "the third one wins" — the same
+    // silent winner, one claimant further along. A collided name stays unavailable for the whole resolve.
+    const root = workspace();
+    const directories = ["one/Research", "two/research", "three/RESEARCH"].map((rel) => {
+      const directory = path.join(profileDir(root), "capabilities", ...rel.split("/"));
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, "SKILL.md"), `skill ${rel}\n`);
+      return { rel, directory };
+    });
+    writeProfile(root, canonical({
+      capabilities: { skills: ["first-skill", "second-skill", "third-skill"] },
+      references: directories.map(({ rel, directory }, index) => ({
+        id: ["first-skill", "second-skill", "third-skill"][index]!,
+        kind: "skill" as const,
+        scope: "profile" as const,
+        owner: AGENT_ID,
+        path: `capabilities/${rel}`,
+        mode: "pinned" as const,
+        sha256: treeDigest(directory),
+      })),
+    }));
+
+    const result = expectSuccess(resolve(root));
+    expect(result.capabilityProjection).toBeUndefined();
+    expect(result.definition.capabilities?.skills ?? []).toEqual([]);
+    const withheld = result.withheldCapabilities ?? [];
+    expect(withheld.map((entry) => entry.referenceId).sort())
+      .toEqual(["first-skill", "second-skill", "third-skill"]);
+    for (const entry of withheld) expect(entry.code).toBe("profile/capability-collision");
+  });
+
   it("does not open an unselected capability reference", () => {
     const root = workspace();
     const outside = path.join(root, "outside-skill");
