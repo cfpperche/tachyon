@@ -1962,8 +1962,10 @@ export class HarnessManager {
     const mergedServers = mergeServers(def, workspaceServers, bridge);
     const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridge);
     if (adapter.runtime === "grok") {
-      this.materializeGrokLifecycleHooks(agent, home, lifecycle?.handoffPath ?? path.join(this.workspaceRoot, ".tachyon", "HANDOFF.md"), {
-        silentPersistence: lifecycle?.silentPersistence ?? true,
+      this.materializeGrokLifecycleHooks(agent, this.grokHome(home), lifecycle?.handoffPath ?? path.join(this.workspaceRoot, ".tachyon", "HANDOFF.md"), {
+        // Grok is not an eligible silent-persistence runtime. Keep the capability explicit for the
+        // measured harness fixture, but never opt a product caller in merely by omitting the option.
+        silentPersistence: lifecycle?.silentPersistence ?? false,
         ...(lifecycle?.projectedHooks ? { projectedHooks: lifecycle.projectedHooks } : {}),
       });
       this.materializeSkills(agent, def, home);
@@ -2569,15 +2571,19 @@ export class HarnessManager {
 
   private materializeGrokLifecycleHooks(
     agent: string,
-    home: string,
-    handoffPath: string,
+    grokHome: string,
+    handoffPath: string | undefined,
     opts: { silentPersistence: boolean; projectedHooks?: Record<string, OwnershipHookGroup[]> },
   ): void {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
-    const pointerPath = handoffPointerPath(this.workspaceRoot);
-    atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
+    let pointer: { pointerPath: string; handoffPath: string } | undefined;
+    if (handoffPath) {
+      const pointerPath = handoffPointerPath(this.workspaceRoot);
+      atomicWrite(pointerPath, SESSION_HANDOFF_POINTER_SOURCE);
+      pointer = { pointerPath, handoffPath };
+    }
     let persistence: { continuityPointerPath: string; continuityPath: string; stopRecorderPath: string; stopFile: string; failureFile: string } | undefined;
     if (opts.silentPersistence) {
       const continuityPointer = continuityPointerPath(this.workspaceRoot);
@@ -2592,8 +2598,8 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
-    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), { pointerPath, handoffPath }, persistence);
-    const hooksRoot = path.join(this.grokHome(home), "hooks");
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
+    const hooksRoot = path.join(grokHome, "hooks");
     fs.mkdirSync(hooksRoot, { recursive: true });
     atomicWrite(path.join(hooksRoot, "session-start.json"), `${JSON.stringify({ hooks: { SessionStart: settings.hooks.SessionStart } }, null, 2)}\n`);
     if (settings.hooks.Stop) {
@@ -2934,10 +2940,10 @@ export class HarnessManager {
    * agent, and this workspace's three live Grok homes have no `hooks/` dir at all. Wiring the gate only
    * into the harness path would have shipped a channel no spawnable agent uses.
    *
-   * Deliberately narrower than the harness path: only the projected GATE is written here, not the
-   * ownership/handoff/continuity/Stop lifecycle hooks. A fail-closed refusal is safe to add to any
-   * session; turning on Activity ownership and persistence recording for a whole runtime changes what
-   * Tachyon believes about every Grok pane and is its own task with its own actor × trigger list.
+   * t-53e5f2 — this path also owns Grok's lifecycle materialization. Every real Grok agent receives
+   * SessionStart ownership; declared/canonical agents additionally receive the project-handoff pointer.
+   * Continuity and Stop stay absent: Grok is not eligible for silent persistence, and enabling those
+   * hooks would also change nudge suppression and the persisted silent-hook ledger.
    */
   materializeBridgeMcpGrok(
     agent: string,
@@ -2947,6 +2953,7 @@ export class HarnessManager {
       exactTrust?: boolean;
       nativeConfig?: ResolvedAgentNativeConfigProjection;
       projectedHooks?: Record<string, OwnershipHookGroup[]>;
+      lifecycle?: { handoffPath?: string };
     } = {},
   ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
@@ -2992,9 +2999,12 @@ export class HarnessManager {
       undefined,
       options.exactTrust ? "replace" : "merge",
     );
-    // Global scope (`$GROK_HOME/hooks/*.json`) — always trusted, so the gate does not depend on the
-    // folder-trust seeded just above, and reaches a delegated worktree that has no `.grok/` tree.
-    this.writeGrokProjectedHooks(path.join(home, "hooks"), options.projectedHooks);
+    // Global scope (`$GROK_HOME/hooks/*.json`) — always trusted. Ownership reaches Temporary agents;
+    // lifecycle.handoffPath distinguishes declared/canonical agents without granting persistence.
+    this.materializeGrokLifecycleHooks(agent, home, options.lifecycle?.handoffPath, {
+      silentPersistence: false,
+      ...(options.projectedHooks ? { projectedHooks: options.projectedHooks } : {}),
+    });
     return home;
   }
 

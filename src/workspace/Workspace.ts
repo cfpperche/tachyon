@@ -937,6 +937,9 @@ export class Workspace {
             {
               exactTrust: true,
               ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),
+              // Canonical profiles are declared/saved; profileFork is a Temporary sibling and stays
+              // ownership-only even though it reuses this native-config materialization door.
+              ...(def.profileLifecycle ? { lifecycle: { handoffPath: this.handoffStore.canonicalPath } } : {}),
               ...this.projectedSessionHooks("grok", name),
             },
           );
@@ -988,6 +991,7 @@ export class Workspace {
             exactTrust: declared?.profileLifecycle !== undefined,
             // t-26f508 — must match the canonical branch above: this port runs last on every spawn.
             ...(declared?.profileNativeConfig ? { nativeConfig: declared.profileNativeConfig } : {}),
+            ...(declared ? { lifecycle: { handoffPath: this.handoffStore.canonicalPath } } : {}),
             // t-836be3 — the gate for every non-harness Grok agent, Temporary ones included: the plan is a
             // pure function of (lockfile, classification, runtime) and never of the agent's declaration,
             // so an undeclared child is projected exactly like a Saved agent.
