@@ -737,16 +737,18 @@ describe("HarnessManager materialize (fs)", () => {
       pi: { extensions: [], prompts: [], themes: [], packages: [] },
     };
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const launchCwd = path.join(ws, "managed-worktree");
+    fs.mkdirSync(launchCwd);
     const nativeConfig = {
       adapter: "codex" as const,
       selectors: { model: "gpt-5.6", provider: "openai" },
       permissions: { approvalPolicy: "on-request" },
     };
-    const first = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, undefined, {
+    const first = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd, {
       url: "http://127.0.0.1:9/mcp",
       headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" },
     });
-    const skillFile = path.join(first.home, "skills", "research", "SKILL.md");
+    const skillFile = path.join(launchCwd, ".agents", "skills", "research", "SKILL.md");
     const manifestFile = path.join(first.home, ".tachyon-profile-capabilities", "manifest.json");
 
     expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
@@ -766,15 +768,15 @@ describe("HarnessManager materialize (fs)", () => {
     fs.writeFileSync(skillFile, "tampered");
     fs.writeFileSync(manifestFile, "tampered");
     fs.writeFileSync(path.join(first.home, "config.toml"), "[mcp_servers.attacker]\ncommand = \"evil\"\n");
-    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection });
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
     expect(fs.readFileSync(skillFile, "utf8")).toContain("Canonical skill");
     expect(fs.readFileSync(path.join(first.home, "config.toml"), "utf8")).not.toContain("attacker");
     expect(JSON.parse(fs.readFileSync(manifestFile, "utf8"))).toMatchObject({ capabilityProjectionSha256: "a".repeat(64) });
     expect(fs.readFileSync(path.join(ws, ".codex", "config.toml"), "utf8")).toBe(pluginConfig);
 
-    fs.rmSync(path.join(first.home, "skills"), { recursive: true });
-    fs.writeFileSync(path.join(first.home, "skills"), "unsafe replacement");
-    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection })).toThrow(/skill projection target must be a real directory/);
+    fs.rmSync(path.join(launchCwd, ".agents", "skills"), { recursive: true });
+    fs.writeFileSync(path.join(launchCwd, ".agents", "skills"), "unsafe replacement");
+    expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd)).toThrow(/skill projection target must be a real directory/);
     expect(fs.existsSync(manifestFile)).toBe(false);
   });
 
