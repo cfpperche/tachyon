@@ -64,14 +64,29 @@ describe("TaskStore", () => {
   });
 
   it("reuses unchanged task files when listing the board again", async () => {
-    await store.create({ id: "t-aaaaaa", title: "a", author: "human" });
-    await store.create({ id: "t-bbbbbb", title: "b", author: "human" });
+    await store.create({ id: "t-aaaaaa", title: "a", author: "human", now: "2026-08-02T00:00:00.000Z" });
+    await store.create({ id: "t-bbbbbb", title: "b", author: "human", now: "2026-08-02T00:00:00.000Z" });
     const read = vi.spyOn(fs, "readFileSync");
     store.listRaw();
     read.mockClear();
 
     expect(store.listRaw().map((task) => task.id)).toEqual(["t-aaaaaa", "t-bbbbbb"]);
     expect(read.mock.calls.filter(([file]) => String(file).endsWith(".json"))).toHaveLength(0);
+  });
+
+  it("does not let a listing caller mutate a cached task", async () => {
+    await store.create({
+      id: "t-aaaaaa",
+      title: "a",
+      author: "human",
+      artifact_refs: [{ type: "path", ref: "src/a.ts" }],
+    });
+    const listed = store.listRaw()[0]!;
+
+    expect(() => { store.listRaw().push(listed); }).toThrow();
+    expect(() => { listed.title = "mutated"; }).toThrow();
+    expect(() => { listed.artifact_refs![0]!.ref = "src/mutated.ts"; }).toThrow();
+    expect(store.listRaw()[0]).toMatchObject({ title: "a", artifact_refs: [{ ref: "src/a.ts" }] });
   });
 
   it("re-reads only a task changed by an external writer", async () => {
