@@ -14,11 +14,13 @@ import {
   previewRemove,
   applyRemove,
   repairGitHooks,
+  MANIFEST_REL,
+  PAYLOAD_ROOT,
   type LoadedPlugin,
   type InstallPreview,
   type InstallProvenance,
 } from "../plugins/engine.js";
-import { type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
+import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
@@ -608,7 +610,7 @@ export class PluginsPanelManager {
       }
       lockfileText = undefined;
     }
-    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks, externalStatuses: this.externalStatuses(ws) });
+    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks, externalStatuses: this.externalStatuses(ws), declared: this.declaredRuntimes(ws) });
   }
 
   /** spec 287 (D3) — per installed plugin, its declared external (system) tools with present/missing + whether an
@@ -646,6 +648,32 @@ export class PluginsPanelManager {
         const targets = p.targets.filter((t) => t.runtime === rt);
         return targets.length > 0 && targets.every((t) => fs.existsSync(path.join(ws.workspaceRoot, t.file)));
       });
+    }
+    return out;
+  }
+
+  /** t-fb216a — per installed plugin, the runtimes its INSTALLED payload manifest declares support for. Read from
+   *  `.tachyon/plugins/<name>/tachyon-plugin.json`: the exact bytes this install materialized, which is also what
+   *  Reinstall re-materializes (it fetches the lockfile's recorded commit), so the card's notice and the gesture it
+   *  points at read the same manifest. Local, spawn-free, no network — which is why the coverage gap surfaces at
+   *  REST rather than only after the user runs "Check for updates".
+   *
+   *  A plugin is OMITTED (not defaulted) when its manifest is absent, unreadable, or invalid: the view-model then
+   *  computes no gap for it. Absence of evidence must not become a claim that a runtime is uncovered. */
+  private declaredRuntimes(ws: WorkspaceGitPresentationTarget): Record<string, Runtime[]> {
+    const lock = this.lockfile(ws);
+    const supported = new Set<string>(SUPPORTED_RUNTIMES);
+    const out: Record<string, Runtime[]> = {};
+    for (const p of Object.values(lock?.plugins ?? {})) {
+      let text: string;
+      try {
+        text = fs.readFileSync(path.join(ws.workspaceRoot, PAYLOAD_ROOT, p.name, MANIFEST_REL), "utf8");
+      } catch {
+        continue; // no payload manifest ⇒ no evidence ⇒ no gap claimed for this plugin
+      }
+      const { manifest } = loadManifest(text);
+      if (!manifest) continue; // invalid manifest — same rule: stay silent rather than guess
+      out[p.name] = manifest.runtimes.filter((rt) => supported.has(rt));
     }
     return out;
   }

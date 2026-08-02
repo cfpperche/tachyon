@@ -81,7 +81,7 @@ const HOOKS_FILE = "hooks.json"; // inside a runtime block dir
 const SKILLS_DIR = "skills"; // spec 251 — the plugin's neutral skills payload root
 const SKILL_FILE = "SKILL.md"; // inside each skills/<name>/ dir
 const MCP_FILE = "mcp.json"; // spec 254 — the plugin's neutral MCP-server payload (at the plugin root)
-const PAYLOAD_ROOT = ".tachyon/plugins";
+export const PAYLOAD_ROOT = ".tachyon/plugins";
 
 const MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_PAYLOAD_FILES = 5000;

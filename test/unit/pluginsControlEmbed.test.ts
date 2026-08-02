@@ -215,3 +215,67 @@ describe("Control → Plugins embed session lifecycle (t-0fc9ee)", () => {
     expect(wv.posted.length).toBe(before);
   });
 });
+
+/**
+ * t-fb216a — the HOST half of the runtime-coverage gap. `buildPluginsViewModel` computing
+ * `declared ∩ present − lock.runtimes` is worth nothing if the panel never injects `declared`;
+ * that injection is fs I/O in the vscode layer, which unit tests otherwise never reach.
+ *
+ * These drive the real gather() through the embed and assert on the POSTED view-model.
+ */
+describe("runtime-coverage gap reaches the posted view-model (t-fb216a)", () => {
+  /** the installed payload manifest — the bytes this install materialized, which is what Reinstall re-materializes. */
+  function writePayloadManifest(root: string, name: string, runtimes: string[]): void {
+    const dir = path.join(root, ".tachyon/plugins", name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "tachyon-plugin.json"), JSON.stringify({ name, version: "1.0.0", description: "test", runtimes }));
+  }
+
+  const uncoveredOf = (wv: FakeWebview, name: string): string[] | undefined =>
+    (pluginsMsgs(wv).at(-1)?.vm.installed.find((p) => p.name === name) as { uncoveredRuntimes?: string[] } | undefined)?.uncoveredRuntimes;
+
+  it("names grok when the payload declares it, the workspace runs it, and the lockfile never covered it", () => {
+    const root = mkroot();
+    writeLockfile(root, "secrets-guard"); // lockfile runtimes: ["claude"]
+    writePayloadManifest(root, "secrets-guard", ["claude", "codex", "grok"]);
+    fs.mkdirSync(path.join(root, ".grok"), { recursive: true }); // detectRuntimes ⇒ this workspace runs grok
+    const wv = fakeWebview();
+    managerFor([target(root, "w1")]).bindControlEmbed(wv as never, "w1");
+    // codex is declared but NOT run here → only grok is uncovered
+    expect(uncoveredOf(wv, "secrets-guard")).toEqual(["grok"]);
+  });
+
+  it("stays silent when the payload manifest is absent — absence of evidence is not a gap", () => {
+    const root = mkroot();
+    writeLockfile(root, "secrets-guard");
+    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
+    // no .tachyon/plugins/secrets-guard/tachyon-plugin.json written
+    const wv = fakeWebview();
+    managerFor([target(root, "w1")]).bindControlEmbed(wv as never, "w1");
+    expect(uncoveredOf(wv, "secrets-guard")).toBeUndefined();
+  });
+
+  it("stays silent when the payload manifest is corrupt (never guesses a runtime set)", () => {
+    const root = mkroot();
+    writeLockfile(root, "secrets-guard");
+    fs.mkdirSync(path.join(root, ".tachyon/plugins/secrets-guard"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon/plugins/secrets-guard/tachyon-plugin.json"), "{ not json");
+    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
+    const wv = fakeWebview();
+    managerFor([target(root, "w1")]).bindControlEmbed(wv as never, "w1");
+    expect(uncoveredOf(wv, "secrets-guard")).toBeUndefined();
+  });
+
+  it("surfaces the gap WITHOUT an update-check having run (the silence breaks at rest)", () => {
+    // the measured complaint was "Already up to date." with nothing else said. The gap is local-only
+    // (lockfile + payload manifest + detectRuntimes), so it must not wait on "Check for updates".
+    const root = mkroot();
+    writeLockfile(root, "secrets-guard");
+    writePayloadManifest(root, "secrets-guard", ["claude", "grok"]);
+    fs.mkdirSync(path.join(root, ".grok"), { recursive: true });
+    const wv = fakeWebview();
+    managerFor([target(root, "w1")]).bindControlEmbed(wv as never, "w1");
+    expect(statusOf(wv, "secrets-guard")).toBe("unknown"); // no check ran…
+    expect(uncoveredOf(wv, "secrets-guard")).toEqual(["grok"]); // …and the gap is named anyway
+  });
+});

@@ -1776,8 +1776,13 @@ describe("spec 270 — configurable plugin (config + docsUrl)", () => {
   });
 });
 
-describe("PROBE t-fb216a", () => {
-  it("install-over-installed with a wider target widens the lock without dropping the runtimes already installed", async () => {
+/**
+ * t-fb216a — the Plugins card now tells the user that a widening gesture "never removes first, so <the runtimes you
+ * have> stay installed throughout". That sentence is a claim about the ENGINE, made in the UI, about an enforcement
+ * plugin's gate. This pins it: without this guard the copy could quietly become a recommendation that disprotects.
+ */
+describe("install-over-installed widens coverage (t-fb216a)", () => {
+  it("a wider target widens the lock without dropping the runtimes already installed", async () => {
     const dir = makePlugin({ runtimes: ["claude", "codex", "grok"] });
     const ws = makeWorkspace(["claude", "codex"]);
     const { plugin } = loadPlugin(dir);

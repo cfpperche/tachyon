@@ -13,7 +13,7 @@ import type { PluginsViewModel } from "../../../src/plugins/viewModel";
 import type { Fixture } from "../routes";
 import vms from "./plugins.vms.json";
 
-const captured = vms as unknown as { default: PluginsViewModel; updateAvailable: PluginsViewModel; empty: PluginsViewModel };
+const captured = vms as unknown as { default: PluginsViewModel; updateAvailable: PluginsViewModel; empty: PluginsViewModel; runtimeGap: PluginsViewModel };
 
 export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
   // every card resolved to "up to date" — the steady state.
@@ -24,4 +24,9 @@ export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
 
   // cold state — no lockfile yet.
   empty: { provenance: "captured-host-vm", vm: captured.empty },
+
+  // t-fb216a — the measured field state: every card truthfully "up to date" while this workspace runs grok
+  // and three of the four installs never covered it. agent-browser is the covered control (its card stays
+  // quiet), so the shot proves the notice is per-card rather than a global banner.
+  "runtime-gap": { provenance: "captured-host-vm", vm: captured.runtimeGap },
 };
