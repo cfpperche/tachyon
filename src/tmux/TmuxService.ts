@@ -9,6 +9,7 @@ import {
   type ComposerSubmissionState,
 } from "../runtime/composerRegion.js";
 import type { ComposerRegionProfile } from "../runtime/runtimeProfile.js";
+import { parseSessionClients, type SessionClientInfo } from "../presentation/foreignTmuxClient.js";
 
 /**
  * Env seam for the dedicated tmux server socket name (`t-05097f`).
@@ -1193,6 +1194,25 @@ export class TmuxService {
       }
     } catch {
       // no clients attached — nothing to refresh
+    }
+  }
+
+  /**
+   * t-edbe36 — clients currently attached to a session (name + size).
+   * Used by the Agent Pane to measure a foreign shell co-attach; never detach/kill them.
+   */
+  async listSessionClients(name: string): Promise<SessionClientInfo[]> {
+    try {
+      const { stdout } = await this.run([
+        "list-clients",
+        "-t",
+        `=${name}:`,
+        "-F",
+        "#{client_name}\t#{client_width}\t#{client_height}",
+      ]);
+      return parseSessionClients(stdout);
+    } catch {
+      return [];
     }
   }
 
