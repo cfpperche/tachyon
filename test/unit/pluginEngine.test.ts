@@ -733,6 +733,56 @@ describe("detectRuntimes", () => {
     expect([...detectRuntimes(makeWorkspace())]).toEqual(["claude"]);
     expect(detectRuntimes(tmp("bare-")).size).toBe(0);
   });
+
+  it("t-2f99e7 — detects grok by `.grok/`", () => {
+    expect([...detectRuntimes(makeWorkspace(["grok"]))]).toEqual(["grok"]);
+    expect([...detectRuntimes(makeWorkspace(["claude", "grok"]))].sort()).toEqual(["claude", "grok"]);
+  });
+});
+
+describe("t-2f99e7 — grok install door", () => {
+  it("installs hooks into `.grok/hooks/tachyon-plugins.json` and records a grok lockfile target", async () => {
+    const ws = makeWorkspace(["grok"]);
+    const res = await install(makePlugin({ runtimes: ["grok"] }), ws);
+    expect(res.errors).toEqual([]);
+    expect(res.installed).toBe(true);
+    expect(res.runtimes).toEqual(["grok"]);
+    const settings = path.join(ws, ".grok/hooks/tachyon-plugins.json");
+    expect(fs.existsSync(settings)).toBe(true);
+    const hooks = readJson(settings).hooks.PreToolUse;
+    expect(hooks).toHaveLength(1);
+    expect(hooks[0].matcher).toBe("Bash");
+    const lock = readJson(LOCK(ws));
+    expect(lock.plugins.sdd.runtimes).toEqual(["grok"]);
+    expect(lock.plugins.sdd.targets).toEqual([
+      expect.objectContaining({ runtime: "grok", kind: "settings-hook", file: ".grok/hooks/tachyon-plugins.json", ref: "PreToolUse" }),
+    ]);
+  });
+
+  it("remove un-merges the grok settings file and clears the lockfile entry", async () => {
+    const ws = makeWorkspace(["grok"]);
+    await install(makePlugin({ runtimes: ["grok"] }), ws);
+    const rem = await applyRemove("sdd", ws);
+    expect(rem.errors).toEqual([]);
+    expect(rem.removed).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(false);
+    expect(fs.existsSync(LOCK(ws))).toBe(false);
+  });
+
+  it("skills land in `.grok/skills/`; MCP is skipped (no codec yet)", async () => {
+    const dir = makeSkillsOnlyPlugin("skilled", ["grok"]);
+    addSkill(dir, "review");
+    fs.writeFileSync(path.join(dir, "mcp.json"), JSON.stringify({
+      servers: [{ name: "db", transport: "stdio", command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } }],
+    }));
+    const { plugin, errors } = loadPlugin(dir);
+    expect(errors).toEqual([]);
+    const targets = planSkillTargets(plugin!, new Set(["grok"] as const));
+    expect(targets.map((t) => t.destRel)).toEqual([".grok/skills/review"]);
+    expect(runtimeSupportsSkills("grok")).toBe(true);
+    expect(runtimeSupportsMcp("grok")).toBe(false);
+    expect(planMcpTargets(plugin!, new Set(["grok"] as const))).toEqual([]);
+  });
 });
 
 describe("previewInstall (the security surface)", () => {
