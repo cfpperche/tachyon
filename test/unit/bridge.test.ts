@@ -225,6 +225,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // to exercise write_input's refusal path without disturbing those other tests.
   let claudeAttention: "working" | "idle" | "needs-input" | "throttled" = "needs-input";
   let claudeComposerOccupied = false;
+  // t-a53dd9 — the SAME question answered from the pane instead of from the poll. Independent of
+  // `claudeComposerOccupied` on purpose: the incident is exactly the case where the two disagree.
+  let claudeComposerDraftNow: boolean | undefined = undefined;
   // spec 273 — back the evidence channel with a REAL SessionLedger (a worktree-backed "claude"),
   // wiring attach/list exactly as Workspace does (a fixed HEAD stands in for git). Headless dogfood.
   const evRoot = makeTempDir("tachyon-bridge-ev-");
@@ -250,6 +253,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     onValidationsChanged: () => { validationChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? claudeAttention : undefined),
     composerOccupiedOf: (agent) => (agent === "claude" ? claudeComposerOccupied : undefined),
+    composerDraftNow: async (agent) => (agent === "claude" ? claudeComposerDraftNow : undefined),
     deliverNotice: async (target, line, metadata) => {
       deliveredNoticeMetadata = metadata;
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
@@ -1088,6 +1092,44 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(answered.isError).toBeFalsy();
       expect(JSON.stringify(answered.content)).toContain("answered-prompt");
       expect(sessions.get(`tachyon-${HASH}-claude`)).toBe("1");
+    } finally {
+      claudeAttention = "needs-input";
+      claudeComposerOccupied = false;
+    }
+  });
+
+  it("write_input: a draft the POLL has not seen yet still refuses — the pane wins over the cache (t-a53dd9)", async () => {
+    // The incident's shape, on write_input's door: the human started typing after the last attention
+    // capture, so the cached reading still says the composer is free. Before this task that cached
+    // "false" was the whole guard, and the write landed on top of what the human was typing.
+    claudeAttention = "idle";
+    claudeComposerOccupied = false;
+    claudeComposerDraftNow = true;
+    try {
+      const before = sessions.get(`tachyon-${HASH}-claude`);
+      const refused = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toMatch(/refused-composer/);
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
+    } finally {
+      claudeAttention = "needs-input";
+      claudeComposerDraftNow = undefined;
+    }
+  });
+
+  it("write_input: a runtime that cannot answer falls back to the poll, never to 'clear' (t-a53dd9)", async () => {
+    // The other direction of the same three-valued contract. `undefined` means "this runtime declares
+    // no composer region", and flattening it to false would hand every unprofiled runtime a guard
+    // that always says the pane is free — a fix that silently un-fixes itself.
+    claudeAttention = "idle";
+    claudeComposerDraftNow = undefined;
+    claudeComposerOccupied = true;
+    try {
+      const before = sessions.get(`tachyon-${HASH}-claude`);
+      const refused = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "should not land" } });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused.content)).toMatch(/refused-composer/);
+      expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
     } finally {
       claudeAttention = "needs-input";
       claudeComposerOccupied = false;

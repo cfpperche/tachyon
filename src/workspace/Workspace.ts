@@ -1777,6 +1777,8 @@ export class Workspace {
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
+        // t-a53dd9 — the at-injection reading write_input prefers over the cached one above.
+        composerDraftNow: (agent) => this.monitor.probeComposerOccupied(agent),
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
@@ -4225,7 +4227,12 @@ export class Workspace {
         return;
       }
       if (await this.applyPendingContextRenewal(agent)) return;
-      if (wantAnchor) {
+      // t-a53dd9 — the re-anchor pointer is typed into the SAME composer the notice is, by the same
+      // idle pass, so it needs the same rule: never write over a draft a human owns. The pending flag
+      // is deliberately left armed (not deleted) rather than the anchor being dropped — this is a
+      // deferral, and it re-fires on the first idle after the draft clears, exactly as the branch
+      // above defers it when a notice wins the pass.
+      if (wantAnchor && !(await this.humanDraftPresent(agent))) {
         try {
           this.pendingAnchor.delete(agent);
           await this.reanchor(agent);
@@ -4278,7 +4285,9 @@ export class Workspace {
   private async applyPendingContextRenewal(agent: string): Promise<boolean> {
     const mode = this.pendingContextRenewal.get(agent);
     if (!mode) return false;
-    const unsafeReason = this.attentionOf(agent)?.composerOccupied
+    // t-a53dd9 — same door, different actor: context renewal also types into a pane a human may be
+    // drafting in. It already refused on the cached reading; it now refuses on the fresh one.
+    const unsafeReason = (await this.humanDraftPresent(agent))
       ? "the composer contains a draft"
       : listPendingApprovalRequests(this.workspaceRoot).some((row) => row.requester === agent)
         ? "a human approval is pending"
@@ -4331,7 +4340,15 @@ export class Workspace {
     const attention = this.attentionOf(agent);
     const state = attention?.state;
     if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
-      return this.enqueueNotice(agent, line, metadata);
+      return this.enqueueNotice(agent, line, metadata, attention?.composerOccupied ? "human-draft" : undefined);
+    }
+    // t-a53dd9 — the check above is a poll up to ATTENTION_POLL_MS old; this one is taken NOW, against
+    // the pane we are about to write into. Both are kept: the cached read costs nothing and catches
+    // the common case, and this one closes the seconds-wide window in which the owner started typing
+    // after the last capture. Without it the queue is right about everything except the one state it
+    // exists to protect.
+    if (await this.humanDraftPresent(agent)) {
+      return this.enqueueNotice(agent, line, metadata, "human-draft");
     }
     const receipt = await this.submitNoticeLine(agent, line);
     // t-8d190f — a typed-but-unsubmitted line used to report "notified". The doorbell must stay
@@ -4343,12 +4360,32 @@ export class Workspace {
     return { status: "notified" };
   }
 
-  private enqueueNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): NoticeDeliveryResult {
+  private enqueueNotice(
+    agent: string,
+    line: string,
+    metadata: NoticeQueueMetadata = {},
+    heldFor?: "human-draft",
+  ): NoticeDeliveryResult {
     const result = this.noticeQueue.enqueue(agent, line, metadata);
     if (result.dropped > 0) {
       this.host.notify(this.t("dropped {0} old notice(s) for '{1}' while queueing a newer one", result.dropped, agent), "warn");
     }
-    return { status: "queued", queued: result.queued, dropped: result.dropped || undefined };
+    // t-a53dd9 — WHY it waits travels back to the sender. "Queued for idle delivery" reads as "the
+    // recipient is mid-turn, it will land in a moment"; a held-for-a-human-draft wait is a different
+    // thing with a different ending (it clears when the human submits, or it expires and the human is
+    // told). The false-positive cost this task names — a doorbell that dies leaving no trace — starts
+    // with the sender not being able to tell those two apart.
+    return { status: "queued", queued: result.queued, dropped: result.dropped || undefined, heldFor };
+  }
+
+  /**
+   * t-a53dd9 — "is a human typing into this pane right now?", measured fresh, with the cached poll as
+   * the fallback for runtimes that cannot answer (see AttentionMonitor.probeComposerOccupied for the
+   * three-valued contract and the per-runtime signal).
+   */
+  private async humanDraftPresent(agent: string): Promise<boolean> {
+    const fresh = await this.monitor.probeComposerOccupied(agent);
+    return fresh ?? !!this.attentionOf(agent)?.composerOccupied;
   }
 
   /**
@@ -4382,8 +4419,13 @@ export class Workspace {
   }
 
   private async flushQueuedNotice(agent: string): Promise<boolean> {
-    if (this.monitor.stateOf(agent)?.composerOccupied) return false;
+    // t-a53dd9 — expiry is swept BEFORE the composer guard, not after it. The old order made the one
+    // wait with no natural end also the one wait the TTL never reached: a draft that is never
+    // submitted holds this early-return forever, so the sweep below never ran for exactly the queue
+    // that was stuck. The declared exit (expire, and tell the human by name — t-fb1453) only exists
+    // if it is reachable while the queue is held.
     this.noticeQueue.clearExpired(agent);
+    if (await this.humanDraftPresent(agent)) return false;
     // t-fb1453 — peek, submit, THEN drop. Removing first meant an unobserved submit took the notice
     // with it (t-b4a799's unknown-flattened-into-known); now only a KNOWN fate consumes the item.
     let item = this.noticeQueue.peek(agent);
@@ -5818,6 +5860,16 @@ export class Workspace {
     if (before?.state !== "throttled" || before.episodeKey !== episodeKey) return;
     const session = this.manager.session(agent);
     if (!(await this.tmux.hasSession(session).catch(() => false))) return;
+    // t-a53dd9 — this "continue" is a BARE ENTER, and a bare Enter into an occupied composer submits
+    // whatever the human has half-written there. Same loss as the notice incident, reached through a
+    // different door and by a different actor (Tachyon's own retry timer, not an agent). Skip the
+    // press and re-arm on the backoff, so the retry chain survives the wait instead of dying in it —
+    // a silently cancelled auto-continue would be this task's own false-positive failure mode.
+    if (await this.humanDraftPresent(agent)) {
+      const held = Math.min(15 * 60_000, 60_000 * 2 ** Math.min(attempt, 4));
+      this.scheduleRateLimitAutoContinue(agent, { ...before, rateLimit: { ...before.rateLimit, resetAt: Date.now() + held } }, attempt + 1);
+      return;
+    }
 
     await this.tmux.sendKeys(session, "", true);
     await new Promise((resolve) => setTimeout(resolve, ATTENTION_POLL_MS + 1_000));
@@ -5839,6 +5891,13 @@ export class Workspace {
     void this.lifecycle.tick();
     void this.commandRunner.tick();
     this.scheduler.tick(); // fires anything due (workspace-open scope)
+    // t-a53dd9 — the notice queue's TTL is enforced on the heartbeat, not only when something else
+    // happens to touch the queue. Every other sweep point rides an event (a new notice, an idle
+    // edge); a notice held behind a draft the human never submits and never clears produces no
+    // events at all, so its declared exit — expire and name the loss to the human (t-fb1453) —
+    // depended on an event that by construction never comes. Waiting is allowed to be long; it is
+    // not allowed to be unbounded and silent.
+    this.noticeQueue.clearExpired();
     await this.monitor.tick();
     await this.temporaryBackstop.tick();
     await this.runtimeSlack.tick().catch(() => undefined);
