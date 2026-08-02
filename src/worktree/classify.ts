@@ -196,7 +196,10 @@ export async function classifyManagedWorktree(
   if (!pathExists) {
     return {
       state: "record-only",
-      reasons: ["path does not exist"],
+      // t-dcdb7f — name the reachable exit: missing path is registry residue, not a checkout to force.
+      reasons: [
+        "path does not exist; list worktrees to reconcile the registry to abandoned, or drop the row from the host UI",
+      ],
       pathExists: false,
       dirty: false,
       aheadOfBase: 0,
@@ -257,7 +260,10 @@ export async function classifyManagedWorktree(
   if (occupant) {
     return {
       state: "occupied",
-      reasons: [`occupied by '${occupant.agent}' (${occupant.state})`],
+      // t-dcdb7f — occupancy is the blocking condition; name who to stop, not only who is there.
+      reasons: [
+        `occupied by '${occupant.agent}' (${occupant.state}); stop agent '${occupant.agent}' (kill_agent) or wait until it leaves this worktree`,
+      ],
       pathExists: true,
       dirty,
       aheadOfBase,
@@ -268,13 +274,24 @@ export async function classifyManagedWorktree(
     };
   }
 
+  // t-dcdb7f — reasons are ordered by what the caller should resolve first (dirty/status before
+  // containment). Each line names a reachable exit after the why, matching hygieneAuthority.
+  // Callers that surface a refusal should report reasons[0] only when one condition blocks the rest.
   const reasons: string[] = [];
   const statusRejected = status.aheadOfBase < 0;
   const genuinelyDirty = status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
   // A `git status` that could not run at all still blocks: without it we do not know whether there is
   // uncommitted work, and that is a data-loss question no containment result can answer.
-  if (statusRejected) reasons.push("git status probe failed — treated as unsafe");
-  if (!statusRejected && genuinelyDirty) reasons.push("worktree has uncommitted changes");
+  if (statusRejected) {
+    reasons.push(
+      "git status probe failed — treated as unsafe; fix git/permissions so dirtiness can be measured, or force-remove as owner with confirmDirty=true if you accept unknown dirtiness",
+    );
+  }
+  if (!statusRejected && genuinelyDirty) {
+    reasons.push(
+      "worktree has uncommitted changes; commit or discard them, or force-remove as owner with confirmDirty=true",
+    );
+  }
   // t-6ae9a8 — the ONE containment reason, and it names the trunk. An unresolvable creation baseRef is
   // no longer a blocker on its own: it is a fact about where the worktree was born, and being born
   // from a ref that has since been deleted says nothing about whether the work arrived. What blocks is
@@ -294,9 +311,13 @@ export async function classifyManagedWorktree(
     // Only now does an unresolvable base matter: with no trunk proof either, nothing establishes that
     // the commits are recoverable, and that is exactly when the classifier must refuse.
     if (!statusRejected && status.aheadProbeFailed === true) {
-      reasons.push(`base ref '${entry.baseRef}' could not be resolved and HEAD is not in '${trunkRef}' — ancestry unknown, treated as unsafe`);
+      reasons.push(
+        `base ref '${entry.baseRef}' could not be resolved and HEAD is not in '${trunkRef}' — ancestry unknown, treated as unsafe; restore a resolvable base or prove HEAD is in '${trunkRef}' before removing`,
+      );
     } else {
-      reasons.push(`${aheadOfBase} commit(s) not contained in base or in '${trunkRef}'`);
+      reasons.push(
+        `${aheadOfBase} commit(s) not contained in base or in '${trunkRef}'; land or integrate them into the trunk before removing`,
+      );
     }
   }
 
