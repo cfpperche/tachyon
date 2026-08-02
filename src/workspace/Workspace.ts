@@ -995,6 +995,18 @@ export class Workspace {
           },
         );
       },
+      // t-84f0eb — authority is the workspace config, keyed by the exact managed agent name. No
+      // environment, parent command or runtime-home setting participates, and absence stays off.
+      resolveAgentPermissionProjection: (name, runtime) => {
+        const authored = this.config?.settings.agentPermissionProjection?.[name];
+        if (!authored) return undefined;
+        if (authored.runtime !== runtime) {
+          throw new Error(
+            `agent '${name}': settings.agentPermissionProjection targets '${authored.runtime}', not '${runtime}'`,
+          );
+        }
+        return authored.mode;
+      },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + isolated auth copy).
       materializeBridgeMcpHermes: (name) => {
         const entry = this.bridgeEntry();

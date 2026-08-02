@@ -2007,6 +2007,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
+      resolveAgentPermissionProjection?: (name: string, runtime: string) => string | undefined;
       piBridgeExtensionPath?: () => string | undefined;
       materializePiSessionDir?: (name: string) => string;
       materializeOwnershipSettings?: (name: string, opts?: {
@@ -2148,6 +2149,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
       materializeBridgeMcpGrok: opts.materializeBridgeMcpGrok,
+      resolveAgentPermissionProjection: opts.resolveAgentPermissionProjection,
       piBridgeExtensionPath: opts.piBridgeExtensionPath,
       materializePiSessionDir: opts.materializePiSessionDir,
       materializeOwnershipSettings: opts.materializeOwnershipSettings,
@@ -5698,6 +5700,30 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(ledger.get("reviewer")?.resume?.configHome).toBe(harnessHome(ws, "reviewer"));
       expect(mats).toEqual([{ name: "reviewer", isolate: "transcript" }]);
       expect(calls).toEqual([{ name: "reviewer", ownershipOnly: true }]);
+    });
+
+    it("t-84f0eb: projects an authored Grok permission mode into a delegated spawn and preserves absence", async () => {
+      const worktree = { path: "/wt/reader", branch: "tachyon/reader", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        resolveAgentPermissionProjection: (name: string, runtime: string) =>
+          name === "reader" && runtime === "grok" ? "auto" : undefined,
+        resolveSpawnCwd: async (ctx) => ({ cwd: `/wt/${ctx.name}`, worktree: { ...worktree, path: `/wt/${ctx.name}` } }),
+      });
+
+      await manager.spawn("reader", { cmd: "grok", parent: "boss", worktree: true });
+      expect(cmds.at(-1)).toContain("--permission-mode auto");
+
+      await manager.spawn("unconfigured", { cmd: "grok", parent: "boss", worktree: true });
+      expect(cmds.at(-1)).not.toContain("--permission-mode");
+    });
+
+    it("t-84f0eb: refuses a named permission projection when the managed runtime is not covered", async () => {
+      const { manager } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        resolveAgentPermissionProjection: (name: string) => name === "reader" ? "auto" : undefined,
+      });
+      await expect(manager.spawn("reader", { cmd: "claude" })).rejects.toThrow(
+        "agent 'reader': authored permission projection targets an unsupported runtime 'claude'",
+      );
     });
 
     it("SDD 369 T3 passes the effective cwd and private Claude config home to capture materialization", async () => {

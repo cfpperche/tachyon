@@ -467,6 +467,27 @@ describe("parseConfig", () => {
       .errors.some((e) => e.includes("agentHookProjection: must be a mapping"))).toBe(true);
   });
 
+  it("t-84f0eb: parses an authored per-agent Grok permission projection and stays off when absent", () => {
+    const { config, errors } = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    reader:\n      runtime: grok\n      mode: auto\n`);
+    expect(errors).toEqual([]);
+    expect(config?.settings.agentPermissionProjection).toEqual({ reader: { runtime: "grok", mode: "auto" } });
+
+    const without = parseConfig("agents:\n  boss:\n    cmd: claude\n");
+    expect(without.config?.settings.agentPermissionProjection).toBeUndefined();
+  });
+
+  it("t-84f0eb: refuses unknown permission projection runtimes, modes and fields by agent name", () => {
+    for (const entry of [
+      "runtime: claude\n      mode: auto",
+      "runtime: grok\n      mode: always-approve",
+      "runtime: grok\n      mode: auto\n      inherit: true",
+    ]) {
+      const result = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    reader:\n      ${entry}\n`);
+      expect(result.config?.settings.agentPermissionProjection).toBeUndefined();
+      expect(result.errors.join("\n")).toContain("settings.agentPermissionProjection.reader");
+    }
+  });
+
   // spec 219 — settings.clipboard enum
   it("parses settings.clipboard auto/off and rejects other values", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: auto\n`).config?.settings.clipboard).toBe("auto");
