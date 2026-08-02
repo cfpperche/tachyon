@@ -1117,7 +1117,7 @@ export class AgentManager {
     const child = asAgent(definition);
     if (!child || !parent) return definition;
     const parentAgent = asAgent(this.definitionOf(parent, lineage));
-    const inherited = parentAgent ? this.delegableToolkit(parentAgent) : undefined;
+    const inherited = parentAgent ? this.delegableToolkit(parent, parentAgent) : undefined;
     if (!inherited || inherited.skills.length === 0) return definition;
     const runtime = adapterFor(child.cmd)?.runtime;
     if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok") {
@@ -1131,10 +1131,29 @@ export class AgentManager {
     const skillOrigins: NonNullable<ResolvedAgentCapabilityProjection["skillOrigins"]> = Object.fromEntries(
       skills.map((skill) => [skill.name, [{ kind: "delegator" as const, agent: parent }]]),
     );
+    /** t-b0cfd4 — delegated skills held back below, so the child's sources cannot claim them. */
+    const withheldFromDelegator = new Set<string>();
     for (const selected of own?.skills ?? []) {
       const inheritedIndex = skills.findIndex((skill) => skill.name === selected.name);
       if (inheritedIndex >= 0 && skills[inheritedIndex]!.source.sha256 !== selected.source.sha256) {
-        throw new Error(`delegated skill '${selected.name}' conflicts with the child's profile selection`);
+        // t-b0cfd4 — the FOURTH site of the same shape, found by sweeping for it rather than by
+        // waiting for it: one skill the parent and the child pinned at different content used to
+        // throw here, and this throw aborts the whole spawn. Both sides are approved bytes, so
+        // neither is unsafe; what is unsafe is picking silently, because the two are different
+        // content wearing one name and the child would run believing it has the other one.
+        //
+        // The child's OWN profile selection wins — it is this agent's authored choice, and it is the
+        // one the child's manifest already names — and the delegated copy is withheld by name. The
+        // spawn continues.
+        skills[inheritedIndex] = structuredClone(selected);
+        skillOrigins[selected.name] = [];
+        withheldFromDelegator.add(selected.name);
+        this.opts.notify?.(
+          `delegated toolkit withheld '${parent}'s '${selected.name}' from '${name}': the two pin different content `
+          + "under one name, and the child's own profile selection is the authored choice. "
+          + `Reauthorize it for one of the two in Agent Studio → Runtime tooling if they should match.`,
+          "warn",
+        );
       }
       if (inheritedIndex < 0) skills.push(structuredClone(selected));
       skillOrigins[selected.name] = [...(skillOrigins[selected.name] ?? []), { kind: "profile", agent: name }];
@@ -1143,7 +1162,10 @@ export class AgentManager {
       schemaVersion: 1,
       adapter: runtime,
       sources: structuredClone([
-        ...inherited.sources.filter((source) => source.kind === "skill"),
+        // A withheld delegated copy must leave the SOURCES too. Leaving it would have the child's
+        // manifest name a digest that nothing in its toolkit carries — provenance describing bytes
+        // that were deliberately not delivered.
+        ...inherited.sources.filter((source) => source.kind === "skill" && !withheldFromDelegator.has(path.posix.basename(source.path))),
         ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !inherited.sources.some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
       ]),
       skills,
@@ -1167,7 +1189,7 @@ export class AgentManager {
    * Capturing the recorded target (rather than asking whether the child runtime directory exists)
    * also keeps delegation independent from plugin runtime detection/materialization ordering.
    */
-  private delegableToolkit(agent: AgentEntry): ResolvedAgentCapabilityProjection | undefined {
+  private delegableToolkit(agentName: string, agent: AgentEntry): ResolvedAgentCapabilityProjection | undefined {
     const declared = agent.profileCapabilities;
     const runtime = adapterFor(agent.cmd)?.runtime;
     if (!runtime) return declared;
@@ -1183,11 +1205,25 @@ export class AgentManager {
 
     const skills = structuredClone(declared?.skills ?? []);
     const sources = structuredClone((declared?.sources ?? []).filter((source) => source.kind === "skill"));
+    // t-b0cfd4 — what the parent's own config already withheld, by name. The config layer is where a
+    // stale pin is visible at all (it holds the profile and the expected digest); by the time the
+    // lockfile is read here the capture succeeds and looks perfectly healthy. Without this the two
+    // layers would contradict each other in the worst direction: the parent runs without the skill
+    // because the human has not re-approved it, and the child gets it anyway.
+    const withheldByProfile = new Set((agent.profileWithheldCapabilities ?? []).map((entry) => entry.name));
     for (const plugin of Object.values(parsed.lockfile.plugins).sort((left, right) => left.name.localeCompare(right.name))) {
       for (const target of plugin.targets
         .filter((candidate) => candidate.kind === "skill-dir" && candidate.runtime === runtime)
         .sort((left, right) => left.file.localeCompare(right.file))) {
         const skillName = path.posix.basename(target.file);
+        if (withheldByProfile.has(skillName)) {
+          this.opts.notify?.(
+            `delegated toolkit withheld '${skillName}': '${agentName}' does not hold it either — its content changed `
+            + "since it was authorized. Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
+            "warn",
+          );
+          continue;
+        }
         // t-b505b3 follow-up — one uncapturable grant must not cost the caller the whole spawn.
         // `inspectCapabilitySourceAtRoot` throws per SOURCE (too-large, unsafe-path, io, …), and
         // before the delegated toolkit existed nothing here was captured, so those throws had no
@@ -1209,31 +1245,23 @@ export class AgentManager {
         }
         const existing = skills.find((skill) => skill.name === skillName);
         if (existing && existing.source.sha256 !== captured.sha256) {
-          // A profile selects skills BY NAME (`capabilities.skills: [agent-browser, …]`); the sha on
-          // the parent's resolved projection is a SNAPSHOT of whatever provided those bytes when it
-          // was last resolved. The lockfile read above is fresh. So a mismatch is usually not two
-          // different skills — it is one skill at two points in time, and updating the plugin is
-          // enough to produce it. Measured 2026-08-02: installing tachyon-plugins v2.3.1 bumped
-          // agent-browser 3.0.0 → 3.1.0 and this throw refused EVERY delegation in the workspace.
+          // t-b0cfd4 — WITHHOLD, whatever the provenance. 4601017b had this branch refresh the
+          // parent's snapshot when the fresh bytes came from this same plugin, on the reasoning that
+          // one skill at two points in time is not a conflict. That reasoning is right and the
+          // conclusion was wrong: refreshing hands the CHILD bytes no human approved, which is the
+          // one thing the parent's pin exists to prevent — and it made the two layers disagree, the
+          // config withholding the changed skill while delegation quietly delivered it.
           //
-          // Provenance decides, and it is the only thing that can: if the parent's copy came from
-          // THIS plugin, the fresh bytes are the current truth and the snapshot is simply stale.
-          // If it came from somewhere else, the two really are different skills wearing one name —
-          // and then the parent's selection wins, because the profile is the authored choice. Either
-          // way this is not fatal: the caller loses at most one tool, never the ability to delegate.
-          const fromThisPlugin = sources.some(
-            (source) => source.referenceId === `plugin:${plugin.name}:${skillName}` || source.owner === `plugin:${plugin.name}`,
+          // The parent's own copy still crosses: those bytes ARE approved. Only the plugin's newer
+          // ones are held back, by name, and the spawn continues — a child missing one tool is
+          // recoverable, and re-pinning stays a human gesture in Agent Studio.
+          this.opts.notify?.(
+            `delegated toolkit withheld plugin '${plugin.name}'s '${skillName}': its content differs from the copy `
+            + `'${agentName}' authorized, and the child receives only approved bytes. `
+            + "Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
+            "warn",
           );
-          if (fromThisPlugin) {
-            existing.source = captured;
-          } else {
-            this.opts.notify?.(
-              `delegated toolkit kept the parent's own '${skillName}' and withheld plugin '${plugin.name}'`
-              + "'s skill of the same name — same name, different content, and the profile selection wins",
-              "warn",
-            );
-            continue;
-          }
+          continue;
         }
         if (!existing) skills.push({ name: skillName, source: captured });
         const referenceId = `plugin:${plugin.name}:${skillName}`;
@@ -5006,6 +5034,12 @@ export class AgentManager {
         : {}),
       ...(sourceDefinition?.profileCapabilities
         ? { profileCapabilities: structuredClone(sourceDefinition.profileCapabilities) }
+        : {}),
+      // t-b0cfd4 — a fork inherits what the source was NOT given, for the same reason it inherits
+      // what it was: the fork delegates from the same profile, and a withholding that did not travel
+      // would let the fork's own delegation hand a child the bytes the source is running without.
+      ...(sourceDefinition?.profileWithheldCapabilities
+        ? { profileWithheldCapabilities: structuredClone(sourceDefinition.profileWithheldCapabilities) }
         : {}),
     };
     const forkRecord = () => ({

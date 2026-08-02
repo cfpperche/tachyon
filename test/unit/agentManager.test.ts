@@ -5515,11 +5515,13 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(warnings.some((line) => line.includes("product-foundation") && line.includes("withheld"))).toBe(true);
     });
 
-    it("t-b505b3: a plugin update refreshes the parent's stale snapshot instead of refusing every delegation", async () => {
+    it("t-b0cfd4: a plugin update withholds the changed skill instead of handing the child unapproved bytes", async () => {
       // Measured in the field on 0.56.154: installing tachyon-plugins v2.3.1 bumped agent-browser
       // 3.0.0 → 3.1.0, the parent's resolved sha no longer matched the fresh lockfile capture, and
-      // the throw refused EVERY spawn. A profile selects skills by NAME; the sha is a snapshot, so a
-      // mismatch is one skill at two points in time, not two skills.
+      // the throw refused EVERY spawn. 4601017b answered that by REFRESHING the parent's snapshot
+      // when provenance matched. Not refusing was right; refreshing was not — it delivers the child
+      // bytes no human approved, and it made the two layers disagree, the config withholding the
+      // changed skill while delegation quietly shipped it. Both now withhold by name and continue.
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
       const dir = path.join(h.ws, ".claude", "skills", "agent-browser");
       fs.mkdirSync(dir, { recursive: true });
@@ -5545,21 +5547,134 @@ describe("AgentManager — session resume (spec 209)", () => {
         mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
       } as unknown as ResolvedAgentCapabilityProjection;
 
+      const warnings: string[] = [];
       const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
-      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) => {
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
         projections.set(name, asAgent(def)?.profileCapabilities);
         return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
       };
 
       await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
 
-      // The spawn happened at all — that is the regression this guards.
+      // The spawn happened at all — that is the regression 4601017b guards and this keeps.
       const inherited = projections.get("child")!;
       const skill = inherited.skills.find((candidate) => candidate.name === "agent-browser")!;
-      // The stale snapshot lost to the installed truth: the child gets the bytes on disk today.
+      // The updated bytes do NOT cross: the child receives the copy the parent's pin approved.
       expect(Buffer.from(skill.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
-        .toBe("# agent-browser 3.1.0 — the UPDATED bytes\n");
-      expect(skill.source.sha256).not.toBe("a".repeat(64));
+        .not.toContain("UPDATED");
+      expect(skill.source.sha256).toBe("a".repeat(64));
+      // Withheld BY NAME and out loud, naming the gesture that accepts the new content.
+      expect(warnings.some((line) => line.includes("agent-browser") && line.includes("withheld") && line.includes("Reauthorize")))
+        .toBe(true);
+    });
+
+    it("t-b0cfd4: a skill the parent's own config withheld does not reach the child either", async () => {
+      // The alignment this task exists for. The config layer is the only one that can see a pin go
+      // stale — by the time the lockfile is read at spawn the capture succeeds and looks healthy —
+      // so without the parent carrying its withholdings the child would receive exactly the bytes
+      // the parent is running without.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      for (const name of ["agent-browser", "sdd"]) {
+        const dir = path.join(h.ws, ".claude", "skills", name);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${name} — installed bytes\n`);
+      }
+      fs.mkdirSync(path.join(h.ws, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          "agent-browser": {
+            name: "agent-browser", version: "3.1.0", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/agent-browser" }],
+          },
+          sdd: {
+            name: "sdd", version: "1.7.1", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/sdd" }],
+          },
+        },
+      }));
+      // What the config projection produced for the parent: sdd delivered, agent-browser withheld.
+      const parent = asAgent(h.manager.defOf("claude"))!;
+      parent.profileWithheldCapabilities = [{
+        referenceId: "agent-browser",
+        name: "agent-browser",
+        kind: "skill",
+        path: ".tachyon/plugins/agent-browser/skills/agent-browser",
+        code: "profile/digest-mismatch",
+        expectedSha256: "6".repeat(64),
+        consumedSha256: "f".repeat(64),
+        version: "3.0.0",
+        detail: "profile/digest-mismatch: expected 6…, consumed f…",
+      }];
+      const warnings: string[] = [];
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
+
+      const inherited = projections.get("child")!;
+      // The child spawned, with everything except the one capability nobody re-approved.
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(warnings.some((line) => line.includes("agent-browser") && line.includes("Reauthorize"))).toBe(true);
+    });
+
+    it("t-b0cfd4: two profiles pinning one name at different content withhold the delegated copy instead of aborting the spawn", async () => {
+      // The fourth site of the same shape, found by sweeping for it rather than by waiting for it:
+      // this threw, and a throw here is the whole spawn. Both copies are approved bytes, so neither
+      // is unsafe — what is unsafe is choosing silently between two different things wearing one
+      // name. The child's own authored selection wins and the delegated one is withheld by name.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n  child:\n    cmd: claude\n", { fileExists: () => true });
+      const captured = (sha: string, body: string) => ({
+        name: "sdd",
+        source: {
+          source: "sdd", sourcePath: "/captured/sdd", type: "tree" as const, sha256: sha,
+          entries: [
+            { path: ".", type: "directory" as const, mode: 0o755 },
+            { path: "SKILL.md", type: "file" as const, mode: 0o644, bytes: Buffer.from(body) },
+          ],
+        },
+      });
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [captured("a".repeat(64), "# the delegator's sdd\n")],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const warnings: string[] = [];
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      // The child is DECLARED, with its own pin on the same name.
+      asAgent(h.manager.defOf("child"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "b".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "b".repeat(64) }],
+        skills: [captured("b".repeat(64), "# the child's own sdd\n")],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+
+      await h.manager.spawn("child", { parent: "claude", reveal: false });
+
+      // The spawn happened at all — that is what the throw cost.
+      const inherited = projections.get("child")!;
+      const skill = inherited.skills.find((candidate) => candidate.name === "sdd")!;
+      expect(Buffer.from(skill.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
+        .toBe("# the child's own sdd\n");
+      expect(warnings.some((line) => line.includes("sdd") && line.includes("withheld"))).toBe(true);
+      // The withheld copy leaves the manifest's provenance too: a source naming bytes the child was
+      // deliberately not given would describe a toolkit it does not have.
+      expect(inherited.sources.map((source) => source.sha256)).toEqual(["b".repeat(64)]);
     });
 
     it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {

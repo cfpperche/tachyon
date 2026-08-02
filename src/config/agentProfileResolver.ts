@@ -24,6 +24,7 @@ import {
 } from "./agentCapabilitySource.js";
 import { parseCodexHooksBlock } from "../plugins/adapters/codex.js";
 import { parseClaudeHooksBlock } from "../plugins/adapters/claude.js";
+import type { WithheldCapability } from "./withheldCapability.js";
 
 export type AgentProfileDiagnosticCode =
   | "profile/missing"
@@ -171,13 +172,13 @@ export interface ResolveAgentProfileInput {
   workspaceDefaults?: WorkspaceProfileDefaults;
   externalReferences?: readonly ExternalProfileReference[];
   /**
-   * t-b0cfd4 — capability ids the owner could not capture (a plugin update moved the bytes under a
-   * pinned digest, a payload outgrew the cap, a path went unreadable). They are dropped from the
-   * selection BEFORE resolution rather than resolved and failed, because a capability that cannot be
-   * delivered must cost only itself: the pin's whole purpose is that unapproved bytes never reach the
-   * agent, and withholding achieves that completely. Failing the profile achieves it too, and also
-   * takes down the agent, the Studio, and the very Reauthorize button that repairs it — protection
-   * the size of the thing protected, not the size of the workspace.
+   * t-b0cfd4 — capability references the OWNER could not deliver, withheld by id.
+   *
+   * The owner captures project-scoped bytes and is therefore the only layer that can see a pin go
+   * stale; this resolver would only see the reference missing and call it `reference-unavailable`,
+   * which is the whole-agent refusal this replaces. Passing the ids in makes the withholding one
+   * decision made once: the capability leaves the selection, the projection is built without it, and
+   * everything else about the agent resolves normally.
    */
   withheldCapabilities?: readonly string[];
   /** Host-custodied profile-head snapshot; workspace path presence is not authority by itself. */
@@ -246,6 +247,16 @@ export interface ResolvedAgentProfile {
   provenance: AgentProfileFieldProvenance[];
   nativeRuntime: NativeRuntimeAttestation;
   capabilityProjection?: ResolvedAgentCapabilityProjection;
+  /**
+   * t-b0cfd4 — the capabilities this resolution held back, by name, with why and the repair.
+   *
+   * Deliberately NOT part of `effectiveSha256`: what a withholding changes about the effective
+   * profile is already there — the capability is absent from `definition.capabilities` and from
+   * `capabilityProjection`. This list is the EXPLANATION of that absence, carried so the surfaces
+   * that render an agent (and the delegation that copies from it) can say what is missing and how to
+   * get it back, instead of showing a silently smaller agent.
+   */
+  withheldCapabilities?: WithheldCapability[];
 }
 
 export type ResolveAgentProfileResult =
@@ -418,52 +429,21 @@ const CAPABILITY_REFERENCE_KINDS = new Set<AgentProfileReferenceV1["kind"]>([
   "pi-package",
 ]);
 
-/**
- * t-b0cfd4 — drop withheld capability ids from BOTH the selection and the reference list, so the
- * rest of resolution never learns they existed. Dropping only the reference would leave the id
- * selected and fail with "selected capability has no owner-captured payload", which is the same
- * total failure wearing a different code.
- */
-function withheldRemoved(profile: AgentProfileV1, withheld: readonly string[] | undefined): AgentProfileV1 {
-  if (!withheld || withheld.length === 0) return profile;
-  const drop = new Set(withheld);
-  const keep = (ids: readonly string[] | undefined): string[] | undefined =>
-    ids === undefined ? undefined : ids.filter((id) => !drop.has(id));
-  const capabilities = profile.capabilities
-    ? {
-      ...profile.capabilities,
-      ...(profile.capabilities.skills ? { skills: keep(profile.capabilities.skills) } : {}),
-      ...(profile.capabilities.mcp ? { mcp: keep(profile.capabilities.mcp) } : {}),
-      ...(profile.capabilities.hooks ? { hooks: keep(profile.capabilities.hooks) } : {}),
-      ...(profile.capabilities.pi
-        ? {
-          pi: {
-            ...profile.capabilities.pi,
-            ...(profile.capabilities.pi.extensions ? { extensions: keep(profile.capabilities.pi.extensions) } : {}),
-            ...(profile.capabilities.pi.prompts ? { prompts: keep(profile.capabilities.pi.prompts) } : {}),
-            ...(profile.capabilities.pi.themes ? { themes: keep(profile.capabilities.pi.themes) } : {}),
-            ...(profile.capabilities.pi.packages ? { packages: keep(profile.capabilities.pi.packages) } : {}),
-          },
-        }
-        : {}),
-    }
-    : profile.capabilities;
-  return {
-    ...profile,
-    ...(capabilities ? { capabilities } : {}),
-    ...(profile.references ? { references: profile.references.filter((reference) => !drop.has(reference.id)) } : {}),
-  };
-}
-
 function resolveReferences(
   source: CanonicalAgentProfileSource,
   profile: AgentProfileV1,
   externalValues: readonly ExternalProfileReference[] | undefined,
-): { references: ResolvedProfileReference[]; errors: AgentProfileDiagnostic[]; provenance: AgentProfileFieldProvenance[] } {
+): {
+  references: ResolvedProfileReference[];
+  errors: AgentProfileDiagnostic[];
+  provenance: AgentProfileFieldProvenance[];
+  withheld: WithheldCapability[];
+} {
   const external = externalReferenceIndex(externalValues);
   const references: ResolvedProfileReference[] = [];
   const errors: AgentProfileDiagnostic[] = [];
   const provenance: AgentProfileFieldProvenance[] = [];
+  const withheld: WithheldCapability[] = [];
   const selectedCapabilities = new Set([
     ...(profile.capabilities?.skills ?? []),
     ...(profile.capabilities?.mcp ?? []),
@@ -498,6 +478,15 @@ function resolveReferences(
           referenceMode: reference.mode,
         });
       } catch (error) {
+        // t-b0cfd4 — a CAPABILITY that cannot be captured is withheld by name; anything else still
+        // fails the profile. The distinction is what the failure costs: a capability is one tool the
+        // agent will not have, and the agent without it is still the agent. A prompt lane, an
+        // Evolution selector or a setup reference is part of what the agent IS, so resolving it
+        // wrong would produce a different agent rather than a smaller one.
+        if (CAPABILITY_REFERENCE_KINDS.has(reference.kind) && error instanceof AgentCapabilitySourceError) {
+          withheld.push(withheldFrom(reference, error));
+          continue;
+        }
         if (error instanceof AgentProfileReadError || error instanceof AgentCapabilitySourceError) {
           errors.push(diagnostic(error.code, error.source, error.message, `references.${reference.id}`));
         } else {
@@ -540,7 +529,51 @@ function resolveReferences(
       referenceMode: reference.mode,
     });
   }
-  return { references, errors, provenance };
+  return { references, errors, provenance, withheld };
+}
+
+/** t-b0cfd4 — the failure, restated as what the human lost and what repairs it. */
+export function withheldFrom(reference: AgentProfileReferenceV1, error: AgentCapabilitySourceError): WithheldCapability {
+  return {
+    referenceId: reference.id,
+    name: path.posix.basename(reference.path),
+    kind: reference.kind,
+    path: reference.path,
+    code: error.code,
+    ...(error.expectedSha256 ? { expectedSha256: error.expectedSha256 } : {}),
+    ...(error.consumedSha256 ? { consumedSha256: error.consumedSha256 } : {}),
+    ...(reference.version ? { version: reference.version } : {}),
+    detail: error.message,
+  };
+}
+
+/**
+ * t-b0cfd4 — the same profile with the withheld ids no longer selected.
+ *
+ * Withholding has to happen HERE, on the selection, and not by dropping the resolved reference:
+ * `resolveCapabilities` reads `profile.capabilities`, so a selection left in place with no reference
+ * behind it becomes `selected capability has no owner-captured payload` — a whole-agent refusal
+ * describing a state nobody chose. Removing the selection makes the projection simply not contain
+ * it, which is exactly what "the agent runs without that capability" means.
+ */
+function withoutSelectedCapabilities(profile: AgentProfileV1, withheldIds: readonly string[]): AgentProfileV1 {
+  if (withheldIds.length === 0 || !profile.capabilities) return profile;
+  const drop = new Set(withheldIds);
+  const keep = (values: string[] | undefined): string[] | undefined =>
+    values === undefined ? undefined : values.filter((id) => !drop.has(id));
+  const pi = profile.capabilities.pi;
+  const next: NonNullable<AgentProfileV1["capabilities"]> = {
+    ...profile.capabilities,
+    ...(profile.capabilities.skills ? { skills: keep(profile.capabilities.skills)! } : {}),
+    ...(profile.capabilities.mcp ? { mcp: keep(profile.capabilities.mcp)! } : {}),
+    ...(profile.capabilities.hooks ? { hooks: keep(profile.capabilities.hooks)! } : {}),
+    ...(pi
+      ? {
+        pi: Object.fromEntries(Object.entries(pi).map(([target, values]) => [target, keep(values as string[] | undefined)])) as typeof pi,
+      }
+      : {}),
+  };
+  return { ...profile, capabilities: next };
 }
 
 function canonicalDefinition(profile: AgentProfileV1): NormalizedAgentDefinition {
@@ -639,6 +672,23 @@ function projectionDigestInput(projection: Omit<ResolvedAgentCapabilityProjectio
   };
 }
 
+/**
+ * t-b0cfd4 sweep — the diagnostics BELOW are still whole-agent refusals, and they have the same
+ * shape as the one this task fixed. Named here rather than left to be rediscovered:
+ *
+ *   - `profile/capability` for a payload that captured cleanly but does not validate — a skill tree
+ *     with no root SKILL.md, an MCP or hook declaration that does not parse, a Pi resource of the
+ *     wrong file type. A plugin update can reach the first one: re-authorize a tree that lost its
+ *     SKILL.md and the agent goes invalid with re-authorization as the thing that caused it.
+ *   - `profile/capability-authority` for a selection with no exact host grant.
+ *   - `profile/capability-collision` for two capabilities claiming one delivered name.
+ *
+ * Each is about ONE capability, so under the owner's rule each should cost that capability and not
+ * the agent. They are deliberately NOT changed here: a capture failure has one obvious meaning
+ * ("these bytes do not reach the agent"), while "withheld" for a half-parsed hook block or for a
+ * collision means choosing which of two claimants survives — a separate decision per case, and one
+ * that should be made with its own guard rather than folded into this commit. Follow-up: t-dfc4de.
+ */
 function resolveCapabilities(
   profile: AgentProfileV1,
   references: readonly ResolvedProfileReference[],
@@ -1176,6 +1226,7 @@ function finalize(
   references: ResolvedProfileReference[],
   profile?: AgentProfileV1,
   capabilityProjection?: ResolvedAgentCapabilityProjection,
+  withheldCapabilities?: readonly WithheldCapability[],
 ): ResolvedAgentProfile {
   const nativeRuntime = normalizedAttestation(input.nativeRuntime);
   const orderedProvenance = [...provenance].sort((left, right) => compareText(`${left.field}:${left.source}`, `${right.field}:${right.source}`));
@@ -1205,6 +1256,7 @@ function finalize(
     provenance: orderedProvenance,
     nativeRuntime,
     ...(capabilityProjection ? { capabilityProjection } : {}),
+    ...(withheldCapabilities?.length ? { withheldCapabilities: [...withheldCapabilities] } : {}),
   };
 }
 
@@ -1252,9 +1304,15 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
 
     const parsed = parseAgentProfile(canonical!);
     if (!parsed.profile) return failure(parsed.errors, warnings);
-    const profile = withheldRemoved(parsed.profile, input.withheldCapabilities);
+    // t-b0cfd4 — withholding is applied to the SELECTION, in two passes, before anything is derived
+    // from it. The owner's withholdings (project-scoped bytes it could not capture) come in as ids;
+    // this resolver adds the profile-local ones it discovers while resolving. Everything downstream —
+    // the normalized definition, its provenance, the capability projection and the effective digest —
+    // is then computed from one profile that already reflects what the agent actually gets.
+    const selected = withoutSelectedCapabilities(parsed.profile, input.withheldCapabilities ?? []);
+    const referenceResult = resolveReferences(canonical!, selected, input.externalReferences);
+    const profile = withoutSelectedCapabilities(selected, referenceResult.withheld.map((entry) => entry.referenceId));
     const definition = canonicalDefinition(profile);
-    const referenceResult = resolveReferences(canonical!, profile, input.externalReferences);
     const inheritance = applyInheritance(profile, definition, input, referenceResult.references);
     const capabilityResult = resolveCapabilities(profile, referenceResult.references, input.authority);
     const errors = [
@@ -1276,7 +1334,18 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
     if (coverage.length > 0) return failure(coverage, warnings);
     return {
       ok: true,
-      value: finalize("canonical", input, canonical!.source, canonical!.sha256, definition, provenance, referenceResult.references, profile, capabilityResult.projection),
+      value: finalize(
+        "canonical",
+        input,
+        canonical!.source,
+        canonical!.sha256,
+        definition,
+        provenance,
+        referenceResult.references,
+        profile,
+        capabilityResult.projection,
+        referenceResult.withheld,
+      ),
       warnings,
     };
   } finally {

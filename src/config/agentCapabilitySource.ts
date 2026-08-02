@@ -22,14 +22,28 @@ export interface CapturedCapabilitySource {
 }
 
 export class AgentCapabilitySourceError extends Error {
-  constructor(readonly code: "profile/invalid-path" | "profile/unsupported-custody" | "profile/unsafe-path" | "profile/missing-reference" | "profile/not-regular" | "profile/too-large" | "profile/changed-during-read" | "profile/digest-mismatch" | "profile/io", readonly source: string, detail: string) {
+  /**
+   * t-b0cfd4 — the two digests as VALUES, not only inside the message.
+   *
+   * A caller that withholds this one capability and keeps the agent running has to tell the human
+   * which digest was approved and which is on disk. Re-parsing them out of the message would make
+   * that text a wire format; carrying them here keeps the message free to read like prose.
+   */
+  readonly expectedSha256?: string;
+  readonly consumedSha256?: string;
+
+  constructor(readonly code: "profile/invalid-path" | "profile/unsupported-custody" | "profile/unsafe-path" | "profile/missing-reference" | "profile/not-regular" | "profile/too-large" | "profile/changed-during-read" | "profile/digest-mismatch" | "profile/io", readonly source: string, detail: string, digests?: { expected: string; consumed: string }) {
     super(`${code}: ${source}: ${detail}`);
     this.name = "AgentCapabilitySourceError";
+    if (digests) {
+      this.expectedSha256 = digests.expected;
+      this.consumedSha256 = digests.consumed;
+    }
   }
 }
 
-function fail(code: AgentCapabilitySourceError["code"], source: string, detail: string): never {
-  throw new AgentCapabilitySourceError(code, source, detail);
+function fail(code: AgentCapabilitySourceError["code"], source: string, detail: string, digests?: { expected: string; consumed: string }): never {
+  throw new AgentCapabilitySourceError(code, source, detail, digests);
 }
 
 function flags(source: string): { directory: number; noFollow: number; nonBlock: number } {
@@ -257,7 +271,7 @@ function captureFromDirectory(
     }
     const sha256 = digestCapturedCapability(type, entries);
     if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
-      fail("profile/digest-mismatch", source, `expected ${expectedSha256}, consumed ${sha256}`);
+      fail("profile/digest-mismatch", source, `expected ${expectedSha256}, consumed ${sha256}`, { expected: expectedSha256, consumed: sha256 });
     }
     return { source, sourcePath: path.join(rootPath, ...referencePath.split("/")), type, sha256, entries };
   } finally {

@@ -200,7 +200,10 @@ describe("resolveAgentProfile", () => {
     expect(rejected.errors.some((error) => error.code === "profile/capability" && error.message.includes("MadeUpEvent"))).toBe(true);
   });
 
-  it("rejects symlinks in captured capability trees", () => {
+  // t-b0cfd4 — the tree is still never captured; what changed is that refusing it no longer refuses
+  // the agent around it. Withholding IS the protection here: unsafe bytes reach nothing, and the
+  // profile that selected them still resolves, without that capability.
+  it("withholds a capability tree containing a symlink, and never delivers its bytes", () => {
     const root = workspace();
     const skill = path.join(profileDir(root), "capabilities", "unsafe");
     fs.mkdirSync(skill, { recursive: true });
@@ -211,9 +214,11 @@ describe("resolveAgentProfile", () => {
       references: [{ id: "unsafe-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/unsafe", mode: "pinned", sha256: "0".repeat(64) }],
     }));
     const result = resolve(root);
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected failure");
-    expect(result.errors.some((error) => error.code === "profile/unsafe-path")).toBe(true);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected the agent to resolve without the unsafe capability");
+    expect(result.value.capabilityProjection).toBeUndefined();
+    expect(result.value.references.some((reference) => reference.id === "unsafe-skill")).toBe(false);
+    expect(result.value.withheldCapabilities).toMatchObject([{ referenceId: "unsafe-skill", code: "profile/unsafe-path" }]);
   });
 
   it("rejects destination-name collisions after scope/path normalization", () => {
