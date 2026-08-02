@@ -11,7 +11,7 @@ const projection = z.object({
   schemaVersion: z.literal(1),
   pinId: z.string().regex(/^p-[0-9a-f]{6}$/),
   title: z.string().min(1),
-  tags: z.array(z.string().min(1).max(32)).max(12),
+  tags: z.array(z.string().min(1)),
   doc: z.union([z.custom<TiptapJSON>(isTiptapDoc, "invalid bounded Tiptap document"), z.null()]),
   attachments: z.array(persistedRichDocAttachmentV1Schema).max(500),
 }).strict().superRefine((value, context) => {
