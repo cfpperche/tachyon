@@ -11,8 +11,6 @@
  */
 
 import { fleetMessage } from "../../src/webview/sidebar/messages";
-import { tilesMessage } from "../../src/webview/control-launcher/messages";
-import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
@@ -95,19 +93,8 @@ export const ROUTES: Record<string, Route> = {
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
     makeMessage: (vm) => fleetMessage([vm as never], {}),
   },
-  // t-6e2952 — Control launcher sidebar tab (phone grid → Control sections).
-  "control-launcher": {
-    bundle: "/dist/webview/control-launcher.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-launcher.css"],
-    frame: { w: 340, h: 640 },
-    fixtures: {
-      default: {
-        provenance: "sample-derived",
-        vm: CONTROL_SECTION_NAV.map((t) => ({ id: t.id, icon: t.icon, label: t.label })),
-      },
-    },
-    makeMessage: (vm) => tilesMessage(vm as never),
-  },
+  // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
+  // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.
   // t-d23f93 — the standalone "plugins" route previewed the retired standalone panel; Plugins is a
   // cockpit-only section now — use ?view=cockpit&fixture=plugins (same App.tsx, same fixture VM).
   // t-610705 (SDD 410 Phase C.2) — the standalone "activity" and "probes" routes previewed the
@@ -357,8 +344,8 @@ export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
  *  matches a named surface deterministically against `view`/`title`/`aliases` before any semantic guess). */
 export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
-  sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet"] },
-  "control-launcher": { title: "Control Launcher", aliases: ["control launcher", "launcher", "control tab", "section grid"] },
+  // t-6e2952 — "control tab"/"control launcher" resolve HERE: the launcher is this view's second tab.
+  sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet", "control tab", "control launcher"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
   cockpit: {

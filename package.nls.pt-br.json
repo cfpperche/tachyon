@@ -31,7 +31,6 @@
   "command.newAgentStudio": "Tachyon: Novo agente (Studio)",
   "command.editAgentStudioItem": "Editar…",
   "view.tachyon": "Tachyon",
-  "view.controlLauncher": "Control",
   "view.runtimeOps": "Runtime Ops",
   "view.runtimeOpsOverview": "Visao geral",
   "command.runCommandItem": "Executar comando",

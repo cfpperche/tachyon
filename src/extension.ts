@@ -35,7 +35,6 @@ import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
 import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
-import { ControlLauncherProvider } from "./webview/ControlLauncherProvider.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
@@ -2361,14 +2360,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   });
 
-  // t-6e2952 — Control launcher is the FIRST sidebar view (package.json views order); fleet + plugins follow.
-  const controlLauncher = new ControlLauncherProvider(context.extensionUri);
-  context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(ControlLauncherProvider.viewType, controlLauncher, {
-      webviewOptions: { retainContextWhenHidden: true },
-    }),
-  );
   // spec 237 — the Tachyon sidebar is the Preact webview (the native tree was retired).
+  // t-6e2952 — the Control launcher is a TAB inside this one view, not a view of its own: registering a
+  // second WebviewViewProvider here is what put a stacked "CONTROL" section above the Tachyon panel.
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(SidebarPrototypeProvider.viewType, sidebarProto, {
       webviewOptions: { retainContextWhenHidden: true },

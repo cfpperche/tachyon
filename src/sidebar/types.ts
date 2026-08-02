@@ -253,9 +253,13 @@ export interface FleetVM {
  * t-37f554 — `Attentions` is a first-class tab (not a permanent panel above Agents). Tab order is
  * visual only; the default selected tab remains Agents so a cold open still lands on the roster.
  */
-export type TabId = "Attentions" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
+export type TabId = "Attentions" | "Control" | "Agents" | "Terminals" | "Pipelines" | "Schedules" | "Commands" | "Runbooks" | "Pins";
 export const TABS: ReadonlyArray<{ id: TabId; icon: string }> = [
   { id: "Attentions", icon: "bell-dot" },
+  // t-6e2952 — Control is a TAB in THIS row (second, right after Attentions), not a sidebar view of its
+  // own: its panel is the launcher grid for the twelve Control sections. A separate WebviewView shipped
+  // once (0.56.161) and rendered as a second collapsible section stacked above this panel.
+  { id: "Control", icon: "dashboard" },
   { id: "Agents", icon: "hubot" },
   { id: "Terminals", icon: "terminal" },
   { id: "Pipelines", icon: "run-all" },

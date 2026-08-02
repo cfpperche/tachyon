@@ -5,6 +5,7 @@ import { panelIcon } from "./shared/panelIcon.js";
 import { isAgentRow, type FleetVM, type AgentVM, type PinPreviewAttachmentVM, type PinPreviewVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { READY } from "./shared/ready.js";
+import { isCockpitSectionId } from "../cockpit/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { pinPreviewMessage } from "./pin-preview/messages.js";
 import type { ActionId } from "../sidebar/actions.js";
@@ -53,6 +54,7 @@ type SidebarMsg = {
   nodeId?: string;
   hash?: string;
   section?: string; // setSort: "agents" | "terminals"
+  sectionId?: string; // global openControl: the Control section a launcher tile targets (t-6e2952)
   mode?: string; // setSort: a SortMode
   keys?: unknown; // setCollapsed: full collapsed key list
 };
@@ -174,8 +176,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.view = view;
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     view.webview.options = { enableScripts: true, localResourceRoots: [root] };
-    // t-38c2a1 — version in native view title. t-6e2952 — Control moved to the launcher sidebar tab
-    // (tachyonControlLauncher); the view/title openControl button is gone.
+    // t-38c2a1 — version in native view title. t-6e2952 — Control is now the second TAB of this same
+    // view (the launcher grid), so the view/title openControl button is gone and no second view exists.
     this.applyNativeTitle(view);
     const uri = (f: string): string => view.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     view.webview.onDidReceiveMessage((m: SidebarMsg) => void this.handleMessage(m));
@@ -288,7 +290,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
-      if (m.op === "openControl") return void vscode.commands.executeCommand("tachyon.openControl");
+      // t-6e2952 — the Control tab's tiles send the section they want. Never trust the webview's string:
+      // an unknown id drops to a plain open (overview) instead of reaching the command as-is. The command
+      // routes through openCockpit, so an already-open Control NAVIGATES rather than opening a second one.
+      if (m.op === "openControl") {
+        return void (isCockpitSectionId(m.sectionId)
+          ? vscode.commands.executeCommand("tachyon.openControl", m.sectionId)
+          : vscode.commands.executeCommand("tachyon.openControl"));
+      }
       if (m.op === "openHandoff") return void vscode.commands.executeCommand("tachyon.openProjectHandoff", m.hash); // spec 245
       if (m.op === "openConfig") return void vscode.commands.executeCommand("tachyon.openConfig", m.hash); // t-8354ae
       // t-aaad95 — the personal override's home is now a FILE, and opening it is also the documented

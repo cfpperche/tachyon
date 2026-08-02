@@ -473,4 +473,37 @@
   .attention-dismiss:hover { color: var(--vscode-foreground); background: var(--hover); }
   .attention-dismiss .codicon { font-size: 12px; }
 
+  /* t-6e2952 — Control tab: a home-screen grid of Control's twelve sections. Layout only; the tile IS the
+     shared Button primitive (.ds-btn) turned vertical, so hover/focus/typography stay the system's. It
+     deliberately has NO card frame: the panel is the screen, and a bordered box floating inside the
+     sidebar reads as an embedded widget instead of a section of this panel. Same 12px horizontal rhythm
+     as .sec/.row/.attention-list. auto-fill keeps 3 columns at the usual sidebar width and drops to 2
+     when the user drags it narrow, instead of squeezing three unreadable labels. */
+  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); gap: 2px; padding: 4px 6px 12px; }
+  .ctl-tile.ds-btn {
+    flex-direction: column; justify-content: flex-start; gap: 5px;
+    width: 100%; min-width: 0; height: auto; min-height: 0;
+    padding: 8px 2px 9px; border-radius: 5px;
+    white-space: normal; text-align: center;
+    /* No outline: every other thing in this panel is a borderless row that lights up on hover, and a
+       phone home screen frames the ICON, not the cell. Twelve outlined boxes read as an embedded
+       widget. The .ds-btn box (radius, focus ring, hover) is otherwise untouched. */
+    border-color: transparent;
+  }
+  .ctl-tile.ds-btn:hover { background: var(--hover); }
+  /* The icon plate carries the tap target; the tile itself stays flush so labels can breathe. */
+  .ctl-tile.ds-btn .codicon {
+    font-size: 17px; width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 8px; background: color-mix(in srgb, var(--vscode-foreground) 9%, transparent);
+    color: var(--vscode-foreground); flex: none;
+  }
+  .ctl-tile.ds-btn:hover .codicon { background: color-mix(in srgb, var(--ds-focus) 22%, transparent); }
+  .ctl-tile.ds-btn .ds-btn-label {
+    font-size: 10px; line-height: 1.25; color: var(--ds-muted);
+    /* Two lines max — "Runtime Config" wraps rather than truncating to an unreadable stub. */
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    max-width: 100%; overflow-wrap: anywhere;
+  }
+  .ctl-tile.ds-btn:hover .ds-btn-label { color: var(--vscode-foreground); }
+
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
