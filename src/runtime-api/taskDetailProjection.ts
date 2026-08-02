@@ -80,8 +80,13 @@ const prototype = z.object({
   id: prototypeId,
   sha256,
   state: z.enum(["draft", "approved", "superseded", "rejected"]),
-  title: boundedText(200),
-  author: boundedText(64),
+  // t-e02bc5 — persisted prototype metadata, bounded only by being non-empty. These carried the two
+  // authoring numbers (`TASK_PROTOTYPE_TITLE_MAX`, the 64-byte author cap) a second time, and this
+  // schema validates the whole view in one pass: one prototype over the cap threw here and took Task
+  // Detail, Task Studio and the engine-service view with it. Dormant only while the store refused
+  // first — the same regression t-c2882f measured on the board, one store further along.
+  title: persistedText(),
+  author: persistedText(),
   createdAt: timestamp,
   available: z.boolean(),
   integrity: z.enum(["verified", "missing", "mismatch", "policy-unknown"]),

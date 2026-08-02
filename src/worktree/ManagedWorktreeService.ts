@@ -511,7 +511,8 @@ export class ManagedWorktreeService {
       occupancy: this.opts.occupancy,
     });
     if (classification.state !== "ready-to-remove") {
-      const why = classification.reasons.join("; ") || classification.state;
+      // t-dcdb7f — reasons are priority-ordered; name the blocking condition (and its exit), not the list.
+      const why = classification.reasons[0] || classification.state;
       return {
         removed: false,
         branchDeleted: false,
@@ -604,11 +605,19 @@ export class ManagedWorktreeService {
       // A classifier that threw proves nothing, so the preview must not claim it would remove.
       return {
         wouldRemove: false,
-        outcome: { ...base, relation: authority.relation, reason: `refused: classification failed: ${this.messageOf(err)}` },
+        outcome: {
+          ...base,
+          relation: authority.relation,
+          // t-dcdb7f — a failed classifier proves nothing; never invent a force path that does not exist.
+          reason:
+            `refused: classification failed: ${this.messageOf(err)}` +
+            "; retry after classification can run — a failed classifier never authorizes removal",
+        },
       };
     }
     if (classification.state !== "ready-to-remove") {
-      const why = classification.reasons.join("; ") || classification.state;
+      // t-dcdb7f — same primary-block rule as removeClassified (reasons are priority-ordered).
+      const why = classification.reasons[0] || classification.state;
       return {
         wouldRemove: false,
         outcome: { ...base, relation: authority.relation, reason: `refused: not ready-to-remove (${classification.state}: ${why})` },
@@ -693,7 +702,16 @@ export class ManagedWorktreeService {
     const entry = findManagedEntry(this.load(), idOrPath);
     if (!entry) return { removed: false, branchDeleted: false, error: `managed worktree not found: ${idOrPath}` };
     if (!canMutateManagedWorktree(entry, opts.actor)) {
-      return { removed: false, branchDeleted: false, error: `refused: caller cannot remove worktree '${entry.id}'` };
+      // t-dcdb7f — owner-only force path; name who may act and the clean lineage alternative.
+      const owner = entry.createdBy ?? entry.agent;
+      return {
+        removed: false,
+        branchDeleted: false,
+        error: owner
+          ? `refused: caller cannot remove worktree '${entry.id}'; only owner '${owner}' or the host human may force-remove` +
+            " — drop confirmDirty to retry via lineage hygiene, or call as the owner"
+          : `refused: caller cannot remove worktree '${entry.id}'; only the host human may remove an entry with no recorded owner`,
+      };
     }
     return this.removeEntryEngine(entry, {
       deleteBranch: opts.deleteBranch === true && entry.tachyonCreatedBranch,
