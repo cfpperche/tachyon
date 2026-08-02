@@ -1,6 +1,6 @@
 export const RUNTIME_OBSERVABILITY_SCHEMA_VERSION = 1 as const;
 
-export type RuntimeObservabilityProviderV1 = "codex" | "claude";
+export type RuntimeObservabilityProviderV1 = "codex" | "claude" | "grok";
 export type ProviderSourceKindV1 = "oauth" | "cli";
 export type ObservationConfidenceV1 = "exact" | "estimated" | "unknown";
 
@@ -75,6 +75,44 @@ export interface ProviderCostFactV1 {
   };
 }
 
+/**
+ * Grok (and any runtime without a remaining-quota channel) must declare that absence by name.
+ * Never fill a `provider-quota` fact with zeros or invent headroom from session token spend.
+ */
+export type ConfigurationQuotaChannelV1 =
+  | { state: "unsupported"; reason: "no-quota-channel" };
+
+export interface ProviderConfigurationCompatCellV1 {
+  vendor: string;
+  surface: string;
+  enabled: boolean;
+  source: string;
+}
+
+/**
+ * Allowlisted projection of `grok inspect --json` (and peer configuration inspectors). Paths, headers,
+ * tokens, session ids, and credential material never belong here — only structure a host can safely show.
+ */
+export interface ProviderConfigurationFactV1 {
+  kind: "provider-configuration";
+  scope: AgentObservationScopeV1;
+  runtime: "grok";
+  source: ProviderSourceKindV1;
+  confidence: ObservationConfidenceV1;
+  observedAt: string;
+  freshness: ObservationFreshnessV1;
+  /** Named refusal of the quota axis — configuration is observable; remaining capacity is not. */
+  quotaChannel: ConfigurationQuotaChannelV1;
+  grokVersion?: string;
+  projectTrusted?: boolean;
+  permissionsLoaded?: number;
+  /** Layer roles only (`user` / `project` / …). Never absolute filesystem paths. */
+  configLayerRoles: string[];
+  /** MCP server names only — no targets, headers, or env. */
+  mcpServerNames: string[];
+  externalCompat: ProviderConfigurationCompatCellV1[];
+}
+
 export type ProviderUnavailableReasonV1 =
   | "unsupported"
   | "source-disabled"
@@ -98,6 +136,7 @@ export interface ProviderUnavailableFactV1 {
 export type RuntimeObservationFactV1 =
   | NativeUsageFactV1
   | ProviderQuotaFactV1
+  | ProviderConfigurationFactV1
   | ProviderUnavailableFactV1;
 
 export type CollectorDiagnosticCodeV1 =

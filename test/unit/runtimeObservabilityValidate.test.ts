@@ -84,6 +84,39 @@ describe("RuntimeObservability CollectorEnvelopeV1 validation", () => {
     expect(JSON.stringify(raw)).not.toContain("agentKey");
   });
 
+  it("accepts a Grok provider-configuration fact that refuses quota by name", () => {
+    const raw = {
+      schemaVersion: 1,
+      collector: { id: "tachyon-grok-cli", version: "1.0.0" },
+      generatedAt: "2026-08-02T18:00:00.000Z",
+      facts: [{
+        kind: "provider-configuration",
+        scope: { kind: "agent", workspaceKey: "ws-7f31", agentKey: "agent-solo" },
+        runtime: "grok",
+        source: "cli",
+        confidence: "exact",
+        observedAt: "2026-08-02T18:00:00.000Z",
+        freshness: { state: "fresh" },
+        quotaChannel: { state: "unsupported", reason: "no-quota-channel" },
+        grokVersion: "0.2.118",
+        configLayerRoles: ["user"],
+        mcpServerNames: ["tachyon_bridge"],
+        externalCompat: [{ vendor: "claude", surface: "skills", enabled: false, source: "config" }],
+      }],
+      diagnostics: [],
+    };
+    const envelope = valid(raw);
+    expect(envelope.facts[0]).toMatchObject({
+      kind: "provider-configuration",
+      runtime: "grok",
+      quotaChannel: { state: "unsupported", reason: "no-quota-channel" },
+    });
+
+    const filledQuota = structuredClone(raw);
+    (filledQuota.facts[0] as Record<string, unknown>).quotaChannel = { state: "available" };
+    invalid(filledQuota, "INVALID_FACT", "$.facts[0].quotaChannel");
+  });
+
   it("tolerates additive fields while stripping identities, credentials, paths, raw bodies, and messages", () => {
     const raw = cloneEnvelope();
     raw.futureEnvelopeField = { token: "MUST_NOT_CROSS_TOKEN" };
