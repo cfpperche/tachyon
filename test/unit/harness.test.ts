@@ -1155,6 +1155,31 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
+  it("t-53e5f2: real Grok homes receive ownership, optional handoff, and never silent persistence", () => {
+    const realGrokHome = path.join(path.dirname(ws), "real-grok-lifecycle");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome);
+    const bridge = { url: "http://127.0.0.1:9/mcp" };
+    const handoff = path.join(ws, ".tachyon", "HANDOFF.md");
+
+    const temporaryHome = mgr.materializeBridgeMcpGrok("temporary", bridge);
+    const temporaryStart = fs.readFileSync(path.join(temporaryHome, "hooks", "session-start.json"), "utf8");
+    expect(temporaryStart).toContain("session-owners.jsonl");
+    expect(temporaryStart).not.toContain("HANDOFF.md");
+    expect(temporaryStart).not.toContain("continuity");
+    expect(fs.existsSync(path.join(temporaryHome, "hooks", "stop.json"))).toBe(false);
+
+    for (const agent of ["declared", "canonical"]) {
+      const home = mgr.materializeBridgeMcpGrok(agent, bridge, ws, { lifecycle: { handoffPath: handoff } });
+      const start = fs.readFileSync(path.join(home, "hooks", "session-start.json"), "utf8");
+      expect(start).toContain("session-owners.jsonl");
+      expect(start).toContain("HANDOFF.md");
+      expect(start).not.toContain("continuity");
+      expect(fs.existsSync(path.join(home, "hooks", "stop.json"))).toBe(false);
+    }
+  });
+
   it("t-26f508: a canonical Grok home keeps the projection, Bridge, trust and auth across every launch", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-native");
     fs.mkdirSync(realGrokHome, { recursive: true });
