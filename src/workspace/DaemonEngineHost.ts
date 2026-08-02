@@ -123,7 +123,7 @@ export class DaemonEngineHost implements EngineHost {
         }
       }
       // Exact duplicate inside the window: keep one toast / pending row; bump collapse count only.
-      this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+      this.invalidateAgentsView();
       return;
     }
 
@@ -155,7 +155,7 @@ export class DaemonEngineHost implements EngineHost {
       actionsLive: publicActions.length > 0,
     });
     this.emit(event);
-    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    this.invalidateAgentsView();
   }
 
   /** Oldest-first canonical attention snapshot (spec 415). */
@@ -174,7 +174,7 @@ export class DaemonEngineHost implements EngineHost {
     this.noticeInbox.splice(idx, 1);
     this.noticeActions.delete(id);
     this.persistNoticeInbox();
-    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    this.invalidateAgentsView();
     return true;
   }
 
@@ -184,7 +184,7 @@ export class DaemonEngineHost implements EngineHost {
     this.noticeInbox = [];
     this.noticeActions.clear();
     this.persistNoticeInbox();
-    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    this.invalidateAgentsView();
     return true;
   }
 
@@ -197,7 +197,7 @@ export class DaemonEngineHost implements EngineHost {
     const idx = this.noticeInbox.findIndex((row) => row.id === noticeId);
     if (idx >= 0) this.noticeInbox.splice(idx, 1);
     this.persistNoticeInbox();
-    this.emit({ kind: "views-changed", view: "agents", at: new Date().toISOString() });
+    this.invalidateAgentsView();
     await action();
   }
 
@@ -373,6 +373,29 @@ export class DaemonEngineHost implements EngineHost {
     }
     this.emit({ kind: "views-changed", view, at: new Date().toISOString() });
     this.openViewCoalesceWindow(view);
+  }
+
+  /**
+   * t-b51923 — every internal agents-view invalidation goes through the SAME door as an external one.
+   *
+   * The notice paths used to call `this.emit({kind:"views-changed", view:"agents"})` directly, and
+   * that is how the first attempt at this fix missed entirely: coalescing was added to
+   * `onViewsChanged` and the storm was measured, unchanged, the moment the build shipped. The
+   * traffic never used that door. Measured with the profiler's caller chain on the live engine:
+   *
+   *   append ← record ← notify ← notify ← delegableToolkit ← withDelegatedToolkit ← … ← canFork
+   *
+   * The duplicate-notice branch above is the sharpest case and worth naming: it exists to collapse a
+   * repeated notification into ONE toast, and it did that correctly — while still paying a full view
+   * invalidation, and a `persistNoticeInbox()` disk write, on every repeat. The thing built to make a
+   * repeat cheap made it expensive everywhere else.
+   *
+   * A private helper rather than five call sites reaching for `onViewsChanged`: this is one fact —
+   * "the agents view is stale" — and a sixth site added later should not have to know it must not
+   * emit raw.
+   */
+  private invalidateAgentsView(): void {
+    this.onViewsChanged("agents");
   }
 
   /**

@@ -443,6 +443,26 @@ describe("DaemonEngineHost — views-changed coalescing (t-b51923)", () => {
     expect(viewEvents()).toHaveLength(2);
   });
 
+  /**
+   * The regression that made the first attempt at this fix a no-op in production.
+   *
+   * Coalescing was added to `onViewsChanged`, shipped, and measured unchanged at 40 events/s: the
+   * notice paths emitted `views-changed` DIRECTLY, so the traffic never touched the coalesced door.
+   * The measured caller chain on the live engine was
+   * `append ← record ← notify ← notify ← delegableToolkit ← … ← canFork`.
+   *
+   * A repeated identical notification is the sharpest case: the dedupe collapses it to one toast on
+   * purpose, and every repeat still cost a full view invalidation. This asserts the notice paths go
+   * through the same window as everyone else.
+   */
+  it("coalesces the invalidations that the NOTICE paths raise, not just external ones", () => {
+    const { host, viewEvents } = coalescing(250);
+
+    for (let i = 0; i < 30; i++) host.notify("delegated toolkit: same warning", "warn");
+
+    expect(viewEvents()).toHaveLength(1);
+  });
+
   it("emits per call when the window is disabled, so the old behaviour stays reachable", () => {
     const { host, viewEvents } = coalescing(0);
 
