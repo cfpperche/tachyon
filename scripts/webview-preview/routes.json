@@ -13,7 +13,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -30,7 +32,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -47,7 +51,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -64,7 +70,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -81,7 +89,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -98,7 +108,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -115,7 +127,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -132,7 +146,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -149,7 +165,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -166,7 +184,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -183,7 +203,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
+      "fleet",
+      "control tab",
+      "control launcher"
     ]
   },
   {
@@ -200,26 +222,9 @@
     "title": "Tachyon Sidebar",
     "aliases": [
       "sidebar",
-      "fleet"
-    ]
-  },
-  {
-    "view": "control-launcher",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=control-launcher&fixture=default",
-    "frame": {
-      "w": 340,
-      "h": 640
-    },
-    "tags": [
-      "sample-derived"
-    ],
-    "title": "Control Launcher",
-    "aliases": [
-      "control launcher",
-      "launcher",
+      "fleet",
       "control tab",
-      "section grid"
+      "control launcher"
     ]
   },
   {

@@ -485,12 +485,6 @@
     "views": {
       "tachyon": [
         {
-          "id": "tachyonControlLauncher",
-          "name": "%view.controlLauncher%",
-          "type": "webview",
-          "icon": "$(dashboard)"
-        },
-        {
           "id": "tachyonSidebarPrototype",
           "name": "%view.tachyon%",
           "type": "webview",

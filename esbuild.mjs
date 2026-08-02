@@ -242,12 +242,7 @@ const sidebar = {
   alias: preactCompat,
 };
 
-// t-6e2952 — Control launcher sidebar tab (phone-format section grid → openCockpit section).
-const controlLauncher = {
-  ...sidebar,
-  entryPoints: ["src/webview/control-launcher/main.tsx"],
-  outfile: "dist/webview/control-launcher.js",
-};
+// t-6e2952 — the Control launcher has no bundle of its own: it is a tab inside the sidebar bundle above.
 
 // t-610705 (SDD 410 Phase C.2) — the standalone Activity bundle was retired: it's a Control
 // subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
@@ -479,7 +474,6 @@ copyFileSync("src/webview/shared/vscode-theme.css", "dist/webview/vscode-theme.c
 rmSync("dist/webview/fonts/tachyon", { recursive: true, force: true });
 cpSync("src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon", { recursive: true });
 copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/control-launcher/control-launcher.css", "dist/webview/control-launcher.css"); // t-6e2952 — Control launcher grid
 copyFileSync("src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/approval/approval.css", "dist/webview/approval.css");
 copyFileSync("src/webview/validations/validations.css", "dist/webview/validations.css");
@@ -533,7 +527,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, controlLauncher, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

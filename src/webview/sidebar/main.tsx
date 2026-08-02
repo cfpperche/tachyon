@@ -71,7 +71,9 @@ function Root() {
   const dispatch = {
     action: (id: string, agent: string, hash?: string) => vscode?.postMessage({ type: "action", id, agent, hash }),
     section: (op: string, id: string, extra?: { done?: boolean; label?: string; actionId?: string }, hash?: string) => vscode?.postMessage({ type: "section", op, id, ...extra, hash }),
-    global: (op: GlobalOp, hash?: string) => vscode?.postMessage({ type: "global", op, hash }),
+    // t-6e2952 — `sectionId` rides along for the Control launcher tiles (openControl <section>); every
+    // other global op leaves it undefined and the host ignores it.
+    global: (op: GlobalOp, hash?: string, sectionId?: string) => vscode?.postMessage({ type: "global", op, hash, sectionId }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),

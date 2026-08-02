@@ -10,6 +10,10 @@ import {
   type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
 } from "../../sidebar/cardTemplate";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
+// t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
+// (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
+import { CONTROL_SECTION_NAV } from "../../cockpit/sectionNav";
+import type { CockpitSectionId } from "../../cockpit/model";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
 import { attentionRows, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
@@ -47,7 +51,9 @@ const SortIcon = ({ dir }: { dir: SortMode }) => {
 export interface Dispatch {
   action: (id: ActionId, agent: string, wsHash?: string) => void;
   section: (op: string, id: string, extra?: { done?: boolean; label?: string; actionId?: string }, wsHash?: string) => void;
-  global: (op: GlobalOp, wsHash?: string) => void;
+  /** t-6e2952 — `sectionId` is the Control section a launcher tile targets; the host validates it and
+   *  passes it to `tachyon.openControl`, which opens OR navigates the one Control panel. */
+  global: (op: GlobalOp, wsHash?: string, sectionId?: string) => void;
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
@@ -1029,6 +1035,37 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
   );
 }
 
+/**
+ * t-6e2952 — the Control tab's panel: a home-screen grid of the twelve top-level Control sections.
+ *
+ * WORKSPACE-WIDE, like Attentions and unlike every other tab: Control is a singleton panel with its own
+ * workspace selector, so the grid mounts ONCE (outside the per-folder map). Rendering it inside `Panel`
+ * would repeat the same twelve tiles under every folder header in a multi-root window.
+ *
+ * A tile never opens a panel itself — it asks the host for `tachyon.openControl <section>`, which goes
+ * through `openCockpit`: existing panel → reveal + navigate, no panel → open on that section. That is the
+ * one door, and it keeps the launcher out of the singleton claim race (Cockpit.ts:1204-1212).
+ */
+function ControlGrid({ onOpen }: { onOpen: (section: CockpitSectionId) => void }) {
+  return (
+    <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
+      {CONTROL_SECTION_NAV.map((s) => (
+        <Button
+          key={s.id}
+          class="ctl-tile"
+          icon={s.icon}
+          title={`Open Control — ${s.label}`}
+          data-section={s.id}
+          data-testid={`control-tile-${s.id}`}
+          onClick={() => onOpen(s.id)}
+        >
+          {s.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 /** t-c61e51 — Clear all open attentions (same markAllRead path the old in-panel toolbar used). */
 function clearAllAttentions(fleets: FleetVM[], dispatch?: Dispatch): void {
   for (const f of fleets) {
@@ -1329,6 +1366,9 @@ export function App({
         {tab === "Attentions" ? (
           // t-37f554 — one global stack (multi-root already merged by attentionRows); not per-folder panels.
           <AttentionStack fleets={fleets} dispatch={dispatch} />
+        ) : tab === "Control" ? (
+          // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
+          <ControlGrid onOpen={(section) => dispatch?.global("openControl", undefined, section)} />
         ) : fleets.map((f) => {
           // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
           // single-root is multi-root with N=1, one code path. It's where the Project Handoff chip lives.
