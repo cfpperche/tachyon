@@ -40,6 +40,7 @@ import {
   WaitOutputConcurrencyGate,
   waitOutputConcurrencyRefusalMessage,
 } from "./waitForOutput.js";
+import type { BackstopAcknowledgement } from "../workspace/TemporaryBackstopMonitor.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import { composerProfileFor } from "../runtime/composerRegion.js";
@@ -422,6 +423,12 @@ export interface BridgeDeps {
   listEvidence?: (agent: string) => Promise<EvidenceView[]>;
   /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
   reanchor?: (agent: string) => Promise<void>;
+  /**
+   * t-0bebf6 — answer the host's idle/stall poke about a child: "inspected, decided, leave it".
+   * Returns null when there is no outstanding poke for that child, which is what keeps the door from
+   * doubling as a pre-emptive mute. Enables acknowledge_agent.
+   */
+  acknowledgeIdlePoke?: (agent: string) => BackstopAcknowledgement | null;
   /** t-7551f9 — continue unfinished task on another agent (new session + focused handoff). */
   continueTask?: (input: {
     fromAgent: string;
@@ -1742,6 +1749,44 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // turn a completed dismissal into an error; `dismissTemporary` is idempotent and finishes the row.
         deps.manager.dismissTemporary(name);
         return ok(dismissReceipt(name, released));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "acknowledge_agent",
+    {
+      description:
+        "Answer the host's idle/stall poke about a child: you inspected it, you decided, leave it as it is. " +
+        "The fifth exit beside inspect / dismiss / resume / re-delegate — the one that means 'I know'. It does NOT " +
+        "mute the child: Tachyon stays quiet only while the state you acknowledged holds, and speaks again when that " +
+        "child produces new output, changes state, or stays idle several times longer than the window you " +
+        "acknowledged — and the returning line says WHICH of those happened. Refused when nothing was asked about " +
+        "that child, so it can never be used as a pre-emptive mute. The acknowledgement is session-local and does not " +
+        "survive a re-delegation of the same name.",
+      inputSchema: { name: AGENT_NAME.describe("the child agent the poke was about") },
+    },
+    async ({ name }) => {
+      try {
+        if (!deps.acknowledgeIdlePoke) return fail(new Error("acknowledge_agent is not available on this Bridge"));
+        const info = await managedEntry(deps, name);
+        if (!info) return fail(new Error(`agent '${name}' not found`));
+        const receipt = deps.acknowledgeIdlePoke(name);
+        if (!receipt) {
+          return fail(new Error(
+            `no outstanding idle poke for '${name}' — nothing to acknowledge. ` +
+            "Acknowledgement answers a notice you were sent; it cannot be taken in advance.",
+          ));
+        }
+        return ok(JSON.stringify({
+          agent: receipt.agent,
+          acknowledged: receipt.reason === "idle" ? "idle" : "silent while working",
+          idleMinutes: Math.round(receipt.idleMs / 60_000),
+          nextCheckInMinutes: receipt.nextCheckInMs === null ? null : Math.round(receipt.nextCheckInMs / 60_000),
+          note: "silent until this child changes state, produces new output, or reaches the next check-in",
+        }, null, 2));
       } catch (err) {
         return fail(err);
       }
