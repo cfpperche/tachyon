@@ -1293,9 +1293,15 @@ export class Workspace {
         now: () => Date.now(),
       },
       (agent, attention, shouldToast) => {
-        // t-9552f3 — clear completion latch only when pane content moves after the doorbell
-        // (a real new turn). Do not clear while monitor still says "working" on frozen content.
-        this.completionHints.clearIfNewOutput(agent, attention.contentSince);
+        // t-9552f3 / t-0db8cb — clear the completion latch only when a NEW turn starts
+        // (this callback only fires on state change; state === "working" here is the non-working → working
+        // edge). Do NOT clear on every contentSince advance: after notify_agent the same turn still paints
+        // final chrome (Working timer → idle prompt, status line), which bumps contentSince and would
+        // drop the latch while raw classification can still lag (CPU / residual chrome). That left
+        // list_agents stuck on "working" for a finished agent (portakill, codex dogfood).
+        if (attention.state === "working") {
+          this.completionHints.clearIfNewOutput(agent, attention.contentSince);
+        }
         this.waiters.notifyAttention(agent, this.attentionOf(agent)?.state ?? attention.state);
         this.refreshAgentsViews();
         // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
@@ -4094,7 +4100,11 @@ export class Workspace {
    * (`extensionOperationService`) too, not only from the in-class Companion wiring.
    */
   async deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata = {}): Promise<NoticeDeliveryResult> {
-    const attention = this.monitor.stateOf(agent);
+    // t-0db8cb — use attentionOf (completion-hint aware), not raw monitor.stateOf. After notify_agent the
+    // sender is presented idle for consumers while raw may still say working (CPU / chrome lag). Queue
+    // policy must match list_agents / wait_for_agent, or notices wait on a working→idle edge that the
+    // presentation layer already claims has happened.
+    const attention = this.attentionOf(agent);
     const state = attention?.state;
     if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata);

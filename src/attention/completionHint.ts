@@ -41,9 +41,12 @@ export class CompletionHintStore {
   }
 
   /**
-   * Drop the latch when the pane produced new output after the doorbell (new turn).
+   * Drop the latch when pane content from a NEW turn is newer than the doorbell.
+   * Call sites must only invoke this on a non-working → working edge (t-0db8cb): final chrome of
+   * the same turn also bumps contentSince and must not clear the latch, or list_agents reverts to
+   * raw "working" while the agent is already done.
    * Do NOT clear merely because AttentionMonitor still classifies as working with
-   * the same frozen content (the bug we're fixing).
+   * the same frozen content (t-9552f3).
    */
   clearIfNewOutput(agent: string, contentSinceMs: number): void {
     const marked = this.agents.get(agent);

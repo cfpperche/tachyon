@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-07-29 (`t-e7c4a9` — native-config family membership + Claude seam list; prior 2026-07-28 Grok Attention audit `t-aafa10`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-02 (`t-0db8cb` — codex idle attention window + completion-hint retention; prior 2026-07-29 `t-e7c4a9` native-config; 2026-07-28 Grok Attention audit `t-aafa10`)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 **Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
 
@@ -336,7 +336,7 @@ in the same change.
 |-----|------------------|--------------|----------|
 | Brief | CLI arg | `INSTRUCTION_ARG.codex` + `composeCommand` | code |
 | Bridge | `-c mcp_servers.tachyon_bridge={…}` or harness `config.toml` | `codexBridgeCmd` / harness fold | code |
-| Attention | Codex TUI / usage strings | shared patterns + `RateLimitRuntime` + **composer** profile | code |
+| Attention | Codex TUI / usage strings | shared patterns + `RateLimitRuntime` + **composer** profile (dim suggestion via escaped capture, `t-aee74e`); **no `activity` profile** (unlike Claude `t-30ff0d`) — mid-turn relies on content churn from the measured `• Working (…s • esc to interrupt)` timer and CPU. Declared idle window: `ATTENTION_POLL_MS` 3s + default `silenceSec` 8 → idle within ~8–11s after freeze when CPU is quiet (`t-0db8cb`, real `portacomport` pane fixtures). Completion doorbell latch must survive same-turn final chrome or `list_agents` reverts to raw `working` | code + `test/unit/codexAttentionIdle.test.ts` |
 | Resume | `codex resume <id>` | `resumeCommand` afterBinary (capture id) | code |
 | Fork | — | no `forkCommand` | 2026-07-09 code read |
 | Harness | `CODEX_HOME` + `config.toml` | harness home-config | specs 298/357 era |

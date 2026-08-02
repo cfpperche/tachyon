@@ -1,0 +1,50 @@
+
+• All 87 focused tests pass and typecheck is green after the final edit. The mutation evidence is saved in task t-46554c; I’m reviewing the final diff and then making the required single commit.
+
+• Ran git status --short && git diff -- test/unit/temporaryWorktreeLifecycle.test.ts && git diff --check
+  └  M test/unit/temporaryWorktreeLifecycle.test.ts
+    diff --git a/test/unit/temporaryWorktreeLifecycle.test.ts b/test/unit/temporaryWorktreeLifecycle.test.ts
+    … +168 lines (ctrl + t to view transcript)
+         const world = dismissWorld();
+
+
+• Ran git add test/unit/temporaryWorktreeLifecycle.test.ts && git commit -F - <<'EOF'
+  │ test(t-46554c): prove agent cleanup by observed effects
+  │
+  │ … +30 lines
+  └ [tachyon/tmp.portacomport.20260802-015936-66cf d8db901d] test(t-46554c): prove agent cleanup by observed effects
+     1 file changed, 47 insertions(+), 75 deletions(-)
+
+• Ran git status --short && git rev-parse HEAD && git rev-parse HEAD^{tree}
+  └ d8db901d1a08e9be3d9b2a0cab997e01080f2e27
+    7fe644d855fb3cc460eb7320786f4d195018ccc0
+
+• Ran git diff --check && npm test -- --run test/unit/temporaryWorktreeLifecycle.test.ts test/unit/workspaceHeadless.test.ts && npm run typecheck
+  └
+     RUN  v3.2.6 /home/goat/.cache/tachyon/worktrees/b349073a/portacomport
+    … +18 lines (ctrl + t to view transcript)
+    > tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json
+
+
+• Called
+  └ tachyon_bridge.notify_agent({"agent":"portacomport","to":"claude","pointer":"t-46554c","summary":"DONE t-46554c — d8db901d (tree 7fe644d8). All 4 doors behavioral: UI via real worktree.remove path; kill direct;
+        dismiss only stopped/postmortem (running is collected by kill); Agent Studio via real lifecycle + Git test. Pins removed; 87 focused green + typecheck. Mutation outputs in journal."})
+    queued 'claude' for idle delivery
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+• Concluído e notificado ao agente claude.
+
+  - Commit: d8db901d1a08e9be3d9b2a0cab997e01080f2e27
+  - Quatro portas cobertas por efeitos comportamentais; pins de fonte removidos.
+  - Testes focados: 87 passaram.
+  - Typecheck: passou.
+  - Provas de mutação e alcançabilidade: journal da task t-46554c.
+  - verify:full não executado, conforme instrução.
+
+─ Worked for 5m 11s ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› Improve documentation in @filename
+
+  gpt-5.6-sol low · ~/.cache/tachyon/worktrees/b349073a/portacomport · tachyon/tmp.portacomport.20260802-015936-66cf · Full Access · Context 24% used · weekly 98% left
