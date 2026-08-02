@@ -80,6 +80,21 @@ const GLOBAL_SETTINGS_ISOLATION_ENV = {
 
 const GATE_ENV = { ...ENGINE_RUNTIME_ENV, ...TMUX_ISOLATION_ENV, ...GLOBAL_SETTINGS_ISOLATION_ENV };
 
+/**
+ * t-dab79c — a disposable editor-host run has no useful crash-reporting lifecycle. Electron starts
+ * `chrome_crashpad_handler` with a shared client connection; on Linux that helper can survive the
+ * VS Code process awaited by `@vscode/test-electron`, reparent to `systemd --user`, and keep this
+ * checkout's ~1 GiB downloaded executable mapped indefinitely. Measured on this host as pid
+ * 1385967, alive for 2d15h after its Jul 30 gate run, with the executable and Crashpad database both
+ * under that run's `.vscode-test`.
+ *
+ * Disable creation at VS Code's supported launch seam. This is deliberately common to every label:
+ * `@vscode/test-cli` launches one Electron tree per configuration. It is safer than teardown-time
+ * process discovery because it never signals a process and cannot confuse a human's VS Code or
+ * Chrome crashpad handler with one from the gate.
+ */
+const GATE_LAUNCH_ARGS = ["--disable-crash-reporter"];
+
 const SINGLE_ROOT_FIXTURE = stagedFixture("test/fixtures/sample-workspace");
 const WORKSPACE_FOLDERS = [SINGLE_ROOT_FIXTURE];
 
@@ -252,6 +267,7 @@ export default defineConfig([
     label: "single-root",
     files: "test/integration/**/*.test.js",
     workspaceFolder: SINGLE_ROOT_FIXTURE,
+    launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
       ui: "bdd",
@@ -265,6 +281,7 @@ export default defineConfig([
     label: "multi-root",
     files: "test/integration-multiroot/**/*.test.js",
     workspaceFolder: "test/fixtures/multiroot/multi.code-workspace",
+    launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
       ui: "bdd",
@@ -280,6 +297,7 @@ export default defineConfig([
     label: "empty-window",
     files: "test/integration-empty/**/*.test.js",
     // No workspaceFolder → VS Code opens with zero folders (the recovery state under test).
+    launchArgs: GATE_LAUNCH_ARGS,
     env: GATE_ENV,
     mocha: {
       ui: "bdd",
