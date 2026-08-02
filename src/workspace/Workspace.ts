@@ -867,7 +867,7 @@ export class Workspace {
         })),
       // t-9d250c — any task's status, so a restart can say what became of the work its frozen brief
       // still names. Unknown ids answer undefined and the brief then claims nothing about them.
-      taskStatusById: (id) => this.taskStore.listRaw().find((task) => task.id === id)?.status,
+      taskStatusById: (id) => this.taskStore.find(id)?.status,
       resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
         this.workspaceRoot,
         principal,

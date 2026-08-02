@@ -130,6 +130,7 @@ export function allowedReconciliations(status: TaskStatus): TaskStatus[] {
 
 export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
+  private readonly listCache = new Map<string, { signature: string; read: TaskRead }>();
   readonly journal: TaskJournalStore;
 
   constructor(
@@ -207,6 +208,15 @@ export class TaskStore {
     throw new Error(unservableTaskMessage(id, this.pathFor(id), read.defect));
   }
 
+  /** Read one task when it exists, without turning absence into an error or scanning the board. */
+  find(id: string): Task | undefined {
+    assertTaskId(id);
+    const read = this.loadTask(id);
+    if (read.ok) return read.task;
+    if (read.absent) return undefined;
+    throw new Error(unservableTaskMessage(id, this.pathFor(id), read.defect));
+  }
+
   /**
    * `includeJournal` materializes the whole log — what Task Detail renders, because a human
    * scrolling a tab is not paying per token. `journalWindow` (t-ab7708) bounds it instead and says
@@ -225,12 +235,23 @@ export class TaskStore {
       return [];
     }
     const tasks: Task[] = [];
+    const present = new Set<string>();
     for (const name of names) {
       if (name.includes(".tmp.")) continue;
       if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
       const id = name.slice(0, -".json".length);
-      const read = this.loadTask(id);
-      if (read.ok) tasks.push(read.task);
+      const signature = this.fileSignature(id);
+      if (signature === undefined) continue;
+      present.add(id);
+      let cached = this.listCache.get(id);
+      if (!cached || cached.signature !== signature) {
+        cached = { signature, read: this.loadTask(id) };
+        this.listCache.set(id, cached);
+      }
+      if (cached.read.ok) tasks.push(structuredClone(cached.read.task));
+    }
+    for (const id of this.listCache.keys()) {
+      if (!present.has(id)) this.listCache.delete(id);
     }
     tasks.sort(compareTasksForListing);
     return tasks;
@@ -404,6 +425,16 @@ export class TaskStore {
     }
     const result = normalizeTask(parsed, id);
     return "task" in result ? { ok: true, task: result.task } : { ok: false, absent: false, defect: result.defect };
+  }
+
+  private fileSignature(id: string): string | undefined {
+    try {
+      const stat = fs.statSync(this.pathFor(id), { bigint: true });
+      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw error;
+    }
   }
 
   private writeTask(task: Task): void {

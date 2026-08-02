@@ -3,11 +3,13 @@ import path from "node:path";
 import type { HostDisposable, WatchEvents } from "../workspace/EngineHost.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 750;
+const DEFAULT_NATIVE_DEBOUNCE_MS = 25;
 const DEFAULT_MAX_ENTRIES = 50_000;
 const MAX_BRACE_EXPANSIONS = 64;
 
 export interface PollingFileWatcherOptions {
   intervalMs?: number;
+  nativeDebounceMs?: number;
   maxEntries?: number;
   onError?: (error: Error) => void;
 }
@@ -17,6 +19,7 @@ export class PollingFileWatcher implements HostDisposable {
   private previous: Map<string, string>;
   private readonly timer: NodeJS.Timeout;
   private native: fs.FSWatcher | undefined;
+  private nativePollTimer: NodeJS.Timeout | undefined;
   private disposed = false;
   private lastError: string | undefined;
 
@@ -28,15 +31,17 @@ export class PollingFileWatcher implements HostDisposable {
     private readonly options: PollingFileWatcherOptions = {},
   ) {
     const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+    const nativeDebounceMs = options.nativeDebounceMs ?? DEFAULT_NATIVE_DEBOUNCE_MS;
     const maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0) throw new Error("watch interval must be a positive integer");
+    if (!Number.isSafeInteger(nativeDebounceMs) || nativeDebounceMs < 0) throw new Error("watch debounce must be a non-negative integer");
     if (!Number.isSafeInteger(maxEntries) || maxEntries <= 0) throw new Error("watch maxEntries must be a positive integer");
     this.plan = watcherPlan(root, glob, maxEntries);
     this.previous = this.scan();
     this.timer = setInterval(() => this.poll(), intervalMs);
     this.timer.unref?.();
     try {
-      this.native = fs.watch(this.plan.hintRoot, { persistent: false }, () => queueMicrotask(() => this.poll()));
+      this.native = fs.watch(this.plan.hintRoot, { persistent: false }, () => this.scheduleNativePoll());
       this.native.on("error", (error) => {
         this.native?.close();
         this.native = undefined;
@@ -53,8 +58,20 @@ export class PollingFileWatcher implements HostDisposable {
     if (this.disposed) return;
     this.disposed = true;
     clearInterval(this.timer);
+    if (this.nativePollTimer) clearTimeout(this.nativePollTimer);
+    this.nativePollTimer = undefined;
     this.native?.close();
     this.native = undefined;
+  }
+
+  private scheduleNativePoll(): void {
+    if (this.disposed) return;
+    if (this.nativePollTimer) clearTimeout(this.nativePollTimer);
+    this.nativePollTimer = setTimeout(() => {
+      this.nativePollTimer = undefined;
+      this.poll();
+    }, this.options.nativeDebounceMs ?? DEFAULT_NATIVE_DEBOUNCE_MS);
+    this.nativePollTimer.unref?.();
   }
 
   private poll(): void {

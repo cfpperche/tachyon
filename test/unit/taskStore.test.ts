@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -61,6 +61,72 @@ describe("TaskStore", () => {
     fs.writeFileSync(path.join(root, ".tachyon", "tasks", "t-ffffff.json"), "{ nope", "utf8");
     fs.writeFileSync(path.join(root, ".tachyon", "tasks", "t-eeeeee.json.tmp.1"), JSON.stringify({}), "utf8");
     expect(store.listRaw().map((t) => t.id)).toEqual([task.id]);
+  });
+
+  it("reuses unchanged task files when listing the board again", async () => {
+    await store.create({ id: "t-aaaaaa", title: "a", author: "human" });
+    await store.create({ id: "t-bbbbbb", title: "b", author: "human" });
+    const read = vi.spyOn(fs, "readFileSync");
+    store.listRaw();
+    read.mockClear();
+
+    expect(store.listRaw().map((task) => task.id)).toEqual(["t-aaaaaa", "t-bbbbbb"]);
+    expect(read.mock.calls.filter(([file]) => String(file).endsWith(".json"))).toHaveLength(0);
+  });
+
+  it("re-reads only a task changed by an external writer", async () => {
+    await store.create({ id: "t-aaaaaa", title: "a", author: "human" });
+    await store.create({ id: "t-bbbbbb", title: "b", author: "human" });
+    store.listRaw();
+    const externalPath = store.pathFor("t-aaaaaa");
+    const external = JSON.parse(fs.readFileSync(externalPath, "utf8"));
+    fs.writeFileSync(externalPath, `${JSON.stringify({ ...external, title: "changed externally" }, null, 2)}\n`, "utf8");
+    const read = vi.spyOn(fs, "readFileSync");
+
+    expect(store.listRaw().find((task) => task.id === "t-aaaaaa")?.title).toBe("changed externally");
+    expect(read.mock.calls.filter(([file]) => String(file).endsWith(".json"))).toHaveLength(1);
+  });
+
+  it("reads one file for an optional lookup by id", async () => {
+    await store.create({ id: "t-aaaaaa", title: "a", author: "human" });
+    await store.create({ id: "t-bbbbbb", title: "b", author: "human" });
+    const read = vi.spyOn(fs, "readFileSync");
+
+    expect(store.find("t-bbbbbb")?.title).toBe("b");
+    expect(read.mock.calls.filter(([file]) => String(file).endsWith(".json"))).toHaveLength(1);
+  });
+
+  it("never accepts a CAS expectation against a cached stale task", async () => {
+    const task = await store.create({ id: "t-aaaaaa", title: "a", author: "human", now: "2026-08-02T00:00:00.000Z" });
+    await store.update(task.id, { status: "triaged", now: "2026-08-02T00:00:01.000Z" });
+    const cached = store.listRaw()[0]!;
+    const externalPath = store.pathFor(task.id);
+    const external = JSON.parse(fs.readFileSync(externalPath, "utf8"));
+    fs.writeFileSync(externalPath, `${JSON.stringify({ ...external, updatedAt: "2026-08-02T00:00:02.000Z" }, null, 2)}\n`, "utf8");
+
+    await expect(store.update(task.id, {
+      priority: 1,
+      expect: { updatedAt: cached.updatedAt },
+      now: "2026-08-02T00:00:03.000Z",
+    })).rejects.toThrow(/updatedAt/);
+    expect(store.get(task.id).priority).toBeUndefined();
+  });
+
+  it("never reconciles against a cached stale CAS expectation", async () => {
+    const task = await store.create({ id: "t-aaaaaa", title: "a", author: "human", now: "2026-08-02T00:00:00.000Z" });
+    await store.update(task.id, { status: "triaged", now: "2026-08-02T00:00:01.000Z" });
+    const cached = store.listRaw()[0]!;
+    const externalPath = store.pathFor(task.id);
+    const external = JSON.parse(fs.readFileSync(externalPath, "utf8"));
+    fs.writeFileSync(externalPath, `${JSON.stringify({ ...external, updatedAt: "2026-08-02T00:00:02.000Z" }, null, 2)}\n`, "utf8");
+
+    await expect(store.reconcile(task.id, {
+      status: "done",
+      evidence: "landed elsewhere",
+      expect: { updatedAt: cached.updatedAt },
+      now: "2026-08-02T00:00:03.000Z",
+    })).rejects.toThrow(/updatedAt/);
+    expect(store.get(task.id).status).toBe("triaged");
   });
 
   it("allows exactly one concurrent CAS claim", async () => {
