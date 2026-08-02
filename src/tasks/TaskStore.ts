@@ -576,16 +576,24 @@ function normalizeTask(input: unknown, expectedId: string): { task: Task } | { d
   if (typeof row.createdAt !== "string") return { defect: `its createdAt is ${describeRejectedValue(row.createdAt)}, which is not a string` };
   if (typeof row.updatedAt !== "string") return { defect: `its updatedAt is ${describeRejectedValue(row.updatedAt)}, which is not a string` };
   if (row.priority !== undefined && !isTaskPriority(row.priority)) return { defect: `its priority is ${describeRejectedValue(row.priority)}, which is not an integer 0..3` };
+  // PRESENCE, not size. `title` and `author` are required and every downstream projection types them
+  // as non-empty, so an empty one is a record without a title rather than a record with a small one —
+  // and letting it through would hand the board a row it cannot render, which is the failure this
+  // whole change is about, arriving from the other side.
+  const title = row.title.trim();
+  const author = row.author.trim();
+  if (!title) return { defect: "its title is empty, and a task record must carry one" };
+  if (!author) return { defect: "its author is empty, and a task record must carry one" };
   return {
     task: {
       id: row.id,
-      title: row.title.trim(),
+      title,
       ...persistedStringField("body", row.body),
       status: row.status,
       ...(row.priority !== undefined ? { priority: row.priority } : {}),
       ...persistedStringField("rank", row.rank),
       ...persistedStringField("kind", row.kind),
-      author: row.author.trim(),
+      author,
       ...persistedStringField("assignee", row.assignee),
       ...persistedArtifactRefs(row.artifact_refs),
       ...persistedDeps(row.deps),

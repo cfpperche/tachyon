@@ -148,6 +148,25 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
     expect(studio.taskId).toBe("t-1d9d15");
   });
 
+  /**
+   * The other side of the same failure. Relaxing the read must not hand a projection a row it cannot
+   * render: `title` and `author` are required and every projection types them non-empty, so an empty
+   * one is a record MISSING a field, not a record with a small one. It is refused by name at the
+   * store, skipped from listings, and the board still renders every other row.
+   */
+  it("refuses a record it cannot fully type, by name, without taking the board down with it", () => {
+    persistTask("t-aaaaaa", { body: "B".repeat(11_511), title: "an ordinary neighbour" });
+    persistTask("t-d780e4", { title: "   " });
+    const store = new TaskStore(root);
+
+    expect(() => store.get("t-d780e4")).toThrow(/title is empty/);
+    expect(() => store.get("t-d780e4")).not.toThrow(/unknown task/);
+    expect(store.listRaw().map((t) => t.id)).toEqual(["t-aaaaaa"]);
+
+    const board = projectMissionControlBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
+    expect(board.views.map((v) => v.task.id)).toEqual(["t-aaaaaa"]);
+  });
+
   it("names a task that exists but cannot be served, instead of calling it unknown", () => {
     const file = persistTask("t-d780e4", { status: "nonsense-status" });
     const store = new TaskStore(root);

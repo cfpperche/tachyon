@@ -198,9 +198,14 @@ function normalizeValidation(input: unknown, expectedId: string): Validation | n
   if (row.priority !== undefined && !isPriority(row.priority)) return null;
   const rounds = normalizeRounds(row.rounds);
   if (!rounds) return null;
+  // t-c2882f — PRESENCE, not size: the board projection types validation title and author as
+  // non-empty, so an empty one is a record missing a required field rather than an undersized one.
+  const title = row.title.trim();
+  const author = row.author.trim();
+  if (!title || !author) return null;
   return {
     id: row.id,
-    title: row.title.trim(),
+    title,
     ...persistedStringField("type", row.type),
     status: row.status,
     executor: row.executor,
@@ -209,7 +214,7 @@ function normalizeValidation(input: unknown, expectedId: string): Validation | n
     ...persistedStringField("instructions", row.instructions),
     ...persistedArtifactRefs("source_refs", row.source_refs),
     rounds,
-    author: row.author.trim(),
+    author,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
