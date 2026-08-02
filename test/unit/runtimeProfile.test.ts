@@ -99,6 +99,9 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     ]);
     expect(profile?.permission?.notes).toContain("private CODEX_HOME/config.toml");
     expect(profile?.permission?.notes).toContain("default_tools_approval_mode");
+    // t-171cb2 — the fourth door (directory trust) is named on the same class boundary, not left as a silent gap.
+    expect(profile?.permission?.notes).toContain("t-171cb2");
+    expect(profile?.permission?.notes).toContain("trust_level");
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
   });
 

@@ -132,6 +132,29 @@ function tomlString(s: string): string {
   return out + '"';
 }
 
+/**
+ * t-171cb2 — drop every `[projects…]` table from a Codex config.toml so ambient trust from a
+ * copied `~/.codex/config.toml` cannot leak into a private home. Table headers only (measured
+ * shape); body lines until the next table or EOF are removed with the header.
+ */
+function stripCodexProjectsTables(toml: string): string {
+  if (toml.length === 0) return "";
+  const lines = toml.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (/^\s*\[projects[\.\]]/.test(lines[i]!)) {
+      i++;
+      while (i < lines.length && !/^\s*\[/.test(lines[i]!)) i++;
+      continue;
+    }
+    out.push(lines[i]!);
+    i++;
+  }
+  while (out.length > 0 && out[out.length - 1] === "") out.pop();
+  return out.join("\n");
+}
+
 function tomlKey(k: string): string {
   return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(k) ? k : tomlString(k);
 }
@@ -2259,12 +2282,18 @@ export class HarnessManager {
    * spec 240 — `isolate: transcript`: a private config home (own transcript namespace) WITHOUT the harness
    * MCP/skills/rules/hooks. The agent still loads the workspace project config (CLAUDE.md/.claude/.mcp.json,
    * cwd-relative) and inherits auth (the symlinked credentials). No strict-MCP args.
+   *
+   * t-171cb2 — `exactTrustCwd` is the delegated-Codex class door for directory trust. Measured on
+   * codex-cli 0.146.0: trust is exact-path only (not prefix-inherited) and is NOT governable via
+   * argv `-c`, so the only channel is this private `config.toml` write. When set, ambient
+   * `[projects.*]` tables copied from the human's `~/.codex` are stripped and replaced with
+   * workspace + the exact spawn cwd — nothing inherited, top-level/declared callers omit the option.
    */
   materializeHomeOnly(
     agent: string,
     adapter: ResumeAdapter,
     cwd?: string,
-    options: { inheritNativeConfig?: boolean } = {},
+    options: { inheritNativeConfig?: boolean; exactTrustCwd?: string } = {},
   ): MaterializedHarness {
     const home = this.materializeHome(agent, adapter, cwd);
     const h = adapter.harness;
@@ -2272,6 +2301,9 @@ export class HarnessManager {
     if (adapter.runtime === "codex") {
       if (options.inheritNativeConfig === false) fs.rmSync(path.join(home, "config.toml"), { force: true });
       else this.seedCodexHomeOnlyConfig(home);
+      if (options.exactTrustCwd !== undefined) {
+        this.writeCodexExactProjectTrust(home, options.exactTrustCwd);
+      }
     }
     // t-c46c35 — `isolate: transcript` is still a canonical launch, so it carries the same memory pin;
     // t-0e88f3 added the env half, which is the half that holds.
@@ -2819,6 +2851,32 @@ export class HarnessManager {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
     fs.symlinkSync(authTarget, authLink);
+  }
+
+  /**
+   * t-171cb2 — write exact-path `[projects."<path>"] trust_level = "trusted"` for the workspace root
+   * and the effective spawn cwd. The cwd is the worktree path resolved before materialize on every
+   * spawn/restart/resume door, so the path written here is the path Codex will ask about.
+   * Replaces any ambient projects tables already in the private config (see stripCodexProjectsTables).
+   */
+  private writeCodexExactProjectTrust(home: string, cwd: string): void {
+    const configPath = path.join(home, "config.toml");
+    let content = "";
+    try {
+      content = fs.readFileSync(configPath, "utf8");
+    } catch {
+      /* absent is fine — we write only the trust blocks */
+    }
+    content = stripCodexProjectsTables(content);
+    const trustedProjects = [...new Set([
+      path.resolve(this.workspaceRoot),
+      path.resolve(cwd),
+    ])].sort();
+    const blocks = trustedProjects
+      .map((project) => `[projects.${tomlString(project)}]\ntrust_level = "trusted"`)
+      .join("\n\n");
+    const body = content.trimEnd();
+    atomicWrite(configPath, body.length > 0 ? `${body}\n\n${blocks}\n` : `${blocks}\n`);
   }
 
   /**
