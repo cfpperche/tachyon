@@ -220,11 +220,86 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
 
   it("states separate precedence for task contract, Tachyon protocol and project-owned guidance", () => {
     const { primer } = renderPrimer(declared);
-    expect(primer).toMatch(/active task contract governs task-specific work/);
     expect(primer).toMatch(/Tachyon primer governs orchestration protocol/);
     expect(primer).toMatch(/project-owned guidance governs repository conventions/);
     expect(primer).toMatch(/cannot override either contract or protocol/);
     expect(primer).not.toContain("orient");
+  });
+
+  /**
+   * t-48f504 — the precedence rule used to name ONE authority and two things answered to the name.
+   *
+   * The retired clause was "the active task contract governs task-specific work". A spawned agent's
+   * brief contains a spawn contract (spec 246: `TASK:` / `CONTEXT:` / `DONE_WHEN:`, which
+   * `spawn_agent` itself calls the DELEGATION CONTRACT) and a WORK ON RECORD section that introduces
+   * itself with "This is the contract for this session" and is selected on status `active`. "The
+   * ACTIVE task CONTRACT" is a live pointer at both, and the sentence resolved neither.
+   *
+   * Measured 2026-08-01: three launches of one reviewer, two refusals, both defensible — an agent
+   * handed two readings picks one, and which one is a property of the agent, not of the product.
+   *
+   * These assertions are per-CLAUSE rather than on the whole sentence, because the defect was never
+   * the wording: it was that the rule ranked authorities without saying which question each one
+   * answers. A rewrite that keeps the ambiguity would have to defeat each clause separately.
+   */
+  describe("t-48f504 — the two authorities are disambiguated by question, not merely ranked", () => {
+    const primerOf = (input: PrimerInput): string => renderPrimer(input).primer;
+
+    it("never re-emits the sentence that named one authority for two documents", () => {
+      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+        expect(primerOf(input)).not.toContain("the active task contract governs task-specific work");
+      }
+    });
+
+    it("gives SCOPE to the board record, and says an unnamed task is not granted by a brief", () => {
+      const primer = primerOf(delegatedAdhoc);
+      // Named by the anchor the agent actually sees (`sessionWorkRecord.ts` delimiters), not by prose.
+      expect(primer).toContain('"WORK ON RECORD"');
+      expect(primer).toMatch(/WHICH task is yours/);
+      expect(primer).toMatch(/wins on scope/);
+      // The measured incident: a brief naming t-21101f while the board held nothing for that agent.
+      // Absence has to be stated, or "no section" reads as "no rule" and the brief wins by default.
+      expect(primer).toMatch(/means you hold NO board task/);
+      expect(primer).toMatch(/no brief can grant you one/);
+    });
+
+    it("gives SUBSTANCE to the spawner's brief, so the board row is not read as instructions", () => {
+      const primer = primerOf(delegatedAdhoc);
+      expect(primer).toMatch(/WHAT to do inside that task/);
+      expect(primer).toMatch(/wins on substance/);
+      expect(primer).toMatch(/the directive exists nowhere else/);
+    });
+
+    /**
+     * Neither authority wins a genuine conflict, and that is deliberate: `staleContractReferences`
+     * already names the case where the brief points at CLOSED work, and every other disagreement is
+     * a fact about the spawner's call that only the spawner can resolve.
+     */
+    it("makes a disagreement a report, not a choice", () => {
+      const primer = primerOf(delegatedAdhoc);
+      expect(primer).toMatch(/name DIFFERENT work/);
+      expect(primer).toMatch(/conflict and not a choice/);
+      expect(primer).toMatch(/report it to your spawner and do not pick one/);
+    });
+
+    it("says the same thing to every spawn shape", () => {
+      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+        const primer = primerOf(input);
+        expect(primer).toMatch(/wins on scope/);
+        expect(primer).toMatch(/wins on substance/);
+        expect(primer).toMatch(/conflict and not a choice/);
+      }
+    });
+
+    /**
+     * The primer is a HARD budget and this rule cost it four lines. Pinning the count keeps a future
+     * elaboration from paying for clarity here with the identity/verification lines below it.
+     */
+    it("spends at most five lines on the rule", () => {
+      const lines = primerOf(delegatedAdhoc).split("\n");
+      const precedence = lines.filter((line) => /Precedence|wins on scope|wins on substance|conflict and not a choice|governs orchestration protocol/.test(line));
+      expect(precedence).toHaveLength(5);
+    });
   });
 });
 
