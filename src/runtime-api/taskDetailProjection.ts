@@ -14,21 +14,21 @@ const taskStatus = z.enum(TASK_STATUSES);
 const taskPriority = z.union(TASK_PRIORITIES.map((priority) => z.literal(priority)) as [z.ZodLiteral<0>, z.ZodLiteral<1>, z.ZodLiteral<2>, z.ZodLiteral<3>]);
 
 const artifactRef = z.object({
-  type: boundedText(64),
-  ref: boundedText(500),
+  type: persistedText(),
+  ref: persistedText(),
   role: z.enum(["deliverable", "relation"]).optional(),
 }).strict();
 
 const task = z.object({
   id: taskId,
-  title: boundedText(300),
-  body: boundedText(4_000).optional(),
+  title: persistedText(),
+  body: persistedText().optional(),
   status: taskStatus,
   priority: taskPriority.optional(),
-  kind: boundedText(64).optional(),
-  author: boundedText(64),
-  assignee: boundedText(64).optional(),
-  artifact_refs: z.array(artifactRef).max(10).optional(),
+  kind: persistedText().optional(),
+  author: persistedText(),
+  assignee: persistedText().optional(),
+  artifact_refs: z.array(artifactRef).optional(),
   createdAt: timestamp,
   updatedAt: timestamp,
 }).strict();
@@ -36,14 +36,14 @@ const task = z.object({
 const journalEntry = z.object({
   id: z.string().regex(/^j-[0-9a-f]{12}$/),
   ts: timestamp,
-  author: boundedText(64),
-  text: boundedText(4_000),
+  author: persistedText(),
+  text: persistedText(),
 }).strict();
 
 const derived = z.object({
   sdd: z.object({
     type: z.literal("sdd"),
-    ref: boundedText(500),
+    ref: persistedText(),
     status: z.enum(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]).optional(),
     missing: z.boolean().optional(),
   }).strict().optional(),
@@ -51,13 +51,14 @@ const derived = z.object({
 
 const attention = z.object({
   code: z.enum(["dangling_dep", "missing_sdd_spec", "ready_to_close", "sdd_needs_retriage", "corrupt_task", "awaiting_human"]),
-  message: boundedText(2_000),
-  ref: boundedText(500).optional(),
+  // `awaiting_human` carries a persisted `reason`, and the rest interpolate persisted refs.
+  message: persistedText(),
+  ref: persistedText().optional(),
 }).strict();
 
 const dependency = z.object({
   id: taskId,
-  title: boundedText(300).optional(),
+  title: persistedText().optional(),
   status: taskStatus.optional(),
   missing: z.boolean(),
 }).strict().superRefine((value, context) => {
@@ -241,4 +242,23 @@ function boundedText(maxCodePoints: number): z.ZodType<string> {
     const length = [...value].length;
     return length > 0 && length <= maxCodePoints;
   }, `expected 1-${maxCodePoints} code points`);
+}
+
+/**
+ * t-c2882f — a field carrying PERSISTED content, bounded only by being non-empty.
+ *
+ * These used to be `boundedText` at the authoring numbers (title 300, body 4000, kind 64, refs 10),
+ * which made this wire contract a SECOND door onto the same defect `TaskStore` had. Measured, not
+ * assumed: with the store already fixed, all three tasks this was filed on still threw
+ * `expected 1-4000 code points` here, so they stayed invisible to the human while being served to
+ * agents. The repo's actor-times-trigger rule is exactly this — the Interface reaches the same
+ * records through a door the store fix never touched.
+ *
+ * The store is the authority on what is persisted, and a projection that cannot carry what the store
+ * serves is a projection that hides records. Structure stays exact: ids, timestamps, enums, and the
+ * counts of collections this projection builds itself. Only persisted values are unbounded, because
+ * the authoring door is where a size is refused — before the value ever reaches disk.
+ */
+function persistedText(): z.ZodType<string> {
+  return z.string().refine((value) => value.length > 0, "expected a non-empty persisted value");
 }
