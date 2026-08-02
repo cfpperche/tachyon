@@ -57,6 +57,25 @@ describe("PollingFileWatcher", () => {
     fs.writeFileSync(path.join(root, "src", "b.ts"), "b");
     expect(() => new PollingFileWatcher(root, "src/*.ts", { create: true }, () => {}, { maxEntries: 1 })).toThrow(/exceeded/);
   });
+
+  it("coalesces bursts of native hints into one authoritative scan", async () => {
+    const root = fixture();
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n");
+    const watcher = new PollingFileWatcher(root, "tachyon.{yml,yaml}", { change: true }, () => {}, {
+      intervalMs: 1_000,
+      nativeDebounceMs: 10,
+    });
+    watchers.push(watcher);
+    const internals = watcher as unknown as { scan: () => Map<string, string>; scheduleNativePoll: () => void };
+    const originalScan = internals.scan.bind(watcher);
+    let scans = 0;
+    internals.scan = () => { scans++; return originalScan(); };
+
+    for (let index = 0; index < 20; index++) internals.scheduleNativePoll();
+    await waitFor(() => scans === 1);
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(scans).toBe(1);
+  });
 });
 
 async function waitFor(predicate: () => boolean): Promise<void> {
