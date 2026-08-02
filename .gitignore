@@ -19,9 +19,11 @@ dist/
 #   .claude/  -> claude (.claude/skills, .claude/settings.json, .mcp.json)
 #   .agents/  -> codex skills (.agents/skills)
 #   .codex/   -> codex hooks + MCP (.codex/hooks.json, .codex/config.toml)
+#   .grok/    -> grok hooks (.grok/hooks/tachyon-plugins.json), .grok/skills
 .claude/
 .agents/
 .codex/
+.grok/
 .mcp.json
 
 # Local dogfood fleet / settings — machine-specific; not shared via git.
@@ -42,6 +44,7 @@ tachyon.yaml
 !test/fixtures/**/tachyon.yml
 !test/fixtures/**/.claude/
 !test/fixtures/**/.agents/
+!test/fixtures/**/.grok/
 !test/fixtures/**/.tachyon/
 test/fixtures/**/.tachyon/*
 !test/fixtures/**/.tachyon/plugins/

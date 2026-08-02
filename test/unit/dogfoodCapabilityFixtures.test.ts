@@ -52,6 +52,7 @@ const FIXTURE_SOURCE = [
   /\/tachyon\.ya?ml$/,
   /\/\.claude\//,
   /\/\.agents\//,
+  /\/\.grok\//,
   /\/\.tachyon\/plugins(\.lock\.json|\/)/,
 ];
 
