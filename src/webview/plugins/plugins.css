@@ -26,6 +26,9 @@
 .pext { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ds-border); display: flex; flex-direction: column; gap: 5px; }
 .pext .ext-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: var(--ds-small); }
 .pext .ev { font-family: var(--ds-mono); color: var(--ds-info); }
+/* t-fb216a — installed-card runtime-coverage notice: this workspace runs a runtime the plugin supports and the
+   install never covered. Wraps at narrow widths (the card is measured at 880 and 360). */
+.pgap { margin-top: 8px; padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-warn) 45%, transparent); background: color-mix(in srgb, var(--ds-warn) 8%, transparent); font-size: var(--ds-small); line-height: 1.5; }
 .rt { font-size: var(--ds-micro); padding: 1px 8px; border-radius: 10px; border: 1px solid var(--ds-border); white-space: nowrap; }
 .rt.has  { color: var(--ds-ok); border-color: color-mix(in srgb, var(--ds-ok) 50%, transparent); }
 .rt.miss { color: var(--ds-muted); opacity: .7; }

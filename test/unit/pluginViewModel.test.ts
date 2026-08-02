@@ -260,3 +260,81 @@ describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
     expect(buildExternalStatuses([mk("x", [])], () => ({ present: true }))).toEqual({});
   });
 });
+
+/**
+ * t-fb216a — the runtime-coverage gap: this workspace RUNS a runtime, the installed plugin's manifest
+ * DECLARES support for it, and the lockfile never consented to it. spec 263 makes update structurally
+ * incapable of closing this (target = lock.runtimes), so the panel's only job here is to NAME it.
+ */
+describe("buildPluginsViewModel — uncovered runtimes (t-fb216a)", () => {
+  it("names the gap: declared by the plugin + run by this workspace + absent from the lockfile", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.8.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude", "codex", "grok"),
+      declared: { sdd: ["claude", "codex", "grok"] },
+    });
+    expect(vm.installed[0].uncoveredRuntimes).toEqual(["grok"]);
+  });
+
+  it("declared but NOT run by this workspace ⇒ no gap (never nag about a runtime nobody uses here)", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.8.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude", "codex"), // no grok in this workspace
+      declared: { sdd: ["claude", "codex", "grok"] },
+    });
+    expect(vm.installed[0].uncoveredRuntimes).toBeUndefined();
+  });
+
+  it("run by this workspace but NOT declared ⇒ no gap (there is nothing the plugin could offer)", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "tdd-guard", version: "1.2.0", runtimes: ["claude"], sourced: true }]),
+      present: ws("claude", "codex", "grok"),
+      declared: { "tdd-guard": ["claude"] },
+    });
+    expect(vm.installed[0].uncoveredRuntimes).toBeUndefined();
+  });
+
+  it("no declared set injected (payload manifest absent/corrupt) ⇒ no signal is invented", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.8.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude", "codex", "grok"),
+      // declared omitted entirely
+    });
+    expect(vm.installed[0].uncoveredRuntimes).toBeUndefined();
+  });
+
+  it("gap is reported in SUPPORTED_RUNTIMES order, not lockfile/manifest order", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "p", version: "1.0.0", runtimes: ["claude"], sourced: true }]),
+      present: ws("claude", "codex", "grok"),
+      declared: { p: ["grok", "codex", "claude"] },
+    });
+    expect(vm.installed[0].uncoveredRuntimes).toEqual(["codex", "grok"]);
+  });
+
+  it("the gap is INDEPENDENT of the update-check: it shows at rest, and coexists with 'up to date'", () => {
+    // (c) — "up to date" stays true about the version at the effective spec; the gap is a separate fact,
+    // computed with no network, so the silence breaks WITHOUT the user first running "Check for updates".
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "sdd", version: "1.8.0", runtimes: ["claude", "codex"], sourced: true }]),
+      present: ws("claude", "codex", "grok"),
+      declared: { sdd: ["claude", "codex", "grok"] },
+      updateChecks: { sdd: { kind: "up-to-date" } },
+    });
+    expect(vm.installed[0].status.kind).toBe("up-to-date");
+    expect(vm.installed[0].uncoveredRuntimes).toEqual(["grok"]);
+  });
+
+  it("ACCEPTANCE SET — the 8 plugins measured in this workspace on 0.56.158 each report grok uncovered", () => {
+    // measured 2026-08-02: manifest declares [claude,codex,grok], lockfile froze at [claude,codex],
+    // all at @v2.3.1 (the repo's highest semver tag), all skills-only.
+    const eight = ["dep-audit", "diagram", "hyperframes", "image", "sdd", "sound", "transcribe", "video"];
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText(eight.map((name) => ({ name, version: "0.2.0", runtimes: ["claude", "codex"] as Runtime[], sourced: true }))),
+      present: ws("claude", "codex", "grok"),
+      declared: Object.fromEntries(eight.map((name) => [name, ["claude", "codex", "grok"] as Runtime[]])),
+    });
+    expect(vm.installed.map((p) => p.name).sort()).toEqual([...eight].sort());
+    for (const p of vm.installed) expect(p.uncoveredRuntimes).toEqual(["grok"]);
+  });
+});

@@ -190,7 +190,10 @@ export const ROUTES: Record<string, Route> = {
           msgs.push({ type: "inspectorModel", model: insp });
         }
       } else if (model.section === "plugins") {
-        const plugins = pluginsFixtures.default?.vm;
+        // t-fb216a — two cockpit fixtures share section "plugins"; the identity check picks which plugins VM
+        // rides along (same pattern as "nav-pending" above), so the coverage-gap state gets its own shot.
+        const gap = vm === cockpitFixtures["plugins-runtime-gap"]?.vm;
+        const plugins = (gap ? pluginsFixtures["runtime-gap"] : pluginsFixtures.default)?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
       }
       // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail

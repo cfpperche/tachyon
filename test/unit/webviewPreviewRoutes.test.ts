@@ -102,6 +102,8 @@ describe("preview route table", () => {
       // route it just committed is loading (the fixture pushes routePending, never routeReady).
       "nav-pending",
       "plugins",
+      // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM.
+      "plugins-runtime-gap",
       "runtime",
       "runtime-config",
       "settings",
