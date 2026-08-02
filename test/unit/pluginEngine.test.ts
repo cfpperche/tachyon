@@ -25,6 +25,8 @@ import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
 import type { GitHookState } from "../../src/plugins/gitHookState.js";
 import type { GitRun } from "../../src/plugins/fetcher.js";
+import { planProjectedPluginHooks, readHookProjectionCandidates } from "../../src/plugins/agentHookProjection.js";
+import { HarnessManager } from "../../src/harness/HarnessManager.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -759,6 +761,7 @@ describe("detectRuntimes", () => {
       runtimes: ["grok"],
       targets: [expect.objectContaining({ runtime: "grok" })],
     }));
+
   });
 
   it("t-18d40c — does not install Grok for a workspace whose roster does not use it", async () => {
@@ -775,6 +778,41 @@ describe("detectRuntimes", () => {
     const res = await install(makePlugin({ runtimes: ["grok"] }), ws);
     expect(res.errors).toEqual([expect.stringMatching(/nothing to install/)]);
     expect(fs.existsSync(LOCK(ws))).toBe(false);
+  });
+
+  it("t-333f68 — detects Grok used only by a live delegated child, without inventing project config", async () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".tachyon", "bridge-mcp", "delegated-child.grok"), { recursive: true });
+    fs.writeFileSync(path.join(ws, ".tachyon", "bridge-mcp", "delegated-child.grok", "config.toml"), "# private Grok home\n");
+
+    expect(fs.existsSync(path.join(ws, ".grok"))).toBe(false);
+    expect([...detectRuntimes(ws)]).toEqual(["grok"]);
+
+    const res = await install(makePlugin({ runtimes: ["grok"] }), ws);
+    expect(res.errors).toEqual([]);
+    expect(readJson(LOCK(ws)).plugins.sdd).toEqual(expect.objectContaining({
+      runtimes: ["grok"],
+      targets: [expect.objectContaining({ runtime: "grok" })],
+    }));
+
+    const plan = planProjectedPluginHooks({
+      plugins: readHookProjectionCandidates(ws),
+      runtime: "grok",
+      policy: { sdd: "enforcement" },
+    });
+    const realGrokHome = tmp("real-grok-");
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), "{}\n");
+    const privateHome = new HarnessManager(ws, undefined, process.env, undefined, undefined, undefined, undefined, realGrokHome)
+      .materializeBridgeMcpGrok("next-delegated-child", {}, ws, { projectedHooks: plan.hooks });
+    expect(readJson(path.join(privateHome, "hooks", "projected.json")).hooks.PreToolUse).toHaveLength(1);
+  });
+
+  it("t-333f68 — spawn capability alone does not make an unused runtime present", () => {
+    const ws = tmp("tachyon-ws-");
+    fs.mkdirSync(path.join(ws, ".tachyon", "bridge-mcp"), { recursive: true });
+    fs.mkdirSync(path.join(ws, ".claude"));
+
+    expect([...detectRuntimes(ws)]).toEqual(["claude"]);
   });
 });
 

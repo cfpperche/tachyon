@@ -288,6 +288,20 @@ export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
   if (fs.existsSync(path.join(workspaceRoot, ".claude"))) present.add("claude");
   if (fs.existsSync(path.join(workspaceRoot, ".codex"))) present.add("codex");
   if (fs.existsSync(path.join(workspaceRoot, ".grok"))) present.add("grok");
+
+  // t-333f68 — a Temporary Grok agent has no roster row and deliberately does not create project
+  // `.grok/`, but its canonical live session still has a Tachyon-owned private GROK_HOME. Count that
+  // observed activity instead of every runtime the spawn API could hypothetically launch: dismiss/
+  // forget owns removal of these homes, so this signal is transient and a workspace that never uses
+  // Grok does not acquire an idle plugin block merely because Grok is supported by the product.
+  try {
+    const bridgeHomes = path.join(workspaceRoot, ".tachyon", "bridge-mcp");
+    if (fs.readdirSync(bridgeHomes, { withFileTypes: true }).some((entry) => entry.isDirectory() && entry.name.endsWith(".grok"))) {
+      present.add("grok");
+    }
+  } catch {
+    // Absence/unreadability is not evidence that this workspace uses the runtime.
+  }
   const supported = new Set<string>(SUPPORTED_RUNTIMES);
   for (const entry of readConfigLkg(workspaceRoot)?.agents ?? []) {
     if (entry.kind !== "agent" || !entry.cmd) continue;
