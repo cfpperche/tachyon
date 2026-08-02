@@ -5515,6 +5515,53 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(warnings.some((line) => line.includes("product-foundation") && line.includes("withheld"))).toBe(true);
     });
 
+    it("t-b505b3: a plugin update refreshes the parent's stale snapshot instead of refusing every delegation", async () => {
+      // Measured in the field on 0.56.154: installing tachyon-plugins v2.3.1 bumped agent-browser
+      // 3.0.0 → 3.1.0, the parent's resolved sha no longer matched the fresh lockfile capture, and
+      // the throw refused EVERY spawn. A profile selects skills by NAME; the sha is a snapshot, so a
+      // mismatch is one skill at two points in time, not two skills.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const dir = path.join(h.ws, ".claude", "skills", "agent-browser");
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), "# agent-browser 3.1.0 — the UPDATED bytes\n");
+      fs.mkdirSync(path.join(h.ws, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          "agent-browser": {
+            name: "agent-browser", version: "3.1.0", runtimes: ["claude"],
+            targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/agent-browser" }],
+          },
+        },
+      }));
+      // The parent carries a STALE resolution of the same plugin-provided skill: right name, right
+      // provenance, bytes from before the update.
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1,
+        adapter: "claude",
+        sha256: "f".repeat(64),
+        skills: [{ name: "agent-browser", source: { sha256: "a".repeat(64), entries: [{ path: "SKILL.md", bytes: [] }] } }],
+        sources: [{ referenceId: "plugin:agent-browser:agent-browser", kind: "skill", scope: "project", owner: "plugin:agent-browser", path: ".claude/skills/agent-browser", sha256: "a".repeat(64) }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      } as unknown as ResolvedAgentCapabilityProjection;
+
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
+
+      // The spawn happened at all — that is the regression this guards.
+      const inherited = projections.get("child")!;
+      const skill = inherited.skills.find((candidate) => candidate.name === "agent-browser")!;
+      // The stale snapshot lost to the installed truth: the child gets the bytes on disk today.
+      expect(Buffer.from(skill.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
+        .toBe("# agent-browser 3.1.0 — the UPDATED bytes\n");
+      expect(skill.source.sha256).not.toBe("a".repeat(64));
+    });
+
     it("t-26f508: canonical Grok regenerates one private projection on fresh, restart and resume, and refuses fork", async () => {
       const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", { fileExists: () => true });
       const realGrokHome = path.join(h.ws, "real-grok");

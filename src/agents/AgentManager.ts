@@ -1209,7 +1209,31 @@ export class AgentManager {
         }
         const existing = skills.find((skill) => skill.name === skillName);
         if (existing && existing.source.sha256 !== captured.sha256) {
-          throw new Error(`plugin skill '${skillName}' conflicts with the parent's profile selection`);
+          // A profile selects skills BY NAME (`capabilities.skills: [agent-browser, …]`); the sha on
+          // the parent's resolved projection is a SNAPSHOT of whatever provided those bytes when it
+          // was last resolved. The lockfile read above is fresh. So a mismatch is usually not two
+          // different skills — it is one skill at two points in time, and updating the plugin is
+          // enough to produce it. Measured 2026-08-02: installing tachyon-plugins v2.3.1 bumped
+          // agent-browser 3.0.0 → 3.1.0 and this throw refused EVERY delegation in the workspace.
+          //
+          // Provenance decides, and it is the only thing that can: if the parent's copy came from
+          // THIS plugin, the fresh bytes are the current truth and the snapshot is simply stale.
+          // If it came from somewhere else, the two really are different skills wearing one name —
+          // and then the parent's selection wins, because the profile is the authored choice. Either
+          // way this is not fatal: the caller loses at most one tool, never the ability to delegate.
+          const fromThisPlugin = sources.some(
+            (source) => source.referenceId === `plugin:${plugin.name}:${skillName}` || source.owner === `plugin:${plugin.name}`,
+          );
+          if (fromThisPlugin) {
+            existing.source = captured;
+          } else {
+            this.opts.notify?.(
+              `delegated toolkit kept the parent's own '${skillName}' and withheld plugin '${plugin.name}'`
+              + "'s skill of the same name — same name, different content, and the profile selection wins",
+              "warn",
+            );
+            continue;
+          }
         }
         if (!existing) skills.push({ name: skillName, source: captured });
         const referenceId = `plugin:${plugin.name}:${skillName}`;
