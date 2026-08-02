@@ -57,6 +57,11 @@ export interface InstalledPluginVM {
   /** spec 287 — the plugin's declared external (system) tools with present/missing + whether an assisted install is
    *  offered, injected by the host (spawn-free presence + lockfile req). Empty/absent ⇒ the card renders no tools row. */
   externalTools?: ExternalToolVM[];
+  /** t-fb216a — runtimes this workspace RUNS that this plugin DECLARES support for and was never installed into
+   *  (`declared ∩ present − lock.runtimes`). Absent when there is no gap or when the host injected no `declared`
+   *  set. Distinct from a `RuntimePill` with `present:false`: that is DRIFT (installed here, files deleted); this
+   *  is a runtime the install never covered. Drives the card's coverage notice. */
+  uncoveredRuntimes?: Runtime[];
 }
 
 /** spec 287 — one external (system) tool on an installed card: present/missing + whether Tachyon can offer the
@@ -115,6 +120,10 @@ export interface BuildPluginsInput {
   /** spec 287 — per-plugin (keyed by name) external-tool statuses, computed by the host (spawn-free presence +
    *  lockfile req). Omit a plugin ⇒ the card shows no external-tools row. */
   externalStatuses?: Record<string, ExternalToolVM[]>;
+  /** t-fb216a — per-plugin (keyed by name) the runtimes the INSTALLED payload's manifest declares, read by the host
+   *  from `.tachyon/plugins/<name>/tachyon-plugin.json`. Omit a plugin ⇒ no coverage gap is computed for it: an
+   *  unreadable manifest is absence of evidence, and inventing "not installed for grok" from it would be a lie. */
+  declared?: Record<string, Runtime[]>;
 }
 
 /** Map an injected update-check to the card's status struct. */
@@ -164,8 +173,40 @@ function runtimePills(lock: PluginLock, present: ReadonlySet<Runtime>, intact: R
   return SUPPORTED_RUNTIMES.filter((rt) => installed.has(rt)).map((rt) => ({ runtime: rt, present: intactSet ? intactSet.has(rt) : present.has(rt) }));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined): InstalledPluginVM {
+/**
+ * t-fb216a — the RUNTIME-COVERAGE GAP: `declared ∩ present − lock.runtimes`. Three conjuncts, each load-bearing:
+ * the plugin must SUPPORT the runtime (declared), the workspace must RUN it (present), and the install must never
+ * have covered it (absent from the lockfile). Drop any one and the notice becomes noise or a lie.
+ *
+ * Why this is a signal and not a fix — measured on 0.56.158, 2026-08-02:
+ *  - `previewUpdate` sets `target = new Set(plan.lock.runtimes)` (engine.ts:2135, spec 263) — the set consented at
+ *    install, deliberately NOT `detectRuntimes`. So Update is STRUCTURALLY incapable of widening coverage. That
+ *    rule is correct and this change does not touch it: widening without consent installs hooks into a runtime
+ *    nobody approved. The defect was never the rule — it was that nothing said the gap existed.
+ *  - `previewUpdate` then decides freshness by `fromVersion === toVersion` (engine.ts:2137). For the 8 plugins
+ *    measured here the lock already sits at the repo's HIGHEST semver tag with matching versions, so the answer is
+ *    a truthful "up to date" while grok is declared, running, and uncovered.
+ *
+ * REFUSED, deliberately:
+ *  - Widening the update target to `detectRuntimes` — that is the spec 263 violation the whole design forbids.
+ *  - Rewording "up to date" into "pinned — may be stale". The task premise was that a tag pin freezes the button
+ *    forever; MEASURED FALSE: `resolveEffectiveUpdateSpec` (engine.ts:400-411) bumps a semver-shaped tag pin to the
+ *    repo's highest semver tag, so v2.2.1 does resolve v2.3.1. Calling a following pin "frozen" would swap one
+ *    half-truth for another, which is exactly what the constraint forbade. "Up to date" is left alone because it is
+ *    true about the version; the gap is carried as its OWN fact instead of smuggled into the status word.
+ *  - A sixth runtime registry. This reads the manifest the host already materialized and intersects it with the
+ *    two sets the panel already had (`present`, `lock.runtimes`). No new source of runtime truth.
+ */
+function uncoveredRuntimes(lock: PluginLock, present: ReadonlySet<Runtime>, declared: Runtime[] | undefined): Runtime[] {
+  if (!declared) return []; // no payload manifest read ⇒ no evidence ⇒ no claim
+  const installed = new Set(lock.runtimes);
+  const declaredSet = new Set(declared);
+  return SUPPORTED_RUNTIMES.filter((rt) => declaredSet.has(rt) && present.has(rt) && !installed.has(rt));
+}
+
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined): InstalledPluginVM {
   const status = statusFrom(check);
+  const uncovered = uncoveredRuntimes(lock, present, declared);
   return {
     name: lock.name,
     version: lock.version,
@@ -177,6 +218,7 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     ...(lock.config ? { config: lock.config } : {}),
     ...(lock.docsUrl ? { docsUrl: lock.docsUrl } : {}),
     ...(externalTools && externalTools.length > 0 ? { externalTools } : {}),
+    ...(uncovered.length > 0 ? { uncoveredRuntimes: uncovered } : {}),
   };
 }
 
@@ -234,7 +276,7 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   const checks = input.updateChecks ?? {};
   const externals = input.externalStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

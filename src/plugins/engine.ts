@@ -76,7 +76,7 @@ import {
   type GitHookLock,
 } from "./lockfile.js";
 
-const MANIFEST_REL = "tachyon-plugin.json";
+export const MANIFEST_REL = "tachyon-plugin.json";
 const HOOKS_FILE = "hooks.json"; // inside a runtime block dir
 const SKILLS_DIR = "skills"; // spec 251 — the plugin's neutral skills payload root
 const SKILL_FILE = "SKILL.md"; // inside each skills/<name>/ dir

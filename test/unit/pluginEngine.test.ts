@@ -1759,3 +1759,27 @@ describe("spec 270 — configurable plugin (config + docsUrl)", () => {
     expect(fs.readFileSync(cfgPath, "utf8")).toBe('{ "confirmActions": "" }');
   });
 });
+
+describe("PROBE t-fb216a", () => {
+  it("install-over-installed with a wider target widens the lock without dropping the runtimes already installed", async () => {
+    const dir = makePlugin({ runtimes: ["claude", "codex", "grok"] });
+    const ws = makeWorkspace(["claude", "codex"]);
+    const { plugin } = loadPlugin(dir);
+    // 1) first install: only the two runtimes the workspace had
+    const narrow = new Set(["claude", "codex"] as const);
+    await applyInstall(plugin!, previewInstall(plugin!, ws, narrow as never), ws, narrow as never, { mcpConfirmed: true });
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex"]);
+    const claudeBefore = JSON.stringify(readJson(SETTINGS(ws)));
+
+    // 2) the workspace gains grok; install AGAIN over the installed plugin with the wider target
+    fs.mkdirSync(path.join(ws, ".grok"), { recursive: true });
+    const wide = new Set(["claude", "codex", "grok"] as const);
+    const res = await applyInstall(plugin!, previewInstall(plugin!, ws, wide as never), ws, wide as never, { mcpConfirmed: true });
+    expect(res.errors).toEqual([]);
+    expect(res.installed).toBe(true);
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex", "grok"]);
+    // the runtimes already installed are untouched (no duplicate, no removal window)
+    expect(JSON.stringify(readJson(SETTINGS(ws)))).toEqual(claudeBefore);
+    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(true);
+  });
+});
