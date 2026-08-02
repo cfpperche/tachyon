@@ -361,6 +361,97 @@ describe("DaemonEngineHost", () => {
   });
 });
 
+/**
+ * t-b51923 — the storm that made the editor unusable, and the two ways a fix for it can be wrong.
+ *
+ * Measured on 0.56.158: `views-changed` for `agents` left the host ~15 times per second PER RUNNING
+ * AGENT (28-40/s with two agents; one event every 3s with an empty fleet). Each one rewrote the
+ * engine journal end to end and made every attached VS Code window refresh that view.
+ *
+ * Coalescing is only safe because the event carries no payload — it says "this view is stale", never
+ * what changed — so N of them hold exactly the information of one. Both error directions are pinned
+ * below, because each is worse than the other in its own way: too little coalescing leaves the storm,
+ * and a swallowed trailing edge leaves a view stale FOREVER with no second chance.
+ */
+describe("DaemonEngineHost — views-changed coalescing (t-b51923)", () => {
+  function coalescing(windowMs: number) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-coalesce-"));
+    roots.push(root);
+    const mediaRoot = path.join(root, "bundle");
+    fs.mkdirSync(mediaRoot);
+    const events: DaemonHostEvent[] = [];
+    const host = new DaemonEngineHost({
+      storageRoot: path.join(root, "state"),
+      mediaRoot,
+      appVersion: "0.57.0",
+      settings: { global: {}, workspace: {}, workspaceFolder: {} },
+      emit: (event) => events.push(event),
+      viewCoalesceWindowMs: windowMs,
+    });
+    hosts.push(host);
+    const viewEvents = () => events.filter((e) => e.kind === "views-changed");
+    return { host, viewEvents };
+  }
+
+  it("collapses a burst of identical invalidations into one leading event", () => {
+    const { host, viewEvents } = coalescing(250);
+
+    for (let i = 0; i < 40; i++) host.onViewsChanged("agents");
+
+    // The burst that used to be 40 journal rewrites and 40 window refreshes.
+    expect(viewEvents()).toHaveLength(1);
+  });
+
+  it("never swallows the last invalidation of a burst", async () => {
+    const { host, viewEvents } = coalescing(30);
+
+    for (let i = 0; i < 10; i++) host.onViewsChanged("agents");
+    expect(viewEvents()).toHaveLength(1); // leading only, so far
+
+    // The trailing edge is the whole safety argument: without it the nine held invalidations vanish
+    // and the view stays stale until something unrelated happens to invalidate it again.
+    await waitFor(() => viewEvents().length === 2);
+  });
+
+  it("does not delay an isolated change — the first invalidation is immediate", () => {
+    const { host, viewEvents } = coalescing(250);
+
+    host.onViewsChanged("agents");
+
+    expect(viewEvents()).toHaveLength(1); // synchronous, no window waited on
+  });
+
+  it("holds each view independently — a busy view does not mute a quiet one", () => {
+    const { host, viewEvents } = coalescing(250);
+
+    host.onViewsChanged("agents");
+    host.onViewsChanged("agents");
+    host.onViewsChanged("tasks");
+
+    expect(viewEvents().map((e) => (e as { view: string }).view)).toEqual(["agents", "tasks"]);
+  });
+
+  it("stops scheduling once a view goes quiet, instead of ticking forever", async () => {
+    const { host, viewEvents } = coalescing(20);
+
+    host.onViewsChanged("agents");
+    host.onViewsChanged("agents");
+    await waitFor(() => viewEvents().length === 2);
+
+    // Nothing more arrives: the window closes and does not re-open on an empty view.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(viewEvents()).toHaveLength(2);
+  });
+
+  it("emits per call when the window is disabled, so the old behaviour stays reachable", () => {
+    const { host, viewEvents } = coalescing(0);
+
+    for (let i = 0; i < 5; i++) host.onViewsChanged("agents");
+
+    expect(viewEvents()).toHaveLength(5);
+  });
+});
+
 async function waitFor(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 1_000;
   while (!predicate()) {

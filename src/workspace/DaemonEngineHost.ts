@@ -60,6 +60,8 @@ export interface DaemonEngineHostOptions {
   watchMaxEntries?: number;
   /** t-ec5cd2: exact-duplicate collapse window; default 10000. */
   noticeDedupeWindowMs?: number;
+  /** t-b51923: per-view `views-changed` coalescing window; default 250, 0 disables. */
+  viewCoalesceWindowMs?: number;
 }
 
 export class EngineUiUnavailableError extends Error {
@@ -77,6 +79,9 @@ export class DaemonEngineHost implements EngineHost {
   private readonly noticeActions = new Map<string, Map<string, () => void | Promise<void>>>();
   /** t-ec5cd2 / spec 397: narrow exact-duplicate window (ms). */
   private readonly noticeDedupeWindowMs: number;
+  /** t-b51923: per-view coalescing window (ms); 0 disables and restores emit-per-call. */
+  private readonly viewCoalesceWindowMs: number;
+  private readonly pendingViewEmits = new Map<ViewKind, { trailing: boolean; timer: ReturnType<typeof setTimeout> | undefined }>();
   private readonly recentNoticeKeys = new Map<string, { at: number; count: number; inboxId?: string }>();
   /** spec 415 — oldest-first durable human attention queue. */
   private noticeInbox: NoticeInboxEntry[] = [];
@@ -88,6 +93,10 @@ export class DaemonEngineHost implements EngineHost {
     this.store = new DaemonStateStore(options.storageRoot);
     this.settings = cloneSettings(options.settings ?? {});
     this.noticeDedupeWindowMs = options.noticeDedupeWindowMs ?? 10_000;
+    // 250ms: a list that repaints four times a second still reads as live to a human, and it holds a
+    // 15Hz-per-agent stream to one event per window instead of one per invalidation. Tuned to the
+    // measured storm, not to a round number — see `onViewsChanged`.
+    this.viewCoalesceWindowMs = options.viewCoalesceWindowMs ?? 250;
     this.noticeInbox = restoreNoticeInbox(this.store.getState<unknown>(NOTICE_INBOX_STATE_KEY));
     this.rebuildRecentNoticeKeys();
   }
@@ -330,9 +339,56 @@ export class DaemonEngineHost implements EngineHost {
     this.terminalPresentation?.replay();
   }
 
+  /**
+   * t-b51923 — the same view invalidated many times in a row costs exactly ONE event.
+   *
+   * Measured on 0.56.158: `views-changed` for `agents` left this method ~15 times per second PER
+   * RUNNING AGENT — 28-40/s with two agents, scaling linearly, while an empty fleet produced one
+   * event every 3s (the heartbeat alone). Each of those did two expensive things downstream: the
+   * engine journal rewrote its whole file, and every attached VS Code window refreshed that view.
+   * The workspace owner could not use the editor with more than one agent running.
+   *
+   * Coalescing here is LOSSLESS, and that is the whole reason it is safe: the event carries no
+   * payload beyond the view's name (see `DaemonHostEvent` above). It is an invalidation, not a
+   * change — it says "this view is stale", never "here is what moved". N identical invalidations
+   * therefore contain exactly the information of one, and a consumer that re-reads once after the
+   * last one is in the same state as a consumer that re-read after each.
+   *
+   * Leading edge fires IMMEDIATELY, so an isolated change (an agent stopped, a task moved) reaches
+   * the UI with no added latency — only a burst is held. While a burst continues, at most one event
+   * leaves per window, and the trailing edge is guaranteed: the final invalidation of a burst always
+   * produces an event. Swallowing the last one would leave the view stale forever, which is worse
+   * than the storm this fixes.
+   */
   onViewsChanged(view: ViewKind): void {
     this.assertActive();
+    if (this.viewCoalesceWindowMs <= 0) {
+      this.emit({ kind: "views-changed", view, at: new Date().toISOString() });
+      return;
+    }
+    const open = this.pendingViewEmits.get(view);
+    if (open) {
+      open.trailing = true; // held; the window's expiry will emit it
+      return;
+    }
     this.emit({ kind: "views-changed", view, at: new Date().toISOString() });
+    this.openViewCoalesceWindow(view);
+  }
+
+  /**
+   * One window per view. On expiry: emit iff something was held, and only then open the next window
+   * — so a quiet view stops scheduling timers instead of ticking forever.
+   */
+  private openViewCoalesceWindow(view: ViewKind): void {
+    const state = { trailing: false, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+    state.timer = setTimeout(() => {
+      this.pendingViewEmits.delete(view);
+      if (this.disposed || !state.trailing) return;
+      this.emit({ kind: "views-changed", view, at: new Date().toISOString() });
+      this.openViewCoalesceWindow(view);
+    }, this.viewCoalesceWindowMs);
+    state.timer.unref?.();
+    this.pendingViewEmits.set(view, state);
   }
 
   onActivityAppended(agent: string, count: number): void {
@@ -348,6 +404,10 @@ export class DaemonEngineHost implements EngineHost {
     this.terminalPresentation?.dispose();
     this.terminalPresentation = undefined;
     this.noticeActions.clear();
+    // t-b51923 — a held trailing emit must not outlive the host: its timer would fire into a disposed
+    // shell. The emit itself also checks `disposed`, because a timer can already be in the queue.
+    for (const pending of this.pendingViewEmits.values()) if (pending.timer) clearTimeout(pending.timer);
+    this.pendingViewEmits.clear();
   }
 
   private emit(event: DaemonHostEvent): void {
