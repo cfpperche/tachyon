@@ -198,18 +198,23 @@ function normalizeValidation(input: unknown, expectedId: string): Validation | n
   if (row.priority !== undefined && !isPriority(row.priority)) return null;
   const rounds = normalizeRounds(row.rounds);
   if (!rounds) return null;
+  // t-c2882f — PRESENCE, not size: the board projection types validation title and author as
+  // non-empty, so an empty one is a record missing a required field rather than an undersized one.
+  const title = row.title.trim();
+  const author = row.author.trim();
+  if (!title || !author) return null;
   return {
     id: row.id,
-    title: boundedString(row.title, "title", 300),
-    ...(typeof row.type === "string" ? optionalStringField("type", row.type, 64) : {}),
+    title,
+    ...persistedStringField("type", row.type),
     status: row.status,
     executor: row.executor,
     ...(row.priority !== undefined ? { priority: row.priority } : {}),
-    ...(typeof row.assignee === "string" ? optionalStringField("assignee", row.assignee, 64) : {}),
-    ...(typeof row.instructions === "string" ? optionalStringField("instructions", row.instructions, 4000) : {}),
-    ...optionalArtifactRefs("source_refs", row.source_refs, 20),
+    ...persistedStringField("assignee", row.assignee),
+    ...persistedStringField("instructions", row.instructions),
+    ...persistedArtifactRefs("source_refs", row.source_refs),
     rounds,
-    author: boundedString(row.author, "author", 64),
+    author,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -223,15 +228,15 @@ function normalizeRounds(input: unknown): ValidationRound[] | null {
     const row = raw as Partial<ValidationRound>;
     if (!Number.isInteger(row.n) || row.n !== out.length + 1) return null;
     if (row.outcome !== undefined && !isValidationOutcome(row.outcome)) return null;
-    const evidence = row.evidence_refs ? normalizeArtifactRefs("evidence_refs", row.evidence_refs, 20) : [];
+    const evidence = persistedArtifactRefs("evidence_refs", row.evidence_refs);
     out.push({
       n: row.n,
       ...(typeof row.startedAt === "string" ? { startedAt: row.startedAt } : {}),
       ...(typeof row.closedAt === "string" ? { closedAt: row.closedAt } : {}),
-      ...(typeof row.assignee === "string" ? optionalStringField("assignee", row.assignee, 64) : {}),
+      ...persistedStringField("assignee", row.assignee),
       ...(row.outcome ? { outcome: row.outcome } : {}),
-      ...(evidence.length ? { evidence_refs: evidence } : {}),
-      ...(typeof row.result_note === "string" ? optionalStringField("result_note", row.result_note, 4000) : {}),
+      ...evidence,
+      ...persistedStringField("result_note", row.result_note),
       ...(isValidationActorKind((row.closedBy as ValidationActor | undefined)?.kind) ? { closedBy: normalizeActor(row.closedBy as ValidationActor) } : {}),
     });
   }
@@ -353,6 +358,35 @@ function optionalArtifactRefs<K extends "source_refs" | "evidence_refs">(key: K,
   if (refs === undefined) return {};
   const out = normalizeArtifactRefs(key, refs, max);
   return out.length ? { [key]: out } as Record<K, ArtifactRef[]> : {};
+}
+
+/**
+ * t-c2882f — the READ side, deliberately separate from `boundedString` above.
+ *
+ * `normalizeValidation` used to call the authoring validators on every field it read back, the same
+ * shape that made three tasks unreachable in `TaskStore`. It is worse here: neither `get` nor `list`
+ * catches, so ONE validation persisted above a cap throws the entire list out. Reading returns what
+ * is persisted; `create`, `update` and `closeRound` still refuse the same sizes at the door.
+ */
+function persistedStringField<K extends "type" | "assignee" | "instructions" | "result_note">(key: K, value: unknown): Record<K, string> | {} {
+  if (typeof value !== "string") return {};
+  const out = value.trim();
+  return out ? ({ [key]: out } as Record<K, string>) : {};
+}
+
+/** t-c2882f — read-side refs: no count cap, no length cap, duplicates preserved as persisted. */
+function persistedArtifactRefs<K extends "source_refs" | "evidence_refs">(key: K, refs: unknown): Record<K, ArtifactRef[]> | {} {
+  if (!Array.isArray(refs)) return {};
+  const out: ArtifactRef[] = [];
+  for (const entry of refs) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Partial<ArtifactRef>;
+    const type = typeof row.type === "string" ? row.type.trim() : "";
+    const value = typeof row.ref === "string" ? row.ref.trim() : "";
+    if (!type || !value) continue;
+    out.push({ type, ref: value });
+  }
+  return out.length ? ({ [key]: out } as Record<K, ArtifactRef[]>) : {};
 }
 
 function normalizeArtifactRefs(name: string, refs: ArtifactRef[], max: number): ArtifactRef[] {

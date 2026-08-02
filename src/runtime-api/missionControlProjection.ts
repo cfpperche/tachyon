@@ -258,20 +258,20 @@ function parseTask(value: unknown): Task {
   }
   const task: Task = {
     id: input.id,
-    title: text(input.title, 1, 300, "task title"),
+    title: persistedText(input.title, "task title"),
     status: input.status,
-    author: text(input.author, 1, 64, "task author"),
+    author: persistedText(input.author, "task author"),
     createdAt: timestamp(input.createdAt, "task createdAt"),
     updatedAt: timestamp(input.updatedAt, "task updatedAt"),
   };
-  if (input.body !== undefined) task.body = text(input.body, 1, 4_000, "task body");
+  if (input.body !== undefined) task.body = persistedText(input.body, "task body");
   if (input.priority !== undefined) {
     if (!isTaskPriority(input.priority)) throw invalid("task priority is invalid");
     task.priority = input.priority;
   }
-  if (input.rank !== undefined) task.rank = text(input.rank, 1, 64, "task rank");
-  if (input.kind !== undefined) task.kind = text(input.kind, 1, 64, "task kind");
-  if (input.assignee !== undefined) task.assignee = text(input.assignee, 1, 64, "task assignee");
+  if (input.rank !== undefined) task.rank = persistedText(input.rank, "task rank");
+  if (input.kind !== undefined) task.kind = persistedText(input.kind, "task kind");
+  if (input.assignee !== undefined) task.assignee = persistedText(input.assignee, "task assignee");
   if (input.awaitingHuman !== undefined) task.awaitingHuman = parseAwaitingHuman(input.awaitingHuman);
   return task;
 }
@@ -287,7 +287,7 @@ function parseAwaitingHuman(value: unknown): NonNullable<Task["awaitingHuman"]> 
     throw invalid("task awaitingHuman subject is invalid");
   }
   return {
-    reason: text(input.reason, 1, 2_000, "task awaitingHuman reason"),
+    reason: persistedText(input.reason, "task awaitingHuman reason"),
     since: timestamp(input.since, "task awaitingHuman since"),
     kind: input.kind,
     ...(subject ? { subject: { type: "task-prototype", prototypeId: subject.prototypeId as string } } : {}),
@@ -312,7 +312,7 @@ function parseDerived(value: unknown): NonNullable<TaskView["derived"]> {
   }
   return { sdd: {
     type: "sdd",
-    ref: text(sdd.ref, 1, 500, "task SDD ref"),
+    ref: persistedText(sdd.ref, "task SDD ref"),
     ...(sdd.status !== undefined ? { status: sdd.status as SddStatus } : {}),
     ...(sdd.missing !== undefined ? { missing: sdd.missing } : {}),
   } };
@@ -328,8 +328,8 @@ function parseAttention(value: unknown): TaskAttention[] {
     if (!ATTENTION_CODES.has(input.code as TaskAttention["code"])) throw invalid("task attention code is invalid");
     return {
       code: input.code as TaskAttention["code"],
-      message: text(input.message, 1, 2_000, "task attention message"),
-      ...(input.ref !== undefined ? { ref: text(input.ref, 1, 500, "task attention ref") } : {}),
+      message: persistedText(input.message, "task attention message"),
+      ...(input.ref !== undefined ? { ref: persistedText(input.ref, "task attention ref") } : {}),
     };
   });
 }
@@ -385,14 +385,14 @@ function parseValidation(value: unknown): MissionControlValidationV1 {
   if (input.priority !== undefined && !isTaskPriority(input.priority)) throw invalid("Mission Control validation priority is invalid");
   return {
     id: input.id,
-    title: text(input.title, 1, 300, "validation title"),
-    ...(input.type !== undefined ? { type: text(input.type, 1, 64, "validation type") } : {}),
+    title: persistedText(input.title, "validation title"),
+    ...(input.type !== undefined ? { type: persistedText(input.type, "validation type") } : {}),
     status: input.status,
     executor: input.executor,
     ...(input.priority !== undefined ? { priority: input.priority } : {}),
-    ...(input.assignee !== undefined ? { assignee: text(input.assignee, 1, 64, "validation assignee") } : {}),
+    ...(input.assignee !== undefined ? { assignee: persistedText(input.assignee, "validation assignee") } : {}),
     ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
-    author: text(input.author, 1, 64, "validation author"),
+    author: persistedText(input.author, "validation author"),
     createdAt: timestamp(input.createdAt, "validation createdAt"),
     updatedAt: timestamp(input.updatedAt, "validation updatedAt"),
   };
@@ -410,12 +410,12 @@ function parseCandidate(value: unknown): NonNullable<MissionControlBoardProjecti
   assertOnlyKeys(source, sourceExpected, "Mission Control candidate source_ref");
   if (source.role !== undefined && source.role !== "deliverable" && source.role !== "relation") throw invalid("candidate source_ref role is invalid");
   return {
-    title: text(input.title, 1, 300, "candidate title"),
-    ...(input.type !== undefined ? { type: text(input.type, 1, 64, "candidate type") } : {}),
+    title: persistedText(input.title, "candidate title"),
+    ...(input.type !== undefined ? { type: persistedText(input.type, "candidate type") } : {}),
     executor: input.executor,
     source_ref: {
-      type: text(source.type, 1, 64, "candidate source_ref type"),
-      ref: text(source.ref, 1, 500, "candidate source_ref ref"),
+      type: persistedText(source.type, "candidate source_ref type"),
+      ref: persistedText(source.ref, "candidate source_ref ref"),
       ...(source.role !== undefined ? { role: source.role } : {}),
     },
     excerpt: text(input.excerpt, 0, 4_000, "candidate excerpt"),
@@ -452,6 +452,27 @@ function assertOnlyKeys(value: Record<string, unknown>, expected: string[], labe
 
 function text(value: unknown, min: number, maxCodePoints: number, label: string): string {
   if (typeof value !== "string" || [...value].length < min || [...value].length > maxCodePoints) throw invalid(`${label} is invalid`);
+  return value;
+}
+
+/**
+ * t-c2882f — a field carrying PERSISTED content: a non-empty string, and nothing more.
+ *
+ * The board was the THIRD door onto the same defect, and the most damaging one. `parseTask` used
+ * `text` at the authoring numbers, and this projection validates the WHOLE board in one pass — so a
+ * single task persisted above a cap threw `task body is invalid` and took every other row with it.
+ *
+ * That made it a regression risk too, not just a latent bug: while `TaskStore` silently dropped the
+ * oversize record, the board still rendered without it. Serving the record correctly is precisely
+ * what would have surfaced this. Measured on a two-task fixture — one normal, one 11511-code-point
+ * body — where the store listed both and this projection threw.
+ *
+ * Structure is still enforced everywhere: ids, timestamps, statuses, priorities, and the row counts
+ * this projection caps itself. Only persisted values are unbounded, because size is the authoring
+ * door's question.
+ */
+function persistedText(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) throw invalid(`${label} is invalid`);
   return value;
 }
 
