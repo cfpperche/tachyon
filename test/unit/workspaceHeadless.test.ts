@@ -15,7 +15,7 @@ import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { Terminals } from "../../src/presentation/Terminals.js";
 import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
-import { harnessRoot } from "../../src/harness/HarnessManager.js";
+import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { FormState } from "../../src/webview/formLogic.js";
@@ -2680,4 +2680,193 @@ it("t-28bf8f: neither a forced Kill nor Stop All collects a Temporary row that s
     ws.dispose();
     await fake.cleanup();
   }
+});
+
+/**
+ * t-746f0f — a capability may be authorized while the agent runs, and the product SAYS what that
+ * means for the session in front of the human.
+ *
+ * The precondition these cases measure was never argued for this door: it was born as
+ * `assertAgentStoppedForProfileMigration` for the legacy→canonical migration and became
+ * `…ForProfileMutation` on every lifecycle commit when the legacy format was removed. The cost was
+ * measured live on 0.56.157 — a human killed a running coordinator's session to give it one skill,
+ * and read "The profile lifecycle action could not be completed." on the way there.
+ */
+describe("Agent Studio — authorizing a capability with the agent running (t-746f0f)", () => {
+  const AGENT = "claudeCoordenador";
+
+  async function runningAgentWithSkills(skills: readonly string[]) {
+    const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: AGENT, spec: { runtime: "claude" } }] });
+    for (const skill of skills) {
+      const dir = path.join(ws.workspaceRoot, ".claude", "skills", skill);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${skill}\n\noriginal content\n`);
+    }
+    return ws;
+  }
+
+  /** What the agent's private home actually holds — the tree the live process was launched with. */
+  const deliveredSkills = (ws: Workspace): string[] => {
+    const skills = path.join(harnessHome(ws.workspaceRoot, AGENT), "skills");
+    return fs.existsSync(skills) ? fs.readdirSync(skills).sort() : [];
+  };
+
+  it("authorizes a skill for a RUNNING agent and reports that it lands at the next launch", async () => {
+    const ws = await runningAgentWithSkills(["atlas"]);
+    try {
+      await ws.manager.spawn(AGENT);
+      expect(await ws.manager.runningAgents()).toContain(AGENT);
+
+      const result = await ws.authorizeAgentSkill(AGENT, "atlas");
+
+      expect(result).toMatchObject({ ok: true, referenceId: "atlas", reachesAgentAtNextLaunch: true });
+      // The grant and the selection are both durable, which is what makes the next launch deliver it.
+      const snapshot = await ws.inspectAgentProfileLifecycle(AGENT);
+      expect(snapshot.profile.capabilities?.skills).toContain("atlas");
+      expect(snapshot.profile.references?.map((reference) => reference.id)).toContain("atlas");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * The proof constraint 2 asks for: nothing is reprojected under the live session.
+   *
+   * Skills reach an agent through `HarnessManager.replaceCapturedSkillTree`, which runs only inside
+   * `AgentManager.materializeRuntimeHarness` — spawn, restart, resume, fork. This asserts the
+   * consequence rather than the call graph: the tree the session launched with is byte-identical
+   * after the authorization, and the capability appears only once the process is replaced.
+   */
+  it("leaves the live session's delivered skills untouched, and delivers on the next launch", async () => {
+    const ws = await runningAgentWithSkills(["atlas"]);
+    try {
+      await ws.manager.spawn(AGENT);
+      const before = deliveredSkills(ws);
+      expect(before).not.toContain("atlas");
+
+      await ws.authorizeAgentSkill(AGENT, "atlas");
+
+      // The running agent still holds exactly what it was launched with.
+      expect(deliveredSkills(ws)).toEqual(before);
+
+      // The next launch, which is the only thing that materializes a skill tree.
+      await ws.manager.kill(AGENT);
+      await ws.manager.spawn(AGENT);
+      expect(deliveredSkills(ws)).toContain("atlas");
+      expect(fs.readFileSync(path.join(harnessHome(ws.workspaceRoot, AGENT), "skills", "atlas", "SKILL.md"), "utf8"))
+        .toContain("original content");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * Reauthorize is the gesture the task is named for: the tree changed on disk, the pin did not, and
+   * `authorizeAgentSkill` without `reauthorize` correctly refuses to accept new content silently.
+   */
+  it("reauthorizes changed content while the agent runs, re-pinning the new digest", async () => {
+    const ws = await runningAgentWithSkills(["atlas"]);
+    try {
+      await ws.authorizeAgentSkill(AGENT, "atlas");
+      const pinned = (await ws.inspectAgentProfileLifecycle(AGENT)).profile.references?.find((r) => r.id === "atlas");
+      fs.writeFileSync(path.join(ws.workspaceRoot, ".claude", "skills", "atlas", "SKILL.md"), "# atlas\n\nnew content\n");
+      await ws.manager.spawn(AGENT);
+
+      expect(await ws.authorizeAgentSkill(AGENT, "atlas")).toMatchObject({ ok: true, outcome: "digest-changed" });
+      const stillPinned = (await ws.inspectAgentProfileLifecycle(AGENT)).profile.references?.find((r) => r.id === "atlas");
+      expect(stillPinned?.sha256).toBe(pinned?.sha256);
+
+      expect(await ws.authorizeAgentSkill(AGENT, "atlas", { reauthorize: true }))
+        .toMatchObject({ ok: true, outcome: "reauthorized", reachesAgentAtNextLaunch: true });
+      const repinned = (await ws.inspectAgentProfileLifecycle(AGENT)).profile.references?.find((r) => r.id === "atlas");
+      expect(repinned?.sha256).not.toBe(pinned?.sha256);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * The exemption is per caller, not per door. Revoking while the agent runs would leave a withdrawn
+   * capability still in the live session, so that one keeps the precondition — and now says so.
+   */
+  it("still refuses to REVOKE under a live session, naming the sequence", async () => {
+    const ws = await runningAgentWithSkills(["atlas"]);
+    try {
+      await ws.authorizeAgentSkill(AGENT, "atlas");
+      await ws.manager.spawn(AGENT);
+
+      await expect(ws.revokeAgentSkill(AGENT, "atlas")).rejects.toMatchObject({
+        code: "agent-profile/agent-running",
+        message: expect.stringContaining(`Stop '${AGENT}', apply the change, then start it again`),
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * A plugin commits once per skill through ONE ports object, so the CAS token has to advance with
+   * each commit. Captured once and reused, the second skill refused with a revision conflict against
+   * its own predecessor — and that refusal reached the panel as "could not be completed".
+   */
+  it("authorizes every skill of a multi-skill plugin in one gesture", async () => {
+    const ws = await runningAgentWithSkills([]);
+    try {
+      for (const skill of ["mapa", "bussola"]) {
+        const dir = path.join(ws.workspaceRoot, ".tachyon", "plugins", "cartografia", "skills", skill);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${skill}\n`);
+      }
+      fs.mkdirSync(path.join(ws.workspaceRoot, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(ws.workspaceRoot, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        plugins: {
+          cartografia: {
+            name: "cartografia",
+            version: "1.0.0",
+            runtimes: ["claude"],
+            targets: [
+              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/mapa" },
+              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/bussola" },
+            ],
+          },
+        },
+      }));
+
+      expect(await ws.authorizeAgentPlugin(AGENT, "cartografia")).toMatchObject({
+        ok: true,
+        authorized: ["bussola", "mapa"],
+        outcomes: ["authorized", "authorized"],
+      });
+      expect((await ws.inspectAgentProfileLifecycle(AGENT)).profile.capabilities?.skills).toEqual(["bussola", "mapa"]);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * The requirement STAYS for a mutation a live session was launched from — and now arrives as the
+   * refusal it always was, carrying all three gestures instead of one flattened sentence.
+   */
+  it("names the stop/apply/start sequence for a mutation that does need the agent stopped", async () => {
+    const ws = await runningAgentWithSkills([]);
+    try {
+      await ws.manager.spawn(AGENT);
+      const before = await ws.inspectAgentProfileStudio(AGENT);
+
+      const refused = await ws.commitAgentProfileStudioLifecycle({
+        schemaVersion: 1,
+        operation: "set-enabled",
+        agentName: AGENT,
+        expectedRevision: before.revision,
+        enabled: false,
+      });
+
+      expect(refused).toMatchObject({ kind: "refused", code: "agent-profile/agent-running" });
+      expect(refused).toMatchObject({
+        message: expect.stringContaining(`Stop '${AGENT}', apply the change, then start it again`),
+      });
+    } finally {
+      ws.dispose();
+    }
+  });
 });

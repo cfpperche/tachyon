@@ -40,6 +40,14 @@ export type AgentStudioHostMessage =
   | StudioDomainMessage<{ type: "agentProfileForgetPlan"; agent: string; result: AgentForgetPlanResultV1 }>
   | StudioDomainMessage<{ type: "agentProfileForgotten"; agent: string; agentId: string }>
   | StudioDomainMessage<{ type: "agentProfileError"; agent: string; code: string; message: string; conflict: boolean }>
+  /**
+   * t-746f0f — something the human needs told about an action that SUCCEEDED.
+   *
+   * Separate from `agentProfileError` because the panel renders that one red and labels the profile
+   * degraded. "Authorized — it reaches the running agent at its next launch" is neither a failure nor
+   * a refusal; sending it down the error channel would report a working repair as a broken one.
+   */
+  | StudioDomainMessage<{ type: "agentProfileNotice"; agent: string; code: string; message: string }>
   /** t-5498a6 — the two candidate lists, delivered host → webview. */
   | StudioDomainMessage<{ type: "authorizableCapabilities"; agent: string; capabilities: AuthorizableCapabilities }>
   | StudioDomainMessage<{ type: "agentProfileBundleExport"; result: AgentProfileStudioBundleExportResultV1 }>

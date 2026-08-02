@@ -103,6 +103,7 @@ export const AGENT_STUDIO_HOST_MESSAGE_NAMES = [
   "agentProfileForgotten",
   "agentProfileOwnership",
   "agentProfileError",
+  "agentProfileNotice",
   "authorizableCapabilities",
   "agentProfileBundleExport",
   "agentProfileBundleCreated",
@@ -535,6 +536,13 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
       && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
       && typeof value.message === "string" && value.message.length <= 2_000
       && typeof value.conflict === "boolean";
+  }
+  /** t-746f0f — same shape as the error, minus `conflict`: a notice has no recovery for the shell to run. */
+  if (value.type === "agentProfileNotice") {
+    return exactKeys(value, ["type", "agent", "code", "message"])
+      && typeof value.agent === "string" && AGENT_NAME_RE.test(value.agent)
+      && typeof value.code === "string" && /^agent-profile\/[a-z0-9-]+$/.test(value.code)
+      && typeof value.message === "string" && value.message.length <= 2_000;
   }
   if (value.type === "cwd") return exactKeys(value, ["type", "value"]) && typeof value.value === "string";
   if (value.type === "soulProfileStatus") return exactKeys(value, ["type", "status"]) && isSoulProfileStatusMessage(value.status);

@@ -55,12 +55,20 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   /**
    * t-5498a6 — authorize a workspace skill for this profile. A refusal is a RESULT, not a throw:
    * "this plugin does not install for codex" is an answer the human needs to read.
+   *
+   * t-746f0f — `reachesAgentAtNextLaunch` is set when the agent was RUNNING at commit time. The
+   * capability is in the profile and cannot reach a live session (the harness materializes skills
+   * only at spawn/restart/resume/fork), so the panel has to say when it will, or a silent success
+   * reads as "your running agent now has this".
    */
   authorizeAgentSkill(
     agent: string,
     skillName: string,
     options?: { reauthorize?: boolean },
-  ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }>;
+  ): Promise<
+    | { ok: true; outcome: string; referenceId: string; reachesAgentAtNextLaunch?: boolean }
+    | { ok: false; error: string }
+  >;
   /** t-5498a6 — candidate lists, queried fresh: a plugin install changes no profile revision. */
   authorizableCapabilitiesFor(agent: string): Promise<AuthorizableCapabilities>;
   /**
@@ -74,7 +82,10 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
     agent: string,
     pluginName: string,
     options?: { reauthorize?: boolean },
-  ): Promise<{ ok: true; authorized: string[]; outcomes: string[] } | { ok: false; error: string }>;
+  ): Promise<
+    | { ok: true; authorized: string[]; outcomes: string[]; reachesAgentAtNextLaunch?: boolean }
+    | { ok: false; error: string }
+  >;
   /** t-4c113c — declared `ownership.subagents` plus the targets this agent may still declare. */
   agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1>;
   commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1>;

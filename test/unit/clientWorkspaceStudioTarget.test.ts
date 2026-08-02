@@ -102,6 +102,45 @@ describe("ClientWorkspaceStudioTarget", () => {
     expect(fake.stagedPayloads.at(-1)?.discarded).toBe(true);
   });
 
+  /**
+   * t-746f0f — the launch-boundary fact crosses the engine↔shell wire or the remote shell reports a
+   * live authorization as a plain success, which is the misreading the sentence exists to prevent.
+   * Decoded permissively in both directions: an engine that never sends it behaves as it does today.
+   */
+  it("carries reachesAgentAtNextLaunch across the wire, and treats its absence as 'not said'", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-authorize-"));
+    roots.push(root);
+    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
+    const identity = projectionIdentity(root);
+    const fake = new FakeWorkspaceClient({
+      identity,
+      snapshot: projectionSnapshot(identity),
+      invoke: async (_operationId, command) => {
+        if (command.method !== "extension.invoke") throw new Error("unexpected command");
+        if (command.input.action === "agent-profile.authorize-skill") {
+          return workspaceExtensionCommandSuccessV1(command as never, command.input.skillName === "atlas"
+            ? { ok: true, outcome: "authorized", referenceId: "atlas", reachesAgentAtNextLaunch: true }
+            : { ok: true, outcome: "authorized", referenceId: command.input.skillName });
+        }
+        return workspaceExtensionCommandSuccessV1(command as never, {
+          ok: true, authorized: ["mapa"], outcomes: ["authorized"], reachesAgentAtNextLaunch: true,
+        });
+      },
+    });
+    let authorizeOperation = 0;
+    const target = new ClientWorkspaceStudioTarget(fake, { extensionUri: {} as StudioDeps["extensionUri"], operationId: () => `authorize-operation-${++authorizeOperation}` });
+
+    await expect(target.authorizeAgentSkill("Ada", "atlas")).resolves.toEqual({
+      ok: true, outcome: "authorized", referenceId: "atlas", reachesAgentAtNextLaunch: true,
+    });
+    await expect(target.authorizeAgentSkill("Ada", "bussola")).resolves.toEqual({
+      ok: true, outcome: "authorized", referenceId: "bussola",
+    });
+    await expect(target.authorizeAgentPlugin("Ada", "cartografia")).resolves.toMatchObject({
+      ok: true, reachesAgentAtNextLaunch: true,
+    });
+  });
+
   it("loads forms locally but routes every save through one idempotency-keyed engine command", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-"));
     roots.push(root);

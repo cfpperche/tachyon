@@ -155,6 +155,9 @@ export const agentProfileForgottenMessage = (agent: string, agentId: string) =>
   envelope({ type: "agentProfileForgotten" as const, agent, agentId });
 export const agentProfileErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
   envelope({ type: "agentProfileError" as const, agent, code, message, conflict });
+/** t-746f0f — host → webview: something true about an action that SUCCEEDED, not a failure. */
+export const agentProfileNoticeMessage = (agent: string, code: string, message: string) =>
+  envelope({ type: "agentProfileNotice" as const, agent, code, message });
 export const agentProfileBundleExportMessage = (result: AgentProfileStudioBundleExportResultV1) => envelope({ type: "agentProfileBundleExport" as const, result });
 export const agentProfileBundleCreatedMessage = (result: AgentProfileStudioBundleCreatedResultV1) => envelope({ type: "agentProfileBundleCreated" as const, result });
 export const agentProfileBundleErrorMessage = (agent: string, code: string, message: string, conflict: boolean) => envelope({ type: "agentProfileBundleError" as const, agent, code, message, conflict });
