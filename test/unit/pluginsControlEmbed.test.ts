@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
 import { __resetVscodeMock } from "../mocks/vscode.js";
-import { PluginsPanelManager } from "../../src/webview/PluginsPanel.js";
+import { PluginsPanelManager, sourceSpecAtCommit } from "../../src/webview/PluginsPanel.js";
 import { serializeLockfile, LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
 import type { WorkspaceGitPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 
@@ -83,6 +83,13 @@ const pluginsMsgs = (wv: FakeWebview) =>
 
 const statusOf = (wv: FakeWebview, name: string): string | undefined =>
   pluginsMsgs(wv).at(-1)?.vm.installed.find((p) => p.name === name)?.status.kind;
+
+describe("Reinstall source pin", () => {
+  it("replaces a movable ref with the recorded commit while preserving a monorepo subdir", () => {
+    expect(sourceSpecAtCommit("github:acme/plugins@v2.3.1#path=diagram", "c".repeat(40)))
+      .toBe(`github:acme/plugins@${"c".repeat(40)}#path=diagram`);
+  });
+});
 
 describe("Control → Plugins embed session lifecycle (t-0fc9ee)", () => {
   it("a same-scope rebind (the shell's 3s poll) preserves a stored update check", async () => {

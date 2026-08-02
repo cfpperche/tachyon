@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildInstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel.js";
+import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview, InstallStep, McpPlanItem } from "../../src/plugins/engine.js";
 import type { McpServer } from "../../src/plugins/mcp.js";
 
@@ -209,6 +209,26 @@ describe("buildInstallConsent", () => {
     const tool = { name: "ab", version: "0.31.0", resolvedPlatform: "linux-x64-glibc", declaredUrl: "https://github.com/org/ab/releases/ab", finalUrl: "https://github.com/org/ab/releases/ab", sha256: "a".repeat(64), binSha256: "a".repeat(64), exeName: "ab", launchPolicy: lp };
     const vm = buildInstallConsent(installPreview({ toolTargets: [tool] }), PROV);
     expect(vm.tools?.[0].launchPolicy).toEqual(lp);
+  });
+});
+
+describe("buildReinstallConsent", () => {
+  it("uses the blocking install drawer contract, including commit provenance and all selected runtimes", () => {
+    const preview = installPreview({
+      manifest: { ...installPreview().manifest, runtimes: ["claude", "codex", "grok"], blocks: { claude: "claude/", codex: "codex/", grok: "grok/" } },
+      targetRuntimes: ["claude", "codex", "grok"],
+    });
+    const vm = buildReinstallConsent(preview, PROV, new Set(["claude", "codex"] as const));
+    expect(vm.op).toBe("install");
+    expect(vm.title).toBe("Reinstall tdd-guard@1.3.0");
+    expect(vm.confirmLabel).toBe("Reinstall");
+    expect(vm.token).toBe("fp-abc");
+    expect(vm.provenance).toContainEqual({ k: "resolved commit", v: "cccccccccccc" });
+    expect(vm.runtimes).toEqual([
+      { runtime: "claude", selected: true, present: true },
+      { runtime: "codex", selected: true, present: true },
+      { runtime: "grok", selected: true, present: false },
+    ]);
   });
 });
 

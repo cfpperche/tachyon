@@ -1113,6 +1113,22 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(true);
   });
 
+  it("REINSTALL repairs an old two-runtime lock by adding the newly declared Grok target", async () => {
+    const ws = makeWorkspace(["claude", "codex"]);
+    const { plugin } = loadPlugin(makePlugin({ runtimes: ["claude", "codex", "grok"] }));
+    const oldTargets = new Set(["claude", "codex"] as const);
+    expect((await applyInstall(plugin!, previewInstall(plugin!, ws, oldTargets), ws, oldTargets, { mcpConfirmed: true })).installed).toBe(true);
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex"]);
+    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(false);
+
+    // The panel's Reinstall path uses the manifest-declared set after consent, not the frozen lockfile set.
+    const reinstallTargets = new Set(plugin!.manifest.runtimes);
+    const result = await applyInstall(plugin!, previewInstall(plugin!, ws, reinstallTargets), ws, reinstallTargets, { mcpConfirmed: true });
+    expect(result.installed).toBe(true);
+    expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex", "grok"]);
+    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(true);
+  });
+
   it("records the runtime ancestor dirs it CREATED in a fresh workspace (spec 263 task 4)", async () => {
     const ws = tmp("tachyon-ws-"); // genuinely fresh
     const pdir = makePlugin({ runtimes: ["claude", "codex"] });
