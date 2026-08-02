@@ -433,6 +433,29 @@ export interface ScheduleDef {
   catchUp?: boolean;
 }
 
+/** t-84f0eb — Grok reads one `--permission-mode` word, so its authored entry stays one word. */
+export const GROK_PERMISSION_MODES = ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] as const;
+/**
+ * t-aaa2c6 — measured on `codex-cli 0.146.0` by feeding an invalid value and reading the config
+ * parser's own "expected one of" list. These are the CONFIG enums (wider than the CLI flag enums:
+ * `-a/--ask-for-approval` offers only untrusted/on-request/never, and `--full-auto` no longer parses
+ * at all). `granular` is omitted deliberately: it is a newtype variant that must arrive as a TOML
+ * table, so it can never be projected from this scalar key.
+ */
+export const CODEX_APPROVAL_POLICIES = ["untrusted", "on-failure", "on-request", "never"] as const;
+export const CODEX_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
+/** t-aaa2c6 — `mcp_servers.<server>.default_tools_approval_mode`, a door of its own (see below). */
+export const CODEX_MCP_TOOL_APPROVAL_MODES = ["auto", "prompt", "writes", "approve"] as const;
+
+export type AgentPermissionProjectionEntry =
+  | { runtime: "grok"; mode: typeof GROK_PERMISSION_MODES[number] }
+  | {
+      runtime: "codex";
+      approvalPolicy?: typeof CODEX_APPROVAL_POLICIES[number];
+      sandboxMode?: typeof CODEX_SANDBOX_MODES[number];
+      bridgeToolApproval?: typeof CODEX_MCP_TOOL_APPROVAL_MODES[number];
+    };
+
 export interface TachyonConfig {
   /** Unified managed-entry map. Parsed from both `agents:` and `terminals:` blocks; the
    *  property name is compatibility surface, not a statement that every entry is an AI agent. */
@@ -487,11 +510,15 @@ export interface TachyonConfig {
      * absence means "not projected" rather than "projected by default".
      */
     agentHookProjection?: Record<string, ProjectedHookClass>;
-    /** t-84f0eb — opt-in permission posture for one named managed agent. Absence projects nothing. */
-    agentPermissionProjection?: Record<string, {
-      runtime: "grok";
-      mode: "default" | "acceptEdits" | "auto" | "dontAsk" | "bypassPermissions" | "plan";
-    }>;
+    /**
+     * t-84f0eb — opt-in permission posture for one named managed agent. Absence projects nothing.
+     *
+     * t-aaa2c6 — Codex joins with its OWN key set rather than Grok's single `mode`, because its
+     * posture is measurably three independent doors (command approval, the write sandbox, and MCP
+     * tool approval), not one scalar. Collapsing them into one word is the derivation by analogy
+     * this repository keeps paying for.
+     */
+    agentPermissionProjection?: Record<string, AgentPermissionProjectionEntry>;
     /** spec 219 — clean clipboard copy: "auto" (default) wires a UTF-8 copy-mode helper; "off" leaves OSC 52 */
     clipboard?: "auto" | "off";
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
@@ -1803,16 +1830,52 @@ export function parseConfig(yamlText: string): ParseResult {
       if (raw.settings.agentPermissionProjection !== undefined) {
         const root = raw.settings.agentPermissionProjection;
         if (!isPlainObject(root)) {
-          errors.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, mode }");
+          errors.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, … }");
         } else {
-          const modes = ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] as const;
+          const modes = GROK_PERMISSION_MODES;
           const out: NonNullable<TachyonConfig["settings"]["agentPermissionProjection"]> = {};
           let sound = true;
           for (const [agent, value] of Object.entries(root)) {
             const prefix = `settings.agentPermissionProjection.${agent}`;
             if (!isPlainObject(value)) {
-              errors.push(`${prefix}: must be a mapping with runtime and mode`);
+              errors.push(`${prefix}: must be a mapping with a runtime`);
               sound = false;
+              continue;
+            }
+            if (value.runtime === "codex") {
+              // t-aaa2c6 — one authored entry per DOOR. Every key is optional and an omitted key
+              // leaves that door exactly as the class/runtime default left it, so an author can
+              // tighten one door (say, restore the sandbox) without restating the other two.
+              const codexKeys = ["runtime", "approvalPolicy", "sandboxMode", "bridgeToolApproval"];
+              const unknown = Object.keys(value).filter((key) => !codexKeys.includes(key));
+              if (unknown.length > 0) {
+                errors.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
+                sound = false;
+              }
+              const doors: Array<[string, readonly string[]]> = [
+                ["approvalPolicy", CODEX_APPROVAL_POLICIES],
+                ["sandboxMode", CODEX_SANDBOX_MODES],
+                ["bridgeToolApproval", CODEX_MCP_TOOL_APPROVAL_MODES],
+              ];
+              const entry: Record<string, string> = {};
+              let ok = unknown.length === 0;
+              for (const [key, allowed] of doors) {
+                const raw = (value as Record<string, unknown>)[key];
+                if (raw === undefined) continue;
+                if (typeof raw !== "string" || !allowed.includes(raw)) {
+                  errors.push(`${prefix}.${key}: must be one of ${allowed.join(", ")}`);
+                  sound = false;
+                  ok = false;
+                  continue;
+                }
+                entry[key] = raw;
+              }
+              if (Object.keys(entry).length === 0) {
+                errors.push(`${prefix}: a codex entry must set at least one of approvalPolicy, sandboxMode, bridgeToolApproval`);
+                sound = false;
+                ok = false;
+              }
+              if (ok) out[agent] = { runtime: "codex", ...entry } as AgentPermissionProjectionEntry;
               continue;
             }
             const unknown = Object.keys(value).filter((key) => key !== "runtime" && key !== "mode");
@@ -1821,7 +1884,7 @@ export function parseConfig(yamlText: string): ParseResult {
               sound = false;
             }
             if (value.runtime !== "grok") {
-              errors.push(`${prefix}.runtime: must be 'grok'`);
+              errors.push(`${prefix}.runtime: must be 'grok' or 'codex'`);
               sound = false;
             }
             if (!modes.includes(value.mode as typeof modes[number])) {

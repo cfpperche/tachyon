@@ -147,6 +147,27 @@ describe("t-0c963d — reading what a Codex session was given", () => {
     expect(read().notExposed.join(" ")).toContain("redirected CODEX_HOME");
   });
 
+  it("t-aaa2c6: reads the permission keys a delegated child receives on the ARGV, not just the file", () => {
+    // A delegated Codex child is handed its approval posture as `-c` overrides — the same channel
+    // the hooks ride. Reading only config.toml renders `approval_policy` as "not delivered to this
+    // agent" while the session is demonstrably running under it.
+    const found = read({
+      argv: [
+        "codex", "--dangerously-bypass-hook-trust", "-c", BRIDGE_ARG,
+        "-c", 'approval_policy="never"',
+        "-c", 'sandbox_mode="danger-full-access"',
+        "-c", 'mcp_servers.tachyon_bridge.default_tools_approval_mode="approve"',
+      ],
+    });
+    const byKey = new Map(found.settings.map((setting) => [setting.key, setting.value]));
+
+    expect(byKey.get("approval_policy")).toBe("never");
+    expect(byKey.get("sandbox_mode")).toBe("danger-full-access");
+    expect(byKey.get("mcp_servers.tachyon_bridge.default_tools_approval_mode")).toBe("approve");
+    // Delivered by Tachyon on the argv is not "the person authored it in their own config".
+    expect(found.settings.find((setting) => setting.key === "approval_policy")?.hostAuthored).toBe(false);
+  });
+
   it("skips an unparseable override instead of guessing at it", () => {
     const found = read({ argv: ["codex", "-c", "hooks.SessionStart=[[[ broken", "-c", STOP_ARG] });
 

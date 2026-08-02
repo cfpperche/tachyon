@@ -4,7 +4,7 @@ import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, shellQuote, instructionsDeliverable, type AgentDef, type AgentEntry, type AgentPermissionProjectionEntry, type EntryKind, type TachyonConfig } from "../config/loadConfig.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
@@ -357,6 +357,95 @@ function hermesBriefIncompatibleArg(argv: string[]): string | undefined {
   return undefined;
 }
 
+/**
+ * t-aaa2c6 — the delegated-Codex class default, one constant per MEASURED door on codex-cli 0.146.0.
+ * These are three doors, not three spellings of one:
+ *
+ * - `approval_policy` is COMMAND approval. `-a/--ask-for-approval` exposes only
+ *   untrusted/on-request/never, while `config.toml` also parses `on-failure` and `granular`.
+ * - `sandbox_mode` is the WRITE door, and it is the one an argument-by-analogy fix would have
+ *   missed. Measured with `codex sandbox`: under `workspace-write`, `git add` inside a Tachyon
+ *   worktree fails with `Unable to create '<repo>/.git/worktrees/<agent>/index.lock': Read-only
+ *   file system`, because a worktree's git directory lives outside its own cwd. With
+ *   `approval_policy = "never"` that stops being a prompt and becomes a hard failure — quieter,
+ *   and no more autonomous. Delegated Claude and Grok children run with no sandbox at all, so
+ *   `danger-full-access` is the parity value, not an escalation beyond the class.
+ * - `mcp_servers.<server>.default_tools_approval_mode` is MCP TOOL approval, governed per SERVER and
+ *   NOT by `approval_policy`. Measured live: with `approval_policy` at its default, a read-only
+ *   Bridge-shaped tool call stops at "Allow the probe MCP server to run tool …?"; adding only
+ *   `default_tools_approval_mode = "approve"` ran the same call with no prompt. Codex itself writes
+ *   `approval_mode = "approve"` under `[mcp_servers.<server>.tools.<tool>]` when a human answers
+ *   "Always allow", which is where the value's meaning is pinned.
+ *
+ * Only the Tachyon Bridge is vouched for here. A third-party MCP server a human authored into the
+ * agent's own capabilities keeps Codex's default posture — Tachyon does not speak for it.
+ */
+const CODEX_DELEGATED_APPROVAL_POLICY = "never";
+const CODEX_DELEGATED_SANDBOX_MODE = "danger-full-access";
+const CODEX_DELEGATED_BRIDGE_TOOL_APPROVAL = "approve";
+const CODEX_BRIDGE_MCP_SERVER = "tachyon_bridge";
+/** Flags that already close BOTH the approval and the sandbox door in one token. */
+const CODEX_BYPASS_FLAGS = ["--dangerously-bypass-approvals-and-sandbox", "--yolo"];
+
+/**
+ * Is one Codex permission door already stated on this command line? An explicitly authored command
+ * always wins over a class default; Tachyon adds a door, it never rewrites one.
+ */
+function codexDoorStated(
+  argv: readonly string[],
+  flags: readonly string[],
+  configPrefix: string,
+  /** The bypass token is documented as skipping approvals AND the sandbox — it says nothing about
+   *  per-server MCP tool approval, and that was not measured, so the MCP door does not read it. */
+  closedByBypassFlag = true,
+): boolean {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] ?? "";
+    if (closedByBypassFlag && CODEX_BYPASS_FLAGS.includes(arg)) return true;
+    if (flags.includes(arg)) return true;
+    if (flags.some((flag) => flag.startsWith("--") && arg.startsWith(`${flag}=`))) return true;
+    const value = arg === "-c" || arg === "--config"
+      ? argv[i + 1] ?? ""
+      : arg.startsWith("--config=")
+        ? arg.slice("--config=".length)
+        : arg.startsWith("-c") && arg.length > 2
+          ? arg.slice(2)
+          : undefined;
+    if (value !== undefined && value.startsWith(configPrefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Append `-c key=value` overrides for the doors that are not already stated. Argv `-c` beats
+ * `config.toml`, and a later `-c` beats an earlier one — measured: the Bridge's own whole-table
+ * override (`mcp_servers.tachyon_bridge={…}`, spliced right after the binary by `codexBridgeCmd`)
+ * REPLACES the table, so the per-server approval key must land after it, which appending does.
+ */
+function applyCodexPermissionDoors(
+  cmd: string,
+  doors: { approvalPolicy?: string; sandboxMode?: string; bridgeToolApproval?: string },
+): string {
+  const argv = parseLaunchCommand(cmd)?.argv ?? [];
+  const add = (override: string): void => {
+    cmd += ` -c ${shellQuote(override)}`;
+  };
+  if (doors.approvalPolicy !== undefined && !codexDoorStated(argv, ["-a", "--ask-for-approval"], "approval_policy=")) {
+    add(`approval_policy="${doors.approvalPolicy}"`);
+  }
+  if (doors.sandboxMode !== undefined && !codexDoorStated(argv, ["-s", "--sandbox"], "sandbox_mode=")) {
+    add(`sandbox_mode="${doors.sandboxMode}"`);
+  }
+  if (
+    doors.bridgeToolApproval !== undefined
+    && !codexDoorStated(argv, [], `mcp_servers.${CODEX_BRIDGE_MCP_SERVER}.default_tools_approval_mode=`, false)
+    && !codexDoorStated(argv, [], `mcp_servers.${CODEX_BRIDGE_MCP_SERVER}.tools.`, false)
+  ) {
+    add(`mcp_servers.${CODEX_BRIDGE_MCP_SERVER}.default_tools_approval_mode="${doors.bridgeToolApproval}"`);
+  }
+  return cmd;
+}
+
 const PI_REVIEWER_EXCLUDED_TOOLS = ["bash", "edit", "write"] as const;
 type PiToolFilterPosture = "none" | "reviewer-read-only" | "other";
 
@@ -505,8 +594,8 @@ export interface AgentManagerOptions {
    *  the effective spawn cwd so folder-trust can be seeded before the interactive TUI starts.
    *  Injected into the spawn env as GROK_HOME. Wired in Workspace where the Bridge URL/token live. */
   materializeBridgeMcpGrok?: (name: string, cwd?: string) => string | undefined;
-  /** t-84f0eb — read an explicitly authored per-agent permission mode from workspace authority. */
-  resolveAgentPermissionProjection?: (name: string, runtime: string) => string | undefined;
+  /** t-84f0eb — read an explicitly authored per-agent permission posture from workspace authority. */
+  resolveAgentPermissionProjection?: (name: string, runtime: string) => AgentPermissionProjectionEntry | undefined;
   /** Materialize a non-harness hermes agent's private HERMES_HOME (Bridge MCP in config.yaml +
    *  auth.json symlink), returning its path (undefined when the Bridge isn't up). Injected as
    *  HERMES_HOME. Wired in Workspace where the Bridge URL/token live. */
@@ -1894,24 +1983,41 @@ export class AgentManager {
     return loadAndRenderProjectGuidanceBundle(this.opts.workspaceRoot, this.opts.getConfig()?.settings.projectGuidance);
   }
 
-  private applyAgentPermissionProjection(name: string, cmd: string, delegated = false): string {
+  private applyAgentPermissionProjection(
+    name: string,
+    cmd: string,
+    delegated = false,
+    authoredNativePermissions?: { approvalPolicy?: string; sandboxMode?: string },
+  ): string {
     const runtime = binaryOf(cmd);
-    const mode = this.opts.resolveAgentPermissionProjection?.(name, runtime);
-    if (mode !== undefined) {
-      if (runtime !== "grok") {
+    const authored = this.opts.resolveAgentPermissionProjection?.(name, runtime);
+    if (authored !== undefined) {
+      if (runtime !== "grok" && runtime !== "codex") {
         throw new Error(`agent '${name}': authored permission projection targets an unsupported runtime '${runtime}'`);
       }
-      const parsed = parseLaunchCommand(cmd)?.argv ?? [];
-      const flag = parsed.findIndex((arg) => arg === "--permission-mode" || arg.startsWith("--permission-mode="));
-      if (flag >= 0) {
-        const explicit = parsed[flag] === "--permission-mode" ? parsed[flag + 1] : parsed[flag]!.slice("--permission-mode=".length);
-        if (explicit !== mode) {
-          throw new Error(`agent '${name}': command permission mode '${explicit ?? "missing"}' conflicts with authored mode '${mode}'`);
-        }
-      } else {
-        cmd += ` --permission-mode ${mode}`;
+      if (authored.runtime !== runtime) {
+        throw new Error(`agent '${name}': authored permission projection targets an unsupported runtime '${runtime}'`);
       }
-    } else if (
+      if (authored.runtime === "grok") {
+        const parsed = parseLaunchCommand(cmd)?.argv ?? [];
+        const flag = parsed.findIndex((arg) => arg === "--permission-mode" || arg.startsWith("--permission-mode="));
+        if (flag >= 0) {
+          const explicit = parsed[flag] === "--permission-mode" ? parsed[flag + 1] : parsed[flag]!.slice("--permission-mode=".length);
+          if (explicit !== authored.mode) {
+            throw new Error(`agent '${name}': command permission mode '${explicit ?? "missing"}' conflicts with authored mode '${authored.mode}'`);
+          }
+        } else {
+          cmd += ` --permission-mode ${authored.mode}`;
+        }
+        return cmd;
+      }
+      return applyCodexPermissionDoors(cmd, {
+        approvalPolicy: authored.approvalPolicy,
+        sandboxMode: authored.sandboxMode,
+        bridgeToolApproval: authored.bridgeToolApproval,
+      });
+    }
+    if (
       delegated
       && runtime === "grok"
       && !/(^|\s)--permission-mode(?:=|\s|$)/.test(cmd)
@@ -1922,11 +2028,25 @@ export class AgentManager {
       // keyed from durable Tachyon lineage, never discovered from HOME, cwd or runtime settings.
       cmd += " --always-approve";
     }
+    if (delegated && runtime === "codex") {
+      // t-aaa2c6 — the same owner decision, reaching the runtime Tachyon actually writes production
+      // code with. Codex needed THREE doors, not one flag (measured on codex-cli 0.146.0; see
+      // CODEX_DELEGATED_* above). An authored profile that already states a door keeps its value:
+      // a per-agent security decision must not be widened by a class default.
+      cmd = applyCodexPermissionDoors(cmd, {
+        ...(authoredNativePermissions?.approvalPolicy === undefined ? { approvalPolicy: CODEX_DELEGATED_APPROVAL_POLICY } : {}),
+        ...(authoredNativePermissions?.sandboxMode === undefined ? { sandboxMode: CODEX_DELEGATED_SANDBOX_MODE } : {}),
+        bridgeToolApproval: CODEX_DELEGATED_BRIDGE_TOOL_APPROVAL,
+      });
+    }
     return cmd;
   }
 
   private effectiveCmd(name: string, def: AgentDef, instructions: string | undefined, delegated = false): string {
-    return composeCommand({ cmd: this.applyAgentPermissionProjection(name, def.cmd, delegated), instructions });
+    return composeCommand({
+      cmd: this.applyAgentPermissionProjection(name, def.cmd, delegated, asAgent(def)?.profileNativeConfig?.permissions),
+      instructions,
+    });
   }
 
   /**
@@ -4573,7 +4693,12 @@ export class AgentManager {
       resumeDef,
       cwd,
       adapter.resumeCommand(
-        this.applyAgentPermissionProjection(name, cmd, !!(this.lineage.get(name) || this.delegators.get(name))),
+        this.applyAgentPermissionProjection(
+          name,
+          cmd,
+          !!(this.lineage.get(name) || this.delegators.get(name)),
+          resumeDef?.profileNativeConfig?.permissions,
+        ),
         id,
       ),
       { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name },

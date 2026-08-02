@@ -488,6 +488,34 @@ describe("parseConfig", () => {
     }
   });
 
+  it("t-aaa2c6: parses a per-door Codex permission projection and keeps omitted doors absent", () => {
+    const { config, errors } = parseConfig(
+      "agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n"
+      + "    writer:\n      runtime: codex\n      approvalPolicy: on-request\n      sandboxMode: workspace-write\n"
+      + "    narrow:\n      runtime: codex\n      bridgeToolApproval: prompt\n",
+    );
+    expect(errors).toEqual([]);
+    expect(config?.settings.agentPermissionProjection).toEqual({
+      writer: { runtime: "codex", approvalPolicy: "on-request", sandboxMode: "workspace-write" },
+      narrow: { runtime: "codex", bridgeToolApproval: "prompt" },
+    });
+  });
+
+  it("t-aaa2c6: refuses unmeasured Codex door values, unknown keys and an entry that states no door", () => {
+    for (const entry of [
+      // `granular` parses in Codex's config but only as a table, so it is not projectable here.
+      "runtime: codex\n      approvalPolicy: granular",
+      "runtime: codex\n      sandboxMode: full-access",
+      "runtime: codex\n      bridgeToolApproval: never",
+      "runtime: codex\n      mode: auto",
+      "runtime: codex",
+    ]) {
+      const result = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    writer:\n      ${entry}\n`);
+      expect(result.config?.settings.agentPermissionProjection).toBeUndefined();
+      expect(result.errors.join("\n")).toContain("settings.agentPermissionProjection.writer");
+    }
+  });
+
   // spec 219 — settings.clipboard enum
   it("parses settings.clipboard auto/off and rejects other values", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: auto\n`).config?.settings.clipboard).toBe("auto");

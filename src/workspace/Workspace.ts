@@ -1018,7 +1018,7 @@ export class Workspace {
             `agent '${name}': settings.agentPermissionProjection targets '${authored.runtime}', not '${runtime}'`,
           );
         }
-        return authored.mode;
+        return authored;
       },
       // Private HERMES_HOME for non-harness hermes (Bridge MCP in config.yaml + isolated auth copy).
       materializeBridgeMcpHermes: (name) => {

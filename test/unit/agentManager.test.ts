@@ -9,7 +9,7 @@ import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../
 import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
-import { asAgent, parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, type AgentPermissionProjectionEntry, type TachyonConfig } from "../../src/config/loadConfig.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
@@ -2007,7 +2007,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
       materializeBridgeMcpGrok?: (name: string) => string | undefined;
-      resolveAgentPermissionProjection?: (name: string, runtime: string) => string | undefined;
+      resolveAgentPermissionProjection?: (name: string, runtime: string) => AgentPermissionProjectionEntry | undefined;
       piBridgeExtensionPath?: () => string | undefined;
       materializePiSessionDir?: (name: string) => string;
       materializeOwnershipSettings?: (name: string, opts?: {
@@ -5810,7 +5810,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       const worktree = { path: "/wt/reader", branch: "tachyon/reader", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
       const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
         resolveAgentPermissionProjection: (name: string, runtime: string) =>
-          name === "reader" && runtime === "grok" ? "auto" : undefined,
+          name === "reader" && runtime === "grok" ? { runtime: "grok", mode: "auto" } : undefined,
         resolveSpawnCwd: async (ctx) => ({ cwd: `/wt/${ctx.name}`, worktree: { ...worktree, path: `/wt/${ctx.name}` } }),
       });
 
@@ -5829,11 +5829,82 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     it("t-84f0eb: refuses a named permission projection when the managed runtime is not covered", async () => {
       const { manager } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
-        resolveAgentPermissionProjection: (name: string) => name === "reader" ? "auto" : undefined,
+        resolveAgentPermissionProjection: (name: string) => name === "reader" ? { runtime: "grok", mode: "auto" } : undefined,
       });
       await expect(manager.spawn("reader", { cmd: "claude" })).rejects.toThrow(
         "agent 'reader': authored permission projection targets an unsupported runtime 'claude'",
       );
+    });
+
+    // t-aaa2c6 — the measured doors, as a behavioural guard. Fail-before on every assertion below:
+    // before this change a delegated Codex child carried none of the three `-c` overrides and stopped
+    // for a human click on the Bridge tool, on applying edits, and on `git add`/`git commit`.
+    it("t-aaa2c6: opens all three measured Codex doors for a delegated child and leaves top-level/declared alone", async () => {
+      const worktree = { path: "/wt/writer", branch: "tachyon/writer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n  declared:\n    cmd: codex\n", {
+        resolveSpawnCwd: async (ctx) => ({ cwd: `/wt/${ctx.name}`, worktree: { ...worktree, path: `/wt/${ctx.name}` } }),
+      });
+
+      await manager.spawn("writer", { cmd: "codex", parent: "boss", worktree: true });
+      const delegated = cmds.at(-1)!;
+      expect(delegated).toContain(`-c 'approval_policy="never"'`);
+      expect(delegated).toContain(`-c 'sandbox_mode="danger-full-access"'`);
+      expect(delegated).toContain(`-c 'mcp_servers.tachyon_bridge.default_tools_approval_mode="approve"'`);
+
+      // restart is the same actor arriving through another door; it must not silently drop the class default.
+      await manager.restart("writer", { stop: "force", session: "new" });
+      expect(cmds.at(-1)).toContain(`-c 'approval_policy="never"'`);
+      expect(cmds.at(-1)).toContain(`-c 'mcp_servers.tachyon_bridge.default_tools_approval_mode="approve"'`);
+
+      // A top-level Codex agent a human starts keeps Codex's own posture, unchanged.
+      await manager.spawn("top-level-codex", { cmd: "codex" });
+      expect(cmds.at(-1)).not.toContain("approval_policy");
+      expect(cmds.at(-1)).not.toContain("sandbox_mode");
+      expect(cmds.at(-1)).not.toContain("default_tools_approval_mode");
+
+      // So does a DECLARED agent started from the config with no delegator above it.
+      await manager.spawn("declared");
+      expect(cmds.at(-1)).not.toContain("approval_policy");
+      expect(cmds.at(-1)).not.toContain("sandbox_mode");
+      expect(cmds.at(-1)).not.toContain("default_tools_approval_mode");
+    });
+
+    it("t-aaa2c6: never rewrites a Codex door the command or an authored profile already states", async () => {
+      const worktree = { path: "/wt/x", branch: "tachyon/x", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        resolveSpawnCwd: async (ctx) => ({ cwd: `/wt/${ctx.name}`, worktree: { ...worktree, path: `/wt/${ctx.name}` } }),
+      });
+
+      // An explicit command wins per door: the stated sandbox stays, the unstated ones are opened.
+      await manager.spawn("stated", { cmd: "codex --sandbox read-only", parent: "boss", worktree: true });
+      const stated = cmds.at(-1)!;
+      expect(stated).toContain("--sandbox read-only");
+      expect(stated).not.toContain("sandbox_mode=");
+      expect(stated).toContain(`-c 'approval_policy="never"'`);
+
+      // One bypass token already closes the approval and sandbox doors; do not restate them.
+      await manager.spawn("bypassed", { cmd: "codex --dangerously-bypass-approvals-and-sandbox", parent: "boss", worktree: true });
+      expect(cmds.at(-1)).not.toContain("approval_policy=");
+      expect(cmds.at(-1)).not.toContain("sandbox_mode=");
+      expect(cmds.at(-1)).toContain(`-c 'mcp_servers.tachyon_bridge.default_tools_approval_mode="approve"'`);
+    });
+
+    it("t-aaa2c6: an authored codex projection overrides the class default, per door", async () => {
+      const worktree = { path: "/wt/y", branch: "tachyon/y", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+      const { manager, cmds } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+        resolveAgentPermissionProjection: (name: string, runtime: string) =>
+          name === "narrow" && runtime === "codex"
+            ? { runtime: "codex", sandboxMode: "workspace-write", bridgeToolApproval: "prompt" }
+            : undefined,
+        resolveSpawnCwd: async (ctx) => ({ cwd: `/wt/${ctx.name}`, worktree: { ...worktree, path: `/wt/${ctx.name}` } }),
+      });
+
+      await manager.spawn("narrow", { cmd: "codex", parent: "boss", worktree: true });
+      const narrow = cmds.at(-1)!;
+      expect(narrow).toContain(`-c 'sandbox_mode="workspace-write"'`);
+      expect(narrow).toContain(`-c 'mcp_servers.tachyon_bridge.default_tools_approval_mode="prompt"'`);
+      // The authored entry is the whole statement — an unstated door is NOT filled from the class default.
+      expect(narrow).not.toContain("approval_policy");
     });
 
     it("SDD 369 T3 passes the effective cwd and private Claude config home to capture materialization", async () => {
