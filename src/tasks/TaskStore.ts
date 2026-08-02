@@ -130,7 +130,8 @@ export function allowedReconciliations(status: TaskStatus): TaskStatus[] {
 
 export class TaskStore {
   private mutation: Promise<void> = Promise.resolve();
-  private readonly listCache = new Map<string, { signature: string; read: TaskRead }>();
+  private readonly listCache = new Map<string, { signature: TaskFileSignature; read: TaskRead }>();
+  private cachedListing: Task[] | undefined;
   readonly journal: TaskJournalStore;
 
   constructor(
@@ -234,8 +235,8 @@ export class TaskStore {
     } catch {
       return [];
     }
-    const tasks: Task[] = [];
     const present = new Set<string>();
+    let changed = false;
     for (const name of names) {
       if (name.includes(".tmp.")) continue;
       if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
@@ -244,17 +245,26 @@ export class TaskStore {
       if (signature === undefined) continue;
       present.add(id);
       let cached = this.listCache.get(id);
-      if (!cached || cached.signature !== signature) {
-        cached = { signature, read: this.loadTask(id) };
+      if (!cached || !sameTaskFileSignature(cached.signature, signature)) {
+        cached = { signature, read: freezeSuccessfulRead(this.loadTask(id)) };
         this.listCache.set(id, cached);
+        changed = true;
       }
-      if (cached.read.ok) tasks.push(structuredClone(cached.read.task));
     }
     for (const id of this.listCache.keys()) {
-      if (!present.has(id)) this.listCache.delete(id);
+      if (!present.has(id)) {
+        this.listCache.delete(id);
+        changed = true;
+      }
+    }
+    if (!changed && this.cachedListing) return this.cachedListing;
+    const tasks: Task[] = [];
+    for (const cached of this.listCache.values()) {
+      if (cached.read.ok) tasks.push(cached.read.task);
     }
     tasks.sort(compareTasksForListing);
-    return tasks;
+    this.cachedListing = Object.freeze(tasks) as Task[];
+    return this.cachedListing;
   }
 
   listViews(limit = 100, options: TaskListOptions = {}): TaskView[] {
@@ -427,10 +437,10 @@ export class TaskStore {
     return "task" in result ? { ok: true, task: result.task } : { ok: false, absent: false, defect: result.defect };
   }
 
-  private fileSignature(id: string): string | undefined {
+  private fileSignature(id: string): TaskFileSignature | undefined {
     try {
       const stat = fs.statSync(this.pathFor(id), { bigint: true });
-      return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`;
+      return { dev: stat.dev, ino: stat.ino, size: stat.size, mtimeNs: stat.mtimeNs, ctimeNs: stat.ctimeNs };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;
@@ -563,6 +573,32 @@ type TaskRead =
   | { ok: true; task: Task }
   | { ok: false; absent: true }
   | { ok: false; absent: false; defect: string };
+
+interface TaskFileSignature {
+  dev: bigint;
+  ino: bigint;
+  size: bigint;
+  mtimeNs: bigint;
+  ctimeNs: bigint;
+}
+
+function sameTaskFileSignature(a: TaskFileSignature, b: TaskFileSignature): boolean {
+  return a.dev === b.dev && a.ino === b.ino && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+}
+
+/** Cached records are shared between listings, so freeze their complete JSON-shaped graph once. */
+function freezeSuccessfulRead(read: TaskRead): TaskRead {
+  if (!read.ok) return read;
+  return { ok: true, task: deepFreeze(read.task) };
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const nested of Object.values(value)) deepFreeze(nested);
+    Object.freeze(value);
+  }
+  return value;
+}
 
 /**
  * t-c2882f — a task that EXISTS and cannot be served says so, and names a way forward.
