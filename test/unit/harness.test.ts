@@ -872,6 +872,49 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.realpathSync(path.join(suppressed.home, "auth.json"))).toBe(fs.realpathSync(path.join(codexHome, "auth.json")));
   });
 
+  it("t-171cb2: materializeHomeOnly exactTrustCwd writes workspace+cwd trust and strips ambient projects", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-exact-trust");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const ambientSibling = path.join(path.dirname(ws), "ambient-sibling");
+    fs.writeFileSync(path.join(codexHome, "config.toml"), [
+      'model = "ambient-model"',
+      'approval_policy = "on-request"',
+      "",
+      `[projects.${JSON.stringify(ambientSibling)}]`,
+      'trust_level = "trusted"',
+      "",
+      `[projects.${JSON.stringify("/home/goat")}]`,
+      'trust_level = "trusted"',
+      "",
+    ].join("\n"));
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const worktreeCwd = path.join(path.dirname(ws), "worktrees", "delegated-child");
+
+    // Fail-before shape: without exactTrustCwd the seed still carries ambient projects and never
+    // the new worktree path (exact match only — prefix trust does not help).
+    const plain = mgr.materializeHomeOnly("top-level", codex, worktreeCwd);
+    const plainToml = fs.readFileSync(path.join(plain.home, "config.toml"), "utf8");
+    expect(plainToml).toContain(JSON.stringify(ambientSibling));
+    expect(plainToml).toContain(JSON.stringify("/home/goat"));
+    expect(plainToml).not.toContain(JSON.stringify(path.resolve(worktreeCwd)));
+
+    const delegated = mgr.materializeHomeOnly("writer", codex, worktreeCwd, { exactTrustCwd: worktreeCwd });
+    const toml = fs.readFileSync(path.join(delegated.home, "config.toml"), "utf8");
+    expect(toml).toContain('model = "ambient-model"');
+    expect(toml).toContain(`[projects.${JSON.stringify(path.resolve(ws))}]\ntrust_level = "trusted"`);
+    expect(toml).toContain(`[projects.${JSON.stringify(path.resolve(worktreeCwd))}]\ntrust_level = "trusted"`);
+    expect(toml).not.toContain(JSON.stringify(ambientSibling));
+    expect(toml).not.toContain(JSON.stringify("/home/goat"));
+
+    // Re-materialize with a different cwd replaces prior exact trust (restart/resume door).
+    const otherCwd = path.join(path.dirname(ws), "worktrees", "other-child");
+    mgr.materializeHomeOnly("writer", codex, otherCwd, { exactTrustCwd: otherCwd });
+    const again = fs.readFileSync(path.join(delegated.home, "config.toml"), "utf8");
+    expect(again).toContain(`[projects.${JSON.stringify(path.resolve(otherCwd))}]\ntrust_level = "trusted"`);
+    expect(again).not.toContain(JSON.stringify(path.resolve(worktreeCwd)));
+  });
+
   it("canonical Codex projection rewrites only typed allowlisted keys on every launch", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });

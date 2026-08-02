@@ -886,7 +886,7 @@ export class Workspace {
         : resolveCurrentSession(runtime, cwd, resolverEnv(runtime, configHome), title), // A3 + spec 220: claude matches by customTitle
       // spec 226/298 (H3) — materialize an agent's isolated harness and return its runtime config-home
       // env + MCP wiring; null when the agent has no harness / runtime can't.
-      materializeHarness: ({ name, def, cwd }) => {
+      materializeHarness: ({ name, def, cwd, delegated }) => {
         const adapter = adapterFor(def.cmd);
         if (def.profileCapabilities) {
           if (!adapter) throw new Error(`runtime for '${name}' has no capability projection adapter`);
@@ -935,7 +935,15 @@ export class Workspace {
         }
         // spec 240 — `isolate: transcript`: private home ONLY (own transcript namespace), no MCP isolation,
         // so the agent still loads the workspace project config (incl. the project .mcp.json).
-        if (def.isolate === "transcript") return this.harness.materializeHomeOnly(name, adapter, cwd);
+        // t-171cb2 — Temporary `cmd: codex` is auto-injected into this arm; directory trust still
+        // applies by class when the launch is delegated (exact-path worktree cwd known here).
+        if (def.isolate === "transcript") {
+          return this.harness.materializeHomeOnly(name, adapter, cwd, {
+            ...(adapter.runtime === "codex" && delegated
+              ? { exactTrustCwd: cwd ?? this.workspaceRoot }
+              : {}),
+          });
+        }
         // spec 357 - codex defaults to a lifetime-scoped private CODEX_HOME so same-cwd agents cannot
         // bind to each other's rollout transcripts.
         if (adapter.runtime === "codex") {
@@ -944,8 +952,11 @@ export class Workspace {
           }
           // Canonical profiles own their forming inputs. Their private CODEX_HOME must not inherit
           // selectors/capabilities from the account-wide config that the profile inspector suppresses.
+          // t-171cb2 — directory trust is authority: only a delegated child gets exact-path trust for
+          // its spawn cwd (the new worktree path). Top-level and declared keep today's seed-only home.
           return this.harness.materializeHomeOnly(name, adapter, cwd, {
             inheritNativeConfig: def.profileLifecycle === undefined,
+            ...(delegated ? { exactTrustCwd: cwd ?? this.workspaceRoot } : {}),
           });
         }
         // t-ee5c05 — `profileFork` joins the gate for the same reason it does on the Claude branch: a
