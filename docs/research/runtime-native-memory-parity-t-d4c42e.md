@@ -152,6 +152,28 @@ rather than by caution. Promoting them needs one explicitly authorized minimal t
 `isolation` was deliberately NOT promoted. The store's PATH is provably bound to the private home,
 but whether a LIVE session writes only there is a different claim needing a session. `verified` has to
 mean observed, including when the observation is nearly enough.
+
+##### Authorized live measurement {#claude-2026-07-28-live}
+
+Later that day, approval `a-b4b050` authorized three paid turns against Claude Code 2.1.220. All
+three used requested and effective model `claude-haiku-4-5-20251001`, the same marker and prompt, and
+the product-materialized private `CLAUDE_CONFIG_DIR`; the real `~/.claude` was never read.
+
+1. The default positive-control arm returned the marker planted in
+   `<home>/projects/<key>/memory/MEMORY.md` verbatim (US$ 0.0176986).
+2. With `autoMemoryEnabled: false` in the private `settings.json`, the response was `NONE`
+   (US$ 0.0105116).
+3. With `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, the response was `NONE` (US$ 0.0107666).
+
+The positive control makes the two disabled arms meaningful rather than indistinguishable from a
+marker planted at the wrong location. This promotes `enable`, `disable` (through two independent
+controls), and live-session `isolation` to `verified` for 2.1.220. It does not promote bounded
+`injection`: inline injection was observed, but the documented 200-line/25-KiB bound was not tested.
+It also does not promote `mutation`, because the before/after snapshot was not inspected carefully
+enough to support a claim. Only `fresh` was exercised; restart, resume, and fork remain unmeasured.
+Consequently `runtime-managed` remains blocked by bounded injection, mutation, and lifecycle gaps.
+Total model cost was US$ 0.0389768.
+
 - **Primary evidence:** [Claude memory documentation](https://code.claude.com/docs/en/memory),
   [Claude environment variables](https://code.claude.com/docs/en/env-vars),
   `src/harness/HarnessManager.ts`,
