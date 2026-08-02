@@ -231,7 +231,10 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     agentName: string,
     skillName: string,
     options: { reauthorize?: boolean } = {},
-  ): Promise<{ ok: true; outcome: string; referenceId: string } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; outcome: string; referenceId: string; reachesAgentAtNextLaunch?: boolean }
+    | { ok: false; error: string }
+  > {
     const result = await this.client.invoke(`authorize-skill:${this.operationId()}`, {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -241,13 +244,23 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-skill") {
       throw new Error("persistent engine returned a malformed skill authorization result");
     }
-    const value = result.value as { ok?: unknown; error?: unknown; outcome?: unknown; referenceId?: unknown };
+    const value = result.value as {
+      ok?: unknown; error?: unknown; outcome?: unknown; referenceId?: unknown; reachesAgentAtNextLaunch?: unknown;
+    };
     if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
     if (value?.ok !== true || typeof value.outcome !== "string" || typeof value.referenceId !== "string") {
       throw new Error("persistent engine returned a malformed skill authorization result");
     }
     this.refreshConfig();
-    return { ok: true, outcome: value.outcome, referenceId: value.referenceId };
+    // t-746f0f — absent means "the engine did not say", which is the same answer an older engine
+    // gives. Decoded permissively for that reason: the flag adds a sentence, and a shell that never
+    // hears it falls back to today's silent success rather than rejecting the whole result.
+    return {
+      ok: true,
+      outcome: value.outcome,
+      referenceId: value.referenceId,
+      ...(value.reachesAgentAtNextLaunch === true ? { reachesAgentAtNextLaunch: true } : {}),
+    };
   }
 
   /** t-5498a6 — the two candidate lists, queried fresh rather than read off the revisioned snapshot. */
@@ -277,7 +290,10 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     agentName: string,
     pluginName: string,
     options: { reauthorize?: boolean } = {},
-  ): Promise<{ ok: true; authorized: string[]; outcomes: string[] } | { ok: false; error: string }> {
+  ): Promise<
+    | { ok: true; authorized: string[]; outcomes: string[]; reachesAgentAtNextLaunch?: boolean }
+    | { ok: false; error: string }
+  > {
     const result = await this.client.invoke(`authorize-plugin:${this.operationId()}`, {
       schemaVersion: 1,
       method: "extension.invoke",
@@ -287,7 +303,9 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
     if (result.method !== "extension.invoke" || result.action !== "agent-profile.authorize-plugin") {
       throw new Error("persistent engine returned a malformed plugin authorization result");
     }
-    const value = result.value as { ok?: unknown; error?: unknown; authorized?: unknown; outcomes?: unknown };
+    const value = result.value as {
+      ok?: unknown; error?: unknown; authorized?: unknown; outcomes?: unknown; reachesAgentAtNextLaunch?: unknown;
+    };
     if (value?.ok === false && typeof value.error === "string") return { ok: false, error: value.error };
     // t-4a2a6f — `outcomes` must be present AND aligned with `authorized`. The caller reads them by
     // index to say which skills were written and which were held back, so a short or missing array
@@ -297,7 +315,13 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       throw new Error("persistent engine returned a malformed plugin authorization result");
     }
     this.refreshConfig();
-    return { ok: true, authorized: value.authorized as string[], outcomes: value.outcomes as string[] };
+    return {
+      ok: true,
+      authorized: value.authorized as string[],
+      outcomes: value.outcomes as string[],
+      // t-746f0f — same permissive decode as the skill door.
+      ...(value.reachesAgentAtNextLaunch === true ? { reachesAgentAtNextLaunch: true } : {}),
+    };
   }
 
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {

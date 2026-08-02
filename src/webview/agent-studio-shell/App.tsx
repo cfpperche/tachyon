@@ -522,6 +522,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setProfileBusy(d.conflict ? "Refreshing profile" : undefined);
       setProfileConflict(d.conflict);
       setProfileNotice({ kind: "error", text: d.message });
+    } else if (d.type === "agentProfileNotice") {
+      // t-746f0f — the action worked; this says something about it the human cannot see on the
+      // screen. It arrives AFTER the refreshes it belongs to, so it deliberately overwrites their
+      // "Latest profile loaded." with the more specific sentence.
+      if (entityRef.current?.name !== d.agent) return;
+      setProfileBusy(undefined);
+      setProfileNotice({ kind: "success", text: d.message });
     } else if (d.type === "agentProfileBundleExport") {
       if (entityRef.current?.name !== d.result.agentName) return;
       const bytes = Uint8Array.from(atob(d.result.contentBase64), (char) => char.charCodeAt(0));

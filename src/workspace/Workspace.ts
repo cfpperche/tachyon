@@ -5342,6 +5342,34 @@ export class Workspace {
    *
    * Authorizing does not select. The Studio's tooling checkboxes are the second gesture, and keeping
    * them separate is the whole point: "may have" and "has" are different facts.
+   *
+   * ## t-746f0f — why this one may run while the agent runs
+   *
+   * The stopped-agent precondition reached this door by a RENAME, not by an argument: it was born as
+   * `assertAgentStoppedForProfileMigration` for the legacy→canonical migration (t-1d1842), which
+   * rewrites the agent's whole definition source, and became `…ForProfileMutation` on every lifecycle
+   * commit when the legacy format was removed. Nobody ever decided that authorizing a capability
+   * needs a stop, and the cost of the inherited rule was measured: to give a running coordinator one
+   * skill, the human had to kill its session, click, and start a new one.
+   *
+   * Measured against the other guarded operations, this is a different class. Create, import and
+   * clone publish or replace the WHOLE profile — executable, selectors, environment, prompt,
+   * isolation, nativeConfig — and the live process's argv, env, config home and cwd were composed
+   * from exactly those fields at launch; rename changes the key its session, ledger and authority are
+   * filed under. A capability authorization writes three things and no others: the skill
+   * `references`, the `capabilities.skills` selection, and the authority's `capabilityGrants`. Their
+   * only consumer is the capability projection, delivered by `HarnessManager.replaceCapturedSkillTree`
+   * and `writeProfileCapabilityManifest`, reached only from `AgentManager.materializeRuntimeHarness`
+   * — spawn, restart, resume, fork. All four start a process or replace one. Nothing re-materializes
+   * under a live session, so this write cannot reach the running agent at all.
+   *
+   * Which is exactly why the answer has to be SAID rather than assumed: `reachesAgentAtNextLaunch`
+   * reports that the capability landed in the profile and will be delivered on the next launch. A
+   * silent success would let a human believe their running agent just gained the skill.
+   *
+   * `revokeAgentSkill` deliberately does NOT get this exemption. "It is gone at the next launch"
+   * describes a revocation that is not yet in force, and a human withdrawing a capability must not be
+   * left holding that.
    */
   async authorizeAgentSkill(agentName: string, skillName: string, options: { reauthorize?: boolean } = {}) {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
@@ -5349,7 +5377,8 @@ export class Workspace {
     if (!origin) {
       return { ok: false as const, error: `no skill named '${skillName}' is installed by a plugin or present in this workspace` };
     }
-    return authorizeAgentSkill({
+    const running = await this.agentIsRunning(agentName);
+    const result = await this.asCapabilityRefusal(() => authorizeAgentSkill({
       workspaceRoot: this.workspaceRoot,
       agentName,
       origin,
@@ -5364,8 +5393,32 @@ export class Workspace {
       // which preserves the digest pin so re-enabling needs no fresh approval. Revoking and
       // re-authorizing would re-pin whatever the content is by then.
       select: true,
-      ports: this.skillAuthorizationPorts(snapshot.revision),
-    });
+      ports: this.skillAuthorizationPorts(snapshot.revision, { allowRunningAgent: true }),
+    }));
+    return result.ok && running ? { ...result, reachesAgentAtNextLaunch: true as const } : result;
+  }
+
+  /**
+   * t-746f0f — a governed refusal reaches this door's VALUE channel instead of being flattened above.
+   *
+   * `authorizeAgentSkill` already answers refusals as `{ ok: false, error }` — "this plugin does not
+   * install for codex" — and the cockpit posts that text verbatim. A refusal thrown from inside the
+   * canonical transaction had no way onto that channel, so it rose as an exception and met
+   * `postAgentProfileError`, which says "The profile lifecycle action could not be completed." for
+   * everything. Both refusals reachable here name a gesture the human can perform (start over from a
+   * reloaded profile; stop the agent first), so both belong in the channel that already exists rather
+   * than in a second one invented for them.
+   *
+   * Only `AgentProfileRefusal` converts. A broken transaction keeps rising and is still flattened at
+   * the panel, which stays correct: a stack or an EIO is not a gesture, and its text leaks host paths.
+   */
+  private async asCapabilityRefusal<T extends { ok: boolean }>(run: () => Promise<T>): Promise<T | { ok: false; error: string }> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!isAgentProfileRefusal(error)) throw error;
+      return { ok: false, error: error.message };
+    }
   }
 
   /**
@@ -5399,15 +5452,18 @@ export class Workspace {
    */
   async authorizeAgentPlugin(agentName: string, pluginName: string, options: { reauthorize?: boolean } = {}) {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
-    return authorizeAgentPlugin({
+    const running = await this.agentIsRunning(agentName);
+    const result = await this.asCapabilityRefusal(() => authorizeAgentPlugin({
       workspaceRoot: this.workspaceRoot,
       agentName,
       pluginName,
       adapter: snapshot.profile.runtime.adapter,
       ...(options.reauthorize ? { reauthorize: true } : {}),
       select: true,
-      ports: this.skillAuthorizationPorts(snapshot.revision),
-    });
+      // t-746f0f — same reasoning as the skill door, which is where it is written down.
+      ports: this.skillAuthorizationPorts(snapshot.revision, { allowRunningAgent: true }),
+    }));
+    return result.ok && running ? { ...result, reachesAgentAtNextLaunch: true as const } : result;
   }
 
   /** t-5498a6 — withdraw an authorization, dropping the selection in the same transaction. */
@@ -5420,8 +5476,24 @@ export class Workspace {
    * The ports both callers share. `expectedRevision` is carried in so the commit is a compare-and-set
    * against the profile the decision was computed from — without it, two concurrent authorizations
    * would each write a grant set that silently discarded the other's.
+   *
+   * t-746f0f — the CAS token ADVANCES across the commits of one gesture. `authorizeAgentPlugin` runs
+   * one commit per skill through a single ports object, and every commit publishes a new revision, so
+   * a token captured once and reused made the second skill of any plugin refuse with a revision
+   * conflict against its own predecessor. Chaining keeps the protection pointed at the third party it
+   * was built for — a concurrent writer still invalidates the token — while a plugin's own successive
+   * skills no longer race themselves. (Latent in this workspace, where every installed plugin exposes
+   * one skill per runtime; reachable the moment one exposes two.)
+   *
+   * `allowRunningAgent` is the caller's declaration that its mutation provably cannot diverge from a
+   * live session — see `authorizeAgentSkill`. It is passed per call rather than assumed, because
+   * `revokeAgentSkill` shares these ports and does NOT qualify.
    */
-  private skillAuthorizationPorts(expectedRevision: string): SkillAuthorizationPorts {
+  private skillAuthorizationPorts(
+    expectedRevision: string,
+    options: { allowRunningAgent?: boolean } = {},
+  ): SkillAuthorizationPorts {
+    let cas = expectedRevision;
     return {
       read: async (agentName) => {
         const snapshot = await this.inspectAgentProfileLifecycle(agentName);
@@ -5430,10 +5502,10 @@ export class Workspace {
       },
       commit: async ({ agentName, references, capabilityGrants, selectedSkills }) => {
         const snapshot = await this.inspectAgentProfileLifecycle(agentName);
-        await this.commitAgentProfileLifecycle({
+        const input = {
           agentName,
-          operation: "edit",
-          expectedRevision,
+          operation: "edit" as const,
+          expectedRevision: cas,
           patch: {
             references: [...references],
             ...(selectedSkills
@@ -5441,15 +5513,43 @@ export class Workspace {
               : {}),
           },
           capabilityGrants,
-        });
+        };
+        const result = options.allowRunningAgent
+          ? await this.runAgentProfileLifecycleCommit(input)
+          : await this.commitAgentProfileLifecycle(input);
+        cas = result.revision;
       },
     };
   }
 
+  /**
+   * t-746f0f — the precondition now NAMES the sequence, and declares itself a refusal.
+   *
+   * It used to throw a bare `Error`, so `isAgentProfileRefusal` said no and every door above flattened
+   * it to "The profile lifecycle action could not be completed." Measured live on 0.56.157: a human
+   * clicked Reauthorize with the coordinator running, read a sentence indistinguishable from "nothing
+   * happened", and diagnosed the wrong subsystem twice before the engine's own answer was found by
+   * reading source. The condition was checked correctly on the first click; only its answer was lost.
+   *
+   * The message states all three gestures rather than the blocked one. "must be stopped" tells a
+   * reader what failed; "stop it, apply this, start it again" tells them what to DO, and the middle
+   * step is the one they cannot infer — that the change survives the restart is the whole reason the
+   * detour is worth taking.
+   */
   private async assertAgentStoppedForProfileMutation(agentName: string): Promise<void> {
     if ((await this.manager.runningAgents()).includes(agentName)) {
-      throw new Error(`agent '${agentName}' must be stopped before canonical profile mutation`);
+      throw new AgentProfileRefusal(
+        "agent-profile/agent-running",
+        `agent '${agentName}' is running, and this change alters what its session was launched from.`
+        + ` Stop '${agentName}', apply the change, then start it again — the change is written to the`
+        + " canonical profile and takes effect on that next launch.",
+      );
     }
+  }
+
+  /** t-746f0f — whether a capability written now would reach this agent only at its next launch. */
+  private async agentIsRunning(agentName: string): Promise<boolean> {
+    return (await this.manager.runningAgents()).includes(agentName);
   }
 
   async exportAgentProfileBundle(agentName: string): Promise<PortableAgentProfileBytes> {

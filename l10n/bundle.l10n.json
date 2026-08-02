@@ -203,5 +203,6 @@
   "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.": "No other agent is available to declare. A candidate must be an agent that no one else owns and that declares no subagents of its own.",
   "Save declared subagents": "Save declared subagents",
   "agent '{0}': plugin '{1}' hooks were not projected into its session — {2}": "agent '{0}': plugin '{1}' hooks were not projected into its session — {2}",
-  "another tmux client ({0}×{1}) is attached — temporary; work is safe": "another tmux client ({0}×{1}) is attached — temporary; work is safe"
+  "another tmux client ({0}×{1}) is attached — temporary; work is safe": "another tmux client ({0}×{1}) is attached — temporary; work is safe",
+  "'{0}' is authorized for {1}. {1} is running, so its session still has the capabilities it launched with — restart {1} to deliver this one.": "'{0}' is authorized for {1}. {1} is running, so its session still has the capabilities it launched with — restart {1} to deliver this one."
 }

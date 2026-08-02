@@ -30,6 +30,15 @@
 export const AGENT_PROFILE_REFUSAL_CODES = [
   /** The profile moved under the human between reading it and acting on it. */
   "agent-profile/revision-conflict",
+  /**
+   * t-746f0f — the agent is running, and this mutation is one a live session would diverge from.
+   *
+   * A refusal rather than an internal failure because the human can act on it, and the sentence has
+   * to carry the whole SEQUENCE: stop, apply, start again. Flattened to "could not be completed" it
+   * cost two wrong diagnoses and a lost work session; the precondition had been checked correctly
+   * every time and never said so.
+   */
+  "agent-profile/agent-running",
   /** A session, pane, provisional registration or soul reservation still holds the agent. */
   "agent-profile/forget-agent-running",
   /** The session ledger still claims a checkout for the agent. */

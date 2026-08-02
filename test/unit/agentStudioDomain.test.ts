@@ -207,6 +207,69 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     expect(posted).not.toContain("fresh-skill was authorized at content");
   });
 
+  /**
+   * t-746f0f — an authorization that lands while the agent runs cannot reach the live session, so the
+   * panel has to say when it will. Silence here reads as "your running agent now has this skill".
+   */
+  it("names the launch boundary when the capability landed while the agent was running", async () => {
+    const target = ws({
+      authorizeAgentSkill: async () => ({ ok: true as const, outcome: "authorized", referenceId: "atlas", reachesAgentAtNextLaunch: true }),
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "atlas", reauthorize: false }));
+    await flush();
+
+    const notice = findType(ctx.posted, "agentProfileNotice").at(-1) as { message: string } | undefined;
+    expect(notice?.message).toContain("restart Ada");
+    // The snapshot refresh posts its own "Latest profile loaded." — the specific sentence has to be
+    // the one left standing, so it is posted last.
+    expect((ctx.posted.at(-1) as { type: string }).type).toBe("agentProfileNotice");
+  });
+
+  it("says nothing about a launch when the agent was stopped — there is no gap to explain", async () => {
+    const target = ws({
+      authorizeAgentSkill: async () => ({ ok: true as const, outcome: "authorized", referenceId: "atlas" }),
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizeSkill" as const, agent: "Ada", skillName: "atlas", reauthorize: false }));
+    await flush();
+
+    expect(findType(ctx.posted, "agentProfileNotice")).toEqual([]);
+  });
+
+  /**
+   * t-746f0f — the stale-skill warning used to be posted BEFORE the refreshes, so the refresh's own
+   * "Latest profile loaded." overwrote it. One statement survives this handler; when a repair only
+   * half landed it has to be the one naming what did not.
+   */
+  it("leaves the half-repair warning as the last word, ahead of any launch notice", async () => {
+    const target = ws({
+      authorizeAgentPlugin: async () => ({
+        ok: true as const,
+        authorized: ["fresh-skill", "drifted-skill"],
+        outcomes: ["authorized", "digest-changed"],
+        reachesAgentAtNextLaunch: true,
+      }),
+      inspectAgentProfileStudio: async () => profileSnapshot("Ada"),
+      authorizableCapabilitiesFor: async () => ({ workspaceSkills: [], plugins: [], checkoutOnlyPlugins: [] }),
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "Ada" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "authorizePlugin" as const, agent: "Ada", pluginName: "multi", reauthorize: false }));
+    await flush();
+
+    const last = ctx.posted.at(-1) as { type: string; message?: string };
+    expect(last.type).toBe("agentProfileError");
+    expect(last.message).toContain("drifted-skill");
+    expect(findType(ctx.posted, "agentProfileNotice")).toEqual([]);
+  });
+
   it("refuses a skill name that could never BE a reference id, before it reaches the host", async () => {
     let called = 0;
     const target = ws({ authorizeAgentSkill: async () => { called += 1; return { ok: true as const, outcome: "authorized", referenceId: "x" }; } } as never);

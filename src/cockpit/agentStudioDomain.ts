@@ -31,6 +31,7 @@ import {
   evolutionErrorMessage,
   evolutionSummaryMessage,
   agentProfileErrorMessage,
+  agentProfileNoticeMessage,
   authorizableCapabilitiesMessage,
   agentProfileForgetPlanMessage,
   agentProfileForgottenMessage,
@@ -255,9 +256,39 @@ async function authorizeSkill(
     }
     await refreshAgentProfile(ws, ctx, agent);
     await refreshCandidates(ws, ctx, agent);
+    postNextLaunchNotice(ctx, agent, result.reachesAgentAtNextLaunch, skillName);
   } catch (error) {
     postAgentProfileError(ctx, agent, error);
   }
+}
+
+/**
+ * t-746f0f — the sentence that keeps a live authorization from reading as more than it is.
+ *
+ * The engine writes the grant while the agent runs, because nothing it writes can reach a live
+ * session: skills are materialized into the agent's private home only at spawn/restart/resume/fork.
+ * That is the whole justification for dropping the stopped-agent precondition here — and it is also
+ * why staying silent would be dishonest. The human clicked a button and the list now says
+ * "authorized"; without this line the reasonable reading is that the running agent just gained the
+ * skill, and they would go looking for it in the session that does not have it.
+ *
+ * Posted LAST, after the profile and candidate refreshes, because the snapshot refresh sets its own
+ * "Latest profile loaded." notice and the specific sentence has to be the one left standing.
+ */
+function postNextLaunchNotice(ctx: StudioDomainContext, agent: string, pending: boolean | undefined, subject: string): void {
+  if (!pending) return;
+  ctx.post(agentProfileNoticeMessage(
+    agent,
+    "agent-profile/capability-reaches-next-launch",
+    // The subject is the capability's own NAME, not "skill X"/"plugin X": the human just clicked its
+    // row, so the kind is on screen, and a localized sentence assembled from an unlocalized fragment
+    // is the shape that reads wrong in every language but the one it was written in.
+    vscode.l10n.t(
+      "'{0}' is authorized for {1}. {1} is running, so its session still has the capabilities it launched with — restart {1} to deliver this one.",
+      subject,
+      agent,
+    ),
+  ));
 }
 
 /**
@@ -284,6 +315,12 @@ async function authorizePlugin(
     // skills, so a partial `digest-changed` means some landed and some did not. Naming the ones that
     // did not is the only way the human can tell a finished repair from a half one.
     const stale = result.authorized.filter((_, index) => result.outcomes[index] === "digest-changed");
+    await refreshAgentProfile(ws, ctx, agent);
+    await refreshCandidates(ws, ctx, agent);
+    // t-746f0f — posted AFTER the refreshes, which was already required and was already wrong: the
+    // profile refresh posts its own "Latest profile loaded." notice, so a stale-skill warning sent
+    // first was overwritten before anyone read it. One statement survives this handler, and when a
+    // repair only half landed that statement has to be the one naming what did not.
     if (stale.length > 0) {
       ctx.post(agentProfileErrorMessage(
         agent,
@@ -291,9 +328,9 @@ async function authorizePlugin(
         `plugin '${pluginName}': ${stale.join(", ")} ${stale.length === 1 ? "was" : "were"} authorized at content that has since changed — nothing was written for ${stale.length === 1 ? "it" : "them"}. Use Reauthorize to accept the new content.`,
         false,
       ));
+      return;
     }
-    await refreshAgentProfile(ws, ctx, agent);
-    await refreshCandidates(ws, ctx, agent);
+    postNextLaunchNotice(ctx, agent, result.reachesAgentAtNextLaunch, pluginName);
   } catch (error) {
     postAgentProfileError(ctx, agent, error);
   }
