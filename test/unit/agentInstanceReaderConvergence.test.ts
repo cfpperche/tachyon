@@ -36,7 +36,10 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   it("the Bridge dismiss family asks the roster's resolved lifetime, and nothing beside it asks `declared`", () => {
     const src = SOURCE("src/bridge/tools.ts");
     expect(src).toMatch(/const canDismiss = info\.lifetime === "temporary" && !info\.running;/);
-    expect(src).toMatch(/if \(info && info\.lifetime === "temporary" && !info\.running\)/);
+    // t-28bf8f narrowed this hint with a further conjunct (it must not answer a worktree-release
+    // refusal with "use dismiss_agent"), so the pin stops at the reader it is actually about. What it
+    // asserts is unchanged: this read asks `info.lifetime`, the roster's resolved answer.
+    expect(src).toMatch(/if \(info && info\.lifetime === "temporary" && !info\.running/);
     expect(src).toMatch(/if \(info\.lifetime === "saved"\) \{/);
 
     // t-04052d — these ask the ROSTER row, not the instance policy, and the difference is a security
