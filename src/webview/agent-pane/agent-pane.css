@@ -90,6 +90,30 @@
   text-align: right;
 }
 
+/* ── detach banner (t-feaaea) ──
+   Wraps at narrow widths so the Reattach control never leaves the pane, and never grows the row
+   past its content — the terminal below keeps every remaining pixel. */
+.agent-pane__detached {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-2);
+  padding: var(--ds-1) var(--ds-2);
+  border: 1px solid var(--agent-pane-border);
+  border-left: 2px solid var(--vscode-notificationsWarningIcon-foreground, #cca700);
+  border-radius: 4px;
+  background: var(--vscode-inputValidation-warningBackground, color-mix(in srgb, var(--agent-pane-fg) 8%, transparent));
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agent-pane__detached-text {
+  flex: 1 1 12em;
+  min-width: 0;
+}
+
 /* FitAddon measures this box — flex child, not absolute full-bleed */
 .agent-pane__term {
   flex: 1 1 auto;

@@ -151,8 +151,26 @@ describe("TmuxAttachClient (node-pty)", () => {
     });
     proc._data?.("\x1b[Hhello");
     expect(onData).toHaveBeenCalledWith("\x1b[Hhello");
+    // node-pty says signal 0 for "no signal". This is the shape of a clean detach — another client
+    // attached with `-d` — and passing the 0 through made the pane announce "attach ended
+    // (signal 0)", which reads as a kill when nothing was killed (t-feaaea).
     proc._exit?.({ exitCode: 0, signal: 0 });
-    expect(onExit).toHaveBeenCalledWith(0, 0);
+    expect(onExit).toHaveBeenCalledWith(0, null);
+    client.dispose();
+  });
+
+  it("still reports a real terminating signal", () => {
+    const capture: {
+      file?: string;
+      args?: string[];
+      options?: { name?: string; cols?: number; rows?: number; env?: NodeJS.ProcessEnv };
+    } = {};
+    const { spawn, proc } = fakePtySpawn(capture);
+    const onExit = vi.fn();
+    const client = new TmuxAttachClient({ onData: () => {}, onExit });
+    client.start({ session: "s", cols: 80, rows: 24, socket: "/tmp/s", ptySpawn: spawn });
+    proc._exit?.({ exitCode: 0, signal: 9 });
+    expect(onExit).toHaveBeenCalledWith(0, 9);
     client.dispose();
   });
 
