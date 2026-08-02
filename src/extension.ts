@@ -772,8 +772,10 @@ async function agentInspection(ws: WorkspaceShellHandle, agent: string): Promise
   record: Record<string, JsonValue> | null;
   worktree: WorktreeRecord | null;
   status: WorktreeStatus | null;
-  declared: boolean;
 }> {
+  // t-6c8cb4 — `declared` was a dead wire field: producer computed config-roster membership,
+  // but no agentInspection() caller ever read the returned value. Dropped from type, validation,
+  // and return (and from the producer) so it cannot be "reused" as agent-species vocabulary.
   const payload = jsonObject(await extensionQuery(ws, { action: "agent.inspect", agent }), "agent.inspect");
   const descendants = jsonArray(payload.descendants, "agent descendants").map((entry) => {
     if (typeof entry !== "string") throw new Error("agent descendant name is invalid");
@@ -782,8 +784,7 @@ async function agentInspection(ws: WorkspaceShellHandle, agent: string): Promise
   const record = payload.record === null ? null : jsonObject(payload.record, "agent record");
   const worktree = record?.worktree === undefined ? null : worktreeRecordFrom(record.worktree);
   const status = payload.worktreeStatus === null ? null : worktreeStatusFrom(payload.worktreeStatus);
-  if (typeof payload.declared !== "boolean") throw new Error("agent inspection declaration is invalid");
-  return { descendants, record, worktree, status, declared: payload.declared };
+  return { descendants, record, worktree, status };
 }
 
 async function confirmAndRemoveWorktree(

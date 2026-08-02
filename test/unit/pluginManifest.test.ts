@@ -315,8 +315,18 @@ describe("resolveCompat", () => {
 });
 
 describe("SUPPORTED_RUNTIMES", () => {
-  it("is claude + codex for v1 (gemini deferred)", () => {
-    expect([...SUPPORTED_RUNTIMES]).toEqual(["claude", "codex"]);
+  it("is claude + codex + grok for v1 (gemini deferred)", () => {
+    expect([...SUPPORTED_RUNTIMES]).toEqual(["claude", "codex", "grok"]);
+  });
+
+  it("t-2f99e7 — accepts runtimes:[grok] and blocks.grok", () => {
+    const { manifest, errors } = loadManifest(withField({
+      runtimes: ["grok"],
+      blocks: { grok: "grok/" },
+    }));
+    expect(errors).toEqual([]);
+    expect(manifest?.runtimes).toEqual(["grok"]);
+    expect(manifest?.blocks).toEqual({ grok: "grok/" });
   });
 });
 
