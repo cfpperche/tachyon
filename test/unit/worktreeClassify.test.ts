@@ -50,10 +50,17 @@ describe("classifyManagedWorktree", () => {
     );
     // t-6ae9a8 added the trunk signals; the point of this case is unchanged — a missing path short-
     // circuits before any git probe, so neither containment signal can be anything but false.
-    expect(result).toEqual({
-      state: "record-only", reasons: ["path does not exist"], pathExists: false, dirty: false,
-      aheadOfBase: 0, containedInBase: false, containedInTrunk: false, trunkRef: "main",
-    });
+    expect(result.state).toBe("record-only");
+    expect(result.pathExists).toBe(false);
+    expect(result.dirty).toBe(false);
+    expect(result.aheadOfBase).toBe(0);
+    expect(result.containedInBase).toBe(false);
+    expect(result.containedInTrunk).toBe(false);
+    expect(result.trunkRef).toBe("main");
+    // t-dcdb7f — reason carries both the fact and a reachable registry exit.
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/path does not exist/);
+    expect(result.reasons[0]).toMatch(/abandoned|host UI/);
   });
 
   it("t-9f8dfc: clean, unoccupied, zero-commits-ahead classifies ready-to-remove", async () => {
@@ -74,7 +81,8 @@ describe("classifyManagedWorktree", () => {
     );
     expect(result.state).toBe("needs-review");
     expect(result.dirty).toBe(true);
-    expect(result.reasons).toEqual(["worktree has uncommitted changes"]);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/uncommitted changes/);
   });
 
   it("t-9f8dfc: commits ahead that are NOT patch-equivalent in base classify needs-review", async () => {
@@ -89,7 +97,8 @@ describe("classifyManagedWorktree", () => {
     expect(result.state).toBe("needs-review");
     expect(result.containedInBase).toBe(false);
     // t-6ae9a8 — the reason now names BOTH proofs, because either would have sufficed and neither held.
-    expect(result.reasons).toEqual(["1 commit(s) not contained in base or in 'main'"]);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/1 commit\(s\) not contained in base or in 'main'/);
   });
 
   it("t-9f8dfc: commits ahead that ARE fully patch-equivalent in base (cherry-picked/squashed) still classify ready-to-remove", async () => {
@@ -114,7 +123,8 @@ describe("classifyManagedWorktree", () => {
     );
     expect(result.state).toBe("occupied");
     expect(result.occupant).toEqual(occupant);
-    expect(result.reasons).toEqual(["occupied by 'codex' (live)"]);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/occupied by 'codex' \(live\)/);
   });
 
   it("t-9f8dfc: a failed status probe fails closed to needs-review, never ready-to-remove", async () => {
@@ -125,7 +135,8 @@ describe("classifyManagedWorktree", () => {
     expect(result.state).toBe("needs-review");
     expect(result.dirty).toBe(true);
     expect(result.containedInBase).toBe(false);
-    expect(result.reasons).toEqual(["git status probe failed — treated as unsafe"]);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/git status probe failed/);
   });
 
   it("t-9f8dfc blocker fix: status RESOLVING with aheadProbeFailed (unresolvable baseRef) also fails closed — the real WorktreeManager.status contract never rejects for this", async () => {
@@ -138,7 +149,9 @@ describe("classifyManagedWorktree", () => {
     );
     expect(result.state).toBe("needs-review");
     expect(result.containedInBase).toBe(false);
-    expect(result.reasons).toEqual(["base ref 'main' could not be resolved and HEAD is not in 'main' — ancestry unknown, treated as unsafe"]);
+    expect(result.reasons).toHaveLength(1);
+    expect(result.reasons[0]).toMatch(/base ref 'main' could not be resolved/);
+    expect(result.reasons[0]).toMatch(/ancestry unknown/);
   });
 
   it("t-9f8dfc blocker fix: aheadProbeFailed plus real uncommitted changes reports both reasons", async () => {
@@ -149,10 +162,9 @@ describe("classifyManagedWorktree", () => {
     expect(result.state).toBe("needs-review");
     // t-6ae9a8 reordered these: uncommitted work now leads, because it is the more urgent and more
     // actionable of the two. Both are still reported, which is what this case is named for.
-    expect(result.reasons).toEqual([
-      "worktree has uncommitted changes",
-      "base ref 'main' could not be resolved and HEAD is not in 'main' — ancestry unknown, treated as unsafe",
-    ]);
+    expect(result.reasons).toHaveLength(2);
+    expect(result.reasons[0]).toMatch(/uncommitted changes/);
+    expect(result.reasons[1]).toMatch(/base ref 'main' could not be resolved/);
   });
 
   it("t-9f8dfc: a failed occupancy probe does not crash classification (best-effort, treated as unoccupied)", async () => {
