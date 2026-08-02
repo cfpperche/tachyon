@@ -5381,7 +5381,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       await h.manager.spawn("codex");
       const privateHome = harnessHome(h.ws, "codex");
       fs.writeFileSync(path.join(privateHome, "config.toml"), 'model = "tampered"\n');
-      fs.writeFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "tampered\n");
+      fs.writeFileSync(path.join(h.ws, ".agents", "skills", "research", "SKILL.md"), "tampered\n");
       await h.manager.restart("codex", { stop: "force", session: "new" });
       fs.rmSync(path.join(privateHome, "config.toml"));
       await h.manager.resume("codex", {
@@ -5404,7 +5404,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(config).toContain("hooks.SessionStart =");
       expect(config).not.toContain("ambient-secret-model");
       expect(config).not.toContain("launch-only-secret");
-      expect(fs.readFileSync(path.join(privateHome, "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
+      expect(fs.readFileSync(path.join(h.ws, ".agents", "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
       expect(fs.realpathSync(path.join(privateHome, "auth.json"))).toBe(fs.realpathSync(path.join(realCodexHome, "auth.json")));
       expect(fs.readFileSync(workspaceSource, "utf8")).toContain("must-not-copy");
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).CODEX_HOME)).toEqual([privateHome, privateHome, privateHome]);

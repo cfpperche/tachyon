@@ -1415,10 +1415,19 @@ export class HarnessManager {
     }
   }
 
-  private replaceCapturedSkillTree(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
-    const target = path.join(home, "skills");
-    const stage = path.join(home, `.skills-staging-${randomUUID()}`);
-    const prior = path.join(home, `.skills-prior-${randomUUID()}`);
+  private replaceCapturedSkillTree(agent: string, root: string, projection: ResolvedAgentCapabilityProjection): void {
+    const target = path.join(root, "skills");
+    const stage = path.join(root, `.skills-staging-${randomUUID()}`);
+    const prior = path.join(root, `.skills-prior-${randomUUID()}`);
+    try {
+      const stat = fs.lstatSync(root);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `profile skill projection root must be a real directory: ${root}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    }
     fs.mkdirSync(stage, { mode: 0o700 });
     try {
       for (const skill of projection.skills) this.writeCapturedCapability(agent, skill.source, path.join(stage, skill.name));
@@ -2371,7 +2380,10 @@ export class HarnessManager {
     if (content.length > 0) atomicWrite(configPath, `${content}\n`);
     else fs.rmSync(configPath, { force: true });
     if (capabilities) {
-      this.replaceCapturedSkillTree(agent, home, capabilities);
+      // Codex discovers user-authored skills from the launch project's `.agents/skills`, not
+      // CODEX_HOME. This tree is still an exact grant projection: it is rebuilt solely from the
+      // resolved, digest-pinned capability snapshot and never copied from the ambient workspace.
+      this.replaceCapturedSkillTree(agent, path.join(cwd ?? this.workspaceRoot, ".agents"), capabilities);
       this.writeProfileCapabilityManifest(agent, home, capabilities);
     }
     const secretEnv = capabilities ? this.resolveMcpSecretEnv(agent, { inherit: "none", mcp: capabilities.mcp }) : {};
