@@ -184,6 +184,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   for (const [agentName, definition] of projected) {
     const {
       profileCapabilities: _profileCapabilities,
+      profileWithheldCapabilities: _profileWithheldCapabilities,
       profileNativeConfig: _profileNativeConfig,
       profileEvolution: _profileEvolution,
       profileLifecycle: _profileLifecycle,
@@ -209,6 +210,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     const entry = asAgent(parsed.config.agents[agentName]);
     if (!entry) return { errors: [`agents.${agentName}.profile: canonical projection did not reload as an agent`], warnings: [], profileErrors };
     if (definition.profileCapabilities) entry.profileCapabilities = definition.profileCapabilities;
+    if (definition.profileWithheldCapabilities) entry.profileWithheldCapabilities = definition.profileWithheldCapabilities;
     if (definition.profileNativeConfig) entry.profileNativeConfig = definition.profileNativeConfig;
     if (definition.profileEvolution) entry.profileEvolution = definition.profileEvolution;
     if (definition.profileLifecycle) entry.profileLifecycle = definition.profileLifecycle;

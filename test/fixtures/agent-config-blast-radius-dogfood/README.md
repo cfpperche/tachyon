@@ -1,24 +1,24 @@
 # agent-config-blast-radius — dogfood fixture
 
-Exercises **t-588644**: one agent's refused profile must not take the whole roster down with it.
+Exercises **t-b0cfd4**: a plugin update must not invalidate the whole configuration. A pin whose
+bytes moved withholds that one skill, names the repair, and leaves everything else running.
 
-Before the fix, `loadProfileAwareConfig` treated any profile error as a broken FILE. Two agents, one
-with a reference left stale by a plugin update, and the healthy one — which produced no error at all
-— did not load either: `config` was undefined and the workspace had no agents. `agentNativeConfigPolicy.ts`
-had already named the hazard in another context ("a refused profile is not a refused agent"); a
-plugin update walks into it with no lane out.
-
-The refusal itself is correct and must stay loud. What changed is its blast radius, and that the
-surviving agents keep working while the banner names the one that did not.
+The fixture was built for **t-588644** (one agent's refused profile must not take the roster down)
+and used a plugin update as its example of a refusal. t-b0cfd4 changed what that example *is*: a
+stale pin no longer refuses the profile at all. The pin exists to keep bytes no human approved away
+from an agent, and simply not delivering them satisfies that completely — refusing the rest of the
+agent added no protection, and it destroyed the only repair path, because Agent Studio is where the
+pin is re-approved. t-588644's isolation is unchanged and still guarded by unit tests, against a
+failure that is genuinely fatal for one agent.
 
 | agent | authorizes | after the update |
 | --- | --- | --- |
-| `pinned` | `demo-drifty` | refused — its reference names bytes that are gone |
-| `bystander` | `demo-stable` | must still load, with a pinned reference that stayed valid |
+| `pinned` | `demo-drifty` | still loads, **without** `demo-drifty` — the changed bytes are withheld |
+| `bystander` | `demo-stable` | untouched: its pin did not move, so it keeps its skill |
 
 `bystander` authorizes a plugin on purpose. An agent that authorized nothing would survive for the
-wrong reason — it would prove that agents with no references are safe, not that isolation is
-per-agent.
+wrong reason — it would prove that agents with no references are safe, not that the withholding is
+per capability.
 
 ## Run it
 
@@ -42,25 +42,23 @@ Then F5 → **Tachyon: Dev Host**.
 
 **Pass:**
 
-- `bystander` is still in the roster and still spawnable.
-- The durable config banner names **only** `pinned`, with `profile/digest-mismatch`.
-- `pinned` is **in the roster too**, carrying a red `refused` badge whose tooltip is the reason, and
-  it will not start. Its **Edit in Studio** action still opens — that is where the pin is repaired.
+- Both agents are in the roster, spawnable, with **no** `config invalid` badge and no durable
+  config-failure banner.
+- A warning names `demo-drifty` for `pinned`: which skill, the digest it was authorized at, the
+  digest on disk, and **Reauthorize** as the gesture that accepts the new content.
+- `pinned` starts, and starts **without** demo-drifty. `bystander` still has demo-stable.
+- Agent Studio shows `demo-drifty@2.0.0 Reauthorize (authorized at 1.0.0)` on `pinned`.
 
-**Fail:** an empty roster (the blast radius is back), a banner that mentions `bystander` (the split
-is leaking healthy agents into the failure list), or `pinned` missing from the roster entirely.
+**Fail:** an empty roster or an `Invalid tachyon.yml` banner (the blast radius is back), `pinned`
+starting *with* the updated demo-drifty (unapproved bytes reached an agent), or a warning that
+mentions `bystander` (the withholding is leaking past the capability it is about).
 
-That last one was the shipped behaviour of 0.56.137 and is what **t-0ad300** fixed. Isolating the
-refused agent meant deleting it from `config.agents`, which the legacy parser needs — and downstream
-that made "refused" indistinguishable from "never declared". The agent disappeared from the sidebar,
-from Fleet and from Control at once, and since Agent Studio opens from a roster row, the repair went
-with it. A loud whole-roster failure had been traded for a quiet partial one, which t-588644 said in
-its own body must not happen.
-
-Step 4 matters. The isolation happens on the config load path, so an observation taken without a
+Step 4 matters. The withholding happens on the config load path, so an observation taken without a
 reload is reading the roster from before the drift.
 
-Do **not** reauthorize `pinned` here — the refused state is the subject. Repairing it is
+Re-authorizing stays a **human** act and is not automated by any of this — `reauthorize` has no
+default, because it says "I know this content changed since I approved it". What t-b0cfd4 changed is
+the cost of not having done it yet: one missing skill instead of a dead agent. Repairing it is
 `agent-capability-reauth`, the sibling fixture.
 
 `drift.sh` refuses to run outside the dev-host mirror — mutating the tracked fixture would leave the

@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { parseLockfile } from "../../src/plugins/lockfile.js";
 import { annotateAuthorized, listAuthorizableCapabilities } from "../../src/config/agentCapabilityCandidates.js";
 import { authorizedSkillStates, skillOriginFor } from "../../src/config/agentSkillAuthorizationService.js";
@@ -191,31 +191,37 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
     expect(before.profileErrors).toEqual([]);
   });
 
-  it("refuses only the agent whose plugin moved, and keeps the other one loading", () => {
+  // t-b0cfd4 — the fixture's subject moved with the behaviour. It used to prove that a REFUSED
+  // profile does not refuse the roster; a stale pin no longer refuses the profile at all, so what it
+  // proves now is the rule that replaced it: the drift costs `pinned` the one skill and nothing else.
+  // t-588644's isolation is unchanged and still guarded, against a failure that is still fatal.
+  it("keeps both agents loading after the update, and costs `pinned` only the skill that moved", () => {
     const { root, input } = scenario();
     drift(root);
 
     const after = loadProfileAwareConfig(input);
-    expect(Object.keys(after.config!.agents)).toEqual(["bystander"]);
-    expect(after.profileErrors.join("\n")).toContain("agents.pinned.profile: profile/digest-mismatch");
-    // `bystander` authorized a plugin too. Surviving because it held nothing would prove the wrong
-    // thing — that agents with no references are safe, not that isolation is per agent.
-    expect(after.profileErrors.join("\n")).not.toContain("bystander");
-    // t-0ad300 — and `pinned` is still NAMED, which is what puts its row back on the roster. The
-    // README's pass criterion depends on this: without it the agent vanishes and Agent Studio, the
-    // only place the pin is repaired, becomes unreachable.
-    expect(after.config!.agentSources.pinned).toMatchObject({
-      mode: "refused",
-      reason: expect.stringContaining("profile/digest-mismatch"),
-    });
+    expect(Object.keys(after.config!.agents).sort()).toEqual(["bystander", "pinned"]);
+    expect(after.errors).toEqual([]);
+    expect(after.profileErrors).toEqual([]);
+    expect(after.config!.agentSources.pinned).toMatchObject({ mode: "profile" });
+    // The unapproved bytes reach nothing: `pinned` runs, without demo-drifty.
+    const pinned = asAgent(after.config!.agents.pinned)!;
+    expect(pinned.profileCapabilities?.skills ?? []).toEqual([]);
+    expect(pinned.profileWithheldCapabilities?.map((entry) => entry.name)).toEqual(["demo-drifty"]);
+    // `bystander` authorized a plugin too, and its pin did not move: it keeps its skill.
+    expect(asAgent(after.config!.agents.bystander)!.profileCapabilities?.skills.map((skill) => skill.name))
+      .toEqual(["demo-stable"]);
   });
 
-  it("still reports every isolated failure in `errors`, so a validity check refuses what it did before", () => {
+  it("alerts about the withheld skill by name, with the gesture that repairs it", () => {
     const { root, input } = scenario();
     drift(root);
 
     const after = loadProfileAwareConfig(input);
-    expect(after.errors).toEqual(after.profileErrors);
-    expect(after.errors.length).toBeGreaterThan(0);
+    const alert = after.warnings.find((warning) => warning.includes("demo-drifty"));
+    expect(alert).toContain("agents.pinned.profile");
+    expect(alert).toContain("Reauthorize");
+    // Nothing is said about the agent that did not drift.
+    expect(after.warnings.join("\n")).not.toContain("bystander");
   });
 });

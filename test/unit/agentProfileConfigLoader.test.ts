@@ -1217,15 +1217,19 @@ describe("t-588644 — a refused profile is not a refused config", () => {
       return treeSha256(dir);
     };
     const healthySha = skill("good", "v1\n");
-    const staleSha = skill("drifted", "v1\n");
-    // the plugin update: same path, new bytes
-    fs.writeFileSync(path.join(root, ".tachyon/plugins/drifted/skills/drifted/SKILL.md"), "v2\n");
+    const otherSha = skill("other", "v1\n");
 
-    const write = (name: string, id: string, plugin: string, sha: string) => {
+    // t-b0cfd4 — this fixture used a plugin whose bytes had drifted off their pin as its example of
+    // a refused profile. That is no longer a refusal: a stale pin withholds the one skill and the
+    // agent still loads, which is what that task changed. The isolation guarantee THIS task proves is
+    // unchanged and still needs a per-agent fatal failure, so the broken agent now carries one that
+    // genuinely describes a different agent rather than a smaller one — a profile schema this build
+    // cannot read at all.
+    const write = (name: string, id: string, plugin: string, sha: string, schemaVersion = 1) => {
       const dir = path.join(root, ".tachyon", "agents", name);
       fs.mkdirSync(dir, { recursive: true });
       const bytes = Buffer.from(stringify({
-        schemaVersion: 1, agentId: id,
+        schemaVersion, agentId: id,
         runtime: { adapter: "codex", executable: "codex" },
         capabilities: { skills: [plugin] },
         references: [{
@@ -1241,7 +1245,7 @@ describe("t-588644 — a refused profile is not a refused config", () => {
       } as unknown as AgentProfileAuthorityRecord;
     };
     const healthy = write("healthy", "11111111-1111-4111-8111-111111111111", "good", healthySha);
-    const broken = write("broken", "22222222-2222-4222-8222-222222222222", "drifted", staleSha);
+    const broken = write("broken", "22222222-2222-4222-8222-222222222222", "other", otherSha, 2);
 
     return {
       root,
@@ -1260,7 +1264,7 @@ describe("t-588644 — a refused profile is not a refused config", () => {
 
     expect(result.config).toBeDefined();
     expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
-    expect(result.profileErrors.join("\n")).toContain("agents.broken.profile: profile/digest-mismatch");
+    expect(result.profileErrors.join("\n")).toContain("agents.broken.profile: profile/schema: schemaVersion");
     expect(result.profileErrors.join("\n")).not.toContain("healthy");
   });
 
@@ -1282,7 +1286,7 @@ describe("t-588644 — a refused profile is not a refused config", () => {
     expect(refused?.mode).toBe("refused");
     // The reason travels with the name: a row that says only "refused" sends the human to a banner
     // on another surface to find out what broke.
-    expect(refused).toMatchObject({ reason: expect.stringContaining("profile/digest-mismatch") });
+    expect(refused).toMatchObject({ reason: expect.stringContaining("profile/schema: schemaVersion") });
     expect(refused).not.toHaveProperty("cmd");
     expect(result.config!.agentSources.healthy?.mode).toBe("profile");
   });
@@ -1309,5 +1313,138 @@ describe("t-588644 — a refused profile is not a refused config", () => {
     expect(result.config).toBeUndefined();
     expect(result.profileErrors).toEqual([]);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * t-b0cfd4 — a plugin cannot invalidate the whole configuration.
+ *
+ * Measured on 2026-08-02: the owner updated the plugins to v2.3.1 through the Plugins screen,
+ * agent-browser went 3.0.0 → 3.1.0, and the sidebar answered "Invalid tachyon.yml —
+ * agents.claude.profile: profile/digest-mismatch", marked the coordinator `config invalid`, and
+ * offered "Open tachyon.yml" and "Doctor" as the only exits. The pin's purpose — keep bytes no human
+ * approved away from the agent — was already satisfied by not delivering them; taking the rest of the
+ * agent down added no protection at all.
+ */
+describe("t-b0cfd4 — a stale pin withholds one skill and leaves the agent standing", () => {
+  const AGENT = "22222222-2222-4222-8222-222222222222";
+
+  function workspace(pin: "current" | "stale"): { root: string; input: LoadProfileAwareConfigInput; digests: Record<string, string> } {
+    const root = temporaryRoot("tachyon-withheld-");
+    const homeDir = temporaryRoot("tachyon-withheld-home-");
+    const install = (name: string, body: string) => {
+      const dir = path.join(root, ".tachyon", "plugins", name, "skills", name);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, "SKILL.md"), body);
+      return treeSha256(dir);
+    };
+    const sddSha = install("sdd", "# sdd 1.7.1\n");
+    const authorizedSha = install("agent-browser", "# agent-browser 3.0.0\n");
+    // The plugin update: same path, same name, new bytes.
+    fs.writeFileSync(path.join(root, ".tachyon/plugins/agent-browser/skills/agent-browser/SKILL.md"), "# agent-browser 3.1.0\n");
+    const installedSha = treeSha256(path.join(root, ".tachyon/plugins/agent-browser/skills/agent-browser"));
+    // "stale" is the profile as the owner left it: pinned at what they approved, 3.0.0. "current" is
+    // the same profile after a human Reauthorize re-pinned it to the bytes on disk.
+    const browserSha = pin === "stale" ? authorizedSha : installedSha;
+
+    const reference = (id: string, sha: string, version: string) => ({
+      id, kind: "skill", scope: "project", owner: `plugin:${id}`,
+      path: `.tachyon/plugins/${id}/skills/${id}`, mode: "pinned", sha256: sha, version,
+    });
+    const dir = path.join(root, ".tachyon", "agents", "codex");
+    fs.mkdirSync(dir, { recursive: true });
+    const bytes = Buffer.from(stringify({
+      schemaVersion: 1, agentId: AGENT,
+      runtime: { adapter: "codex", executable: "codex" },
+      capabilities: { skills: ["agent-browser", "sdd"] },
+      references: [reference("agent-browser", browserSha, "3.0.0"), reference("sdd", sddSha, "1.7.1")],
+    }));
+    fs.writeFileSync(path.join(dir, "agent.yml"), bytes);
+
+    return {
+      root,
+      digests: { authorizedSha, installedSha, sddSha },
+      input: {
+        yamlText: "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
+        workspaceRoot: root,
+        authorities: new Map([["codex", {
+          schemaVersion: 1, agentName: "codex", agentId: AGENT, revision: "profile-r1",
+          canonicalSha256: sha256(bytes), runtimeInspector: { ...CODEX_EMPTY_NATIVE_INPUT_INSPECTOR },
+          capabilityGrants: [
+            { kind: "skill", referenceId: "agent-browser", sourceSha256: browserSha, adapter: "codex" },
+            { kind: "skill", referenceId: "sdd", sourceSha256: sddSha, adapter: "codex" },
+          ],
+        } as unknown as AgentProfileAuthorityRecord]]),
+        homeDir,
+      },
+    };
+  }
+
+  it("keeps the config valid and the agent loadable when a pinned plugin skill drifts", () => {
+    const result = loadProfileAwareConfig(workspace("stale").input);
+
+    // The whole point: the file is not invalid, and the agent is not refused.
+    expect(result.errors).toEqual([]);
+    expect(result.profileErrors).toEqual([]);
+    expect(result.config!.agentSources.codex?.mode).toBe("profile");
+    expect(asAgent(result.config!.agents.codex)?.cmd).toBe("codex");
+  });
+
+  it("withholds the drifted skill by name and delivers every other one", () => {
+    const result = loadProfileAwareConfig(workspace("stale").input);
+
+    const agent = asAgent(result.config!.agents.codex)!;
+    // The unapproved bytes reach nothing: not the projection the agent launches with, not its sources.
+    expect(agent.profileCapabilities?.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+    expect(agent.profileCapabilities?.sources.map((source) => source.referenceId)).toEqual(["sdd"]);
+    // And the sibling skill, which never moved, still crosses.
+    expect(Buffer.from(agent.profileCapabilities!.skills[0]!.source.entries
+      .find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString()).toBe("# sdd 1.7.1\n");
+  });
+
+  it("names the skill, both digests and the re-authorization gesture in the alert", () => {
+    const { input, digests } = workspace("stale");
+
+    const result = loadProfileAwareConfig(input);
+
+    const alert = result.warnings.find((warning) => warning.includes("agent-browser"));
+    expect(alert).toBeDefined();
+    // The four things the owner had to reconstruct by hand last time.
+    expect(alert).toContain("agent-browser");
+    expect(alert).toContain(digests.authorizedSha!.slice(0, 16));
+    expect(alert).toContain(digests.installedSha!.slice(0, 16));
+    expect(alert).toContain("Reauthorize");
+    // …and it says what still works, because a warning that only names a loss reads like a failure.
+    expect(alert).toContain("keeps running without it");
+  });
+
+  it("carries the withholding on the agent, so delegation can withhold the same thing", () => {
+    const { input, digests } = workspace("stale");
+
+    const agent = asAgent(loadProfileAwareConfig(input).config!.agents.codex)!;
+
+    expect(agent.profileWithheldCapabilities).toEqual([{
+      referenceId: "agent-browser",
+      name: "agent-browser",
+      kind: "skill",
+      path: ".tachyon/plugins/agent-browser/skills/agent-browser",
+      code: "profile/digest-mismatch",
+      expectedSha256: digests.authorizedSha,
+      consumedSha256: digests.installedSha,
+      version: "3.0.0",
+      detail: expect.stringContaining("profile/digest-mismatch"),
+    }]);
+  });
+
+  it("delivers the skill again, silently, once a human re-authorizes it", () => {
+    // The repair is not automated anywhere: this is the profile AFTER `authorizeAgentSkill(…,
+    // { reauthorize: true })` re-pinned it to the digest on disk. Nothing else changed.
+    const result = loadProfileAwareConfig(workspace("current").input);
+
+    const agent = asAgent(result.config!.agents.codex)!;
+    expect(agent.profileCapabilities?.skills.map((skill) => skill.name)).toEqual(["agent-browser", "sdd"]);
+    expect(agent.profileWithheldCapabilities).toBeUndefined();
+    expect(result.warnings).toEqual([]);
+    expect(result.errors).toEqual([]);
   });
 });

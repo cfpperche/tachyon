@@ -20,6 +20,7 @@ import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
+import type { WithheldCapability } from "./withheldCapability.js";
 import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
 
 export interface AttentionDef {
@@ -172,6 +173,16 @@ export interface AgentEntry extends ManagedEntryBase {
   harness?: HarnessDef;
   /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
   profileCapabilities?: ResolvedAgentCapabilityProjection;
+  /**
+   * t-b0cfd4 — capabilities this agent SELECTED and did not get, by name, with why and the repair.
+   *
+   * A pin whose bytes changed withholds that one capability and leaves the agent valid; this is what
+   * the agent lost, kept next to the agent so the delegated toolkit withholds the same thing and a
+   * human surface can name it. Absent when nothing was withheld — the common case is no key at all.
+   * Internal, like the other `profile*` projections: it is attached after parsing and is not an
+   * accepted config key.
+   */
+  profileWithheldCapabilities?: WithheldCapability[];
   /** Internal typed native-config projection. Raw runtime config bytes are never carried here. */
   profileNativeConfig?: ResolvedAgentNativeConfigProjection;
   /** Internal canonical-profile lifecycle snapshot. It cannot be authored in tachyon.yml. */
