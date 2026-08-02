@@ -13,14 +13,23 @@ import { runtimeOf } from "../resume/adapters.js";
 
 /** Per-runtime compaction/summarization markers. Tune against live panes; keep them specific
  *  enough not to fire on an agent merely discussing "compaction" in its output. */
-const MARKERS: Partial<Record<string, RegExp[]>> = {
-  claude: [/compacting conversation/i, /compacted conversation/i, /conversation compacted/i],
-  codex: [/summarizing conversation/i, /conversation summarized/i, /summarizing context/i],
+const MARKERS: Partial<Record<string, { detection: RegExp[]; compact: string; fresh: string }>> = {
+  claude: {
+    detection: [/compacting conversation/i, /compacted conversation/i, /conversation compacted/i],
+    compact: "/compact",
+    fresh: "/clear",
+  },
+  codex: {
+    detection: [/summarizing conversation/i, /conversation summarized/i, /summarizing context/i],
+    compact: "/compact",
+    fresh: "/new",
+  },
+  grok: { detection: [], compact: "/compact", fresh: "/new" },
 };
 
 /** Runtimes with a compaction detector in v1 (claude + codex). */
 export function compactionRuntimes(): string[] {
-  return Object.keys(MARKERS);
+  return Object.entries(MARKERS).filter(([, entry]) => (entry?.detection.length ?? 0) > 0).map(([runtime]) => runtime);
 }
 
 /**
@@ -32,5 +41,13 @@ export function detectCompaction(cmd: string, paneTail: string): boolean {
   if (!rt) return false;
   const markers = MARKERS[rt];
   if (!markers) return false;
-  return markers.some((re) => re.test(paneTail));
+  return markers.detection.some((re) => re.test(paneTail));
+}
+
+export type ContextRenewalMode = "compact" | "fresh";
+
+/** The only measured runtime→gesture table. Unknown runtimes deliberately have no fallback. */
+export function contextRenewalGesture(cmd: string, mode: ContextRenewalMode): string | undefined {
+  const runtime = runtimeOf(cmd);
+  return runtime ? MARKERS[runtime]?.[mode] : undefined;
 }

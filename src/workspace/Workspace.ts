@@ -136,7 +136,7 @@ import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
-import { adapterFor, binaryOf, harnessable, managesOwnSession } from "../resume/adapters.js";
+import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
@@ -148,6 +148,7 @@ import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compaction.js";
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
@@ -535,6 +536,8 @@ export class Workspace {
   private readonly completionHints = new CompletionHintStore();
   /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
   private pendingAnchor = new Set<string>();
+  /** t-6f0377 — session-local and deliberately non-durable: death cancels the intent. */
+  private readonly pendingContextRenewal = new Map<string, ContextRenewalMode>();
   /** t-b88106 — a relaunch never changes whether an agent is visible; this owns that rule. */
   private readonly surfaces = new SurfacePreservation();
   /** t-71ec3b — per-agent delayed retry for real runtime rate-limit reset screens. */
@@ -1126,6 +1129,7 @@ export class Workspace {
         // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
         this.pendingAnchor.delete(name);
+        this.pendingContextRenewal.delete(name);
         this.recordSpawnIncarnation(name);
         this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
@@ -1148,6 +1152,7 @@ export class Workspace {
         this.terminals.close(name);
         this.surfaces.forget(name); // t-b88106 — a kill ends the agent; nothing to restore
         this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
+        this.pendingContextRenewal.delete(name); // t-6f0377: death cancels a renewal intent
         this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
         this.temporaryBackstop.reset(name);
@@ -2006,6 +2011,8 @@ export class Workspace {
         listEvidence: (agent) => this.listEvidence(agent),
         // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
         reanchor: async (agent) => this.reanchor(agent),
+        requestContextCompaction: async (agent) => this.requestContextCompaction(agent),
+        requestFreshContext: async (agent) => this.requestFreshContext(agent),
         // t-0bebf6 — the fifth exit on the idle poke. It answers the SAME monitor that authored the
         // line, so the acknowledgement and the notice cannot drift into two views of one child.
         acknowledgeIdlePoke: (agent) => this.temporaryBackstop.acknowledge(agent),
@@ -4164,6 +4171,7 @@ export class Workspace {
         if (wantAnchor) this.pendingAnchor.add(agent);
         return;
       }
+      if (await this.applyPendingContextRenewal(agent)) return;
       if (wantAnchor) {
         try {
           this.pendingAnchor.delete(agent);
@@ -4191,6 +4199,54 @@ export class Workspace {
     } finally {
       this.recoveryInFlight.delete(agent);
     }
+  }
+
+  private queueContextRenewal(agent: string, mode: ContextRenewalMode): { status: "pending"; replaced?: ContextRenewalMode } {
+    const cmd = this.manager.defOf(agent)?.cmd ?? "";
+    if (!contextRenewalGesture(cmd, mode)) {
+      const runtime = runtimeOf(cmd) ?? (cmd.trim() || "unknown");
+      throw new Error(`renew_context refused for '${agent}': runtime '${runtime}' has no measured ${mode} gesture`);
+    }
+    const replaced = this.pendingContextRenewal.get(agent);
+    this.pendingContextRenewal.set(agent, mode);
+    return { status: "pending", ...(replaced ? { replaced } : {}) };
+  }
+
+  /** Cheap path kept separate from fresh so callers cannot erase context through a defaulted flag. */
+  private async requestContextCompaction(agent: string): Promise<{ status: "pending"; replaced?: ContextRenewalMode }> {
+    return this.queueContextRenewal(agent, "compact");
+  }
+
+  /** Destructive path; Bridge governance checks continuity before this port is reachable. */
+  private async requestFreshContext(agent: string): Promise<{ status: "pending"; replaced?: ContextRenewalMode }> {
+    return this.queueContextRenewal(agent, "fresh");
+  }
+
+  private async applyPendingContextRenewal(agent: string): Promise<boolean> {
+    const mode = this.pendingContextRenewal.get(agent);
+    if (!mode) return false;
+    const unsafeReason = this.attentionOf(agent)?.composerOccupied
+      ? "the composer contains a draft"
+      : listPendingApprovalRequests(this.workspaceRoot).some((row) => row.requester === agent)
+        ? "a human approval is pending"
+        : undefined;
+    if (unsafeReason) {
+      this.pendingContextRenewal.delete(agent);
+      this.host.notify(this.t("context renewal for '{0}' was cancelled: {1}", agent, unsafeReason), "warn");
+      return false;
+    }
+    const gesture = contextRenewalGesture(this.manager.defOf(agent)?.cmd ?? "", mode);
+    if (!gesture) {
+      this.pendingContextRenewal.delete(agent);
+      this.host.notify(this.t("context renewal for '{0}' was cancelled: runtime has no measured {1} gesture", agent, mode), "warn");
+      return false;
+    }
+    const receipt = await this.submitNoticeLine(agent, gesture);
+    this.pendingContextRenewal.delete(agent);
+    if (receipt.status === "submit-unconfirmed") {
+      this.host.notify(this.t("context renewal for '{0}' was typed but submission could not be confirmed", agent), "warn");
+    }
+    return true;
   }
 
   /**
@@ -6404,6 +6460,12 @@ export class Workspace {
       }
       this.pendingAnchor.delete(newName);
       if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
+      this.pendingContextRenewal.delete(newName);
+      const renewal = this.pendingContextRenewal.get(oldName);
+      if (renewal) {
+        this.pendingContextRenewal.delete(oldName);
+        this.pendingContextRenewal.set(newName, renewal);
+      }
       this.agentIncarnations.delete(newName);
       const incarnation = this.agentIncarnations.get(oldName);
       if (incarnation !== undefined) {
@@ -6459,6 +6521,12 @@ export class Workspace {
     // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.
     this.pendingAnchor.delete(newName);
     if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
+    this.pendingContextRenewal.delete(newName);
+    const renewal = this.pendingContextRenewal.get(oldName);
+    if (renewal) {
+      this.pendingContextRenewal.delete(oldName);
+      this.pendingContextRenewal.set(newName, renewal);
+    }
     this.agentIncarnations.delete(newName);
     const incarnation = this.agentIncarnations.get(oldName);
     if (incarnation !== undefined) {

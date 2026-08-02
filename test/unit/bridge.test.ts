@@ -94,7 +94,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // lease. This list IS the inventory guard — a reintroduced tool fails here by name.
   // t-f638bd — 69 → 70: reconcile_task, the verb for recording an outcome that already happened.
   // t-0bebf6 — 70 → 71: acknowledge_agent, the fifth exit on the host's idle poke ("I already decided").
-  it("exposes exactly the 71 canonical tools, including the explicit Terminal operation", async () => {
+  it("exposes exactly the 72 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -147,6 +147,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "reconcile_worktree_hygiene",
       "register_worktree",
       "remove_worktree",
+      "renew_context",
       "request_human_approval",
       "request_human_attention",
       "restart_agent",
