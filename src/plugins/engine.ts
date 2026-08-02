@@ -57,6 +57,8 @@ import { provisionTools, provisionData, type ProvisionProgressFn } from "./toolP
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
 import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
+import { readConfigLkg } from "../config/configLkg.js";
+import { runtimeOf } from "../resume/adapters.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
  *  hooks with cwd = the repo top-level). The launcher itself derives the workspace from its own location. */
@@ -274,12 +276,24 @@ function preflightPayload(dir: string): PayloadCheck {
 
 // ── runtime detection ───────────────────────────────────────────────────────
 
-/** Which runtimes a workspace uses, by the presence of their config dir. */
+/**
+ * Which plugin runtimes a workspace uses.
+ *
+ * Project config directories are a valid pre-roster signal for runtimes that read project scope.
+ * The resolved roster is the signal for runtimes whose Tachyon config home is agent-private: its
+ * LKG is written after a successful config load, before any agent needs to spawn/materialize a home.
+ */
 export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
   const present = new Set<Runtime>();
   if (fs.existsSync(path.join(workspaceRoot, ".claude"))) present.add("claude");
   if (fs.existsSync(path.join(workspaceRoot, ".codex"))) present.add("codex");
   if (fs.existsSync(path.join(workspaceRoot, ".grok"))) present.add("grok");
+  const supported = new Set<string>(SUPPORTED_RUNTIMES);
+  for (const entry of readConfigLkg(workspaceRoot)?.agents ?? []) {
+    if (entry.kind !== "agent" || !entry.cmd) continue;
+    const runtime = runtimeOf(entry.cmd);
+    if (runtime && supported.has(runtime)) present.add(runtime as Runtime);
+  }
   return present;
 }
 
