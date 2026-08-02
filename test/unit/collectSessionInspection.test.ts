@@ -151,6 +151,121 @@ describe("t-283149 — collecting what a session was given", () => {
 });
 
 /**
+ * t-a5d827 — Grok is a first-class reader, and secrets/session ids never reach the webview payload.
+ *
+ * Driven through the collector (not the reader alone) because redaction of argv session ids and
+ * setting values is a RULE, and rules live here. A reader-only test would pass while the panel
+ * still printed a uuid.
+ */
+describe("t-a5d827 — collecting a Grok session with no secrets on the wire", () => {
+  const dirs: string[] = [];
+  const originalHome = process.env.HOME;
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+  });
+
+  const SESSION_ID = "a8f52d0c-a921-4b70-b346-d4ca7077a991";
+  const TOKEN = "fake-token-for-tests-0000000000000000";
+  const CREDENTIAL = "REAL-SECRET-DO-NOT-SURFACE-9f3a";
+
+  function grokWorkspace(): { root: string; grokHome: string } {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-inspect-grok-"));
+    dirs.push(root);
+    const grokHome = path.join(root, ".tachyon", "bridge-mcp", "solo.grok");
+    const realHome = path.join(root, "home");
+    fs.mkdirSync(path.join(grokHome, "hooks"), { recursive: true });
+    fs.mkdirSync(path.join(realHome, ".grok"), { recursive: true });
+    process.env.HOME = realHome;
+
+    fs.writeFileSync(path.join(grokHome, "auth.json"), JSON.stringify({ access_token: CREDENTIAL }));
+    fs.writeFileSync(path.join(grokHome, "config.toml"), [
+      "[memory]",
+      "enabled = false",
+      "",
+      "[compat.claude]",
+      "skills = false",
+      "",
+      "[mcp_servers.tachyon_bridge]",
+      'url = "http://127.0.0.1:9/mcp"',
+      `headers = { "Authorization" = "Bearer \${TACHYON_AGENT_BRIDGE_TOKEN}", "X-Leak" = "${CREDENTIAL}" }`,
+    ].join("\n"));
+    fs.writeFileSync(path.join(grokHome, "hooks", "session-start.json"), JSON.stringify({
+      hooks: {
+        SessionStart: [{
+          matcher: "startup|resume",
+          hooks: [{ type: "command", command: "node '/ws/.tachyon/activity/session-owner-record.cjs' 'solo'" }],
+        }],
+      },
+    }));
+    fs.writeFileSync(path.join(realHome, ".grok", "config.toml"), 'permission_mode = "always-approve"\n');
+    return { root, grokHome };
+  }
+
+  it("registers grok and redacts the session id, bridge token, and leaked credential values", async () => {
+    const { root, grokHome } = grokWorkspace();
+    const result = await collectSessionInspection({
+      workspaceRoot: root,
+      agent: "solo",
+      runtime: "grok",
+      ports: {
+        panePid: async () => 99,
+        processArgv: () => [
+          "grok", "-s", SESSION_ID, "--always-approve",
+          "── TACHYON PRIMER ──\n" + "brief ".repeat(80) + "\n── END ──",
+          "--no-memory",
+        ],
+        processEnv: () => ({
+          GROK_HOME: grokHome,
+          HOME: grokHome, // co-bound
+          GROK_MEMORY: "0",
+          TACHYON_AGENT_NAME: "solo",
+          TACHYON_BRIDGE_TOKEN: TOKEN,
+          TACHYON_AGENT_BRIDGE_TOKEN: TOKEN,
+        }),
+      },
+    });
+
+    expect(result.runtime).toBe("grok");
+    expect(result.state).toBe("live");
+    expect(result.hooks.some((hook) => hook.event === "SessionStart")).toBe(true);
+    expect(result.settings.some((setting) => setting.key === "memory.enabled" && setting.origin === "host")).toBe(true);
+    expect(result.env.some((entry) => entry.key === "GROK_MEMORY" && entry.value === "0")).toBe(true);
+    expect(result.env.some((entry) => entry.key === "TACHYON_BRIDGE_TOKEN" && entry.value === REDACTED)).toBe(true);
+
+    const wire = JSON.stringify(result);
+    expect(wire).not.toContain(SESSION_ID);
+    expect(wire).not.toContain(TOKEN);
+    expect(wire).not.toContain(CREDENTIAL);
+    expect(result.command.join(" ")).toContain("[session id — not shown]");
+    expect(result.command.join(" ")).toContain("[opening brief");
+    // Env-ref form of the Authorization header stays — it is the mechanism, not a secret.
+    expect(result.settings.some((setting) =>
+      setting.key.includes("Authorization") && setting.value.includes("${TACHYON_AGENT_BRIDGE_TOKEN}"),
+    )).toBe(true);
+  });
+
+  it("no longer claims Grok is undescribed", async () => {
+    const { root, grokHome } = grokWorkspace();
+    const result = await collectSessionInspection({
+      workspaceRoot: root,
+      agent: "solo",
+      runtime: "grok",
+      ports: {
+        panePid: async () => undefined,
+        processArgv: () => undefined,
+        processEnv: () => undefined,
+      },
+    });
+    // Force the home via disk layout (no live env): reader falls back to bridge-mcp/solo.grok.
+    expect(fs.existsSync(path.join(grokHome, "config.toml"))).toBe(true);
+    expect(result.notExposed.join(" ")).not.toMatch(/does not yet describe/);
+    expect(result.notExposed.join(" ")).toContain("no live process");
+  });
+});
+
+/**
  * t-0c963d — the rules file must not learn where any runtime keeps its files.
  *
  * The split exists so a rule fixed once is fixed for every runtime. It survives only while
