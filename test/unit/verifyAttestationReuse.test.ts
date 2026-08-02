@@ -23,7 +23,9 @@ import { DEFAULT_MAX_RECORD_AGE_MS, readRecord, recordVerification, recordDir, r
 function repo(): { dir: string; tree: string; commit: (msg: string, file: string, body: string) => string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "verify-reuse-"));
   const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" }).trim();
-  git("init", "-q");
+  // Force `main` so assertions that compare against that ref do not depend on the host's
+  // init.defaultBranch (master vs main) — otherwise the fixture fails before any reuse logic runs.
+  git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "T");
   git("config", "commit.gpgsign", "false");
