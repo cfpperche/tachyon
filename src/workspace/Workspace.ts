@@ -890,7 +890,19 @@ export class Workspace {
         if (!harnessable(adapter) || !adapter) return null;
         // spec 236 — a harness agent runs with --strict-mcp-config (ignores project/global MCP), so the
         // Bridge MUST be folded into the materialized file or it can't reach complete_node/write_input.
-        if (def.harness) return this.harness.materialize(name, def.harness, adapter, cwd, this.bridgeEntry());
+        // t-836be3 — the grok branch of `materialize` writes `$GROK_HOME/hooks/`, so it is the door that
+        // carries the projected gate for a harness-declared Grok agent. claude/codex harness agents get
+        // theirs from their own per-spawn channel (`--settings` / `-c hooks.…`), never from here.
+        if (def.harness) {
+          return this.harness.materialize(
+            name,
+            def.harness,
+            adapter,
+            cwd,
+            this.bridgeEntry(),
+            adapter.runtime === "grok" ? this.projectedSessionHooks("grok", name) : undefined,
+          );
+        }
         if (adapter.runtime === "claude" && (def.profileLifecycle || def.profileFork || def.profileNativeConfig)) {
           return this.harness.materializeCanonicalClaudeHome(name, adapter, cwd, def.profileNativeConfig, this.bridgeEntry());
         }
@@ -920,8 +932,13 @@ export class Workspace {
             // t-26f508 — the same options the Bridge port below passes. `withRuntimeBridge` calls
             // that port AFTER this materializer on every spawn, rewriting config.toml from scratch;
             // if the two disagreed, the second write would silently erase the projection this one
-            // just made. Keeping them identical is what makes the second write a no-op.
-            { exactTrust: true, ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}) },
+            // just made. Keeping them identical is what makes the second write a no-op. t-836be3
+            // joins `projectedHooks` to that rule for the same reason.
+            {
+              exactTrust: true,
+              ...(def.profileNativeConfig ? { nativeConfig: def.profileNativeConfig } : {}),
+              ...this.projectedSessionHooks("grok", name),
+            },
           );
           // Grok 0.2.112 consults `$HOME/.claude/settings.json` for permission settings even when
           // GROK_HOME is redirected. A canonical profile owns the complete forming namespace, so bind
@@ -971,6 +988,10 @@ export class Workspace {
             exactTrust: declared?.profileLifecycle !== undefined,
             // t-26f508 — must match the canonical branch above: this port runs last on every spawn.
             ...(declared?.profileNativeConfig ? { nativeConfig: declared.profileNativeConfig } : {}),
+            // t-836be3 — the gate for every non-harness Grok agent, Temporary ones included: the plan is a
+            // pure function of (lockfile, classification, runtime) and never of the agent's declaration,
+            // so an undeclared child is projected exactly like a Saved agent.
+            ...this.projectedSessionHooks("grok", name),
           },
         );
       },

@@ -18,12 +18,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import TOML from "@iarna/toml";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, bridgeGrokHome, harnessHome } from "../../src/harness/HarnessManager.js";
+import { adapterForRuntime } from "../../src/resume/adapters.js";
 import { spawnSettingsPath, type OwnershipHookGroup } from "../../src/activity/sessionOwners.js";
 import {
   planProjectedPluginHooks,
   readHookProjectionCandidates,
   type AgentHookProjectionPolicy,
+  type HookProjectionCandidate,
 } from "../../src/plugins/agentHookProjection.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
@@ -344,13 +346,26 @@ describe("t-09edf2 — Tachyon × crash-recovery: the custodied record is restor
   });
 });
 
-describe("t-09edf2 — Grok × create: no projectable channel, and Tachyon does not claim one", () => {
-  it("names the runtime instead of returning a quietly empty plan", () => {
+describe("t-836be3 — Grok HAS a projectable channel; what is missing is the plugin's block", () => {
+  it("no longer refuses the runtime by name — the reason is now the plugin's missing grok block", () => {
+    // This assertion used to read "runtime 'grok' has no Tachyon-owned per-spawn hook channel". That was
+    // measured false on 2026-08-02 (grok 0.2.114): `$GROK_HOME/hooks/*.json` is a Global, always-trusted
+    // source and its `deny` blocks the tool call. The honest withheld line is about `secrets-guard` 2.0.4,
+    // which declares claude and codex blocks and no grok one.
     const plan = planFor("grok");
     expect(plan.hooks).toEqual({});
     expect(plan.withheld).toEqual([{
       plugin: "secrets-guard",
-      reason: "runtime 'grok' has no Tachyon-owned per-spawn hook channel — layer 2 is NOT projected there",
+      reason: "installs no grok settings-hook — its manifest declares no grok block",
+    }]);
+  });
+
+  it("an unrecognized runtime is still refused by name, so the fail-closed default is intact", () => {
+    const plan = planFor("gemini");
+    expect(plan.hooks).toEqual({});
+    expect(plan.withheld).toEqual([{
+      plugin: "secrets-guard",
+      reason: "runtime 'gemini' has no Tachyon-owned per-spawn hook channel — layer 2 is NOT projected there",
     }]);
   });
 
@@ -417,5 +432,249 @@ describe("t-09edf2 — the standing inheritance ruling still holds", () => {
     const settings = JSON.parse(fs.readFileSync(file, "utf8")) as { hooks: Record<string, OwnershipHookGroup[]> };
     const commands = [...settings.hooks.SessionStart!, ...settings.hooks.Stop!].flatMap((group) => group.hooks.map((hook) => hook.command));
     expect(commands.some((command) => command.includes("hijack"))).toBe(false);
+  });
+});
+
+/**
+ * t-836be3 — the Grok channel: `$GROK_HOME/hooks/`.
+ *
+ * Measured on grok 0.2.114 before a line of this was written, in a real headless session:
+ *
+ *  - `$GROK_HOME/hooks/*.json` is a Global, always-trusted source — no folder-trust, so it reaches a
+ *    delegated worktree that has no `.grok/` tree of its own.
+ *  - A `PreToolUse` `deny` from it blocks the tool call even under `--yolo`
+ *    (`permissionMode=bypassPermissions`); `git rev-list --all --count` stayed 0, i.e. Git never ran.
+ *  - The envelope is camelCase: `{"toolName":"run_terminal_command","toolInput":{"command":…}}`. There is
+ *    no `tool_input`, which is why the gate below reads `toolInput` and why deriving Grok's groups from a
+ *    plugin's claude block is refused rather than treated as free: `secrets-guard`'s claude `guard.sh`
+ *    reads `.tool_input.command` and, fed the real Grok payload, exits 0 — a gate that silently ALLOWS.
+ */
+const GROK_GUARD_SOURCE = `// layer-2 shape gate (test fixture) — Grok dialect: camelCase envelope.
+let raw = "";
+process.stdin.on("data", (c) => { raw += c; });
+process.stdin.on("end", () => {
+  let command = "";
+  try { command = JSON.parse(raw || "{}")?.toolInput?.command ?? ""; } catch { command = ""; }
+  if (/(^|[;&|]\\s*)git\\s+(?:-[^\\s]+\\s+)*commit\\b/.test(command) && /\\s(?:--no-verify|-n)(?=\\s|$)/.test(command)) {
+    process.stderr.write("--no-verify skips the gitleaks pre-commit gate\\n");
+    process.exit(2);
+  }
+  process.exit(0);
+});
+`;
+
+/** The payload Grok actually writes to a hook's stdin (transcribed from the measured envelope). */
+function grokPayload(command: string): string {
+  return JSON.stringify({
+    hookEventName: "pre_tool_use",
+    toolName: "run_terminal_command",
+    toolInput: { command, description: "run it" },
+    toolInputTruncated: false,
+    permissionMode: "bypassPermissions",
+  });
+}
+
+function grokGuardCommand(authority: string): string {
+  const script = path.join(authority, ".tachyon", "plugins", "secrets-guard", "grok", "guard.cjs");
+  return `if [ ! -f '${script}' ]; then echo '[tachyon] plugin hook root missing' >&2; exit 2; fi; node '${script}'`;
+}
+
+/**
+ * A grok `settings-hook` target, hand-built rather than read from the lockfile.
+ *
+ * Not a shortcut — the lockfile CANNOT carry one yet (`manifest.SUPPORTED_RUNTIMES` is claude+codex, so
+ * `parseLockfile` rejects `runtime: "grok"`), which is the install-side half of this gap and its own
+ * follow-up. `HookProjectionCandidate` types `runtime` as a plain string precisely so a caller may pass a
+ * hand-built record, and the test below pins that the lockfile door is still shut, so this cannot quietly
+ * become a claim that installing works.
+ */
+function grokCandidate(
+  authority: string,
+  options: { event?: string; statusMessage?: boolean } = {},
+): HookProjectionCandidate {
+  return {
+    name: "secrets-guard",
+    version: "2.0.4",
+    targets: [{
+      runtime: "grok",
+      kind: "settings-hook",
+      file: ".grok/hooks/secrets-guard.json",
+      ref: options.event ?? "PreToolUse",
+      removal: [{
+        matcher: "Bash",
+        hooks: [{
+          type: "command",
+          command: grokGuardCommand(authority),
+          ...(options.statusMessage ? { statusMessage: "secrets-guard shape-gate" } : {}),
+        }],
+      }],
+    }],
+  };
+}
+
+function grokPlan(options: { authority?: string; event?: string; statusMessage?: boolean; policy?: AgentHookProjectionPolicy } = {}) {
+  return planProjectedPluginHooks({
+    plugins: [grokCandidate(options.authority ?? fixture.authority, options)],
+    runtime: "grok",
+    policy: options.policy ?? POLICY,
+  });
+}
+
+let grokAuthHome: string;
+
+/** A HarnessManager whose "real" `~/.grok` holds a credential, so the private-home materializers run. */
+function grokManager(authority: string = fixture.authority): HarnessManager {
+  return new HarnessManager(authority, undefined, process.env, undefined, undefined, undefined, undefined, grokAuthHome);
+}
+
+function readProjected(hooksRoot: string): Record<string, OwnershipHookGroup[]> {
+  const file = path.join(hooksRoot, "projected.json");
+  if (!fs.existsSync(file)) return {};
+  return (JSON.parse(fs.readFileSync(file, "utf8")) as { hooks: Record<string, OwnershipHookGroup[]> }).hooks;
+}
+
+describe("t-836be3 — Agent Grok × create/restart/resume/fork: the gate reaches the session's own GROK_HOME", () => {
+  beforeAll(() => {
+    grokAuthHome = makeTempDir("tachyon-guard-real-grok-");
+    fs.writeFileSync(path.join(grokAuthHome, "auth.json"), '{"token":"GROK"}');
+    const dir = path.join(fixture.authority, ".tachyon", "plugins", "secrets-guard", "grok");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "guard.cjs"), GROK_GUARD_SOURCE);
+  });
+
+  // Every non-harness door — Temporary create, restart, resume, fork, and the canonical profile path —
+  // reaches `materializeBridgeMcpGrok`, which is the GROK_HOME real Grok agents run with. The harness
+  // door is a different materializer and gets its own case below rather than being assumed equivalent.
+  for (const door of [
+    { trigger: "create (Temporary, undeclared)", exactTrust: false },
+    { trigger: "restart", exactTrust: false },
+    { trigger: "resume", exactTrust: false },
+    { trigger: "fork (no profile visible to the port)", exactTrust: false },
+    { trigger: "canonical profile (exactTrust)", exactTrust: true },
+  ]) {
+    it(`${door.trigger}: 'git commit --no-verify' is refused with exit 2 before Git runs`, () => {
+      const home = grokManager().materializeBridgeMcpGrok("delegado", { url: "http://127.0.0.1:9/mcp" }, fixture.worktree, {
+        exactTrust: door.exactTrust,
+        projectedHooks: grokPlan().hooks,
+      });
+      expect(home).toBe(bridgeGrokHome(fixture.authority, "delegado"));
+      const groups = readProjected(path.join(home, "hooks")).PreToolUse ?? [];
+      const command = onlyCommand(groups);
+      const result = spawnSync("sh", ["-c", command], {
+        input: grokPayload("git commit --no-verify -m 'wip'"),
+        cwd: fixture.worktree,
+        encoding: "utf8",
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("--no-verify");
+    });
+  }
+
+  it("an ordinary commit still falls through to layer 1", () => {
+    const home = grokManager().materializeBridgeMcpGrok("delegado", { url: "http://127.0.0.1:9/mcp" }, fixture.worktree, {
+      projectedHooks: grokPlan().hooks,
+    });
+    const command = onlyCommand(readProjected(path.join(home, "hooks")).PreToolUse ?? []);
+    const result = spawnSync("sh", ["-c", command], { input: grokPayload("git commit -m 'ordinary'"), cwd: fixture.worktree, encoding: "utf8" });
+    expect(result.status).toBe(0);
+  });
+
+  it("harness door: the same gate lands in the harness home's .grok/hooks, alongside the lifecycle hooks", () => {
+    const mgr = grokManager();
+    mgr.materialize("harnessed", {} as never, adapterForRuntime("grok")!, fixture.worktree, undefined, {
+      projectedHooks: grokPlan().hooks,
+    });
+    const hooksRoot = path.join(harnessHome(fixture.authority, "harnessed"), ".grok", "hooks");
+    expect(onlyCommand(readProjected(hooksRoot).PreToolUse ?? [])).toBe(grokGuardCommand(fixture.authority));
+    // The lifecycle channel is untouched: ownership still records, in its own file.
+    const start = JSON.parse(fs.readFileSync(path.join(hooksRoot, "session-start.json"), "utf8")) as { hooks: Record<string, OwnershipHookGroup[]> };
+    expect(start.hooks.SessionStart!.length).toBeGreaterThan(0);
+  });
+
+  it("a reclassified or uninstalled plugin REMOVES the gate — a stale projected.json would keep gating", () => {
+    // $GROK_HOME outlives a spawn, so "write nothing" is not the same as "remove". The measured failure
+    // mode this guards is the mirror of the one the task exists for: a session gated by a policy the
+    // human already revoked.
+    const mgr = grokManager();
+    const home = mgr.materializeBridgeMcpGrok("delegado", { url: "http://127.0.0.1:9/mcp" }, fixture.worktree, {
+      projectedHooks: grokPlan().hooks,
+    });
+    expect(fs.existsSync(path.join(home, "hooks", "projected.json"))).toBe(true);
+    mgr.materializeBridgeMcpGrok("delegado", { url: "http://127.0.0.1:9/mcp" }, fixture.worktree, {
+      projectedHooks: grokPlan({ policy: { "secrets-guard": "observability" } }).hooks,
+    });
+    expect(fs.existsSync(path.join(home, "hooks", "projected.json"))).toBe(false);
+  });
+
+  it("SessionStart and Stop cannot be displaced through the Grok channel either", () => {
+    const mgr = grokManager();
+    const home = mgr.materializeBridgeMcpGrok("hijacker", { url: "http://127.0.0.1:9/mcp" }, fixture.worktree, {
+      projectedHooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: "echo hijack" }] }],
+        Stop: [{ hooks: [{ type: "command", command: "echo hijack" }] }],
+        PreToolUse: [{ hooks: [{ type: "command", command: "exit 0" }] }],
+      },
+    });
+    const projected = readProjected(path.join(home, "hooks"));
+    expect(Object.keys(projected)).toEqual(["PreToolUse"]);
+  });
+});
+
+describe("t-836be3 — what the Grok plan accepts, and what it refuses", () => {
+  it("projects the gate event from a grok block", () => {
+    const plan = grokPlan();
+    expect(plan.projected).toEqual([{ plugin: "secrets-guard", version: "2.0.4", event: "PreToolUse", groups: 1 }]);
+    expect(onlyCommand(plan.hooks.PreToolUse as OwnershipHookGroup[])).toBe(grokGuardCommand(fixture.authority));
+  });
+
+  it("a grok-only event that is not a gate is withheld — enforcement buys refusal, not reach", () => {
+    // `PermissionDenied` exists in Grok's event table and in neither claude's nor codex's, so this also
+    // proves GROK_HOOK_EVENTS is Grok's own set rather than a neighbour's copied across.
+    const plan = grokPlan({ event: "PermissionDenied" });
+    expect(plan.hooks).toEqual({});
+    expect(plan.withheld[0]!.reason).toContain("is not a gate event");
+  });
+
+  it("an event Grok does not have is withheld as unknown, not silently inert", () => {
+    // Grok "skips unrecognized event names" (guide § Key Fields), so a typo would never be reported by
+    // the runtime. Failing closed here is the only place a human hears about it.
+    const plan = grokPlan({ event: "PreToolUsage" });
+    expect(plan.hooks).toEqual({});
+    expect(plan.withheld[0]!.reason).toContain("unknown event");
+  });
+
+  it("a statusMessage is refused for grok — it is a Codex-only field", () => {
+    const plan = grokPlan({ statusMessage: true });
+    expect(plan.hooks).toEqual({});
+    expect(plan.withheld[0]!.reason).toContain("not valid for grok");
+  });
+
+  it("a plugin with only a claude block projects NOTHING for grok — no silent derivation", () => {
+    // Grok reads claude-shaped hook JSON, which makes deriving look free. Measured: `secrets-guard`'s
+    // claude guard.sh reads `.tool_input.command`; fed the real Grok camelCase payload it exits 0. A
+    // derived gate would claim to refuse and would allow.
+    const plan = planFor("grok");
+    expect(plan.hooks).toEqual({});
+    expect(plan.withheld).toEqual([{ plugin: "secrets-guard", reason: "installs no grok settings-hook — its manifest declares no grok block" }]);
+  });
+
+  it("the install door is still shut: a lockfile naming a grok target yields no grok candidate", () => {
+    // The remaining half of the gap, pinned so it cannot be mistaken for working. When
+    // `manifest.SUPPORTED_RUNTIMES` gains grok this fails, and whoever lands it updates this line.
+    const authority = makeTempDir("tachyon-guard-grok-lock-");
+    fs.mkdirSync(path.join(authority, ".tachyon"), { recursive: true });
+    fs.writeFileSync(path.join(authority, ".tachyon", "plugins.lock.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      plugins: {
+        "secrets-guard": {
+          name: "secrets-guard",
+          version: "2.0.4",
+          runtimes: ["grok"],
+          targets: [{ runtime: "grok", kind: "settings-hook", file: ".grok/hooks/secrets-guard.json", ref: "PreToolUse", removal: [{ hooks: [{ type: "command", command: "exit 2" }] }] }],
+        },
+      },
+    }, null, 2)}\n`);
+    expect(readHookProjectionCandidates(authority)).toEqual([]);
+    expect(planFor("grok", { authority }).hooks).toEqual({});
   });
 });

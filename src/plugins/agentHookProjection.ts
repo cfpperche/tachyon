@@ -46,10 +46,28 @@
  *    the next door picks the change up. Nothing here reaches into a running session.
  *  - *Agent Claude × create/restart/resume/fork* — one channel, the per-spawn `--settings` layer.
  *  - *Agent Codex × create/restart/resume/fork* — one channel, the per-spawn `-c hooks.<Event>=` flags.
+ *  - *Agent Grok × create/restart/resume/fork* — one channel, the private `$GROK_HOME/hooks/` dir that
+ *    Tachyon materializes on every spawn (t-836be3).
  *  - *Tachyon × crash-recovery* — recovery re-derives from the custodied lockfile, so a recovered
  *    session is projected exactly like a fresh one and imports nothing from the environment it woke in.
- *  - *Grok (and every other runtime)* — refused by name with a reason, never silently empty. The
- *    `secrets-guard` 2.0.4 manifest declares no Grok block, so Tachyon must not claim layer 2 there.
+ *  - *every other runtime* — refused by name with a reason, never silently empty.
+ *
+ * ## t-836be3 — why Grok moved from "refused" to a channel, and what still does not reach it
+ *
+ * This header used to say Grok had no per-spawn channel. That was wrong twice over, and the correction
+ * is measured (grok 0.2.114, re-confirmed on 0.2.118 — real headless sessions): `$GROK_HOME/hooks/*.json` is a Global, always-trusted
+ * source, and a `PreToolUse` `deny` from it blocks the tool call even under `--yolo`
+ * (`permissionMode=bypassPermissions`) — `git commit --no-verify` never reached the Git binary.
+ *
+ * What is NOT fixed by adding Grok here, and must not be papered over: a plugin still cannot DECLARE a
+ * grok block (`manifest.SUPPORTED_RUNTIMES` is claude+codex), so no lockfile target carries
+ * `runtime: "grok"` and this plan stays empty for every installed plugin until that lands.
+ *
+ * And the tempting shortcut is refused on purpose: Grok reads claude-SHAPED hook JSON, so deriving its
+ * groups from a plugin's `claude` block looks free. It is not. Grok's PreToolUse envelope is camelCase
+ * (`toolInput.command`); `secrets-guard`'s claude `guard.sh` reads `.tool_input.command`, and fed the real
+ * Grok payload it exits 0 — a gate that silently ALLOWS. Deriving would install a hook that claims to
+ * refuse and does not, which is strictly worse than the honest withheld line this module already emits.
  */
 
 import fs from "node:fs";
@@ -59,6 +77,7 @@ import type { HookGroup, HooksBlock } from "./adapters/hooks.js";
 import { FAIL_CLOSED_HOOK_EVENTS, parseOwnedHooks } from "./adapters/hooks.js";
 import { CLAUDE_HOOK_EVENTS } from "./adapters/claude.js";
 import { CODEX_HOOK_EVENTS } from "./adapters/codex.js";
+import { GROK_HOOK_EVENTS } from "./adapters/grok.js";
 
 /**
  * The class a workspace assigns an installed plugin's hooks. Deliberately the same vocabulary as the
@@ -75,12 +94,13 @@ export const PROJECTED_HOOK_CLASSES: readonly ProjectedHookClass[] = [
 ];
 
 /** Runtimes whose per-spawn channel Tachyon owns end-to-end and can therefore project into. */
-export const PROJECTABLE_HOOK_RUNTIMES = ["claude", "codex"] as const;
+export const PROJECTABLE_HOOK_RUNTIMES = ["claude", "codex", "grok"] as const;
 export type ProjectableHookRuntime = (typeof PROJECTABLE_HOOK_RUNTIMES)[number];
 
 const KNOWN_EVENTS: Record<ProjectableHookRuntime, ReadonlySet<string>> = {
   claude: CLAUDE_HOOK_EVENTS,
   codex: CODEX_HOOK_EVENTS,
+  grok: GROK_HOOK_EVENTS,
 };
 
 /** Workspace classification: plugin name → the class the human assigned it. */

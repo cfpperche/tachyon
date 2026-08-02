@@ -1923,7 +1923,7 @@ export class HarnessManager {
     adapter: ResumeAdapter,
     cwd?: string,
     bridgeEntry?: Record<string, unknown>,
-    lifecycle?: { handoffPath?: string; silentPersistence?: boolean },
+    lifecycle?: { handoffPath?: string; silentPersistence?: boolean; projectedHooks?: Record<string, OwnershipHookGroup[]> },
     profileCapabilities?: ResolvedAgentCapabilityProjection,
   ): MaterializedHarness {
     const h = adapter.harness;
@@ -1964,6 +1964,7 @@ export class HarnessManager {
     if (adapter.runtime === "grok") {
       this.materializeGrokLifecycleHooks(agent, home, lifecycle?.handoffPath ?? path.join(this.workspaceRoot, ".tachyon", "HANDOFF.md"), {
         silentPersistence: lifecycle?.silentPersistence ?? true,
+        ...(lifecycle?.projectedHooks ? { projectedHooks: lifecycle.projectedHooks } : {}),
       });
       this.materializeSkills(agent, def, home);
       // t-0e88f3 — pin the disabled memory policy in BOTH channels, for different reasons. The env pin
@@ -2539,7 +2540,39 @@ export class HarnessManager {
     return path.join(home, ".grok");
   }
 
-  private materializeGrokLifecycleHooks(agent: string, home: string, handoffPath: string, opts: { silentPersistence: boolean }): void {
+  /**
+   * t-836be3 — write the workspace's projected `enforcement` gate hooks into a private `$GROK_HOME/hooks/`.
+   *
+   * Its own file, never merged into `session-start.json`/`stop.json`: those two are Tachyon's lifecycle
+   * channel, and Grok merges every discovered source, so a separate file is both sufficient and the only
+   * shape in which a reclassified plugin can be REMOVED without rewriting ownership. Deleting on empty is
+   * the load-bearing half — a stale `projected.json` would keep gating a session whose policy no longer
+   * says so, and `$GROK_HOME` outlives a single spawn.
+   */
+  private writeGrokProjectedHooks(hooksRoot: string, projectedHooks?: Record<string, OwnershipHookGroup[]>): void {
+    const file = path.join(hooksRoot, "projected.json");
+    // SessionStart/Stop are skipped for the same reason as on the Claude/Codex channels (buildOwnershipSettings
+    // and renderCodexProjectedHookConfig both skip them): a policy change must not be able to displace or
+    // duplicate the ownership hooks by installing a gate.
+    const hooks = Object.fromEntries(
+      Object.entries(projectedHooks ?? {})
+        .filter(([event, groups]) => event !== "SessionStart" && event !== "Stop" && groups.length > 0)
+        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
+    );
+    if (Object.keys(hooks).length === 0) {
+      fs.rmSync(file, { force: true });
+      return;
+    }
+    fs.mkdirSync(hooksRoot, { recursive: true });
+    atomicWrite(file, `${JSON.stringify({ hooks }, null, 2)}\n`);
+  }
+
+  private materializeGrokLifecycleHooks(
+    agent: string,
+    home: string,
+    handoffPath: string,
+    opts: { silentPersistence: boolean; projectedHooks?: Record<string, OwnershipHookGroup[]> },
+  ): void {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
@@ -2568,6 +2601,7 @@ export class HarnessManager {
     } else {
       fs.rmSync(path.join(hooksRoot, "stop.json"), { force: true });
     }
+    this.writeGrokProjectedHooks(hooksRoot, opts.projectedHooks);
   }
 
   /** spec t-e2ebe3 — the opencode harness config body for `<XDG_CONFIG_HOME>/opencode/opencode.json`. Folds
@@ -2893,11 +2927,27 @@ export class HarnessManager {
     return this.reconcileClaudeAuthFromWorkspace(nowMs);
   }
 
+  /**
+   * t-836be3 — `options.projectedHooks` is the SAME workspace plan the harness path receives, and it is
+   * accepted here because this is the `$GROK_HOME` real Grok agents get. Measured 2026-08-02 on 0.56.149:
+   * `materializeGrokLifecycleHooks` runs only from `materialize()`, i.e. only for a `harness:`-declared
+   * agent, and this workspace's three live Grok homes have no `hooks/` dir at all. Wiring the gate only
+   * into the harness path would have shipped a channel no spawnable agent uses.
+   *
+   * Deliberately narrower than the harness path: only the projected GATE is written here, not the
+   * ownership/handoff/continuity/Stop lifecycle hooks. A fail-closed refusal is safe to add to any
+   * session; turning on Activity ownership and persistence recording for a whole runtime changes what
+   * Tachyon believes about every Grok pane and is its own task with its own actor × trigger list.
+   */
   materializeBridgeMcpGrok(
     agent: string,
     bridgeEntry: Record<string, unknown>,
     cwd?: string,
-    options: { exactTrust?: boolean; nativeConfig?: ResolvedAgentNativeConfigProjection } = {},
+    options: {
+      exactTrust?: boolean;
+      nativeConfig?: ResolvedAgentNativeConfigProjection;
+      projectedHooks?: Record<string, OwnershipHookGroup[]>;
+    } = {},
   ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
@@ -2942,6 +2992,9 @@ export class HarnessManager {
       undefined,
       options.exactTrust ? "replace" : "merge",
     );
+    // Global scope (`$GROK_HOME/hooks/*.json`) — always trusted, so the gate does not depend on the
+    // folder-trust seeded just above, and reaches a delegated worktree that has no `.grok/` tree.
+    this.writeGrokProjectedHooks(path.join(home, "hooks"), options.projectedHooks);
     return home;
   }
 
