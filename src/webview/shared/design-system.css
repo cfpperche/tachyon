@@ -480,6 +480,23 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   align-items: center;
 }
 
+/* t-ededdd — action-bearing rows share one narrow-width contract. Page headers and list rows both
+   keep their actions beside the main content while there is room; below this breakpoint the action
+   region becomes a full-width second row. Keeping the reflow here, on the shared primitives, means
+   Fleet cannot overlap its buttons while Board independently clips its toolbar. */
+@media (max-width: 620px) {
+  .ds-page-chrome,
+  .ds-list-row {
+    flex-direction: column;
+  }
+
+  .ds-page-chrome-actions,
+  .ds-list-row-actions {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .ds-empty-state {
   display: flex;
   flex-direction: column;

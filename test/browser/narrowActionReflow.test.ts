@@ -1,0 +1,134 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import { resolveChromeExecutable } from "./support/chrome";
+import { startGateServer, type GateServer } from "./support/gateServer";
+
+const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit";
+
+async function loadFixture(
+  page: Page,
+  origin: string,
+  fixture: "fleet" | "mission",
+  width: number,
+): Promise<void> {
+  await page.setViewport({ width, height: 760 });
+  await page.goto(
+    `${origin}${PREVIEW}&fixture=${fixture}&width=${width}&height=760`,
+    { waitUntil: "networkidle0" },
+  );
+  await page.waitForSelector(
+    fixture === "fleet" ? "[data-testid=control-fleet]" : ".mc-head-tools",
+    {
+      visible: true,
+      timeout: 15_000,
+    },
+  );
+}
+
+type ReflowBox = {
+  containerBottom: number;
+  containerRight: number;
+  actionsLeft: number;
+  actionsRight: number;
+  actionsTop: number;
+  mainBottom: number;
+};
+
+async function measure(
+  page: Page,
+  container: string,
+  main: string,
+  actions: string,
+): Promise<ReflowBox> {
+  return page.$eval(
+    container,
+    (element, selectors) => {
+      const box = (selector: string) =>
+        element.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+      const root = element.getBoundingClientRect();
+      const mainBox = box(selectors.main);
+      const actionsBox = box(selectors.actions);
+      return {
+        containerBottom: root.bottom,
+        containerRight: root.right,
+        actionsLeft: actionsBox.left,
+        actionsRight: actionsBox.right,
+        actionsTop: actionsBox.top,
+        mainBottom: mainBox.bottom,
+      };
+    },
+    { main, actions },
+  );
+}
+
+describe("t-ededdd — shared action regions reflow instead of leaving the viewport", () => {
+  let server: GateServer;
+  let browser: Browser;
+
+  beforeAll(async () => {
+    server = await startGateServer();
+    browser = await puppeteer.launch({
+      executablePath: resolveChromeExecutable(),
+      headless: true,
+    });
+  });
+
+  afterAll(async () => {
+    await browser.close();
+    await server.close();
+  });
+
+  it.each([
+    {
+      fixture: "fleet" as const,
+      container: ".ds-list-row",
+      main: ".ds-list-row-main",
+      actions: ".ds-list-row-actions",
+    },
+    {
+      fixture: "mission" as const,
+      container: ".ds-page-chrome",
+      main: ".ds-page-chrome-text",
+      actions: ".ds-page-chrome-actions",
+    },
+  ])(
+    "puts $fixture actions below content and entirely inside the container at 360px",
+    async ({ fixture, container, main, actions }) => {
+      const page = await browser.newPage();
+      await loadFixture(page, server.origin, fixture, 360);
+      const result = await measure(page, container, main, actions);
+
+      expect(result.actionsTop).toBeGreaterThanOrEqual(result.mainBottom);
+      expect(result.actionsRight).toBeLessThanOrEqual(result.containerRight);
+      expect(result.actionsRight).toBeGreaterThan(result.actionsLeft);
+      expect(result.containerBottom).toBeGreaterThanOrEqual(result.actionsTop);
+      await page.close();
+    },
+  );
+
+  it.each([
+    {
+      fixture: "fleet" as const,
+      container: ".ds-list-row",
+      main: ".ds-list-row-main",
+      actions: ".ds-list-row-actions",
+    },
+    {
+      fixture: "mission" as const,
+      container: ".ds-page-chrome",
+      main: ".ds-page-chrome-text",
+      actions: ".ds-page-chrome-actions",
+    },
+  ])(
+    "keeps the established side-by-side $fixture composition at 880px",
+    async ({ fixture, container, main, actions }) => {
+      const page = await browser.newPage();
+      await loadFixture(page, server.origin, fixture, 880);
+      const result = await measure(page, container, main, actions);
+
+      expect(result.actionsTop).toBeLessThan(result.mainBottom);
+      expect(result.actionsRight).toBeLessThanOrEqual(result.containerRight);
+      await page.close();
+    },
+  );
+});
