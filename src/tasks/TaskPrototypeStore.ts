@@ -235,6 +235,31 @@ export class TaskPrototypeStore {
   }
 }
 
+/**
+ * t-e02bc5 — READING a persisted manifest is not AUTHORING one, the fifth door of the family t-c2882f
+ * closed in `TaskStore`, `TaskJournalStore`, `ValidationStore` and three projections.
+ *
+ * This used to re-apply `TASK_PROTOTYPE_TITLE_MAX` and `TASK_PROTOTYPE_REVIEW_MAX` — the numbers
+ * `bounded()` already enforces at every authoring door — to the manifest it read back, which made those
+ * caps retroactive. The refusal was loud and named rather than silent, which is why it was left out of
+ * that change; but the manifest is per TASK, so a single oversize title took EVERY prototype of that
+ * task out of reach at once, and `readManifestOrEmpty` throws inside `createDraft` and `readMutable`
+ * too, so the task could no longer accept a new prototype or a review either. Naming a refusal helps
+ * whoever reads the log; it does not give the record back, and there is no repair door here.
+ *
+ * The split is the same one, and it survives this reader being an integrity check rather than a
+ * normalizer: every anti-tamper assertion around this line binds a field to OTHER evidence — sha256 to
+ * the blob's bytes, byteSize to its length, review.sha256 to the revision, supersededBy to a live id,
+ * one approved anchor, state to its own timestamps — and all of them stay. A byte cap binds to nothing;
+ * anyone able to rewrite this file satisfies it for free, so dropping it detects strictly nothing less.
+ *
+ * PRESENCE is still structure and is still refused by name: a title or author that is absent leaves a
+ * record the projections cannot type. How long one may be is the authoring door's question.
+ *
+ * `writeManifest` validates through here too, deliberately. A preserved oversize title has to round-trip
+ * or the record would be readable and frozen — the same unreachability wearing a smaller hat. Authoring
+ * is capped where authoring happens: `bounded()` at :81, :128, :190 and :193.
+ */
 function parseManifest(value: unknown, taskId: string): TaskPrototypeManifest {
   if (!value || typeof value !== "object") throw new Error("malformed prototype manifest");
   const m = value as Partial<TaskPrototypeManifest>;
@@ -249,10 +274,10 @@ function parseManifest(value: unknown, taskId: string): TaskPrototypeManifest {
     if (!Number.isSafeInteger(p.byteSize) || p.byteSize <= 0 || !Number.isSafeInteger(p.decodedDataBytes) || p.decodedDataBytes < 0) throw new Error("malformed prototype sizes");
     if (p.mediaType !== "text/html" || typeof p.title !== "string" || typeof p.author !== "string" || !["draft", "approved", "superseded", "rejected"].includes(p.state)) throw new Error("malformed prototype metadata");
     if (!Array.isArray(p.reviews) || typeof p.createdAt !== "string") throw new Error("malformed prototype history");
-    if (Buffer.byteLength(p.title, "utf8") > TASK_PROTOTYPE_TITLE_MAX || Buffer.byteLength(p.author, "utf8") > 64 || !p.title.trim() || !p.author.trim()) throw new Error("malformed prototype authored metadata");
+    if (!p.title.trim() || !p.author.trim()) throw new Error("malformed prototype authored metadata");
     for (const review of p.reviews) {
       if (!review || typeof review !== "object" || !["note", "approved", "rejected"].includes(review.action) || review.by !== "human" || typeof review.at !== "string" || review.sha256 !== p.sha256) throw new Error("malformed prototype review");
-      if (review.text !== undefined && (typeof review.text !== "string" || !review.text.trim() || Buffer.byteLength(review.text, "utf8") > TASK_PROTOTYPE_REVIEW_MAX)) throw new Error("malformed prototype review text");
+      if (review.text !== undefined && (typeof review.text !== "string" || !review.text.trim())) throw new Error("malformed prototype review text");
     }
     if (p.state === "approved") approved++;
     if (p.state === "superseded" && (!p.supersededBy || p.supersededBy === p.id)) throw new Error("malformed prototype supersession");

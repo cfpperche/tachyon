@@ -18,6 +18,11 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { JOURNAL_TEXT_MAX_CODEPOINTS, TaskJournalStore } from "../../src/tasks/TaskJournalStore.js";
+import {
+  TASK_PROTOTYPE_REVIEW_MAX,
+  TASK_PROTOTYPE_TITLE_MAX,
+  TaskPrototypeStore,
+} from "../../src/tasks/TaskPrototypeStore.js";
 import { TASK_AUTHORING_LIMITS } from "../../src/tasks/taskAuthoring.js";
 import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../../src/runtime-api/missionControlProjection.js";
@@ -203,6 +208,124 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
     expect(journal.count("t-1d9d15")).toBe(1);
 
     expect(() => journal.append("t-1d9d15", { author: "claude", text })).toThrow(/text/);
+  });
+
+  /**
+   * t-e02bc5 — the fifth door, and the one where the same shape costs the most.
+   *
+   * `parseManifest` re-applied `TASK_PROTOTYPE_TITLE_MAX` and `TASK_PROTOTYPE_REVIEW_MAX` — the numbers
+   * `bounded()` already enforces at every authoring door — to the manifest it read back. Unlike the
+   * store defects above it refused ALOUD, which is why it was left out of t-c2882f; but the manifest is
+   * per TASK, so one oversize title did not hide one row: it took every prototype of that task out of
+   * reach at once, and `readManifestOrEmpty` throws inside `createDraft`/`readMutable` too, so the task
+   * could no longer accept a new prototype or a review either. A named refusal aids diagnosis; it does
+   * not restore access, and the store offers no repair door.
+   *
+   * The size checks bound nothing to other evidence, which is what separates them from the integrity
+   * checks around them: sha256 to the blob's bytes, byteSize to its length, review.sha256 to the
+   * revision, supersededBy to a live id, one approved anchor, state to its timestamps. Anyone able to
+   * rewrite the manifest satisfies a byte cap for free, so dropping it detects nothing less.
+   */
+  function persistPrototype(taskId: string, over: { title?: string; review?: string }): TaskPrototypeStore {
+    const store = new TaskPrototypeStore(root, taskId);
+    const created = store.createDraft({
+      html: "<h1>persisted before the current limit</h1>",
+      title: "within the limit of the day",
+      author: "designer",
+      now: "2026-07-09T00:00:00.000Z",
+    });
+    const revision = created.prototypes[0]!;
+    const manifest = JSON.parse(fs.readFileSync(store.manifestPath, "utf8")) as {
+      prototypes: { title: string; reviews: unknown[] }[];
+    };
+    if (over.title !== undefined) manifest.prototypes[0]!.title = over.title;
+    if (over.review !== undefined) {
+      manifest.prototypes[0]!.reviews.push({
+        action: "note", text: over.review, at: "2026-07-09T00:00:00.000Z", by: "human", sha256: revision.sha256,
+      });
+    }
+    fs.writeFileSync(store.manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+    return store;
+  }
+
+  it("serves a prototype manifest persisted above the authoring caps, whole and unedited", () => {
+    const title = "T".repeat(TASK_PROTOTYPE_TITLE_MAX + 1);
+    const review = "R".repeat(TASK_PROTOTYPE_REVIEW_MAX + 500);
+    const store = persistPrototype("t-abc123", { title, review });
+    const before = fs.readFileSync(store.manifestPath, "utf8");
+
+    const snapshot = store.read();
+    expect(snapshot.error).toBeUndefined();
+    expect(snapshot.readOnly).toBe(false);
+    expect(snapshot.prototypes).toHaveLength(1);
+    expect(snapshot.prototypes[0]).toMatchObject({ available: true, integrity: "verified", title });
+    expect(snapshot.prototypes[0]!.reviews[0]?.text).toBe(review);
+    // Reading is a read: the record is served as persisted, not repaired into the current limit.
+    expect(fs.readFileSync(store.manifestPath, "utf8")).toBe(before);
+    expect(store.readHtml(snapshot.prototypes[0]!.id)).toBe("<h1>persisted before the current limit</h1>");
+  });
+
+  it("still refuses to AUTHOR a title or a review of the same size, through all four doors", () => {
+    const store = new TaskPrototypeStore(root, "t-abc123");
+    const title = "T".repeat(TASK_PROTOTYPE_TITLE_MAX + 1);
+    const review = "R".repeat(TASK_PROTOTYPE_REVIEW_MAX + 1);
+
+    expect(() => store.createDraft({ html: "<p>A</p>", title, author: "designer", now: "a" }))
+      .toThrow(`prototype title must be 1-${TASK_PROTOTYPE_TITLE_MAX} bytes`);
+
+    const created = store.createDraft({ html: "<p>A</p>", title: "ok", author: "designer", now: "a" });
+    const id = created.prototypes[0]!.id;
+    expect(() => store.addReview(id, { expectUpdatedAt: "a", text: review }))
+      .toThrow(`prototype review must be 1-${TASK_PROTOTYPE_REVIEW_MAX} bytes`);
+    expect(() => store.approve(id, { expectUpdatedAt: "a", review, now: "b" }))
+      .toThrow(`prototype review must be 1-${TASK_PROTOTYPE_REVIEW_MAX} bytes`);
+    expect(() => store.reject(id, { expectUpdatedAt: "a", review, now: "b" }))
+      .toThrow(`prototype review must be 1-${TASK_PROTOTYPE_REVIEW_MAX} bytes`);
+    expect(store.read().prototypes[0]).toMatchObject({ state: "draft", title: "ok" });
+    expect(store.read().prototypes[0]!.reviews).toEqual([]);
+  });
+
+  /**
+   * The SIXTH door of the same family, dormant only while the store refused first. `taskDetailProjection`
+   * re-encoded the same two numbers in its wire schema (`boundedText(200)`, `boundedText(64)`), and it
+   * validates the whole view in one pass — so serving the record correctly at the store is exactly what
+   * would have thrown here and taken Task Detail, Task Studio and the engine-service view with it. Same
+   * regression t-c2882f measured on the board, one store further along.
+   */
+  it("carries an oversize prototype through the Task Detail projection", () => {
+    const title = "T".repeat(TASK_PROTOTYPE_TITLE_MAX + 1);
+    persistTask("t-abc123", { title: "an ordinary task" });
+    persistPrototype("t-abc123", { title, review: "R".repeat(TASK_PROTOTYPE_REVIEW_MAX + 500) });
+
+    const detail = projectTaskDetail(new TaskStore(root), root, "t-abc123");
+    expect(detail.prototypes.readOnly).toBe(false);
+    expect(detail.prototypes.prototypes).toHaveLength(1);
+    expect(detail.prototypes.prototypes[0]!.title).toBe(title);
+  });
+
+  /**
+   * `parseManifest` guards the write too, so relaxing it is not only about reading: a task carrying a
+   * preserved oversize title has to stay reviewable. Refusing here would have left the record readable
+   * and frozen, which is the same unreachability wearing a smaller hat.
+   */
+  it("lets a preserved oversize prototype still be approved, and keeps the persisted value", () => {
+    const title = "T".repeat(TASK_PROTOTYPE_TITLE_MAX + 1);
+    const store = persistPrototype("t-abc123", { title });
+
+    const snapshot = store.read();
+    const approved = store.approve(snapshot.prototypes[0]!.id, { expectUpdatedAt: snapshot.updatedAt!, now: "2026-08-02T00:00:00.000Z" });
+    expect(approved.approved).toMatchObject({ state: "approved", approvedBy: "human", title });
+    expect(JSON.parse(fs.readFileSync(store.manifestPath, "utf8")).prototypes[0].title).toBe(title);
+  });
+
+  /**
+   * PRESENCE, not size — the same line the TaskStore fix drew. A title that is absent leaves a record the
+   * projections cannot type, and it keeps being refused by the name it always had.
+   */
+  it("still refuses a prototype missing a required field, by the same name", () => {
+    const store = persistPrototype("t-abc123", { title: "   " });
+
+    expect(store.read()).toMatchObject({ readOnly: true, prototypes: [], error: "malformed prototype authored metadata" });
   });
 
   it("serves a validation persisted above its authoring caps, and still refuses to author one", async () => {
