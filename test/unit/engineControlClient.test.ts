@@ -208,7 +208,7 @@ describe("EngineControlClient", () => {
     journal.append("one", {});
     journal.append("two", {});
     journal.append("three", {});
-    expect(await client.events()).toMatchObject({ resyncRequired: true, oldestSeq: 2, latestSeq: 3, events: [] });
+    expect(await client.events()).toMatchObject({ resyncRequired: true, oldestSeq: 3, latestSeq: 3, events: [] });
     expect((await client.snapshot()).seq).toBe(3);
     journal.append("four", { view: "agents" });
     expect(await client.events()).toMatchObject({

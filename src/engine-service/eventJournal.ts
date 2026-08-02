@@ -8,6 +8,7 @@ import {
 } from "./protocol.js";
 
 const DEFAULT_MAX_EVENTS = 1_024;
+const DEFAULT_RETAINED_INSTANCE_JOURNALS = 8;
 const MAX_EVENT_BYTES = 64 * 1024;
 const MAX_JOURNAL_BYTES = 16 * 1024 * 1024;
 
@@ -24,7 +25,7 @@ export class EngineEventJournal {
   constructor(private readonly options: EngineEventJournalOptions) {
     if (options.engineInstanceId.length < 8 || options.engineInstanceId.length > 128) throw new Error("invalid engine event identity");
     this.maxEvents = options.maxEvents ?? DEFAULT_MAX_EVENTS;
-    if (!Number.isSafeInteger(this.maxEvents) || this.maxEvents <= 0) throw new Error("event journal maxEvents must be a positive integer");
+    if (!Number.isSafeInteger(this.maxEvents) || this.maxEvents < 2) throw new Error("event journal maxEvents must be an integer of at least two");
     ensurePrivateDirectory(path.dirname(options.filePath));
     this.events = readJournal(options.filePath, options.engineInstanceId);
     if (this.events.length > this.maxEvents) {
@@ -51,7 +52,11 @@ export class EngineEventJournal {
     if (Buffer.byteLength(line, "utf8") > MAX_EVENT_BYTES) throw new Error("engine event exceeds the size limit");
     const next = [...this.events, event];
     if (next.length > this.maxEvents) {
-      const compacted = next.slice(-this.maxEvents);
+      // Keep a count bound: unlike time it cannot grow without bound during a burst, and unlike bytes
+      // it gives clients a predictable delta window independent of payload size. Rewriting to 75%
+      // preserves most of that window while amortizing the rewrite over 25% of maxEvents appends.
+      const lowWatermark = Math.max(1, Math.floor(this.maxEvents * 0.75));
+      const compacted = next.slice(-lowWatermark);
       rewriteJournal(this.options.filePath, compacted);
       this.events = compacted;
     } else {
@@ -87,6 +92,44 @@ export class EngineEventJournal {
       events,
     };
   }
+}
+
+/**
+ * Retain the most recent abandoned journals in this workspace's engine storage directory.
+ * The active id is exempt even if its file is older than every abandoned journal: startup and
+ * upgrade paths must never trade a live engine's delta stream for disk cleanup. Other workspaces
+ * use different hash-scoped storage roots, and other windows attach to this workspace's singleton
+ * engine rather than starting another writer.
+ */
+export function pruneEngineEventJournals(
+  directory: string,
+  activeInstanceId: string,
+  retainRecent = DEFAULT_RETAINED_INSTANCE_JOURNALS,
+): number {
+  if (!Number.isSafeInteger(retainRecent) || retainRecent < 0) throw new Error("retained event journal count must be non-negative");
+  let names: string[];
+  try { names = fs.readdirSync(directory); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return 0;
+    throw error;
+  }
+  const candidates = names.flatMap((name) => {
+    const match = /^([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.jsonl$/iu.exec(name);
+    if (!match || match[1] === activeInstanceId) return [];
+    const file = path.join(directory, name);
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink() ? [{ file, modified: stat.mtimeMs }] : [];
+  }).sort((left, right) => right.modified - left.modified);
+  let removed = 0;
+  for (const candidate of candidates.slice(retainRecent)) {
+    try {
+      fs.unlinkSync(candidate.file);
+      removed += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return removed;
 }
 
 function fileSize(file: string): number {

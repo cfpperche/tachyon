@@ -62,7 +62,7 @@ import {
 } from "../tasks/taskStudioService.js";
 import { startEngineControlServer, type RunningEngineControlServer } from "./controlServer.js";
 import { engineDaemonStateRoot } from "./daemonStateStore.js";
-import { EngineEventJournal } from "./eventJournal.js";
+import { EngineEventJournal, pruneEngineEventJournals } from "./eventJournal.js";
 import { StagedPayloadStore } from "./stagedPayloadStore.js";
 import type { HumanInboxKind } from "../humanInbox/model.js";
 import { GlobalTmuxWatchdog } from "./tmuxAuthority.js";
@@ -285,6 +285,7 @@ export async function startDaemonEngineService(
     filePath: path.join(options.storageRoot, "events", `${instanceId}.jsonl`),
     engineInstanceId: instanceId,
   });
+  pruneEngineEventJournals(path.join(options.storageRoot, "events"), instanceId);
   const projections = new EngineProjectionCoordinator(journal, instanceId);
   // SDD 480 Phase 2 — deliberately NOT `journal` above. That one is keyed to `instanceId`, a fresh
   // uuid per start, so hanging the execution graph off it would discard the graph on every restart —
