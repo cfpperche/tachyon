@@ -487,6 +487,11 @@ export interface TachyonConfig {
      * absence means "not projected" rather than "projected by default".
      */
     agentHookProjection?: Record<string, ProjectedHookClass>;
+    /** t-84f0eb — opt-in permission posture for one named managed agent. Absence projects nothing. */
+    agentPermissionProjection?: Record<string, {
+      runtime: "grok";
+      mode: "default" | "acceptEdits" | "auto" | "dontAsk" | "bypassPermissions" | "plan";
+    }>;
     /** spec 219 — clean clipboard copy: "auto" (default) wires a UTF-8 copy-mode helper; "off" leaves OSC 52 */
     clipboard?: "auto" | "off";
     /** spec 245 — project handoff: canonical file path (RELATIVE to workspace root, default .tachyon/HANDOFF.md)
@@ -1795,6 +1800,41 @@ export function parseConfig(yamlText: string): ParseResult {
           if (sound && Object.keys(out).length > 0) settings.agentHookProjection = out;
         }
       }
+      if (raw.settings.agentPermissionProjection !== undefined) {
+        const root = raw.settings.agentPermissionProjection;
+        if (!isPlainObject(root)) {
+          errors.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, mode }");
+        } else {
+          const modes = ["default", "acceptEdits", "auto", "dontAsk", "bypassPermissions", "plan"] as const;
+          const out: NonNullable<TachyonConfig["settings"]["agentPermissionProjection"]> = {};
+          let sound = true;
+          for (const [agent, value] of Object.entries(root)) {
+            const prefix = `settings.agentPermissionProjection.${agent}`;
+            if (!isPlainObject(value)) {
+              errors.push(`${prefix}: must be a mapping with runtime and mode`);
+              sound = false;
+              continue;
+            }
+            const unknown = Object.keys(value).filter((key) => key !== "runtime" && key !== "mode");
+            if (unknown.length > 0) {
+              errors.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
+              sound = false;
+            }
+            if (value.runtime !== "grok") {
+              errors.push(`${prefix}.runtime: must be 'grok'`);
+              sound = false;
+            }
+            if (!modes.includes(value.mode as typeof modes[number])) {
+              errors.push(`${prefix}.mode: must be one of ${modes.join(", ")}`);
+              sound = false;
+            }
+            if (value.runtime === "grok" && modes.includes(value.mode as typeof modes[number]) && unknown.length === 0) {
+              out[agent] = { runtime: "grok", mode: value.mode as typeof modes[number] };
+            }
+          }
+          if (sound && Object.keys(out).length > 0) settings.agentPermissionProjection = out;
+        }
+      }
       if (raw.settings.handoff !== undefined) {
         if (!isPlainObject(raw.settings.handoff)) {
           errors.push("settings.handoff: must be a mapping with 'path'");
@@ -1926,7 +1966,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "agentHookProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }
