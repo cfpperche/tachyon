@@ -2,6 +2,7 @@ import fs from "node:fs";
 import * as vscode from "vscode";
 import type { EntryKind } from "../config/loadConfig.js";
 import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "../tmux/TmuxService.js";
+import type { SessionViewportRegistry } from "./sessionViewport.js";
 import type {
   TerminalManifestStore,
   TerminalPresentation,
@@ -74,12 +75,18 @@ export class Terminals implements TerminalPresentation {
     private readonly manifest?: TerminalManifestStore,
     /** Manual shell-tab closure is an engine intent change, not merely local presentation cleanup. */
     private readonly onClosed?: (agent: string, session: string) => void,
+    /**
+     * t-feaaea — one exclusive tmux client per session. Without it, opening this terminal evicts a
+     * live Agent Pane mid-redraw (dot fill, then `attach ended`); with it the pane lets go first.
+     */
+    private readonly viewports?: SessionViewportRegistry,
   ) {
     this.disposables.push(
       vscode.window.onDidCloseTerminal((terminal) => {
         for (const [session, entry] of this.bySession) {
           if (entry.terminal === terminal) {
             this.bySession.delete(session);
+            this.viewports?.release(session, "terminal");
             this.saveManifest();
             if (!this.programmaticClose.has(terminal)) this.onClosed?.(entry.agent, session);
             break;
@@ -91,6 +98,10 @@ export class Terminals implements TerminalPresentation {
 
   /** Opens (or reveals) the editor-area terminal attached to a managed entry's tmux session. */
   open(agent: string, session: string, viewColumn?: number, title?: string): vscode.Terminal {
+    // Claim BEFORE any tmux client exists: the outgoing viewport must be gone by the time
+    // `attach-session -d` runs, or tmux paints its dot fill into it and then evicts it (t-feaaea).
+    // The hook resolves the terminal lazily because at claim time it is not created yet.
+    this.viewports?.claim(session, "terminal", () => this.releaseSession(session));
     const existing = this.bySession.get(session)?.terminal;
     if (existing) {
       existing.show(false);
@@ -132,6 +143,15 @@ export class Terminals implements TerminalPresentation {
       this.bySession.delete(candidate);
     }
     this.saveManifest();
+  }
+
+  /**
+   * Hand this session's viewport to the Agent Pane (t-feaaea): drop the tab so its tmux client is
+   * gone before the pane attaches. Unlike `close`, this is NOT marked programmatic — the tab really
+   * stopped being presented, and the engine must hear that or it keeps a phantom terminal open.
+   */
+  private releaseSession(session: string): void {
+    this.bySession.get(session)?.terminal.dispose();
   }
 
   has(agent: string): boolean {

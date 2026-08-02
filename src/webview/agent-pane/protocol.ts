@@ -19,7 +19,9 @@ export type AgentPaneToHost =
   /** Open the 381 template picker preselected for this pane's agent. */
   | { type: "agent-pane/inject-template" }
   /** Pin the current xterm selection into the project pin list (Slice 2). */
-  | { type: "agent-pane/pin-selection"; text: string };
+  | { type: "agent-pane/pin-selection"; text: string }
+  /** Re-attach this pane's tmux client after a detach (t-feaaea) — the session outlived it. */
+  | { type: "agent-pane/reattach" };
 
 /** Typography + metrics aligned with VS Code integrated terminal settings. */
 export interface AgentPaneFontMetrics {
@@ -46,6 +48,12 @@ export type AgentPaneFromHost =
   | { type: "agent-pane/data"; data: string }
   | { type: "agent-pane/status"; status: string }
   | { type: "agent-pane/exit"; code: number | null; signal: string | null }
+  /**
+   * Whether this pane currently holds the session's tmux client (t-feaaea). `detached` with
+   * `sessionAlive` means only the VIEW ended — the agent kept running, so the pane offers Reattach
+   * instead of telling the human to reopen it.
+   */
+  | { type: "agent-pane/attach-state"; state: "attached" | "detached"; reason?: string; sessionAlive?: boolean }
   /** Feedback after stage/submit (toast-in-pane). */
   | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string }
   /** Place an inject marker at the current viewport line (no PTY bytes). */
@@ -65,7 +73,7 @@ export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
   if (t === "agent-pane/stage" || t === "agent-pane/submit") {
     return typeof (value as { text?: unknown }).text === "string";
   }
-  if (t === "agent-pane/inject-template") return true;
+  if (t === "agent-pane/inject-template" || t === "agent-pane/reattach") return true;
   if (t === "agent-pane/pin-selection") {
     return typeof (value as { text?: unknown }).text === "string";
   }
