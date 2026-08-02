@@ -583,8 +583,17 @@ function readEvolutionSelector(
   }
 }
 
-function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: AgentProfileV1): ExternalProfileReference[] | string[] {
+export interface WithheldProjectCapability {
+  id: string;
+  reason: string;
+}
+
+function captureProjectCapabilities(
+  input: ProjectAgentProfileInput,
+  profile: AgentProfileV1,
+): { external: ExternalProfileReference[]; withheld: WithheldProjectCapability[] } {
   const external: ExternalProfileReference[] = [];
+  const withheld: WithheldProjectCapability[] = [];
   const selected = new Set([
     ...(profile.capabilities?.skills ?? []),
     ...(profile.capabilities?.mcp ?? []),
@@ -605,11 +614,21 @@ function captureProjectCapabilities(input: ProjectAgentProfileInput, profile: Ag
         capturedCapability,
       });
     } catch (error) {
-      if (error instanceof AgentCapabilitySourceError) return [`${error.code}: ${error.message}`];
-      return [`profile/reference-unavailable: ${reference.path}: project capability could not be captured`];
+      // t-b0cfd4 — this used to `return` an error array, so ONE uncapturable capability failed the
+      // whole profile projection. Measured in the field: updating tachyon-plugins moved the bytes
+      // under a pinned digest, and the workspace lost the agent, the Studio and the Reauthorize
+      // button that repairs it — the only remaining exit was to un-install the update. Withhold the
+      // one capability instead. The pin's purpose is that unapproved bytes never reach the agent;
+      // withholding delivers exactly that and nothing more.
+      withheld.push({
+        id: reference.id,
+        reason: error instanceof AgentCapabilitySourceError
+          ? `${error.code}: ${error.message}`
+          : `profile/reference-unavailable: ${reference.path}: project capability could not be captured`,
+      });
     }
   }
-  return external;
+  return { external, withheld };
 }
 
 function projectDefinition(
@@ -697,14 +716,21 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   if (parsed.profile.agentId !== input.authority.agentId || input.authority.agentName !== input.agentName) {
     return { ok: false, errors: ["profile/authority-boundary: authority identity does not match canonical profile"] };
   }
-  const externalReferences = captureProjectCapabilities(input, parsed.profile);
-  if (Array.isArray(externalReferences) && externalReferences.length > 0 && typeof externalReferences[0] === "string") {
-    return { ok: false, errors: externalReferences as string[] };
-  }
+  const captured = captureProjectCapabilities(input, parsed.profile);
+  const externalReferences = captured.external;
   const attestation = inspectMeasuredNativeInputs(input, parsed.profile);
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
   let nativeConfigProjection = projectAgentNativeConfig(parsed.profile);
   const warnings: string[] = [];
+  // t-b0cfd4 — named, never silent: the human must be able to see WHICH capability the agent lacks
+  // and the gesture that restores it, without reading a log or a diff. Reauthorize is the gesture,
+  // and it stays reachable precisely because the profile still resolves.
+  for (const entry of captured.withheld) {
+    warnings.push(
+      `profile/capability-withheld: ${entry.id} was withheld and the agent starts without it — ${entry.reason}`
+      + `; use Reauthorize in Agent Studio to accept the new content`,
+    );
+  }
   if (parsed.profile.runtime.adapter === "codex") {
     const selectedSources = new Set(
       Object.values(parsed.profile.nativeConfig ?? {})
@@ -773,7 +799,8 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     authority: authoritySnapshotFor(input.authority),
     nativeRuntime: attestation,
     workspaceDefaults: input.workspaceDefaults,
-    externalReferences: externalReferences as ExternalProfileReference[],
+    externalReferences,
+    ...(captured.withheld.length > 0 ? { withheldCapabilities: captured.withheld.map((entry) => entry.id) } : {}),
   });
   if (!resolved.ok) return { ok: false, errors: resolved.errors.map((error) => `${error.code}: ${error.message}`) };
   const definition = projectDefinition(resolved.value, evolutionSelector, nativeConfigProjection);

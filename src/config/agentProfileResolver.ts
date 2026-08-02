@@ -170,6 +170,16 @@ export interface ResolveAgentProfileInput {
   } | undefined>>;
   workspaceDefaults?: WorkspaceProfileDefaults;
   externalReferences?: readonly ExternalProfileReference[];
+  /**
+   * t-b0cfd4 — capability ids the owner could not capture (a plugin update moved the bytes under a
+   * pinned digest, a payload outgrew the cap, a path went unreadable). They are dropped from the
+   * selection BEFORE resolution rather than resolved and failed, because a capability that cannot be
+   * delivered must cost only itself: the pin's whole purpose is that unapproved bytes never reach the
+   * agent, and withholding achieves that completely. Failing the profile achieves it too, and also
+   * takes down the agent, the Studio, and the very Reauthorize button that repairs it — protection
+   * the size of the thing protected, not the size of the workspace.
+   */
+  withheldCapabilities?: readonly string[];
   /** Host-custodied profile-head snapshot; workspace path presence is not authority by itself. */
   authority: AgentProfileAuthoritySnapshot;
   /** Complete, digest-bound result from the selected runtime adapter's native-input inspector. */
@@ -407,6 +417,43 @@ const CAPABILITY_REFERENCE_KINDS = new Set<AgentProfileReferenceV1["kind"]>([
   "pi-theme",
   "pi-package",
 ]);
+
+/**
+ * t-b0cfd4 — drop withheld capability ids from BOTH the selection and the reference list, so the
+ * rest of resolution never learns they existed. Dropping only the reference would leave the id
+ * selected and fail with "selected capability has no owner-captured payload", which is the same
+ * total failure wearing a different code.
+ */
+function withheldRemoved(profile: AgentProfileV1, withheld: readonly string[] | undefined): AgentProfileV1 {
+  if (!withheld || withheld.length === 0) return profile;
+  const drop = new Set(withheld);
+  const keep = (ids: readonly string[] | undefined): string[] | undefined =>
+    ids === undefined ? undefined : ids.filter((id) => !drop.has(id));
+  const capabilities = profile.capabilities
+    ? {
+      ...profile.capabilities,
+      ...(profile.capabilities.skills ? { skills: keep(profile.capabilities.skills) } : {}),
+      ...(profile.capabilities.mcp ? { mcp: keep(profile.capabilities.mcp) } : {}),
+      ...(profile.capabilities.hooks ? { hooks: keep(profile.capabilities.hooks) } : {}),
+      ...(profile.capabilities.pi
+        ? {
+          pi: {
+            ...profile.capabilities.pi,
+            ...(profile.capabilities.pi.extensions ? { extensions: keep(profile.capabilities.pi.extensions) } : {}),
+            ...(profile.capabilities.pi.prompts ? { prompts: keep(profile.capabilities.pi.prompts) } : {}),
+            ...(profile.capabilities.pi.themes ? { themes: keep(profile.capabilities.pi.themes) } : {}),
+            ...(profile.capabilities.pi.packages ? { packages: keep(profile.capabilities.pi.packages) } : {}),
+          },
+        }
+        : {}),
+    }
+    : profile.capabilities;
+  return {
+    ...profile,
+    ...(capabilities ? { capabilities } : {}),
+    ...(profile.references ? { references: profile.references.filter((reference) => !drop.has(reference.id)) } : {}),
+  };
+}
 
 function resolveReferences(
   source: CanonicalAgentProfileSource,
@@ -1205,7 +1252,7 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
 
     const parsed = parseAgentProfile(canonical!);
     if (!parsed.profile) return failure(parsed.errors, warnings);
-    const profile = parsed.profile;
+    const profile = withheldRemoved(parsed.profile, input.withheldCapabilities);
     const definition = canonicalDefinition(profile);
     const referenceResult = resolveReferences(canonical!, profile, input.externalReferences);
     const inheritance = applyInheritance(profile, definition, input, referenceResult.references);

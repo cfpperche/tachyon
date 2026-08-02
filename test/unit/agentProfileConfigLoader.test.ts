@@ -1255,36 +1255,34 @@ describe("t-588644 — a refused profile is not a refused config", () => {
     };
   }
 
-  it("loads the healthy agent and refuses only the one whose pinned plugin drifted", () => {
+  // t-b0cfd4 supersedes the three assertions that used to live here. t-588644 kept the ROSTER when
+  // one profile refused, and t-0ad300 kept the refused agent's ROW so the repair had a door. The
+  // field disproved the last step on 2026-08-02: a plugin update drifted the pin, the profile did
+  // not resolve, Agent Studio disabled every mutation because it cannot read an unresolvable
+  // profile, and Reauthorize — the only repair — became a no-op. The row existed and the door
+  // behind it was shut; the workspace's single exit was to un-install the update. So the agent now
+  // LOADS, minus the capability whose bytes it cannot prove.
+  it("t-b0cfd4: a drifted pin costs the capability, not the agent — both agents load", () => {
     const result = loadProfileAwareConfig(twoAgents().input);
 
     expect(result.config).toBeDefined();
-    expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
-    expect(result.profileErrors.join("\n")).toContain("agents.broken.profile: profile/digest-mismatch");
-    expect(result.profileErrors.join("\n")).not.toContain("healthy");
-  });
-
-  it("keeps every isolatable error in `errors` too, so a validity check refuses exactly what it did before", () => {
-    const result = loadProfileAwareConfig(twoAgents().input);
-
-    expect(result.errors).toEqual(result.profileErrors);
-    expect(result.errors.length).toBeGreaterThan(0);
-  });
-
-  // t-0ad300 — the refused agent has to stay NAMED somewhere. Deleting it from `config.agents` is
-  // what the legacy parser needs; leaving it nowhere else is what made it vanish from the sidebar
-  // and stranded the repair, since Agent Studio opens from a roster row.
-  it("names the refused agent in agentSources, with why, even though it is not in config.agents", () => {
-    const result = loadProfileAwareConfig(twoAgents().input);
-
-    expect(Object.keys(result.config!.agents)).toEqual(["healthy"]);
-    const refused = result.config!.agentSources.broken;
-    expect(refused?.mode).toBe("refused");
-    // The reason travels with the name: a row that says only "refused" sends the human to a banner
-    // on another surface to find out what broke.
-    expect(refused).toMatchObject({ reason: expect.stringContaining("profile/digest-mismatch") });
-    expect(refused).not.toHaveProperty("cmd");
+    expect(Object.keys(result.config!.agents).sort()).toEqual(["broken", "healthy"]);
+    // Nothing is refused, so nothing needs a refused row: the repair opens from a live agent.
+    expect(result.profileErrors).toEqual([]);
+    expect(result.config!.agentSources.broken?.mode).toBe("profile");
     expect(result.config!.agentSources.healthy?.mode).toBe("profile");
+  });
+
+  it("t-b0cfd4: the drifted capability is withheld and NAMED, with the gesture that restores it", () => {
+    const result = loadProfileAwareConfig(twoAgents().input);
+
+    // Withholding is what honours the pin — the unapproved bytes never reach the agent. Silence is
+    // the failure to avoid: the agent would run believing it holds a tool it lacks.
+    const warned = result.warnings.join("\n");
+    expect(warned).toContain("agents.broken.profile: profile/capability-withheld");
+    expect(warned).toContain("profile/digest-mismatch");
+    expect(warned).toContain("Reauthorize");
+    expect(warned).not.toContain("agents.healthy");
   });
 
   it("does not invent a refused entry when every agent projects", () => {

@@ -191,31 +191,34 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
     expect(before.profileErrors).toEqual([]);
   });
 
-  it("refuses only the agent whose plugin moved, and keeps the other one loading", () => {
+  it("t-b0cfd4: a moved plugin costs the CAPABILITY, not the agent — both agents keep loading", () => {
     const { root, input } = scenario();
     drift(root);
 
     const after = loadProfileAwareConfig(input);
-    expect(Object.keys(after.config!.agents)).toEqual(["bystander"]);
-    expect(after.profileErrors.join("\n")).toContain("agents.pinned.profile: profile/digest-mismatch");
-    // `bystander` authorized a plugin too. Surviving because it held nothing would prove the wrong
-    // thing — that agents with no references are safe, not that isolation is per agent.
-    expect(after.profileErrors.join("\n")).not.toContain("bystander");
-    // t-0ad300 — and `pinned` is still NAMED, which is what puts its row back on the roster. The
-    // README's pass criterion depends on this: without it the agent vanishes and Agent Studio, the
-    // only place the pin is repaired, becomes unreachable.
-    expect(after.config!.agentSources.pinned).toMatchObject({
-      mode: "refused",
-      reason: expect.stringContaining("profile/digest-mismatch"),
-    });
+    // t-0ad300 kept the refused agent's ROW so the repair would have a door. Measured in the field
+    // on 2026-08-02, the door was still shut: the profile did not resolve, so Agent Studio disabled
+    // every mutation and Reauthorize — the only repair — was a no-op. The workspace's single exit
+    // was to un-install the plugin update. So the agent now LOADS, minus the capability it cannot
+    // prove. Withholding delivers the pin's whole purpose (unapproved bytes never reach the agent)
+    // and nothing beyond it.
+    expect(Object.keys(after.config!.agents).sort()).toEqual(["bystander", "pinned"]);
+    expect(after.profileErrors).toEqual([]);
+    // `bystander` authorized a plugin too, and is untouched — isolation is still per agent.
+    expect(after.config!.agentSources.pinned).not.toMatchObject({ mode: "refused" });
   });
 
-  it("still reports every isolated failure in `errors`, so a validity check refuses what it did before", () => {
+  it("t-b0cfd4: the withheld capability is NAMED with its repair, never dropped in silence", () => {
     const { root, input } = scenario();
     drift(root);
 
     const after = loadProfileAwareConfig(input);
-    expect(after.errors).toEqual(after.profileErrors);
-    expect(after.errors.length).toBeGreaterThan(0);
+    // Silence would be the worse failure: the agent would run believing it holds a tool it lacks,
+    // and the human would have no way to learn which one or how to restore it.
+    const warned = after.warnings.join("\n");
+    expect(warned).toContain("profile/capability-withheld");
+    expect(warned).toContain("demo-drifty");
+    expect(warned).toContain("Reauthorize");
+    expect(warned).not.toContain("bystander");
   });
 });
