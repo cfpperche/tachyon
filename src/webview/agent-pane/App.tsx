@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneInjectKind, AgentPaneToHost } from "./protocol";
+import { foreignClientBannerText } from "../../presentation/foreignTmuxClient";
 import { gridChanged, sanitizeFontMetrics, type GridSize } from "./geometry";
 
 export interface AgentPaneAppProps {
@@ -104,6 +105,11 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
    * guess which one happened from an exit code.
    */
   const [detached, setDetached] = useState<{ sessionAlive: boolean; reason?: string } | null>(null);
+  /**
+   * t-edbe36 — a foreign shell client is co-attached (measured). The · fill is real tmux state;
+   * we name it instead of hiding it. Detached handoff supersedes this notice.
+   */
+  const [coAttach, setCoAttach] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const el = termHostRef.current;
@@ -241,6 +247,15 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
           setDetached(null);
         } else {
           setDetached({ sessionAlive: msg.sessionAlive === true, ...(msg.reason ? { reason: msg.reason } : {}) });
+          setCoAttach(null);
+        }
+        return;
+      }
+      if (msg.type === "agent-pane/co-attach") {
+        if (msg.present && typeof msg.width === "number" && typeof msg.height === "number") {
+          setCoAttach({ width: msg.width, height: msg.height });
+        } else {
+          setCoAttach(null);
         }
         return;
       }
@@ -305,6 +320,8 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         ? "This pane lost its view of the session. The agent kept running — reattach to bring it back."
         : "This pane is detached and the agent session is no longer running.";
 
+  const coAttachText = coAttach ? foreignClientBannerText(coAttach.width, coAttach.height) : "";
+
   const pinSelection = () => {
     void (async () => {
       const term = termRef.current;
@@ -350,6 +367,12 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
           >
             Reattach
           </button>
+        </div>
+      ) : null}
+
+      {!detached && coAttach ? (
+        <div class="agent-pane__co-attach" role="status">
+          <span class="agent-pane__co-attach-text">{coAttachText}</span>
         </div>
       ) : null}
 

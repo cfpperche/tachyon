@@ -114,6 +114,30 @@
   min-width: 0;
 }
 
+/* ── foreign co-attach notice (t-edbe36) ──
+   Informational, not a failure: the · padding is real tmux state while a shell client shares
+   the session. Wrap at 360 so the full sentence stays readable; terminal keeps remaining height. */
+.agent-pane__co-attach {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ds-2);
+  padding: var(--ds-1) var(--ds-2);
+  border: 1px solid var(--agent-pane-border);
+  border-left: 2px solid var(--vscode-notificationsInfoIcon-foreground, #3794ff);
+  border-radius: 4px;
+  background: var(--vscode-inputValidation-infoBackground, color-mix(in srgb, var(--agent-pane-fg) 6%, transparent));
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agent-pane__co-attach-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* FitAddon measures this box — flex child, not absolute full-bleed */
 .agent-pane__term {
   flex: 1 1 auto;

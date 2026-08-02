@@ -2016,6 +2016,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       resizeSession: async (session, cols, rows) => {
         await terminalTmux.resizeWindow(session, cols, rows);
       },
+      // t-edbe36 — measure foreign shell co-attach; never detach clients we did not spawn.
+      listClients: async (session) => terminalTmux.listSessionClients(session),
       // Same hardened tmux delivery as prompt.inject (381) — stage without Enter / submit with Enter.
       deliverText: async (session, text, submit) => {
         if (submit) {

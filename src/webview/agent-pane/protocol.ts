@@ -54,6 +54,11 @@ export type AgentPaneFromHost =
    * instead of telling the human to reopen it.
    */
   | { type: "agent-pane/attach-state"; state: "attached" | "detached"; reason?: string; sessionAlive?: boolean }
+  /**
+   * t-edbe36 — a foreign tmux client (not one of our viewports) is co-attached.
+   * Measured via list-clients; present=false clears the notice. Never an eviction request.
+   */
+  | { type: "agent-pane/co-attach"; present: boolean; width?: number; height?: number }
   /** Feedback after stage/submit (toast-in-pane). */
   | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string }
   /** Place an inject marker at the current viewport line (no PTY bytes). */

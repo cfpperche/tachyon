@@ -25,6 +25,8 @@
  * - Interface → "Open Agent Pane" / Reattach → `AgentPanePanelManager`
  * - a human running `tmux attach` in their own shell — NOT our door. It cannot be arbitrated; the
  *   pane survives it now (nobody evicts it) and tmux repaints clean when that client leaves.
+ *   t-edbe36: the pane measures that co-attach (list-clients vs our single viewport client) and
+ *   names it in the identity strip — explain, never fight or hide the dots.
  */
 
 export type SessionViewportKind = "pane" | "terminal";

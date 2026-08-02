@@ -7,6 +7,7 @@
 import * as vscode from "vscode";
 import { TmuxAttachClient, type PtySpawn } from "../presentation/TmuxAttachClient.js";
 import type { SessionViewportRegistry } from "../presentation/sessionViewport.js";
+import { probeForeignClients, type SessionClientInfo } from "../presentation/foreignTmuxClient.js";
 import { resolveAgentPaneFontMetrics } from "../presentation/agentPaneFont.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { panelIcon } from "./shared/panelIcon.js";
@@ -42,6 +43,11 @@ export interface AgentPaneOpenArgs {
   createPinFromSelection: (text: string, agent: string) => Promise<{ id: string }>;
   /** Is the tmux session still running? Answers "did I lose the view or the work?" (t-feaaea). */
   sessionAlive?: (session: string) => Promise<boolean>;
+  /**
+   * t-edbe36 — list tmux clients on this session (name + size). Measurement only: the pane
+   * never detaches or kills a client it did not spawn (a human shell attach is not ours).
+   */
+  listClients?: (session: string) => Promise<SessionClientInfo[]>;
   /** Test seam mirroring `TmuxAttachClientOptions.ptySpawn`; production loads node-pty. */
   ptySpawn?: PtySpawn;
 }
@@ -63,6 +69,10 @@ interface LivePane {
    * closes the terminal they just opened, ping-ponging the two viewports (t-feaaea).
    */
   detached: boolean;
+  /** t-edbe36 — last co-attach notice key so we do not spam the webview on every poll. */
+  foreignKey: string | null;
+  /** t-edbe36 — poll handle while attached; cleared on detach/dispose. */
+  foreignTimer: ReturnType<typeof setInterval> | null;
 }
 
 export class AgentPanePanelManager {
@@ -78,6 +88,10 @@ export class AgentPanePanelManager {
   dispose(): void {
     this.disposed = true;
     for (const live of this.byAgent.values()) {
+      if (live.foreignTimer !== null) {
+        clearInterval(live.foreignTimer);
+        live.foreignTimer = null;
+      }
       live.attach?.dispose();
       this.viewports?.release(live.session, "pane");
       live.panel.dispose();
@@ -128,6 +142,8 @@ export class AgentPanePanelManager {
       lastRows: 0,
       started: false,
       detached: false,
+      foreignKey: null,
+      foreignTimer: null,
     };
     this.byAgent.set(args.agent, live);
 
@@ -153,6 +169,77 @@ export class AgentPanePanelManager {
       void panel.webview.postMessage(msg);
     };
 
+    const stopForeignWatch = () => {
+      if (live.foreignTimer !== null) {
+        clearInterval(live.foreignTimer);
+        live.foreignTimer = null;
+      }
+    };
+
+    const clearForeignNotice = (restoreStatus: boolean) => {
+      if (live.foreignKey === null) return;
+      live.foreignKey = null;
+      post({ type: "agent-pane/co-attach", present: false });
+      if (restoreStatus && live.started && live.attach?.alive && !live.detached) {
+        post({ type: "agent-pane/status", status: "attached" });
+      }
+    };
+
+    /**
+     * t-edbe36 — measure list-clients while we own the session. Our viewports never co-exist
+     * (SessionViewportRegistry), so any extra client is foreign. Explain only — never detach it.
+     */
+    const probeForeign = async () => {
+      if (!args.listClients) return;
+      if (!live.started || !live.attach?.alive || live.detached) return;
+      // Registry is the "ours" side: if something else owns the session we already handed off.
+      if (this.viewports && this.viewports.ownerOf(args.session) !== "pane") return;
+      let clients: SessionClientInfo[];
+      try {
+        clients = await args.listClients(args.session);
+      } catch {
+        return;
+      }
+      if (!live.started || !live.attach?.alive || live.detached) return;
+      const probe = probeForeignClients(clients, { cols: live.lastCols, rows: live.lastRows });
+      if (probe.kind === "foreign") {
+        const key = `${probe.width}x${probe.height}:${probe.extraCount}`;
+        if (live.foreignKey === key) return;
+        live.foreignKey = key;
+        post({
+          type: "agent-pane/status",
+          status: vscode.l10n.t(
+            "another tmux client ({0}×{1}) is attached — temporary; work is safe",
+            probe.width,
+            probe.height,
+          ),
+        });
+        post({
+          type: "agent-pane/co-attach",
+          present: true,
+          width: probe.width,
+          height: probe.height,
+        });
+        return;
+      }
+      if (probe.kind === "uncertain") {
+        // Do not invent a foreign client; leave any prior notice alone until we can measure again.
+        return;
+      }
+      clearForeignNotice(true);
+    };
+
+    const startForeignWatch = () => {
+      stopForeignWatch();
+      if (!args.listClients) return;
+      // Resize catches local geometry changes; a short poll catches a shell attach that does not
+      // resize our webview (the foreign client is smaller — we just get · padding).
+      live.foreignTimer = setInterval(() => {
+        void probeForeign();
+      }, 2000);
+      void probeForeign();
+    };
+
     /**
      * Another viewport (the integrated terminal) is taking this session — let go of our tmux
      * client BEFORE it attaches. Deliberate handoff, so the human sees "the terminal has it",
@@ -160,6 +247,8 @@ export class AgentPanePanelManager {
      */
     const releaseToTerminal = () => {
       if (!live.attach && !live.started) return;
+      stopForeignWatch();
+      clearForeignNotice(false);
       live.attach?.dispose();
       live.attach = null;
       live.started = false;
@@ -177,6 +266,7 @@ export class AgentPanePanelManager {
         void args.resizeSession(args.session, cols, rows).catch(() => {
           /* best-effort */
         });
+        void probeForeign();
         return;
       }
 
@@ -188,6 +278,8 @@ export class AgentPanePanelManager {
       const attach = new TmuxAttachClient({
         onData: (chunk) => post({ type: "agent-pane/data", data: chunk }),
         onExit: (code, signal) => {
+          stopForeignWatch();
+          clearForeignNotice(false);
           live.attach = null;
           live.started = false;
           live.detached = true;
@@ -237,6 +329,7 @@ export class AgentPanePanelManager {
         void args.resizeSession(args.session, cols, rows).catch(() => {
           /* best-effort */
         });
+        startForeignWatch();
       } catch (err) {
         live.started = false;
         const message = err instanceof Error ? err.message : String(err);
@@ -312,6 +405,8 @@ export class AgentPanePanelManager {
           void args.resizeSession(args.session, msg.cols, msg.rows).catch(() => {
             /* best-effort */
           });
+          // Geometry change is when the · fill appears/disappears — re-measure clients.
+          void probeForeign();
         } else {
           maybeStart();
         }
@@ -366,6 +461,7 @@ export class AgentPanePanelManager {
     });
 
     panel.onDidDispose(() => {
+      stopForeignWatch();
       live.attach?.dispose();
       this.viewports?.release(args.session, "pane");
       this.byAgent.delete(args.agent);
