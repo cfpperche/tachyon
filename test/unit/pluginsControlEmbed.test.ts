@@ -89,6 +89,38 @@ describe("Reinstall source pin", () => {
     expect(sourceSpecAtCommit("github:acme/plugins@v2.3.1#path=diagram", "c".repeat(40)))
       .toBe(`github:acme/plugins@${"c".repeat(40)}#path=diagram`);
   });
+
+  // A single-plugin repo has no `#path=` fragment, and the ref is still the LAST '@' — the same rule
+  // `parseSource`'s `splitRef` applies. Pinned separately because this helper is a second copy of that
+  // split: if the spec grammar ever grows a locator that can hold an '@', both have to move together.
+  it("pins a spec with no monorepo subdir", () => {
+    expect(sourceSpecAtCommit("github:acme/tdd-guard@v1.0.0", "d".repeat(40)))
+      .toBe(`github:acme/tdd-guard@${"d".repeat(40)}`);
+  });
+
+  /**
+   * The routing half. `buildReinstallConsent` proves the drawer's SHAPE; this proves the `reinstall`
+   * message reaches the new door at all, and that the door pins the recorded COMMIT rather than the
+   * movable ref it was installed from.
+   *
+   * Before the fix the same message was routed to `previewUpdateOp(…, force: true)`, which resolves
+   * `source.ref`. The failing resolve names what it tried to fetch, so the message the human gets is
+   * itself the evidence of which door ran — no spying on internals required.
+   */
+  it("routes reinstall to the pinned-commit door, not to force-update on the movable ref", async () => {
+    const root = mkroot();
+    writeLockfile(root, "tdd-guard");
+    const mgr = managerFor([target(root, "ws-1")]);
+    const wv = fakeWebview();
+    mgr.bindControlEmbed(wv as never, "ws-1");
+
+    mgr.handleControlEmbedMessage({ type: "reinstall", name: "tdd-guard" } as never);
+    await flush();
+
+    const result = wv.posted.find((m) => m.type === "result") as { ok: boolean; message: string } | undefined;
+    expect(result?.ok).toBe(false); // the fake git cannot fetch; what matters is WHICH fetch was attempted
+    expect(result?.message).toContain("a1b2c3d".padEnd(40, "0").slice(0, 12));
+  });
 });
 
 describe("Control → Plugins embed session lifecycle (t-0fc9ee)", () => {
