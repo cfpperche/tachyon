@@ -109,6 +109,16 @@ export interface AgentWorktreeRemovalReceipt {
  * rather than pretending it deleted something. The proof comes from `WorktreeManager.probeAbsence`
  * (repository + disk), never from the shape of a git error, so a lock, a permission error or a
  * dirty refusal still throws.
+ *
+ * t-28bf8f — READ THIS AS A TRANSACTION, because a refusal here used to leave half of one. Every
+ * durable record mutation is in the last two lines; everything before them either measures or tears
+ * down the pane. The pane teardown is not a registry mutation and is what the caller asked for anyway,
+ * and since t-28bf8f it no longer collects a Temporary row that still owns this checkout — so a
+ * refusal by the descendant gate, either occupancy gate, `releaseOwnedWorktreeForRemoval` (a live root
+ * process; the field case) or git itself leaves the agent listed, addressable and retryable, with the
+ * checkout, the branch and the registry entry all still claimed by the row that owns them. "Nothing
+ * moved" is the only acceptable shape of a refusal on this path; "half moved" strands a checkout that
+ * no governed door can reach.
  */
 export async function removeAgentWorktree(
   ports: AgentWorktreeRemovalPorts,
@@ -140,8 +150,14 @@ export async function removeAgentWorktree(
     refuseUnlessForceIfDirty: true,
   });
   if (!result.removed && !result.absent) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
-  ports.ledger.clearWorktree(agent);
+  // t-28bf8f — registry first, ledger second, and that order is the invariant rather than a style.
+  // These are two file writes and the second can fail; whichever way round they go, one ordering can
+  // leave a registry entry whose owning row is gone — the ownerless state that has no governed door —
+  // and the other leaves a row still owning an unregistered checkout, which every door can still
+  // finish (the retry re-enters here, `probeAbsence` proves the checkout gone, and t-05dff5's
+  // already-absent arm completes both records). Only one of those is recoverable.
   ports.managedWorktrees.syncAgentRecord(agent, null);
+  ports.ledger.clearWorktree(agent);
   if (result.absent) {
     // The branch is deliberately left alone: nothing proved this checkout's work was merged, and
     // the branch has its own spelled-out delete action.

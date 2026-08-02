@@ -8,7 +8,7 @@ import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Works
 import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { registerTools, type NotifyLevel } from "../../src/bridge/tools.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
@@ -122,7 +122,18 @@ class SharedSecretHost extends FakeHost {
 }
 
 /** fake-exec tmux: a real TmuxService whose command channel is a fake (same pattern as the manager suites). */
-function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[]) => void } = {}) {
+function fakeTmux(opts: {
+  realPaneProcesses?: boolean;
+  /**
+   * t-28bf8f — the measured race: `kill-session` returns while the pane's root process is still
+   * alive in the checkout. Real tmux does this whenever the process outlives its own session
+   * (reparented, or a shutdown that takes longer than the call), which is exactly the state
+   * `refreshWorktreeOccupancy` was taught to quarantine on. With this set the child is left running
+   * and stays in `children`, so the case can end it deliberately and watch the retry succeed.
+   */
+  orphanPaneProcesses?: boolean;
+  onExec?: (args: string[]) => void;
+} = {}) {
   const sessions = new Set<string>();
   /** `${session}\0${key}` → value, mirroring tmux's per-session environment. */
   const sessionEnv = new Map<string, string>();
@@ -138,8 +149,11 @@ function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[])
     if (child?.exitCode === null) { child.kill("SIGKILL"); await waitForExit(child); }
     children.delete(name);
   };
-  const replacePaneProcess = async (name: string) => {
-    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  const replacePaneProcess = async (name: string, cwd?: string) => {
+    // The cwd matters to exactly one reader and only when a case asks for it: `probeRememberedRootProcess`
+    // re-establishes "is this pid still in THAT checkout?" through /proc/<pid>/cwd. Undefined inherits,
+    // byte-identical to every pre-existing caller.
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", ...(cwd ? { cwd } : {}) });
     children.set(name, child);
     return child;
   };
@@ -159,7 +173,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[])
         if (eq > 0) sessionEnv.set(`${name}\u0000${args[i + 1]!.slice(0, eq)}`, args[i + 1]!.slice(eq + 1));
       }
       panes.set(name, "");
-      if (opts.realPaneProcesses) await replacePaneProcess(name);
+      if (opts.realPaneProcesses) await replacePaneProcess(name, args.includes("-c") ? args[args.indexOf("-c") + 1] : undefined);
       return { stdout: "", stderr: "" };
     }
     if (args[2] === "show-environment") {
@@ -212,7 +226,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[])
     }
     if (args[2] === "kill-session") {
       const name = args[args.indexOf("-t") + 1].replace(/^=/, "");
-      await stop(name);
+      if (!opts.orphanPaneProcesses) await stop(name);
       sessions.delete(name);
       dead.delete(name);
       panes.delete(name);
@@ -230,7 +244,7 @@ function fakeTmux(opts: { realPaneProcesses?: boolean; onExec?: (args: string[])
     }
     return { stdout: "", stderr: "" };
   };
-  return { sessions, sessionEnv, dead, sent, panes, calls, children, replacePaneProcess, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
+  return { sessions, sessionEnv, dead, sent, panes, calls, children, replacePaneProcess, stop, cleanup: async () => { await Promise.all([...children.keys()].map(stop)); }, tmux: new TmuxService(exec) };
 }
 
 const dirs: string[] = [];
@@ -2373,7 +2387,9 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
  * not. A REAL repo is not decoration here: adoption of a leftover branch is a git decision
  * (`exists-free` → attach), and a faked `ensure` would only assert that we call what we call.
  */
-function delegatingWorkspace(): Promise<{ root: string; ws: Workspace; fake: ReturnType<typeof fakeTmux> }> {
+function delegatingWorkspace(
+  tmuxOpts: Parameters<typeof fakeTmux>[0] = {},
+): Promise<{ root: string; ws: Workspace; fake: ReturnType<typeof fakeTmux> }> {
   const root = gitRepoWorkspace();
   const worktreeBase = mkdir();
   // `boss` is the parent this child is delegated by. It is declared because lineage must name an
@@ -2384,7 +2400,7 @@ function delegatingWorkspace(): Promise<{ root: string; ws: Workspace; fake: Ret
     [{ name: "boss", spec: { runtime: "claude" } }],
     `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
   );
-  const fake = fakeTmux();
+  const fake = fakeTmux(tmuxOpts);
   return Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
@@ -2450,6 +2466,124 @@ it("spec 484: two spawns of the SAME Temporary name get two different branches, 
     expect(gitIn(second.path, ["rev-parse", "HEAD"])).toBe(gitIn(root, ["rev-parse", "main"]));
     // And the orphan is still exactly where its owner left it — nothing was built on top of it.
     expect(gitIn(root, ["rev-parse", first.branch])).toBe(firstTip);
+  } finally {
+    ws.dispose();
+    await fake.cleanup();
+  }
+});
+
+/**
+ * t-28bf8f — the refusal that used to strand a checkout with NO door on it.
+ *
+ * MEASURED TWICE on 0.56.149, in two runtimes: `kill_agent` on a Temporary child that owned a checkout
+ * answered `still has a live root process for its worktree` — a correct refusal, because tearing a
+ * checkout out from under a live process is the data loss `rollbackPreparedWorktree` exists to avoid —
+ * and left behind the worktree, its branch, its `managed-worktrees.json` entry, and NO session row.
+ * The four end-of-life doors (UI delete, `dismiss_agent`, Agent Studio Forget, `kill_agent`) all address
+ * an agent BY NAME, so all four then answered "not found"; the fifth, `unregister_worktree`, addresses
+ * the entry by id and refuses anyone who is not its owner — and the owner was the row the same call had
+ * just deleted. Both cleanups were `git worktree remove --force` + `git branch -D` + hand-editing JSON.
+ *
+ * The trigger is a narrow race (the coordinator's own journal refuted "agents that did work": six clean
+ * kills, two orphans, and what separates them is only whether the pane's root process was still alive at
+ * the instant of measurement). So this does not wait for the race — it FORCES the state: `kill-session`
+ * leaves the pane's root process running with its cwd inside the checkout, which is exactly what
+ * `refreshWorktreeOccupancy` was already written to quarantine on, and what `/proc/<pid>/cwd` then reads.
+ *
+ * What it asserts is atomicity, not the refusal: after a refusal NOTHING durable moved, and the agent is
+ * still listed and still addressable — so the retry that finishes the job exists at all.
+ */
+it("t-28bf8f: a kill refused by a live root process moves nothing, and the retry after it dies finishes the removal", async () => {
+  const { root, ws, fake } = await delegatingWorkspace({ realPaneProcesses: true, orphanPaneProcesses: true });
+  const notices: string[] = [];
+  const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+  registerTools(
+    { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+    {
+      workspaceRoot: root,
+      caller: { kind: "agent", name: "boss" },
+      notify: (message: string) => { notices.push(message); },
+      manager: ws.manager,
+      // The Workspace IS the removal cascade's port bundle, exactly as it wires itself (`agentWorktrees: this`).
+      agentWorktrees: ws,
+    } as never,
+  );
+  const killAgent = tools.get("kill_agent")!;
+  const listed = async (): Promise<string[]> => (await ws.manager.list()).map((a) => a.name);
+  try {
+    await ws.manager.spawn("filho", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+    const record = ws.ledger.get("filho")!.worktree!;
+    // Occupancy is captured from the LIVE pane, with its root pid — the ordinary reading every worktree
+    // surface performs (`WorktreeManager.remove`, Control → Worktrees' classifier, `worktree_hygiene`),
+    // and the state the field repro was in when its kill arrived.
+    expect(await ws.manager.worktreeOccupant(record.path)).toMatchObject({ state: "live", agent: "filho" });
+
+    const refused = await killAgent({ name: "filho" });
+
+    // 1. THE REFUSAL IS RIGHT, and stays right — this change never relaxes it.
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text).toContain("still has a live root process");
+    // 2. AND NOTHING MOVED. Each of these was measured as moved-or-stranded in the field repro.
+    expect(await listed()).toContain("filho");                                       // list_agents
+    expect(ws.ledger.get("filho")?.worktree?.path).toBe(record.path);                // sessions.json
+    expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.agent)).toContain("filho"); // managed-worktrees.json
+    expect(fs.existsSync(record.path)).toBe(true);
+    expect(branchesOf(root)).toContain(record.branch);
+    // The per-spawn settings file stands for the whole ephemeral footprint `removeEphemeralFootprint`
+    // deletes — harness home, activity log, pane transcript, evolution profile. None of it is
+    // recoverable, which is why this had to be PREVENTED rather than rolled back after the fact.
+    expect(fs.existsSync(spawnSettingsPath(root, "filho"))).toBe(true);
+
+    // 3. THE ROOT PROCESS DIES, and the SAME door — addressed by the same name, which only still
+    //    resolves because the refusal kept the row — completes the whole removal.
+    await fake.stop(ws.manager.session("filho"));
+    const done = await killAgent({ name: "filho" });
+
+    expect(done.isError).toBeFalsy();
+    expect(done.content[0]?.text).toContain(record.path);
+    expect(await listed()).not.toContain("filho");
+    expect(ws.ledger.get("filho")).toBeUndefined();
+    expect(ws.managedWorktrees.list({ kind: "agent" })).toHaveLength(0);
+    expect(fs.existsSync(record.path)).toBe(false);
+    expect(branchesOf(root)).not.toContain(record.branch);
+    expect(fs.existsSync(spawnSettingsPath(root, "filho"))).toBe(false);
+  } finally {
+    ws.dispose();
+    await fake.cleanup();
+  }
+});
+
+/**
+ * t-28bf8f — the other two actors that reach the same effect, and neither goes through a removal door.
+ *
+ * The field repro arrived through `kill_agent`, but "who else can reach this?" answers with two more:
+ * the sidebar's forced Kill (`agent.kill` → `manager.kill`), which never refuses anything, and Stop All
+ * (`killAll`), which collects Temporary rows through its OWN copy of the collection rather than through
+ * `kill`. Both would strand a checkout, its branch and its registry entry behind a row they deleted —
+ * silently, with no refusal to blame. So the invariant is asserted per door, not per bug report.
+ */
+it("t-28bf8f: neither a forced Kill nor Stop All collects a Temporary row that still owns a checkout", async () => {
+  const { ws, fake } = await delegatingWorkspace();
+  const owns = (name: string): boolean =>
+    ws.managedWorktrees.list({ kind: "agent" }).some((e) => e.agent === name) && !!ws.ledger.get(name)?.worktree;
+  try {
+    await ws.manager.spawn("byKill", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+    await ws.manager.kill("byKill");
+    // Stopped, still listed, and both records still agree about who owns the checkout — which is what
+    // makes `dismiss_agent`/`kill_agent`/UI Remove able to finish it later.
+    expect((await ws.manager.list()).map((a) => a.name)).toContain("byKill");
+    expect(owns("byKill")).toBe(true);
+
+    await ws.manager.spawn("byStopAll", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
+    await ws.manager.killAll();
+    expect((await ws.manager.list()).map((a) => a.name)).toEqual(expect.arrayContaining(["byKill", "byStopAll"]));
+    expect(owns("byStopAll")).toBe(true);
+
+    // Non-vacuity: a Temporary that owns NOTHING is still collected by a stop, exactly as spec 211
+    // requires — the guard is about the checkout, not about Temporary rows in general.
+    await ws.manager.spawn("semArvore", { cmd: "claude", kind: "agent", parent: "boss", reveal: false });
+    await ws.manager.kill("semArvore");
+    expect((await ws.manager.list()).map((a) => a.name)).not.toContain("semArvore");
   } finally {
     ws.dispose();
     await fake.cleanup();

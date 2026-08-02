@@ -1684,19 +1684,32 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const info = await managedEntry(deps, name);
         // t-a76aed — for a running Temporary that owns a checkout, kill IS the reachable end-of-life
-        // door: AgentManager.kill removes the row, so the documented follow-up `dismiss_agent` can only
-        // answer "not found". Run the same worktree cascade dismiss uses while the owning row still
-        // exists. Do not put this in AgentManager.kill: removeAgentWorktree itself uses manager.kill to
-        // stop occupancy, so doing that would recurse (and would double-remove through the other doors).
+        // door: it is the call a coordinator makes on a finished child, and the documented follow-up
+        // `dismiss_agent` used to answer "not found" because kill had already collected the row. Run the
+        // same worktree cascade dismiss uses, while the owning row still exists. Do not put the CASCADE
+        // in AgentManager.kill: removeAgentWorktree itself uses manager.kill to stop occupancy, so doing
+        // that would recurse (and would double-remove through the other doors). t-28bf8f puts the far
+        // narrower row-collection GUARD there instead — no recursion, and it covers the sidebar's Kill.
         if (info?.lifetime === "temporary" && deps.agentWorktrees?.ledger.get(name)?.worktree) {
           const released = await dismissOwnedWorktree(deps, name);
+          // t-28bf8f — the row is collected HERE, and only here, because only now is the checkout
+          // proved released. The cascade's own occupancy gate tore the pane down through
+          // `manager.kill`, which since t-28bf8f deliberately leaves a still-owning Temporary row
+          // listed; a refusal anywhere above therefore throws past this line and the agent stays
+          // addressable for the retry, instead of vanishing from the board with its checkout, its
+          // branch and its registry entry stranded behind it.
+          deps.manager.dismissTemporary(name);
           return ok(dismissReceipt(name, released));
         }
         await deps.manager.kill(name);
         return ok(`agent '${name}' killed`);
       } catch (err) {
         const info = await managedEntry(deps, name);
-        if (info && info.lifetime === "temporary" && !info.running) {
+        // t-28bf8f — this hint belongs to the plain kill door alone. A cascade refusal now leaves
+        // exactly this shape (listed, Temporary, pane down), and answering it with "use dismiss_agent"
+        // would replace the measured reason — a live root process in the checkout — with advice for a
+        // different problem, pointing at a door that refuses identically because the refusal is right.
+        if (info && info.lifetime === "temporary" && !info.running && !deps.agentWorktrees?.ledger.get(name)?.worktree) {
           return fail(new Error(`agent '${name}' is not running; use dismiss_agent to remove the stopped Temporary entry`));
         }
         return fail(err);

@@ -84,13 +84,13 @@ function dismissWorld(opts: {
       events.push("probe");
       return verdicts[Math.min(probe++, verdicts.length - 1)]!;
     },
-    // Real AgentManager.kill collects a non-persistent Temporary row. The removal cascade captures
-    // the worktree record before this call, so it can still finish git + registry cleanup afterwards.
+    // Real AgentManager.kill collects a non-persistent Temporary row — but since t-28bf8f, ONLY once
+    // that row no longer records a checkout. A stop that collected a still-owning row would strand the
+    // checkout, its branch and its registry entry with no door left addressing them, so a row mid-cascade
+    // survives here exactly as it does in production, and the end-of-life door collects it afterwards.
     kill: async () => {
       events.push("kill");
-      // The ordinary successful stop collects the Temporary row. The unknown fixture models the
-      // cascade's refusal contract and deliberately leaves ownership intact for that assertion.
-      if (verdicts.some((verdict) => verdict.state === "free")) ledger.delete("child");
+      if (!ledger.get("child")?.worktree) ledger.delete("child");
     },
     releaseOwnedWorktreeForRemoval: async () => { events.push("release"); },
     dismissTemporary: () => { events.push("dismiss-row"); ledger.delete("child"); },
@@ -154,8 +154,11 @@ describe("t-46554c — Temporary end-of-life doors prove their worktree effects"
       "probe",
       "release",
       "git-remove /checkouts/child deleteBranch=true force=false probeDirty=true",
-      "ledger-clear",
+      // t-28bf8f — registry BEFORE ledger. Both are file writes and the second can fail; only this
+      // order fails into a state a door can still finish (a row still owning an unregistered checkout)
+      // rather than the one that has none (a registry entry whose owning row is gone).
       "registry-sync",
+      "ledger-clear",
     ]);
     expect(world.registry.get("child")).toBeNull();
   });
@@ -172,8 +175,11 @@ describe("t-46554c — Temporary end-of-life doors prove their worktree effects"
       "probe",
       "release",
       "git-remove /checkouts/child deleteBranch=true force=false probeDirty=true",
-      "ledger-clear",
       "registry-sync",
+      "ledger-clear",
+      // t-28bf8f — the row is collected LAST, by this door, and only because everything above it
+      // succeeded. The `kill` three lines up is the cascade's occupancy gate and no longer collects it.
+      "dismiss-row",
     ]);
     expect(world.ledger.has("child")).toBe(false);
     expect(world.registry.get("child")).toBeNull();
@@ -252,9 +258,13 @@ describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => 
     expect(world.events).toContain("git-remove /checkouts/child deleteBranch=true force=false probeDirty=true");
     expect(world.events).not.toContain("ledger-clear");
     expect(world.events).not.toContain("dismiss-row");
-    // Teardown of the stopped pane collects a Temporary row before Git can measure dirtiness. The
-    // durable managed-worktree record remains, making the preserved checkout hygiene-visible.
-    expect(world.ledger.has("child")).toBe(false);
+    // t-28bf8f — this line used to read `false`, with a comment explaining that teardown of the stopped
+    // pane collects the row before Git can measure dirtiness. That was the defect, pinned as behaviour:
+    // the preserved checkout stayed hygiene-visible through the registry, but the AGENT that owned it —
+    // the only handle the four name-addressed end-of-life doors accept — was gone, so nothing could
+    // retry the dismissal once the tree was cleaned. A refused removal now moves neither record.
+    expect(world.ledger.has("child")).toBe(true);
+    expect(world.ledger.get("child")?.worktree).toEqual(RECORD);
     expect(world.registry.get("child")).toEqual(RECORD);
   });
 

@@ -3141,6 +3141,34 @@ export class AgentManager {
     }
   }
 
+  /**
+   * t-28bf8f — does this row still CLAIM a checkout? The one question that decides whether a stop may
+   * also collect the row.
+   *
+   * A Temporary's row is its listing (t-eb4b30), and every governed end-of-life door — UI delete,
+   * `dismiss_agent`, Agent Studio Forget, `kill_agent` — addresses an agent BY NAME. The registry entry
+   * in `managed-worktrees.json` is addressed by worktree id and may only be dropped by its owner or a
+   * human (`canMutateManagedWorktree`), and lineage deliberately does NOT extend over an agent's own
+   * working home (`resolveHygieneAuthority`: "a parent tidying up after a finished task must never be
+   * able to delete the place its child actually lives"). So a row collected while it still owns a
+   * checkout leaves the checkout, its branch and its registry entry behind with NO door on them at all:
+   * the four name-addressed doors answer "not found", and the fifth refuses for want of an owner the
+   * same call just deleted. Measured twice on 0.56.149 and cleaned up by hand both times.
+   *
+   * Hence the invariant, stated here rather than at each door: THE REGISTRY ENTRY NEVER OUTLIVES THE
+   * ROW THAT OWNS IT. A stop leaves a still-owning Temporary listed and stopped, which is the state the
+   * removal doors know how to finish; only they collect the row, and only after the cascade has proved
+   * the checkout released (`removeAgentWorktree` → `ledger.clearWorktree`, after which this reads false).
+   *
+   * It is deliberately here, in `kill`, and not in one caller: the same effect is reachable through
+   * every actor that stops an agent — the Bridge's `kill_agent`, the sidebar's forced Kill
+   * (`agent.kill` → `manager.kill`, which never even refuses), and the removal cascade's own occupancy
+   * gate. A guard in the Bridge door would have left the sidebar orphaning silently.
+   */
+  private ownsWorktree(name: string): boolean {
+    return !!this.opts.ledger?.get(name)?.worktree;
+  }
+
   async kill(name: string): Promise<void> {
     this.stoppingSince.delete(name);
     this.clearStopFailed(name);
@@ -3168,7 +3196,9 @@ export class AgentManager {
       // entry on the next activation. Since t-eb4b30 the row IS the listing — there is no in-memory
       // map whose deletion could hide a surviving row — so this removal is the whole operation rather
       // than the durable half of two. Declared agents keep their row (still resumable later).
-      if (wasTemporary) {
+      //
+      // t-28bf8f — UNLESS the row still owns a checkout. See `ownsWorktree`.
+      if (wasTemporary && !this.ownsWorktree(name)) {
         // pin p-4dadd3 (dogfood follow-up): kill removes the row AND leaves no pane (killSession, not a
         // remain-on-exit clean-exit dead pane), so the durable log is unreachable — it dies with the row.
         // spec 247: the row+log pair is one named operation now, so this can no longer drift apart.
@@ -4908,7 +4938,12 @@ export class AgentManager {
         //
         // A fork is PERSISTENT (spec 225): its row survives a Stop and is dropped only by an explicit
         // Dismiss, which is the same exception `kill()` makes.
-        if (this.opts.ledger?.get(name)?.def?.fork !== true && this.isTemporary(name)) {
+        //
+        // t-28bf8f — and so is a row that still owns a checkout, for the reason spelled out on
+        // `ownsWorktree`. Stop All is the sixth actor that reaches this same effect, and it reaches it
+        // through its own copy of the collection rather than through `kill`, so the guard has to be
+        // repeated here or the invariant holds everywhere except the one door that stops everything.
+        if (this.opts.ledger?.get(name)?.def?.fork !== true && this.isTemporary(name) && !this.ownsWorktree(name)) {
           this.removeEphemeralFootprint(name);
         }
         this.opts.onKilled?.(name);
