@@ -2360,8 +2360,25 @@ describe("AgentManager — session resume (spec 209)", () => {
     internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "reviewer", cwd: wt });
     await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/quarantined by.*reviewer/);
 
+    // A live but reused pid is not authority: the current process exists, but its measured cwd is
+    // elsewhere, so it cannot keep this checkout quarantined merely because its number was cached.
     internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt, pid: process.pid });
-    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/live root process/);
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).resolves.toBeUndefined();
+
+    // Conversely, the same fresh measurement still refuses a process actually rooted in the target.
+    const cwdKey = internals.canonicalWorktreeKey(process.cwd());
+    internals.worktreeOccupancy.set(cwdKey, { state: "dirty", agentId: "claude", cwd: process.cwd(), pid: process.pid });
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", process.cwd())).rejects.toThrow(/live root process/);
+
+    // An unreadable measurement is not collapsed into either life or death and changes no state.
+    internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt, pid: 424242 });
+    const realpath = vi.spyOn(fs, "realpathSync").mockImplementation((value) => {
+      if (String(value) === "/proc/424242/cwd") throw Object.assign(new Error("permission denied"), { code: "EACCES" });
+      return String(value);
+    });
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", wt)).rejects.toThrow(/occupancy unverifiable.*remembered root process/);
+    expect(internals.worktreeOccupancy.has(key)).toBe(true);
+    realpath.mockRestore();
   });
 
   /**
@@ -6924,7 +6941,8 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     dirs.push(ws);
     const hash = workspaceHash(ws);
     const ledger = new SessionLedger(ws);
-    ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // clean exit
+    const ownedWorktree = { path: path.join(ws, "review-worktree"), branch: "tachyon/review", tachyonCreatedBranch: true, baseRef: "abc", createdAt: "2026-08-01T00:00:00.000Z" };
+    ledger.record("review", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, worktree: ownedWorktree, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // clean exit
     ledger.record("boom", { def: { cmd: "codex exec", kind: "agent" }, cwd: ws, instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false } }); // crashed
     const { tmux, sessions, dead, panes } = fakeTmux();
     const reviewSession = sessionName(hash, "review");
@@ -6939,6 +6957,9 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     await manager.rehydrateFromLedger();
     await expect(manager.dismissCleanExitPane("review")).resolves.toBe(true);
     expect(ledger.get("review")?.lifecycle).toMatchObject({ state: "clean-exited" });
+    // Clean-exit reap is pane cleanup, not a fifth permanent-removal door: both the roster row and
+    // its checkout ownership survive together for the explicit dismiss cascade.
+    expect(ledger.get("review")?.worktree).toEqual(ownedWorktree);
     expect(ledger.get("boom")).toBeDefined();
 
     const reloaded = new AgentManager(opts);

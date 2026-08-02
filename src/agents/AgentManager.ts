@@ -77,15 +77,24 @@ import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, 
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
 
-/** t-815796 MEDIUM fix — is `pid` still alive? `process.kill(pid, 0)` sends no signal, only probes.
- *  ESRCH is the one unambiguous "gone" answer; any other error (e.g. EPERM — exists, owned by someone
- *  else) is treated as "still alive" so the cleanup probe never frees a worktree it isn't sure about. */
-function isPidAlive(pid: number): boolean {
+/** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
+ *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes
+ *  that association at the decision point; unreadable is distinct from gone and refuses cleanup. */
+function probeRememberedRootProcess(
+  pid: number,
+  worktreePath: string,
+): { state: "live" | "gone" | "unknown"; detail?: string } {
   try {
-    process.kill(pid, 0);
-    return true;
+    const cwd = fs.realpathSync(`/proc/${pid}/cwd`);
+    const root = fs.realpathSync(worktreePath);
+    const relative = path.relative(root, cwd);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))
+      ? { state: "live" }
+      : { state: "gone" };
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code !== "ESRCH";
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return { state: "gone" };
+    return { state: "unknown", detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -1937,8 +1946,10 @@ export class AgentManager {
         "agent-profile/worktree-release-agent-running",
         `agent '${agent}' must be fully stopped before releasing its worktree`,
       );
-      if (occ.pid !== undefined && isPidAlive(occ.pid)) {
-        throw new Error(`agent '${agent}' still has a live root process for its worktree`);
+      if (occ.pid !== undefined) {
+        const root = probeRememberedRootProcess(occ.pid, worktreePath);
+        if (root.state === "live") throw new Error(`agent '${agent}' still has a live root process for its worktree`);
+        if (root.state === "unknown") throw new AgentOccupancyUnverifiableError(agent, `the remembered root process could not be measured (${root.detail})`);
       }
       this.worktreeOccupancy.delete(key);
     });
@@ -1984,9 +1995,12 @@ export class AgentManager {
     // dropped bookkeeping) must still quarantine the worktree, not free it. No captured pid (pre-existing
     // occupancy row, or the capture failed) keeps the pre-existing tmux-only behavior — undiminished, but
     // unable to claim it checked something it didn't.
-    if (occ.pid !== undefined && isPidAlive(occ.pid)) {
-      this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
-      return;
+    if (occ.pid !== undefined) {
+      const root = probeRememberedRootProcess(occ.pid, worktreePath);
+      if (root.state !== "gone") {
+        this.worktreeOccupancy.set(key, { ...occ, state: "dirty" });
+        return;
+      }
     }
     if (occ.pid === undefined) console.warn(`[tachyon] worktree occupancy freed on tmux-session-gone alone for '${occ.agentId}' — no pid was captured to verify its root process also exited`);
     this.worktreeOccupancy.delete(key);
