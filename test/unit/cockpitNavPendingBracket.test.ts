@@ -85,7 +85,11 @@ function depsFor(all: Workspace[], overrides: { collect?: () => Promise<CockpitW
   });
 }
 
-const posted = () => __createdPanels[0].webview.posted as Array<{ type?: string; routeKey?: string }>;
+const posted = () => __createdPanels[0].webview.posted as Array<{
+  type?: string;
+  routeKey?: string;
+  model?: { activeRoute?: { kind?: string; wsHash?: string; taskId?: string } };
+}>;
 const postedTypes = (): string[] => posted().map((m) => m.type ?? "");
 /** Index of the first message of a type, or -1 — ordering is the point of most assertions here. */
 const firstIndexOf = (type: string): number => postedTypes().indexOf(type);
@@ -208,6 +212,10 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     // Second click supersedes while the first is parked inside collect().
     __createdPanels[0].webview.__receive({ type: "openTask", id: second.id });
     await flush();
+    const modelsBeforeStaleSettles = posted().filter((m) => m.type === "model");
+    expect(modelsBeforeStaleSettles.at(-1)).toMatchObject({
+      model: { activeRoute: { kind: "task-detail", wsHash: ws.wsHash, taskId: second.id } },
+    });
     release?.();
     await flush();
     await flush();
@@ -218,6 +226,15 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     // wants, dropping the UI back to "loaded" while the real destination is still loading.
     expect(staleReady, `stale routeReady leaked: ${JSON.stringify(after)}`).toHaveLength(0);
     expect(after.some((m) => m.type === "routePending" && m.routeKey === `task-detail:${ws.wsHash}:${second.id}`)).toBe(true);
+    // The model whose collect() began for the first route is stale too. Dropping it is expected,
+    // but must not leave the live panel model-less: the superseding hot navigation schedules and
+    // delivers its own model before the old collect settles. Releasing the old call must therefore
+    // add no model and cannot overwrite the current route with old workspace data.
+    const modelsAfterStaleSettles = posted().filter((m) => m.type === "model");
+    expect(modelsAfterStaleSettles).toHaveLength(modelsBeforeStaleSettles.length);
+    expect(modelsAfterStaleSettles.at(-1)).toMatchObject({
+      model: { activeRoute: { kind: "task-detail", wsHash: ws.wsHash, taskId: second.id } },
+    });
   });
 
   it("still delivers model before task — the t-9993cc ordering this feature must not disturb", async () => {
