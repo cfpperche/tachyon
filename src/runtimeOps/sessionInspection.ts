@@ -98,6 +98,60 @@ export function redactCommand(argv: readonly string[], secrets: readonly string[
 }
 
 /**
+ * t-a5d827 — replace the VALUE of a session-identity flag, not the flag itself.
+ *
+ * Grok's live argv is `grok -s <uuid> …`; Claude/Codex use `--resume <id>`. The panel must show that
+ * a session was resumed or continued, never the identifier. Matching on value shape (UUID regex) is
+ * deliberately avoided: a secret that does not look like a UUID would slip through, and a path that
+ * happens to look like one would be destroyed. The previous token is the authority, same as tokens.
+ */
+const SESSION_IDENTITY_FLAGS = new Set(["-s", "--session", "--resume"]);
+
+export function redactSessionArguments(argv: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]!;
+    if (SESSION_IDENTITY_FLAGS.has(arg) && index + 1 < argv.length && !argv[index + 1]!.startsWith("-")) {
+      out.push(arg, "[session id — not shown]");
+      index++;
+      continue;
+    }
+    let replaced = arg;
+    for (const flag of ["--resume=", "--session="]) {
+      if (replaced.startsWith(flag) && replaced.length > flag.length) {
+        replaced = `${flag}[session id — not shown]`;
+        break;
+      }
+    }
+    out.push(replaced);
+  }
+  return out;
+}
+
+/**
+ * t-a5d827 — a settings value under an auth/token/secret key is presence, not content.
+ *
+ * Env-style refs (`${TACHYON_AGENT_BRIDGE_TOKEN}`) stay visible: they are the mechanism, not a secret.
+ * Boolean and the panel's own presence prose pass through. Everything else under a sensitive key is
+ * redacted so a leaked credential in a projected header never reaches the webview.
+ */
+export function isSensitiveSettingKey(key: string): boolean {
+  // `headers.` catches any MCP header cell (Authorization, and anything else a server might mint).
+  // Matching on value shape is avoided — a secret that does not look like one would slip through.
+  return /token|secret|password|authorization|credentials|auth\.json|headers\./i.test(key);
+}
+
+export function redactSettingValue(key: string, rendered: string): string {
+  if (!isSensitiveSettingKey(key)) return rendered;
+  // auth.json rows are host-authored presence claims the Grok reader already phrased safely.
+  if (key === "auth.json") return rendered;
+  if (rendered.includes("${")) return rendered;
+  if (rendered === "true" || rendered === "false" || rendered === "null" || rendered === "") return rendered;
+  if (rendered.startsWith("private reconciled copy")) return rendered;
+  return REDACTED;
+}
+
+/**
  * An argv entry this long WITH line breaks is prose, not a flag or a path. Both bounds matter: a long
  * path has no newlines, and a short multi-line value is not a brief.
  */

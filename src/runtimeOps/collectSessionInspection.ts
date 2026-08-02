@@ -4,11 +4,14 @@ import {
   foldWrappedStatusLine,
   inspectEnv,
   redactCommand,
+  redactSessionArguments,
+  redactSettingValue,
   type InspectedSession,
   type InspectedSetting,
 } from "./sessionInspection.js";
 import { claudeSessionReader } from "./claudeSessionReader.js";
 import { codexSessionReader } from "./codexSessionReader.js";
+import { grokSessionReader } from "./grokSessionReader.js";
 import type { RuntimeSessionReader } from "./sessionSources.js";
 
 /**
@@ -41,6 +44,7 @@ export interface SessionInspectionPorts {
 const RUNTIME_READERS: Readonly<Record<string, RuntimeSessionReader>> = {
   claude: claudeSessionReader,
   codex: codexSessionReader,
+  grok: grokSessionReader,
 };
 
 /** Objects are summarized rather than dumped: the panel answers "what is set", not "paste the JSON". */
@@ -52,6 +56,11 @@ function renderValue(value: unknown): string {
     return Object.entries(record).map(([key, inner]) => `${key}=${renderValue(inner)}`).join(" · ");
   }
   return JSON.stringify(value ?? null);
+}
+
+/** Render, then redact: a secret key must never depend on a length heuristic to stay hidden. */
+function renderSettingValue(key: string, value: unknown): string {
+  return redactSettingValue(key, renderValue(value));
 }
 
 export async function collectSessionInspection(input: {
@@ -73,7 +82,7 @@ export async function collectSessionInspection(input: {
 
   const settings: InspectedSetting[] = (found?.settings ?? []).map((entry) => ({
     key: entry.key,
-    value: renderValue(entry.value),
+    value: renderSettingValue(entry.key, entry.value),
     origin: entry.hostAuthored
       ? "host"
       : classifySetting(entry.key, {
@@ -96,7 +105,9 @@ export async function collectSessionInspection(input: {
     .map(([, value]) => value);
 
   // Redact BEFORE folding: a secret must never depend on a length heuristic to stay hidden.
-  const launch = foldProseArguments(argv ? redactCommand(argv, secrets) : []);
+  // Session ids are redacted by flag, not by value shape — Grok's `-s <uuid>` is otherwise legible
+  // in the launch command, and the panel's rule is show that a session exists, not which one.
+  const launch = foldProseArguments(argv ? redactSessionArguments(redactCommand(argv, secrets)) : []);
 
   return {
     agent,
