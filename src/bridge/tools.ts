@@ -1682,6 +1682,16 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name }) => {
       try {
+        const info = await managedEntry(deps, name);
+        // t-a76aed — for a running Temporary that owns a checkout, kill IS the reachable end-of-life
+        // door: AgentManager.kill removes the row, so the documented follow-up `dismiss_agent` can only
+        // answer "not found". Run the same worktree cascade dismiss uses while the owning row still
+        // exists. Do not put this in AgentManager.kill: removeAgentWorktree itself uses manager.kill to
+        // stop occupancy, so doing that would recurse (and would double-remove through the other doors).
+        if (info?.lifetime === "temporary" && deps.agentWorktrees?.ledger.get(name)?.worktree) {
+          const released = await dismissOwnedWorktree(deps, name);
+          return ok(dismissReceipt(name, released));
+        }
         await deps.manager.kill(name);
         return ok(`agent '${name}' killed`);
       } catch (err) {

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import { registerTools } from "../../src/bridge/tools.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
@@ -50,6 +52,7 @@ interface DismissWorld {
   ledger: Map<string, { worktree?: WorktreeRecord }>;
   registry: Map<string, WorktreeRecord | null>;
   dismiss: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>;
+  kill: (args: Record<string, unknown>) => Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }>;
 }
 
 /**
@@ -81,7 +84,14 @@ function dismissWorld(opts: {
       events.push("probe");
       return verdicts[Math.min(probe++, verdicts.length - 1)]!;
     },
-    kill: async () => { events.push("kill"); },
+    // Real AgentManager.kill collects a non-persistent Temporary row. The removal cascade captures
+    // the worktree record before this call, so it can still finish git + registry cleanup afterwards.
+    kill: async () => {
+      events.push("kill");
+      // The ordinary successful stop collects the Temporary row. The unknown fixture models the
+      // cascade's refusal contract and deliberately leaves ownership intact for that assertion.
+      if (verdicts.some((verdict) => verdict.state === "free")) ledger.delete("child");
+    },
     releaseOwnedWorktreeForRemoval: async () => { events.push("release"); },
     dismissTemporary: () => { events.push("dismiss-row"); ledger.delete("child"); },
   };
@@ -108,8 +118,65 @@ function dismissWorld(opts: {
       },
     },
   } as never);
-  return { events, notices, ledger, registry, dismiss: mcp.handlers.get("dismiss_agent")!, };
+  return {
+    events,
+    notices,
+    ledger,
+    registry,
+    dismiss: mcp.handlers.get("dismiss_agent")!,
+    kill: mcp.handlers.get("kill_agent")!,
+  };
 }
+
+describe("t-a76aed — all four Temporary end-of-life doors carry the worktree step", () => {
+  /**
+   * Local topology guard in the shape of taskStoreSinkWiring.test.ts: enumerate the four known doors
+   * around the critical sink. This intentionally does not regex the whole repository — most raw kills
+   * are honest stop/restart operations, while these four named triggers mean permanent removal.
+   */
+  it("enumerates UI delete, Bridge dismiss, Agent Studio Forget, and Bridge kill", () => {
+    const bridge = fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8");
+    const operations = fs.readFileSync(path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"), "utf8");
+    const workspace = fs.readFileSync(path.join(process.cwd(), "src/workspace/Workspace.ts"), "utf8");
+
+    const door = (source: string, start: string, end: string): string => {
+      const from = source.indexOf(start);
+      const to = source.indexOf(end, from + start.length);
+      expect(from, `missing door ${start}`).toBeGreaterThanOrEqual(0);
+      expect(to, `missing end marker ${end}`).toBeGreaterThan(from);
+      return source.slice(from, to);
+    };
+
+    expect(door(operations, "async function deleteConfiguredAgent(", "async function promoteAgent("))
+      .toContain("removeAgentWorktree(workspace, agent, true)");
+    expect(door(bridge, '"dismiss_agent",', '"restart_agent",'))
+      .toContain("dismissOwnedWorktree(deps, name)");
+    expect(door(workspace, "async forgetAgentProfileAgentCascade(", "/** Recoverable retirement"))
+      .toContain("removeAgentWorktree(this, name, true)");
+    expect(door(bridge, '"kill_agent",', '"dismiss_agent",'))
+      .toContain("dismissOwnedWorktree(deps, name)");
+  });
+
+  it("Bridge kill removes checkout, branch, registry and row through the shared cascade", async () => {
+    const world = dismissWorld();
+
+    const result = await world.kill({ name: "child" });
+
+    expect(result.isError).toBeFalsy();
+    expect(world.events).toEqual([
+      "probe",
+      "kill",
+      "probe",
+      "release",
+      "git-remove /checkouts/child deleteBranch=true",
+      "ledger-clear",
+      "registry-sync",
+    ]);
+    expect(world.ledger.has("child")).toBe(false);
+    expect(world.registry.get("child")).toBeNull();
+    expect(result.content[0]?.text).toContain("branch 'tachyon/child' was deleted");
+  });
+});
 
 describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => {
   it("runs the SHARED cascade before the row is dropped, and leaves neither record claiming the checkout", async () => {
