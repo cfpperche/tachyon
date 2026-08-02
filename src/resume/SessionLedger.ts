@@ -7,6 +7,7 @@ import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { VerifyState } from "../worktree/verify.js";
+import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { Role } from "../roles/templates.js";
 import type { SoulSnapshot } from "../agents/promptLayers.js";
@@ -567,10 +568,40 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
     ...(typeof o.baseBranch === "string" ? { baseBranch: o.baseBranch } : {}), // spec 223
     createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
     ...(parseVerify(o.verify) ? { verify: parseVerify(o.verify) } : {}),
+    ...((): { dependencies?: SharedDependencyState } => {
+      const deps = parseDependencies(o.dependencies);
+      return deps ? { dependencies: deps } : {};
+    })(),
     ...((): { evidence?: WorktreeEvidence[] } => {
       const ev = parseEvidenceArray(o.evidence);
       return ev.length > 0 ? { evidence: ev } : {};
     })(),
+  };
+}
+
+/**
+ * t-3f93b4 — defensive parse of the dependency-sharing decision, in the shape of `parseVerify`.
+ *
+ * It has to survive the round-trip for the same reason the verify verdict does: it is the value a
+ * later divergence is MEASURED AGAINST. Dropped here, `auditSharedDependencies` would read
+ * `undefined`, conclude "nothing to check", and let the verify gate grade a worktree against the
+ * primary checkout's packages — the silence this task exists to end, reintroduced one layer down.
+ *
+ * A malformed or unrecognized mode yields undefined rather than a default: "I do not know what this
+ * checkout's dependencies are" is a fact worth keeping, and every consumer already handles it by
+ * saying nothing instead of claiming something.
+ */
+function parseDependencies(d: unknown): SharedDependencyState | undefined {
+  if (typeof d !== "object" || d === null) return undefined;
+  const o = d as Record<string, unknown>;
+  if (o.mode !== "linked" && o.mode !== "absent" && o.mode !== "own") return undefined;
+  if (typeof o.lockDigest !== "string" || o.lockDigest.length === 0) return undefined;
+  return {
+    mode: o.mode,
+    lockDigest: o.lockDigest,
+    ...(typeof o.target === "string" ? { target: o.target } : {}),
+    reason: typeof o.reason === "string" ? o.reason : "",
+    at: typeof o.at === "string" ? o.at : new Date(0).toISOString(),
   };
 }
 

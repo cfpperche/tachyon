@@ -460,7 +460,7 @@ export interface TachyonConfig {
      * spec 214 — global default verify-gate; t-aaad95 — `revealInWorkspace` (default true), migrated
      * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
      */
-    worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean };
+    worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
     /** spec 362/385 — the project's own verification commands, shown in the primer. */
     verify?: {
       full?: string;
@@ -1488,7 +1488,7 @@ export function parseConfig(yamlText: string): ParseResult {
           errors.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
-          const out: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean } = {};
+          const out: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean } = {};
           if (wt.base !== undefined) {
             if (typeof wt.base !== "string" || wt.base.trim().length === 0) errors.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
@@ -1516,8 +1516,17 @@ export function parseConfig(yamlText: string): ParseResult {
             if (typeof wt.revealInWorkspace !== "boolean") errors.push("settings.worktree.revealInWorkspace: must be a boolean");
             else out.revealInWorkspace = wt.revealInWorkspace;
           }
+          // t-3f93b4 — link a fresh worktree's `node_modules` to the primary checkout's when the two
+          // lockfiles are byte-identical (default true). The opt-out exists because sharing one
+          // dependency directory across checkouts is a real product decision, not a free win: a
+          // workspace whose tooling writes INTO node_modules per-checkout can say no here without
+          // having to give up worktree isolation itself.
+          if (wt.shareDependencies !== undefined) {
+            if (typeof wt.shareDependencies !== "boolean") errors.push("settings.worktree.shareDependencies: must be a boolean");
+            else out.shareDependencies = wt.shareDependencies;
+          }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch", "verify", "revealInWorkspace"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }

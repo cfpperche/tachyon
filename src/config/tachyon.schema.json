@@ -334,6 +334,11 @@
               "type": "boolean",
               "default": true,
               "description": "Reveal each running agent's isolated git worktree as a folder in this multi-root workspace, and remove it on cleanup (self-heals stale entries left by a prior reload). Only applies when the window is already multi-root — a single-folder window is left untouched to avoid forcing a reload."
+            },
+            "shareDependencies": {
+              "type": "boolean",
+              "default": true,
+              "description": "Link a fresh worktree's node_modules to the primary checkout's when both checkouts' lockfiles are byte-identical, instead of leaving the agent to install its own copy. Re-decided on every launch: if the lockfiles diverge the link is removed and the agent is told it must install, never left pointing at the wrong packages. Set false for a workspace whose tooling writes into node_modules per-checkout."
             }
           }
         },

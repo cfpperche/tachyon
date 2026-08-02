@@ -121,6 +121,7 @@ import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { shareDependencies, auditSharedDependencies } from "../worktree/dependencySharing.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
@@ -1166,6 +1167,9 @@ export class Workspace {
             }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
+            // t-3f93b4 — the workspace root is the only thing this needs that the resolver cannot
+            // reach; everything else is a decision `dependencySharing.ts` makes on its own.
+            shareDependencies: (worktreePath) => shareDependencies({ workspaceRoot: this.workspaceRoot, worktreePath }),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
         );
@@ -4383,6 +4387,27 @@ export class Workspace {
     if (!fs.existsSync(wt.path)) throw new Error(this.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
     const verify = effectiveVerify(asAgent(this.config?.agents[agent]) ?? {}, this.config?.settings ?? {});
     if (!verify) throw new Error(this.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
+
+    // t-3f93b4 — the one door a MID-SESSION lockfile edit comes through. Creation and relaunch are
+    // re-decided by `shareDependencies`, but an agent that edits `package-lock.json` at 10:00 reaches
+    // neither, and this is where that edit would otherwise turn into a recorded green computed from
+    // the primary checkout's packages. Refusing here is the same class of refusal as the three above
+    // it — "I cannot produce a truthful verdict" — not a new gate. Two file reads and a hash, paid
+    // once per verify run, ahead of a check that costs minutes.
+    const diverged = auditSharedDependencies({
+      workspaceRoot: this.workspaceRoot,
+      worktreePath: wt.path,
+      state: wt.dependencies,
+    });
+    if (diverged) {
+      const message = this.t(
+        "'{0}' cannot be verified: {1}. Replace the link with this branch's own install, then re-run verify.",
+        agent,
+        diverged,
+      );
+      this.host.notify(message, "error");
+      throw new Error(message);
+    }
 
     // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
     const { headRef } = await this.worktrees.headState(wt.path);

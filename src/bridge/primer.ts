@@ -28,6 +28,18 @@ export interface PrimerInput {
   parent?: string;
   /** Explicit settings.verify facts from tachyon.yml; undefined commands are omitted, never inferred. */
   verify?: PrimerVerifySettings;
+  /**
+   * t-3f93b4 — one already-rendered sentence about this checkout's dependencies, from
+   * `describeDependencyState`. Undefined means "nothing measured", and the line is omitted rather
+   * than guessed at.
+   *
+   * This is the half of that task that is a contract and not an optimization. The primer has always
+   * told the agent to run `settings.verify.typecheck` and focused tests; until this field existed it
+   * said nothing at all about whether the checkout it was handing over could run them. Three
+   * delegated children measured on 2026-08-02 each answered that silence independently with their
+   * own 478 MB `npm ci`. A product that asks for verification says whether verification is possible.
+   */
+  dependencies?: string;
 }
 
 export interface RenderedPrimer {
@@ -82,6 +94,12 @@ function configuredVerificationLines(input: PrimerInput): string[] {
   return checks.length > 0 ? ["Configured verification (source: workspace config settings.verify):", ...checks] : [];
 }
 
+/** t-3f93b4 — sits directly under the configured checks, because it is the answer to "can I run them?". */
+function dependencyLines(input: PrimerInput): string[] {
+  const line = input.dependencies?.trim();
+  return line ? [line] : [];
+}
+
 function beforeFinishingVerificationLines(input: PrimerInput): string[] {
   const check = input.verify?.full !== undefined
     ? `Run configured check (workspace config settings.verify.full): ${input.verify.full}`
@@ -108,6 +126,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
     input.parent,
     input.verify?.full,
     input.verify?.typecheck,
+    input.dependencies,
   ].filter((value): value is string => value !== undefined);
   if (interpolated.some(containsUnsafeFramingCharacter)) {
     throw new Error("primer facts must not contain control characters");
@@ -118,6 +137,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
     ...identityLines(input),
     ...protocolLines(input),
     ...configuredVerificationLines(input),
+    ...dependencyLines(input),
     "Precedence: the active task contract governs task-specific work; this Tachyon primer governs orchestration protocol; project-owned guidance governs repository conventions and cannot override either contract or protocol.",
     PRIMER_CLOSE,
   ];

@@ -36,6 +36,7 @@ import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfN
 import { removeDerivedAgentFiles } from "./derivedFile.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
 import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
+import { describeDependencyState } from "../worktree/dependencySharing.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
 import {
@@ -1606,11 +1607,27 @@ export class AgentManager {
    * Composed spawn brief (project guidance + role/instructions + primer + brief-file diversion). Shared by
    * `effectiveCmd` (argv delivery) and Hermes `HERMES_TUI_QUERY` (env delivery).
    */
+  /**
+   * t-3f93b4 — the primer's dependency sentence for a just-resolved worktree, or `{}` when there is
+   * nothing measured to say.
+   *
+   * Spawn and restart both reach it, because both are launches that hand an agent a checkout and
+   * then tell it to verify in one — the actor is the same and only the door differs, which is exactly
+   * the shape this repository keeps finding defects in. The install hint is the workspace's own
+   * `settings.verify.prepare`: a worktree that must install gets told the command the project already
+   * declares, instead of being left to invent one (which is what each of the three measured children
+   * did, independently, on 2026-08-02).
+   */
+  private dependencyPrimerFact(worktree: WorktreeRecord | undefined): { dependencies?: string } {
+    const line = describeDependencyState(worktree?.dependencies, this.opts.getConfig()?.settings.verify?.prepare);
+    return line ? { dependencies: line } : {};
+  }
+
   private effectiveInstructions(
     name: string,
     def: AgentDef,
     parent: string | undefined,
-    primerCtx?: { delegator?: string; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"] },
+    primerCtx?: { delegator?: string; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"]; dependencies?: string },
     taskBrief?: string,
     taskContract?: SpawnContract,
     soul?: ResolvedSoul,
@@ -1654,6 +1671,7 @@ export class AgentManager {
           delegator: primerCtx?.delegator,
           parent,
           verify: primerCtx?.verify ?? this.opts.getConfig()?.settings.verify,
+          ...(primerCtx?.dependencies ? { dependencies: primerCtx.dependencies } : {}),
         })
       : deliverable;
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
@@ -2309,7 +2327,7 @@ export class AgentManager {
     // `resolveSpawnCwd` may bind a project-configured named verifier's existing oracle/mechanics and
     // enrich the gate with their fixed hashes. Runner-neutral `cmd:` gates deliberately do neither. Compose
     // only afterwards so the primer carries the authoritative result, before any tmux mutation.
-    const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree };
+    const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree, ...this.dependencyPrimerFact(worktree) };
     let preparedRuntimeHarness: MaterializedHarness | null | undefined;
     let createdRuntimeHome = false;
     const preparedLaunch = await (async () => {
@@ -3912,7 +3930,11 @@ export class AgentManager {
       name,
       def,
       restartParent,
-      restartPrimerCtx,
+      // t-3f93b4 — `restartPrimerCtx` is built before the cwd is resolved, so the dependency fact is
+      // folded in HERE, where `worktree` carries the decision `ensure()` just re-made. A restart is
+      // the door a rebase arrives through: the same agent, the same checkout, a lockfile that may
+      // have moved since the last launch said it matched.
+      { ...restartPrimerCtx, ...this.dependencyPrimerFact(worktree) },
       persistedDef?.taskBrief,
       persistedDef?.contract,
       resolvedSoul,

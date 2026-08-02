@@ -46,6 +46,7 @@ settings:
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
   #   revealInWorkspace: true     # show each running agent's worktree as a folder (multi-root windows only)
+  #   shareDependencies: true     # link node_modules to the primary checkout while the lockfiles match (default true)
   # maxAgents: 8                  # fork-bomb guardrail (default 8)
   # agentMemoryMax: "2G"          # opt-in systemd --user MemoryMax per agent spawn tree (Linux only)
   # taskNotifications:            # human-facing toasts for task create/edit events

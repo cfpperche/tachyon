@@ -20,6 +20,7 @@ import type { AgentEntry, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
 import type { VerifyState } from "./verify.js";
 import type { WorktreeEvidence } from "./evidence.js";
+import type { SharedDependencyState } from "./dependencySharing.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
 
 /** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
@@ -39,6 +40,13 @@ export interface WorktreeRecord {
   createdAt: string;
   /** spec 214 (C3) — last verify-gate result, keyed to the commit it ran against (staleness). */
   verify?: VerifyState;
+  /**
+   * t-3f93b4 — whether this checkout's `node_modules` is shared with the primary, and the lockfile
+   * digest that made sharing legitimate. Persisted for the same reason `verify` is: the value is a
+   * claim about a commit-shaped state, so it has to travel with the record that outlives the launch
+   * in order for a later divergence to be a COMPARISON rather than a guess.
+   */
+  dependencies?: SharedDependencyState;
   /** spec 273 — the neutral non-binary evidence channel (bounded; HEAD-only staleness, never a gate). */
   evidence?: WorktreeEvidence[];
 }
@@ -344,6 +352,14 @@ export interface EnsureOptions {
    * the path and start before setup finishes (review fix). Omit on restart/reuse.
    */
   runSetup?: (rec: WorktreeRecord) => Promise<void>;
+  /**
+   * t-3f93b4 — reconcile `<worktree>/node_modules` against the primary checkout, and hand back what
+   * is now true. Runs on BOTH the create and the reuse paths, under the same lock, because create
+   * and restart/resume/relaunch are one mechanism reached through different doors — a check wired
+   * only into create would link a matching lockfile once and then never notice the rebase that broke
+   * it. Also runs BEFORE `runSetup`, so a `worktreeSetup` that builds can see the dependencies.
+   */
+  shareDependencies?: (worktreePath: string) => SharedDependencyState | undefined;
 }
 
 /**
@@ -684,6 +700,10 @@ export class WorktreeManager {
         const srcBranch = srcProbe.code === 0 ? srcProbe.stdout.trim() : "";
         baseBranch = srcBranch && srcBranch !== "HEAD" ? srcBranch : undefined;
       }
+      // t-3f93b4 — RE-decide, never carry forward. `prior.dependencies` records what was true at the
+      // last launch; a branch that rebased onto a base with a different lockfile since then would
+      // otherwise relaunch still claiming a link that is now wrong. Recomputing is two file reads.
+      const dependencies = o.shareDependencies?.(wtPath);
       const record: WorktreeRecord = {
         path: wtPath,
         branch: o.branch,
@@ -694,6 +714,7 @@ export class WorktreeManager {
         // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
         // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).
         ...(o.prior?.verify ? { verify: o.prior.verify } : {}),
+        ...(dependencies ? { dependencies } : {}),
       };
       return {
         record,
@@ -733,6 +754,11 @@ export class WorktreeManager {
       if (initialHeadProbe.code !== 0 || initialHeadProbe.stdout.trim() !== initialHead) {
         throw new Error("fresh worktree HEAD could not be resolved at its expected branch tip");
       }
+      // t-3f93b4 — the checkout exists and is at its expected tip, so its lockfile is now readable.
+      // Decide dependency sharing BEFORE setup, so a `worktreeSetup` that builds or tests is not the
+      // thing that discovers the worktree has nothing installed.
+      const dependencies = o.shareDependencies?.(wtPath);
+      if (dependencies) record.dependencies = dependencies;
       // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
       // concurrent reuse-spawn can race into the half-set-up worktree.
       if (o.runSetup) await o.runSetup(record);
@@ -1071,6 +1097,12 @@ export interface WorktreeResolveDeps {
   priorRecord?: WorktreeRecord;
   /** run worktreeSetup in the fresh worktree (sequential/stop-on-failure/non-fatal) — only on create */
   runSetup: (rec: WorktreeRecord, setup: string[]) => Promise<void>;
+  /**
+   * t-3f93b4 — reconcile the worktree's `node_modules` against the primary checkout's. Injected the
+   * way `runSetup` is, because it needs the workspace root and a filesystem this module has no
+   * business reaching for itself. Omitted → no sharing at all (what every caller did before t-3f93b4).
+   */
+  shareDependencies?: (worktreePath: string) => SharedDependencyState | undefined;
   notify: (message: string, level?: "info" | "warn" | "error") => void;
 }
 
@@ -1188,6 +1220,11 @@ export async function resolveWorktreeCwd(
   // Setup runs ONCE, only on a fresh create (not restart) — handed to ensure() so it runs
   // under the per-agent lock (review fix: setup must not race a concurrent reuse-spawn).
   const wantSetup = !ctx.isRestart && !!ctx.worktreeSetup && ctx.worktreeSetup.length > 0;
+  // t-3f93b4 — unlike setup, this runs on EVERY launch including restart: setup is a one-time build
+  // step, while dependency sharing is a claim about the lockfile that has to be re-checked each time
+  // the branch could have moved. Default ON; `settings.worktree.shareDependencies: false` opts a
+  // workspace out for which sharing one directory across checkouts is genuinely wrong.
+  const wantShare = deps.settings.worktree?.shareDependencies !== false && deps.shareDependencies;
   try {
     const { record: rec, created, initialHead, preparationLocked } = await deps.manager.ensure({
       agent: ctx.name,
@@ -1197,8 +1234,15 @@ export async function resolveWorktreeCwd(
       // has to recreate a missing checkout, this also ensures its fresh `worktree add` is finalized.
       quarantineForLaunch: true,
       runSetup: wantSetup ? (r) => deps.runSetup(r, ctx.worktreeSetup as string[]) : undefined,
+      ...(wantShare ? { shareDependencies: deps.shareDependencies } : {}),
     });
     announceDiscardedCwd(ctx, deps, rec.path, "it runs in its own git worktree, which IS its working directory");
+    // t-3f93b4 — divergence is never a silent downgrade. `absent` after a lockfile mismatch means the
+    // agent is about to be handed a checkout its primer tells it to verify in and it cannot; the
+    // human hears it here, and the agent hears the same fact in its primer.
+    if (rec.dependencies?.mode === "absent") {
+      deps.notify(`'${ctx.name}' has no shared node_modules — ${rec.dependencies.reason}`, "warn");
+    }
     return {
       cwd: rec.path,
       worktree: rec,
