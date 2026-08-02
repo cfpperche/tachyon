@@ -1399,6 +1399,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               wsHash: ws.wsHash,
               tachyonCreatedBranch: e.tachyonCreatedBranch === true,
               classification: e.classification as NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["classification"],
+              // t-621613 — anything the engine did not state reads as `unknown`, which the tab
+              // treats as "somebody lives here". An older engine that never sends it lands there.
+              ownerPresence: e.ownerPresence === "absent" || e.ownerPresence === "present" ? e.ownerPresence : "unknown",
             };
           });
         } catch (err) {

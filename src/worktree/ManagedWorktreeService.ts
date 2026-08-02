@@ -164,7 +164,7 @@ export class ManagedWorktreeService {
   async listClassified(filter?: {
     kind?: ManagedWorktreeKind;
     status?: ManagedWorktreeEntry["status"];
-  }): Promise<Array<ManagedWorktreeEntry & { classification: WorktreeClassification }>> {
+  }): Promise<Array<ManagedWorktreeEntry & { classification: WorktreeClassification; ownerPresence: OwnerPresence }>> {
     const entries = this.list(filter);
     // t-24e28d — the trunk is a property of the REPOSITORY, so it is discovered once per sweep against
     // the workspace root rather than re-probed inside every entry's checkout. Resolving it here also
@@ -172,6 +172,10 @@ export class ManagedWorktreeService {
     const trunkRefs = await resolveTrunkRefs(this.git, this.opts.workspaceRoot);
     return Promise.all(
       entries.map(async (entry) => {
+        // t-621613 — carried on every row because a reader deciding what to DO with an agent entry
+        // needs it: the surfaces that offer a removal gate on `kind === "agent"`, and without this
+        // they cannot tell a home with somebody in it from residue nobody can otherwise reach.
+        const ownerPresence = await this.ownerPresenceOf(entry);
         try {
           const classification = await classifyManagedWorktree(entry, {
             git: this.git,
@@ -179,10 +183,11 @@ export class ManagedWorktreeService {
             occupancy: this.opts.occupancy,
             trunkRefs,
           });
-          return { ...entry, classification };
+          return { ...entry, classification, ownerPresence };
         } catch (err) {
           return {
             ...entry,
+            ownerPresence,
             classification: {
               state: "needs-review" as const,
               reasons: [`classification failed: ${err instanceof Error ? err.message : String(err)}`],

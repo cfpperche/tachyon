@@ -111,6 +111,14 @@ export interface CockpitWorktreeRow {
    * (the classifier itself threw); the client must never treat "absent" as "safe".
    */
   classification?: import("../worktree/classify.js").WorktreeClassification;
+  /**
+   * t-621613 — for an `agent` row, whether the agent it belongs to still exists anywhere Tachyon
+   * knows. Computed host-side alongside `classification` (it reads the roster, the ledger and tmux).
+   * `absent` is the only value that unlocks anything: `unknown` — an unreadable roster, an ambiguous
+   * tmux read, or a row from the fail-closed fallback that never asked — must read as "somebody
+   * lives here", exactly as it does in the engine's own authority decision.
+   */
+  ownerPresence?: import("../worktree/hygieneAuthority.js").OwnerPresence;
 }
 
 /**

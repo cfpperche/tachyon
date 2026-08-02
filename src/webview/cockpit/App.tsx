@@ -1022,7 +1022,12 @@ function WorktreesHygiene({
     // t-e722ce — an agent's checkout is not this tab's to remove. The engine refuses it outright;
     // hiding the control here is so a human is not invited into that refusal, and the row stays
     // VISIBLE because "where did my agent's worktree go" is a question this tab should still answer.
-    const studioOwned = row.kind === "agent";
+    // t-621613 — unless the agent is PROVED gone. Agent Studio → Forget is reached by name, so it
+    // cannot act on an entry whose agent is in no roster and no ledger: pointing a human at it there
+    // sends them to a door that is not there, and the checkout ends up cleared by raw git instead.
+    // `unknown` keeps the row read-only, exactly as the engine's own authority decision does.
+    const orphaned = row.kind === "agent" && row.ownerPresence === "absent";
+    const studioOwned = row.kind === "agent" && !orphaned;
     const selectable = !studioOwned && (group === "ready-to-remove" || group === "record-only");
     const op: "remove" | "forget" = group === "ready-to-remove" ? "remove" : "forget";
     const occupant = row.classification?.occupant;
@@ -1064,6 +1069,10 @@ function WorktreesHygiene({
               <span class="ck-wt-reason-warn">⚠ {reasons.join("; ")}</span>
             ) : null}
             {group === "record-only" ? <span class="ck-wt-reason-muted">{reasons.join("; ")}</span> : null}
+            {/* t-621613 — a REASON, so it sits with the other reasons rather than in the actions
+                column: measured at 880px, a sentence next to the buttons squeezed the row's main
+                column into a four-character strip and wrapped the branch mid-word. */}
+            {orphaned ? <span class="ck-wt-reason-muted">{s.wtAgentGone}</span> : null}
           </>
         }
         detail={group !== "record-only" && row.path ? <span class="ck-mono">{row.path}</span> : undefined}

@@ -717,6 +717,8 @@ function strings(): CockpitStrings {
     wtRecordDesc: t("The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row."),
     wtRemoveCheckout: t("Remove checkout"),
     wtAgentOwned: t("Managed by Agent Studio → Forget"),
+    // t-621613 — this row's agent is in no roster and no ledger, so Forget cannot reach it.
+    wtAgentGone: t("Agent no longer exists — leftover checkout"),
     wtForgetRecord: t("Forget record"),
     wtAlsoDeleteBranch: t("Also delete local branch"),
     wtSelectAll: t("Select all"),
