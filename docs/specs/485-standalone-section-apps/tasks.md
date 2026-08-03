@@ -2,51 +2,134 @@
 
 _Generated from `plan.md` on 2026-08-02. Work top-to-bottom. Check boxes as tasks complete. If a task reveals the plan is wrong, update `plan.md` before continuing._
 
+Phases A and B move no surface and must land first. Everything from C on is one PR per surface, with
+maintainer visual sign-off before release (convention agreed 2026-08-02).
+
 ## Implementation
 
-- [ ] {{task — small, unambiguous, ordered}}
-- [ ] {{task}}
-- [ ] {{task}}
+### Phase A — conformance contract
+
+- [ ] A1. Add `posture` (`conform` | `extend` | `replace`) to each entry in `WEBVIEW_SURFACES`, with
+      `extend` naming the extension points used and `replace` requiring a non-empty reason. Carry
+      410's standing exceptions forward as explicit entries (sidebar, pin-preview, dev-only spec-350
+      fakes, plugin surfaces) — none survives implicitly.
+- [ ] A2. Give the shared shell named extension points (regions/slots) so `extend` is a real posture
+      and not a euphemism for `replace`.
+- [ ] A3. Convert at least one existing surface to `extend` through those points. If every surface
+      lands on `conform`, the points are decorative — say so in `notes.md` and fix before A closes.
+- [ ] A4. Generalize `webviewConvention.test.ts`: an **undeclared** departure fails and names the
+      surface — own page chrome, own pad/token values, mounting outside the shared shell. A declared
+      `replace` passes; an empty reason fails.
+- [ ] A5. Fail-before proof for A4: a scratch surface that bypasses the shell makes the test red, and
+      declaring it turns it green. Record in `notes.md`; do not commit the scratch surface.
+
+### Phase B — visibility gating
+
+- [ ] B1. Add view-state observation to the panel manager layer (`onDidChangeViewState` appears
+      nowhere in the repo today). A hidden panel runs no refresh, no collection, no subscriber
+      callback, and posts no model.
+- [ ] B2. Catch-up on reveal: journal delta where the window covers it, full resync where it does
+      not. A revealed panel is never stale.
+- [ ] B3. Guard by counting WORK, not wall time: with N panels open and one visible, a
+      `views-changed` produces refresh work for the visible panel only.
+- [ ] B4. Apply to the panels that exist today (`AgentPanePanel`, Control) and measure the before/
+      after the same way t-b51923 did — journal events per second with two agents running.
+
+### Phase C — generic manager + the two motivating apps
+
+- [ ] C1. `SectionPanelManager`: configured from the manifest entry, keyed by
+      `viewId + project + identity`, cardinality as a **parameter** (dashboard = one per section per
+      project; document = one per identity). Creates through the shared shell; persists the minimum
+      state `registerTrustedPanelSerializer` needs.
+- [ ] C2. Multi-entry build: one entrypoint per app in a single esbuild invocation with
+      `splitting: true`; Preact and the kit extracted to shared chunks, per-app bootstrap, error
+      boundary and CSS.
+- [ ] C3. Replace `cockpitBundleBudget.test.ts` with a manifest-driven successor measuring each app's
+      eager entry and the reachable total. Record the new numbers in `notes.md` against 410's
+      baseline (~244 KB, gate 350 KB) so a future reader can see whether this reversal cost size.
+- [ ] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task
+      details from different projects open side by side and stay distinct.
+- [ ] C5. **Board as a dashboard app** — one panel per project, revealed rather than duplicated.
+- [ ] C6. Move the project selector into the sidebar Control tab header row (the slot the Agents tab
+      uses for `All · N`), with the host keeping a single writer. Re-anchor
+      `controlWorkspaceScope.test.ts` in the same change.
+- [ ] C7. Guard the identity rule: switching the selector does not retarget an open document.
+- [ ] C8. Launcher tiles and `tachyon.*` commands open/reveal these two apps; their old Control
+      routes become redirects with no dead path left behind.
+- [ ] **CHECKPOINT — stop and use it.** Board beside a terminal, two task details side by side, for a
+      few days. If side-by-side is not what the use wanted, the remaining ten are untouched and the
+      spec's `Done` narrows here. _Strike this only on the maintainer's word — it is insurance, not
+      a technical requirement._
+
+### Phase D — the remaining ten dashboards
+
+- [ ] D1–D10. One PR per section (Overview, Engine, Fleet, Inbox, Worktrees, Execution, Runtime Ops,
+      Runtime Config, tmux, Plugins, Settings — minus any already moved). Each PR: app lands,
+      launcher + commands point at it, old restore state and deep links redirect, that section's
+      renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
+- [ ] D11. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
+      navigation surface left open deliberately by t-aa2780.
+- [ ] D12. Exercise restore with all apps open across editor groups, then reload. Spec 361's
+      machinery has never been tested at this count.
+
+### Phase E — remove Control
+
+- [ ] E1. Remove the internal router, `navEpoch`, the singleton claim (`cockpitSingleton.ts`), the
+      subroute breadcrumb chrome, `Cockpit.ts` and the cockpit entry.
+- [ ] E2. Record the supersession in `docs/specs/410-cockpit-single-app/spec.md` so a reader finds
+      the reversal from either direction, and set this spec's `**Closure:**` line.
 
 ## Verification
 
-_Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
+_Each maps to a checkbox in `spec.md` § Acceptance criteria._
 
-- [ ] {{verify criterion}}
-- [ ] {{verify criterion}}
+- [ ] An undeclared departure from shell or design system fails the build and names the surface (A4).
+- [ ] `extend` passes with no exception entry; `replace` passes only with a non-empty reason (A1, A4).
+- [ ] At least one real surface uses `extend` (A3).
+- [ ] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
+- [ ] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
+- [ ] Switching the project selector does not rewrite an open document (C7).
+- [ ] The selector exists exactly once, in the sidebar Control tab header (C6).
+- [ ] Reload restores every open app to its tab and state (D12).
+- [ ] Every `tachyon.*` command and deep link lands on an app, with no dead redirect (C8, D1–D10).
+- [ ] One app failing to render leaves the others working (C2 — per-app error boundary).
+- [ ] Control's single-app machinery is gone (E1).
+- [ ] 410 records that its app-count decision was superseded (E2).
 
-**Headless check:** `{{command, or "none"}}`
-<!-- A mechanical command an agent can run to validate this spec's implementation
-     without a human (tests / build / lint). Kept green = the spec stays delivered.
-     To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
-       **Verify:** `npm test`
-     `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
-     default, and runs only with --run. Multiple **Verify:** lines run in order. -->
+**Headless check:** `npm run verify:full:quiet`
+
+**Verify:** `npm run verify:full:quiet`
 
 ## Dogfood
 
-**Dogfood:** `{{representative headless dogfood command}}`
-<!-- A representative command that exercises the shipped behavior end-to-end.
-     `/sdd dogfood` previews by default and runs only with --run, then logs under
-     notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
-     the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
+**Dogfood-Opt-Out:** the delivered behaviour is two editor tabs visible at once with live content and
+a project selector that does not rewrite open documents — none of it observable headlessly. The
+mechanical half is covered by `**Verify:**` (conformance contract, hidden-app work count, identity
+rule, restore); the human half is the checkpoint below, which is the point of the spec.
 
-**Human dogfood:** optional
-<!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
-     UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
+**Human dogfood:**
+1. Open the Board and an agent terminal in a split editor. Both live at once.
+2. Open two task details side by side. Both stay their own task.
+3. With a second project open, switch the selector in the sidebar Control tab header. Already-open
+   documents keep their project; newly opened ones follow the selector.
+4. Reload the window. Everything comes back to its tab.
+5. Hide an app behind another tab, change something it shows, bring it forward. It is current.
 
 ## Visual QA
 
-_Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
+Every phase from C on changes a visible surface. Per the convention agreed with the maintainer on
+2026-08-02, each surface PR captures preview screenshots (`npm run preview:webview` + agent-browser)
+and the maintainer sees them **before** the release — validation is part of `done`, not polish.
 
-_Do not create a prototype or evidence file just to satisfy this section. If a durable spec-specific artifact is useful, store it inside this spec directory (for example under `prototypes/` or `evidence/`) and reference its path in backticks after `Prototype:` or `Evidence:`. If it must live elsewhere, declare `**Artifact-Location-Opt-Out:** <reason>`._
+Two findings already justify the cost, neither catchable by a test: a 1px border that made the
+launcher grid read as a grafted widget (t-6e2952), and an Overview action row that clips at 360px
+(t-89ecfe).
 
 - [ ] Evidence:
 - [ ] Verdict:
 
 ## Cookbook
 
-_Optional operator/agent how-to. Not scaffolded by `new`. When this ship adds a Bridge tool, CLI, registry lifecycle, or other usable surface, add `cookbook.md` (via `sdd-cookbook.sh <485>`) and declare **Cookbook:** yes — or **Cookbook-Opt-Out:** &lt;reason&gt;. `close` warns (does not hard-fail) if a likely operator surface ships without either._
-
-<!-- **Cookbook:** yes -->
-<!-- **Cookbook-Opt-Out:** pure internal refactor; no new operator surface -->
+**Cookbook-Opt-Out:** no new operator or agent surface — this reverses where existing screens render.
+The one behavioural rule an operator must know (a document's project is fixed at open) belongs in
+`spec.md`, not in a separate how-to.
