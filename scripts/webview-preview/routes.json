@@ -96,6 +96,25 @@
   },
   {
     "view": "sidebar",
+    "fixture": "engine-log-error",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=engine-log-error",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet",
+      "control tab",
+      "control launcher"
+    ]
+  },
+  {
+    "view": "sidebar",
     "fixture": "declared-owner",
     "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=declared-owner",
     "frame": {

@@ -88,6 +88,20 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
     vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, kind: "agent" }] } as FleetVM,
   },
 
+  /**
+   * t-aa2780 — the engine log-error signal at its new home, which is the only place it now has.
+   *
+   * Control's Engine TAB used to carry this dot; the tab strip is gone, so it lives on the sidebar's
+   * Control tab icon (visible from every tab) and on the Engine tile inside it. A fixture rather than a
+   * description because the thing to judge is whether a 6px mark on an existing icon still reads as an
+   * alarm without looking like damage — which no test can answer and no screenshot of the default
+   * fixture would ever show, since the default has no errors.
+   */
+  "engine-log-error": {
+    provenance: "synthetic-edge",
+    vm: { ...SAMPLE, engineLogHasError: true } as FleetVM,
+  },
+
   "declared-owner": {
     provenance: "synthetic-edge",
     vm: {

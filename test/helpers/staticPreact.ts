@@ -139,6 +139,22 @@ export function renderStatic(node: unknown): string {
   if (typeof type === "function") {
     const component = type as { prototype?: { render?: unknown } };
     if (component.prototype && typeof component.prototype.render === "function") {
+      /**
+       * t-aa2780 — a `<Suspense fallback={…}>` boundary serializes as its FALLBACK.
+       *
+       * `preact/compat`'s Suspense is the one class component these bundles contain, and a static
+       * serializer can never resolve the `lazy()` import behind it — there is no scheduler, no
+       * microtask turn, no chunk loader. The fallback is not a substitute for the real subtree: it
+       * IS what a human sees for the whole window between the click and the chunk landing, and that
+       * window is exactly what Control's section-identity guard is about.
+       *
+       * Identified by shape, not by name: esbuild renames the class in the bundle (it comes back as
+       * `P2`), and the helper's own `preact/compat` is a different module instance from the bundle's,
+       * so neither `.name` nor identity comparison would hold. A class component carrying a
+       * `fallback` prop is a suspense boundary; any OTHER class component still throws, because the
+       * claim "none exist in these webviews" is worth keeping enforced.
+       */
+      if ("fallback" in props) return renderStatic(props.fallback);
       throw new Error("renderStatic: class components are not supported (none exist in the sidebar)");
     }
     return renderStatic((type as (p: unknown) => unknown)(props));

@@ -221,6 +221,21 @@ export interface FleetVM {
   /** spec 245 — the per-folder Project Handoff state (drives the header open-button + badge). */
   handoff?: HandoffVM;
   /**
+   * t-aa2780 — this folder's engine daemon log ring holds at least one error line.
+   *
+   * The passive "something is wrong in the log" signal Control's Engine TAB used to carry as a red
+   * dot. Control has no tab strip any more, so the signal moved to the sidebar (the Control tab's
+   * icon and the launcher's Engine tile). It rides the fleet because that is the projection the
+   * sidebar already receives per folder — a window with two roots lights the tab if EITHER has errors,
+   * and the tile says which section to open.
+   *
+   * ABSENT means "not known", not "no errors": only the engine that owns the ring can answer, so the
+   * legacy in-extension projection path leaves it unset and no dot is drawn. That matches what Control
+   * did before (a failed engineLogHealth read left `logHasError` undefined and the tab dot dark) —
+   * this signal has never claimed to be a health check, only a report from the ring itself.
+   */
+  engineLogHasError?: boolean;
+  /**
    * t-8354ae — set when the working-tree config failed to load. While present, Agents tab
    * MUST show this banner and must not render the empty-roster placeholder when agents/ledger/LKG exist.
    */
