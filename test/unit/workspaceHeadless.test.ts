@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -34,6 +35,33 @@ import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
  * NO Electron, NO real tmux, NO bound Bridge port — proving config → managers → monitors → factory
  * lifecycle are wired together correctly. Substrate is injected via `Workspace.createForTest`.
  */
+
+skipTestsWithoutOptionalRuntimeAuth({
+  claude: [
+    "uses Workspace authority for Evolution profile creation and rejects tampered production startup",
+    "SDD 369 T3 composes the extension-global Claude capture into the existing per-spawn settings layer",
+    "SDD 369 T3 does not compose capture across an explicit Claude settings-source filter",
+    "re-anchor transports configured project guidance without overwriting the startup brief",
+    "SDD 421 re-anchor reuses the session's pinned Evolution snapshot",
+    "re-anchor leaves a running pane untouched when configured guidance becomes invalid",
+    "surfaces an automatic re-anchor guidance failure instead of swallowing it",
+    "blocks reloadWindow while another agent is actively working",
+    "spec 484: a delegated Temporary child is born on a per-SPAWN branch, and the name-derived one is never minted",
+    "spec 484: two spawns of the SAME Temporary name get two different branches, and the first child's commits are left alone",
+    "t-28bf8f: a kill refused by a live root process moves nothing, and the retry after it dies finishes the removal",
+    "t-28bf8f: neither a forced Kill nor Stop All collects a Temporary row that still owns a checkout",
+    "authorizes a skill for a RUNNING agent and reports that it lands at the next launch",
+    "leaves the live session's delivered skills untouched, and delivers on the next launch",
+    "reauthorizes changed content while the agent runs, re-pinning the new digest",
+    "still refuses to REVOKE under a live session, naming the sequence",
+    "names the stop/apply/start sequence for a mutation that does need the agent stopped",
+  ],
+  opencode: [
+    "pokes the live parent with the child's matched prompt line when it enters needs-input",
+    "falls back to a generic line when no matched prompt text is available",
+    "queues (via deliverNotice, per 341) rather than typing into a busy parent",
+  ],
+});
 
 describe("resolveAgentProfileHomeDir", () => {
   it("uses an isolated absolute home only inside Dev Host", () => {

@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -138,6 +139,14 @@ function deliverNoticeOf(ws: Workspace) {
 function agentIncarnationsOf(ws: Workspace): Map<string, number> {
   return (ws as unknown as { agentIncarnations: Map<string, number> }).agentIncarnations;
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn",
+    "t-572cef: a live child whose incarnation entry is missing (modeling a reload survivor) still has its poke delivered",
+    "t-572cef: a text-identical notify_agent relay is not absorbed into a child poke's dedup slot and survives the child's death",
+  ],
+});
 
 describe("container-generated delegation behavior", () => {
   it("a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn", async () => {

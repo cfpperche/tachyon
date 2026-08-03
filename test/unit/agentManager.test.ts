@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
 import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
@@ -271,6 +272,12 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
   });
   return { manager, sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "SDD 421 delivers the same approved evolution snapshot through every supported runtime channel",
+  ],
+});
 
 describe("AgentManager", () => {
   it("clears legacy, prior-boot, and dead-owner launch reservations while preserving a same-boot live owner", () => {

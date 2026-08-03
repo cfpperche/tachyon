@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -132,6 +133,13 @@ function envValue(argv: string[], varName: string): string | undefined {
   }
   return undefined;
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  claude: [
+    "restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — the old one is revoked, the new one is in the recreated session's argv",
+    "stale-pane case: a tmux session surviving an extension-host reload keeps its PRE-reload token valid (does not silently strand)",
+  ],
+});
 
 describe("resume env integration proof (spec 351 T6)", () => {
   const dirs: string[] = [];
