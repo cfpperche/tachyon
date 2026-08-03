@@ -67,6 +67,10 @@ describe("Task Studio provisional-new Cancel/Back stays on Board (t-c3c819)", ()
     const breadcrumbRegion = src.slice(breadcrumbAt, breadcrumbAt + 1400);
     expect(breadcrumbRegion).toMatch(/m\.studioPersisted === false/);
     expect(breadcrumbRegion).toContain('p.onSetSection("mission")');
-    expect(breadcrumbRegion).toContain("p.taskDetailDispatch.openTask(parent.taskId)");
+    // SDD 485 C4 — the persisted branch no longer navigates Control: the task detail is its own tab, so
+    // the button asks the HOST for this studio route's parent (`navigateStudioParent`) and the host's
+    // `navigate` turns that task-detail parent into "open the task's tab, land Control on the Board".
+    // The `studioPersisted === false` fallback above is untouched, which is what this test is for.
+    expect(breadcrumbRegion).toContain("navigateStudioParentAction(routeKey(activeRoute))");
   });
 });

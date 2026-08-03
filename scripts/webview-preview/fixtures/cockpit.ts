@@ -934,28 +934,10 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
-  // t-610705 (Phase C.1) — previews the task-detail subroute: buildCockpitModel only knows sections,
-  // so activeRoute is attached after, exactly like Cockpit.ts's sendModel() does for the real host.
-  "task-detail": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-4f2c91") },
-  },
-  // t-5564b4 — the content shapes the human's report is about. Same route, different task payload:
-  // `-heavy` carries the long title, long body, awaiting-human and the sha/path/URL refs that used to
-  // escape the reading column; `-sparse` proves the empty states hold the layout alone; `-tombstone`
-  // proves the missing-task banner stays readable. The suffix selects the task-detail fixture.
-  "task-detail-heavy": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-067540") },
-  },
-  "task-detail-sparse": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-000001") },
-  },
-  "task-detail-tombstone": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.taskDetail("b349073a", "t-067541") },
-  },
+  // SDD 485 C4 — the four `task-detail*` cockpit fixtures are GONE with the subroute: the task detail
+  // is a standalone app, so its four content shapes (default / heavy / sparse / tombstone) are previewed
+  // through its OWN route (`?view=task-detail`) against the REAL shipped bundle. Previewing it here would
+  // be photographing a renderer Control no longer has.
   /**
    * t-ac79a7 — the navigation-feedback state, sequenced the way the LIVE host sequences it.
    *
@@ -975,8 +957,8 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }),
   },
-  // t-610705 (Phase C.2) — Fleet subroutes: same activeRoute-attached-after-buildCockpitModel
-  // pattern as task-detail above. nav section for both is "fleet".
+  // t-610705 (Phase C.2) — Fleet subroutes: buildCockpitModel only knows sections, so activeRoute is
+  // attached after, exactly like Cockpit.ts's sendModel() does for the real host. Nav section: "fleet".
   "agent-activity": {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentActivity("b349073a", "claude") },

@@ -12,6 +12,7 @@ import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model
 import {
   formatCompanionPairClipboard,
   navigateReturnAction,
+  navigateStudioParentAction,
   openGlobalSettingsFileAction,
   openPersonalCardTemplateAction,
   openProjectHandoffAction,
@@ -35,8 +36,6 @@ import { RuntimeLogo } from "../agent-studio-shell/runtimeLogos";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
-import type { TaskDetailDispatch } from "../task-detail/App";
-import type { TaskDetailVM } from "../task-detail/messages";
 import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
@@ -74,15 +73,10 @@ const MissionControlApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-610705 (Phase C.1) — CSS co-load, seventh surface: the task-detail subroute of Mission (its own
-// sheet plus the mermaid-block sheet its body's MarkdownView can render).
-const TaskDetailApp = lazy(() =>
-  import("../task-detail/App").then((m) => {
-    loadSectionStylesheet("task-detail-mermaid");
-    loadSectionStylesheet("task-detail");
-    return { default: m.App };
-  }),
-);
+// SDD 485 C4 — the task-detail lazy block is GONE with the subroute: the task detail is a standalone
+// `document` app (src/webview/task-detail/main.tsx) with its own bundle, error boundary and stylesheet
+// list, so Control neither imports its renderer nor co-loads its CSS. Two live renderers of one screen is
+// what the atomic cutover exists to prevent.
 // t-610705 — CSS co-load, third surface (see the Approvals comment below for the mechanism).
 const ValidationsApp = lazy(() =>
   import("../validations/App").then((m) => {
@@ -142,7 +136,7 @@ const InspectorApp = lazy(() =>
   }),
 );
 // t-610705 (Phase C.2) — CSS co-load, eighth surface: the agent-activity subroute of Fleet. Shares
-// the mermaid-block.css sheet with task-detail (see Cockpit.ts's combined eager-styles condition)
+// the mermaid-block.css sheet with Handoff (see Cockpit.ts's combined eager-styles condition)
 // but under its OWN bootstrap-global key ("activity-mermaid") — same href, distinct id, so the
 // cockpitCssParity key-parity check stays a clean 1:1 client-id ↔ host-key mapping.
 const ActivityApp = lazy(() =>
@@ -162,7 +156,7 @@ const ProbesApp = lazy(() =>
 );
 // t-610705 (Phase C.3) — CSS co-load, tenth surface: the Handoff section (its own sheet plus the
 // mermaid-block sheet its doc body's MarkdownView can render, same combined-condition mechanism as
-// task-detail/activity above).
+// activity above).
 const HandoffApp = lazy(() =>
   import("../handoff/App").then((m) => {
     loadSectionStylesheet("handoff-mermaid");
@@ -177,7 +171,7 @@ const HandoffApp = lazy(() =>
 // studio's own loadSectionStylesheet call for the shared sheet uses a PER-STUDIO "studio-frame-X" key
 // even though every key resolves to the SAME studio-frame.css href — same convention as the 3
 // "*-mermaid" keys below
-// (task-detail-mermaid/activity-mermaid/handoff-mermaid, all → mermaid-block.css): cockpitCssParity's
+// (activity-mermaid/handoff-mermaid, both → mermaid-block.css): cockpitCssParity's
 // client/host id-set comparison is a plain 1:1 match, not a dedup, so 4 lazy blocks sharing ONE
 // "studio-frame" key would read as 4 client calls against 1 host key and fail parity.
 const CommandStudioApp = lazy(() =>
@@ -335,11 +329,6 @@ export interface CockpitAppProps {
   missionVm?: MissionControlVM;
   missionError?: TaskErrorEvent;
   missionDispatch: MissionControlDispatch;
-  /** t-610705 (Phase C.1) — the task-detail subroute of Mission (model.activeRoute drives which). */
-  taskVm?: TaskDetailVM;
-  taskErrorSeq: number;
-  taskErrorMessage?: string;
-  taskDetailDispatch: TaskDetailDispatch;
   /** t-610705 (Phase C.2) — the agent-activity subroute of Fleet. */
   activityVm?: ActivityViewModel;
   activityPrepended: boolean;
@@ -389,7 +378,7 @@ export interface CockpitAppProps {
    *  ONE shared prop for every StudioId (D1a — was `commandStudioDispatch: CommandStudioDispatch`,
    *  D0's studio-specific name/type for what turned out to be an identical `{post}` wrapper every
    *  studio needs): only one studio binding is ever active at a time, so there is nothing to
-   *  disambiguate between studios on this prop the way there is for e.g. `taskVm`/`activityVm`. */
+   *  disambiguate between studios on this prop the way there is for e.g. `activityVm`/`probesVm`. */
   studioIncoming?: { seq: number; message: unknown };
   studioDispatch: StudioDispatch;
 }
@@ -1546,42 +1535,22 @@ export function App(p: CockpitAppProps) {
   // rendering as active while a nav-less route (Pin Studio, Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
   // distinction it protected is no longer observable anywhere.
-  // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
+  // t-fullpage-proto — every subroute (the 3 Fleet subroutes, all 7 studios) gets the
   // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
   // very top, and the content area gets the vertical space the tab strip would have used. Each
   // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
-  const isSubroute = activeRoute?.kind === "task-detail" || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
+  // SDD 485 C4 — no `task-detail` term: Control never commits that route any more (Cockpit.ts's
+  // `navigate` redirects it to the document app), so a branch for it here would be a path nothing reaches.
+  const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
   if (!m) {
     body = <div class="ck-empty">{s.empty}</div>;
-  } else if (activeRoute?.kind === "task-detail") {
-    // t-610705 (Phase C.1) — a subroute of Mission: same embed host styling as the board (checked
-    // BEFORE the section branch below, since model.section still reads "mission" here — navSection
-    // keeps the Mission tab highlighted while this subroute is what's actually on screen).
-    const parent = parentRoute(activeRoute);
-    // t-610705 (Phase C.1) — a lone back-link, not a full "parent / current" trail: the task's own
-    // title already renders right below as the page H1 (PageChrome), so repeating it here would just
-    // be the same text twice with nothing between them.
-    if (parent && parent.kind === "section") {
-      breadcrumb = (
-        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-task-detail-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
-          {s.navMission}
-        </Button>
-      );
-    }
-    body = (
-      <div class="ck-embed-host" data-testid="control-task-detail">
-        <Suspense fallback={<SectionFallback />}>
-          <TaskDetailApp vm={p.taskVm} errorSeq={p.taskErrorSeq} errorMessage={p.taskErrorMessage} dispatch={p.taskDetailDispatch} />
-        </Suspense>
-      </div>
-    );
   } else if (activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
     // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
-    // task-detail above (nav section reads "fleet" for all three; this renders the actual content).
+    // the section branch below (nav section reads "fleet" for all three; this renders the content).
     const parent = parentRoute(activeRoute);
     // t-fullpage-proto — was a compact "← Fleet" line under the surface's OWN title
     // (ActivityApp/ProbesApp rendered it there); now lives in the top chrome instead, so neither
@@ -1656,7 +1625,7 @@ export function App(p: CockpitAppProps) {
   } else if (activeRoute && isStudioRoute(activeRoute)) {
     // t-610705 (Phase D, D0/D1a) — a studio route is its own full-bleed body (StudioFrame is its own
     // chrome: title, dirty dot, Cancel/Save) — same "checked before the section branch" pattern as
-    // task-detail/Fleet subroutes above. D1b/D2/D3 add their own branch the same way (no generic
+    // the Fleet subroutes above. D1b/D2/D3 add their own branch the same way (no generic
     // dispatch-by-registry on the client — Preact's `lazy()` calls must stay static top-level calls
     // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
     // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
@@ -1677,9 +1646,11 @@ export function App(p: CockpitAppProps) {
       </Button>
       // t-610705 (Phase D, D2) — Task Studio's edit route is the one OTHER studio whose parent is
       // NOT a flat section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the
-      // task's own task-detail subroute) — reuses taskDetailDispatch's existing "openTask" round trip
-      // (the SAME one Task Detail's own breadcrumb and the Board's card-click already navigate
-      // through) rather than inventing a new generic route-navigate prop for this one case.
+      // task's own task-detail route).
+      // SDD 485 C4 — that parent is no longer a Control route that renders: it is the task's own editor
+      // tab. So the button posts `navigateStudioParent` and the HOST derives the destination from
+      // parentRoute — the same no-client-destination rule pin's `navigateReturn` follows, and the same
+      // reason: a queued click from a route the human already left must be dropped, not fired.
     ) : parent && parent.kind === "section" ? (
       <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
         {s[TAB_META[parent.section].navKey]}
@@ -1695,7 +1666,7 @@ export function App(p: CockpitAppProps) {
         // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
         // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
         // Board itself instead, same as every other studio's flat-section parent.
-        onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.taskDetailDispatch.openTask(parent.taskId))}
+        onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.onPost(navigateStudioParentAction(routeKey(activeRoute))))}
       >
         {s.navMission}
       </Button>

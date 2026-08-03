@@ -64,16 +64,31 @@ function depsFor(all: Workspace[], overrides: { collect?: () => Promise<CockpitW
     openTaskStudio: () => {},
     onTasksChanged: () => {},
   };
-  const taskDetail: CockpitTaskDetail = { getWorkspaces: () => all.map((w) => legacyTaskDetailTarget(w)) };
-  // A minimal handoff target: the bracket assertion only needs the route to RESOLVE and commit, so
-  // this stubs the content load rather than standing up a real ProjectHandoffStore.
+  // SDD 485 C4 — a task opens as its own tab; `openDocument` is what Control asks for, and this file's
+  // first case is precisely that it does NOT bracket a navigation it never makes.
+  const taskDetail: CockpitTaskDetail = {
+    getWorkspaces: () => all.map((w) => legacyTaskDetailTarget(w)),
+    openDocument: () => {},
+  };
+  // A minimal handoff target — no real ProjectHandoffStore. SDD 485 C4 made project-handoff the detail
+  // route these bracket assertions ride on (the task detail left Control), so the snapshot now carries
+  // every field `sendHandoff` reads: a stub that throws on a missing field posts NO content, and the
+  // ordering claims below are exactly about the content push landing before `routeReady`.
   const handoff = {
     getWorkspaces: () =>
       all.map((w) => ({
         workspaceRoot: (w as unknown as { workspaceRoot: string }).workspaceRoot,
         wsHash: w.wsHash,
         folderName: w.folderName,
-        loadHandoff: async () => ({ body: "", revision: "r1", pending: [], pendingThrough: null }),
+        loadHandoff: async () => ({
+          exists: true,
+          body: "",
+          revision: "r1",
+          staleness: "fresh",
+          pendingCount: 0,
+          notes: [],
+          distillTargets: [],
+        }),
         ensureHandoffFile: async () => "HANDOFF.md",
         startHandoffDistill: async () => ({ ok: true }),
       })),
@@ -95,17 +110,19 @@ const postedTypes = (): string[] => posted().map((m) => m.type ?? "");
 const firstIndexOf = (type: string): number => postedTypes().indexOf(type);
 
 describe("t-ac79a7: every navigation is bracketed by routePending / routeReady", () => {
-  it("posts routePending for a Board click BEFORE the model the client used to wait on", async () => {
+  it("posts routePending for a detail route BEFORE the model the client used to wait on", async () => {
+    // This case used to drive a Board card click, which navigated Control to the task-detail subroute.
+    // SDD 485 C4 made that a tab rather than a navigation, so the bracket is measured on the detail
+    // route Control still owns. The property is unchanged and is the point of the feature:
+    // acknowledgement lands ahead of the expensive payload.
     const ws = fakeWorkspace();
-    const t = await ws.taskStore.create({ title: "open me from the board", author: "human" });
 
-    // A Board click is exactly this: the panel is on the mission section, the card posts openTask.
-    await openCockpit(depsFor([ws]), { section: "mission" });
+    await openCockpit(depsFor([ws]), { section: "overview" });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const before = posted().length;
 
-    __createdPanels[0].webview.__receive({ type: "openTask", id: t.id });
+    __createdPanels[0].webview.__receive({ type: "openProjectHandoff" });
     await flush();
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
@@ -115,15 +132,41 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
 
     expect(pendingAt, `no routePending after the click; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
     expect(modelAt, `no model after the click; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    // The whole point: acknowledgement lands ahead of the expensive payload, not with it.
     expect(pendingAt).toBeLessThan(modelAt);
     // It names WHICH navigation, so the client can ignore a superseded route's late ready.
-    expect(after[pendingAt].routeKey).toBe(`task-detail:${ws.wsHash}:${t.id}`);
+    expect(after[pendingAt].routeKey).toBe(`project-handoff:${ws.wsHash}`);
   });
 
   it("closes the bracket with routeReady only after the route's own content is posted", async () => {
     const ws = fakeWorkspace();
-    const t = await ws.taskStore.create({ title: "ready comes last", author: "human" });
+
+    await openCockpit(depsFor([ws]), { section: "overview" });
+    __createdPanels[0].webview.__receive({ type: "ready" });
+    await flush();
+    const before = posted().length;
+
+    __createdPanels[0].webview.__receive({ type: "openProjectHandoff" });
+    await flush();
+
+    const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
+    const types = after.map((m) => m.type ?? "");
+    const contentAt = types.indexOf("handoff");
+    const readyAt = types.indexOf("routeReady");
+
+    expect(contentAt, `no content push; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
+    expect(readyAt, `no routeReady; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
+    // Ready must mean "the content is there", or the client would drop its pending state onto an
+    // empty surface — the abrupt swap this task exists to remove.
+    expect(contentAt).toBeLessThan(readyAt);
+    expect(after[readyAt].routeKey).toBe(`project-handoff:${ws.wsHash}`);
+  });
+
+  it("does NOT bracket a click that opens a DOCUMENT — Control never navigated (SDD 485 C4)", async () => {
+    // The bracket is a promise about a navigation THIS panel is making. A Board card now opens the
+    // task's own editor tab and leaves Control where it is, so a pending state here would be a
+    // progress bar for a navigation that never arrives — the client would sit in it forever.
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "opens as its own tab", author: "human" });
 
     await openCockpit(depsFor([ws]), { section: "mission" });
     __createdPanels[0].webview.__receive({ type: "ready" });
@@ -133,17 +176,9 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     __createdPanels[0].webview.__receive({ type: "openTask", id: t.id });
     await flush();
 
-    const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
-    const types = after.map((m) => m.type ?? "");
-    const taskAt = types.indexOf("task");
-    const readyAt = types.indexOf("routeReady");
-
-    expect(taskAt, `no task push; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    expect(readyAt, `no routeReady; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    // Ready must mean "the content is there", or the client would drop its pending state onto an
-    // empty surface — the abrupt swap this task exists to remove.
-    expect(taskAt).toBeLessThan(readyAt);
-    expect(after[readyAt].routeKey).toBe(`task-detail:${ws.wsHash}:${t.id}`);
+    const types = posted().slice(before).map((m) => m.type ?? "");
+    expect(types, `Control bracketed a navigation it did not make: ${JSON.stringify(types)}`).not.toContain("routePending");
+    expect(types).not.toContain("routeReady");
   });
 
   it("brackets a DIFFERENT detail route kind with the same primitive — one emit, not one per route", async () => {
@@ -186,8 +221,6 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
 
   it("suppresses a superseded route's routeReady so it cannot clear a newer navigation's pending state", async () => {
     const ws = fakeWorkspace();
-    const first = await ws.taskStore.create({ title: "superseded", author: "human" });
-    const second = await ws.taskStore.create({ title: "the one the user wants", author: "human" });
 
     // Hold collect open so the FIRST navigation is still mid-load when the second one commits —
     // the interleaving a real impatient double-click on two different cards produces, which the
@@ -201,57 +234,53 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
       return [];
     };
 
-    await openCockpit(depsFor([ws], { collect }), { section: "mission" });
+    await openCockpit(depsFor([ws], { collect }), { section: "overview" });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
 
-    __createdPanels[0].webview.__receive({ type: "openTask", id: first.id });
+    __createdPanels[0].webview.__receive({ type: "setSection", section: "fleet" });
     await flush();
     const before = posted().length;
 
     // Second click supersedes while the first is parked inside collect().
-    __createdPanels[0].webview.__receive({ type: "openTask", id: second.id });
+    __createdPanels[0].webview.__receive({ type: "setSection", section: "engine" });
     await flush();
     const modelsBeforeStaleSettles = posted().filter((m) => m.type === "model");
-    expect(modelsBeforeStaleSettles.at(-1)).toMatchObject({
-      model: { activeRoute: { kind: "task-detail", wsHash: ws.wsHash, taskId: second.id } },
-    });
+    expect(modelsBeforeStaleSettles.at(-1)).toMatchObject({ model: { section: "engine" } });
     release?.();
     await flush();
     await flush();
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
-    const staleReady = after.filter((m) => m.type === "routeReady" && m.routeKey === `task-detail:${ws.wsHash}:${first.id}`);
+    const staleReady = after.filter((m) => m.type === "routeReady" && m.routeKey === "section:fleet");
     // A ready for the abandoned route would clear the pending state of the route the user actually
     // wants, dropping the UI back to "loaded" while the real destination is still loading.
     expect(staleReady, `stale routeReady leaked: ${JSON.stringify(after)}`).toHaveLength(0);
-    expect(after.some((m) => m.type === "routePending" && m.routeKey === `task-detail:${ws.wsHash}:${second.id}`)).toBe(true);
+    expect(after.some((m) => m.type === "routePending" && m.routeKey === "section:engine")).toBe(true);
     // The model whose collect() began for the first route is stale too. Dropping it is expected,
     // but must not leave the live panel model-less: the superseding hot navigation schedules and
     // delivers its own model before the old collect settles. Releasing the old call must therefore
     // add no model and cannot overwrite the current route with old workspace data.
     const modelsAfterStaleSettles = posted().filter((m) => m.type === "model");
     expect(modelsAfterStaleSettles).toHaveLength(modelsBeforeStaleSettles.length);
-    expect(modelsAfterStaleSettles.at(-1)).toMatchObject({
-      model: { activeRoute: { kind: "task-detail", wsHash: ws.wsHash, taskId: second.id } },
-    });
+    expect(modelsAfterStaleSettles.at(-1)).toMatchObject({ model: { section: "engine" } });
   });
 
-  it("still delivers model before task — the t-9993cc ordering this feature must not disturb", async () => {
+  it("still delivers model before a detail route's content — the ordering this feature must not disturb", async () => {
+    // The client rejects content for a route it has not learned yet (t-9993cc's rule, which the task
+    // detail carried before SDD 485 C4 moved it out; the same ordering still binds every detail route
+    // Control keeps). This case passes both with and without the bracket, on purpose — it is here to
+    // catch the bracket breaking someone else's invariant, not to prove the bracket.
     const ws = fakeWorkspace();
-    const t = await ws.taskStore.create({ title: "guard intact", author: "human" });
 
-    await openCockpit(depsFor([ws]), { route: { kind: "task-detail", wsHash: ws.wsHash, taskId: t.id } });
+    await openCockpit(depsFor([ws]), { route: { kind: "project-handoff", wsHash: ws.wsHash } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
 
     const modelAt = firstIndexOf("model");
-    const taskAt = firstIndexOf("task");
+    const contentAt = firstIndexOf("handoff");
     expect(modelAt).toBeGreaterThanOrEqual(0);
-    expect(taskAt).toBeGreaterThanOrEqual(0);
-    // The client rejects a TASK whose route it hasn't learned yet (t-9993cc). Adding the bracket
-    // must not reorder these two; this case passes both with and without the feature, on purpose —
-    // it is here to catch the bracket breaking someone else's invariant, not to prove the bracket.
-    expect(modelAt).toBeLessThan(taskAt);
+    expect(contentAt).toBeGreaterThanOrEqual(0);
+    expect(modelAt).toBeLessThan(contentAt);
   });
 });

@@ -47,7 +47,7 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
 - [x] C3. Replace `cockpitBundleBudget.test.ts` with a manifest-driven successor measuring each app's
       eager entry and the reachable total. Record the new numbers in `notes.md` against 410's
       baseline (~244 KB, gate 350 KB) so a future reader can see whether this reversal cost size.
-- [ ] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task
+- [x] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task
       details from different projects open side by side and stay distinct.
 - [ ] C5. **Board as a dashboard app** — one panel per project, revealed rather than duplicated.
 - [ ] C6. Move the project selector into the sidebar Control tab header row (the slot the Agents tab
@@ -125,8 +125,26 @@ Two findings already justify the cost, neither catchable by a test: a 1px border
 launcher grid read as a grafted widget (t-6e2952), and an Overview action row that clips at 360px
 (t-89ecfe).
 
-- [ ] Evidence:
-- [ ] Verdict:
+- [x] **Evidence (C4, 2026-08-03):** 4 fixtures x 2 widths (880, 360) of the REAL shipped
+      `dist/webview/task-detail.js`, captured through the route this change adds —
+      `npm run preview:webview` +
+      `?view=task-detail&fixture=<default|heavy|sparse|tombstone>[&width=360]`. Attached via
+      `attach_evidence` on `fase485c4` (`.tachyon/evidence/t-40e408/`, not committed: `docs/` holds
+      durable documentation, not generated images — the ROUTE is committed, so any of the eight
+      re-takes in one command). Anchor, written from the task's problem statement before the surface
+      was built: *the task detail must render in its own tab exactly as it rendered as a Control
+      subroute — same reading column, field rhythm, tombstone banner and middle-truncated refs —
+      because this phase moves WHERE it renders, not HOW it looks.*
+- [x] **Verdict (C4):** satisfies the anchor. At 880 the reading column fills the frame with the page
+      pad and long refs truncate in the middle; at 360 the action row wraps BELOW the title (t-89ecfe's
+      failure mode does not recur), the fields card stacks, and the attention callout wraps as prose.
+      No horizontal overflow at either width on any fixture. One intended difference: no "← Board"
+      breadcrumb — it existed to get back INSIDE Control, and a tab is closed rather than navigated out
+      of. One defect found and deliberately NOT fixed here because it is PRE-EXISTING: an empty body
+      renders `BODYno body` on one line (`.ds-section` is an inline span whose `margin-bottom` cannot
+      make vertical space, and `.td-body` — unlike `.td-journal` — is not a flex column). `App.tsx` and
+      `task-detail.css` are byte-identical across C4 and neither Control-only sheet touches those
+      rules, so Control renders it the same way today. Filed as **t-fe8ba3**.
 
 ## Cookbook
 

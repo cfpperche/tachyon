@@ -147,11 +147,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // cockpit/App.tsx; the bounded agent-liveness pass moved to src/cockpit/missionVm.ts). The trusted
   // serializer for the legacy "tachyonMissionControl" viewType stays registered in extension.ts: a revived
   // pre-410 panel disposes itself and redirects into Control → Mission scoped to its persisted workspace.
-  // t-610705 (SDD 410 Phase C.1, 2026-07-21) — the standalone Task Detail panel was retired: it's a
-  // Control subroute now (src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx;
-  // standalone bundle + harness route retired — use ?view=cockpit&fixture=task-detail instead). The
-  // trusted serializer for the legacy "tachyonTaskDetail" viewType stays registered in extension.ts:
-  // a revived pre-410 panel disposes itself and redirects into Control → the task's subroute.
+  // SDD 485 C4 (2026-08-03) — Task Detail is a STANDALONE APP again, and this row is the reversal of
+  // 410 Phase C.1's retirement (which had made it a Control subroute). It is the `document` kind: one
+  // panel per identity, so two task details stand side by side and neither is retargeted by the project
+  // selector. It mounts through the shared shell via `SectionPanelManager`, links design-system.css, and
+  // task-detail.css neither styles the page frame nor mints `--ds-*` values → `conform`.
+  { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio panel was retired: it's a Control
   // studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
   // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer

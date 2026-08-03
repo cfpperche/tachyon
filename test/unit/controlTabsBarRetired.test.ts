@@ -139,11 +139,11 @@ describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived"
   });
 
   // One per breadcrumb wiring: the two that read TAB_META for their label (handoff, studio-command),
-  // and the two with a fixed label (task-detail, inbox-item). All four must still paint the row.
+  // and the one with a fixed label (inbox-item). All three must still paint the row.
+  // SDD 485 C4 — `task-detail` was the fourth and left with its subroute; its fixture is gone too.
   const SUBROUTES = [
     { fixture: "handoff", testid: "control-handoff-breadcrumb", label: "Overview" },
     { fixture: "studio-command", testid: "control-studio-breadcrumb", label: "Fleet" },
-    { fixture: "task-detail", testid: "control-task-detail-breadcrumb", label: "Board" },
     { fixture: "inbox-item", testid: "control-inbox-item-breadcrumb", label: "Inbox" },
   ] as const;
 

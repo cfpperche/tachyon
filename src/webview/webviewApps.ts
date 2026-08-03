@@ -78,6 +78,12 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // entry in the splitting invocation (without which "shared chunks" is a claim with no witness), a second
   // measurement for the budget test, and a live host wiring that C4/C5 can copy.
   { view: "section-app-fixture", viewId: "tachyonSectionAppFixture", host: "section", cardinality: "document", eagerBudgetBytes: 64 * 1024 },
+  // SDD 485 C4 — the task detail, the FIRST shipped app on this mechanism and the motivating case the
+  // "twelve sections" framing would have missed: `document`, so one panel per identity and two task
+  // details stand side by side. It keeps the `tachyonTaskDetail` viewType SDD 410 retired to a
+  // serializer-only tombstone, so a pre-410 window state revives INTO this app rather than redirecting
+  // through Control (see TaskDetailPanel.ts).
+  { view: "task-detail", viewId: "tachyonTaskDetail", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

@@ -37,18 +37,6 @@ import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
 import type { MissionControlVM } from "../mission-control/messages";
-import type { TaskDetailDispatch } from "../task-detail/App";
-import {
-  TASK,
-  requestSnapshotAction as requestTaskSnapshotAction,
-  updateTaskAction as updateTaskDetailAction,
-  openTaskAction as openTaskDetailAction,
-  openTaskStudioAction as openTaskDetailStudioAction,
-  approvePrototypeAction,
-  rejectPrototypeAction,
-  notePrototypeAction,
-  type TaskDetailVM,
-} from "../task-detail/messages";
 import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import {
@@ -188,9 +176,6 @@ function CockpitRoot() {
   const [auto, setAuto] = useState(true);
   const [missionVm, setMissionVm] = useState<MissionControlVM | undefined>(undefined);
   const [missionError, setMissionError] = useState<TaskErrorEvent | undefined>(undefined);
-  const [taskVm, setTaskVm] = useState<TaskDetailVM | undefined>(undefined);
-  const [taskErrorSeq, setTaskErrorSeq] = useState(-1);
-  const [taskErrorMessage, setTaskErrorMessage] = useState<string | undefined>(undefined);
   const [activityVm, setActivityVm] = useState<ActivityViewModel | undefined>(undefined);
   const [activityPrepended, setActivityPrepended] = useState(false);
   const [activityImages, setActivityImages] = useState<Record<string, string>>({});
@@ -242,17 +227,17 @@ function CockpitRoot() {
   const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const errorSeq = useRef(0);
-  const taskErrorSeqCounter = useRef(0);
   /**
    * Track companion devices so a successful pair dismisses the ephemeral code card.
    * Fingerprint = sorted device ids (count alone is not enough if a device is replaced in place).
    */
   const companionPairSnapshot = useRef<{ paired: boolean; deviceKey: string } | null>(null);
-  // t-610705 (Phase C.1) — mission-control's TASK_ERROR and task-detail's TASK_DETAIL_ERROR are the
-  // SAME wire string ("taskError", identical {type,message} shape — ported verbatim from the two
-  // panels' pre-410 messages.ts files, never meant to share a client). The onMsg listener below is
-  // mounted once ([] deps), so it can't read fresh `model` state directly (stale closure) — this ref
-  // is kept current from the MODEL branch so the taskError branch can tell which surface it's for.
+  // t-610705 (Phase C.2) — the onMsg listener below is mounted once ([] deps), so it can't read fresh
+  // `model` state directly (stale closure); this ref is kept current from the MODEL branch for the
+  // identity checks the ACTIVITY and inbox-item branches make.
+  // SDD 485 C4 — the TASK_ERROR branch no longer has to disambiguate two surfaces: "taskError" was the
+  // same wire string for mission-control and the task detail, and the task detail took its protocol with
+  // it when it became its own app.
   const activeRouteRef = useRef<CockpitModel["activeRoute"]>(undefined);
   // t-610705 (Phase D, D1a code-review finding) — `studioIncoming` is ONE shared state slot every
   // studio App reads via its `incoming` prop; a fresh studio component mount does NOT clear it (only
@@ -335,16 +320,7 @@ function CockpitRoot() {
           setActivityVm(undefined);
           setActivityImages({});
         }
-        // t-9993cc — same identity-change reset as Activity above: a stale TASK message from the
-        // route just navigated AWAY FROM must never repopulate taskVm under a route pointing at a
-        // DIFFERENT task (or none) — clear it eagerly on identity change rather than trusting arrival
-        // order alone (a fast double-click between two Board cards could otherwise interleave).
-        const prevTask = activeRouteRef.current?.kind === "task-detail" ? activeRouteRef.current : undefined;
-        const nextTask = next.activeRoute?.kind === "task-detail" ? next.activeRoute : undefined;
-        if (!nextTask || !prevTask || prevTask.wsHash !== nextTask.wsHash || prevTask.taskId !== nextTask.taskId) {
-          setTaskVm(undefined);
-        }
-        // t-e76acc — same identity-change reset task-detail and activity already do: a late item push
+        // t-e76acc — same identity-change reset Activity already does above: a late item push
         // from the row just navigated away from must never render under a DIFFERENT item's route.
         const prevItem = activeRouteRef.current?.kind === "inbox-item" ? activeRouteRef.current : undefined;
         const nextItem = next.activeRoute?.kind === "inbox-item" ? next.activeRoute : undefined;
@@ -361,28 +337,11 @@ function CockpitRoot() {
       }
       else if (type === SNAPSHOT && raw.vm) setMissionVm(raw.vm as MissionControlVM);
       else if (type === TASK_ERROR && typeof raw.message === "string") {
-        // mission-control's TASK_ERROR and task-detail's TASK_DETAIL_ERROR are the same wire
-        // string — see activeRouteRef's doc comment above for why this can't be two `else if`s.
-        if (activeRouteRef.current?.kind === "task-detail") {
-          setTaskErrorSeq(++taskErrorSeqCounter.current);
-          setTaskErrorMessage(raw.message);
-        } else {
-          setMissionError({
-            seq: ++errorSeq.current,
-            message: raw.message,
-            ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
-          });
-        }
-      } else if (type === TASK && raw.vm) {
-        // t-9993cc — same identity check ACTIVITY already does below: reject a TASK push that doesn't
-        // match the CURRENTLY active task-detail route rather than accepting any TASK message
-        // unconditionally (a delayed post from a route just navigated away from must never repopulate
-        // taskVm under a different/no task-detail route).
-        const route = activeRouteRef.current;
-        const vm = raw.vm as TaskDetailVM;
-        if (route?.kind === "task-detail" && route.wsHash === vm.wsHash && route.taskId === vm.id) {
-          setTaskVm(vm);
-        }
+        setMissionError({
+          seq: ++errorSeq.current,
+          message: raw.message,
+          ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
+        });
       } else if (type === ACTIVITY && raw.vm) {
         // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — every Activity message carries its
         // own feed identity (wsHash/agent); reject anything that doesn't match the CURRENT route
@@ -573,19 +532,6 @@ function CockpitRoot() {
     [],
   );
 
-  const taskDetailDispatch: TaskDetailDispatch = useMemo(
-    () => ({
-      updateTask: (patch: TaskUpdateInput) => post(updateTaskDetailAction(patch)),
-      openTask: (id: string) => post(openTaskDetailAction(id)),
-      openStudio: () => post(openTaskDetailStudioAction()),
-      refresh: () => post(requestTaskSnapshotAction()),
-      approvePrototype: (id, expect, review) => post(approvePrototypeAction(id, expect, review)),
-      rejectPrototype: (id, expect, review) => post(rejectPrototypeAction(id, expect, review)),
-      notePrototype: (id, expect, review) => post(notePrototypeAction(id, expect, review)),
-    }),
-    [],
-  );
-
   const activityDispatch: ActivityDispatch = useMemo(
     () => ({
       openFile: (path: string) => post({ type: "openFile", path }),
@@ -752,10 +698,6 @@ function CockpitRoot() {
       missionVm={missionVm}
       missionError={missionError}
       missionDispatch={missionDispatch}
-      taskVm={taskVm}
-      taskErrorSeq={taskErrorSeq}
-      taskErrorMessage={taskErrorMessage}
-      taskDetailDispatch={taskDetailDispatch}
       activityVm={activityVm}
       activityPrepended={activityPrepended}
       activityImages={activityImages}
@@ -808,9 +750,9 @@ function CockpitRoot() {
       pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
         // t-610705 (Phase C.1) — a plain setSection always lands on that section's own top-level
-        // route (never a subroute), so any activeRoute left over from a prior task-detail visit
+        // route (never a subroute), so any activeRoute left over from a prior subroute visit
         // must clear optimistically too — the App's render switch checks activeRoute BEFORE
-        // section, so a stale task-detail route would otherwise flash until the host's real reply.
+        // section, so a stale subroute would otherwise flash until the host's real reply.
         //
         // t-0e8a9a EXCEPTION — but NOT when leaving a STUDIO route: a studio owns the nav-transaction
         // freeze listener (useStudioFreeze), and the host answers a nav-away by posting

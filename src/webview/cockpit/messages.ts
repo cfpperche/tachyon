@@ -397,6 +397,19 @@ export type CockpitAction =
    *  delayed click from pin A processed after a fast navigation to pin B would otherwise navigate to
    *  B's returnRoute instead of being silently dropped). See Cockpit.ts's "navigateReturn" case. */
   | { type: "navigateReturn"; routeKey: string }
+  /**
+   * SDD 485 C4 — "go to this studio route's parent", for the one studio whose parent is NOT a flat
+   * section: Task Studio's edit route, whose parent is the task's own detail (`route.ts`'s parentRoute).
+   * That used to be answered by posting Task Detail's `openTask` and letting Control navigate in place;
+   * the task detail is its own app now, so the destination is no longer a section the client can name.
+   *
+   * Same trust shape as `navigateReturn` above, and for the same reason: the client sends NO destination,
+   * only its identity snapshot of the route it was showing, so a queued click from a route the human has
+   * already left is dropped instead of firing against whatever is current. The host derives the
+   * destination from `parentRoute(currentRoute)` — and `navigate()` is what turns a task-detail parent
+   * into "open that task's tab, land Control on the Board".
+   */
+  | { type: "navigateStudioParent"; routeKey: string }
   /** t-ace77f — Overview's Handoff entry: the host resolves the workspace and navigates to the
    *  `project-handoff` route. No section to switch to any more — the tab is gone. */
   | { type: "openProjectHandoff" }
@@ -471,6 +484,7 @@ export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" }
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
 export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
+export const navigateStudioParentAction = (routeKey: string): CockpitAction => ({ type: "navigateStudioParent", routeKey });
 /**
  * SDD 479 phase 5 — open the settings editor filtered to the personal card-template key. A distinct
  * action from `openConfigFile`: one home is a file in the repo, the other a key in VS Code settings,
