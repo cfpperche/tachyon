@@ -25,9 +25,9 @@ const WIDE = { w: 880, h: 1400 };
 const NARROW = { w: 360, h: 2200 };
 
 const FIXTURES = [
-  { id: "up-to-date", fixture: "plugins", waitText: "up to date" },
-  { id: "update-available", fixture: "plugins-update-available", waitText: "update available" },
-  { id: "source-changed", fixture: "plugins-source-changed", waitText: "source changed" },
+  { id: "up-to-date", fixture: "default", waitText: "up to date" },
+  { id: "update-available", fixture: "update-available", waitText: "update available" },
+  { id: "source-changed", fixture: "source-changed", waitText: "source changed" },
 ] as const;
 
 describe("Plugins card — freshness states (t-4e5f11)", () => {
@@ -68,7 +68,7 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
 
   async function shoot(name: string, fixture: string, waitText: string, { w, h }: { w: number; h: number }): Promise<void> {
     await page.setViewport({ width: w + 40, height: Math.min(h + 40, 4000), deviceScaleFactor: 2 });
-    const route = `?view=cockpit&fixture=${fixture}&width=${w}&height=${h}`;
+    const route = `?view=plugins&fixture=${fixture}&width=${w}&height=${h}`;
     await page.goto(`${server.origin}/scripts/webview-preview/index.html${route}`, { waitUntil: "networkidle0" });
     await page.waitForFunction(
       (text) => document.body.innerText.toLowerCase().includes(text.toLowerCase()),
@@ -89,7 +89,7 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
       }));
       return { over, cards, previewView: document.body.dataset.previewView, previewFixture: document.body.dataset.previewFixture };
     });
-    expect(measured.previewView, `${name}: wrong preview view`).toBe("cockpit");
+    expect(measured.previewView, `${name}: wrong preview view`).toBe("plugins");
     expect(measured.previewFixture, `${name}: wrong fixture`).toBe(fixture);
     expect(measured.over, `${name}: content overflows the ${w}px frame`).toEqual([]);
     expect(measured.cards.every((c) => c.width < w), `${name}: cards did not reflow to ${w}px`).toBe(true);
@@ -115,7 +115,7 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
   it("source-changed card says still vX and offers Reapply, not Update", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
     await page.goto(
-      `${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-source-changed&width=${WIDE.w}&height=${WIDE.h}`,
+      `${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=source-changed&width=${WIDE.w}&height=${WIDE.h}`,
       { waitUntil: "networkidle0" },
     );
     await page.waitForFunction(() => document.body.innerText.includes("source changed"), { timeout: 8000 });
@@ -136,7 +136,7 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
   it("update-available card still offers Update with a newer version label", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
     await page.goto(
-      `${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-update-available&width=${WIDE.w}&height=${WIDE.h}`,
+      `${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=update-available&width=${WIDE.w}&height=${WIDE.h}`,
       { waitUntil: "networkidle0" },
     );
     await page.waitForFunction(() => document.body.innerText.includes("update available"), { timeout: 8000 });

@@ -1,5 +1,5 @@
 import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync, constants as fsConstants } from "node:fs";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -44,6 +44,38 @@ export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH |
  * `scripts/check-source-diffable.mjs`, which the test imports rather than restates.
  */
 export const STATIC_GATES = ["check:source-diffable", "check:engine-boundary", "typecheck"];
+
+function gitOutput(args, cwd = process.cwd()) {
+  return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+/** t-6e929b — browser layout coverage follows changes to the shipped webview sources. */
+export function browserGateDecision({ cwd = process.cwd() } = {}) {
+  try {
+    const head = gitOutput(["rev-parse", "HEAD"], cwd);
+    const branch = gitOutput(["branch", "--show-current"], cwd);
+    let base;
+    if (branch === "main") {
+      base = gitOutput(["rev-parse", "HEAD^"], cwd);
+    } else {
+      base = gitOutput(["merge-base", "HEAD", "main"], cwd);
+    }
+    const tracked = [
+      gitOutput(["diff", "--name-only", base, "HEAD", "--"], cwd),
+      gitOutput(["diff", "--name-only", "--"], cwd),
+      gitOutput(["diff", "--cached", "--name-only", "HEAD", "--"], cwd),
+    ].flatMap((output) => output.split("\n").filter(Boolean));
+    const untracked = gitOutput(["ls-files", "--others", "--exclude-standard", "--", "src/webview"], cwd)
+      .split("\n").filter(Boolean);
+    const changedPaths = [...new Set([...tracked, ...untracked])];
+    const webviewPaths = changedPaths.filter((file) => file.startsWith("src/webview/"));
+    return { run: webviewPaths.length > 0, changedPaths, webviewPaths, base, head };
+  } catch {
+    // verify:full also has unit-test fixtures outside Git. They have no product diff, so say exactly
+    // why browser coverage is absent instead of pretending the decision was evaluated.
+    return { run: false, changedPaths: [], webviewPaths: [], reason: "no Git diff available" };
+  }
+}
 
 export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
   try {
@@ -305,7 +337,28 @@ export async function main() {
       process.stderr.write(`${formatFailure({ phase: "tests", report, fallback: await readTail(testLog), logDir: root })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : tests.code || 1;
     }
-    process.stdout.write(`${formatSuccess(report)}\n`);
+    const browserDecision = browserGateDecision();
+    let browserSummary;
+    if (browserDecision.run) {
+      const browserLog = path.join(root, "browser.log");
+      const browserReportFile = path.join(root, "browser-report.json");
+      const browserTests = await runChild(process.execPath,
+        [vitestEntry, "run", "--config", "vitest.browser.config.ts", "--reporter=json", `--outputFile=${browserReportFile}`, "--silent=passed-only"], browserLog, active);
+      let browserReport;
+      try { browserReport = JSON.parse(readFileSync(browserReportFile, "utf8")); } catch { browserReport = undefined; }
+      const browserCount = browserReport ? summarizeReport(browserReport) : undefined;
+      const browserFailed = browserReport?.success === false || (browserCount?.failed ?? 0) > 0 || (browserCount?.failedFiles ?? 0) > 0;
+      if (browserTests.code !== 0 || browserTests.signal || receivedSignal || !browserReport || browserFailed) {
+        process.stderr.write(`${formatFailure({ phase: "browser tests", report: browserReport, fallback: await readTail(browserLog), logDir: root })}\n`);
+        return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : browserTests.code || 1;
+      }
+      browserSummary = `${browserCount.total} browser tests (${browserDecision.webviewPaths.length} src/webview change${browserDecision.webviewPaths.length === 1 ? "" : "s"})`;
+    } else {
+      browserSummary = browserDecision.reason
+        ? `0 browser tests (${browserDecision.reason})`
+        : "0 browser tests (no src/webview change)";
+    }
+    process.stdout.write(`${formatSuccess(report)}\n${browserSummary}\n`);
     // t-47cc91 — file the green under the TREE it covered, so "the tree you land is the tree you
     // verified" becomes a lookup instead of something the operator has to still remember. Recorded
     // only on the success path: a red or aborted run must never leave a proof behind.

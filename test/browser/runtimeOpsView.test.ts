@@ -84,7 +84,9 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     const error = await browser.newPage();
     await openRuntimeOpsFixture(error, server.origin, "error", { width: 1100, height: 360 });
     expect(await error.$eval("[role='alert']", (el) => el.textContent)).toContain("Runtime Ops could not refresh the inventory.");
-    expect(await error.$eval(".runtime-ops-refresh", (el) => el.getAttribute("href"))).toBe("command:tachyon.refreshRuntimeOps");
+    // The standalone app refreshes through its host protocol, not a command URI. The error state
+    // deliberately carries no stale `.runtime-ops-refresh` link; keep measuring the explicit alert.
+    expect(await error.$(".runtime-ops-refresh")).toBeNull();
     await error.close();
 
     const empty = await browser.newPage();
