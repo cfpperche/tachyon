@@ -33,8 +33,15 @@ describe("the global workspace scope has exactly one control (SDD 485 C6)", () =
     expect(controlHeader).toContain('data-testid="control-workspace-select"');
   });
 
-  it("does not turn a single project into selector noise", () => {
-    expect(sidebarApp).toMatch(/tab === "Control" && fleets\.length > 1/);
+  it("stays on screen with a single project, carrying that one option", () => {
+    // Maintainer, 2026-08-03, reversing the first delivery: the selector must be evident at all
+    // times, inert rather than absent. A control that appears only once a second project shows up
+    // teaches nobody it exists, and the human who needs it is the one who just added that project.
+    expect(sidebarApp).toMatch(/\{tab === "Control" && \(/);
+    expect(sidebarApp).not.toMatch(/tab === "Control" && fleets\.length > 1/);
+    // "All workspaces" is the one part that IS conditional: with a single workspace it would offer a
+    // choice between a set and its only member, so that branch renders the project itself instead.
+    expect(sidebarApp).toMatch(/fleets\.length > 1\s*\?[\s\S]*All workspaces[\s\S]*:\s*<option value="">\{fleets\[0\]\?\.folder\?\.name/);
   });
 
   it("no screen mirrors it — the Board's own workspace dropdown is gone", () => {

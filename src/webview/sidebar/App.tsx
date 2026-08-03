@@ -1334,7 +1334,12 @@ export function App({
       </div>
       <div class="sec">
         <b>{tab}</b>
-        {tab === "Control" && fleets.length > 1 && (
+        {/* SDD 485 C6 — ALWAYS rendered, including for a single workspace (maintainer, 2026-08-03).
+            It first hid itself below two fleets; a control that appears only once the window happens
+            to hold a second project teaches nobody it exists, and the human who needs it is exactly
+            the one who just added that project. With one workspace it is present and inert: the
+            dropdown carries the one option, so the scope is VISIBLE rather than merely defaulted. */}
+        {tab === "Control" && (
           <span class="sec-actions">
             <select
               class="control-workspace-select"
@@ -1344,8 +1349,19 @@ export function App({
               aria-label="Control workspace"
               onChange={(e) => dispatch?.switchWorkspace?.((e.currentTarget as HTMLSelectElement).value)}
             >
-              <option value="">All workspaces</option>
-              {fleets.map((fleet) => <option value={fleet.folder?.hash ?? ""}>{fleet.folder?.name ?? "Workspace"}</option>)}
+              {/* One workspace: the single option IS the list, and "All workspaces" above it would be
+                  a choice between a set and its only member. Not `disabled` — a greyed control reads
+                  as broken, and the ask was for it to stay evident. With nothing else to pick it is
+                  already inert.
+                  It carries value="" on purpose: the stored scope for a fresh window is undefined
+                  ("all"), so an option keyed by the workspace hash would not match and the select
+                  would render EMPTY — measured, not theorised. Empty is worse than absent. */}
+              {fleets.length > 1
+                ? <>
+                    <option value="">All workspaces</option>
+                    {fleets.map((fleet) => <option value={fleet.folder?.hash ?? ""}>{fleet.folder?.name ?? "Workspace"}</option>)}
+                  </>
+                : <option value="">{fleets[0]?.folder?.name ?? "Workspace"}</option>}
             </select>
           </span>
         )}
