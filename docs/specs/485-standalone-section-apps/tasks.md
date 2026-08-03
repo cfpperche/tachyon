@@ -142,6 +142,27 @@ work in parallel only if the second re-applies onto the first before delivery, n
       now risks building something that gets thrown away. Record the collect cost per panel when (a) lands;
       that is the measurement (b) would need and nobody has.
 
+      **Correction to the paragraph above, measured after writing it: the model is A cost, not THE cost.**
+      The thing that actually separates these six from D1–D5 is the STYLESHEET, and counting JSX lines
+      cannot see it. Every one of the five migrated apps arrived with a stylesheet of its own
+      (`mission-control.css`, `inspector.css`, `plugins.css`, `runtime-ops.css`, `human-inbox.css`) and
+      **not one of them uses a single `ck-` class** — checked by grep across all five directories, which
+      returns nothing. Engine is the first section whose markup is written in CONTROL's namespace:
+      `ck-card-list`, `ck-empty` on the section itself, and `ck-mono` plus five `ck-wt-*` inside
+      `WorkspaceCard` — which is not extracted either (`cockpit/App.tsx:773–842`, 69 lines, so Engine's
+      real footprint is ~81 lines of TSX and not the 12 the section body suggests).
+
+      Those rules live in `cockpit.css` and are SHARED: `ck-mono` has 9 uses, `ck-empty` 3, `ck-card-list`
+      2. So moving a rule breaks whatever section still renders it, and copying it forks a definition —
+      the classic problem the first five never hit because each owned its own sheet from birth. Each rule
+      has a LAST user somewhere in D5–D10, and until that migration it must be live in two places.
+
+      This does not change the (a)/(b) recommendation; it adds a third question every one of these PRs has
+      to answer out loud: **which `ck-` rules does this section consume, who else still consumes them, and
+      does this migration move them, copy them, or leave them.** `page-frame.css` (t-32c872) is the shape
+      of the answer when a rule is genuinely shared — one opt-in sheet, LINKED not copied, with the Phase A
+      contract checking the CONSUMPTION. Reach for that before duplicating.
+
       Two facts checked rather than assumed, so no one re-derives them:
 
         - **The workspace scope survives Overview leaving.** `cockpit/App.tsx`'s comment calls its `<select>`
