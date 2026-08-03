@@ -263,7 +263,6 @@ export class PluginsPanelManager {
       // consumption check cannot see because it reads `#root` height chains and not padding.
       styleFiles: ["codicon.css", "design-system.css", "plugins.tailwind.css", "plugins.css"],
       title: () => vscode.l10n.t("Plugins"),
-      iconName: "extensions",
       refreshKindFor: pluginsRefreshKind,
       bind: (session) => {
         // PER PANEL, not per manager — see this class's doc comment. Two projects are two panels, two

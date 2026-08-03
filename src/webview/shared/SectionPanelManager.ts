@@ -3,6 +3,7 @@ import { renderWebviewShell, type ShellExtensionPoint } from "./shell.js";
 import { panelIcon } from "./panelIcon.js";
 import { PanelWorkGate, panelVisibility } from "./panelWorkGate.js";
 import type { TrustedPanelState } from "./panelSerializer.js";
+import { sectionAppIconName } from "../webviewApps.js";
 import type { SectionAppCardinality, WebviewAppEntry } from "../webviewApps.js";
 import type { ControlWorkspaceScope } from "./ControlWorkspaceScope.js";
 
@@ -129,7 +130,13 @@ export interface SectionAppConfig<K extends string = string> {
   /** stylesheet filenames under `dist/webview`, IN ORDER (codicon → design-system → the app's own). */
   styleFiles: readonly string[];
   title(target: SectionPanelTarget): string;
-  /** editor-tab icon, resolved via `media/icons/{light,dark}/<name>.svg`. */
+  /**
+   * editor-tab icon, resolved via `media/icons/{light,dark}/<name>.svg`.
+   *
+   * t-icon — only for an app NO launcher tile opens. When the manifest row names a `section`, the icon
+   * comes from `controlSectionIcon(section)` and declaring it here is a startup error rather than a second
+   * opinion: a tab whose icon differs from the tile that opened it is the bug this refusal exists for.
+   */
   iconName?: string;
   /**
    * SDD 485 A2 — the shell extension points this app composes through, emitted as `data-shell-extends` and
@@ -362,7 +369,8 @@ export class SectionPanelManager<K extends string = string> {
     );
     panel.title = title;
     panel.webview.options = { enableScripts: true, localResourceRoots };
-    if (config.iconName) panel.iconPath = panelIcon(this.extensionUri, config.iconName);
+    const iconName = sectionAppIconName(config.app, config.iconName);
+    if (iconName) panel.iconPath = panelIcon(this.extensionUri, iconName);
 
     const uri = (file: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, file)).toString();
     panel.webview.html = renderWebviewShell({

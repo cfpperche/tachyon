@@ -122,7 +122,6 @@ export class BoardPanelManager {
       // CONSUMPTION, not just the declaration.
       styleFiles: ["codicon.css", "design-system.css", "page-frame.css", "vscode-theme.css", "mission-control.tailwind.css", "mission-control.css"],
       title: () => "Board",
-      iconName: "tasklist",
       refreshKindFor: boardRefreshKind,
       bind: (session) => {
         const send = async (): Promise<void> => {
