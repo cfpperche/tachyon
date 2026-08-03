@@ -29,6 +29,8 @@ export interface DoctorReportInput {
   configValid: boolean;
   /** accepted-but-ignored compatibility settings and other non-blocking config diagnostics */
   configWarnings?: readonly string[];
+  /** agent profiles rejected in isolation while the rest of the config loaded */
+  refusedProfiles?: readonly { name: string; reason: string }[];
   lkg: ConfigLkgSnapshot | null;
   ledger: ReadonlyArray<readonly [string, SessionRecord]>;
   /** agent names with a live (non-dead) tmux session */
@@ -93,6 +95,15 @@ export function buildDoctorReport(input: DoctorReportInput): DoctorReport {
     });
     suggestions.push(`Open and fix ${input.configFailure?.file ?? "tachyon.yml"}`);
     suggestions.push("After fixing: Reload Window or Tachyon: Start");
+  } else if (input.refusedProfiles?.length) {
+    findings.push({
+      id: "config.profiles_refused",
+      severity: "warn",
+      title: `Config loaded with ${input.refusedProfiles.length} refused agent profile(s)`,
+      detail: input.refusedProfiles.map(({ name, reason }, index) => `${index + 1}. ${name}: ${reason}`).join("\n"),
+      action: "Fix the refused profile(s), then reload the window or run Tachyon: Start",
+    });
+    suggestions.push("Fix the refused agent profile(s) in tachyon.yml");
   } else {
     findings.push({
       id: "config.ok",
