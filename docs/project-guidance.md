@@ -84,6 +84,34 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   then remove the change worktree. The retired flags
   `--owner`, `--slot`, `--activate`, `--no-activate`, `--require-owner`, and `--all` must not return.
 - Do not open a desktop VS Code window unless the human explicitly requests it.
+- **Test through the door PRODUCTION uses, and prove the guard red before trusting it green.** A green
+  test proves the door you called works; it never proves it was the only door. `0.56.159` shipped a
+  coalescing fix with green units and changed nothing live — the tests called the one coalesced entry
+  point while five other call sites bypassed it. Enumerate the paths that can reach the effect (the
+  ACTOR × TRIGGER habit above, applied to your own change), then write the test. And watch it fail
+  first: on 2026-08-03 a static guard written to close exactly that gap was itself blind — it compared
+  line text against a `switch` body, so an injected bypass matched as a substring of the switch's own
+  `case` and every violation passed. The fail-before caught it; nothing else would have.
+
+## Measurement and diagnosis
+
+Performance and correctness claims are measurements, not impressions. Three ways this repo has been
+wrong, each paid for.
+
+- **Self time is not caller attribution.** A CPU profile's self time answers *where the CPU is*, never
+  *who asked for it*. On 2026-08-02 that confusion produced a confident wrong culprit (the Board),
+  reported to the human and handed to a delegated agent before re-profiling with caller attribution
+  showed the real distribution. Before naming a cause, check that your instrument answers the question
+  you are asking.
+- **Measure frequency before cost.** A 13 ms path means something different at once per three seconds
+  than at thirty times per second. Cost per call is the cheaper number to get and the easier one to
+  act on, which is exactly why it gets reported first and anchors the whole diagnosis to the wrong
+  axis.
+- **When you suppress or coalesce, the trailing edge is the safety property.** Collapsing N events is
+  lossless only because the event carries no payload — an invalidation says "this is stale", never
+  what changed. Swallow the *last* one and the view is stale forever, with no second chance. Trading
+  slowness for wrong data is the worse defect, so design the catch-up first and the suppression
+  second (`t-b51923`, then SDD 485 Phase B one layer down).
 
 ## Visual and UI work
 
