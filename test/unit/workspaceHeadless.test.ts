@@ -495,6 +495,34 @@ it("rejects an invalid reload and retains the prior known-good config", async ()
   ws.dispose();
 });
 
+it("t-af6803 isolates one invalid profile without invalidating or stopping the healthy fleet", async () => {
+  const root = mkdir();
+  const fixtures = [writeSavedAgent(root, "healthy"), writeSavedAgent(root, "broken")];
+  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
+  const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+  try {
+    await ws.manager.spawn("healthy");
+    const healthySession = ws.manager.session("healthy");
+    expect(fake.sessions.has(healthySession)).toBe(true);
+
+    const brokenPath = path.join(root, ".tachyon", "agents", "broken", "agent.yml");
+    fs.writeFileSync(brokenPath, fs.readFileSync(brokenPath, "utf8").replace("schemaVersion: 1", "schemaVersion: 2"));
+
+    expect(ws.reloadConfig()).toBe(true);
+    expect(ws.configFailure).toBeUndefined();
+    expect(ws.config?.agents.healthy).toBeDefined();
+    expect(ws.config?.agents.broken).toBeUndefined();
+    expect(fake.sessions.has(healthySession)).toBe(true);
+    expect(ws.refusedAgents().broken).toMatch(/profile\/schema: schemaVersion/);
+    expect(() => ws.assertNotLkgOnlySpawn("healthy")).not.toThrow();
+    expect(() => ws.assertNotLkgOnlySpawn("broken")).toThrow(/profile\/schema: schemaVersion/);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("loads a canonical agent profile only after host-custodied authority is available", async () => {
   const root = mkdir();
   const homeDir = mkdir();

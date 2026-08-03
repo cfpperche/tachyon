@@ -4936,12 +4936,9 @@ export class Workspace {
       return false;
     }
     const { config, errors, warnings, profileErrors } = this.parseTrustedConfigText(text);
-    // t-588644 — a broken profile is ONE agent's problem. Before this, every error went into one
-    // bucket and any of them took the whole roster down: measured with two agents, the healthy one
-    // produced no error and still did not load. The loader now says which errors belong to a single
-    // agent; when that is all of them, the healthy agents load and the refused ones are named in the
-    // durable failure banner. `configValid` stays false — the file DOES have a problem — which is the
-    // invariant `workspaceProjection` enforces between the two, and which keeps this loud.
+    // t-af6803 — a broken profile is ONE agent's problem. The loader keeps its actionable reason in
+    // agentSources as `refused`; putting the same error into the FILE-wide configFailure slot marks
+    // every healthy/running row `config invalid` and makes unrelated profiles unspawnable.
     const isolatable = errors.length > 0 && profileErrors.length === errors.length && config !== undefined;
     if (errors.length > 0 && !isolatable) {
       // t-8354ae — keep a durable failure surface (sidebar banner); toast alone is not enough.
@@ -4959,16 +4956,12 @@ export class Workspace {
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
     this.config = config;
-    // t-588644 — the refused agents are ABSENT from the config we just accepted, so this banner is
-    // the only thing standing between "that agent was refused, here is why" and an agent that
-    // silently stopped existing. Trading a loud whole-roster failure for a quiet partial one would
-    // be the worse bug, so the failure surface is set BEFORE anything reads the new roster.
-    this.configFailure = isolatable
-      ? { path: file, file: path.basename(file), errors: [...profileErrors], at: new Date().toISOString() }
-      : undefined;
+    // The refused row itself is the durable failure surface (name + reason + disabled spawn). The
+    // global banner is reserved for failures that actually invalidate tachyon.yml as a whole.
+    this.configFailure = undefined;
     this.profileSpawnBlocked.clear();
     if (isolatable) {
-      this.blockProfileSpawnsFromLiveConfig();
+      this.blockRefusedProfileSpawnsFromLiveConfig();
       this.host.notify(
         this.t("{0}: {1}{2}", path.basename(file), profileErrors[0], profileErrors.length > 1 ? this.t(" (+{0} more)", profileErrors.length - 1) : ""),
         "error",
@@ -5040,6 +5033,17 @@ export class Workspace {
       // from, and starting it is exactly what its refusal denies.
       Object.entries(sources ?? {})
         .filter(([, source]) => source.mode === "profile" || source.mode === "refused")
+        .map(([name]) => name),
+    );
+  }
+
+  private blockRefusedProfileSpawnsFromLiveConfig(): void {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
+    }) | undefined)?.agentSources;
+    this.profileSpawnBlocked = new Set(
+      Object.entries(sources ?? {})
+        .filter(([, source]) => source.mode === "refused")
         .map(([name]) => name),
     );
   }
@@ -5703,7 +5707,11 @@ export class Workspace {
       );
     }
     if (this.profileSpawnBlocked.has(name)) {
-      throw new Error(`cannot spawn profile-backed agent '${name}' while its trusted configuration is invalid; fix the profile/authority error and reload`);
+      const reason = this.refusedAgents()[name];
+      throw new Error(
+        `cannot spawn profile-backed agent '${name}' while its trusted configuration is invalid`
+        + `${reason ? ` — ${reason}` : ""}; fix that profile field or authority and reload`,
+      );
     }
     if (!this.configFailure) return;
     const inLive = !!this.config?.agents[name] || this.manager.defOf(name) !== undefined;
