@@ -98,11 +98,25 @@ Two limits on this rule, both deliberate:
   route today; `studioParentSection` sends command, terminal, runbook, schedule and agent to flat
   sections (`route.ts:187`). Those are documents with one mode, not two — do not invent a reading
   view none of them has.
-- **Pin is explicitly NOT folded in by analogy.** Its edit form is in the editor, but its "detail"
-  is `pin-preview`, a **sidebar** surface (`editorHome: "sidebar"`, hosted by `SidebarPrototype`),
-  and `studio-edit(pin)` returns to `returnRoute ?? overview` rather than to a pin detail. Unifying
-  those means moving where a human reads a pin, which is a product change this spec is not making.
-  It stays a separate decision.
+- **Pin IS folded in — same shape as task.** Maintainer, 2026-08-03: one Pins document app carrying
+  detail and edit, keyed by pin id; the **list stays in the sidebar**, which is what a sidebar is for.
+
+  This corrects a claim made a paragraph earlier in this spec's own history. Pin was first excluded
+  on the grounds that its detail is a sidebar surface, read off `editorHome: "sidebar"` in
+  `WEBVIEW_SURFACES`. That field names the surface's HOST FILE, not where the panel opens:
+  `SidebarPrototype.ts:439` calls `createWebviewPanel(PIN_PREVIEW_VIEW_TYPE, …, ViewColumn.Active)`.
+  A pin detail is **already an editor tab**. So unifying detail and edit moves nothing about where a
+  human reads a pin — it is the same consolidation task gets, not a larger one.
+
+  Two consequences ride along. `studio-edit(pin)` currently returns to `returnRoute ?? overview`
+  because it had no detail route to return to; under one app that return target becomes the app's own
+  read mode. And the manifest's `editorHome` is proven ambiguous — a field read twice in this session
+  as "where it opens" when it means "who hosts it". Worth a rename, filed separately.
+
+Also correcting the record: this spec's Open questions claim "the only live standalone editor panel
+is `AgentPanePanel`". There are more — `SidebarPrototype.ts:439` (pin preview), `plugins/ui/host.ts`
+and `AgentFixtureStudioPanel.ts` all call `createWebviewPanel` today. The grep behind the original
+claim missed hosts whose file name does not end in `Panel.ts`.
 
 **Done** means: the twelve Control dashboards and the identity-bearing documents are standalone
 editor apps, any two can be open at once, every one of them provably renders through the shared

@@ -79,9 +79,11 @@ work in parallel only if the second re-applies onto the first before delivery, n
 - [ ] D12. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
       with ONE mode. Their parent is a flat section (`route.ts:187`), not an entity route, so do not
       invent a reading view none of them has.
-- [ ] D13. Pin is NOT folded in here. `pin-preview` is a sidebar surface and `studio-edit(pin)`
-      returns to `returnRoute ?? overview`; unifying them moves where a human reads a pin. Open it as
-      its own decision with that argument, and close this box by having done so.
+- [ ] D13. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D11.
+      The LIST stays in the sidebar. `studio-edit(pin)`'s `returnRoute ?? overview` fallback becomes
+      the app's own read mode, since it existed only for lack of a detail route to return to.
+      Its current host is `SidebarPrototype.previewPin` (`:439`), which already opens an editor panel;
+      moving it to `SectionPanelManager` also gets it the Phase B gate it has never had.
 - [ ] D14. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
       navigation surface left open deliberately by t-aa2780.
 - [ ] D15. Exercise restore with all apps open across editor groups, then reload. Spec 361's
