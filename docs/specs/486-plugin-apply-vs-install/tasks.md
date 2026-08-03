@@ -5,6 +5,16 @@ _Generated from `plan.md` on 2026-08-03. Work top-to-bottom. Check boxes as task
 Two phases after the scope cut. A is the point; B is forced by A — once install
 materializes nothing, the delegated toolkit breaks unless its source moves.
 
+**Scope widened 2026-08-03, before ratification** (`spec.md` § "A plugin is not only skills"): Phase A
+covers TWO projected kinds, not one — `skill-dir` AND `settings-hook`. The maintainer asked whether hooks
+could be toggled like skills; the answer is yes, and the case is stronger, because a hook is code that RUNS
+rather than text a model may read. `mcp-server` is Phase C (`t-7f52f6`), `gitHooks` are a separate
+mechanism and a separate follow-up (`t-e85e0e`), and `view` is out by decision, contestable in `t-7ec4b2`.
+
+The hook half is not a copy of the skill half, and the tasks below say where they diverge: a skill is a
+DIRECTORY (un-apply is a delete), a hook is an entry MERGED into a settings file the human also edits
+(un-apply is a content-based un-merge, which is why `MaterializedTarget.removal` already exists).
+
 **Sequencing against SDD 485:** A5's UI lands in `src/webview/plugins/App.tsx`, which D2 has already
 moved to a standalone app. Confirm that merge is in before writing it, or it lands in the file that
 no longer renders.
@@ -18,18 +28,35 @@ no longer renders.
       runtime's behaviour there has been measured. If a runtime crashes or wedges rather than losing
       one skill, that changes what A5's switch may offer — so this comes before the switch exists,
       not after.
+- [ ] A1b. The same measurement for a HOOK, which is sharper in two ways the skill question does not
+      cover. (i) The entry lives in a settings file a runtime may have read ONCE at startup, so removal
+      may not take effect until restart — and a switch that promises "disarmed" while the hook still
+      fires is worse than no switch. (ii) A hook may be MID-EXECUTION when its entry is removed;
+      "stops firing next time" and "the running one is killed" are different products. Measure per
+      runtime, and let the answer constrain what A5 is allowed to say.
 - [ ] A2. Add the applied record, LOCAL by decision (`spec.md` — Tachyon state does not travel in the
       repo; the exceptions are re-opened by name). Its own store, not a field on `plugins.lock.json`:
       that file records what was FETCHED, and its `integrity.payload` deliberately drifts once a human
       edits (spec 270). One file must not answer two questions with two lifetimes.
-- [ ] A3. `install` writes the payload and materializes NOTHING. Materialization moves behind
-      `apply(plugin, skill)`, fanning out to every runtime the plugin declares.
-- [ ] A4. `unapply(plugin, skill)` removes exactly what `apply` wrote — the lockfile's `targets`
-      already name those paths per runtime, so it is a lookup, not a guess — and leaves the payload
-      alone, so re-applying needs no refetch.
-- [ ] A5. Per-skill apply/un-apply control on the Plugins app. The state the model introduces has no
-      representation today: **installed but not applied**. A card that renders it as absent would hide
-      a plugin the human installed — that is the visual failure to design against.
+- [ ] A3. `install` writes the payload and materializes NOTHING — no skill directory AND no hook entry.
+      Materialization moves behind `apply(plugin, contribution)`, fanning out to every runtime the
+      plugin declares. Keyed by contribution, not by plugin: a plugin shipping a skill and a hook has
+      two independently applicable things, because they carry different risk and the human may well
+      want one without the other.
+- [ ] A4. `unapply(plugin, contribution)` removes exactly what `apply` wrote and leaves the payload
+      alone, so re-applying needs no refetch. **Two removals, not one.** A `skill-dir` is a directory:
+      the lockfile's `targets` name the path per runtime, so it is a lookup and a delete. A
+      `settings-hook` is an entry inside a file the human ALSO edits: removal must go through
+      `MaterializedTarget.removal` — the adapter-owned identity that exists for exactly this
+      ("content-based un-merge that survives", `lockfile.ts:36`) — and a human's own edits to that file
+      must survive. Prove the second with a test that edits the settings file by hand first.
+- [ ] A5. Per-contribution apply/un-apply control on the Plugins app. The state the model introduces
+      has no representation today: **installed but not applied**. A card that renders it as absent
+      would hide a plugin the human installed — that is the visual failure to design against. And a
+      hook needs more than a skill does: code that will run on the next matching event must not look
+      like code that will not. Whatever A1b measured about restart-to-take-effect has to be VISIBLE
+      here, not just true — a toggle that reads "off" while the hook still fires is the one outcome
+      worse than having no toggle.
 
 ### Phase B — the delegated toolkit reads the payload
 
@@ -44,9 +71,13 @@ no longer renders.
 
 _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 
-- [ ] Installing a plugin materializes nothing in any runtime's project directory (A3)
-- [ ] Applying one skill materializes exactly that skill, into every runtime the plugin declares (A3)
+- [ ] Installing a plugin materializes nothing in any runtime's project directory — no skill dir and
+      no hook entry (A3)
+- [ ] Applying one contribution materializes exactly that one, into every runtime the plugin declares,
+      leaving the plugin's other contributions unapplied (A3)
 - [ ] Un-applying removes the materialization from every runtime dir and leaves the payload (A4)
+- [ ] Un-applying a HOOK from a settings file the human edited by hand removes Tachyon's entry and
+      leaves the human's edits intact (A4)
 - [ ] A Temporary agent gets its own worktree and receives the parent's skills filtered by runtime,
       with any shortfall named (B1 — the filter and the naming already exist; prove they survive)
 - [ ] A canonical Grok agent is creatable with plugins installed and nothing applied (A3)
