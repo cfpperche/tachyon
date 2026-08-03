@@ -55,6 +55,7 @@ import { terminalStudioShellFixtures, terminalStudioShellMakeMessage } from "./f
 import { commandStudioShellFixtures, commandStudioShellMakeMessage } from "./fixtures/command-studio-shell";
 import { runbookStudioShellFixtures, runbookStudioShellMakeMessage } from "./fixtures/runbook-studio-shell";
 import { scheduleStudioShellFixtures, scheduleStudioShellMakeMessage } from "./fixtures/schedule-studio-shell";
+import { sectionAppFixtureFixtures, sectionAppFixtureMakeMessage } from "./fixtures/section-app-fixture";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -327,6 +328,18 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },
+  // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
+  // status as the two spec-350 fakes above.
+  "section-app-fixture": {
+    bundle: "/dist/webview/section-app-fixture.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/section-app-fixture.css"],
+    frame: { w: 880, h: 520 },
+    fixtures: sectionAppFixtureFixtures as Record<string, Fixture>,
+    // SDD 485 C2 — an entry of the code-split invocation, so the bundle is an ES module (same reason
+    // cockpit.js is, above): a classic <script> injection dies on its first `import`.
+    module: true,
+    makeMessage: (vm) => sectionAppFixtureMakeMessage(vm as never),
+  },
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone "command"/"terminal"/"runbook"/"schedule"
   // /"agent"-studio-shell routes previewed the retired standalone panels; they're Control routes now
   // (studio-new/studio-edit, studio:"command"/"terminal"/"runbook"/"schedule"/"agent") — use
@@ -359,6 +372,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
+  "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

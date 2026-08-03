@@ -37,14 +37,14 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
 
 ### Phase C — generic manager + the two motivating apps
 
-- [ ] C1. `SectionPanelManager`: configured from the manifest entry, keyed by
+- [x] C1. `SectionPanelManager`: configured from the manifest entry, keyed by
       `viewId + project + identity`, cardinality as a **parameter** (dashboard = one per section per
       project; document = one per identity). Creates through the shared shell; persists the minimum
       state `registerTrustedPanelSerializer` needs.
-- [ ] C2. Multi-entry build: one entrypoint per app in a single esbuild invocation with
+- [x] C2. Multi-entry build: one entrypoint per app in a single esbuild invocation with
       `splitting: true`; Preact and the kit extracted to shared chunks, per-app bootstrap, error
       boundary and CSS.
-- [ ] C3. Replace `cockpitBundleBudget.test.ts` with a manifest-driven successor measuring each app's
+- [x] C3. Replace `cockpitBundleBudget.test.ts` with a manifest-driven successor measuring each app's
       eager entry and the reachable total. Record the new numbers in `notes.md` against 410's
       baseline (~244 KB, gate 350 KB) so a future reader can see whether this reversal cost size.
 - [ ] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task

@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
 import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
+import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
 // tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
@@ -25,7 +26,9 @@ describe("webview convention (spec 279)", () => {
   it("every converted surface is a real preact bundle (main.tsx + esbuild entry)", () => {
     for (const s of WEBVIEW_SURFACES.filter((x) => x.converted)) {
       expect(existsSync(`src/webview/${s.view}/main.tsx`), `${s.viewId}: missing src/webview/${s.view}/main.tsx`).toBe(true);
-      expect(esbuild.includes(`dist/webview/${s.view}.js`), `${s.viewId}: no esbuild entrypoint for dist/webview/${s.view}.js`).toBe(true);
+      // SDD 485 C2 — a bundle is emitted either by its own target's `outfile` or as one entry of the
+      // multi-entry splitting invocation (outdir + entryNames, so no literal output path exists).
+      expect(buildsWebviewEntry(esbuild, s.view), `${s.viewId}: no esbuild entrypoint for dist/webview/${s.view}.js`).toBe(true);
     }
   });
 
@@ -98,7 +101,7 @@ describe("webview convention (spec 279)", () => {
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
       tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
     };
-    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
+    const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
       // Statically contributed WebviewViews are recreated by VS Code through their provider; serializers apply
@@ -174,9 +177,12 @@ function shellCallChunks(hostSource: string): Array<{ view: string; chunk: strin
   return out;
 }
 
-/** the stylesheet basenames a surface links, in link order. Two shapes exist: a direct `renderWebviewShell`
- *  call (`styles: [uri("x.css"), …]`) and a `StudioSurfaceConfig` handed to the shared studio host base
- *  (`styleFiles: ["x.css", …]`, which that base passes straight through to the same option). */
+/** the stylesheet basenames a surface links, in link order. Three shapes exist, all of them ending at the
+ *  same `renderWebviewShell` option: a direct call (`styles: [uri("x.css"), …]`); a `StudioSurfaceConfig`
+ *  handed to the shared studio host base (`styleFiles: [...]` next to `bundleFile: "<view>.js"`); and, since
+ *  SDD 485 C1, a `SectionAppConfig` handed to `SectionPanelManager` (`styleFiles: [...]` next to the
+ *  manifest row the host names, `webviewApp("<view>")` — that manager derives the bundle from the manifest,
+ *  so there is no `bundleFile` to key on). */
 function linkedStylesheets(s: WebviewSurface): string[] {
   const src = readFileSync(s.hostFile, "utf8");
   for (const { view, chunk } of shellCallChunks(src)) {
@@ -184,7 +190,9 @@ function linkedStylesheets(s: WebviewSurface): string[] {
     const block = /\bstyles:\s*\[([\s\S]*?)\]/.exec(chunk);
     if (block) return cssNamesIn(block[1]);
   }
-  if (new RegExp(String.raw`bundleFile:\s*["'\`]${s.view}\.js["'\`]`).test(src)) {
+  const namesItsSurface = new RegExp(String.raw`bundleFile:\s*["'\`]${s.view}\.js["'\`]`).test(src)
+    || new RegExp(String.raw`webviewApp\(\s*["'\`]${s.view}["'\`]\s*\)`).test(src);
+  if (namesItsSurface) {
     const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
     if (block) return cssNamesIn(block[1]);
   }

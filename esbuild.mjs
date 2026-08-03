@@ -276,11 +276,10 @@ const sidebar = {
 
 // POC — Tachyon Cockpit desktop shell (editor sysadmin; t-fe52f0 frente 1; no mobile).
 // spec 410 — ESM + code-splitting so section bodies can lazy-import without bloating eager cockpit.js.
-// emits dist/webview/cockpit.js + dist/webview/chunks/cockpit-*.js
-// t-06a542 — after each build, drop content-hashed chunks no longer referenced by cockpit.js so a
-// reused dist/ does not accumulate multi-MB stale cockpit-App-* files into the VSIX.
-const cockpitChunkHygienePlugin = {
-  name: "cockpit-chunk-hygiene",
+// t-06a542 — after each build, drop content-hashed chunks no longer referenced by a live entry so a
+// reused dist/ does not accumulate multi-MB stale App-* files into the VSIX.
+const webviewChunkHygienePlugin = {
+  name: "webview-chunk-hygiene",
   setup(build) {
     build.onEnd((result) => {
       if (result.errors.length > 0) return;
@@ -291,17 +290,33 @@ const cockpitChunkHygienePlugin = {
     });
   },
 };
-const cockpit = {
+
+/**
+ * SDD 485 C2 — the STANDALONE APPS, built as one entrypoint each in ONE esbuild invocation with
+ * `splitting: true`. One invocation is the whole decision (`spec.md`, RESOLVED 2026-08-03): twelve
+ * independent IIFE builds were rejected because they PREVENT chunk extraction — Preact, the kit and every
+ * shared utility would be copied once per app, which genuinely reopens 410's budget hole. Splitting across
+ * one graph means the twelfth app costs its own code and nothing else.
+ *
+ * This array is the build's half of the app manifest (`src/webview/webviewApps.ts`, which esbuild cannot
+ * import because it is TypeScript). `test/unit/webviewAppBudget.test.ts` fails if the two disagree in
+ * either direction, so the duplication cannot drift silently — the same bargain the convention guard
+ * already takes when it reads this file as text.
+ *
+ * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
+ */
+const WEBVIEW_APP_VIEWS = ["cockpit", "section-app-fixture"];
+const webviewApps = {
   ...sidebar,
-  entryPoints: ["src/webview/cockpit/main.tsx"],
-  entryNames: "cockpit",
-  chunkNames: "chunks/cockpit-[name]-[hash]",
+  entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
+  entryNames: "[name]",
+  chunkNames: "chunks/app-[name]-[hash]",
   outdir: "dist/webview",
   splitting: true,
   format: "esm",
-  plugins: [...(sidebar.plugins ?? []), cockpitChunkHygienePlugin],
+  plugins: [...(sidebar.plugins ?? []), webviewChunkHygienePlugin],
 };
-delete cockpit.outfile;
+delete webviewApps.outfile;
 
 // spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
 const pinPreview = {
@@ -496,6 +511,7 @@ copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"
 copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
 copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
 copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
+copyFileSync("src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
 copyFileSync("src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 // t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
 // (Cockpit.ts), not a standalone bundle's own entry point; the standalone .js targets are gone.
@@ -527,7 +543,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, cockpit, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));
