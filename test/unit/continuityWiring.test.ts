@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -145,6 +146,29 @@ type WorkspacePrivates = {
   maybeRemindHandoff(agent: string): Promise<void>;
 };
 const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePrivates;
+
+skipTestsWithoutOptionalRuntimeAuth({
+  claude: [
+    "automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks",
+    "D3: clean resume and post-compaction resume are both silent automatically",
+    "cold start (no brief) does not inject a create-first-brief nudge automatically",
+    "spec 307: plain Temporary Codex and Claude children do not receive automatic cold-start continuity nudges",
+    "spec 312: automatic checkpoint and handoff pane reminders are suppressed for declared agents with silent hooks",
+    "spec 312: silent hook suppression survives a VS Code reload while the tmux session keeps running",
+    "spec 312 / t-7bcba6: automatic pane reminders stay suppressed for declared agents (no visible-legacy path)",
+    "spec 312: no visible fallback remains when hook injection did not happen for this spawn",
+    "spec 316: persistence hook health reports active and failed from current-spawn evidence plus failure ledger",
+    "spec 316: persistence hook health treats stale or absent evidence conservatively",
+    "spec 309: cold-start checkpoint reminder is retired, even after new activity",
+    "spec 307: fork/worktree Temporary rows are still default-off for automatic nudges",
+    "spec 307: UI-origin manual reinject is allowed for a Temporary, generic manual calls are suppressed",
+    "a malformed brief stays silent automatically + does NOT clear the discontinuity",
+    "manual UI reinject can still warn for a malformed brief",
+    "continuityBadge: missing → fresh after a write",
+    "snapshotContinuityForFork copies a paused snapshot with fork provenance + a re-scope note (D8)",
+    "removeContinuity reaps the brief + state on delete",
+  ],
+});
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
   it("automatic injectContinuity stays silent and leaves discontinuity for runtime-native hooks", async () => {

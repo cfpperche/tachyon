@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -184,6 +185,24 @@ async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
 }
 
 const doorbellMetadataFor = (ws: Workspace, sender: string) => priv(ws).sourceNoticeMetadata(sender, "agent-authored");
+
+skipTestsWithoutOptionalRuntimeAuth({
+  claude: [
+    "THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected",
+    "the sender is TOLD a human is holding it — a queued doorbell that waits on a person says so",
+    "NO REGRESSION: an empty composer still delivers immediately, exactly as before",
+    "NO REGRESSION: Claude's dim suggestion is not a human and does not hold the queue (t-c5f29b bytes)",
+    "the held notice arrives when the draft leaves — waiting, not discarding",
+    "a queued notice is not flushed into a pane the human started typing in meanwhile",
+    "the HOST poke rides the same guard — the fix cannot be walked around through the other door",
+    "the idle re-anchor is deferred, not typed, while the human holds the composer",
+    "the same re-anchor is consumed once the composer is free — the deferral is not a mute button",
+    "the rate-limit auto-continue does not press Enter on a human's draft, and re-arms instead of dying",
+    "with a free composer the auto-continue still presses Enter, exactly as before",
+    "an abandoned draft cannot hold the notice forever: the TTL is swept even while the composer is held",
+    "the exit does not depend on an event: the heartbeat sweeps a queue nothing else touches",
+  ],
+});
 
 describe("t-a53dd9 — a human typing is not idleness", () => {
   it("THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected", async () => {

@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -19,6 +20,12 @@ import { expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
  *  This behavior test mirrors `src/agents/AgentManager.ts` spec-236 path: the materializer is
  *  `materializeBridgeMcpOpencode(name, cwd)` and is folded into spawnBuild.env as OPENCODE_CONFIG.
  */
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "opencode spawns receive bridge mcp config via environment",
+  ],
+});
+
 describe("container-generated delegation behavior", () => {
   const dirs: string[] = [];
   afterEach(() => {

@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -115,6 +116,12 @@ async function makeWorkspace() {
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
   return { ws, ...fake };
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "a Bridge-spawned child never opens a surface, and restarting it does not either (F3)",
+  ],
+});
 
 describe("t-b88106 — a relaunch preserves the agent's surface (real Workspace wiring)", () => {
   it("an explicit start opens the agent's editor terminal", async () => {

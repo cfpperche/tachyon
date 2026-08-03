@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -141,6 +142,19 @@ async function withCoordAndChild() {
   await made.ws.manager.spawn("child", { cmd: "opencode", parent: "coord" });
   return { ...made, session: made.ws.manager.session("coord") };
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "THE MEASURED BUG: a doorbell from a child the coordinator has since KILLED is still delivered",
+    "a HOST poke about a killed child is still purged — the ghost fix keeps its original scope",
+    "a host poke about a child that is still ALIVE is delivered (no over-purge)",
+    "baseline: busy at enqueue, idle later, child alive → delivered",
+    "expiry names the sender and the line, the way overflow already names its count",
+    "a notice queued because recovery held the mutex is drained in the same idle pass",
+    "a submit whose completion could not be observed keeps the notice queued for the next idle",
+    "a human draft in the composer holds the drain without losing the notice",
+  ],
+});
 
 describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
   it("THE MEASURED BUG: a doorbell from a child the coordinator has since KILLED is still delivered", async () => {

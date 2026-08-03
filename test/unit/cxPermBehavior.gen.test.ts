@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -28,6 +29,14 @@ function makeExec(newSessionEnvs: Record<string, string>[]) {
     return { stdout: "", stderr: "" };
   };
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "a delegated opencode agent's generated config carries the Tachyon permission block and project config cannot override it",
+    "an ungated, shared-cwd delegated opencode agent (parent set, no worktree) does NOT get the Tachyon permission block",
+    "a gated opencode agent still gets the Tachyon permission block after ledger rehydration and resume",
+  ],
+});
 
 describe("container-generated delegation behavior", () => {
   it("a delegated opencode agent's generated config carries the Tachyon permission block and project config cannot override it", async () => {

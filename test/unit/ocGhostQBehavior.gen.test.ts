@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -146,6 +147,14 @@ function recoverOnIdleOf(ws: Workspace) {
 }
 
 const STALE_POKE_LINE = "[tachyon] child 'cwdProbe' is waiting for input: Continue? [y/n]";
+
+skipTestsWithoutOptionalRuntimeAuth({
+  opencode: [
+    "a queued parent notice about a killed child is purged and never flushed to the parent pane",
+    "a queued parent notice about a still-alive child is flushed normally (no-over-purge guard)",
+    "an ordinary relayed notice whose body merely contains poke-shaped text is delivered, not purged (regex anchor)",
+  ],
+});
 
 describe("container-generated delegation behavior", () => {
   it("a queued parent notice about a killed child is purged and never flushed to the parent pane", async () => {

@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -75,6 +76,12 @@ function fakeTmux() {
   };
   return { sessions, tmux: new TmuxService(exec) };
 }
+
+skipTestsWithoutOptionalRuntimeAuth({
+  claude: [
+    "writes skipDangerousModePermissionPrompt into the per-spawn settings a Saved Agent launches with",
+  ],
+});
 
 describe("t-084b28 — Saved Agent bypass consent is seeded, not asked every launch", () => {
   const dirs: string[] = [];

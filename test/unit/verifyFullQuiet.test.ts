@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { FAILURE_LIMITS, STATIC_GATES, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
+import { FAILURE_LIMITS, STATIC_GATES, formatFailure, formatSuccess, summarizeReport, summarizeUnavailableCoverage } from "../../scripts/verify-full.mjs";
 
 const repoRoot = process.cwd();
 const runner = path.join(repoRoot, "scripts/verify-full.mjs");
@@ -71,6 +71,27 @@ describe("quiet full verification", () => {
     expect(summarizeReport(passingReport)).toEqual({ files: 2, passedFiles: 2, failedFiles: 0,
       total: 12, passed: 10, failed: 0, skipped: 1, todo: 1 });
     expect(formatSuccess(passingReport)).toBe("verify:full:quiet passed\nFiles: 2 passed (2)\nTests: 10 passed | 1 skipped | 1 todo (12)");
+  });
+
+  it("reports native credential skips by reason without changing their result", () => {
+    const report = {
+      ...passingReport,
+      testResults: [{ status: "passed", assertionResults: [
+        { status: "skipped", meta: { optionalRuntimeAuthUnavailable: "claude" } },
+        { status: "skipped", meta: { optionalRuntimeAuthUnavailable: "claude" } },
+        { status: "skipped", meta: { optionalRuntimeAuthUnavailable: "opencode" } },
+        { status: "skipped", meta: {} },
+      ] }],
+    };
+    expect(summarizeUnavailableCoverage(report)).toEqual([
+      { reason: "optional claude credential unavailable", count: 2 },
+      { reason: "optional opencode credential unavailable", count: 1 },
+    ]);
+    expect(formatSuccess(report)).toContain(
+      "Coverage unavailable (native test skips):\n- 2: optional claude credential unavailable\n- 1: optional opencode credential unavailable",
+    );
+    expect(report.testResults.map((file) => file.assertionResults.map((test) => test.status)))
+      .toEqual([["skipped", "skipped", "skipped", "skipped"]]);
   });
 
   it("bounds assertion count, each assertion, and total diagnostics", () => {

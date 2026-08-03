@@ -100,17 +100,38 @@ export function summarizeReport(report) {
   return { files, passedFiles: files - failedFiles, failedFiles, total, passed, failed, skipped, todo };
 }
 
+/** t-eccb00: summarize native Vitest skips; never rewrite statuses or the process exit code. */
+export function summarizeUnavailableCoverage(report) {
+  const counts = new Map();
+  for (const file of Array.isArray(report?.testResults) ? report.testResults : []) {
+    for (const assertion of Array.isArray(file?.assertionResults) ? file.assertionResults : []) {
+      if (assertion?.status !== "skipped") continue;
+      const runtime = assertion?.meta?.optionalRuntimeAuthUnavailable;
+      if (typeof runtime !== "string") continue;
+      const reason = `optional ${runtime} credential unavailable`;
+      counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([reason, count]) => ({ reason, count }));
+}
+
 export function formatSuccess(report) {
   const count = summarizeReport(report);
   const testParts = [`${count.passed} passed`];
   if (count.failed) testParts.push(`${count.failed} failed`);
   if (count.skipped) testParts.push(`${count.skipped} skipped`);
   if (count.todo) testParts.push(`${count.todo} todo`);
-  return [
+  const lines = [
     "verify:full:quiet passed",
     `Files: ${count.passedFiles} passed (${count.files})`,
     `Tests: ${testParts.join(" | ")} (${count.total})`,
-  ].join("\n");
+  ];
+  const unavailable = summarizeUnavailableCoverage(report);
+  if (unavailable.length) {
+    lines.push("Coverage unavailable (native test skips):");
+    for (const item of unavailable) lines.push(`- ${item.count}: ${item.reason}`);
+  }
+  return lines.join("\n");
 }
 
 function assertionFailures(report) {
