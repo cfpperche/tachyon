@@ -1,6 +1,6 @@
-/* SDD 485 D5/D6 — opt-in workspace primitives shared across Control and extracted apps. Engine and
-   Worktrees consume ck-card-list. Typography lives in control-typography.css; the surface-owned ck-wt-*
-   leaf moved to worktrees.css because it has exactly one consumer. */
+/* SDD 485 D5–D7 — opt-in primitives shared by Control and extracted apps. Engine, Worktrees and Fleet
+   consume ck-card-list; Control retains two ck-empty consumers in Overview. Typography lives in
+   control-typography.css; the surface-owned ck-wt-* leaf moved to worktrees.css. */
 .ck-card-list { display: flex; flex-direction: column; gap: 8px; }
 .ck-empty { padding: 12px 0; text-align: left; font-size: 11px; color: var(--ds-muted); }
 .ci-ws { border:1px solid var(--ds-border);border-radius:4px;margin-bottom:10px;overflow:hidden;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent) }

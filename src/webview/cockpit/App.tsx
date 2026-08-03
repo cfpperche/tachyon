@@ -21,7 +21,7 @@ import {
 } from "./messages";
 import { CardTemplateBlock } from "./CardTemplateBlock";
 import { ExecutionGraphSection } from "./ExecutionGraphSection";
-import { Button, Badge, ListRow, PageChrome, EmptyState, QuickPicker, type QuickPickerItem } from "../shared/ui";
+import { Button, Badge, PageChrome, EmptyState } from "../shared/ui";
 import {
   KitDropdown,
   KitDropdownContent,
@@ -247,16 +247,6 @@ export interface CockpitAppProps {
   onSetSection: (section: CockpitSectionId) => void;
   /** t-d16a39 — shell-level workspace scope; "" = All workspaces. */
   onSwitchWorkspace: (wsHash: string) => void;
-  onFleetStart: (name: string, wsHash?: string) => void;
-  onFleetStop: (name: string, wsHash?: string) => void;
-  onFleetTerminal: (name: string, wsHash?: string) => void;
-  onFleetActivity: (name: string, wsHash?: string) => void;
-  /** t-610705 (Phase D, D1c) — Fleet's own Probes/Edit buttons (previously only reachable via the
-   *  agent-less `tachyon.openProbes` command / the sidebar tree's context menu). */
-  onFleetProbes: (name: string, wsHash?: string) => void;
-  onFleetAgentStudio: (name: string, wsHash?: string) => void;
-  /** SDD 443 — webview QuickPicker already chose destination; host only invokes. */
-  onFleetContinueTask: (fromName: string, toName: string, wsHash?: string) => void;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onOpenConfigFile: (wsHash?: string) => void;
@@ -1057,7 +1047,6 @@ export function App(p: CockpitAppProps) {
   // its scroll math — window/document.body no longer work now that the standalone panel is retired).
   const activityScrollRef = useRef<HTMLDivElement>(null);
   // SDD 443 — in-webview QuickPicker for Continue task (replaces vscode.showQuickPick).
-  const [continuePick, setContinuePick] = useState<{ fromName: string; wsHash?: string } | null>(null);
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
   const m = p.model;
@@ -1340,72 +1329,6 @@ export function App(p: CockpitAppProps) {
           </div>
         </div>
       </>
-    );
-  } else if (section === "fleet") {
-    body = (
-      <ModuleChrome title={s.fleetTitle} hint={s.fleetHint} actionLabel={s.openMissionControl} onAction={() => p.onSetSection("mission")}>
-        {m.fleet.length === 0 ? (
-          <EmptyState kind="empty" message={s.noneListed} />
-        ) : (
-          <div class="ck-card-list" data-testid="control-fleet">
-            {m.fleet.map((a) => (
-              <ListRow
-                key={`${a.wsHash ?? ""}:${a.name}`}
-                title={
-                  <>
-                    <span class="name">{a.name}</span>
-                    <Badge tone={a.running ? "ok" : "default"}>{a.running ? s.running : s.stopped}</Badge>
-                    {a.lifetime === "temporary" ? <Badge tone="info">{s.temporary}</Badge> : <Badge>{s.saved}</Badge>}
-                    {a.kind ? <Badge>{a.kind}</Badge> : null}
-                  </>
-                }
-                meta={
-                  <>
-                    {a.folder ? <span>{a.folder}</span> : null}
-                    {a.wsHash ? <span class="ck-mono">{a.wsHash.slice(0, 8)}</span> : null}
-                  </>
-                }
-                actions={
-                  <>
-                    {a.running ? (
-                      <Button variant="default" onClick={() => p.onFleetStop(a.name, a.wsHash)}>
-                        {s.stop}
-                      </Button>
-                    ) : (
-                      <Button variant="default" onClick={() => p.onFleetStart(a.name, a.wsHash)}>
-                        {s.start}
-                      </Button>
-                    )}
-                    <Button variant="default" onClick={() => p.onFleetTerminal(a.name, a.wsHash)}>
-                      {s.openTerminal}
-                    </Button>
-                    <Button variant="default" onClick={() => p.onFleetActivity(a.name, a.wsHash)}>
-                      {s.openActivity}
-                    </Button>
-                    <Button variant="default" onClick={() => p.onFleetProbes(a.name, a.wsHash)}>
-                      {s.openProbes}
-                    </Button>
-                    {a.lifetime !== "temporary" && a.kind !== "terminal" ? (
-                      <Button
-                        variant="default"
-                        data-testid="fleet-continue-task"
-                        onClick={() => setContinuePick({ fromName: a.name, wsHash: a.wsHash })}
-                      >
-                        {s.continueTask}
-                      </Button>
-                    ) : null}
-                    {a.lifetime !== "temporary" ? (
-                      <Button variant="default" onClick={() => p.onFleetAgentStudio(a.name, a.wsHash)}>
-                        {s.editAgent}
-                      </Button>
-                    ) : null}
-                  </>
-                }
-              />
-            ))}
-          </div>
-        )}
-      </ModuleChrome>
     );
   } else if (section === "approvals") {
     body = (
@@ -1697,48 +1620,6 @@ export function App(p: CockpitAppProps) {
         ) : null}
       </main>
 
-      {continuePick && m ? (() => {
-        const from = continuePick.fromName;
-        const wsHash = continuePick.wsHash;
-        // Same workspace only when scoped; exclude source, terminal, Temporary.
-        const candidates = m.fleet
-          .filter((row) => row.name !== from)
-          .filter((row) => !wsHash || row.wsHash === wsHash)
-          .filter((row) => row.kind !== "terminal")
-          .filter((row) => row.lifetime !== "temporary")
-          .slice()
-          .sort((a, b) => Number(!!a.running) - Number(!!b.running));
-        const items: QuickPickerItem[] = candidates.map((row) => ({
-          id: `${row.wsHash ?? ""}:${row.name}`,
-          label: row.name,
-          description: row.running ? s.continueTaskDestRunning : s.continueTaskDestStopped,
-          detail: row.running
-            ? s.continueTaskDestRunning
-            : s.continueTaskDestDetail.replace("{0}", from),
-          disabled: !!row.running,
-          disabledReason: s.continueTaskDestRunning,
-        }));
-        const title = s.continueTaskPickTitle.includes("{0}")
-          ? s.continueTaskPickTitle.replace("{0}", from)
-          : `${s.continueTaskPickTitle} ${from}`;
-        return (
-          <QuickPicker
-            open
-            data-testid="fleet-continue-picker"
-            title={title}
-            subtitle={s.continueTaskPickSubtitle}
-            placeholder={s.continueTaskPickPlaceholder}
-            emptyText={s.continueTaskPickEmpty}
-            items={items}
-            onClose={() => setContinuePick(null)}
-            onSelect={(item) => {
-              const toName = item.label;
-              setContinuePick(null);
-              p.onFleetContinueTask(from, toName, wsHash);
-            }}
-          />
-        );
-      })() : null}
     </div>
   );
 }

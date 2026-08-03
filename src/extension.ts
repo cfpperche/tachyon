@@ -17,6 +17,7 @@ import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/Runtime
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
+import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -1606,6 +1607,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return result.forgotten === true ? undefined : `record not found or refused: ${id}`;
   };
+  // SDD 485 D7 — the Continue picker moved with Fleet; this remains the authoritative host action.
+  const continueFleetTask = async (fromName: string, toName: string, wsHash: string): Promise<void> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error("no Tachyon workspace for that hash");
+    if (!toName || toName === fromName) throw new Error("Continue task requires a different destination agent");
+    const listed = await extensionQuery(ws, { action: "agents.list" });
+    type AgentRow = { name?: string; running?: boolean; kind?: string; lifetime?: "saved" | "temporary" };
+    const dest = (Array.isArray(listed) ? listed : []).map((row) => row as AgentRow).find((row) => row.name === toName);
+    if (!dest || typeof dest.name !== "string") throw new Error(`destination agent '${toName}' not found`);
+    if (dest.kind === "terminal") throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
+    if (dest.lifetime !== "saved") throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
+    if (dest.running) throw new Error(`destination '${toName}' is running — stop it first`);
+    const result = jsonObject(await extensionInvoke(ws, {
+      action: "agent.continue-task", fromAgent: fromName, toAgent: toName, reason: "continued from Fleet",
+    }), "agent.continue-task");
+    if (result.ok !== true) throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
+    const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
+    void vscode.window.showInformationMessage(handoff
+      ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
+      : vscode.l10n.t("Continued {0} → {1}", fromName, toName));
+  };
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
@@ -1958,6 +1980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
     openBoard,
+    openFleet: (hash?: string) => openFleetTab(hash),
     // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
     // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
     openPlugins: (hash?: string) => openPluginsTab(hash),
@@ -1973,62 +1996,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
-    },
-    fleetStart: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: wsHash });
-    },
-    fleetStop: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: wsHash });
-    },
-    // SDD 443 — webview QuickPicker already chose toName; host revalidates against live list.
-    fleetContinueTask: async (fromName, toName, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      if (!toName || toName === fromName) {
-        throw new Error("Continue task requires a different destination agent");
-      }
-      const listed = await extensionQuery(ws, { action: "agents.list" });
-      const rows = Array.isArray(listed) ? listed : [];
-      type AgentRow = { name?: string; running?: boolean; kind?: string; lifetime?: "saved" | "temporary" };
-      const dest = rows
-        .map((r) => r as AgentRow)
-        .find((r) => r.name === toName);
-      if (!dest || typeof dest.name !== "string") {
-        throw new Error(`destination agent '${toName}' not found`);
-      }
-      if (dest.kind === "terminal") {
-        throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
-      }
-      // t-04052d — fail-closed on `!== "saved"`, not on `=== "temporary"`. This guard is over an
-      // untyped `agents.list` payload, so an absent field must refuse rather than pass: written the
-      // other way it silently stopped firing the moment the field it named was removed.
-      if (dest.lifetime !== "saved") {
-        throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
-      }
-      if (dest.running) {
-        throw new Error(`destination '${toName}' is running — stop it first`);
-      }
-      const result = jsonObject(
-        await extensionInvoke(ws, {
-          action: "agent.continue-task",
-          fromAgent: fromName,
-          toAgent: toName,
-          reason: "continued from Control Fleet",
-        }),
-        "agent.continue-task",
-      );
-      if (result.ok !== true) {
-        throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
-      }
-      const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
-      void vscode.window.showInformationMessage(
-        handoff
-          ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
-          : vscode.l10n.t("Continued {0} → {1}", fromName, toName),
-      );
-    },
-    fleetTerminal: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
     },
     revealPath: (fsPath) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
@@ -2397,6 +2364,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
+  // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
+  const fleetPanels = new FleetPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openBoard: (project) => openBoard(project),
+    start: async (name, project) => { await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: project }); },
+    stop: async (name, project) => { await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: project }); },
+    terminal: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, project); },
+    activity: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentActivity", name, project); },
+    probes: async (name, project) => { await vscode.commands.executeCommand("tachyon.openProbes", project, name); },
+    edit: async (name, project) => { await vscode.commands.executeCommand("tachyon.editAgentStudioItem", { agentName: name, workspaceHash: project }); },
+    continueTask: continueFleetTask,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => fleetPanels.dispose() });
+  const openFleetTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    fleetPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
   // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
   // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
@@ -2415,6 +2405,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2889,6 +2880,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "worktrees") {
           openWorktreesTab();
+          return Promise.resolve();
+        }
+        if (resolved === "fleet") {
+          openFleetTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });
