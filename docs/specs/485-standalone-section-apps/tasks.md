@@ -116,7 +116,31 @@ work in parallel only if the second re-applies onto the first before delivery, n
       renders AROUND its surface, not only for the surface**: the item's `← Inbox` breadcrumb was Control's
       chrome, and without moving it into the app the detail would have been reachable and unleavable — no
       functional test would have noticed.
-- [ ] D5–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Worktrees, Execution,
+- [x] D5. **Engine** — the fifth migration, the first whose markup lived in CONTROL's namespace, and the
+      one that answered the `ck-` question for the five that follow. The answer is `page-frame.css`'s
+      shape applied a second time: `src/webview/shared/engine-workspace.css` holds exactly what Engine
+      consumes — the two layout utilities (`ck-card-list`, `ck-empty`) plus the `ci-*` workspace/log
+      contract — and **Control LINKS it** (`Cockpit.ts:2650`) rather than keeping a copy. One definition,
+      two consumers, and `ck-wt-*` untouched because Worktrees still owns those 21 uses. A new contract
+      test proves the CONSUMPTION, not just the link, which is the lesson t-32c872 paid for.
+      Cardinality `dashboard`, argued from the signature as D3 taught: `buildCockpitModel(bundles, {wsHash})`
+      validates and filters before producing `m.control.workspaces`, so the plural is the old aggregate
+      model's shape, not a cross-project source.
+
+      **The measurement this migration was asked to take, and what it changes.** Option (a) was chosen
+      deliberately — every app calls the shared builder and reads its slice — with the cost to be measured
+      rather than assumed. Measured: **each visible Engine panel runs a full `deps.collect()` plus a
+      `buildCockpitModel` every 3s poll, and `collect` walks every attached workspace** — only the builder
+      filters by project. With six standalone apps now, three open panels are three full sweeps of every
+      workspace every three seconds, each producing a whole model to use one slice of.
+
+      That does NOT vindicate option (b). Splitting collect per section would make each sweep smaller
+      while leaving N sweeps; the cost is the POLLING, not the builder's breadth. So the number retires
+      (b) as the answer and promotes `t-a8f4a9` — an engine event hub pushing deltas instead of
+      per-window polling — from an architectural idea to the fix a measured cost is asking for. D6–D10
+      should keep taking (a) and should NOT attempt (b) on the strength of this number.
+
+- [ ] D6–D10. One PR per remaining dashboard (Overview, Fleet, Worktrees, Execution,
       Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
