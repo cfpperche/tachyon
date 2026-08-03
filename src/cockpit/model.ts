@@ -71,7 +71,6 @@ export type CockpitSectionId =
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
   "fleet",
-  "worktrees",
   "execution-graph",
   "runtime-config",
   "settings",
@@ -94,6 +93,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   "plugins",
   "runtime",
   "tmux",
+  "worktrees",
   "validations",
 ];
 

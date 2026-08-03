@@ -1651,36 +1651,6 @@ main.ck-main.ck-main--embed,
   margin-top: 8px;
 }
 
-/* ── spec 444 — Worktrees hygiene groups ─────────────────────────────────── */
-.ck-wt-group { margin-bottom: var(--ds-5); }
-.ck-wt-group-head { display: flex; align-items: center; gap: var(--ds-2); margin-bottom: var(--ds-1); }
-.ck-wt-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.ck-wt-dot-ready-to-remove { background: var(--ds-ok); }
-.ck-wt-dot-needs-review { background: var(--ds-warn); }
-.ck-wt-dot-occupied { background: var(--ds-info); }
-.ck-wt-dot-record-only { background: var(--ds-muted); }
-.ck-wt-group-title { font-size: var(--ds-section); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
-.ck-wt-group-count { font-size: var(--ds-micro); color: var(--ds-muted); font-variant-numeric: tabular-nums; }
-.ck-wt-group-action { margin-left: auto; }
-.ck-wt-group-desc { font-size: var(--ds-small); color: var(--ds-muted); margin: 0 0 var(--ds-2); }
-.ck-wt-check { width: 16px; height: 16px; accent-color: var(--ds-accent); cursor: pointer; }
-.ck-wt-reason-warn { color: var(--ds-warn); }
-.ck-wt-reason-occupied { color: var(--ds-info); }
-.ck-wt-reason-muted { color: var(--ds-muted); }
-.ck-wt-branch-consent { display: inline-flex; align-items: center; gap: var(--ds-icon-gap); font-size: var(--ds-micro); color: var(--ds-muted); cursor: pointer; white-space: nowrap; }
-.ck-wt-show-all { background: none; border: none; color: var(--ds-link); cursor: pointer; font-family: inherit; font-size: var(--ds-small); padding: var(--ds-2) var(--ds-3); text-align: left; }
-.ck-wt-unavailable { border: 1px solid color-mix(in srgb, var(--ds-err) 45%, var(--ds-border)); background: color-mix(in srgb, var(--ds-err) 10%, transparent); color: var(--ds-err); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); margin-bottom: var(--ds-4); font-size: var(--ds-small); }
-.ck-wt-unavailable-detail { color: var(--ds-muted); margin-top: var(--ds-1); }
-/* t-43c6fa — classifier reasons on a Delivery row (why it is in the state the badge claims). */
-.ck-dlv-reasons { display: block; color: var(--ds-muted); font-size: var(--ds-small); margin-top: var(--ds-1); }
-.ck-wt-batch-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: var(--ds-3); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); box-shadow: var(--ds-shadow-2); font-size: var(--ds-small); z-index: var(--ds-z-toast); }
-.ck-wt-confirm { position: fixed; inset: 0; background: var(--ds-scrim); display: flex; align-items: center; justify-content: center; z-index: var(--ds-z-dialog); }
-.ck-wt-confirm-card { max-width: 460px; width: calc(100% - var(--ds-6)); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-4); box-shadow: var(--ds-shadow-2); }
-.ck-wt-confirm-card h3 { margin: 0 0 var(--ds-2); font-size: var(--ds-body); font-weight: 600; }
-.ck-wt-confirm-card p { margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
-.ck-wt-confirm-card ul { margin: 0 0 var(--ds-3); padding-left: 18px; font-size: var(--ds-small); max-height: 40vh; overflow-y: auto; }
-.ck-wt-confirm-actions { display: flex; justify-content: flex-end; gap: var(--ds-2); }
-
 /* SDD 479 phase 4 — the card-template block. The PREVIEW itself is styled by sidebar.css inside a
    shadow root (see CardTemplateBlock.tsx); nothing here may style a card, or the block would start
    disagreeing with the sidebar it is previewing. These rules cover the composer around it. */

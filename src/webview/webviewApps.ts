@@ -199,6 +199,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D5 — Engine is per project: buildCockpitModel accepts wsHash and filters bundles before
   // producing the plural workspaces row. New id: tachyonControlInspector names a retired inspector.
   { view: "engine", viewId: "tachyonEngine", section: "engine", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D6 — Worktrees is filtered by buildCockpitModel's wsHash before its classified rows are
+  // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
+  { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

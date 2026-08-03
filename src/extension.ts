@@ -16,6 +16,7 @@ import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
+import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -2374,6 +2375,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     enginePanels.open(ws.wsHash); return true;
   };
 
+  // SDD 485 D6 — Worktrees uses the same validated model source as Control did, but the standalone
+  // dashboard binds one immutable project. All destructive calls below receive that project from the
+  // panel session, not from an untrusted row/message field.
+  const worktreesPanels = new WorktreesPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    revealPath: engineHost.revealPath,
+    remove: (id, deleteBranch, wsHash) => engineHost.worktreeRemove(id, deleteBranch, wsHash),
+    forget: (id, wsHash) => engineHost.worktreeForgetRecord(id, wsHash),
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => worktreesPanels.dispose() });
+  const openWorktreesTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    worktreesPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
   // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
   // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
@@ -2391,6 +2414,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2861,6 +2885,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "engine") {
           openEngineTab();
+          return Promise.resolve();
+        }
+        if (resolved === "worktrees") {
+          openWorktreesTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });
