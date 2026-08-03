@@ -56,9 +56,28 @@ codebase, and `StudioPanelManagerBase.ts:160` sets `retainContextWhenHidden: tru
 standalone panels that already exist keep refreshing while hidden behind other tabs. Gating them is
 worth doing on its own merits and is a prerequisite here.
 
-**Done** means: the twelve Control sections are standalone editor apps, any two can be open at once,
-every one of them provably renders through the shared shell and design system, a hidden app costs
-nothing, and Control's single-app machinery is gone.
+### Two kinds of app, not one
+
+Both design consults caught the same hole in this spec's first draft, independently, and it is worth
+stating in the intent rather than in a footnote: **a task detail is not one of the twelve sections.**
+`CONTROL_SECTION_NAV` holds twelve top-level dashboards; a task detail is a route with its own
+identity, carrying an immutable `wsHash` (`route.ts:37`). Migrating "the sections" would deliver
+twelve editor tabs and **still fail motivating case #2** — two task details side by side.
+
+So this spec declares two kinds, and every decision below applies to both:
+
+| Kind | Cardinality | Examples |
+|---|---|---|
+| **Dashboard** | one panel per section, per project | Board, Fleet, Engine, Settings, the other eight |
+| **Document** | one panel per identity | task detail, and any future entity screen |
+
+A document's identity is fixed at open and is never rewritten by the project selector. That is the
+rule that makes "two task details side by side" mean two *different* documents rather than one
+screen that changes under the human.
+
+**Done** means: the twelve Control dashboards and the identity-bearing documents are standalone
+editor apps, any two can be open at once, every one of them provably renders through the shared
+shell and design system, a hidden app does no work, and Control's single-app machinery is gone.
 
 ## Acceptance criteria
 
@@ -100,10 +119,12 @@ contract will be worked around instead of used._
 - [ ] 410's standing exceptions (sidebar, pin-preview, dev-only spec-350 fakes, plugin surfaces)
       carry forward as explicit entries or are re-justified; none survives implicitly
 
-- [ ] **Scenario: a hidden app stops costing**
-  - **Given** several section apps are open and one is visible
+- [ ] **Scenario: a hidden app stops working, not merely stops mattering**
+  - **Given** several apps are open and one is visible
   - **When** a `views-changed` event is emitted
-  - **Then** only the visible app(s) do refresh work; hidden apps do none
+  - **Then** the hidden apps run no refresh, no collection, no subscriber callback and post no model
+  - _Not "a hidden app costs nothing" — `retainContextWhenHidden: true` keeps an iframe and its
+    memory, and codex was right to call the absolute claim false. What must go to zero is the WORK._
 - [ ] **Scenario: a revealed app is correct, not stale**
   - **Given** an app was hidden while the workspace changed
   - **When** the human brings its tab forward
@@ -161,13 +182,36 @@ contract will be worked around instead of used._
 
 ## Open questions
 
-- **Does each app get its own host panel manager, or one manager parameterized by section?** The
-  ~10 existing standalone panels share `StudioPanelManagerBase`; whether twelve sections need twelve
-  managers or one generic one is a plan-level decision with real consequences for the conformance
-  contract's shape. Owner: plan.
-- **What is the unit of "app"?** Twelve separate bundles reintroduces the bundle-budget problem 410
-  solved with one; one bundle with twelve lazy mounts keeps the CSS graph shared but weakens
-  isolation. Owner: plan, and it should be decided with the bundle-budget test in hand.
+- ~~**Does each app get its own host panel manager?**~~ **RESOLVED, 2026-08-03** — one generic
+  manager, configured from the manifest, never twelve classes. Both consults reached this
+  independently. Cardinality is a **parameter**, not a constant: a dashboard is one panel per
+  section per project; a document is one panel per identity. Twelve hand-written managers would
+  recreate the triplication `StudioPanelManagerBase` was written to end, and would move the
+  conformance contract from "inspect a manifest" to "inspect twelve heterogeneous classes".
+
+  Correction to this spec's own premise, found by grok and verified: the "~10 existing standalone
+  panels" cited above **do not exist**. `AgentStudioPanel`, `PinStudioPanel`, `CommandStudioPanel`,
+  `ActivityPanel`, `ApprovalPanel` and `HandoffPanel` are 13–43 line tombstones with zero
+  `createWebviewPanel` calls — 410 retired them too, and what survives is a serializer redirect.
+  The only live standalone editor panel is `AgentPanePanel` (470 lines). The road is far less built
+  than this spec claimed; `StudioPanelManagerBase`'s *design* is still good evidence, but its
+  *dialect* (dirty/save/entity CRUD) must not be pasted onto dashboards that push a model.
+
+- ~~**What is the unit of "app"?**~~ **RESOLVED, 2026-08-03** — one entrypoint per app, all built in
+  a **single esbuild invocation with `splitting: true`**, so Preact, the kit and shared utilities are
+  extracted into common chunks instead of being copied twelve times. Each app owns its own bootstrap,
+  error boundary and CSS.
+
+  The dichotomy in the original question was false and both consults said so, for different reasons.
+  Grok: crash isolation is the webview boundary, not the module graph. Codex: a single bundle with
+  twelve lazy mounts still shares shell, listener, state and error boundary — that is code-splitting,
+  not app isolation. Codex's point decides it, because per-app failure isolation is one of the
+  reasons this reversal is worth doing at all. Twelve independent IIFE builds are rejected for the
+  reason grok named: they would prevent chunk extraction and reopen 410's budget hole for real.
+
+  The budget test moves with it: `cockpitBundleBudget.test.ts` measures `dist/webview/cockpit.js`
+  alone. Its successor measures each app's eager entry and the reachable total, driven from the
+  manifest rather than from a hardcoded filename.
 - ~~**Where is workspace scope chosen?**~~ **RESOLVED by the maintainer, 2026-08-03.** The selector
   moves out of Overview and into the **header row of the sidebar's Control tab**, in the slot the
   Agents tab already uses for its `All · N` filter. This is the placement neither consult proposed:
@@ -190,6 +234,14 @@ contract will be worked around instead of used._
   - `controlWorkspaceScope.test.ts` anchors the selector's testid to `cockpit/App.tsx` and must move
     with it, in the same change. The test is right in spirit (one control, no mirrors) and wrong in
     its anchor once the selector leaves Control.
-- **Does the migration keep both paths alive per section during the transition, or cut over?** 410
-  migrated one surface per PR with the old panel retired at the end of each; the mirror image here
-  is one section per PR with the Control section retired at the end of each. Owner: plan.
+- ~~**Does the migration keep both paths alive, or cut over?**~~ **RESOLVED, 2026-08-03** — atomic
+  cutover, one surface per PR, mirroring the discipline 410 proved. In the same PR: the app lands,
+  the launcher and commands point at it, old restore state and deep links become redirects, and that
+  surface's renderer leaves Control. A compatibility shim with **no UI** may survive; two paths that
+  render the same surface may not.
+
+  Both consults converged, and both named the same reason: Control's host state is global
+  (`panel`, `currentRoute`, `navEpoch`), so a surface living in both places at once means two
+  subscriptions, two scope policies and two possible answers to one command. Approvals already wore
+  that scar before 410. Rollback of a PR restores that section's Control renderer; it does not
+  depend on a permanent dual path.
