@@ -505,17 +505,34 @@ serializer, feeds it the state read back out of the RENDERED page rather than a 
 asserts the revived panel lands on the same key and is not disposed. What is NOT proven here is a real
 window reload, which needs an app that ships: **C4/C5 own that**, and D12 owns it at N panels.
 
-### Phase C — no visual evidence was produced, and here is exactly why (2026-08-03)
+### Phase C — the visual pass, and what it was actually good for (2026-08-03)
 
 `plan.md` says every phase after B is visible. C1–C3 is the seam in that claim: no section moved, no
-shipped surface changed, and `cockpit/App.tsx` was not touched. The one thing a human could look at is the
-dev-only proof surface, which no user can reach.
+shipped surface changed, `cockpit/App.tsx` was not touched, and the only thing a human can look at is a
+dev-only proof surface no user can reach. The two-width sweep was run anyway, and it earned its cost
+immediately — not on appearance.
 
-It does carry a preview harness route (`?view=section-app-fixture`, four fixtures: `document`,
-`document-second-identity`, `dashboard`, `revealed-resync`), so the evidence is CHEAP for whoever wants
-it — but no screenshots were taken in this change, at either width, and none are claimed. The two-width
-sweep belongs to the phases that move a surface a human uses, starting with C4. Recording the absence
-rather than skipping it silently, per the repository convention.
+**Anchor, written before the surface was built** (from the task's problem statement, not from what the
+screen ended up looking like): *a reader must be able to tell, from the panel alone, WHICH app this is,
+which cardinality decided its key, what that key came out as, and how many models the host has pushed —
+because that is what makes "two identities are two panels, one dashboard is one panel" observable rather
+than asserted.*
+
+Measured at 880 and 360 (`npm run preview:webview` + the agent-browser plugin), all four fixtures
+(`document`, `document-second-identity`, `dashboard`, `revealed-resync`). Verdict: it satisfies the
+anchor. At 360 the action wraps below the title and the panel key wraps rather than clipping (the failure
+mode t-89ecfe caught on Overview); no horizontal overflow at either width.
+
+**What it actually caught, and this is the point:** the first render was BLANK of any model — the app
+posted a surface-local `section-fixture/ready` while the preview harness waits for spec 278's SHARED
+`READY` before injecting a fixture. Every unit test was green through this, because they drive the host
+and the host claims either handshake. A view that never renders in the harness is a view nobody can
+screenshot, review, or visual-QA — for C4 and C5 that would have been discovered at their sign-off, not
+here. Fixed by using the shared constant, which is what it exists for.
+
+Screenshots were NOT committed: they are work evidence, and `docs/` holds durable documentation rather
+than generated images (repository guidance). The route is committed, so anyone can re-take them in one
+command: `?view=section-app-fixture&fixture=<name>[&width=360]`.
 
 ### Phase C — Control is in the app manifest, and Phase E takes it back out (2026-08-03)
 

@@ -11,6 +11,7 @@ import {
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import { webviewApp, type WebviewAppEntry } from "../../src/webview/webviewApps.js";
 import { SectionAppFixturePanelManager } from "../../src/webview/SectionAppFixturePanel.js";
+import { sectionFixtureReadyMessage } from "../../src/webview/section-app-fixture/protocol.js";
 
 const {
   __resetVscodeMock,
@@ -311,7 +312,9 @@ describe("SectionAppFixturePanelManager — the mechanism wired end to end", () 
     fixture.open({ project: "ws-a", identity: "t-1" });
     const key = "tachyonSectionAppFixture|ws-a|t-1";
     // the app's `ready` handshake is claimed by refreshKindFor, so the first model is the replay path.
-    __createdPanels[0].webview.__receive({ type: "section-fixture/ready" });
+    // Built from the surface's own constructor, never a hand-typed literal: the harness/host handshake
+    // drift this file's sibling commit fixed is exactly what a literal here would have hidden.
+    __createdPanels[0].webview.__receive(sectionFixtureReadyMessage());
     expect(fixture.revisionOf(key)).toBe(1);
 
     __setPanelVisible(__createdPanels[0], false);

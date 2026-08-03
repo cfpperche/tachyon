@@ -7,6 +7,8 @@
  * DOM-free, so the vscode-bound host may import it under the extension-host tsconfig.
  */
 
+import { READY } from "../shared/ready.js";
+
 /** What the app renders. Everything here is an OBSERVATION of the mechanism, not domain data. */
 export interface SectionFixtureModel {
   /** the manifest `view` this bundle was built from. */
@@ -28,7 +30,9 @@ export interface SectionFixtureModel {
 }
 
 export const SECTION_FIXTURE_MODEL = "section-fixture/model";
-export const SECTION_FIXTURE_READY = "section-fixture/ready";
+/** spec 278's SHARED handshake, not a surface-local one: the dev preview harness waits for exactly this
+ *  message before injecting a fixture, so a view that invents its own `ready` never renders there. */
+export const SECTION_FIXTURE_READY = READY;
 /** The client's own periodic poll — the door Phase B found open on Control, gated host-side here. */
 export const SECTION_FIXTURE_REFRESH = "section-fixture/refresh";
 
