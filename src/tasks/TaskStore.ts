@@ -308,6 +308,22 @@ export class TaskStore {
       // string (a priority quick-edit always sends `rank:null`, dueto F5); guard against two concurrent drags
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
+      // t-f33480 — a status move is a weighty mutation; leave author + reason in the journal the same
+      // way reconcile does. Without this, triage (and every other lane change) only moved updatedAt,
+      // so "who triaged, and why" was invisible even when the Bridge had a resolved caller. Journal
+      // first: if the cap refuses, the status has not moved.
+      if (next.status !== current.status) {
+        const reasonParts = [`status ${current.status} -> ${next.status}`];
+        if ("priority" in input && input.priority !== undefined) {
+          const fromPri = current.priority === undefined ? "none" : String(current.priority);
+          const toPri = input.priority === null ? "none" : String(input.priority);
+          if (fromPri !== toPri) reasonParts.push(`priority ${fromPri} -> ${toPri}`);
+        }
+        this.journal.append(id, {
+          author: input.actor ?? "human",
+          text: reasonParts.join("; "),
+        });
+      }
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
