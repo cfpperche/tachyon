@@ -61,15 +61,30 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
       spec's `Done` narrows here. _Strike this only on the maintainer's word — it is insurance, not
       a technical requirement._
 
-### Phase D — the remaining ten dashboards
+### Phase D — the remaining dashboards, and the documents
 
-- [ ] D1–D10. One PR per section (Overview, Engine, Fleet, Inbox, Worktrees, Execution, Runtime Ops,
-      Runtime Config, tmux, Plugins, Settings — minus any already moved). Each PR: app lands,
+**Order matters and is not preference.** Every PR here removes something from `Cockpit.ts`, and C4/C5
+proved a three-way merge of two such PRs silently keeps BOTH sides with no conflict reported (see
+notes.md). So Phase D is SEQUENTIAL on that file: one lands, the next rebases onto it. Two agents may
+work in parallel only if the second re-applies onto the first before delivery, never merges into it.
+
+- [ ] D1–D10. One PR per dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution, Runtime
+      Ops, Runtime Config, tmux, Plugins, Settings — minus any already moved). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
-- [ ] D11. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
+- [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
+      (spec.md § "A document is one ENTITY"). Same panel, same key (`taskId`), mode as state. Declare
+      and test the unsaved-edit policy on mode switch — that policy is the cost this decision accepts,
+      and leaving it implicit is how it turns into data loss.
+- [ ] D12. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
+      with ONE mode. Their parent is a flat section (`route.ts:187`), not an entity route, so do not
+      invent a reading view none of them has.
+- [ ] D13. Pin is NOT folded in here. `pin-preview` is a sidebar surface and `studio-edit(pin)`
+      returns to `returnRoute ?? overview`; unifying them moves where a human reads a pin. Open it as
+      its own decision with that argument, and close this box by having done so.
+- [ ] D14. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
       navigation surface left open deliberately by t-aa2780.
-- [ ] D12. Exercise restore with all apps open across editor groups, then reload. Spec 361's
+- [ ] D15. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
 
 ### Phase E — remove Control

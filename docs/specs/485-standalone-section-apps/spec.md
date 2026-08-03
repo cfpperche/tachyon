@@ -75,6 +75,35 @@ A document's identity is fixed at open and is never rewritten by the project sel
 rule that makes "two task details side by side" mean two *different* documents rather than one
 screen that changes under the human.
 
+#### A document is one ENTITY, not one screen — reading and editing are its modes
+
+**Maintainer decision, 2026-08-03, correcting this spec.** The draft counted task detail and Task
+Studio as two documents. They are one: the same task, read and then edited.
+
+The router already says so. `parentRoute` sends `studio-edit(task, X)` to `task-detail(ws, X)`
+(`route.ts:283`), and its own comment names it "the task-edit→task-detail chain" — the studio's way
+back is the task, not the Board. Splitting them into two apps would put **two editor tabs on one
+identity**, which contradicts the cardinality rule this section just established, and would allow
+task detail and Task Studio to sit open on the same task showing divergent state, one of them with
+unsaved edits. Two panels disagreeing about one entity is worse than one panel with a mode to
+resolve.
+
+So: **a document app is keyed by its entity, and edit is a MODE within it.** The cost is real and
+named here rather than discovered later — switching mode with unsaved edits needs a declared policy.
+That cost is paid either way; the split merely pays it worse, by making divergence representable.
+
+Two limits on this rule, both deliberate:
+
+- **It generalises by entity, not by "studios".** Task is the only studio whose parent is an entity
+  route today; `studioParentSection` sends command, terminal, runbook, schedule and agent to flat
+  sections (`route.ts:187`). Those are documents with one mode, not two — do not invent a reading
+  view none of them has.
+- **Pin is explicitly NOT folded in by analogy.** Its edit form is in the editor, but its "detail"
+  is `pin-preview`, a **sidebar** surface (`editorHome: "sidebar"`, hosted by `SidebarPrototype`),
+  and `studio-edit(pin)` returns to `returnRoute ?? overview` rather than to a pin detail. Unifying
+  those means moving where a human reads a pin, which is a product change this spec is not making.
+  It stays a separate decision.
+
 **Done** means: the twelve Control dashboards and the identity-bearing documents are standalone
 editor apps, any two can be open at once, every one of them provably renders through the shared
 shell and design system, a hidden app does no work, and Control's single-app machinery is gone.

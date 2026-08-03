@@ -860,3 +860,30 @@ under task B's route, and a document panel has no route to change. What is left 
 render of the task the tab IS — resolves on the next fan-out, and Control had the identical exposure already
 (`navEpoch` does not bump on a same-route refresh, by its own contract). Named here so a future reader does
 not mistake the absence for something that was forgotten.
+
+### Phase C→D — two branches removing from the same file cannot be three-way merged (2026-08-03)
+
+C4 and C5 both rewrote `src/webview/Cockpit.ts` heavily, each removing its own surface. Merging them:
+
+    C4 alone:  resolveBlobUri x0, 3200 lines   (task-detail push removed)
+    C5 alone:  resolveBlobUri x3, 3226 lines   (branched before C4, block still present)
+    merged:    resolveBlobUri x3, 3286 lines   ← larger than either
+
+Git reported NO conflict: the deletions and the edits fell in different hunks, so it kept both sides
+and resurrected the push C4 removed — two live renderers, the one thing the spec forbids. A
+`cherry-pick` was worse: it replaced the file wholesale with C5's copy, dropping C4's removals in
+silence. Neither strategy failed loudly; both produced a plausible file.
+
+C5 was re-applied BY HAND onto C4. That pass found a composition defect no merge could have surfaced
+either way: C4's task-detail redirect landed on `section("mission")`, correct while mission was a
+Control section, and after C5 it means "open a Board tab" on every task-detail navigation. Both that
+and `studioExitTarget` now land on Overview — a panel appearing on a CANCEL is a surprise, not a
+recovery.
+
+Two rules for Phase D, which removes from this file ten more times:
+- sequential on `Cockpit.ts`; a second PR REBASES onto the first, never merges into it;
+- verify removals by grep after integrating, not by trusting a clean merge. The three that caught
+  this: `resolveBlobUri`, `lastKnownTaskDetail`, `sendMission` — all must be 0.
+
+The orchestration error was mine: the briefs warned both agents about `cockpit/App.tsx` and said
+nothing about the HOST they both had to gut.
