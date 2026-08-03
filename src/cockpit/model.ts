@@ -70,7 +70,6 @@ export type CockpitSectionId =
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
-  "engine",
   "fleet",
   "worktrees",
   "execution-graph",
@@ -89,6 +88,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   "approvals",
+  "engine",
   "inbox",
   "mission",
   "plugins",

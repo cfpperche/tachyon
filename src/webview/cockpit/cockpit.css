@@ -1136,14 +1136,6 @@ main.ck-main.ck-main--embed,
   color: var(--ds-muted);
 }
 
-.ck-empty {
-  /* Top-left empty state — not a hero centered in the viewport. */
-  padding: 12px 0;
-  text-align: left;
-  font-size: 11px;
-  color: var(--ds-muted);
-}
-
 /* t-963b66 — shell toast is product ToastHost (.ds-toast*), not .ck-toast. */
 .ck-checked {
   margin-top: 14px;
@@ -1216,13 +1208,7 @@ main.ck-main.ck-main--embed,
   margin-left: 0;
 }
 
-/* Fleet / Worktrees / Deliveries entity cards */
-.ck-card-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
+/* Fleet / Worktrees / Deliveries entity cards use shared/engine-workspace.css while their last users migrate. */
 .ck-entity-card {
   display: flex;
   flex-wrap: wrap;

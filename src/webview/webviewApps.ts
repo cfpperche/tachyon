@@ -196,6 +196,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // `iconName` at all. That fix is what stops the tab and the tile wearing different glyphs — the exact
   // divergence a fourth hand-written `iconName` would have re-opened.
   { view: "human-inbox", viewId: "tachyonHumanInbox", section: "inbox", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D5 — Engine is per project: buildCockpitModel accepts wsHash and filters bundles before
+  // producing the plural workspaces row. New id: tachyonControlInspector names a retired inspector.
+  { view: "engine", viewId: "tachyonEngine", section: "engine", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

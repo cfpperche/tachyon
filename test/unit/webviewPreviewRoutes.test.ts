@@ -66,6 +66,7 @@ describe("preview route table", () => {
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
+      "/dist/webview/engine-workspace.css",
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
@@ -74,7 +75,6 @@ describe("preview route table", () => {
       "approvals",
       "default",
       "empty",
-      "engine",
       // SDD 480 Phase 4 — the heavy/grouped surface plus each explicit state, which is what the
       // headless Visual QA at 760/1000/1400 drives.
       "execution-graph",

@@ -350,8 +350,6 @@ export interface CockpitDeps {
   worktreeRemove: (id: string, deleteBranch: boolean, wsHash?: string) => Promise<string | undefined>;
   worktreeForgetRecord: (id: string, wsHash?: string) => Promise<string | undefined>;
   openConfigFile: (wsHash?: string) => Promise<void>;
-  clearEngineLog: (wsHash: string) => Promise<void>;
-  openEngineJournal: (wsHash: string) => void;
   /** SDD 414 — settings.companion.tabTools for one workspace engine. */
   setCompanionTabTools: (wsHash: string, enabled: boolean) => Promise<void>;
   /** t-585d5c — write the idle-notification window; `undefined` resets to the product default. */
@@ -2433,26 +2431,6 @@ export async function openCockpit(
             live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
           }
           return;
-        case "engineLogClear":
-          if (typeof c.wsHash === "string" && c.wsHash) {
-            try {
-              await deps.clearEngineLog(c.wsHash);
-              await sendModel();
-              live.webview.postMessage(toastMessage("Log cleared", "ok"));
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
-        case "engineLogJournal":
-          if (typeof c.wsHash === "string" && c.wsHash) {
-            try {
-              deps.openEngineJournal(c.wsHash);
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
         case "setIdleAfterMinutes":
           // t-585d5c — the value was already validated by the runtime-api schema this calls into, so
           // the only check here is the shape the wire could malform.
@@ -2669,6 +2647,7 @@ export async function openCockpit(
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
         taskStudioIsActive ? uri("task-studio.css") : undefined,
         pinStudioIsActive ? uri("pin-studio.css") : undefined,
+        uri("engine-workspace.css"),
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
       bundle: uri("cockpit.js"),

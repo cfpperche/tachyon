@@ -4,8 +4,8 @@ import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } fr
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {
     expect(COCKPIT_SECTION_ORDER[0]).toBe("overview");
-    expect(COCKPIT_SECTION_ORDER[1]).toBe("engine");
-    expect(COCKPIT_SECTION_ORDER[2]).toBe("fleet");
+    expect(COCKPIT_SECTION_ORDER[1]).toBe("fleet");
+    expect(COCKPIT_SECTION_ORDER).not.toContain("engine");
     // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a CockpitSectionId (so a
     // persisted or deep-linked `section:inbox` decodes and can be redirected) and still a launcher tile,
     // but Control renders no section for it. `approvals` and `validations` below were never on this list

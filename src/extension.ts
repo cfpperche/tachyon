@@ -15,6 +15,7 @@ import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
+import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -1572,6 +1573,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
+  const clearEngineLog = async (wsHash: string): Promise<void> => {
+    const ws = byHash(wsHash); if (!ws) throw new Error("no Tachyon workspace for that hash");
+    await ws.client.clearEngineLog();
+  };
+  const openEngineJournal = (wsHash: string): void => {
+    const ws = byHash(wsHash); if (!ws) throw new Error("no Tachyon workspace for that hash");
+    const unit = engineSystemdUnitName(ws.workspaceRoot);
+    const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
+    term.show(); term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
+  };
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
@@ -2029,22 +2040,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(cfg));
       await vscode.window.showTextDocument(doc, { preview: false });
     },
-    clearEngineLog: async (wsHash) => {
-      const ws = byHash(wsHash);
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      await ws.client.clearEngineLog();
-    },
-    openEngineJournal: (wsHash) => {
-      const ws = byHash(wsHash);
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      // t-05097f — one authority for the unit name. Rebuilding it from the hash here would open the
-      // journal of a DIFFERENT unit whenever the engine runs under tmux-socket isolation.
-      const unit = engineSystemdUnitName(ws.workspaceRoot);
-      const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
-      term.show();
-      // follow journal for this workspace engine unit
-      term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
-    },
     // t-585d5c — Control -> Settings writes the idle-notification window through the same governed
     // operation an API client would use, so there is one validated entrance and not a UI-only path.
     setIdleAfterMinutes: async (wsHash, minutes) => {
@@ -2365,6 +2360,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
   };
 
+  const engineHost = makeCockpitDeps();
+  const enginePanels = new EnginePanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openDoctor: engineHost.openDoctor,
+    clearEngineLog,
+    openEngineJournal,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => enginePanels.dispose() });
+  const openEngineTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    enginePanels.open(ws.wsHash); return true;
+  };
+
   // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
   // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
   // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
@@ -2381,6 +2390,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2849,13 +2859,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openHumanInboxTab();
           return Promise.resolve();
         }
+        if (resolved === "engine") {
+          openEngineTab();
+          return Promise.resolve();
+        }
         return openCockpit(makeCockpitDeps(), { section: resolved });
       }
       return openCockpit(makeCockpitDeps());
     }),
     // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
-    vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
+    vscode.commands.registerCommand("tachyon.inspectEngine", () => { openEngineTab(); }),
     // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
     // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command
