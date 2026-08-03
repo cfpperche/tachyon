@@ -4,9 +4,12 @@ import { PluginsPanelManager } from "../../src/webview/PluginsPanel.js";
 import type { RuntimeOpsSnapshot } from "../../src/runtimeOps/types.js";
 
 /**
- * t-610705 Phase B #6 — fake CockpitDeps for host-side Control tests. The standalone Board panel
- * manager is retired, so board routing/behavior tests drive openCockpit (section "mission") with
- * these deps, mirroring extension.ts's wiring shape.
+ * Fake CockpitDeps for host-side Control tests, mirroring extension.ts's wiring shape.
+ *
+ * SDD 485 C4/C5 — the task detail's and the Board's own routing/behaviour tests moved OUT of here with the
+ * surfaces: they drive `TaskDetailPanelManager` / `BoardPanelManager` directly (`taskDetailApp.test.ts`,
+ * `boardPanel.test.ts`). `missionBoard` survives because Control still needs it for Validations' workspace
+ * list and the studio hand-off.
  */
 export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides: Partial<CockpitDeps> = {}): CockpitDeps {
   return {
@@ -36,6 +39,9 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
       reapOrphans: async () => 0,
     },
     plugins: new PluginsPanelManager(Uri.file("/ext"), () => []),
+    // SDD 485 C5 — Control opens the Board app instead of rendering it; a test that cares which project it
+    // was handed overrides this.
+    openBoard: () => {},
     openSettings: () => {},
     openDoctor: () => {},
     fleetStart: async () => {},

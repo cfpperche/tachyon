@@ -197,10 +197,10 @@ describe("t-6ced6f — a bare `ready` returns `init` on every Control route kind
     // Anchored on the condition, not the whole line: the studio carve-out below already changed this
     // line once, and a guard that breaks when the fix is refined teaches people to delete the guard.
     const readyAnswer = source.indexOf("type === READY", listener);
-    // SDD 485 C4 — `handleTaskDetailAction` was the first link in this chain and left with the task
-    // detail. `handleMissionAction` is the first link now; the property under test is the ORDER, not
-    // which handler happens to be first.
-    const firstRouteHandler = source.indexOf("if (await handleMissionAction(", listener);
+    // SDD 485 C4/C5 — `handleTaskDetailAction` and then `handleMissionAction` were the first links in this
+    // chain, and both left with their surfaces. `handleApprovalAction` is the first link now; the property
+    // under test is the ORDER, not which handler happens to be first.
+    const firstRouteHandler = source.indexOf("if (await handleApprovalAction(", listener);
 
     expect(listener, "the message listener moved; this guard needs updating").toBeGreaterThan(-1);
     expect(readyAnswer, "READY is no longer answered directly in the listener").toBeGreaterThan(-1);

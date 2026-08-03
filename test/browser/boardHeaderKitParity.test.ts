@@ -11,11 +11,12 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // entirely in mission-control.css's own overrides (`.board-search`'s split outer/inner padding, `.ds-btn`'s
 // shorter padding token), which a page that never links that stylesheet can't catch.
 //
-// t-c55f8d (2026-08-01): `dist/webview/mission-control.js` is gone — the board ships inside cockpit.js as a
-// Control section. The hand-rolled host page 404'd on that script and the header never rendered. The harness
-// route below links the same stylesheet set and pushes the catalog's board VM, so the parity measured is
-// still the real header's under the real CSS.
-const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=mission&width=1100&height=760";
+// t-c55f8d (2026-08-01) replaced this test's hand-rolled host page with the preview harness, because the
+// board had stopped shipping its own bundle and the page 404'd on the script.
+// SDD 485 C5 (2026-08-03): `dist/webview/mission-control.js` is back — the Board is a standalone app again —
+// so the harness route is the board's OWN route rather than Control with the board embedded. Same component,
+// same stylesheet set, same catalog VM; what changed is that the page measured is now the page that ships.
+const PREVIEW = "/scripts/webview-preview/index.html?view=mission-control&fixture=default&width=1100&height=760";
 
 async function loadMissionControl(page: Page, origin: string): Promise<void> {
   await page.goto(`${origin}${PREVIEW}`, { waitUntil: "networkidle0" });

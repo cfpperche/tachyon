@@ -142,11 +142,21 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["base-style", "token-scale"] },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
-  // The standalone Mission Control (Board) panel was retired (t-610705, SDD 410 Phase B #6, 2026-07-20) —
-  // the Board is a cockpit section only (src/webview/mission-control/App.tsx stays, lazy-imported by
-  // cockpit/App.tsx; the bounded agent-liveness pass moved to src/cockpit/missionVm.ts). The trusted
-  // serializer for the legacy "tachyonMissionControl" viewType stays registered in extension.ts: a revived
-  // pre-410 panel disposes itself and redirects into Control → Mission scoped to its persisted workspace.
+  // SDD 485 C5 (2026-08-03) — the Board is a STANDALONE APP again, and SDD 410's app-count decision is the
+  // thing being reversed rather than a rule being bent: it opens as its own editor tab through the generic
+  // `SectionPanelManager` with cardinality `dashboard` (one panel per project, re-open reveals), so it can be
+  // read beside an agent terminal. Its renderer left `cockpit/App.tsx` in the same change — two live paths
+  // rendering one screen is what `spec.md` forbids, not two panels.
+  //
+  // `conform`, and the contract checks that rather than trusting this sentence: it mounts through the shared
+  // shell (via SectionPanelManager), links design-system.css, and mission-control.css styles neither the page
+  // frame nor the `--ds-*` scale — t-e085bc had already deleted its `html, body` rules, which is why the
+  // migration cost Phase A's open question priced for this section came out at zero.
+  //
+  // The legacy "tachyonMissionControl" viewType is NOT this row: it stays a serializer-only redirect in
+  // extension.ts (a revived pre-410 panel disposes itself and opens THIS app for its persisted workspace),
+  // which is why the new panel needed a viewType of its own.
+  { viewId: "tachyonBoard", view: "mission-control", hostFile: "src/webview/BoardPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // SDD 485 C4 (2026-08-03) — Task Detail is a STANDALONE APP again, and this row is the reversal of
   // 410 Phase C.1's retirement (which had made it a Control subroute). It is the `document` kind: one
   // panel per identity, so two task details stand side by side and neither is retargeted by the project

@@ -35,8 +35,6 @@ import {
 } from "./messages";
 import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
-import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
-import type { MissionControlVM } from "../mission-control/messages";
 import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import {
@@ -59,19 +57,8 @@ import {
   distillExistingAction,
   distillTemporaryAction,
 } from "../handoff/messages";
-import {
-  SNAPSHOT,
-  TASK_ERROR,
-  closeValidationAction,
-  requestSnapshotAction,
-  updateTaskAction,
-  reorderLaneAction,
-  openTaskAction,
-  copyTaskIdAction,
-  openTaskStudioAction,
-} from "../mission-control/messages";
-import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
-import type { ValidationOutcome } from "../../validations/types";
+// SDD 485 C5 — the Board's envelope and its actions left with its renderer: they belong to
+// src/webview/mission-control/main.tsx, the board app's own client, and nothing here speaks them.
 import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
 import {
@@ -174,8 +161,6 @@ function CockpitRoot() {
   /** Ephemeral pair offer — not stored in polled model. */
   const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
-  const [missionVm, setMissionVm] = useState<MissionControlVM | undefined>(undefined);
-  const [missionError, setMissionError] = useState<TaskErrorEvent | undefined>(undefined);
   const [activityVm, setActivityVm] = useState<ActivityViewModel | undefined>(undefined);
   const [activityPrepended, setActivityPrepended] = useState(false);
   const [activityImages, setActivityImages] = useState<Record<string, string>>({});
@@ -226,7 +211,6 @@ function CockpitRoot() {
   const [navPending, setNavPending] = useState<{ routeKey: string; phase: "pending" | "slow" | "stalled" } | undefined>(undefined);
   const studioSeq = useRef(0);
   const timer = useRef<number | undefined>(undefined);
-  const errorSeq = useRef(0);
   /**
    * Track companion devices so a successful pair dismisses the ephemeral code card.
    * Fingerprint = sorted device ids (count alone is not enough if a device is replaced in place).
@@ -235,9 +219,9 @@ function CockpitRoot() {
   // t-610705 (Phase C.2) — the onMsg listener below is mounted once ([] deps), so it can't read fresh
   // `model` state directly (stale closure); this ref is kept current from the MODEL branch for the
   // identity checks the ACTIVITY and inbox-item branches make.
-  // SDD 485 C4 — the TASK_ERROR branch no longer has to disambiguate two surfaces: "taskError" was the
-  // same wire string for mission-control and the task detail, and the task detail took its protocol with
-  // it when it became its own app.
+  // SDD 485 C4/C5 — there is no TASK_ERROR branch left at all: "taskError" was the same wire string for
+  // the board and the task detail, and both took their protocol with them when they became their own apps.
+  // Control now speaks neither, which is a stronger statement than disambiguating them correctly.
   const activeRouteRef = useRef<CockpitModel["activeRoute"]>(undefined);
   // t-610705 (Phase D, D1a code-review finding) — `studioIncoming` is ONE shared state slot every
   // studio App reads via its `incoming` prop; a fresh studio component mount does NOT clear it (only
@@ -335,14 +319,7 @@ function CockpitRoot() {
         }
         setModel(next);
       }
-      else if (type === SNAPSHOT && raw.vm) setMissionVm(raw.vm as MissionControlVM);
-      else if (type === TASK_ERROR && typeof raw.message === "string") {
-        setMissionError({
-          seq: ++errorSeq.current,
-          message: raw.message,
-          ...(typeof raw.taskId === "string" ? { taskId: raw.taskId } : {}),
-        });
-      } else if (type === ACTIVITY && raw.vm) {
+      else if (type === ACTIVITY && raw.vm) {
         // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — every Activity message carries its
         // own feed identity (wsHash/agent); reject anything that doesn't match the CURRENT route
         // rather than trusting message-arrival order alone (a delayed post from a torn-down feed
@@ -518,20 +495,6 @@ function CockpitRoot() {
     };
   }, [navPending?.routeKey, navPending?.phase]);
 
-  const missionDispatch: MissionControlDispatch = useMemo(
-    () => ({
-      updateTask: (id: string, patch: TaskUpdateInput) => post(updateTaskAction(id, patch)),
-      reorderLane: (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>) =>
-        post(reorderLaneAction(status, priority, orderedIds, expect)),
-      closeValidation: (id: string, outcome: ValidationOutcome, result_note: string) =>
-        post(closeValidationAction(id, outcome, result_note)),
-      openTaskStudio: (id?: string) => post(openTaskStudioAction(id)),
-      openTask: (id: string) => post(openTaskAction(id)),
-      copyTaskId: (id: string) => post(copyTaskIdAction(id)),
-    }),
-    [],
-  );
-
   const activityDispatch: ActivityDispatch = useMemo(
     () => ({
       openFile: (path: string) => post({ type: "openFile", path }),
@@ -695,9 +658,6 @@ function CockpitRoot() {
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
       companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}
-      missionVm={missionVm}
-      missionError={missionError}
-      missionDispatch={missionDispatch}
       activityVm={activityVm}
       activityPrepended={activityPrepended}
       activityImages={activityImages}
@@ -749,6 +709,14 @@ function CockpitRoot() {
       pluginsBusy={pluginsBusy}
       pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
+        // SDD 485 C5 — "go to the Board" is no longer a navigation inside Control: the host answers this by
+        // opening the Board APP and landing Control on Overview. Posted WITHOUT the optimistic model update
+        // below on purpose — optimistically rendering a section this build has no renderer for would flash
+        // the unknown-section fallback for the frame before the host's real model arrives.
+        if (section === "mission") {
+          post(setSectionAction(section));
+          return;
+        }
         // t-610705 (Phase C.1) — a plain setSection always lands on that section's own top-level
         // route (never a subroute), so any activeRoute left over from a prior subroute visit
         // must clear optimistically too — the App's render switch checks activeRoute BEFORE
@@ -777,7 +745,6 @@ function CockpitRoot() {
         setActivityVm(undefined);
         setActivityImages({});
         post(setSectionAction(section));
-        if (section === "mission") post(requestSnapshotAction());
         if (section === "approvals") post(refreshApprovalsAction());
         if (section === "validations") post(refreshValidationsAction());
         if (section === "inbox") post(refreshInboxAction());

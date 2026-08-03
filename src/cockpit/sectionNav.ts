@@ -17,6 +17,13 @@ export interface ControlSectionNav {
   icon: string;
   /** English product label; localize at the host boundary. */
   label: string;
+  /**
+   * SDD 485 — true when this tile opens a STANDALONE APP in its own editor tab rather than navigating the
+   * Control panel. The tile, the icon and the position are unchanged; what differs is where the click lands,
+   * and the label the human reads for it ("Open Board", not "Open Control — Board"). `tachyon.openControl`
+   * is still the one door: it routes the id, so the sidebar never has to know which apps exist.
+   */
+  standalone?: true;
 }
 
 /** Top-level only (not approvals/validations deep-links). Keyed by id for O(1) lookup. */
@@ -35,12 +42,45 @@ const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = 
   ["settings", { icon: "settings-gear", label: "Settings" }],
 ]);
 
-/** Top-level Control sections in product order — the launcher grid's sole catalog. */
-export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = COCKPIT_SECTION_ORDER.map((id) => {
+/**
+ * The launcher grid's order — the twelve tiles, unchanged as a product surface.
+ *
+ * SDD 485 C5 — this is no longer `COCKPIT_SECTION_ORDER` itself. `mission` (Board) left that list when it
+ * became a standalone app, and the launcher is the door to it either way: it lists what the human can OPEN,
+ * not what Control happens to render. Keeping the two lists distinct is what lets a migration change a
+ * destination without moving a tile, which is exactly what Phase D will do ten more times.
+ */
+const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
+  "overview",
+  "engine",
+  "fleet",
+  "inbox",
+  "mission",
+  "worktrees",
+  "execution-graph",
+  "runtime",
+  "runtime-config",
+  "tmux",
+  "plugins",
+  "settings",
+];
+
+/** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */
+const STANDALONE_APPS = new Set<CockpitSectionId>(["mission"]);
+
+/** Top-level launcher entries in product order — the launcher grid's sole catalog. */
+export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {
   const meta = NAV_BY_ID.get(id);
   if (!meta) {
-    // Approvals/validations are on COCKPIT_SECTION_IDS but not COCKPIT_SECTION_ORDER — should never hit.
+    // Approvals/validations are on COCKPIT_SECTION_IDS but never on the launcher — should never hit.
     throw new Error(`CONTROL_SECTION_NAV: missing metadata for section '${id}'`);
   }
-  return { id, ...meta };
+  return { id, ...meta, ...(STANDALONE_APPS.has(id) ? { standalone: true as const } : {}) };
 });
+
+/** Every section Control renders must have a tile — a new section without one is unreachable. */
+for (const id of COCKPIT_SECTION_ORDER) {
+  if (!LAUNCHER_ORDER.includes(id)) {
+    throw new Error(`CONTROL_SECTION_NAV: Control renders section '${id}' but the launcher offers no tile for it`);
+  }
+}

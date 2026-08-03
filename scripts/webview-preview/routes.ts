@@ -47,6 +47,7 @@ import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
+import { snapshotMessage as missionControlSnapshotMessage } from "../../src/webview/mission-control/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
@@ -116,8 +117,8 @@ export const ROUTES: Record<string, Route> = {
       CODICON,
       DESIGN_SYSTEM,
       "/dist/webview/vscode-theme.css",
-      "/dist/webview/mission-control.tailwind.css",
-      "/dist/webview/mission-control.css",
+      // SDD 485 C5 — no mission-control sheets: the Board is a standalone app with its own route below,
+      // and Control stopped linking them in the same change (cockpitCssParity asserts the two agree).
       "/dist/webview/plugins.tailwind.css",
       "/dist/webview/plugins.css",
       "/dist/webview/approval.css",
@@ -162,10 +163,11 @@ export const ROUTES: Record<string, Route> = {
         msgs.push({ type: "routePending", routeKey: `task-detail:b349073a:${NAV_PENDING_TASK_ID}` });
       }
       // Push the same host envelopes the live Control panel uses for embedded tabs.
-      if (model.section === "mission") {
-        const board = missionControlFixtures.default?.vm;
-        if (board) msgs.push({ type: "snapshot", vm: board });
-      } else if (model.section === "validations") {
+      // SDD 485 C5 — no `section === "mission"` arm: the Board has its own route in this table now, for
+      // the same reason C4's task detail does. `nav-pending` still carries `section: "mission"` — that
+      // fixture depicts CONTROL waiting on a navigation, and its section is only what the model happened
+      // to hold; nothing renders a board here.
+      if (model.section === "validations") {
         msgs.push(validationsMessage(validationsFixtureVm));
       } else if (model.section === "approvals") {
         const approval = approvalFixtures.pending?.vm;
@@ -338,6 +340,24 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => taskMessage(vm as never),
   },
+  // SDD 485 C5 — the Board, standalone again, so it gets its own route back for the same reason the task
+  // detail did one commit earlier: this renders the REAL shipped `mission-control.js` with the exact
+  // stylesheet list `BoardPanel.ts` links, rather than the same component embedded inside Control.
+  "mission-control": {
+    bundle: "/dist/webview/mission-control.js",
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/mission-control.tailwind.css",
+      "/dist/webview/mission-control.css",
+    ],
+    frame: { w: 1100, h: 720 },
+    fixtures: missionControlFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => missionControlSnapshotMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -383,6 +403,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
+  "mission-control": { title: "Board", aliases: ["board", "mission control", "task board", "kanban"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },

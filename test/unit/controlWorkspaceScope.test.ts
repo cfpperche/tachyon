@@ -57,9 +57,12 @@ describe("the global workspace scope has exactly one control (t-46eb4f)", () => 
   it("the host writes controlWsHash from exactly one client message", () => {
     const host = readFileSync(path.join(WEBVIEW, "Cockpit.ts"), "utf8");
     const assignments = host.match(/controlWsHash = /g) ?? [];
-    // Three: the open-options block (deep link / legacy per-section aliases, all one scope) and the
-    // single `switchControlWorkspace` case. Any fourth is a second writer and must be justified here.
-    expect(assignments).toHaveLength(4);
+    // Three: the open-options block (deep link + the `approvalWsHash` alias, both one scope) and the single
+    // `switchControlWorkspace` case. Any fourth is a second writer and must be justified here.
+    // SDD 485 C5 — was four. `missionWsHash` was the third alias and went with the Board: its only caller,
+    // `tachyon.missionControl`, opens the Board APP now, which keys its panel on a project rather than
+    // moving Control's scope.
+    expect(assignments).toHaveLength(3);
     expect(host).toMatch(/case "switchControlWorkspace":[\s\S]*?controlWsHash = c\.wsHash \|\| undefined;/);
     expect(host).not.toMatch(/m\.type === "switchWorkspace"/);
   });

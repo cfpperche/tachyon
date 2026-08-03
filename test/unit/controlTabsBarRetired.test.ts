@@ -35,8 +35,8 @@ const read = (rel: string) => readFileSync(path.join(repoRoot, rel), "utf8");
  * a lookup into the same strings the component reads: a guard that derives its expectation from the
  * subject cannot notice the subject losing its title.
  *
- * Five render their own PageChrome from the shell. The five code-split ones (inbox, mission, runtime,
- * tmux, plugins) are photographed at their Suspense fallback — a static serializer can never resolve a
+ * Five render their own PageChrome from the shell. The code-split ones (inbox, runtime, tmux, plugins)
+ * are photographed at their Suspense fallback — a static serializer can never resolve a
  * lazy chunk — so what this asserts for them is precisely the loading-window identity that used to come
  * from the tab strip, worded as the launcher tile the human clicked. The remaining two are in
  * RADIX_BOUND below.
@@ -54,8 +54,10 @@ const SECTION_HEADING: Record<CockpitSectionId, string> = {
   tmux: "tmux",
   plugins: "Plugins",
   settings: "Settings",
-  // Not on COCKPIT_SECTION_ORDER (deep-link only, so no launcher tile) — listed because the record is
-  // keyed by CockpitSectionId and a new section must be answered here, not silently skipped.
+  // Not on COCKPIT_SECTION_ORDER — listed because the record is keyed by CockpitSectionId and a new
+  // section must be answered here, not silently skipped. `approvals`/`validations` are deep-link only;
+  // `mission` (SDD 485 C5) HAS a launcher tile but is a standalone app, so Control renders no section
+  // for it and this suite never asks it to.
   approvals: "Approvals",
   validations: "Validations",
 };
@@ -193,8 +195,11 @@ describe("t-aa2780 — every section says which section it is", () => {
     expect((src.match(/<PageChrome\s+title=\{s\.runtimeConfigTitle\}/g) ?? []).length).toBe(2);
   });
 
-  it("the twelve are exactly the twelve the launcher offers — a new tile needs a heading here", () => {
-    expect(CONTROL_SECTION_NAV.map((s) => s.id)).toEqual([...COCKPIT_SECTION_ORDER]);
+  it("every launcher tile has a heading here — a new tile needs one", () => {
+    // SDD 485 C5 — the launcher offers twelve; eleven are sections Control renders and one (Board) opens
+    // a standalone app. Both need a name a human can read, so the record spans the tiles, not the sections.
+    expect(CONTROL_SECTION_NAV).toHaveLength(12);
+    for (const tile of CONTROL_SECTION_NAV) expect(SECTION_HEADING[tile.id]?.length ?? 0).toBeGreaterThan(0);
     for (const id of COCKPIT_SECTION_ORDER) expect(SECTION_HEADING[id]?.length ?? 0).toBeGreaterThan(0);
   });
 

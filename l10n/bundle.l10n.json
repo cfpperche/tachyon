@@ -59,6 +59,7 @@
   "New code": "New code",
   "No Companion device paired. Generate a pair code above, enter it in Tachyon Companion, then refresh.": "No Companion device paired. Generate a pair code above, enter it in Tachyon Companion, then refresh.",
   "No Companion device paired. Open Tachyon Companion, pair with a code from this workspace, then refresh.": "No Companion device paired. Open Tachyon Companion, pair with a code from this workspace, then refresh.",
+  "No Tachyon workspace is attached in this window, so there is no Board to open.": "No Tachyon workspace is attached in this window, so there is no Board to open.",
   "No completed-task review yet": "No completed-task review yet",
   "No proposals yet": "No proposals yet",
   "No prompt templates in {0}/ — add <id>.md files there.{1}": "No prompt templates in {0}/ — add <id>.md files there.{1}",
