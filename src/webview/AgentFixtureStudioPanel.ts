@@ -25,6 +25,8 @@ export function openAgentFixtureStudio(extensionUri: vscode.Uri, vm: AgentFixtur
     styles: [uri("codicon.css"), uri("design-system.css"), uri("studio-frame.css"), uri("agent-studio-fixture.css")],
     bundle: uri("agent-studio-fixture.js"),
     mode: "live",
+    // spec 485 A2 — a conforming surface names itself and nothing else: no `extend`, no exception entry.
+    surface: "tachyonAgentFixtureStudio",
   });
   panel.webview.onDidReceiveMessage((m: { type?: string }) => {
     if (m?.type === "ready") void panel.webview.postMessage(loadMessage(vm));

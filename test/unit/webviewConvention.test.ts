@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
+import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
 // tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
@@ -42,10 +44,14 @@ describe("webview convention (spec 279)", () => {
     // every top-level src/webview/*.ts is a vscode-bound host emitter; the one sanctioned <!DOCTYPE> site is
     // src/webview/shared/shell.ts (a subdir → naturally excluded here). A host that hand-rolls a page reintroduces
     // the duplicated-shell + CSP-drift problem this spec closed.
+    // spec 485 A4 — a surface that DECLARES `replace` is allowed its own page: that is what the posture buys.
+    // Silence is what fails, here and in the conformance block below.
+    const replaceHosts = new Set(WEBVIEW_SURFACES.filter((s) => s.posture === "replace").map((s) => s.hostFile));
     const offenders = readdirSync("src/webview")
       .filter((f) => f.endsWith(".ts"))
+      .filter((f) => !replaceHosts.has(`src/webview/${f}`))
       .filter((f) => /<!DOCTYPE/i.test(readFileSync(`src/webview/${f}`, "utf8")));
-    expect(offenders, `host files hand-rolling <!DOCTYPE> (use renderWebviewShell): ${offenders.join(", ")}`).toEqual([]);
+    expect(offenders, `host files hand-rolling <!DOCTYPE> (use renderWebviewShell, or declare posture "replace"): ${offenders.join(", ")}`).toEqual([]);
   });
 
   it("is FULLY ENFORCING — every surface is converted, the allowlist is empty (spec 279 complete)", () => {
@@ -110,5 +116,219 @@ describe("webview convention (spec 279)", () => {
       violations.push(`${s.viewId}: no reload serializer policy`);
     }
     expect(violations, violations.join("\n")).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// spec 485 Phase A — the DESIGN-SYSTEM CONFORMANCE CONTRACT.
+//
+// SDD 410 made the design system enforceable with a mechanism, not with discipline: collapse 23 peer apps
+// into one runtime, because "a shared kit cannot enforce one runtime when every surface is a peer app". 485
+// puts the app count back. Without a replacement mechanism the reversal recreates 2026-07-18 exactly — dual
+// command routes, CSS bleed, dual pad, surface-local shell overrides. This block is the replacement.
+//
+// It fails an UNDECLARED departure and names the surface. It does NOT fail a declared one: `extend` composes
+// through the shell's named points, `replace` brings its own shell with a reason. A contract with no supported
+// way out is a contract that gets worked around, and a worked-around contract enforces nothing.
+//
+// Everything below reads the source the surface actually ships (its host file and its own CSS), never a
+// parallel inventory — a declaration that has drifted from the code is itself a failure, in both directions:
+// an undeclared departure fails, and a declared point that is NOT used fails too (otherwise `extend`
+// everything becomes a rubber stamp and the contract is back to honour-system).
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** CSS with comments removed — a `body {` inside a comment is not page chrome. */
+const stripCssComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+/** every selector text in a stylesheet (including inside `@media`/`@layer` blocks). */
+function cssSelectors(css: string): string[] {
+  return [...stripCssComments(css).matchAll(/(?:^|[};{])\s*([^{};@]+?)\s*\{/g)].map((m) => m[1]);
+}
+
+/** the surface's OWN stylesheets: `src/webview/<view>/**\/*.css`. Sheets a surface merely LINKS that belong to
+ *  another app's directory are that app's to answer for (Control links every embedded section's sheet). */
+function ownStylesheets(view: string): Array<{ file: string; css: string }> {
+  const out: Array<{ file: string; css: string }> = [];
+  const walk = (dir: string): void => {
+    if (!existsSync(dir)) return;
+    for (const entry of readdirSync(dir)) {
+      const p = join(dir, entry);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (entry.endsWith(".css")) out.push({ file: p, css: readFileSync(p, "utf8") });
+    }
+  };
+  walk(`src/webview/${view}`);
+  return out;
+}
+
+const cssNamesIn = (block: string): string[] => [...block.matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+
+/** the `renderWebviewShell` option chunks in a host file, one per call site (a host may serve two surfaces —
+ *  SidebarPrototype renders both the sidebar view and pin-preview). Keyed back to a surface by its bundle. */
+function shellCallChunks(hostSource: string): Array<{ view: string; chunk: string }> {
+  const out: Array<{ view: string; chunk: string }> = [];
+  for (const chunk of hostSource.split("renderWebviewShell(").slice(1)) {
+    const bundle = /\bbundle:\s*uri\(\s*["'`]([^"'`]+)\.js["'`]\s*\)/.exec(chunk)?.[1];
+    if (bundle) out.push({ view: bundle, chunk });
+  }
+  return out;
+}
+
+/** the stylesheet basenames a surface links, in link order. Two shapes exist: a direct `renderWebviewShell`
+ *  call (`styles: [uri("x.css"), …]`) and a `StudioSurfaceConfig` handed to the shared studio host base
+ *  (`styleFiles: ["x.css", …]`, which that base passes straight through to the same option). */
+function linkedStylesheets(s: WebviewSurface): string[] {
+  const src = readFileSync(s.hostFile, "utf8");
+  for (const { view, chunk } of shellCallChunks(src)) {
+    if (view !== s.view) continue;
+    const block = /\bstyles:\s*\[([\s\S]*?)\]/.exec(chunk);
+    if (block) return cssNamesIn(block[1]);
+  }
+  if (new RegExp(String.raw`bundleFile:\s*["'\`]${s.view}\.js["'\`]`).test(src)) {
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
+    if (block) return cssNamesIn(block[1]);
+  }
+  return [];
+}
+
+/** host files under `src/webview/shared/` that assemble a page — a surface may reach the shared shell through
+ *  one of these (PipelineStudioPanel delegates to StudioPanelManagerBase) instead of calling it directly. */
+function sharedMountModules(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const p = join(dir, entry);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (entry.endsWith(".ts") && readFileSync(p, "utf8").includes("renderWebviewShell(")) out.push(entry.replace(/\.ts$/, ""));
+    }
+  };
+  walk("src/webview/shared");
+  return out;
+}
+
+/** the extension points a surface's shipped code ACTUALLY exercises, with the evidence that proves each. */
+function observedExtensionPoints(s: WebviewSurface): Map<ShellExtensionPoint, string> {
+  const found = new Map<ShellExtensionPoint, string>();
+  const linked = linkedStylesheets(s);
+  if (!linked.includes(SHELL_DESIGN_SYSTEM_STYLESHEET)) {
+    found.set("base-style", `${s.hostFile} links [${linked.join(", ")}] — no ${SHELL_DESIGN_SYSTEM_STYLESHEET}`);
+  }
+  for (const { file, css } of ownStylesheets(s.view)) {
+    const chrome = cssSelectors(css).find((sel) => sel.split(",").some((part) => /^\s*(html|body)\b/.test(part)));
+    if (chrome !== undefined && !found.has("page-chrome")) found.set("page-chrome", `${file}: styles the page frame itself — \`${chrome.trim().replace(/\s+/g, " ")} { … }\``);
+    const token = /(?:^|[;{])\s*(--ds-[a-z0-9-]+)\s*:/.exec(stripCssComments(css));
+    if (token && !found.has("token-scale")) found.set("token-scale", `${file}: defines its own \`${token[1]}\` value`);
+  }
+  return found;
+}
+
+const declaredExtensionPoints = (s: WebviewSurface): ShellExtensionPoint[] => (s.posture === "extend" ? [...s.extensionPoints] : []);
+
+describe("webview design-system conformance contract (spec 485 Phase A)", () => {
+  it("every surface declares a posture, and the declaration is well-formed", () => {
+    // A1 — 410's standing exceptions (sidebar, pin-preview, the dev-only spec-350 fakes, the plugin surfaces)
+    // carry forward as EXPLICIT entries. `posture` is required by the type, so "no posture" cannot compile;
+    // what this catches is a declaration that compiles but says nothing (empty reason, empty point list).
+    const errors = WEBVIEW_SURFACES.flatMap(postureDeclarationErrors);
+    expect(errors, errors.join("\n")).toEqual([]);
+    expect(WEBVIEW_SURFACES.length).toBeGreaterThan(0);
+  });
+
+  it("`replace` passes with a reason and FAILS on an empty one (the rule, not just today's manifest)", () => {
+    // no surface replaces the shell today, so assert the rule on synthetic entries — otherwise the requirement
+    // "an empty or missing reason fails" would be untested until the first surface needs it, which is the
+    // moment it is least likely to be noticed.
+    const base = { viewId: "scratch", view: "scratch", hostFile: "src/webview/Scratch.ts", mode: "live", converted: true } as const;
+    expect(postureDeclarationErrors({ ...base, posture: "replace", reason: "hosts a third-party canvas that owns its own document" })).toEqual([]);
+    expect(postureDeclarationErrors({ ...base, posture: "replace", reason: "   " })).toHaveLength(1);
+    expect(postureDeclarationErrors({ ...base, posture: "replace", reason: "" })[0]).toContain("non-empty reason");
+    expect(postureDeclarationErrors({ ...base, posture: "extend", extensionPoints: [] })[0]).toContain("at least one extension point");
+    expect(postureDeclarationErrors({ ...base, posture: "extend", extensionPoints: ["page-chrome"] })).toEqual([]);
+  });
+
+  it("reads a real stylesheet list for every surface (guard against a silently-blind contract)", () => {
+    // the whole block below is derived from these lists. A regex that quietly matched nothing would make every
+    // conformance assertion vacuously pass — a test that sees nothing is worse than no test.
+    const blind = WEBVIEW_SURFACES.filter((s) => s.posture !== "replace" && linkedStylesheets(s).length === 0);
+    expect(blind.map((s) => `${s.viewId} (${s.hostFile})`), "could not read a stylesheet list — did a shell call move or change shape?").toEqual([]);
+  });
+
+  it("every surface mounts through the shared shell unless it declares `replace`", () => {
+    const shared = sharedMountModules();
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.posture === "replace") continue;
+      const src = readFileSync(s.hostFile, "utf8");
+      const direct = src.includes("renderWebviewShell(");
+      const viaShared = shared.some((m) => new RegExp(String.raw`from\s+["'\`][^"'\`]*\b${m}\.js["'\`]`).test(src));
+      if (!direct && !viaShared) {
+        violations.push(`${s.viewId} (${s.hostFile}): mounts outside the shared shell — call renderWebviewShell, or declare posture "replace" with a reason`);
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("an UNDECLARED departure from the shared shell/design system fails and names the surface", () => {
+    // the scenario this whole phase exists for. Three departures are detected from the shipped source:
+    //   page-chrome — the surface's own CSS styles `html`/`body`, which design-system.css already owns;
+    //   base-style  — the surface links no design-system.css at all;
+    //   token-scale — the surface mints its own `--ds-*` values instead of reading the scale.
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.posture === "replace") continue;
+      const declared = new Set(declaredExtensionPoints(s));
+      for (const [point, evidence] of observedExtensionPoints(s)) {
+        if (!declared.has(point)) {
+          violations.push(`${s.viewId}: UNDECLARED "${point}" — ${evidence}. Declare posture "extend" naming "${point}" in WEBVIEW_SURFACES, or stop departing.`);
+        }
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("a declared extension point is one the surface actually uses (no blanket declarations)", () => {
+    // the other direction, and the reason `extend` cannot become a rubber stamp: declaring the whole point set
+    // on every surface would silence the check above, so a point that is not exercised is itself a failure.
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.posture === "replace") continue;
+      const observed = observedExtensionPoints(s);
+      for (const point of declaredExtensionPoints(s)) {
+        if (!observed.has(point)) violations.push(`${s.viewId}: declares extension point "${point}" but nothing in its host or CSS uses it — drop it (a declaration nobody checks is how the contract rots)`);
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("a host that binds itself to the shell declares exactly its manifest posture", () => {
+    // A2/A3 — `surface`/`extend` on renderWebviewShell put the claim in the rendered page. The manifest stays
+    // the declaration of record (Cockpit.ts, AgentPanePanel.ts and StudioPanelManagerBase were Phase B's files
+    // when this landed and are not bound yet — t-4a3333), but a host that DOES bind must not disagree with it.
+    const violations: string[] = [];
+    for (const hostFile of [...new Set(WEBVIEW_SURFACES.map((s) => s.hostFile))]) {
+      for (const { view, chunk } of shellCallChunks(readFileSync(hostFile, "utf8"))) {
+        const surface = WEBVIEW_SURFACES.find((s) => s.view === view && s.hostFile === hostFile);
+        if (!surface) continue;
+        const bound = /\bextend:\s*\[/.test(chunk) || /\bsurface:\s*/.test(chunk);
+        if (!bound) continue;
+        const block = /\bextend:\s*\[([\s\S]*?)\]/.exec(chunk);
+        const passed = block ? [...block[1].matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]).sort() : [];
+        const declared = declaredExtensionPoints(surface).slice().sort();
+        if (JSON.stringify(passed) !== JSON.stringify(declared)) {
+          violations.push(`${hostFile} (${view}): passes extend [${passed.join(", ")}] but the manifest declares [${declared.join(", ")}]`);
+        }
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("the shell's extension points are REAL — at least one live surface extends through them", () => {
+    // A3's honesty check, kept as a test rather than a note: a shell nobody can extend is a shell people will
+    // replace. If every surface ever lands on `conform`, the points below are decorative and this goes red.
+    const extending = WEBVIEW_SURFACES.filter((s) => s.posture === "extend");
+    expect(extending.map((s) => s.viewId), "no surface uses `extend` — the shell's extension points are decorative").not.toEqual([]);
+    const used = new Set(extending.flatMap((s) => s.extensionPoints));
+    const unused = SHELL_EXTENSION_POINTS.filter((p) => !used.has(p));
+    expect(unused, `extension points declared by the shell but used by nothing: ${unused.join(", ")}`).toEqual([]);
   });
 });

@@ -190,6 +190,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       mode: "live",
       imgBlob: true,
       scriptCspSource: false,
+      // spec 485 A2/A3 — declared through the shell's named extension points: the sidebar renders in the
+      // side-bar surface, so sidebar.css overrides the design system's editor background and page pad on
+      // `html, body`. The manifest declares the same set; the page now carries the claim too.
+      surface: "tachyonSidebar",
+      extend: ["page-chrome"],
     });
     void this.push();
     // SDD 479 phase 5 — editing the personal override must repaint the cards, or the person is
@@ -485,6 +490,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         bundle: uri("pin-preview.js"),
         mode: "static",
         imgBlob: true,
+        // spec 485 A2/A3 — pin-preview sets its own `body` baseline and centres a fixed column, so it composes
+        // page chrome over the shared one and says so here as well as in the manifest.
+        surface: PIN_PREVIEW_VIEW_TYPE,
+        extend: ["page-chrome"],
         persistedState: { schemaVersion: 1, view: PIN_PREVIEW_VIEW_TYPE, wsHash: ws.wsHash, pinId: id } satisfies PinPreviewPanelState,
       });
       // preact-static: post the VM once the bundle signals ready.

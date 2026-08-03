@@ -9,18 +9,18 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
 
 ### Phase A — conformance contract
 
-- [ ] A1. Add `posture` (`conform` | `extend` | `replace`) to each entry in `WEBVIEW_SURFACES`, with
+- [x] A1. Add `posture` (`conform` | `extend` | `replace`) to each entry in `WEBVIEW_SURFACES`, with
       `extend` naming the extension points used and `replace` requiring a non-empty reason. Carry
       410's standing exceptions forward as explicit entries (sidebar, pin-preview, dev-only spec-350
       fakes, plugin surfaces) — none survives implicitly.
-- [ ] A2. Give the shared shell named extension points (regions/slots) so `extend` is a real posture
+- [x] A2. Give the shared shell named extension points (regions/slots) so `extend` is a real posture
       and not a euphemism for `replace`.
-- [ ] A3. Convert at least one existing surface to `extend` through those points. If every surface
+- [x] A3. Convert at least one existing surface to `extend` through those points. If every surface
       lands on `conform`, the points are decorative — say so in `notes.md` and fix before A closes.
-- [ ] A4. Generalize `webviewConvention.test.ts`: an **undeclared** departure fails and names the
+- [x] A4. Generalize `webviewConvention.test.ts`: an **undeclared** departure fails and names the
       surface — own page chrome, own pad/token values, mounting outside the shared shell. A declared
       `replace` passes; an empty reason fails.
-- [ ] A5. Fail-before proof for A4: a scratch surface that bypasses the shell makes the test red, and
+- [x] A5. Fail-before proof for A4: a scratch surface that bypasses the shell makes the test red, and
       declaring it turns it green. Record in `notes.md`; do not commit the scratch surface.
 
 ### Phase B — visibility gating
