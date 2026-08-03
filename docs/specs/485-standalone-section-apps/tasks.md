@@ -140,7 +140,32 @@ work in parallel only if the second re-applies onto the first before delivery, n
       per-window polling — from an architectural idea to the fix a measured cost is asking for. D6–D10
       should keep taking (a) and should NOT attempt (b) on the strength of this number.
 
-- [ ] D6–D10. One PR per remaining dashboard (Overview, Fleet, Worktrees, Execution,
+- [x] D6. **Worktrees** — the sixth migration, and the one that proves D5's answer was a RESULT rather
+      than a rule. `ck-wt-*` had 21 uses and exactly ONE consumer left (the `WorkspaceCard` that shared
+      the vocabulary left with Engine in D5), so this one MOVES: the rules went down into
+      `worktrees/worktrees.css` and out of `cockpit.css` entirely, with no shared sheet. The CSS decision
+      tree now has all three branches visited by real cases — **nothing to do** (D4), **link** (D5),
+      **move** (D6) — and the rule is: COUNT THE CONSUMERS, do not apply the previous migration's answer.
+
+      **A regression this migration nearly shipped, and the guard that now prevents its whole class.**
+      The first cut linked `engine-workspace.css` and used `ck-mono` three times — but that class was
+      never in that sheet; it lived in `cockpit.css`, which a standalone app does not link. Three elements
+      would have silently lost their monospace font: no functional test sees it, and a two-width visual
+      sweep would not either, because the layout stays correct and only the typeface is wrong. Caught by
+      hand in review, which is exactly the wrong way to catch it.
+
+      So the Phase A contract stopped being per-app. D5's test named one panel, one sheet and four classes
+      by hand — it could not have caught this, and every migration would have had to remember to write its
+      own. The replacement is general: **for every section app, every `ck-*`/`ci-*` class its JSX uses must
+      be defined in some sheet its panel links.** Proved red naming `worktrees: uses .ck-mono` before the
+      fix. D7–D10 inherit the net rather than the obligation.
+
+      `ck-mono` itself went to `shared/control-typography.css` rather than into `engine-workspace.css`: a
+      monospace utility does not belong to anything named after the Engine, and a shared sheet whose name
+      lies is worse than two copies. Two consumers, so it LINKS — the same branch as D5, reached by the
+      same counting rule rather than by habit.
+
+- [ ] D7–D10. One PR per remaining dashboard (Overview, Fleet, Execution,
       Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
