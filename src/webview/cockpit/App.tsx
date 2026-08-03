@@ -46,8 +46,6 @@ import type { HumanInboxDispatch } from "../human-inbox/App";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
 import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { HumanInboxKind } from "../../humanInbox/model";
-import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
-import type { SessionInspectionState } from "../runtime-ops/messages";
 
 import type { StudioDispatch } from "../shared/studio/protocol";
 import type {
@@ -102,13 +100,10 @@ const HumanInboxItemApp = lazy(() =>
     return { default: m.ItemApp };
   }),
 );
-// t-610705 — CSS co-load, second surface (see the Approvals comment above for the mechanism).
-const RuntimeOpsApp = lazy(() =>
-  import("../runtime-ops/App").then((m) => {
-    loadSectionStylesheet("runtime");
-    return { default: m.App };
-  }),
-);
+// SDD 485 D3 — the Runtime Ops lazy import is GONE with its section: it is a standalone `window` app now
+// (src/webview/RuntimeOpsPanel.ts + runtime-ops/main.tsx), one tab for the whole window, and two live
+// renderers of one screen is the thing spec.md forbids. `src/webview/runtime-ops/App.tsx` is unchanged and
+// unmoved — what changed is who mounts it, which is the whole of a Phase D cutover.
 // SDD 485 D2 — the Plugins lazy import is GONE with its section: it is a standalone `dashboard` app now
 // (src/webview/PluginsPanel.ts + plugins/main.tsx), one panel per project, and two live renderers of one
 // screen is the thing spec.md forbids. `src/webview/plugins/App.tsx` is unchanged and unmoved — what
@@ -332,11 +327,6 @@ export interface CockpitAppProps {
   validationsVm?: ValidationsViewModel;
   validationsError?: string;
   validationsDispatch: ValidationsDispatch;
-  runtimeSnapshot?: RuntimeOpsSnapshot;
-  onRuntimeSetProviderObservation: (provider: RuntimeOpsProviderV2, enabled: boolean) => void;
-  /** t-283149 — keyed by `<wsHash>:<agent>`; only expanded rows appear. */
-  sessionInspections: Record<string, SessionInspectionState>;
-  onToggleSessionInspection: (workspaceKey: string, agent: string, open: boolean) => void;
   runtimeConfigSnapshot?: RuntimeConfigControlSnapshot;
   runtimeConfigUnavailable?: boolean;
   onOpenRuntimeConfigSource: (path: string) => void;
@@ -353,7 +343,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -1910,19 +1900,6 @@ export function App(p: CockpitAppProps) {
           onFilter={setEgFilters}
         />
       </ModuleChrome>
-    );
-  } else if (section === "runtime") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-runtime-ops">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["runtime"].navKey]} />}>
-          <RuntimeOpsApp
-            snapshot={p.runtimeSnapshot}
-            onSetProviderObservation={p.onRuntimeSetProviderObservation}
-            sessionInspections={p.sessionInspections}
-            onToggleSessionInspection={p.onToggleSessionInspection}
-          />
-        </Suspense>
-      </div>
     );
   } else if (section === "runtime-config") {
     body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} unavailable={p.runtimeConfigUnavailable} onOpenSource={p.onOpenRuntimeConfigSource} onSaveChanges={p.onSaveRuntimeConfigChanges} />;

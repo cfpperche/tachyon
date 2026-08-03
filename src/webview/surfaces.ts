@@ -191,12 +191,26 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer
   // for the legacy "tachyonTaskStudio" viewType stays registered in extension.ts: a revived pre-410
   // panel disposes itself and redirects into Control → the task's studio-edit route.
-  // spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067, 2026-07-20) — it was never
-  // registered (no registerWebviewViewProvider call), unreachable in production. Runtime Ops lives ONLY as
-  // a cockpit section now (view: "runtime-ops" the directory still exists — src/webview/runtime-ops/App.tsx
-  // is lazy-imported by cockpit/App.tsx). The dispose-only serializer for the legacy "tachyonRuntimeOpsView"
-  // viewType stays registered in extension.ts regardless of this manifest entry — real defensive code for
-  // any still-persisted pre-migration window state, independent of whether the class exists.
+  // SDD 485 D3 (2026-08-03) — Runtime Ops is a STANDALONE APP, and the second `window` one after tmux:
+  // ONE editor tab for the whole window, because its subject is not per-project. `buildSnapshot()` takes
+  // no project and merges every attached workspace (`runtimeOpsFleetView`), the provider quota it shows is
+  // account-wide by its own type's words, and `Cockpit.ts` never handed it the project selector's value —
+  // so two attached projects would otherwise open two byte-identical panels. The launcher tile beside it,
+  // Runtime CONFIG, is the contrast worth knowing: that one IS per-project, and the difference is a
+  // parameter on a signature rather than a policy.
+  //
+  // The viewType is NEW. spec 367 Phase 1's WebviewView (RuntimeOpsView.ts) was retired (t-ed3067,
+  // 2026-07-20) — never registered (no registerWebviewViewProvider call), unreachable in production — so
+  // `tachyonRuntimeOpsView` names a different surface KIND that never shipped and has no persisted record
+  // to revive. Its dispose-only serializer stays registered in extension.ts regardless of this manifest
+  // entry, defensive code for a state that cannot exist; it is not a redirect and needs none.
+  //
+  // `conform`, and the contract checks it: it mounts through the shared shell (via SectionPanelManager),
+  // links design-system.css, and runtime-ops.css styles no page frame, mints no `--ds-*` values and gives
+  // `#root` no height — a page-scrolling document, so no `page-frame.css` either. It already owned its own
+  // `--ds-page-pad-*` rule, which is why this migration moved no CSS and only DELETED the embed-context
+  // overrides that Control and this sheet each carried for the other.
+  { viewId: "tachyonRuntimeOps", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

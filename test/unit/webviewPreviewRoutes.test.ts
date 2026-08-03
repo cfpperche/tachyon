@@ -50,7 +50,8 @@ describe("preview route table", () => {
       "/dist/webview/approval.css",
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
-      "/dist/webview/runtime-ops.css",
+      // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
+      // earlier: Runtime Ops is a standalone app with its own route below.
       "/dist/webview/mermaid-block.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
@@ -98,7 +99,6 @@ describe("preview route table", () => {
       // t-ac79a7 — the navigation-pending state: Control's landing screen still on display while the
       // route it just committed is loading (the fixture pushes routePending, never routeReady).
       "nav-pending",
-      "runtime",
       "runtime-config",
       "settings",
       "studio-agent",
@@ -130,6 +130,8 @@ describe("preview route table", () => {
       // SDD 485 D2 — and none of the four `plugins*` fixtures: Plugins has its own route below, whose
       // fixtures name the four card states directly instead of four Control models disambiguated by
       // object identity.
+      // SDD 485 D3 — and no "runtime" fixture: Runtime Ops has its own route below too, with all
+      // seventeen of its fixtures reachable rather than the single one this list could carry.
       "validations",
       "worktrees",
     ]);
@@ -149,8 +151,6 @@ describe("preview route table", () => {
     expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
     expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
-    const runtimeMsgs = r.makeMessage(r.fixtures.runtime.vm) as Array<{ type: string }>;
-    expect(runtimeMsgs.map((m) => m.type)).toEqual(["init", "model", "runtimeOpsSnapshot"]);
     // t-610705 (Phase C.3) — Handoff folds into a section (unlike Fleet's subroutes): nav section is
     // "handoff" itself, so its own content message rides alongside init+model directly.
     const handoffMsgs = r.makeMessage(r.fixtures.handoff.vm) as Array<{ type: string }>;
@@ -270,6 +270,28 @@ describe("preview route table", () => {
     expect(msg.vm?.installed?.length).toBeGreaterThan(0);
   });
 
+  it("declares the Runtime Ops route (SDD 485 D3) against the REAL standalone bundle, with all 17 fixtures", () => {
+    // The fixture COUNT is the load-bearing half here, and it is why this route had to come back rather
+    // than be served by `?view=cockpit&fixture=runtime`: that arm could carry exactly ONE of these, which
+    // is the reason `test/browser/runtimeOpsView.test.ts` was parked red instead of repointed (t-2a49b2).
+    // Seventeen fixtures reachable again is what un-parks it.
+    const r = ROUTES["runtime-ops"];
+    expect(r.bundle).toBe("/dist/webview/runtime-ops.js");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/runtime-ops.css",
+    ]);
+    expect(r.module).toBe(true);
+    // No page-frame link, so no `pageFrame` flag: Runtime Ops scrolls as a document, like the inspector.
+    expect(r.cssLinks.some((href) => href.endsWith("/page-frame.css"))).toBe(false);
+    expect(r.pageFrame).toBeUndefined();
+    expect(Object.keys(r.fixtures)).toHaveLength(17);
+    // the two host states the surface distinguishes, addressable by name and answered by different envelopes.
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("runtimeOpsSnapshot");
+    expect((r.makeMessage(r.fixtures.loading.vm) as { type: string }).type).toBe("runtimeOpsLoading");
+  });
+
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
     const r = ROUTES["pin-preview"];
     expect(r.bundle).toBe("/dist/webview/pin-preview.js");
@@ -366,6 +388,9 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // exactly the kind of reversal a derived guard must see rather than be told.
     expect(bundles.has("dist/webview/inspector.js")).toBe(true);
     expect(bundles.has("dist/webview/plugins.js")).toBe(true);
+    // SDD 485 D3 — and runtime-ops.js, the fifth. Like plugins.js, this is a string this file's history
+    // names as DEAD; it is live again, which is the kind of reversal a derived guard must SEE.
+    expect(bundles.has("dist/webview/runtime-ops.js")).toBe(true);
     expect(bundles.has("dist/webview/task-studio.js")).toBe(false);
   });
 

@@ -13,6 +13,7 @@ import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, 
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
+import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -1369,6 +1370,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const tmuxPanels = new TmuxPanelManager(context.extensionUri, makeServerInspectorDeps());
   context.subscriptions.push({ dispose: () => tmuxPanels.dispose() });
 
+  /**
+   * SDD 485 D3 — Runtime Ops is a standalone `window` app: ONE editor tab for the whole window, because
+   * the inventory it shows is not per-project. `buildSnapshot` takes no workspace and merges every
+   * attached one (`runtimeOpsFleetView`); the provider quota it renders is account-wide. Note the deps
+   * below are the SAME three `makeCockpitDeps` used to pass as `runtimeOps` — the domain did not change,
+   * only who owns the panel. Built once here, like tmux's, though for a weaker reason: these three close
+   * over `workspaces()` and `byHash`, which are stable for the window's life.
+   */
+  const runtimeOpsPanels = new RuntimeOpsPanelManager(context.extensionUri, {
+    buildSnapshot: () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
+    configureProviderObservation: async (provider, enabled) => {
+      await Promise.all(
+        workspaces().map((ws) =>
+          extensionInvoke(ws, {
+            action: "runtime-ops.provider.configure",
+            provider,
+            enabled,
+          }),
+        ),
+      );
+    },
+    // t-283149 — the panel's agent rows carry `workspaceKey`, which IS the wsHash the snapshot was
+    // built from (runtimeOps/snapshotService.ts), so the row addresses its own workspace directly
+    // rather than this fanning out and guessing which reply belongs to the row. It is also the reason
+    // this app cannot be a `dashboard`: the row's workspace and the panel's would be two different
+    // answers, and only the row's is right.
+    inspectAgentSession: async (workspaceKey, agent) => {
+      const ws = byHash(workspaceKey);
+      if (!ws) throw new Error(`Workspace '${workspaceKey}' is no longer open.`);
+      return jsonObject(
+        await extensionQuery(ws, { action: "agent.session-inspection", agent }),
+        "agent.session-inspection",
+      ) as unknown as InspectedSession;
+    },
+  });
+  context.subscriptions.push({ dispose: () => runtimeOpsPanels.dispose() });
+
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
@@ -1740,31 +1778,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         boardPanels.refresh();
       },
     },
-    runtimeOps: {
-      buildSnapshot: () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
-      configureProviderObservation: async (provider, enabled) => {
-        await Promise.all(
-          workspaces().map((ws) =>
-            extensionInvoke(ws, {
-              action: "runtime-ops.provider.configure",
-              provider,
-              enabled,
-            }),
-          ),
-        );
-      },
-      // t-283149 — the panel's agent rows carry `workspaceKey`, which IS the wsHash the snapshot was
-      // built from (runtimeOps/snapshotService.ts), so the row addresses its own workspace directly
-      // rather than this fanning out and guessing which reply belongs to the row.
-      inspectAgentSession: async (workspaceKey, agent) => {
-        const ws = byHash(workspaceKey);
-        if (!ws) throw new Error(`Workspace '${workspaceKey}' is no longer open.`);
-        return jsonObject(
-          await extensionQuery(ws, { action: "agent.session-inspection", agent }),
-          "agent.session-inspection",
-        ) as unknown as InspectedSession;
-      },
-    },
     runtimeConfig: {
       buildSnapshot: (wsHash) => {
         const ws = wsHash ? byHash(wsHash) : workspaces()[0];
@@ -1850,6 +1863,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // SDD 485 D1 — and the tmux app, which takes no argument at all: `window` cardinality means there is
     // one panel for the window and nothing to key it on.
     openTmux: () => tmuxPanels.open(),
+    // SDD 485 D3 — and Runtime Ops, the second `window` app and so the second opener with no argument.
+    openRuntimeOps: () => runtimeOpsPanels.open(),
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openGlobalSettings");
     },
@@ -2394,6 +2409,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Control panel someone else had restored; opening an app touches no Control state, and re-opening
   // reveals rather than duplicating, which makes this safe against VS Code's unspecified revive order).
   registerTrustedPanelSerializer<SectionPanelState>(context, TMUX_VIEW_TYPE, (panel, state) => tmuxPanels.deserialize(panel, state));
+  // SDD 485 D3 — the Runtime Ops app's own restore. A NEW viewType, unlike C4's, D1's and D2's reuses:
+  // the only legacy id, `tachyonRuntimeOpsView`, names spec 367's retired WebviewView (a bottom-panel
+  // view container that was never registered), so there is no record to revive and nothing to migrate.
+  // That tombstone therefore stays exactly where it is, in the dispose-only loop below, and this app's
+  // own `{schemaVersion, view}` state is what a reload hands back. No revive deferral either: a `window`
+  // app names no workspace, so there is nothing for `workspacePanelReviveDeferral` to wait for.
+  registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_OPS_VIEW_TYPE, (panel, state) => runtimeOpsPanels.deserialize(panel, state));
   // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
   // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
   // overview rather than reviving into whatever the raw payload happened to contain.
@@ -2736,6 +2758,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openPluginsTab();
           return Promise.resolve();
         }
+        // SDD 485 D3 — the fourth, and the second that takes no argument (a `window` app has nothing to
+        // key on). This is also the line `tachyon.openControlRuntime` funnels into below.
+        if (resolved === "runtime") {
+          runtimeOpsPanels.open();
+          return Promise.resolve();
+        }
         return openCockpit(makeCockpitDeps(), { section: resolved });
       }
       return openCockpit(makeCockpitDeps());
@@ -2745,7 +2773,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
     // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
-    vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
+    // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command
+    // id keeps its `openControl` spelling on purpose: `tachyon.showRuntimeUsage` and
+    // `src/runtimeOps/openRuntimeOps.ts` both route through it, and renaming it inside a cutover would
+    // churn three call sites to say the same thing (the same call C5 made for the `mission-control`
+    // directory name).
+    vscode.commands.registerCommand("tachyon.openControlRuntime", () => { runtimeOpsPanels.open(); }),
     // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
     // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
     // SDD 485 C4 — the same command name and the same (wsHash, taskId) contract the host-agnostic

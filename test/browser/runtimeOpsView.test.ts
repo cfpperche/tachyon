@@ -3,28 +3,30 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 
-// t-2a49b2 / t-c55f8d — ALL FOUR TESTS IN THIS FILE ARE RED, KNOWINGLY, AND ARE NOT BEING REPOINTED.
-// The `?view=runtime-ops` standalone preview route was retired in t-ed3067, so every `openRuntimeOpsFixture`
-// below times out waiting for a `previewFixture` marker the harness never sets. Its three sibling files
-// (boardCardLayout, boardHeaderKitParity, pilotAPlugins, pilotBTaskStudio) were repointed at the Control
-// route in t-c55f8d because their surfaces survived intact behind ONE cockpit fixture each. This one did not:
-// the route below drives 16 runtime-ops fixtures (loading, error, empty, mixed, throttled, stale-bridge,
-// long-label, duplicate-workspace, provider-*) and `?view=cockpit&fixture=runtime` exposes exactly one of
-// them. Reaching the other 15 means either restoring a standalone entry point or teaching the cockpit route
-// to select a sub-fixture — and the narrow-width overflow assertions would then be measuring the Control
-// chrome's page box, not this panel's, so they need rewriting rather than repointing.
+// SDD 485 D3 (2026-08-03) — THIS FILE IS LIVE AGAIN, and it came back on its own terms rather than by being
+// repointed. The waiver that used to sit here said exactly how it would end, and this is that ending:
 //
-// The human decided on 2026-07-31 (t-2a49b2 journal) that this guard comes back only after the plugin work
-// lands — deps t-54cdb2 and t-54cdb1, both still inbox as of 2026-08-01. Repointing it now would also mean
-// deciding what it covers, including the t-283149 session-inspection panel, which is design work, not a
-// mechanical fix. Left as-is so the guard's absence stays loud instead of being silently skipped.
+//   "the moment this file stops naming `view=runtime-ops` — because the route came back with
+//    t-54cdb2/t-54cdb1, or because the file was repointed — the guard fails on the STALE waiver instead."
 //
-// preview-route-check: allow view=runtime-ops (t-2a49b2) — the ONE dead preview route this repo keeps on
-// purpose. t-fdfbd4's portable guard (test/unit/webviewPreviewRoutes.test.ts) fails verify:full on any
-// browser test that opens a route ROUTES no longer has; this waiver is the human's 2026-07-31 decision
-// written where the reference lives, so the exception stays visible and dies with the file. It is checked,
-// not merely tolerated: the moment this file stops naming `view=runtime-ops` — because the route came back
-// with t-54cdb2/t-54cdb1, or because the file was repointed — the guard fails on the STALE waiver instead.
+// t-ed3067 retired the `?view=runtime-ops` preview route when Runtime Ops became a Control-only section, and
+// all four tests below had been knowingly RED ever since (t-2a49b2 / t-c55f8d): every `openRuntimeOpsFixture`
+// timed out waiting for a `previewFixture` marker the harness never set. The human's 2026-07-31 decision was
+// to leave them red rather than repoint them, because `?view=cockpit&fixture=runtime` exposed ONE of this
+// surface's seventeen fixtures and the narrow-width overflow assertions would then have been measuring
+// Control's page box instead of this panel's.
+//
+// Runtime Ops is a standalone `window` app now, so `ROUTES["runtime-ops"]` exists again — pointing at the
+// REAL shipped `dist/webview/runtime-ops.js` with the exact stylesheet list `RuntimeOpsPanel.ts` links — and
+// all seventeen fixtures are addressable. The URL below is unchanged from the day it was written; what
+// changed is that it resolves. The `preview-route-check` waiver is DELETED rather than updated,
+// because the reference it excused is no longer dead — and `webviewPreviewRoutes.test.ts`'s "no waiver
+// outlives the reference it excuses" case would have gone red on it if it had been left behind, which is how
+// this was noticed rather than remembered.
+//
+// `test:browser` still needs a system Chrome and is still not part of `verify:full` (see that guard's own
+// comment for why that is deliberate); it stays a pre-release gate. What this change restores is the guard's
+// ability to run at all.
 const PREVIEW_PATH = "/scripts/webview-preview/index.html?view=runtime-ops&fixture=";
 
 interface Viewport {
@@ -71,7 +73,12 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     const loading = await browser.newPage();
     await openRuntimeOpsFixture(loading, server.origin, "loading", { width: 1100, height: 360 });
     expect(await loading.$eval(".runtime-ops", (el) => el.getAttribute("aria-busy"))).toBe("true");
-    expect(await loading.$eval(".runtime-ops", (el) => el.textContent)).toContain("Loading runtime inventory...");
+    // SDD 485 D3 — a PRE-EXISTING stale assertion, found by running this file for the first time since
+    // t-ed3067 parked it. The component renders a Unicode ellipsis ("…", U+2026) and this expected three
+    // ASCII dots; `runtime-ops/App.tsx` is byte-identical across this migration, so the drift predates it
+    // and was invisible only because the whole file was red for a different reason. Fixed rather than
+    // left, because a revived suite that is still red revives nothing.
+    expect(await loading.$eval(".runtime-ops", (el) => el.textContent)).toContain("Loading runtime inventory\u2026");
     await loading.close();
 
     const error = await browser.newPage();

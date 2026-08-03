@@ -72,6 +72,9 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
     expectPagePad(validations, ".validations-main");
   });
 
+  // SDD 485 D3 — this claim OUTLIVED the migration and is now the whole of Runtime Ops' pad story: the
+  // rule was always in this surface's own sheet, so unlike Plugins (D2) nothing had to move. See the
+  // describe below for the half that DID change.
   it("the Runtime Ops root applies the Fleet page pad standalone", () => {
     expectPagePad(runtimeOps, ".runtime-ops");
   });
@@ -83,10 +86,11 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
     expectPagePad(validations, ".ck-embed-host > main.validations-main", { important: true });
   });
 
-  it("the Runtime Ops root re-asserts the page pad inside a Control embed host", () => {
-    expectPagePad(runtimeOps, ".ck-embed-host > main.runtime-ops", { important: true });
-  });
 
+  // SDD 485 D3 — the Runtime Ops embed re-assert case that used to sit here is GONE with the embed; see
+  // the "Runtime Ops owns its own page pad" describe below for what replaced it. Validations keeps its
+  // pair, because Validations is still a Control section.
+  //
   // the host owning no padding is the other half of the contract: if a surface ever re-added a pad on
   // .ck-embed-host itself, both layers would apply and the embed would sit at 32px, not 16px.
   it("neither surface pads the embed host itself", () => {
@@ -148,6 +152,63 @@ describe("Plugins owns its own page pad now that it is a standalone app (SDD 485
   it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {
     const app = read("src/webview/plugins/App.tsx");
     expect(app.match(/class="ck-plugins-root"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
+  });
+});
+
+/**
+ * SDD 485 D3 — the same page-pad contract for Runtime Ops, and it is the INVERSE of D2's.
+ *
+ * D2 found the pad rule living in `cockpit.css` — the sheet a standalone app does not link — so the rule
+ * had to MOVE or Plugins shipped flush against the tab edge at every width. The first thing this task did
+ * was run D2's parting instruction (`grep -n "<root class>" src/webview/cockpit/cockpit.css`) and the
+ * answer came back different: `.runtime-ops`'s `--ds-page-pad-*` rule was always in `runtime-ops.css`.
+ * What `cockpit.css` provided was only embed-context NEUTRALIZATION — `.ck-embed-host > .runtime-ops`
+ * with `flex`/`min-height`/`width`/`margin` — and this sheet answered it with a `!important` re-assert of
+ * its own pad (t-0739f7), because `.ck-embed-host > main { padding: 0 !important }` outranked the bare
+ * root rule.
+ *
+ * Both of those are dead the moment there is no embed host, and BOTH SIDES are asserted here rather than
+ * one: a leftover in `cockpit.css` would be a rule with no element to match and would make the real owner
+ * ambiguous for the next reader, and a leftover here would be a rule keyed to a host that no longer wraps
+ * this surface. The grep is worth ten seconds on every remaining Phase D migration, and the answer can be
+ * "a rule to delete" as readily as "a rule to move".
+ */
+describe("Runtime Ops owns its own page pad now that it is a standalone app (SDD 485 D3)", () => {
+  const runtimeOps = read(RUNTIME_OPS_CSS);
+  const cockpit = read("src/webview/cockpit/cockpit.css");
+
+  it("cockpit.css no longer styles the Runtime Ops root — a rule with no element left to match", () => {
+    for (const r of rules(cockpit)) {
+      expect(
+        r.selector.split(",").some((part) => part.trim().endsWith(".runtime-ops")),
+        `cockpit.css still styles .runtime-ops (\`${r.selector}\`) — Runtime Ops left Control in SDD 485 D3`,
+      ).toBe(false);
+    }
+  });
+
+  it("runtime-ops.css no longer re-asserts the pad for an embed host that cannot exist", () => {
+    // The other half of the same deletion. Keeping it would be harmless CSS and a live lie about where
+    // this surface renders — exactly the residue t-17d885 was about, one sheet over.
+    expect(rulesFor(runtimeOps, ".ck-embed-host > main.runtime-ops")).toHaveLength(0);
+  });
+
+  it("Control renders no Runtime Ops section to pad in the first place", () => {
+    // The cutover half: two live renderers is what spec.md forbids, and a surviving branch here is how
+    // one would come back without any test noticing.
+    expect(read(COCKPIT_APP)).not.toContain('section === "runtime"');
+  });
+
+  it("the app links the sheet that owns the pad, and no page frame it does not anchor to", () => {
+    // The pad is only real if the app actually LINKS the sheet carrying it — the Phase A consumption
+    // check reads `#root` height chains and cannot see a pad, which is why this is asserted here.
+    const host = read("src/webview/RuntimeOpsPanel.ts");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(host);
+    expect(block, "src/webview/RuntimeOpsPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
+    const linked = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+    expect(linked).toContain("runtime-ops.css");
+    // and NOT page-frame.css: runtime-ops.css anchors `#root` to nothing, so linking the frame would
+    // fail webviewConvention's mirror rule and put a scrolling document inside `overflow: hidden`.
+    expect(linked).not.toContain("page-frame.css");
   });
 });
 

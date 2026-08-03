@@ -131,7 +131,8 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/approval.css",
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
-      "/dist/webview/runtime-ops.css",
+      // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
+      // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
       "/dist/webview/mermaid-block.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
@@ -182,15 +183,6 @@ export const ROUTES: Record<string, Route> = {
         // t-d16698 — the Inbox list. The item subroute rides on top of this same section push below,
         // exactly like task-detail rides on Mission's.
         msgs.push(humanInboxMessage(humanInboxFixtureVm));
-      } else if (model.section === "runtime") {
-        const runtime = runtimeOpsFixtures.default?.vm as RuntimeOpsPreviewState | undefined;
-        if (runtime) {
-          msgs.push(
-            runtime.state === "loading"
-              ? runtimeOpsLoadingMessage()
-              : runtimeOpsSnapshotMessage(runtime.snapshot),
-          );
-        }
       } else if (model.section === "runtime-config") {
         msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
       }
@@ -290,9 +282,6 @@ export const ROUTES: Record<string, Route> = {
   // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
   // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
   // (same App.tsx, same fixture VM via the cockpit route's board injection below).
-  // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
-  // (never registered in production). Runtime Ops is a cockpit-only section now; use
-  // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
   // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
   // TaskStudioPanel.ts webview; Task Studio is a cockpit-only studio route now — use
   // ?view=cockpit&fixture=studio-task-edit (same App.tsx, same fixture VMs, via the cockpit route's
@@ -396,6 +385,36 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => pluginsMessage(vm as never),
   },
+  // SDD 485 D3 — Runtime Ops, standalone again, so it gets its own route back for the same reason the
+  // task detail, the Board, the inspector and Plugins did: this renders the REAL shipped `runtime-ops.js`
+  // with the exact stylesheet list `RuntimeOpsPanel.ts` links, rather than the same component embedded
+  // inside Control.
+  //
+  // **Restoring this key does more than serve a screenshot.** `?view=runtime-ops` was retired by t-ed3067
+  // and `test/browser/runtimeOpsView.test.ts` has been knowingly RED ever since, held open by an in-file
+  // `preview-route-check: allow` waiver (t-2a49b2) whose own text says it dies the day the route returns.
+  // It returns here, with all seventeen fixtures addressable again — including the fifteen
+  // `?view=cockpit&fixture=runtime` never could reach, which is the reason that suite was parked rather
+  // than repointed.
+  //
+  // No `pageFrame`: Runtime Ops is a page-scrolling document (like the task detail, the inspector and
+  // Plugins), links no `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized
+  // `#frame` is the right model of what a real webview gives it. The height is generous because the
+  // provider-capacity block sits above a runtime table, and `runtime-ops.css`'s own
+  // `@container (max-width: 720px)` / `@media (max-width: 760px)` blocks are what make the 360 pass worth
+  // taking (the media query needs the BROWSER viewport set, not only `?width=` — t-b24282).
+  "runtime-ops": {
+    bundle: "/dist/webview/runtime-ops.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: runtimeOpsFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => {
+      const state = vm as RuntimeOpsPreviewState;
+      return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
+    },
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -445,6 +464,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
+  "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

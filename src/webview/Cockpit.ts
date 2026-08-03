@@ -97,15 +97,6 @@ import {
   type ValidationsAction,
 } from "./validations/messages.js";
 import type { ApprovalDecision } from "../bridge/approvalRequest.js";
-import {
-  runtimeOpsSnapshotMessage,
-  runtimeOpsSnapshotUnavailableMessage,
-  runtimeOpsSessionInspectionMessage,
-  isRuntimeOpsSetProviderObservationAction,
-  isRuntimeOpsInspectSessionAction,
-} from "./runtime-ops/messages.js";
-import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/types.js";
-import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
 import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
@@ -212,16 +203,15 @@ export interface CockpitProbes {
   getWorkspaces: () => WorkspaceProbePresentationTarget[];
 }
 
-export interface CockpitRuntimeOps {
-  buildSnapshot: () => RuntimeOpsSnapshot | Promise<RuntimeOpsSnapshot>;
-  configureProviderObservation?: (provider: RuntimeOpsProviderV2, enabled: boolean) => void | Promise<void>;
-  /**
-   * t-283149 — what Tachyon handed one agent's runtime. Optional: an engine that predates the
-   * `agent.session-inspection` action refuses it by name, and the panel says so on that row rather
-   * than the whole section failing.
-   */
-  inspectAgentSession?: (workspaceKey: string, agent: string) => Promise<InspectedSession>;
-}
+/**
+ * SDD 485 D3 — `CockpitRuntimeOps` left with the renderer: it is `RuntimeOpsDeps` in
+ * `src/webview/RuntimeOpsPanel.ts` now, unchanged apart from the file it lives in.
+ *
+ * Worth leaving a marker here rather than a clean deletion, because the interface BELOW is what makes the
+ * cardinality readable at a glance: `runtimeConfig.buildSnapshot` takes a `wsHash` and Runtime Ops'
+ * took none. Adjacent launcher tiles, opposite cardinalities — Runtime Config is the `dashboard` the D3
+ * brief expected Runtime Ops to be, and only one of the two can be keyed on a project.
+ */
 
 /** Read-only native runtime-config inventory. Editing is intentionally deferred to SDD 446 B. */
 export interface CockpitRuntimeConfig {
@@ -337,8 +327,15 @@ export interface CockpitDeps {
     proposalId: string;
     approvedDigest: string;
   }) => Promise<SavedAgentRemovalCommitResult>;
-  runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
+  /**
+   * SDD 485 D3 — open (or reveal) the Runtime Ops APP. Control no longer renders Runtime Ops, so the
+   * doors it still owns for that screen — Overview's Jump card and a persisted/deep-linked
+   * `section:runtime` — leave Control instead of navigating inside it. Takes NO argument, like D1's
+   * `openTmux` and unlike D2's `openPlugins`: `window` cardinality is precisely the statement that this
+   * screen is not about a project, so there is nothing to key it on.
+   */
+  openRuntimeOps: () => void;
   /**
    * SDD 485 D2 — open (or reveal) the Plugins APP for one project. Control no longer renders Plugins, so
    * the doors it still owns for that screen — Overview's Jump card and a persisted/deep-linked
@@ -481,8 +478,6 @@ function strings(): CockpitStrings {
     egAttrUnproven: t("unproven"),
     worktreesTitle: t("Managed worktrees"),
     worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
-    runtimeTitle: t("Runtime Ops"),
-    runtimeHint: t("Usage and rate limits (embedded)."),
     runtimeConfigTitle: t("Runtime Config"),
   runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
     runtimeConfigPrototype: t("Read-only inventory"),
@@ -814,6 +809,13 @@ let openTmuxApp: (() => void) | undefined;
  */
 let openPluginsApp: (() => void) | undefined;
 
+/**
+ * SDD 485 D3 — and the same seam for Runtime Ops. Fifth of these, and the second that takes NOTHING: a
+ * `window` app has no project to open against, and the slot's empty signature is that fact showing in the
+ * type — the same way `openPluginsApp`'s project shows a dashboard's.
+ */
+let openRuntimeOpsApp: (() => void) | undefined;
+
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
@@ -856,6 +858,15 @@ function navigate(route: CockpitRoute): void {
     // `onSetSection("plugins")` from inside the client and never touches extension.ts. Fourth entry in
     // this block, and the block is now the readable inventory of what has left Control.
     openPluginsApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "runtime") {
+    // SDD 485 D3 — and the same for Runtime Ops. Four doors could ask Control for it (the
+    // `tachyon.openControlRuntime` command — which `tachyon.showRuntimeUsage` also routes through — the
+    // launcher tile, Overview's Jump card, and a revived/deep-linked `section:runtime`). Fifth entry, and
+    // by now the block is the readable inventory of what has left Control: task detail, Board, tmux,
+    // Plugins, Runtime Ops.
+    openRuntimeOpsApp?.();
     route = routes.section("overview");
   }
   reconcileActivityTeardown(route);
@@ -1321,6 +1332,7 @@ export async function openCockpit(
         openBoardDocument = undefined;
         openTmuxApp = undefined;
         openPluginsApp = undefined;
+        openRuntimeOpsApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1349,6 +1361,11 @@ export async function openCockpit(
   // for. A launcher click, a Jump card and a revived route therefore land on the SAME project's panel — and
   // re-opening reveals it rather than making a second, which is what `cardinality: "dashboard"` buys.
   openPluginsApp = () => deps.openPlugins(controlWorkspaceScope.current);
+  // SDD 485 D3 — no scope to resolve and none to pass, exactly like D1's tmux: `window` cardinality is the
+  // statement that this screen is not about a project. Passing `controlWorkspaceScope.current` here would
+  // compile and be wrong — `sectionPanelKey` REFUSES a project for a `window` app, which is the refusal
+  // that member exists for.
+  openRuntimeOpsApp = () => deps.openRuntimeOps();
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1781,18 +1798,13 @@ export async function openCockpit(
       },
     });
 
-  const sendRuntime = async () => {
-    if (panel !== live || !isSection(currentRoute, "runtime")) return;
-    const epoch = navEpoch;
-    try {
-      const snap = await deps.runtimeOps.buildSnapshot();
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(runtimeOpsSnapshotMessage(snap));
-    } catch {
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(runtimeOpsSnapshotUnavailableMessage());
-    }
-  };
+  /**
+   * SDD 485 D3 — Control no longer RENDERS Runtime Ops; the app does (`RuntimeOpsPanel.ts`). What used to
+   * live here — `sendRuntime` and the two action handlers — moved there whole. The `navEpoch` guard it
+   * carried did NOT move, and its absence is deliberate: that guard stopped one route's snapshot landing
+   * under another route's screen, and a `window` app's panel has no route to change (C4 recorded the same
+   * non-guard for the task detail).
+   */
 
   let runtimeConfigKnownPaths = new Set<string>();
   const sendRuntimeConfig = async () => {
@@ -2053,7 +2065,6 @@ export async function openCockpit(
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (isSection(currentRoute, "inbox")) await sendInbox();
     else if (currentRoute.kind === "inbox-item") await sendInboxItem();
-    else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
@@ -2075,7 +2086,7 @@ export async function openCockpit(
    * `sendModel()` is the push a delta never carries — nothing in the `views-changed` fan-out asks
    * for it, so a hidden panel that missed a scope- or fleet-shaped change cannot recover it kind by
    * kind — and `sendSectionModule()` is already the complete "refresh whatever route is mounted"
-   * dispatcher, wider than the fan-out (it reaches runtime and the studios too). Reusing the poll
+   * dispatcher, wider than the fan-out (it reaches runtime-config and the studios too). Reusing the poll
    * body rather than inventing a resync path means the recovery is the code Control runs twenty
    * times a minute, not a branch that only ever executes on reveal.
    */
@@ -2391,34 +2402,9 @@ export async function openCockpit(
       // there's no current binding or the message doesn't decode, so this is safe unconditionally.
       if (await dispatchStudioMessage(msg)) return;
 
-      if (isRuntimeOpsSetProviderObservationAction(msg)) {
-        try {
-          await deps.runtimeOps.configureProviderObservation?.(msg.provider, msg.enabled);
-        } catch {
-          /* next snapshot wins */
-        }
-        await sendRuntime();
-        return;
-      }
-
-      if (isRuntimeOpsInspectSessionAction(msg)) {
-        // t-283149 — no navEpoch guard: the reply is addressed to an agentKey, so a row that is gone
-        // simply has nowhere to land. Dropping it on nav would instead leave a row spinning forever.
-        const agentKey = `${msg.workspaceKey}:${msg.agent}`;
-        try {
-          const inspect = deps.runtimeOps.inspectAgentSession;
-          if (!inspect) throw new Error("This engine does not expose session inspection.");
-          const inspection = await inspect(msg.workspaceKey, msg.agent);
-          if (panel === live) live.webview.postMessage(runtimeOpsSessionInspectionMessage(agentKey, { inspection }));
-        } catch (error) {
-          if (panel === live) {
-            live.webview.postMessage(
-              runtimeOpsSessionInspectionMessage(agentKey, { error: error instanceof Error ? error.message : String(error) }),
-            );
-          }
-        }
-        return;
-      }
+      // SDD 485 D3 — the two runtime-ops action arms left with the renderer. They are
+      // `RuntimeOpsPanelManager.handleAction` now, reached through the manager's own `onMessage` seam
+      // rather than through this chain.
 
       const c = msg as unknown as CockpitAction;
       switch (c.type) {
@@ -2850,7 +2836,6 @@ export async function openCockpit(
     // t-e76acc — ONE condition covers the section and its item subroute: they share a stylesheet, and
     // a panel opened straight onto an item (revived/deep link) must paint styled too.
     const inboxIsActive = isSection(currentRoute, "inbox") || currentRoute.kind === "inbox-item";
-    const runtimeIsActive = isSection(currentRoute, "runtime");
     const validationsIsActive = isSection(currentRoute, "validations");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
@@ -2932,7 +2917,6 @@ export async function openCockpit(
         approvalsIsActive ? uri("approval.css") : undefined,
         inboxIsActive ? uri("human-inbox.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
-        runtimeIsActive ? uri("runtime-ops.css") : undefined,
         // one shared conditional for the mermaid stylesheet — task-detail and activity both render
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
@@ -2996,7 +2980,6 @@ export async function openCockpit(
           // t-e76acc — own key, same href: the item route is reachable by deep link without the list
           // block ever running (see cockpit/App.tsx's lazy blocks for the convention).
           "inbox-item": uri("human-inbox.css"),
-          runtime: uri("runtime-ops.css"),
           validations: uri("validations.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),

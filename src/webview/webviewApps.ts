@@ -133,6 +133,26 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // PluginsPanel.ts) instead of disposing and reopening. That is C4's call rather than C5's, and the
   // difference is not the tombstone — all three were redirects — but whether the id still names the app.
   { view: "plugins", viewId: "tachyonPlugins", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D3 — Runtime Ops, the THIRD Phase D migration and the SECOND `window` app. It is also the
+  // first surface whose cardinality contradicts its launcher neighbour, which is why the reason is here
+  // rather than only in the host file: the tile beside it, Runtime CONFIG, is a `dashboard`
+  // (`buildSnapshot(wsHash)` takes a workspace and reads that root's files), and Runtime OPS is not —
+  // `buildSnapshot()` takes no project and is implemented as a MERGE across every attached workspace
+  // (`runtimeOpsFleetView`). The provider quota it shows is account-wide by its own type's words, its
+  // runtime rows name every workspace they span, and `Cockpit.ts` never passed it the project selector's
+  // value. Two attached projects under `dashboard` would open two byte-identical panels; under `window`
+  // they open one, and `sectionPanelKey` can REFUSE a project rather than politely ignoring it.
+  //
+  // The lesson for D4–D10, stated where the next author will be reading: "it is a Control section" says
+  // NOTHING about cardinality. The question is whether the surface's data source accepts a project, and
+  // the signature of its `buildSnapshot` answers in ten seconds.
+  //
+  // `view` stays "runtime-ops" — the directory the screen has always lived in and the basename its
+  // stylesheet already ships under. The viewType is NEW (`tachyonRuntimeOps`): the only legacy id,
+  // `tachyonRuntimeOpsView`, names spec 367's retired WebviewView — a different surface KIND that was
+  // never registered in production, so there is no record to revive and reuse would buy nothing. See
+  // `RUNTIME_OPS_VIEW_TYPE`'s own comment for the full table of the five calls this series has now made.
+  { view: "runtime-ops", viewId: "tachyonRuntimeOps", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

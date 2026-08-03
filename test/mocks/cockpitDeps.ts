@@ -1,6 +1,5 @@
 import { Uri } from "vscode";
 import type { CockpitDeps, CockpitMissionBoard } from "../../src/webview/Cockpit.js";
-import type { RuntimeOpsSnapshot } from "../../src/runtimeOps/types.js";
 
 /**
  * Fake CockpitDeps for host-side Control tests, mirroring extension.ts's wiring shape.
@@ -24,7 +23,6 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     studios: { getWorkspaces: () => [], onChanged: () => {} },
     approvals: { getWorkspaces: () => [], resolve: async () => {} },
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },
-    runtimeOps: { buildSnapshot: () => ({ generatedAt: "", providers: [] }) as unknown as RuntimeOpsSnapshot },
     runtimeConfig: { buildSnapshot: () => undefined, openSource: async () => {}, saveChanges: async () => {} },
     // SDD 485 C5 — Control opens the Board app instead of rendering it; a test that cares which project it
     // was handed overrides this.
@@ -35,6 +33,9 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     // SDD 485 D2 — Control opens the Plugins app instead of rendering it; a test that cares which project
     // it was handed overrides this.
     openPlugins: () => {},
+    // SDD 485 D3 — Control opens the Runtime Ops app instead of rendering it. No argument to override:
+    // `window` cardinality means one panel for the window and nothing to key it on.
+    openRuntimeOps: () => {},
     openSettings: () => {},
     openDoctor: () => {},
     fleetStart: async () => {},

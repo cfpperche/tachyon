@@ -94,15 +94,6 @@ import {
   decideSavedAgentRemovalAction,
 } from "../human-inbox/messages";
 import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
-import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../../runtimeOps/types";
-import {
-  RUNTIME_OPS_SNAPSHOT,
-  RUNTIME_OPS_SESSION_INSPECTION,
-  runtimeOpsSetProviderObservationAction,
-  runtimeOpsInspectSessionAction,
-} from "../runtime-ops/messages";
-import type { SessionInspectionState } from "../runtime-ops/messages";
-import type { InspectedSession } from "../../runtimeOps/sessionInspection";
 import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "../runtime-config/messages";
 import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
 import type { StudioDispatch } from "../shared/studio/protocol";
@@ -129,7 +120,7 @@ const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
  * Kept client-side and deliberately small: the client only needs to know "do not optimistically render
  * this", never which app it is or where it opens. `Cockpit.ts`'s `navigate()` is what actually routes it.
  */
-const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux", "plugins"]);
+const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux", "plugins", "runtime"]);
 
 function Root() {
   return (
@@ -161,9 +152,6 @@ function CockpitRoot() {
   const [inboxError, setInboxError] = useState<HumanInboxErrorReceipt | undefined>(undefined);
   const [inboxItemVm, setInboxItemVm] = useState<HumanInboxItemViewModel | undefined>(undefined);
   const [inboxItemMissing, setInboxItemMissing] = useState<{ kind: HumanInboxKind; id: string } | undefined>(undefined);
-  const [runtimeSnapshot, setRuntimeSnapshot] = useState<RuntimeOpsSnapshot | undefined>(undefined);
-  /** t-283149 — keyed by `<wsHash>:<agent>`; only rows the person expanded are ever present. */
-  const [sessionInspections, setSessionInspections] = useState<Record<string, SessionInspectionState>>({});
   const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
   const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
@@ -357,16 +345,8 @@ function CockpitRoot() {
           setInboxItemVm(undefined);
           setInboxItemMissing({ kind: raw.kind as HumanInboxKind, id: raw.id });
         }
-      } else if (type === RUNTIME_OPS_SNAPSHOT && raw.snapshot) {
-        setRuntimeSnapshot(raw.snapshot as RuntimeOpsSnapshot);
-      } else if (type === RUNTIME_OPS_SESSION_INSPECTION && typeof raw.agentKey === "string") {
-        const agentKey = raw.agentKey;
-        const next: SessionInspectionState = raw.inspection
-          ? { status: "ready", inspection: raw.inspection as InspectedSession }
-          : { status: "error", message: typeof raw.error === "string" ? raw.error : "Session inspection failed." };
-        // A reply for a row the person already collapsed is dropped: re-adding it would make the row
-        // reopen-with-stale-data on the next expand instead of re-reading a live process.
-        setSessionInspections((prev) => (agentKey in prev ? { ...prev, [agentKey]: next } : prev));
+      // SDD 485 D3 — the two runtime-ops arms left with the renderer: Runtime Ops is a standalone app, and
+      // its client half is `runtime-ops/main.tsx`, which owns both state slots and its own 3s poll.
       } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
         setRuntimeConfigSnapshot(raw.snapshot as RuntimeConfigControlSnapshot);
         setRuntimeConfigUnavailable(false);
@@ -574,25 +554,6 @@ function CockpitRoot() {
       inboxItemVm={inboxItemVm}
       inboxItemMissing={inboxItemMissing}
       inboxDispatch={inboxDispatch}
-      runtimeSnapshot={runtimeSnapshot}
-      onRuntimeSetProviderObservation={(provider: RuntimeOpsProviderV2, enabled: boolean) =>
-        post(runtimeOpsSetProviderObservationAction(provider, enabled))
-      }
-      sessionInspections={sessionInspections}
-      onToggleSessionInspection={(workspaceKey: string, agent: string, open: boolean) => {
-        const agentKey = `${workspaceKey}:${agent}`;
-        setSessionInspections((prev) => {
-          if (!open) {
-            const { [agentKey]: _dropped, ...rest } = prev;
-            return rest;
-          }
-          return { ...prev, [agentKey]: { status: "loading" } };
-        });
-        // Every expand re-asks. A session inspection is a reading of a LIVE process; serving a cached
-        // one would show settings the agent no longer runs under, which is the exact failure this panel
-        // exists to end.
-        if (open) post(runtimeOpsInspectSessionAction(workspaceKey, agent));
-      }}
       runtimeConfigSnapshot={runtimeConfigSnapshot}
       runtimeConfigUnavailable={runtimeConfigUnavailable}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
