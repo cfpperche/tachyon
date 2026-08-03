@@ -269,6 +269,36 @@ describe("t-d06da3 — dismiss_agent takes the child's worktree with it", () => 
   });
 
   /**
+   * t-eb25ba — GUARD: following the refusal's instruction must be possible. WorktreeManager still
+   * says "pass confirmDirty=true" (true for remove_worktree); agent end-of-life doors never accept
+   * that parameter. The cascade rewrites so the message names commit-or-discard + retry.
+   */
+  it("dirty refusal names commit/discard retry, not confirmDirty=true (t-eb25ba)", async () => {
+    const world = dismissWorld({ dirty: true });
+
+    const result = await world.dismiss({ name: "child" });
+    const text = result.content[0]?.text ?? "";
+
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/commit|discard/i);
+    expect(text).toMatch(/retry/i);
+    expect(text).not.toMatch(/pass confirmDirty=true/);
+    // Still tells the truth about where confirmDirty lives, without instructing the caller to use it here.
+    expect(text).toMatch(/remove_worktree/);
+  });
+
+  it("kill_agent dirty refusal also refuses confirmDirty instruction (t-eb25ba)", async () => {
+    const world = dismissWorld({ dirty: true });
+
+    const result = await world.kill({ name: "child" });
+    const text = result.content[0]?.text ?? "";
+
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/commit|discard/i);
+    expect(text).not.toMatch(/pass confirmDirty=true/);
+  });
+
+  /**
    * Criterion 3's recoverable half. `WorktreeManager.remove` deletes the branch with `git branch -d`,
    * so a branch carrying commits that were never merged SURVIVES the dismissal — and the human is the
    * only one who can act on that, so it is said out loud rather than left in a return value.

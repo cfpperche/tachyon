@@ -621,9 +621,15 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const full = await client.callTool({ name: "get_task", arguments: { id: task.id } });
     const fullParsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
     expect(fullParsed.task).toMatchObject({ id: task.id, body: "Full implementation detail", status: "triaged", assignee: "codex" });
-    expect(fullParsed.journal).toEqual([]);
-    // t-ab7708 — an empty journal is still declared, so "nothing came back" never has to be guessed at.
-    expect(fullParsed.journalWindow).toMatchObject({ mode: "tail", returned: 0, total: 0, truncated: false });
+    // t-f33480 — each status move journals author + reason (this path has no agent caller → "human").
+    expect(fullParsed.journal.map((e: { author: string; text: string }) => [e.author, e.text])).toEqual([
+      ["human", "status inbox -> triaged; priority none -> 1"],
+      ["human", "status triaged -> active"],
+      ["human", "status active -> done"],
+      ["human", "status done -> triaged"],
+    ]);
+    // t-ab7708 — the window declares what came back so "nothing" never has to be guessed at.
+    expect(fullParsed.journalWindow).toMatchObject({ mode: "tail", returned: 4, total: 4, truncated: false });
     expect(taskChanges).toBeGreaterThanOrEqual(3);
   });
 

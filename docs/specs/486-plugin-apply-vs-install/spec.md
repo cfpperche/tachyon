@@ -138,9 +138,26 @@ done twice.
   wrote. Applied-state is a different fact with a different lifetime (a human toggles it; an install
   does not). Same file with a new field, or its own record? The test is which one makes an
   un-applied skill impossible to resurrect by reload.
-- **What does a fresh clone do?** A teammate clones a repo whose `tachyon.yml` lists plugins. Does
-  applied-state travel in the repo (so the team shares one answer) or stay local (so each machine
-  decides)? These give opposite defaults and both are defensible; the maintainer decides.
-- **Does the Temporary child's runtime filter already exist?** `AgentManager.ts:1256` captures parent
-  skills per delegation and already withholds BY NAME on failure. Whether it filters on runtime
-  support — and whether the shortfall is reported — must be measured before it is assumed.
+- ~~**What does a fresh clone do?**~~ **RESOLVED by the maintainer, 2026-08-03.** Applied-state stays
+  **local**. The rule stated is broader than this spec and worth recording as such: *"tachyon nunca
+  deve viajar no repo … exceto o explicitamente declarado como as specs do plugin sdd"*.
+
+  It is already the practice, which is why it is the right answer here rather than a preference:
+  `.gitignore:13` closes `.tachyon/`, `:32` closes `tachyon.yml` itself, and the exceptions are
+  re-opened BY NAME (`.tachyon/designs`, `.tachyon/evidence`, `.tachyon/reviews`, and the SDD
+  plugin's `docs/specs/`). A fleet's own configuration does not travel; only deliberately published
+  documents do.
+
+  Consequence, and it is the correct default rather than a shortfall: a teammate who clones this repo
+  gets the plugins declared and **nothing applied**. They choose, on their machine, exactly as this
+  spec asks the first human to. The alternative would have handed someone skills they never selected,
+  in a workspace they just opened — the same accident this whole spec exists to end, arriving through
+  git instead of through install.
+
+- ~~**Does the Temporary child's runtime filter already exist?**~~ **MEASURED, 2026-08-03 — yes.**
+  `AgentManager.ts:1238` filters plugin targets with
+  `candidate.kind === "skill-dir" && candidate.runtime === runtime`, over the four runtimes the
+  toolkit admits (claude, codex, grok, pi). The shortfall IS reported: capture failure withholds the
+  one skill BY NAME through `notifyDelegatedToolkitCondition` rather than failing the delegation
+  (`t-b505b3` follow-up), and a digest conflict refuses rather than refreshing (`t-b0cfd4`). Nothing
+  to build; Phase B only moves what it reads FROM.

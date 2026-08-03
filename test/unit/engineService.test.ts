@@ -65,12 +65,30 @@ describe("daemon engine service", () => {
       fs.mkdirSync(directory, { mode: 0o700 });
     }
     // t-c289cf: private tmux + XDG so parallel verify:full never hits production -L tachyon or shared runtime.
-    const childEnv: NodeJS.ProcessEnv = {
-      ...tmuxChildEnv(),
+    const childEnv = tmuxChildEnv();
+    // t-70fda0: the daemon fixture is a new Tachyon machine. Inheriting any ambient Tachyon
+    // identity, Bridge credential/address, execution authority, or dev-host pointer lets it observe
+    // (and potentially act on) the live fleet even though its workspace and tmux socket are private.
+    for (const key of Object.keys(childEnv)) {
+      if (key.startsWith("TACHYON_")) delete childEnv[key];
+    }
+    Object.assign(childEnv, {
       TMUX_TMPDIR: tmuxTmp,
       TACHYON_ENGINE_TMUX_TMPDIR: tmuxTmp,
       XDG_RUNTIME_DIR: xdgRuntime,
-    };
+    });
+    for (const key of [
+      "TACHYON_AGENT_BRIDGE_TOKEN",
+      "TACHYON_AGENT_NAME",
+      "TACHYON_BRIDGE_TOKEN",
+      "TACHYON_BRIDGE_URL",
+      "TACHYON_ENGINE_SERVICE",
+      "TACHYON_EXECUTION_AGENT",
+      "TACHYON_EXECUTION_ID",
+      "TACHYON_INSTANCE_CUT",
+    ]) {
+      expect(childEnv[key], `${key} leaked from the live fleet into the daemon fixture`).toBeUndefined();
+    }
     const testBin = path.join(root, "test-bin");
     fs.mkdirSync(testBin, { mode: 0o700 });
     fs.writeFileSync(path.join(testBin, "codex"), "#!/bin/sh\nexec sh\n", { mode: 0o700 });

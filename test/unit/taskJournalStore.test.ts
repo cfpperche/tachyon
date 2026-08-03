@@ -93,14 +93,26 @@ describe("TaskJournalStore", () => {
     const dropped = await tasks.create({ title: "dropped note", author: "human" });
     await tasks.update(dropped.id, { status: "dropped" });
     tasks.journal.append(dropped.id, { author: "codex", text: "post hoc dropped note" });
-    expect(tasks.journal.read(dropped.id).map((e) => e.text)).toEqual(["post hoc dropped note"]);
+    // t-f33480 — status moves leave an automatic journal trail; post-hoc notes still append.
+    // Membership not order: same-millisecond entries can sort by id.
+    expect(tasks.journal.read(dropped.id).map((e) => e.text)).toEqual(
+      expect.arrayContaining(["status inbox -> dropped", "post hoc dropped note"]),
+    );
+    expect(tasks.journal.read(dropped.id)).toHaveLength(2);
 
     const reopen = await tasks.create({ title: "reopen", author: "human" });
     await tasks.update(reopen.id, { status: "triaged" });
     tasks.journal.append(reopen.id, { author: "codex", text: "survives reopen" });
     await tasks.update(reopen.id, { status: "inbox" });
     expect(tasks.get(reopen.id).status).toBe("inbox");
-    expect(tasks.journal.read(reopen.id).map((e) => e.text)).toEqual(["survives reopen"]);
+    expect(tasks.journal.read(reopen.id).map((e) => e.text)).toEqual(
+      expect.arrayContaining([
+        "status inbox -> triaged",
+        "survives reopen",
+        "status triaged -> inbox",
+      ]),
+    );
+    expect(tasks.journal.read(reopen.id)).toHaveLength(3);
   });
 });
 

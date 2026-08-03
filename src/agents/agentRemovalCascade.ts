@@ -88,6 +88,37 @@ export interface AgentWorktreeRemovalReceipt {
   error?: string;
 }
 
+/** t-eb25ba — WorktreeManager dirtiness lines (soft remove / refuseUnlessForceIfDirty). */
+export function isWorktreeDirtyRefusal(message: string): boolean {
+  return /pass confirmDirty=true|worktree is dirty|dirtiness unknown/i.test(message);
+}
+
+/**
+ * t-eb25ba — agent end-of-life doors soft-remove and refuse dirty trees; they never accept
+ * `confirmDirty`. WorktreeManager still says "pass confirmDirty=true" because that parameter is
+ * real on `remove_worktree`. A refusal that names a closed door pushed operators to `rm -rf`
+ * someone else's checkout. Name exits that work: commit (branch kept when unmerged) or discard
+ * the dirt and retry the same kill/dismiss.
+ */
+export function agentEndOfLifeDirtyRefusal(worktreePath: string, underlying?: string): string {
+  const dirtUnknown = /dirtiness unknown/i.test(underlying ?? "");
+  if (dirtUnknown) {
+    return (
+      `worktree dirtiness unknown at ${worktreePath}; agent end-of-life doors (kill_agent, dismiss_agent) ` +
+      "never force-remove. Fix git/permissions so dirtiness can be measured, then either commit any " +
+      "uncommitted work in that checkout and retry (a branch holding unmerged commits is kept), or " +
+      "discard the uncommitted files there and retry. confirmDirty is accepted only by remove_worktree, " +
+      "not by kill_agent or dismiss_agent."
+    );
+  }
+  return (
+    `worktree is dirty at ${worktreePath}; agent end-of-life doors (kill_agent, dismiss_agent) never ` +
+    "force-remove uncommitted work. Commit it in that checkout and retry (a branch holding unmerged " +
+    "commits is kept), or discard the uncommitted files there and retry. confirmDirty is accepted only " +
+    "by remove_worktree, not by kill_agent or dismiss_agent."
+  );
+}
+
 /**
  * Remove the checkout an agent owns, and stop owning it.
  *
@@ -149,7 +180,17 @@ export async function removeAgentWorktree(
     force: false,
     refuseUnlessForceIfDirty: true,
   });
-  if (!result.removed && !result.absent) throw new Error(result.error ?? `could not remove '${agent}' worktree`);
+  if (!result.removed && !result.absent) {
+    // t-eb25ba — WorktreeManager's soft-remove refusal names `confirmDirty=true`, which is real for
+    // `remove_worktree` and false for every agent end-of-life door that shares this cascade
+    // (kill_agent, dismiss_agent, UI Remove, Forget). Those doors deliberately never force-remove:
+    // they do not preview uncommitted files. Rewrite ONLY dirtiness refusals so the message names
+    // exits the caller can take; occupancy / git failures keep their own text.
+    const underlying = result.error ?? `could not remove '${agent}' worktree`;
+    throw new Error(isWorktreeDirtyRefusal(underlying)
+      ? agentEndOfLifeDirtyRefusal(record.path, underlying)
+      : underlying);
+  }
   // t-28bf8f — registry first, ledger second, and that order is the invariant rather than a style.
   // These are two file writes and the second can fail; whichever way round they go, one ordering can
   // leave a registry entry whose owning row is gone — the ownerless state that has no governed door —

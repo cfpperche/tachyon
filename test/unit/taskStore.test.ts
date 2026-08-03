@@ -500,3 +500,47 @@ describe("t-57a00a — call metadata does not count as a field edit", () => {
       .rejects.toThrow("task fields are immutable while status is 'landed'");
   });
 });
+
+/**
+ * t-f33480 — a status move must leave a journal trail (author + reason).
+ *
+ * Measured: agent `update_task(status: "triaged")` left journalCount:0 and only updatedAt changed.
+ * create_task and append_task_note record authorship; status updates did not. The product decision
+ * whether agents may triage is separate; the audit trail is required either way.
+ */
+describe("t-f33480 — status change journals author and reason", () => {
+  it("records agent-authored triage with author and status reason", async () => {
+    const task = await store.create({ title: "needs triage", author: "claude" });
+    expect(store.journal.count(task.id)).toBe(0);
+
+    await store.update(task.id, { status: "triaged", priority: 2, actor: "bridgehonesto" });
+
+    const entries = store.journal.read(task.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      author: "bridgehonesto",
+      text: expect.stringMatching(/status inbox -> triaged/),
+    });
+    expect(entries[0]!.text).toMatch(/priority none -> 2/);
+    expect(store.getView(task.id).journalCount).toBe(1);
+  });
+
+  it("records human-path status moves as author human when no actor is supplied", async () => {
+    const task = await store.create({ title: "board drag", author: "human" });
+    await store.update(task.id, { status: "triaged" });
+
+    const entries = store.journal.read(task.id);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ author: "human", text: "status inbox -> triaged" });
+  });
+
+  it("does not journal a non-status field edit", async () => {
+    const task = await store.create({ title: "title only", author: "human" });
+    await store.update(task.id, { status: "triaged" });
+    const afterTriage = store.journal.count(task.id);
+
+    await store.update(task.id, { title: "renamed", actor: "ada" });
+
+    expect(store.journal.count(task.id)).toBe(afterTriage);
+  });
+});
