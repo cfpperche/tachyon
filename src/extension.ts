@@ -23,6 +23,7 @@ import {
   refreshCockpitProbes,
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
+  markControlSourceResync,
   openCockpitAgentTranscript,
   decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
@@ -2111,7 +2112,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let timer: ReturnType<typeof setTimeout> | undefined;
     let connectionWarningShown = false;
     const unsubscribe = ws.client.subscribe((result) => {
-      if (result.resynced || result.engineChanged) refreshAll();
+      if (result.resynced || result.engineChanged) {
+        // SDD 485 B2 — the event cursor expired (or the engine changed incarnation), so "what
+        // changed" is unknowable from any journal downstream of here. A hidden Control must rebuild
+        // on reveal rather than replay the handful of kinds `refreshAll` happens to touch.
+        markControlSourceResync();
+        refreshAll();
+      }
       for (const event of result.events) {
         if (event.kind === "views-changed") {
           const view = viewKind(event.payload.view);

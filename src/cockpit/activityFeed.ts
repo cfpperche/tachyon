@@ -36,10 +36,23 @@ export interface ActivityFeedIO {
   /** True while this feed instance is still the one Cockpit wants on screen — checked before every
    *  observable action (post/postImage). Backed by the caller's binding-generation counter. */
   isCurrent: () => boolean;
+  /**
+   * SDD 485 B1 — true while the host surface is HIDDEN behind another editor tab. The feed then does
+   * no read, no build and no post; the durable log keeps growing and the byte offset stays where it
+   * was, so `catchUp()` on reveal is a delta from the log itself (and a full re-prime when the log
+   * was truncated under us — `pump()`'s `size < offset` branch). Absent = never paused.
+   */
+  paused?: () => boolean;
 }
 
 export interface ActivityFeed {
   stop: () => void;
+  /**
+   * SDD 485 B2 — reveal catch-up: ingest whatever the log grew while the surface was hidden and
+   * re-render once, instead of the per-change renders that were suppressed. A no-op when nothing
+   * changed — the retained webview is already showing the right thing.
+   */
+  catchUp: () => void;
   /** Re-flush every retained image + repost the current VM. For cockpit READY / webview-reload
    *  recovery (the client's in-memory image cache is presumed empty) — NOT for the shared 3s shell
    *  poll, which must never touch an agent-activity route at all (see route.ts's refreshPolicy doc). */
@@ -139,9 +152,15 @@ export function startActivityFeed(ws: WorkspaceActivityTarget, agent: string, io
     render(true);
   };
 
+  let missedWhilePaused = false;
+  let lastState: string | undefined;
+
   const onChange = (cur: fs.Stats, prev: fs.Stats): void => {
     if (!io.isCurrent()) return;
     if (started && cur.mtimeMs === prev.mtimeMs) return;
+    // SDD 485 B1 — hidden: record that the log moved and read NOTHING. The offset is the journal
+    // cursor; catchUp() below is the trailing edge that makes this safe rather than merely cheap.
+    if (io.paused?.()) { missedWhilePaused = true; return; }
     try { if (pump()) render(); } catch { /* transient read race — the next tick catches up */ }
   };
   fs.watchFile(logFile, { interval: 500 }, onChange);
@@ -156,15 +175,29 @@ export function startActivityFeed(ws: WorkspaceActivityTarget, agent: string, io
     render();
   }).catch(() => undefined);
 
-  let lastState: string | undefined;
   const stateTimer = setInterval(() => {
     if (!io.isCurrent()) return;
+    // Hidden: not even the attention read. catchUp() re-reads it once on reveal.
+    if (io.paused?.()) return;
     const st = ws.activityAttention(agent);
     if (st !== lastState) { lastState = st; render(); }
   }, 1000);
 
+  const catchUp = (): void => {
+    if (!io.isCurrent()) return;
+    let changed = false;
+    if (missedWhilePaused) {
+      missedWhilePaused = false;
+      try { changed = pump(); } catch { /* transient read race — the next tick catches up */ }
+    }
+    const st = ws.activityAttention(agent);
+    if (st !== lastState) { lastState = st; changed = true; }
+    if (changed) render();
+  };
+
   return {
     stop: () => { clearInterval(stateTimer); fs.unwatchFile(logFile, onChange); },
+    catchUp,
     replayImages,
     loadOlder,
   };

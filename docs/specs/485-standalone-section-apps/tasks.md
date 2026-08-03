@@ -25,14 +25,14 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
 
 ### Phase B — visibility gating
 
-- [ ] B1. Add view-state observation to the panel manager layer (`onDidChangeViewState` appears
+- [x] B1. Add view-state observation to the panel manager layer (`onDidChangeViewState` appears
       nowhere in the repo today). A hidden panel runs no refresh, no collection, no subscriber
       callback, and posts no model.
-- [ ] B2. Catch-up on reveal: journal delta where the window covers it, full resync where it does
+- [x] B2. Catch-up on reveal: journal delta where the window covers it, full resync where it does
       not. A revealed panel is never stale.
-- [ ] B3. Guard by counting WORK, not wall time: with N panels open and one visible, a
+- [x] B3. Guard by counting WORK, not wall time: with N panels open and one visible, a
       `views-changed` produces refresh work for the visible panel only.
-- [ ] B4. Apply to the panels that exist today (`AgentPanePanel`, Control) and measure the before/
+- [x] B4. Apply to the panels that exist today (`AgentPanePanel`, Control) and measure the before/
       after the same way t-b51923 did — journal events per second with two agents running.
 
 ### Phase C — generic manager + the two motivating apps
@@ -86,7 +86,7 @@ _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 - [ ] An undeclared departure from shell or design system fails the build and names the surface (A4).
 - [ ] `extend` passes with no exception entry; `replace` passes only with a non-empty reason (A1, A4).
 - [ ] At least one real surface uses `extend` (A3).
-- [ ] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
+- [x] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
 - [ ] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
 - [ ] Switching the project selector does not rewrite an open document (C7).
 - [ ] The selector exists exactly once, in the sidebar Control tab header (C6).

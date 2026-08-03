@@ -16,6 +16,7 @@ import {
   type CockpitPanelState,
 } from "../cockpit/route.js";
 import { markCockpitSingletonClaimed, clearCockpitSingletonClaim } from "./cockpitSingleton.js";
+import { PanelWorkGate, panelVisibility, type CatchUpDecision } from "./shared/panelWorkGate.js";
 import { READY } from "./shared/ready.js";
 import {
   buildCockpitModel,
@@ -894,23 +895,81 @@ let pushPinStudioEntity: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
+/**
+ * SDD 485 B1 — every push Control can be asked to make from OUTSIDE itself (extension.ts's
+ * `views-changed` fan-out and the engine-side mutation paths that share it). Navigation, the READY
+ * handshake and a webview action are NOT here on purpose: those only happen while a human is looking
+ * at the panel, and gating them would delay the very interaction that proves it is visible.
+ */
+type ControlRefreshKind =
+  | "mission" | "task-detail" | "probes" | "handoff" | "approvals" | "validations" | "inbox"
+  | "studio-reference" | "task-studio" | "pin-studio";
+
+const CONTROL_REFRESH_KINDS: readonly ControlRefreshKind[] = [
+  "mission", "task-detail", "probes", "handoff", "approvals", "validations", "inbox",
+  "studio-reference", "task-studio", "pin-studio",
+];
+
+function pushControlRefresh(kind: ControlRefreshKind): void {
+  switch (kind) {
+    case "mission": pushMissionBoard?.(); return;
+    case "task-detail": pushTaskDetail?.(); return;
+    case "probes": pushProbes?.(); return;
+    case "handoff": pushHandoff?.(); return;
+    case "approvals": pushApprovals?.(); return;
+    case "validations": pushValidations?.(); return;
+    case "inbox": pushInbox?.(); return;
+    case "studio-reference": pushStudioReferenceData?.(); return;
+    case "task-studio": pushTaskStudioEntity?.(); return;
+    case "pin-studio": pushPinStudioEntity?.(); return;
+  }
+}
+
+/** SDD 485 B1 — hidden ⇒ journal the invalidation and do nothing. Undefined gate = no panel, and the
+ *  push slots are undefined too, so the call is already a no-op — pass it through rather than hide it. */
+let controlGate: PanelWorkGate<ControlRefreshKind> | undefined;
+/** The resync branch: `sendModel()` plus every kind, wired in `openCockpit` where those live. */
+let pushControlResync: (() => void) | undefined;
+/** Test/instrumentation seam — what the last reveal decided (delta vs resync, and from how deep). */
+let lastControlCatchUp: CatchUpDecision<ControlRefreshKind> | undefined;
+
+function refreshControl(kind: ControlRefreshKind): void {
+  if (controlGate) controlGate.run(kind, () => pushControlRefresh(kind));
+  else pushControlRefresh(kind);
+}
+
+/**
+ * SDD 485 B2 — the upstream event cursor expired or the engine changed incarnation
+ * (`WorkspaceClient.resynced` / `engineChanged`). While Control is hidden its journal can no longer
+ * prove what changed, so the reveal must rebuild rather than replay. Called from extension.ts's
+ * subscriber, alongside the `refreshAll()` it already did.
+ */
+export function markControlSourceResync(): void {
+  controlGate?.markSourceResync();
+}
+
+/** SDD 485 B3 — what the panel is holding back right now, for a guard that counts WORK. */
+export function __controlGateProbe(): { visible: boolean; pending: number; lastCatchUp: CatchUpDecision<ControlRefreshKind> | undefined } {
+  return { visible: controlGate?.visible ?? false, pending: controlGate?.pending ?? 0, lastCatchUp: lastControlCatchUp };
+}
+
 /** Refresh embedded Mission board after task mutations. */
 export function refreshCockpitMissionBoard(): void {
-  pushMissionBoard?.();
+  refreshControl("mission");
 }
 
 /** t-610705 (Phase C.1) — refresh an open task-detail subroute after any task mutation, from ANY
  *  source (board drag/edit, detail edit, MCP tool call) — the same shared fan-out the board and
  *  sidebar already use. A no-op when the current route isn't task-detail (mirrors refreshCockpitMissionBoard). */
 export function refreshCockpitTaskDetail(): void {
-  pushTaskDetail?.();
+  refreshControl("task-detail");
 }
 
 /** t-610705 (Phase C.2) — refresh an open agent-probes/workspace-probes subroute after the probe
  *  ledger changes (wired into extension.ts's onViewsChanged("probes"), replacing the retired
  *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route (mirrors refreshCockpitTaskDetail). */
 export function refreshCockpitProbes(): void {
-  pushProbes?.();
+  refreshControl("probes");
 }
 
 /** t-610705 (Phase D, D1a) — re-fetch reference data (catalogs, not the entity) for an open studio
@@ -920,7 +979,7 @@ export function refreshCockpitProbes(): void {
  *  a studio whose adapter never changes its own referenceData externally is harmless (best-effort,
  *  see studioHost.ts's refreshStudioReferenceData doc comment). */
 export function refreshCockpitStudioReferenceData(): void {
-  pushStudioReferenceData?.();
+  refreshControl("studio-reference");
 }
 
 /** t-610705 (Phase D, D2) — re-send a fresh `load` for an open Task Studio binding after ANY task
@@ -932,7 +991,7 @@ export function refreshCockpitStudioReferenceData(): void {
  *  A no-op off a task studio-edit route, and best-effort (sendStudioLoad already tolerates a load
  *  failure) otherwise. */
 export function refreshCockpitTaskStudioEntity(): void {
-  pushTaskStudioEntity?.();
+  refreshControl("task-studio");
 }
 
 /** t-610705 (Phase D, D3) — Pin's equivalent of refreshCockpitTaskStudioEntity above: the retired
@@ -941,7 +1000,7 @@ export function refreshCockpitTaskStudioEntity(): void {
  *  created/deleted from the sidebar tree while a DIFFERENT pin's studio tab is open) — ported as-is,
  *  same call site, rather than narrowed to a pin-specific event that didn't exist before this port. */
 export function refreshCockpitPinStudioEntity(): void {
-  pushPinStudioEntity?.();
+  refreshControl("pin-studio");
 }
 
 /** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
@@ -954,22 +1013,22 @@ export function openCockpitAgentTranscript(): void {
 
 /** Refresh embedded Approvals after resolve/fan-out. */
 export function refreshCockpitApprovals(): void {
-  pushApprovals?.();
-  pushInbox?.();
+  refreshControl("approvals");
+  refreshControl("inbox");
 }
 
 export function refreshCockpitValidations(): void {
-  pushValidations?.();
+  refreshControl("validations");
   // t-e76acc — the Inbox is a projection over the same stores: any push that refreshes one of its
   // sources refreshes the aggregate too, or the unified count silently goes stale the moment a
   // validation is closed from the Validations tab.
-  pushInbox?.();
+  refreshControl("inbox");
 }
 
 /** t-610705 (Phase C.3) — re-post the Handoff snapshot (wired into onViewsChanged("handoff"),
  *  replacing the retired HandoffPanelManager.refreshAll()). A no-op off the handoff section. */
 export function refreshCockpitHandoff(): void {
-  pushHandoff?.();
+  refreshControl("handoff");
 }
 
 const PLUGIN_ACTION_TYPES = new Set([
@@ -1209,10 +1268,27 @@ export async function openCockpit(
     // disposal nulled the LIVE panel's wiring, bumped navEpoch, reset the route and released the
     // singleton claim — after which the model push below is suppressed forever and every section
     // of the shell renders "No Tachyon workspace attached in this window."
+    // SDD 485 B1/B2 — one gate per live panel. Created HERE (not per refresh) because the journal
+    // it keeps while hidden is the panel's, and it must die with the panel: a gate outliving its
+    // panel would replay a delta into a webview nobody owns any more.
+    controlGate?.dispose();
+    lastControlCatchUp = undefined;
+    controlGate = new PanelWorkGate<ControlRefreshKind>(panelVisibility(panel), {
+      replay: (kind) => pushControlRefresh(kind),
+      resync: () => pushControlResync?.(),
+      // Unconditional: the activity log grows without emitting a single `views-changed`, so its
+      // catch-up cannot hang off the journal's decision (see panelWorkGate.ts's `onReveal`).
+      onReveal: () => activityBinding?.feed.catchUp(),
+      onCatchUp: (decision) => { lastControlCatchUp = decision; },
+    });
     const disposingPanel = panel;
+    const disposingGate = controlGate;
     panel.onDidDispose(() => {
       if (panel === disposingPanel) {
         panel = undefined;
+        disposingGate.dispose();
+        if (controlGate === disposingGate) controlGate = undefined;
+        pushControlResync = undefined;
         clearCockpitSingletonClaim();
         pushMissionBoard = undefined;
         pushApprovals = undefined;
@@ -1887,6 +1963,10 @@ export async function openCockpit(
     const isCurrent = () => panel === capturedPanel && activityBinding?.generation === generation;
     const feed = startActivityFeed(ws, route.agent, {
       isCurrent,
+      // SDD 485 B1 — Control hidden behind another tab: the feed stops reading, building and posting.
+      // Its catch-up is driven from the gate's `onReveal` (below) rather than from a journaled
+      // invalidation, because the activity log moves without any `views-changed` at all.
+      paused: () => controlGate !== undefined && !controlGate.visible,
       post: (vm, prepended) => {
         if (!isCurrent()) return;
         const shareVm = withActivityShareKeys(route.agent, vm);
@@ -2105,6 +2185,21 @@ export async function openCockpit(
     if (panel === live && navEpoch === readyEpoch) live.webview.postMessage(routeReadyMessage(readyKey));
   };
 
+  /**
+   * SDD 485 B2 — the resync branch of the reveal. `sendModel()` re-posts the whole model (the one
+   * push a delta never carries: nothing in the fan-out asks for it, so a hidden panel that missed a
+   * scope- or fleet-shaped change cannot recover it kind by kind), and every content push then
+   * refreshes whichever route is actually mounted — each one already no-ops off its own route.
+   *
+   * Deliberately NOT the READY path: this must not re-post `routeReady`, which is one half of a
+   * navigation bracket the client is not in the middle of.
+   */
+  pushControlResync = () => {
+    void (async () => {
+      await sendModel();
+      for (const kind of CONTROL_REFRESH_KINDS) pushControlRefresh(kind);
+    })();
+  };
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
