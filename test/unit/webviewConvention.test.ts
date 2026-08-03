@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
-import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
+import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
@@ -235,6 +235,85 @@ function observedExtensionPoints(s: WebviewSurface): Map<ShellExtensionPoint, st
 
 const declaredExtensionPoints = (s: WebviewSurface): ShellExtensionPoint[] => (s.posture === "extend" ? [...s.extensionPoints] : []);
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+// spec 485 Phase A — CONSUMPTION, the question the declaration half cannot ask (t-32c872).
+//
+// The block above asks "does this surface DECLARE that it styles the page frame?". For the Board the answer
+// was no, and it was RIGHT: `mission-control.css` styles no `html`/`body`, mints no `--ds-*`, links the
+// design system — legitimately `conform`. It shipped standalone and lost per-column scrolling anyway,
+// because its layout DEPENDS on a page frame that a sheet it no longer links used to provide (cockpit.css
+// pinned `html, body { height: 100% }`; the Board linked it only while it lived inside Control).
+//
+// So a surface can be conforming and still break the moment it stops sitting next to whatever was holding
+// it up. The missing question is the other half: **does this surface CONSUME page chrome that another sheet
+// provides — and does it link that sheet itself?** Same spirit as the rest of the phase: read the shipped
+// source, name the surface, no parallel inventory.
+//
+// It is checkable because a percentage height chain has exactly one root. `#root` is the SHELL's element,
+// so a surface giving it `height: 100%` is asking an ancestor it does not own (`body`) for a definite
+// height — that rule is the seam, and it is why `page-frame.css` deliberately stops at `body`. (`min-height:
+// 0` on its own asks nothing of anyone: it is a flex-shrink fix, not a dependency.)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** every `selector { declarations }` pair in a stylesheet (comments stripped; at-rule preludes skipped). */
+function cssRules(css: string): Array<{ selector: string; body: string }> {
+  return [...stripCssComments(css).matchAll(/(?:^|[};{])\s*([^{};@]+?)\s*\{([^{}]*)\}/g)].map((m) => ({ selector: m[1], body: m[2] }));
+}
+
+const oneLine = (s: string): string => s.trim().replace(/\s+/g, " ");
+const selectsShellRoot = (selector: string): boolean => selector.split(",").some((part) => /(?:^|[\s>+~])#root\b/.test(part.trim()));
+const declaresPercentHeight = (body: string): boolean => /(?:^|[;{\s])(?:min-)?height\s*:\s*[^;]*\d%/.test(body);
+const declaresOutOfFlowRoot = (body: string): boolean => /(?:^|[;{\s])position\s*:\s*(absolute|fixed)/.test(body);
+
+/**
+ * The surface's dependency on a page frame it does not own: its own CSS gives the shell's `#root` a
+ * PERCENTAGE height. Returns the offending rule as evidence, or undefined when the surface asks for nothing
+ * (task detail scrolls as a document; agent-pane pins `#root` out of flow with `inset: 0`, which resolves
+ * against the initial containing block and needs no ancestor height at all).
+ */
+function rootHeightDependency(view: string): { file: string; rule: string } | undefined {
+  for (const { file, css } of ownStylesheets(view)) {
+    for (const { selector, body } of cssRules(css)) {
+      if (selectsShellRoot(selector) && declaresPercentHeight(body)) return { file, rule: `${oneLine(selector)} { ${oneLine(body)} }` };
+    }
+  }
+  return undefined;
+}
+
+/** Any `#root` rule that anchors the surface to the page frame — a percentage height, or out-of-flow. */
+function anchorsToPageFrame(view: string): boolean {
+  return ownStylesheets(view).some(({ css }) =>
+    cssRules(css).some(({ selector, body }) => selectsShellRoot(selector) && (declaresPercentHeight(body) || declaresOutOfFlowRoot(body))));
+}
+
+/** every `src/webview/**\/*.css` source, indexed by basename (a linked sheet is a `dist/webview` filename). */
+function stylesheetSourcesByName(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const p = join(dir, entry);
+      if (statSync(p).isDirectory()) walk(p);
+      else if (entry.endsWith(".css")) out.set(entry, [...(out.get(entry) ?? []), p]);
+    }
+  };
+  walk("src/webview");
+  return out;
+}
+
+/** Does this sheet give the page frame itself a height — i.e. is it the ROOT of a percentage chain? */
+function pageFrameHeightRule(css: string): string | undefined {
+  for (const { selector, body } of cssRules(css)) {
+    const framesPage = selector.split(",").some((part) => /^\s*(html|body)\b/.test(part));
+    if (framesPage && /(?:^|[;{\s])height\s*:/.test(body)) return `${oneLine(selector)} { ${oneLine(body)} }`;
+  }
+  return undefined;
+}
+
+/** the sheets a surface LINKS that provide the page frame's height, resolved back to their source. */
+function linkedPageFrameProviders(s: WebviewSurface, sources: Map<string, string[]>): string[] {
+  return linkedStylesheets(s).flatMap((name) => (sources.get(name) ?? []).filter((p) => pageFrameHeightRule(readFileSync(p, "utf8")) !== undefined));
+}
+
 describe("webview design-system conformance contract (spec 485 Phase A)", () => {
   it("every surface declares a posture, and the declaration is well-formed", () => {
     // A1 — 410's standing exceptions (sidebar, pin-preview, the dev-only spec-350 fakes, the plugin surfaces)
@@ -328,6 +407,48 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
         if (JSON.stringify(passed) !== JSON.stringify(declared)) {
           violations.push(`${hostFile} (${view}): passes extend [${passed.join(", ")}] but the manifest declares [${declared.join(", ")}]`);
         }
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("the page-frame sheet REALLY provides the chain, and some surface really depends on one (blind-scan guard)", () => {
+    // Same safeguard the stylesheet-list check above is: the two tests below are vacuous if the provider
+    // detection matches nothing, or if no surface in the manifest consumes a chain at all.
+    const sources = stylesheetSourcesByName();
+    const frame = (sources.get(SHELL_PAGE_FRAME_STYLESHEET) ?? []).map((p) => ({ p, rule: pageFrameHeightRule(readFileSync(p, "utf8")) }));
+    expect(frame.filter((f) => f.rule !== undefined).map((f) => f.p), `${SHELL_PAGE_FRAME_STYLESHEET} must exist and give html/body a height — it is what every consumer below is required to link`).not.toEqual([]);
+    const consumers = WEBVIEW_SURFACES.filter((s) => s.posture !== "replace" && rootHeightDependency(s.view) !== undefined);
+    expect(consumers.map((s) => s.viewId), "no surface anchors `#root` to a percentage height — the consumption check is reading nothing").not.toEqual([]);
+  });
+
+  it("a surface that DEPENDS on a root height chain links a sheet that provides it (t-32c872)", () => {
+    // The Board's regression, as a rule rather than as one fix: `#root { height: 100% }` resolves against
+    // `body`, so whichever sheet gives `body` a height has to be one this surface LINKS — not one that
+    // happened to be loaded by the app it used to be embedded in.
+    const sources = stylesheetSourcesByName();
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.posture === "replace") continue;
+      const dep = rootHeightDependency(s.view);
+      if (!dep) continue;
+      if (linkedPageFrameProviders(s, sources).length === 0) {
+        violations.push(`${s.viewId}: CONSUMES a page-frame height chain but links nothing that provides it — ${dep.file}: \`${dep.rule}\` resolves against a \`body\` with no height, so it collapses to content. Link ${SHELL_PAGE_FRAME_STYLESHEET} (the shared frame) in ${s.hostFile}, or stop anchoring to the frame. Linked: [${linkedStylesheets(s).join(", ")}].`);
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
+
+  it("a surface that links the page-frame sheet actually anchors to it (no blanket linking)", () => {
+    // The mirror rule, and the reason the frame sheet cannot quietly become "link it everywhere": a page
+    // that never scrolls is the WRONG frame for a document surface (task detail's reading column would put
+    // its own content out of reach), so linking it without anchoring `#root` to the frame is a defect too.
+    const violations: string[] = [];
+    for (const s of WEBVIEW_SURFACES) {
+      if (s.posture === "replace") continue;
+      if (!linkedStylesheets(s).includes(SHELL_PAGE_FRAME_STYLESHEET)) continue;
+      if (!anchorsToPageFrame(s.view)) {
+        violations.push(`${s.viewId} (${s.hostFile}): links ${SHELL_PAGE_FRAME_STYLESHEET} but its own CSS never anchors \`#root\` to the frame (no percentage height, not out of flow) — a page that cannot scroll is the wrong frame for a document surface. Drop the link, or say what the frame is for.`);
       }
     }
     expect(violations, violations.join("\n")).toEqual([]);

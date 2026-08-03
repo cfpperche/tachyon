@@ -108,7 +108,13 @@ export class BoardPanelManager {
       // stylesheet neither styles the page frame nor mints `--ds-*` values, which is why this surface
       // `conform`s instead of declaring an extension point — checked by `webviewConvention.test.ts`
       // rather than asserted here.
-      styleFiles: ["codicon.css", "design-system.css", "vscode-theme.css", "mission-control.tailwind.css", "mission-control.css"],
+      //
+      // t-32c872 — `page-frame.css` is the sheet that list was MISSING, and its absence is the whole bug:
+      // the board's per-column scrolling is a height chain rooted at `body`, and inside Control that root
+      // came from cockpit.css. Standalone, the Board must link the shared frame itself. It is a shared
+      // sheet, so this is conformance, not page chrome of its own — and the contract now checks the
+      // CONSUMPTION, not just the declaration.
+      styleFiles: ["codicon.css", "design-system.css", "page-frame.css", "vscode-theme.css", "mission-control.tailwind.css", "mission-control.css"],
       title: () => "Board",
       iconName: "tasklist",
       refreshKindFor: boardRefreshKind,

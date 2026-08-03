@@ -44,6 +44,19 @@ export const SHELL_BASE_STYLESHEETS = ["codicon.css", "design-system.css"] as co
 /** The one baseline sheet that CARRIES the design system (tokens + base components + the body baseline). */
 export const SHELL_DESIGN_SYSTEM_STYLESHEET = "design-system.css";
 
+/**
+ * SDD 485 / t-32c872 — the shared sheet that gives the PAGE FRAME (`html`, `body`) the tab's height and
+ * stops the page itself from scrolling: `shared/page-frame.css`. An app whose screen IS the page links it;
+ * a document app that scrolls (task detail) does not.
+ *
+ * It is a shared sheet, so linking it is CONFORMANCE, not a `page-chrome` departure — the same status
+ * `design-system.css` already has for the body baseline it owns. What the contract checks is the other
+ * thing entirely: a surface that DEPENDS on a root height chain (its own CSS gives `#root` a percentage
+ * height) must link a sheet that PROVIDES that chain. Declaration was never the question the Board failed:
+ * it was legitimately `conform` and still broke the moment it stopped sitting next to cockpit.css.
+ */
+export const SHELL_PAGE_FRAME_STYLESHEET = "page-frame.css";
+
 /** A per-render CSP nonce (the bundle is the only script allowed to run). */
 export function webviewNonce(): string {
   let s = "";

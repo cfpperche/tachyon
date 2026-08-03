@@ -81,6 +81,18 @@ export interface Route<VM = unknown> {
   /** set when the built bundle is an ESM module (esbuild code-splitting) rather than a classic script — the
    *  harness must inject it via `<script type="module">` or the browser rejects its `import` statements. */
   module?: boolean;
+  /**
+   * t-32c872 — this surface IS the page (an SDD 485 standalone app that links `page-frame.css`), so the
+   * harness must not interpose its own sized `#frame` box: `preview.ts` collapses it (`display: contents`)
+   * and puts the frame size on `<html>` instead, which is where a real webview's page frame lives.
+   *
+   * Without this the harness is MORE generous than the product and cannot see a whole defect class. The
+   * Board lost per-column scrolling standalone because `#root { height: 100% }` had no `body` height to
+   * resolve against — and the harness rendered it correctly the whole time, because `#frame` handed `#root`
+   * a definite height the real page never had. A harness that cannot reproduce the bug cannot witness the
+   * fix either.
+   */
+  pageFrame?: boolean;
 }
 
 const CODICON = "/dist/webview/codicon.css";
@@ -348,6 +360,9 @@ export const ROUTES: Record<string, Route> = {
     cssLinks: [
       CODICON,
       DESIGN_SYSTEM,
+      // t-32c872 — the shared page frame, exactly where `BoardPanel.ts` links it. It is what makes
+      // `.col-body { overflow-y: auto }` scroll per column instead of the whole page.
+      "/dist/webview/page-frame.css",
       "/dist/webview/vscode-theme.css",
       "/dist/webview/mission-control.tailwind.css",
       "/dist/webview/mission-control.css",
@@ -356,6 +371,8 @@ export const ROUTES: Record<string, Route> = {
     fixtures: missionControlFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
     module: true,
+    // the Board fills its editor tab and scrolls per column — the harness must render a real page frame.
+    pageFrame: true,
     makeMessage: (vm) => missionControlSnapshotMessage(vm as never),
   },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same

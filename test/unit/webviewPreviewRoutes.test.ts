@@ -196,6 +196,19 @@ describe("preview route table", () => {
     expect(pinNewMsgs[2]?.studioProtocolVersion).toBe(1);
   });
 
+  it("a route that links the page-frame sheet renders a REAL page frame (t-32c872)", () => {
+    // The harness's `#frame` div hands `#root` a definite height that a real webview's `body` only has when
+    // a stylesheet gives it one. That is why the Board previewed correctly for a whole commit while shipping
+    // broken: the harness was more generous than the product. `pageFrame` collapses the div (preview.ts), so
+    // a route linking `page-frame.css` and NOT declaring it would be back to previewing a page nobody ships.
+    const violations = Object.entries(ROUTES)
+      .filter(([, r]) => r.cssLinks.some((href) => href.endsWith("/page-frame.css")) && r.pageFrame !== true)
+      .map(([view]) => `${view}: links page-frame.css but does not declare pageFrame — the harness would hand #root a height the product does not have`);
+    expect(violations, violations.join("\n")).toEqual([]);
+    // and the Board is the route that proves the flag is wired to something (not a field nobody sets).
+    expect(ROUTES["mission-control"].pageFrame).toBe(true);
+  });
+
   it("declares the task-detail route (SDD 485 C4) against the REAL standalone bundle and the host's own CSS list", () => {
     // The point of this route is that it previews what SHIPS: the task detail is a standalone app again,
     // so the harness must load `task-detail.js` and the exact stylesheet list `TaskDetailPanel.ts` links —
