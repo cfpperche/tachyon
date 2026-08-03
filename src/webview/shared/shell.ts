@@ -11,6 +11,39 @@
 
 const NONCE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
+/**
+ * spec 485 A2 — the shared page frame's NAMED extension points: the closed set of ways a surface may
+ * legitimately compose beyond the default frame. SDD 410 made the design system enforceable by having ONE
+ * runtime; 485 puts the app count back, so the enforcement has to come from somewhere else. This is that
+ * somewhere: a surface either takes the frame as it comes (`conform`), composes through a point NAMED here
+ * (`extend`), or brings its own shell with a reason (`replace`). What fails the build is silence, never the
+ * difference — a contract with no supported way out gets worked around, and a worked-around contract enforces
+ * nothing. The postures live in the surface manifest (`../surfaces.ts`); `webviewConvention.test.ts` is what
+ * makes them true, by checking each declaration against the host + CSS the surface actually ships.
+ *
+ * Each point is DETECTABLE, not honour-system — that is the whole reason the set is small and specific:
+ *  - `page-chrome`  the surface styles the page frame's own elements (`html` / `body`). The design-system
+ *                   baseline already owns those (`design-system.css` sets body font/colour/background/margin),
+ *                   so a surface restyling them is composing its own page chrome over the shared one. The dual
+ *                   pad of 2026-07-18 arrived exactly here.
+ *  - `base-style`   the surface does not link the design-system baseline at all and brings its own base layer
+ *                   (agent-pane: Tachyon Mono's `@font-face` breaks xterm cell metrics).
+ *  - `token-scale`  the surface defines its OWN values for shared `--ds-*` tokens rather than reading them.
+ *
+ * NOT extension points, deliberately: the CSP options below (`imgBlob`, `connectSrc`, `workerSrc`, `childSrc`,
+ * `frameSrc`, `scriptCspSource`). They are a security axis, orthogonal to design-system conformance — folding
+ * them in here would make almost every surface `extend` and drain the word of meaning.
+ */
+export const SHELL_EXTENSION_POINTS = ["page-chrome", "base-style", "token-scale"] as const;
+export type ShellExtensionPoint = (typeof SHELL_EXTENSION_POINTS)[number];
+
+/** The baseline stylesheet layer a CONFORMING surface links first, in this order: the icon font, then the
+ *  sheet that carries the design system itself. A surface missing the latter declares `base-style`. */
+export const SHELL_BASE_STYLESHEETS = ["codicon.css", "design-system.css"] as const;
+
+/** The one baseline sheet that CARRIES the design system (tokens + base components + the body baseline). */
+export const SHELL_DESIGN_SYSTEM_STYLESHEET = "design-system.css";
+
 /** A per-render CSP nonce (the bundle is the only script allowed to run). */
 export function webviewNonce(): string {
   let s = "";
@@ -54,6 +87,15 @@ export interface WebviewShellOptions {
   persistedState?: unknown;
   /** spec 410 — load bundle as ES module (cockpit code-split chunks). */
   module?: boolean;
+  /** spec 485 A2 — this surface's manifest `viewId`, emitted as `data-shell-surface` on `<html>`. Optional
+   *  passthrough: the manifest (`../surfaces.ts`) is the declaration of record and the convention test is the
+   *  enforcement, but a host that passes it makes the binding observable in the rendered page — the browser
+   *  harness, `visual-qa` and anyone reading the DOM can see WHICH surface a page claims to be. */
+  surface?: string;
+  /** spec 485 A2 — the named extension points this render composes through, emitted as `data-shell-extends`.
+   *  When present it must match the surface's manifest `extensionPoints` exactly (webviewConvention.test.ts
+   *  checks that); it never grants anything the manifest has not already declared. */
+  extend?: readonly ShellExtensionPoint[];
 }
 
 /** Assemble the standard webview page for a converted surface. The only sanctioned `<!DOCTYPE>` site. */
@@ -85,8 +127,11 @@ export function renderWebviewShell(o: WebviewShellOptions): string {
   const bootstrap = Object.keys(globals).length > 0
     ? `<script nonce="${nonce}">${Object.entries(globals).map(([k, v]) => `window.${k}=${jsonInline(v)};`).join("")}</script>\n`
     : "";
+  // spec 485 A2 — the posture declaration rides on the root element, so a rendered page carries its own
+  // conformance claim (attribute-only: no layout, no style, nothing a human sees).
+  const shellAttrs = `${o.surface ? ` data-shell-surface="${o.surface}"` : ""}${o.extend?.length ? ` data-shell-extends="${[...o.extend].join(" ")}"` : ""}`;
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${shellAttrs}>
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
