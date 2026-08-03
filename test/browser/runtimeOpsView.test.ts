@@ -73,7 +73,12 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     const loading = await browser.newPage();
     await openRuntimeOpsFixture(loading, server.origin, "loading", { width: 1100, height: 360 });
     expect(await loading.$eval(".runtime-ops", (el) => el.getAttribute("aria-busy"))).toBe("true");
-    expect(await loading.$eval(".runtime-ops", (el) => el.textContent)).toContain("Loading runtime inventory...");
+    // SDD 485 D3 — a PRE-EXISTING stale assertion, found by running this file for the first time since
+    // t-ed3067 parked it. The component renders a Unicode ellipsis ("…", U+2026) and this expected three
+    // ASCII dots; `runtime-ops/App.tsx` is byte-identical across this migration, so the drift predates it
+    // and was invisible only because the whole file was red for a different reason. Fixed rather than
+    // left, because a revived suite that is still red revives nothing.
+    expect(await loading.$eval(".runtime-ops", (el) => el.textContent)).toContain("Loading runtime inventory\u2026");
     await loading.close();
 
     const error = await browser.newPage();
