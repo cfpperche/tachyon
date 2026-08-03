@@ -54,7 +54,7 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
       uses for `All · N`), with the host keeping a single writer. Re-anchor
       `controlWorkspaceScope.test.ts` in the same change.
 - [x] C7. Guard the identity rule: switching the selector does not retarget an open document.
-- [ ] C8. Launcher tiles and `tachyon.*` commands open/reveal these two apps; their old Control
+- [x] C8. Launcher tiles and `tachyon.*` commands open/reveal these two apps; their old Control
       routes become redirects with no dead path left behind.
 - [ ] **CHECKPOINT — stop and use it.** Board beside a terminal, two task details side by side, for a
       few days. If side-by-side is not what the use wanted, the remaining ten are untouched and the
