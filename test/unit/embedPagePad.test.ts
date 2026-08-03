@@ -28,6 +28,7 @@ const read = (rel: string) => fs.readFileSync(path.resolve(root, rel), "utf8");
 
 const VALIDATIONS_CSS = "src/webview/validations/validations.css";
 const RUNTIME_OPS_CSS = "src/webview/runtime-ops/runtime-ops.css";
+const HUMAN_INBOX_CSS = "src/webview/human-inbox/human-inbox.css";
 const VALIDATIONS_APP = "src/webview/validations/App.tsx";
 const COCKPIT_APP = "src/webview/cockpit/App.tsx";
 
@@ -208,6 +209,68 @@ describe("Runtime Ops owns its own page pad now that it is a standalone app (SDD
     expect(linked).toContain("runtime-ops.css");
     // and NOT page-frame.css: runtime-ops.css anchors `#root` to nothing, so linking the frame would
     // fail webviewConvention's mirror rule and put a scrolling document inside `overflow: hidden`.
+    expect(linked).not.toContain("page-frame.css");
+  });
+});
+
+describe("the Human Inbox owns its own page pad, and always did (SDD 485 D4)", () => {
+  const inbox = read(HUMAN_INBOX_CSS);
+  const cockpit = read("src/webview/cockpit/cockpit.css");
+
+  /**
+   * D2's parting instruction — grep `cockpit.css` for your surface's root class before anything else —
+   * has now produced three DIFFERENT answers in three migrations, and that is the fact worth recording
+   * here rather than the outcome:
+   *
+   *   D2 Plugins     `.ck-plugins-root`'s pad LIVED in cockpit.css        → a rule to MOVE
+   *   D3 Runtime Ops `.runtime-ops` had embed neutralization + a re-assert → two rules to DELETE
+   *   D4 Human Inbox `.hi-root` appears in cockpit.css NOWHERE            → nothing to do
+   *
+   * The third answer is the one a future migration is most likely to get wrong, because "the grep came
+   * back empty" reads like the check did not run. It did: `.hi-root` is a `div`, and cockpit.css's embed
+   * neutralization is `.ck-embed-host > main`, which reaches `<main>`-rooted surfaces only. So this
+   * surface never consumed anything from the sheet it was about to stop linking — which is what the pad
+   * MEASUREMENT in the visual pass confirms, since a static test cannot.
+   */
+  it("the Inbox root applies the Fleet page pad from its OWN stylesheet", () => {
+    const root = rulesFor(inbox, ".hi-root");
+    expect(root, "no rule found for `.hi-root`").not.toHaveLength(0);
+    expect(root.some((r) => /padding:\s*var\(--ds-page-pad-y\)/.test(r.body)), ".hi-root does not apply the page pad").toBe(true);
+  });
+
+  it("cockpit.css styles no Inbox selector — it never did, and now there is no element either", () => {
+    for (const r of rules(cockpit)) {
+      expect(
+        r.selector.split(",").some((part) => part.trim().includes(".hi-")),
+        `cockpit.css styles an Inbox selector (\`${r.selector}\`) — the Inbox left Control in SDD 485 D4`,
+      ).toBe(false);
+    }
+  });
+
+  it("human-inbox.css carries no embed re-assert for a host that cannot exist", () => {
+    // The mirror of D3's deletion, asserted even though there was nothing to delete: if a future edit
+    // adds one it is dead CSS and a live lie about where this surface renders.
+    expect(rulesFor(inbox, ".ck-embed-host > main.hi-root")).toHaveLength(0);
+    expect(rulesFor(inbox, ".ck-embed-host > .hi-root")).toHaveLength(0);
+  });
+
+  it("Control renders no Inbox section, and no inbox-item subroute, to pad in the first place", () => {
+    // The cutover half, and this surface needs BOTH halves checked because it left with two route kinds:
+    // two live renderers is what spec.md forbids, and a surviving branch here is how one comes back
+    // without any test noticing.
+    const app = read(COCKPIT_APP);
+    expect(app).not.toContain('section === "inbox"');
+    expect(app).not.toContain('kind === "inbox-item"');
+  });
+
+  it("the app links the sheet that owns the pad, and no page frame it does not anchor to", () => {
+    const host = read("src/webview/HumanInboxPanel.ts");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(host);
+    expect(block, "src/webview/HumanInboxPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
+    const linked = [...block![1].matchAll(/["\'`]([^"\'`]+\.css)["\'`]/g)].map((m) => m[1]);
+    expect(linked).toContain("human-inbox.css");
+    // and NOT page-frame.css. For THIS surface that is not merely the default: the detail route renders
+    // evidence a human did not choose the dimensions of, and `overflow: hidden` would put it out of reach.
     expect(linked).not.toContain("page-frame.css");
   });
 });

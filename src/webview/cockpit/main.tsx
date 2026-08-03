@@ -77,23 +77,6 @@ import {
   closeValidationItemAction,
   assignValidationAction,
 } from "../validations/messages";
-import type { HumanInboxDispatch } from "../human-inbox/App";
-import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
-import type { HumanInboxKind } from "../../humanInbox/model";
-import {
-  HUMAN_INBOX,
-  HUMAN_INBOX_ERROR,
-  HUMAN_INBOX_ITEM,
-  HUMAN_INBOX_ITEM_MISSING,
-  refreshInboxAction,
-  openInboxItemAction,
-  resolveInboxApprovalAction,
-  closeInboxValidationAction,
-  assignInboxValidationAction,
-  decideSavedAgentProposalAction,
-  decideSavedAgentRemovalAction,
-} from "../human-inbox/messages";
-import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "../runtime-config/messages";
 import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
 import type { StudioDispatch } from "../shared/studio/protocol";
@@ -120,7 +103,7 @@ const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
  * Kept client-side and deliberately small: the client only needs to know "do not optimistically render
  * this", never which app it is or where it opens. `Cockpit.ts`'s `navigate()` is what actually routes it.
  */
-const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux", "plugins", "runtime"]);
+const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux", "plugins", "runtime", "inbox"]);
 
 function Root() {
   return (
@@ -148,10 +131,6 @@ function CockpitRoot() {
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
-  const [inboxVm, setInboxVm] = useState<HumanInboxViewModel | undefined>(undefined);
-  const [inboxError, setInboxError] = useState<HumanInboxErrorReceipt | undefined>(undefined);
-  const [inboxItemVm, setInboxItemVm] = useState<HumanInboxItemViewModel | undefined>(undefined);
-  const [inboxItemMissing, setInboxItemMissing] = useState<{ kind: HumanInboxKind; id: string } | undefined>(undefined);
   const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
   const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
@@ -184,7 +163,7 @@ function CockpitRoot() {
   const companionPairSnapshot = useRef<{ paired: boolean; deviceKey: string } | null>(null);
   // t-610705 (Phase C.2) — the onMsg listener below is mounted once ([] deps), so it can't read fresh
   // `model` state directly (stale closure); this ref is kept current from the MODEL branch for the
-  // identity checks the ACTIVITY and inbox-item branches make.
+  // identity checks the ACTIVITY branch makes.
   // SDD 485 C4/C5 — there is no TASK_ERROR branch left at all: "taskError" was the same wire string for
   // the board and the task detail, and both took their protocol with them when they became their own apps.
   // Control now speaks neither, which is a stronger statement than disambiguating them correctly.
@@ -270,14 +249,6 @@ function CockpitRoot() {
           setActivityVm(undefined);
           setActivityImages({});
         }
-        // t-e76acc — same identity-change reset Activity already does above: a late item push
-        // from the row just navigated away from must never render under a DIFFERENT item's route.
-        const prevItem = activeRouteRef.current?.kind === "inbox-item" ? activeRouteRef.current : undefined;
-        const nextItem = next.activeRoute?.kind === "inbox-item" ? next.activeRoute : undefined;
-        if (!nextItem || !prevItem || prevItem.wsHash !== nextItem.wsHash || prevItem.itemKind !== nextItem.itemKind || prevItem.itemId !== nextItem.itemId) {
-          setInboxItemVm(undefined);
-          setInboxItemMissing(undefined);
-        }
         activeRouteRef.current = next.activeRoute;
         if (next.studioMountNonce !== studioMountNonceRef.current) {
           studioMountNonceRef.current = next.studioMountNonce;
@@ -323,28 +294,11 @@ function CockpitRoot() {
         setValidationsError(undefined);
       } else if (type === VALIDATION_ERROR && typeof raw.message === "string") {
         setValidationsError(raw.message);
-      } else if (type === HUMAN_INBOX && raw.vm) {
-        setInboxVm(raw.vm as HumanInboxViewModel);
-        setInboxError(undefined);
-      } else if (type === HUMAN_INBOX_ERROR && typeof raw.message === "string") {
-        // t-58f9e9 — a NEW object per receipt, never the bare string: an identical refusal twice in
-        // a row must still read as a second refusal downstream.
-        setInboxError({ message: raw.message });
-      } else if (type === HUMAN_INBOX_ITEM && raw.vm) {
-        // identity-checked against the CURRENT route, same rule as TASK/ACTIVITY above.
-        const route = activeRouteRef.current;
-        const vm = raw.vm as HumanInboxItemViewModel;
-        if (route?.kind === "inbox-item" && route.wsHash === vm.wsHash && route.itemKind === vm.item.kind && route.itemId === vm.item.id) {
-          setInboxItemVm(vm);
-          setInboxItemMissing(undefined);
-          setInboxError(undefined);
-        }
-      } else if (type === HUMAN_INBOX_ITEM_MISSING && typeof raw.id === "string") {
-        const route = activeRouteRef.current;
-        if (route?.kind === "inbox-item" && route.itemKind === raw.kind && route.itemId === raw.id) {
-          setInboxItemVm(undefined);
-          setInboxItemMissing({ kind: raw.kind as HumanInboxKind, id: raw.id });
-        }
+      // SDD 485 D4 — the four Human Inbox arms left with the renderer: the Inbox is a standalone
+      // `dashboard` app, and its client half is `human-inbox/main.tsx`, which owns its state slots, its
+      // own 3s poll, and the list/item subroute the HOST decides. The identity checks these two arms
+      // made went with them for C4's reason: they existed because ONE panel served every route, and a
+      // panel that IS one project's queue has no second identity for a late push to belong to.
       // SDD 485 D3 — the two runtime-ops arms left with the renderer: Runtime Ops is a standalone app, and
       // its client half is `runtime-ops/main.tsx`, which owns both state slots and its own 3s poll.
       } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
@@ -472,25 +426,6 @@ function CockpitRoot() {
     [],
   );
 
-  // t-e76acc — every entry routes to the kind's own host path; there is no generic "resolve" here,
-  // and no shape a validation row could use to reach the approval one.
-  const inboxDispatch: HumanInboxDispatch = useMemo(
-    () => ({
-      refresh: () => post(refreshInboxAction()),
-      open: (kind: HumanInboxKind, id: string) => post(openInboxItemAction(kind, id)),
-      resolveApproval: (id: string, decision: ApprovalDecision) => post(resolveInboxApprovalAction(id, decision)),
-      closeValidation: (id, outcome, note) => post(closeInboxValidationAction(id, outcome, note)),
-      assignValidation: (id, assignee, expect) => post(assignInboxValidationAction(id, assignee, expect)),
-      // The digest travels with the decision: the host compares it, so a proposal that changed since
-      // this pane rendered is refused rather than approved from a stale view.
-      decideSavedAgentProposal: (id, digest, decision, reason) =>
-        post(decideSavedAgentProposalAction(id, digest, decision, reason)),
-      decideSavedAgentRemoval: (id, digest, decision, reason) =>
-        post(decideSavedAgentRemovalAction(id, digest, decision, reason)),
-    }),
-    [],
-  );
-
   // SDD 485 D2 — `pluginsDispatch` left with the renderer: Plugins is a standalone app, and its client
   // half is `plugins/main.tsx`, which owns this dispatch, its own ToastProvider and its own 3s poll.
 
@@ -549,11 +484,6 @@ function CockpitRoot() {
       validationsVm={validationsVm}
       validationsError={validationsError}
       validationsDispatch={validationsDispatch}
-      inboxVm={inboxVm}
-      inboxError={inboxError}
-      inboxItemVm={inboxItemVm}
-      inboxItemMissing={inboxItemMissing}
-      inboxDispatch={inboxDispatch}
       runtimeConfigSnapshot={runtimeConfigSnapshot}
       runtimeConfigUnavailable={runtimeConfigUnavailable}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
@@ -598,7 +528,6 @@ function CockpitRoot() {
         post(setSectionAction(section));
         if (section === "approvals") post(refreshApprovalsAction());
         if (section === "validations") post(refreshValidationsAction());
-        if (section === "inbox") post(refreshInboxAction());
       }}
       onSwitchWorkspace={(wsHash: string) => {
         // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host

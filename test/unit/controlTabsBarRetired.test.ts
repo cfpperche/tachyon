@@ -146,8 +146,11 @@ describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived"
   const SUBROUTES = [
     { fixture: "handoff", testid: "control-handoff-breadcrumb", label: "Overview" },
     { fixture: "studio-command", testid: "control-studio-breadcrumb", label: "Fleet" },
-    { fixture: "inbox-item", testid: "control-inbox-item-breadcrumb", label: "Inbox" },
   ] as const;
+  // SDD 485 D4 — `inbox-item` was the third and left with the Human Inbox app; its fixture is gone too,
+  // the same way C4's `task-detail` went. The affordance did NOT disappear with it: the app renders its
+  // own back button now (`inbox-item-back`), because that breadcrumb was the EMBED HOST's chrome and a
+  // standalone item route has no host to draw it. `humanInboxApp.test.ts` owns that claim.
 
   it("every subroute still renders its ← Back row, with the label TAB_META supplies", () => {
     for (const { fixture, testid, label } of SUBROUTES) {
@@ -206,13 +209,14 @@ describe("t-aa2780 — every section says which section it is", () => {
   it("a lazy section names itself WHILE loading, which is when it used to be anonymous", () => {
     // Rendered at the Suspense fallback (see staticPreact's suspense note): heading present, chunk not.
     //
-    // SDD 485 D3 — driven through the Inbox now. This case has been repointed twice by the same force:
-    // Plugins was its vehicle until D2, Runtime Ops until D3, and each time the section it drove became a
-    // standalone app. The property under test belongs to the SHELL, not to any one section, so what the
-    // repoints record is which lazy sections Control still owns — three, after this one (`inbox`,
-    // `approvals`, `validations`), and Phase D is not finished with them.
-    const html = renderStatic(Shell({ strings: cockpitStrings, model: sectionModel("inbox"), inspector: {} }));
-    expect(headings(html)).toContain("Inbox");
+    // SDD 485 D4 — driven through Validations now. This case has been repointed THREE times by the same
+    // force: Plugins was its vehicle until D2, Runtime Ops until D3, the Inbox until D4, and each time the
+    // section it drove became a standalone app. The property under test belongs to the SHELL, not to any
+    // one section, so what the repoints record is which lazy sections Control still owns — TWO after this
+    // one (`approvals`, `validations`), and both are compatibility routes rather than Phase D targets, so
+    // the next migration to take a lazy section will have to bring its own vehicle or retire this case.
+    const html = renderStatic(Shell({ strings: cockpitStrings, model: sectionModel("validations"), inspector: {} }));
+    expect(headings(html)).toContain("Validations");
     expect(html).toContain("ds-empty-state--loading");
   });
 

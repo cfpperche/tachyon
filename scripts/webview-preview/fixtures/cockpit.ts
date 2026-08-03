@@ -1073,16 +1073,10 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
-  // t-d16698 — the two Inbox surfaces a "Review" doorbell can land on. Both were unpreviewable, which
-  // is why a deep-link defect that ended on one of them could only be judged inside a real editor.
-  inbox: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "inbox", nowIso: now }) },
-  "inbox-item": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "inbox", nowIso: now }),
-      activeRoute: cockpitRoutes.inboxItem("b349073a", "saved-agent-proposal", "sp-45042f"),
-    },
-  },
+  // SDD 485 D4 — the two Inbox fixtures left with the section: both are `?view=human-inbox` now
+  // (`fixture=list` and `fixture=item`), rendering the real standalone bundle rather than the same
+  // components embedded in Control. The VMs below are still built HERE, because they derive from this
+  // harness's own approval and validation fixtures, and `fixtures/human-inbox.ts` imports them.
   // t-ace77f — Handoff is a DETAIL ROUTE, not a section: the model still carries a background
   // section (nav-less routes fall back to overview at every call site) and `activeRoute` is what
   // actually renders, same shape as the task-detail/Fleet-subroute fixtures above.

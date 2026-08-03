@@ -101,7 +101,22 @@ work in parallel only if the second re-applies onto the first before delivery, n
       paid off in the OTHER direction: the pad was always this sheet's, so the residue was a rule to DELETE
       in both sheets rather than move. **D4 should run BOTH ten-second checks: grep `cockpit.css` for the
       root class, and read the host dep's signature for whether it accepts a project.**
-- [ ] D4–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
+- [x] D4. **Human Inbox** — the fourth Phase D migration, the third `dashboard`, and the first surface to
+      leave Control with TWO route kinds: its item detail stays a SUBROUTE of the app rather than becoming a
+      document (the queue is a thing a human works down — `route.ts:258` — and two items side by side is a
+      product decision nobody asked for). Cardinality confirmed by D3's method rather than assumed: every read
+      is rooted at ONE `workspaceRoot` (pending approvals, that workspace's validations, both Saved Agent
+      queues, the config digest, the artifact loader's containment root), so two projects have two genuinely
+      different queues. Three firsts worth carrying forward: the `cockpit.css` grep returned a THIRD answer —
+      **nothing to do** — because `.hi-root` is a `div` and the embed neutralization is `.ck-embed-host > main`;
+      the viewType question had **no subject**, since this surface was born a Control section AFTER 410 and left
+      no tombstone (new id `tachyonHumanInbox`, no shim); and the state between messages is the SUBROUTE itself,
+      inherent to the design rather than inherited, so it lives inside `bind` and a shared slot would show
+      project A's approval decision under project B's tab. **D5 should grep `cockpit/App.tsx` for what it
+      renders AROUND its surface, not only for the surface**: the item's `← Inbox` breadcrumb was Control's
+      chrome, and without moving it into the app the detail would have been reachable and unleavable — no
+      functional test would have noticed.
+- [ ] D5–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Worktrees, Execution,
       Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.

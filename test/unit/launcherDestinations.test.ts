@@ -35,6 +35,10 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     // migration. D2's Plugins needed none because its two names already agreed — which is the reason this map
     // is written out rather than derived: two of the four so far do not match, and no transform predicts which.
     runtime: "runtime-ops",
+    // SDD 485 D4 — the Inbox tile's section id is `inbox`; its bundle directory has always been
+    // `human-inbox` (the surface's product name is the Human Inbox; the tile is short for the grid).
+    // Fourth line, fourth migration — and the third of five whose two names disagree.
+    inbox: "human-inbox",
   };
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {

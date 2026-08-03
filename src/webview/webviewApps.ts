@@ -153,6 +153,28 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // never registered in production, so there is no record to revive and reuse would buy nothing. See
   // `RUNTIME_OPS_VIEW_TYPE`'s own comment for the full table of the five calls this series has now made.
   { view: "runtime-ops", viewId: "tachyonRuntimeOps", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D4 — the Human Inbox, the FOURTH Phase D migration and the third `dashboard`. D3 established
+  // that "it is a Control section" says nothing about cardinality and that the question is whether the
+  // surface's data source ACCEPTS a project; here the answer is yes, everywhere, and it predates this
+  // migration: `inboxSources(wsHash?)` resolved an approval workspace by hash, and every read below it is
+  // rooted at that ONE `workspaceRoot` — pending approvals, that workspace's validations, both Saved Agent
+  // proposal queues, the config digest they are checked against, the artifact loader's containment root,
+  // and the per-workspace staleness threshold. Two attached projects have two genuinely different queues,
+  // so two panels showing two answers is CORRECT — the Plugins case (D2), not the Runtime Ops one (D3).
+  //
+  // The ITEM DETAIL STAYS INSIDE, as a subroute of this app rather than a `document` of its own. The
+  // `inbox-item` route does carry identity (wsHash + kind + id), so a document app was representable; it
+  // is not what this migration does, because "two inbox items side by side" is a product decision nobody
+  // asked for and the queue is the thing a human works down. The cost is named where it is paid: the
+  // open item is per-panel state inside `bind` (see HumanInboxPanel.ts), never a module slot.
+  //
+  // The viewType is NEW, and for a reason none of the five previous calls met: there is NO legacy id at
+  // all. This surface was born as a Control section (t-e76acc) AFTER SDD 410, so it never had a standalone
+  // panel and left no tombstone — the two-part question has no subject rather than a negative answer.
+  // `tachyonApprovals` exists and is a LIVE redirect, but it names a DIFFERENT surface that `spec.md`
+  // deliberately keeps as a compatibility route (§ Non-goals), so reusing it would be C5's mistake plus a
+  // surface confusion. Nothing to migrate, nothing to redirect, no shim.
+  { view: "human-inbox", viewId: "tachyonHumanInbox", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

@@ -547,7 +547,12 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
   const extension = fs.readFileSync(path.resolve(__dirname, "../../src/extension.ts"), "utf8");
 
   it("supplies the port from the extension host, and nowhere else", () => {
-    expect(extension).toMatch(/approveSavedAgentProposal:\s*async/);
+    // SDD 485 D4 — the port is a named const in `activate()` rather than an inline property of
+    // `makeCockpitDeps`, because Control stopped being its caller: the Human Inbox is the surface an
+    // approval is redeemed on, and it became a standalone app. The claim is unchanged — the extension
+    // host is where the port is built, and it is handed to exactly one consumer.
+    expect(extension).toMatch(/const commitSavedAgentProposal = async/);
+    expect(extension).toMatch(/approveSavedAgentProposal: \(input\) => commitSavedAgentProposal\(input\)/);
   });
 
   it("creates through the single canonical transaction, not two Studio calls", () => {

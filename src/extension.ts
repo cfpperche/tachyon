@@ -14,6 +14,7 @@ import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
+import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -46,8 +47,8 @@ import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } fro
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
-import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
-import { approveSavedAgentRemovalProposal } from "./agents/savedAgentRemovalProposalCommit.js";
+import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents/savedAgentProposalCommit.js";
+import { approveSavedAgentRemovalProposal, type SavedAgentRemovalCommitResult } from "./agents/savedAgentRemovalProposalCommit.js";
 import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
@@ -1407,6 +1408,169 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   context.subscriptions.push({ dispose: () => runtimeOpsPanels.dispose() });
 
+  /*
+   * SDD 485 D4 — the two Saved Agent commit doors, lifted out of `makeCockpitDeps` because Control is no
+   * longer their caller: the Human Inbox is the surface an approval is redeemed on, and it left. Both are
+   * unchanged inside — same canonical transactions, same ports, same receipts — and they are consts here
+   * rather than inline in the manager's deps so their reasoning stays readable at this width.
+   */
+  /**
+   * SDD 482 phase 4C — commit an approved Saved Agent proposal.
+   *
+   * NO PROTOCOL BUMP WAS NEEDED, and finding that out changed the design. `commitAgentProfileStudio`
+   * with no `expectedRevision` already IS the canonical create, and it already crosses the
+   * engine/shell seam as `agent-profile.studio-commit`; `set-subagents` crosses it too. So this door
+   * opens on paths a human already uses, rather than on a new operation — which also means the
+   * canonical validator, not this code, is what refuses capability references at creation.
+   *
+   * TWO transactions, because the lifecycle transaction is per-agent and the second one edits the
+   * PROPOSER's profile. That window is real and is why the receipt has an `owning` state: a crash
+   * between them leaves an existing, unowned agent, and re-approving finishes it.
+   */
+  const commitSavedAgentProposal = async ({ workspaceRoot, proposalId, approvedDigest }: { workspaceRoot: string; proposalId: string; approvedDigest: string }): Promise<SavedAgentCommitResult> => {
+    const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+    if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+    return approveSavedAgentProposal({
+      workspaceRoot,
+      proposalId,
+      approvedDigest,
+      approvedBy: "human",
+      nowMs: Date.now(),
+      ports: {
+        createSavedAgent: async ({ agentName, spec, owner, grants }) => {
+          // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
+          // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
+          // two-transaction version: ownership is parent-side, so committing separately left a
+          // window where the agent existed unowned.
+          // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
+          // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
+          // stays wiring only — the previous inline literal is what let the isolation bug hide.
+          return ws.createSavedAgent(savedAgentCreateMutation(agentName, spec), {
+            ...(owner ? { owner } : {}),
+            ...(grants ? { grants: { proposeSavedAgent: true } } : {}),
+          });
+        },
+        // Re-read at commit time, which is what makes a revoked capability effective on a proposal
+        // queued before the revocation.
+        // t-5498a6 — the SAME door the Studio uses. Reaching the shared function here is what keeps
+        // the two approval surfaces from drifting into different rules about pinning and refusals.
+        authorizeSkill: async ({ agentName, skillName }) => {
+          const result = await ws.authorizeAgentSkill(agentName, skillName);
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        },
+        readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+        currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+      },
+    });
+  };
+  /**
+   * t-afe120 — host-only commit for Saved Agent removal. Reaches the SAME studio-lifecycle forget
+   * door Agent Studio uses (cascade: stop → governed worktree → profile+authority+roster).
+   */
+  const commitSavedAgentRemoval = async ({ workspaceRoot, proposalId, approvedDigest }: { workspaceRoot: string; proposalId: string; approvedDigest: string }): Promise<SavedAgentRemovalCommitResult> => {
+    const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+    if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+    return approveSavedAgentRemovalProposal({
+      workspaceRoot,
+      proposalId,
+      approvedDigest,
+      approvedBy: "human",
+      nowMs: Date.now(),
+      ports: {
+        forgetSavedAgent: async ({ agentName, expectedRevision }) => {
+          const result = await ws.commitAgentProfileStudioLifecycle({
+            schemaVersion: 1,
+            operation: "forget",
+            agentName,
+            expectedRevision,
+            confirmation: agentName,
+          });
+          if (result.kind === "refused") {
+            throw new Error(`${result.code}: ${result.message}`);
+          }
+          if (result.kind !== "forgotten") {
+            throw new Error(`unexpected lifecycle result '${result.kind}' for Saved Agent removal`);
+          }
+          // The cascade does not surface a separate txid on the forgotten receipt; the agentId is the
+          // durable identity that was retired. Bind revision to the approved one for the receipt.
+          return { txid: result.agentId, revision: expectedRevision };
+        },
+        readTargetIdentity: async (agentName) => {
+          try {
+            const snapshot = await ws.inspectAgentProfileStudio(agentName);
+            return { agentId: snapshot.agentId, revision: snapshot.revision };
+          } catch {
+            return undefined;
+          }
+        },
+        readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+        currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+      },
+    });
+  };
+
+  /**
+   * t-e76acc → SDD 485 D4 — the Human Inbox app: one editor tab PER PROJECT for everything waiting on a
+   * human, which can now sit beside the agent terminal that is blocked on the approval it shows.
+   *
+   * `dashboard`, and the fact is in the domain rather than in a policy: every read below is rooted at one
+   * `workspaceRoot` — the pending approval queue, that workspace's validations, both Saved Agent proposal
+   * queues, and the digest they are checked against. Two attached projects have two genuinely different
+   * queues, which is the exact inverse of the `runtimeOpsPanels` above (one merged snapshot, no project
+   * anywhere in its signature). Two adjacent Phase D migrations, opposite cardinalities, and the
+   * difference is visible in the deps' types rather than in a convention someone has to remember.
+   *
+   * The commit ports are handed over unchanged: they are what an approval on this surface REDEEMS, and
+   * they were only ever reachable from here. Optional, so a window that cannot commit says so on the pane
+   * rather than accepting a click and doing nothing.
+   */
+  const humanInboxPanels = new HumanInboxPanelManager(
+    context.extensionUri,
+    {
+      approvals: {
+        getWorkspaces: () => workspaces().map((ws) => ({
+          wsHash: ws.wsHash,
+          workspaceRoot: ws.workspaceRoot,
+          folderName: ws.folderName,
+        })),
+        resolve: async (wsHash, id, decision) => {
+          const ws = byHash(wsHash);
+          if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+          await extensionInvoke(ws, { action: "approval.resolve", id, decision });
+          notify(`approval request ${id} ${decision}`);
+          refreshAll();
+          refreshCockpitApprovals();
+          humanInboxPanels.refresh();
+        },
+      },
+      validations: { getWorkspaces: () => workspaces().map((ws) => ws.missionControl) },
+      onValidationsChanged: () => {
+        refreshCockpitValidations();
+        boardPanels.refresh();
+        humanInboxPanels.refresh();
+      },
+      // t-e4f662 — the staleness threshold from the SAME loaded config the rest of the workspace's
+      // project-owned settings come from. Per wsHash: two roots may legitimately answer differently.
+      humanInboxStaleAfter: (wsHash: string) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
+      approveSavedAgentProposal: (input) => commitSavedAgentProposal(input),
+      approveSavedAgentRemoval: (input) => commitSavedAgentRemoval(input),
+    },
+  );
+  context.subscriptions.push({ dispose: () => humanInboxPanels.dispose() });
+  /**
+   * Open (or reveal) the Inbox for a project — the same shape as `openPluginsTab`, and for the same
+   * reason: a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here.
+   */
+  const openHumanInboxTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so nothing is waiting on you here."), "warn");
+      return false;
+    }
+    humanInboxPanels.open(ws.wsHash);
+    return true;
+  };
+
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
@@ -1663,103 +1827,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCockpitApprovals();
       },
     },
-    // t-e4f662 — the Human Inbox's staleness threshold, from the SAME loaded config the rest of the
-    // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
-    humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
-    /**
-     * SDD 482 phase 4C — commit an approved Saved Agent proposal.
-     *
-     * NO PROTOCOL BUMP WAS NEEDED, and finding that out changed the design. `commitAgentProfileStudio`
-     * with no `expectedRevision` already IS the canonical create, and it already crosses the
-     * engine/shell seam as `agent-profile.studio-commit`; `set-subagents` crosses it too. So this door
-     * opens on paths a human already uses, rather than on a new operation — which also means the
-     * canonical validator, not this code, is what refuses capability references at creation.
-     *
-     * TWO transactions, because the lifecycle transaction is per-agent and the second one edits the
-     * PROPOSER's profile. That window is real and is why the receipt has an `owning` state: a crash
-     * between them leaves an existing, unowned agent, and re-approving finishes it.
-     */
-    approveSavedAgentProposal: async ({ workspaceRoot, proposalId, approvedDigest }) => {
-      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
-      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
-      return approveSavedAgentProposal({
-        workspaceRoot,
-        proposalId,
-        approvedDigest,
-        approvedBy: "human",
-        nowMs: Date.now(),
-        ports: {
-          createSavedAgent: async ({ agentName, spec, owner, grants }) => {
-            // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
-            // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
-            // two-transaction version: ownership is parent-side, so committing separately left a
-            // window where the agent existed unowned.
-            // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
-            // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
-            // stays wiring only — the previous inline literal is what let the isolation bug hide.
-            return ws.createSavedAgent(savedAgentCreateMutation(agentName, spec), {
-              ...(owner ? { owner } : {}),
-              ...(grants ? { grants: { proposeSavedAgent: true } } : {}),
-            });
-          },
-          // Re-read at commit time, which is what makes a revoked capability effective on a proposal
-          // queued before the revocation.
-          // t-5498a6 — the SAME door the Studio uses. Reaching the shared function here is what keeps
-          // the two approval surfaces from drifting into different rules about pinning and refusals.
-          authorizeSkill: async ({ agentName, skillName }) => {
-            const result = await ws.authorizeAgentSkill(agentName, skillName);
-            return result.ok ? { ok: true } : { ok: false, error: result.error };
-          },
-          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
-          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
-        },
-      });
-    },
-    /**
-     * t-afe120 — host-only commit for Saved Agent removal. Reaches the SAME studio-lifecycle forget
-     * door Agent Studio uses (cascade: stop → governed worktree → profile+authority+roster).
-     */
-    approveSavedAgentRemoval: async ({ workspaceRoot, proposalId, approvedDigest }) => {
-      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
-      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
-      return approveSavedAgentRemovalProposal({
-        workspaceRoot,
-        proposalId,
-        approvedDigest,
-        approvedBy: "human",
-        nowMs: Date.now(),
-        ports: {
-          forgetSavedAgent: async ({ agentName, expectedRevision }) => {
-            const result = await ws.commitAgentProfileStudioLifecycle({
-              schemaVersion: 1,
-              operation: "forget",
-              agentName,
-              expectedRevision,
-              confirmation: agentName,
-            });
-            if (result.kind === "refused") {
-              throw new Error(`${result.code}: ${result.message}`);
-            }
-            if (result.kind !== "forgotten") {
-              throw new Error(`unexpected lifecycle result '${result.kind}' for Saved Agent removal`);
-            }
-            // The cascade does not surface a separate txid on the forgotten receipt; the agentId is the
-            // durable identity that was retired. Bind revision to the approved one for the receipt.
-            return { txid: result.agentId, revision: expectedRevision };
-          },
-          readTargetIdentity: async (agentName) => {
-            try {
-              const snapshot = await ws.inspectAgentProfileStudio(agentName);
-              return { agentId: snapshot.agentId, revision: snapshot.revision };
-            } catch {
-              return undefined;
-            }
-          },
-          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
-          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
-        },
-      });
-    },
     /**
      * t-c6a89e — the ledger Control's Execution section reads.
      *
@@ -1865,6 +1932,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openTmux: () => tmuxPanels.open(),
     // SDD 485 D3 — and Runtime Ops, the second `window` app and so the second opener with no argument.
     openRuntimeOps: () => runtimeOpsPanels.open(),
+    openHumanInbox: (wsHash) => { openHumanInboxTab(wsHash); },
+    openHumanInboxItem: (wsHash, itemKind, itemId) => { humanInboxPanels.openItem(wsHash, itemKind, itemId); },
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openGlobalSettings");
     },
@@ -2416,6 +2485,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // own `{schemaVersion, view}` state is what a reload hands back. No revive deferral either: a `window`
   // app names no workspace, so there is nothing for `workspacePanelReviveDeferral` to wait for.
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_OPS_VIEW_TYPE, (panel, state) => runtimeOpsPanels.deserialize(panel, state));
+  // SDD 485 D4 — the Human Inbox app's own restore, and the simplest of the six: the viewType is NEW
+  // because there is NO legacy id at all (this surface was born as a Control section after 410 and never
+  // had a standalone panel), so there is no tombstone to keep in the dispose-only loop, no record to
+  // migrate and no redirect to leave behind. The revive deferral DOES apply — it is a dashboard, so its
+  // persisted `project` names a workspace, and without it a panel restored before its workspace attaches
+  // paints "that workspace is no longer attached" for a moment.
+  registerTrustedPanelSerializer<SectionPanelState>(context, HUMAN_INBOX_VIEW_TYPE, (panel, state) => humanInboxPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
   // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
   // overview rather than reviving into whatever the raw payload happened to contain.
@@ -2700,18 +2776,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(
       "tachyon.openHumanInbox",
       async (hash?: string, target?: unknown) => {
+        // SDD 485 D4 — the destination is the Inbox APP, not a Control route. Both halves of this
+        // command move together: a targeted "Review" opens (or reveals) that project's tab AND lands it
+        // on the item, and an untargeted palette invocation opens the queue. `openItem` navigates a
+        // revealed panel rather than making a second one, which is what `dashboard` buys and what makes
+        // "the item you were just told about" reachable from a tab that was already open.
         const ws = hash ? byHash(hash) : await pickWorkspace();
         const link = decodeHumanInboxDeepLink(target);
         if (ws && link.target === "item") {
-          await openCockpit(makeCockpitDeps(), {
-            route: cockpitRoutes.inboxItem(ws.wsHash, link.itemKind, link.itemId),
-          });
+          humanInboxPanels.openItem(ws.wsHash, link.itemKind, link.itemId);
           return;
         }
-        await openCockpit(makeCockpitDeps(), {
-          section: "inbox",
-          ...(ws ? { approvalWsHash: ws.wsHash } : {}),
-        });
+        openHumanInboxTab(ws?.wsHash);
       },
     ),
     vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: "approved" | "denied"; wsHash?: string }) => {
@@ -2722,10 +2798,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(`approval request ${arg.id} ${arg.decision}`);
         refreshAll();
         refreshCockpitApprovals();
+        humanInboxPanels.refresh();
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "error");
         approvalPanels.refreshAll();
         refreshCockpitApprovals();
+        humanInboxPanels.refresh();
       }
     }),
     // t-aaad95 — `tachyon.openSettings` (which opened VS Code's settings page filtered to this
@@ -2762,6 +2840,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // key on). This is also the line `tachyon.openControlRuntime` funnels into below.
         if (resolved === "runtime") {
           runtimeOpsPanels.open();
+          return Promise.resolve();
+        }
+        // SDD 485 D4 — the fifth, and the second that resolves a PROJECT (a dashboard is opened against
+        // one). The tile is short for the surface's product name: the id is `inbox`, the app is the
+        // Human Inbox, and `openHumanInboxTab` picks the same scope Control would have rendered it for.
+        if (resolved === "inbox") {
+          openHumanInboxTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

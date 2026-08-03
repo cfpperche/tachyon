@@ -42,10 +42,6 @@ import type { ValidationsDispatch } from "../validations/App";
 import type { ValidationsViewModel } from "../validations/viewModel";
 import type { ApprovalDispatch } from "../approval/App";
 import type { ApprovalViewModel } from "../approval/viewModel";
-import type { HumanInboxDispatch } from "../human-inbox/App";
-import type { HumanInboxViewModel, HumanInboxItemViewModel } from "../human-inbox/viewModel";
-import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
-import type { HumanInboxKind } from "../../humanInbox/model";
 
 import type { StudioDispatch } from "../shared/studio/protocol";
 import type {
@@ -82,24 +78,11 @@ const ApprovalsApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-e76acc — CSS co-load: the unified Human Inbox. The list and the item route share one sheet and
-// one chunk, but each lazy block requests it under its OWN key (the "studio-frame-<id>" convention:
-// one distinct key per call site, both resolving to the same href) — the item route is reachable by
-// deep link without the list ever mounting, and a shared key would fail the co-load parity check,
-// which compares the two id lists as arrays rather than as sets. `loadSectionStylesheet` is
-// idempotent per href, so the second call is free whenever both do run.
-const HumanInboxApp = lazy(() =>
-  import("../human-inbox/App").then((m) => {
-    loadSectionStylesheet("inbox");
-    return { default: m.App };
-  }),
-);
-const HumanInboxItemApp = lazy(() =>
-  import("../human-inbox/App").then((m) => {
-    loadSectionStylesheet("inbox-item");
-    return { default: m.ItemApp };
-  }),
-);
+// SDD 485 D4 — the two Human Inbox lazy imports are GONE with the section: it is a standalone
+// `dashboard` app now (src/webview/HumanInboxPanel.ts + human-inbox/main.tsx), one tab per project, and
+// two live renderers of one screen is the thing spec.md forbids. `src/webview/human-inbox/App.tsx` keeps
+// both components; what changed is who mounts them, and that the item’s back affordance moved INTO the
+// app — the breadcrumb below was this file’s chrome, and a standalone item route has no host to render it.
 // SDD 485 D3 — the Runtime Ops lazy import is GONE with its section: it is a standalone `window` app now
 // (src/webview/RuntimeOpsPanel.ts + runtime-ops/main.tsx), one tab for the whole window, and two live
 // renderers of one screen is the thing spec.md forbids. `src/webview/runtime-ops/App.tsx` is unchanged and
@@ -318,12 +301,6 @@ export interface CockpitAppProps {
   approvalVm?: ApprovalViewModel;
   approvalError?: string;
   approvalDispatch: ApprovalDispatch;
-  /** t-e76acc — the unified Human Inbox section and its item subroute. */
-  inboxVm?: HumanInboxViewModel;
-  inboxError?: HumanInboxErrorReceipt;
-  inboxItemVm?: HumanInboxItemViewModel;
-  inboxItemMissing?: { kind: HumanInboxKind; id: string };
-  inboxDispatch: HumanInboxDispatch;
   validationsVm?: ValidationsViewModel;
   validationsError?: string;
   validationsDispatch: ValidationsDispatch;
@@ -343,7 +320,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -1486,10 +1463,10 @@ export function App(p: CockpitAppProps) {
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
   const isProjectHandoff = activeRoute?.kind === "project-handoff";
-  // t-e76acc — an opened inbox item is a full-bleed embedded surface like every other subroute, and
-  // (unlike Handoff) it keeps its own nav tab lit: the human is working a counted queue down.
-  const isInboxItem = activeRoute?.kind === "inbox-item";
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
+  // SDD 485 D4 — no `inbox-item` term: Control never commits that route any more (Cockpit.ts's
+  // `navigate` redirects it into the Human Inbox app, which renders the item as its own subroute), so a
+  // branch for it here would be a path nothing reaches — the same shape C4 left for `task-detail`.
+  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff;
   // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
   // rendering as active while a nav-less route (Pin Studio, Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
@@ -1501,7 +1478,7 @@ export function App(p: CockpitAppProps) {
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
   // SDD 485 C4 — no `task-detail` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it to the document app), so a branch for it here would be a path nothing reaches.
-  const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
+  const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -1537,29 +1514,6 @@ export function App(p: CockpitAppProps) {
           ) : (
             <ProbesApp vm={p.probesVm} />
           )}
-        </Suspense>
-      </div>
-    );
-  } else if (activeRoute?.kind === "inbox-item") {
-    // t-e76acc — checked before the section branch, same as every other subroute: `model.section`
-    // reads "inbox" underneath (navSection keeps that tab lit), and this is what renders.
-    const parent = parentRoute(activeRoute);
-    if (parent && parent.kind === "section") {
-      breadcrumb = (
-        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-inbox-item-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
-          {s.navInbox}
-        </Button>
-      );
-    }
-    body = (
-      <div class="ck-embed-host" data-testid="control-inbox-item">
-        <Suspense fallback={<SectionFallback />}>
-          <HumanInboxItemApp
-            vm={p.inboxItemVm}
-            missing={p.inboxItemMissing}
-            dispatch={p.inboxDispatch}
-            error={p.inboxError}
-          />
         </Suspense>
       </div>
     );
@@ -1847,14 +1801,6 @@ export function App(p: CockpitAppProps) {
           </div>
         )}
       </ModuleChrome>
-    );
-  } else if (section === "inbox") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-inbox">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["inbox"].navKey]} />}>
-          <HumanInboxApp vm={p.inboxVm} error={p.inboxError} dispatch={p.inboxDispatch} />
-        </Suspense>
-      </div>
     );
   } else if (section === "approvals") {
     body = (

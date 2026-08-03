@@ -25,6 +25,28 @@ export const HUMAN_INBOX = "humanInbox" as const;
 export const HUMAN_INBOX_ERROR = "humanInboxError" as const;
 
 /**
+ * SDD 485 D4 — the standalone app's own 3s timer, and a DIFFERENT word from `refreshInbox`.
+ *
+ * Inside Control this model was re-posted by Control's shell poll; standing alone the app owns the timer.
+ * The separation is D3's call rather than D2's, and the difference is worth stating because the check that
+ * decided it is the one the brief asked for: `refreshInbox`'s host handler is `sendInbox(); sendInboxItem();`
+ * — a pure re-read with no side effect — so sharing the word would have been SAFE here, unlike Plugins,
+ * whose `refresh` drops every update check it has found (t-0fc9ee by a new road).
+ *
+ * It is still separated, for one constant: `refreshInbox` is a human pressing the Refresh button on a panel
+ * someone is looking at, and the poll is exactly what `PanelWorkGate` exists to suppress behind another tab.
+ * Keeping them distinguishable in the gate costs nothing and stops a future side effect on the human action
+ * from silently acquiring a 20×/min caller.
+ */
+export const POLL = "pollInbox" as const;
+export interface PollInboxMessage {
+  type: typeof POLL;
+}
+export function pollInboxAction(): PollInboxMessage {
+  return { type: POLL };
+}
+
+/**
  * t-58f9e9 — one RECEIPT of a host refusal, not the refusal's text.
  *
  * The detail route clears its pending state when this changes, and a bare `string` cannot say
@@ -75,8 +97,18 @@ export type HumanInboxHostMessage =
 
 export type HumanInboxAction =
   | ReadyMessage
+  | PollInboxMessage
   | { type: "refreshInbox" }
   | { type: "openInboxItem"; kind: HumanInboxKind; id: string }
+  /**
+   * SDD 485 D4 — back to the list, from an opened item.
+   *
+   * Inside Control this was not a message at all: `cockpit/App.tsx` rendered a `← Inbox` breadcrumb that
+   * posted `onSetSection("inbox")`, so the affordance belonged to the EMBED HOST rather than to this
+   * surface. Standing alone there is no host to own it, and an item route with no way back is a dead end —
+   * so the app carries its own, and the host owns the subroute the same way Control's router did.
+   */
+  | { type: "closeInboxItem" }
   /** approval-only: the capability path the Delivery later redeems */
   | { type: "resolveInboxApproval"; id: string; decision: ApprovalDecision }
   /** validation-only: evidence being read and closed out; can never authorize anything */
@@ -101,6 +133,7 @@ export const humanInboxItemMissingMessage = (kind: HumanInboxKind, id: string): 
 });
 
 export const refreshInboxAction = (): HumanInboxAction => ({ type: "refreshInbox" });
+export const closeInboxItemAction = (): HumanInboxAction => ({ type: "closeInboxItem" });
 export const decideSavedAgentProposalAction = (
   id: string,
   digest: string,

@@ -93,6 +93,10 @@ describe("webview convention (spec 279)", () => {
       // (`tachyonRuntimeOpsView`) names spec 367's retired WebviewView, a different surface KIND that was
       // never registered, so it stays in the dispose-only loop and this app registers its own.
       tachyonRuntimeOps: "RUNTIME_OPS_VIEW_TYPE",
+      // SDD 485 D4 — the Human Inbox app. A NEW viewType with NO legacy id behind it: this surface was
+      // born as a Control section after 410 and never had a standalone panel, so unlike C4's and D2's
+      // reuses there is no tombstone and no `migrateLegacy`.
+      tachyonHumanInbox: "HUMAN_INBOX_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",

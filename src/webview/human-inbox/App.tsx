@@ -21,6 +21,16 @@ import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textar
 export interface HumanInboxDispatch {
   refresh(): void;
   open(kind: HumanInboxKind, id: string): void;
+  /**
+   * SDD 485 D4 — back to the list from an opened item.
+   *
+   * This is the ONE member this migration added, and it is a restoration rather than a feature: inside
+   * Control the `← Inbox` breadcrumb was `cockpit/App.tsx`'s chrome (`control-inbox-item-breadcrumb`),
+   * posting `onSetSection("inbox")`. A standalone app has no embed host to render it, so without this the
+   * detail route is reachable and unleavable. The host owns the subroute either way — the client asks, it
+   * does not navigate itself.
+   */
+  back(): void;
   /** approval-only — the capability path; there is no validation caller for this by construction */
   resolveApproval(id: string, decision: ApprovalDecision): void;
   closeValidation(id: string, outcome: ValidationOutcome, note: string): void;
@@ -558,9 +568,18 @@ export function ItemApp({
 }) {
   // Gone-while-you-were-reading is its own state, never a blank document: something else resolved or
   // closed this, and saying so is the difference between "handled" and "lost".
+  // SDD 485 D4 — the way back, and it renders in EVERY state of this route including the two dead ends
+  // below. Inside Control the breadcrumb was the embed host's chrome and therefore always on screen; a
+  // tombstone or a stuck loading state with no exit is the one way this migration could strand a human.
+  const backLink = (
+    <Button variant="default" icon="arrow-left" data-testid="inbox-item-back" onClick={() => dispatch.back()}>
+      Inbox
+    </Button>
+  );
   if (missing) {
     return (
       <div class="hi-root">
+        {backLink}
         <EmptyState kind="empty" message={`${missing.kind} ${missing.id} is no longer waiting — it was resolved or closed elsewhere.`} />
       </div>
     );
@@ -568,6 +587,7 @@ export function ItemApp({
   if (!vm) {
     return (
       <div class="hi-root">
+        {backLink}
         <EmptyState kind="loading" message="Loading item…" />
       </div>
     );
@@ -578,7 +598,7 @@ export function ItemApp({
   const waited = age(item.createdAt);
   return (
     <div class="hi-root hi-detail" data-testid="control-human-inbox-item">
-      <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} />
+      <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} backLink={backLink} />
       <div class="hi-detail-meta">
         <KindBadge kind={item.kind} />
         <Requester item={item} />

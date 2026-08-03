@@ -6,7 +6,11 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER[0]).toBe("overview");
     expect(COCKPIT_SECTION_ORDER[1]).toBe("engine");
     expect(COCKPIT_SECTION_ORDER[2]).toBe("fleet");
-    expect(COCKPIT_SECTION_ORDER).toContain("inbox");
+    // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a CockpitSectionId (so a
+    // persisted or deep-linked `section:inbox` decodes and can be redirected) and still a launcher tile,
+    // but Control renders no section for it. `approvals` and `validations` below were never on this list
+    // for a DIFFERENT reason — they are compatibility routes the Inbox aggregates, not apps.
+    expect(COCKPIT_SECTION_ORDER).not.toContain("inbox");
     expect(COCKPIT_SECTION_ORDER).not.toContain("approvals");
     // SDD 485 C5 — the Board is a standalone app: it is still a CockpitSectionId (so a persisted or
     // deep-linked route decodes and can be redirected) and still a launcher tile, but Control renders no

@@ -36,6 +36,11 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     // SDD 485 D3 — Control opens the Runtime Ops app instead of rendering it. No argument to override:
     // `window` cardinality means one panel for the window and nothing to key it on.
     openRuntimeOps: () => {},
+    // SDD 485 D4 — Control opens the Human Inbox app instead of rendering it. Two doors rather than one,
+    // because the item detail stayed a subroute INSIDE that app: a test that cares which project the
+    // queue was opened for, or which item the deep link landed on, overrides these.
+    openHumanInbox: () => {},
+    openHumanInboxItem: () => {},
     openSettings: () => {},
     openDoctor: () => {},
     fleetStart: async () => {},

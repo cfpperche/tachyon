@@ -48,7 +48,6 @@ describe("preview route table", () => {
       // SDD 485 C5 — the two mission-control sheets left with the Board (its own route now), exactly as
       // C4's task-detail.css did one commit earlier.
       "/dist/webview/approval.css",
-      "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
       // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
       // earlier: Runtime Ops is a standalone app with its own route below.
@@ -87,8 +86,6 @@ describe("preview route table", () => {
       "handoff",
       // t-d16698 — the Human Inbox list and ONE opened item: the two surfaces every "Review"
       // doorbell can land on, and the deep-link destination this task is about.
-      "inbox",
-      "inbox-item",
       // SDD 485 C5 — no "mission" fixture: the Board is a standalone app with its own route now, so
       // Control has no Board section to render or photograph (same as C4's four task-detail fixtures).
       "multi-workspace",

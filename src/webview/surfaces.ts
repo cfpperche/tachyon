@@ -211,6 +211,22 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // `--ds-page-pad-*` rule, which is why this migration moved no CSS and only DELETED the embed-context
   // overrides that Control and this sheet each carried for the other.
   { viewId: "tachyonRuntimeOps", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  // SDD 485 D4 (2026-08-03) — the Human Inbox is a STANDALONE APP, the fourth Phase D migration and the
+  // third `dashboard`: everything it reads is rooted at ONE workspace root (pending approvals, that
+  // workspace's validations, both Saved Agent proposal queues, the artifact loader's containment root), so
+  // two attached projects have two different queues and two panels is the correct answer.
+  //
+  // The viewType is NEW because there is no legacy id at all: this surface was born as a Control section
+  // (t-e76acc) after 410 and never had a standalone panel to leave a tombstone. `tachyonApprovals` names a
+  // different surface that stays a compatibility route.
+  //
+  // `conform`, and the contract checks it: it mounts through the shared shell (via SectionPanelManager),
+  // links design-system.css, and `human-inbox.css` styles no page frame, mints no `--ds-*` values and gives
+  // `#root` no height — a page-scrolling document (its detail route renders evidence a human did not choose
+  // the dimensions of), so no `page-frame.css` either. Its `--ds-page-pad-*` rule was ALREADY its own —
+  // cockpit.css never carried one for `.hi-root`, which is the third answer that grep has now given
+  // (D2 had to move a rule, D3 had to delete two, this one had nothing to do).
+  { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

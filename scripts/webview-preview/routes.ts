@@ -37,8 +37,6 @@ import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspe
 import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
-  humanInboxFixtureVm,
-  humanInboxItemFixtureVm,
   NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
   strings as cockpitStrings,
@@ -50,6 +48,7 @@ import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
 import { snapshotMessage as missionControlSnapshotMessage } from "../../src/webview/mission-control/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
+import { humanInboxFixtures, type HumanInboxPreviewState } from "./fixtures/human-inbox";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
@@ -129,7 +128,8 @@ export const ROUTES: Record<string, Route> = {
       // and Control stopped linking them in the same change (cockpitCssParity asserts the two agree).
       // SDD 485 D2 — and no plugins sheets, for the same reason and in the same change.
       "/dist/webview/approval.css",
-      "/dist/webview/human-inbox.css",
+      // SDD 485 D4 — and no human-inbox sheet: the Inbox has its own route in this table now, and Control
+      // stopped linking it in the same change (cockpitCssParity asserts the two agree).
       "/dist/webview/validations.css",
       // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
       // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
@@ -179,10 +179,6 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "approvals") {
         const approval = approvalFixtures.pending?.vm;
         if (approval) msgs.push(approvalsMessage(approval));
-      } else if (model.section === "inbox") {
-        // t-d16698 — the Inbox list. The item subroute rides on top of this same section push below,
-        // exactly like task-detail rides on Mission's.
-        msgs.push(humanInboxMessage(humanInboxFixtureVm));
       } else if (model.section === "runtime-config") {
         msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
       }
@@ -207,9 +203,8 @@ export const ROUTES: Record<string, Route> = {
         // envelope, now keyed off the route instead of the tab.
         const handoff = handoffFixtures.default?.vm;
         if (handoff) msgs.push(handoffMessage(handoff));
-      } else if (activeRoute?.kind === "inbox-item") {
-        // t-d16698 — where every Inbox doorbell's "Review" is supposed to land: ONE item, opened.
-        msgs.push(humanInboxItemMessage(humanInboxItemFixtureVm));
+      // SDD 485 D4 — no `inbox-item` arm either: the item is a subroute INSIDE the Human Inbox app now,
+      // reachable as `?view=human-inbox&fixture=item`, and Control commits neither route.
       } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));
@@ -403,6 +398,23 @@ export const ROUTES: Record<string, Route> = {
   // provider-capacity block sits above a runtime table, and `runtime-ops.css`'s own
   // `@container (max-width: 720px)` / `@media (max-width: 760px)` blocks are what make the 360 pass worth
   // taking (the media query needs the BROWSER viewport set, not only `?width=` — t-b24282).
+  /**
+   * SDD 485 D4 — the Human Inbox app. `list` and `item` are the app's TWO surfaces, and the route renders
+   * whichever the fixture names, exactly as the real host does: this client picks its screen from the
+   * message type the host posted, never from a local mode it flips itself.
+   */
+  "human-inbox": {
+    bundle: "/dist/webview/human-inbox.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/human-inbox.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: humanInboxFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => {
+      const state = vm as HumanInboxPreviewState;
+      return state.state === "item" ? humanInboxItemMessage(state.vm) : humanInboxMessage(state.vm);
+    },
+  },
   "runtime-ops": {
     bundle: "/dist/webview/runtime-ops.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
@@ -465,6 +477,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
   "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
+  "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

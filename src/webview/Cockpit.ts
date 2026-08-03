@@ -69,27 +69,12 @@ import {
   approvalErrorMessage,
   type ApprovalAction,
 } from "./approval/messages.js";
-import { buildApprovalViewModel, listPendingApprovalViewItems } from "./approval/viewModel.js";
+import { buildApprovalViewModel } from "./approval/viewModel.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
-import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel.js";
-import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
-import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
-import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
-import { readLiveSavedAgentRemovalProposalQueue } from "../agents/savedAgentRemovalProposalStore.js";
-import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
-import {
-  denySavedAgentRemovalProposal,
-  type SavedAgentRemovalCommitResult,
-} from "../agents/savedAgentRemovalProposalCommit.js";
-import { workspaceConfigSha256 } from "../config/agentProfileGrants.js";
-import {
-  humanInboxMessage,
-  humanInboxErrorMessage,
-  humanInboxItemMessage,
-  type HumanInboxAction,
-} from "./human-inbox/messages.js";
-import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
-import type { StaleAfter } from "../humanInbox/model.js";
+// SDD 485 D4 — the Saved Agent proposal/removal reads, their digest source and the pending-approval
+// projection all left with the Inbox renderer: this file was their only caller, because the Inbox was
+// the only surface that decided them. They are `HumanInboxPanel.ts`'s imports now.
+import type { HumanInboxKind } from "../humanInbox/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import {
   validationsMessage,
@@ -158,17 +143,6 @@ export interface CockpitValidations {
   getWorkspaces: () => WorkspaceMissionControlTarget[];
   onValidationsChanged: () => void;
 }
-
-/**
- * t-e4f662 — the Human Inbox's configured staleness threshold for ONE workspace, from that
- * workspace's own `tachyon.yml`. Per wsHash rather than per window because it is project-owned
- * config: in a multi-root window two folders can legitimately answer differently, and reading "the"
- * threshold would silently pick whichever root came first.
- *
- * Unwired, or a workspace that configured nothing, answers undefined and the projection uses the
- * product default — the same fail-quiet shape every other optional resolver here uses.
- */
-export type CockpitInboxStaleAfter = (wsHash: string) => StaleAfter | undefined;
 
 /** t-610705 (Phase C.3) — Project Handoff folds into a section (no new route kind — the plan.md
  *  distinction from Fleet's subroutes: Handoff is workspace-scoped like Approvals/Validations, not
@@ -309,24 +283,13 @@ export interface CockpitDeps {
   studios: CockpitStudios;
   approvals: CockpitApprovals;
   validations: CockpitValidations;
-  /** t-e4f662 — see CockpitInboxStaleAfter. Optional: absent means the product default everywhere. */
-  humanInboxStaleAfter?: CockpitInboxStaleAfter;
-  /**
-   * SDD 482 phase 4C — commit an approved Saved Agent proposal through the canonical Studio
-   * transaction. Optional so a host that has not wired it says so out loud rather than accepting a
-   * click and doing nothing; supplied by the extension, never reachable from the Bridge.
+  /*
+   * SDD 485 D4 — the two Saved Agent commit ports (`approveSavedAgentProposal`, SDD 482 phase 4C, and
+   * `approveSavedAgentRemoval`, t-afe120) left with the Inbox renderer, because the Inbox was their only
+   * caller: they are what an APPROVAL on that surface redeems. They are `HumanInboxDeps`' now, still
+   * optional for the same reason — a host that has not wired one says so out loud rather than accepting a
+   * click and doing nothing — and still supplied by the extension, never reachable from the Bridge.
    */
-  approveSavedAgentProposal?: (input: {
-    workspaceRoot: string;
-    proposalId: string;
-    approvedDigest: string;
-  }) => Promise<SavedAgentCommitResult>;
-  /** t-afe120 — host-only retirement commit through the forget cascade */
-  approveSavedAgentRemoval?: (input: {
-    workspaceRoot: string;
-    proposalId: string;
-    approvedDigest: string;
-  }) => Promise<SavedAgentRemovalCommitResult>;
   runtimeConfig: CockpitRuntimeConfig;
   /**
    * SDD 485 D3 — open (or reveal) the Runtime Ops APP. Control no longer renders Runtime Ops, so the
@@ -336,6 +299,21 @@ export interface CockpitDeps {
    * screen is not about a project, so there is nothing to key it on.
    */
   openRuntimeOps: () => void;
+  /**
+   * SDD 485 D4 — open (or reveal) the Human Inbox APP for one project. Control no longer renders the
+   * Inbox, so the doors it still owns for that screen — Overview's "Waiting on you" metric, its Jump
+   * card, and a persisted/deep-linked `section:inbox` — leave Control instead of navigating inside it.
+   * Takes the project, like D2's `openPlugins`: `dashboard` cardinality is one panel PER PROJECT,
+   * because everything this surface reads is rooted at one workspace root.
+   */
+  openHumanInbox: (wsHash?: string) => void;
+  /**
+   * SDD 485 D4 — the same app, landing on ONE ITEM. `inbox-item` is a subroute INSIDE the app rather
+   * than an app of its own (the queue is a thing a human works down, and two items side by side is a
+   * product decision nobody asked for), so this is not a second panel: it opens or reveals that
+   * project's panel and navigates it, which is exactly what Control did to its single panel.
+   */
+  openHumanInboxItem: (wsHash: string, itemKind: HumanInboxKind, itemId: string) => void;
   /**
    * SDD 485 D2 — open (or reveal) the Plugins APP for one project. Control no longer renders Plugins, so
    * the doors it still owns for that screen — Overview's Jump card and a persisted/deep-linked
@@ -816,6 +794,15 @@ let openPluginsApp: (() => void) | undefined;
  */
 let openRuntimeOpsApp: (() => void) | undefined;
 
+/**
+ * SDD 485 D4 — and the same seam for the Human Inbox. Sixth and seventh of these, and the first PAIR:
+ * this surface leaves Control with two route kinds rather than one, because its item detail stays a
+ * subroute of the app instead of becoming a document. Both land on the same panel — the second one
+ * navigates it — which is the shape a `document` app would NOT have had.
+ */
+let openInboxApp: (() => void) | undefined;
+let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string) => void) | undefined;
+
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
@@ -867,6 +854,28 @@ function navigate(route: CockpitRoute): void {
     // by now the block is the readable inventory of what has left Control: task detail, Board, tmux,
     // Plugins, Runtime Ops.
     openRuntimeOpsApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "inbox-item") {
+    // SDD 485 D4 — the Inbox's item route, and the FIRST redirect in this block that carries identity
+    // rather than only a destination. It still arrives from three places: a `tachyon.openHumanInbox`
+    // deep link (the "Review" doorbell, whose whole point is landing on THAT item), persisted window
+    // state written before this cutover, and a revived route. All three mean the same thing now — open
+    // that project's Inbox tab and show the item on it.
+    //
+    // Control lands on Overview rather than on `section("inbox")`: chaining into the redirect below
+    // would be harmless (same panel) but would say the human asked for two things when they asked for
+    // one, and C4 already paid for a redirect that opened a surface nobody requested.
+    openInboxItemApp?.(route.wsHash, route.itemKind, route.itemId);
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "inbox") {
+    // SDD 485 D4 — and the section itself. Five doors could ask Control for it (the
+    // `tachyon.openHumanInbox` command with no target, the launcher tile, Overview's Jump card,
+    // Overview's "Waiting on you" METRIC — a second in-client door this screen has and the others did
+    // not — and a revived/deep-linked `section:inbox`). Sixth entry in this block, which is by now the
+    // readable inventory of what has left Control: task detail, Board, tmux, Plugins, Runtime Ops, Inbox.
+    openInboxApp?.();
     route = routes.section("overview");
   }
   reconcileActivityTeardown(route);
@@ -927,8 +936,6 @@ async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, a
  *  former pair of per-section scope aliases and Plugins' derived fallback. */
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
-/** t-e76acc — the unified Human Inbox re-reads on ANY approval or validation mutation, from anywhere. */
-let pushInbox: (() => void) | undefined;
 let pushHandoff: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
@@ -945,7 +952,7 @@ let wiredPanel: vscode.WebviewPanel | undefined;
  */
 type ControlRefreshKind =
   | "shell-poll"
-  | "probes" | "handoff" | "approvals" | "validations" | "inbox"
+  | "probes" | "handoff" | "approvals" | "validations"
   | "studio-reference" | "task-studio" | "pin-studio";
 
 function pushControlRefresh(kind: ControlRefreshKind): void {
@@ -955,7 +962,6 @@ function pushControlRefresh(kind: ControlRefreshKind): void {
     case "handoff": pushHandoff?.(); return;
     case "approvals": pushApprovals?.(); return;
     case "validations": pushValidations?.(); return;
-    case "inbox": pushInbox?.(); return;
     case "studio-reference": pushStudioReferenceData?.(); return;
     case "task-studio": pushTaskStudioEntity?.(); return;
     case "pin-studio": pushPinStudioEntity?.(); return;
@@ -1048,15 +1054,17 @@ export function openCockpitAgentTranscript(): void {
 /** Refresh embedded Approvals after resolve/fan-out. */
 export function refreshCockpitApprovals(): void {
   refreshControl("approvals");
-  refreshControl("inbox");
 }
 
 export function refreshCockpitValidations(): void {
   refreshControl("validations");
-  // t-e76acc — the Inbox is a projection over the same stores: any push that refreshes one of its
-  // sources refreshes the aggregate too, or the unified count silently goes stale the moment a
-  // validation is closed from the Validations tab.
-  refreshControl("inbox");
+  // SDD 485 D4 — the Inbox is a projection over the same stores, so any push that refreshes one of its
+  // sources must refresh the aggregate too, or the unified count silently goes stale the moment a
+  // validation is closed from the Validations tab. That fan-out did not disappear when the Inbox left
+  // Control; it moved to `HumanInboxPanelManager.refresh()`, called beside this function and beside
+  // `refreshCockpitApprovals` in extension.ts — the same shape C5 left for the Board's counts. This is
+  // the FIRST Phase D surface with a real fan-out door: tmux, Plugins and Runtime Ops are all polled
+  // rather than watched, and each recorded that its `refresh()` had no caller yet. This one has two.
 }
 
 /** t-610705 (Phase C.3) — re-post the Handoff snapshot (wired into onViewsChanged("handoff"),
@@ -1321,7 +1329,6 @@ export async function openCockpit(
         clearCockpitSingletonClaim();
         pushApprovals = undefined;
         pushValidations = undefined;
-        pushInbox = undefined;
         pushHandoff = undefined;
         pushProbes = undefined;
         pushStudioReferenceData = undefined;
@@ -1333,6 +1340,8 @@ export async function openCockpit(
         openTmuxApp = undefined;
         openPluginsApp = undefined;
         openRuntimeOpsApp = undefined;
+        openInboxApp = undefined;
+        openInboxItemApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1366,6 +1375,14 @@ export async function openCockpit(
   // compile and be wrong — `sectionPanelKey` REFUSES a project for a `window` app, which is the refusal
   // that member exists for.
   openRuntimeOpsApp = () => deps.openRuntimeOps();
+  // SDD 485 D4 — a dashboard, so the scope handed over is the one Control itself would have rendered the
+  // section for (D2's shape). The item door passes the ROUTE's own immutable wsHash instead, never the
+  // shell scope: an entity route carries its workspace as identity, and here that workspace also decides
+  // which root the item's evidence may resolve against — so taking it from the selector would be a
+  // containment bug as well as a navigation one. That rule is older than this migration; what changed is
+  // that it now also picks which PANEL answers.
+  openInboxApp = () => deps.openHumanInbox(controlWorkspaceScope.current);
+  openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1510,149 +1527,14 @@ export async function openCockpit(
     }
   };
 
-  /**
-   * t-e76acc — the unified Human Inbox.
-   *
-   * Reads BOTH stores through the SAME two functions the Approvals and Validations sections already
-   * use, then projects them. There is no third read anywhere in this file, which is what keeps the
-   * aggregate from being able to disagree with the surfaces it aggregates.
-   *
-   * A workspace that has approvals but no validations target still renders its approvals, and SAYS
-   * that validations could not be read — an empty half of an inbox must never be indistinguishable
-   * from a quiet one.
+  /*
+   * SDD 485 D4 — the Human Inbox's five host functions left with the renderer: `inboxSources`,
+   * `buildInboxVm`, `returnToInbox`, `sendInbox` and `sendInboxItem`. They live in
+   * `src/webview/HumanInboxPanel.ts` now, where the two that were route-gated here (`sendInbox` /
+   * `sendInboxItem` each no-oped off its own route) collapse into ONE `send()` reading that panel's own
+   * subroute slot, and where `resolveApprovalWs`'s fallback chain becomes a STRICT lookup because the
+   * project is half the panel's key.
    */
-  const inboxSources = (wsHash?: string) => {
-    const approvalWs = resolveApprovalWs(deps.approvals, wsHash);
-    if (!approvalWs) return undefined;
-    const validationWs = deps.validations.getWorkspaces().find((w) => w.wsHash === approvalWs.wsHash);
-    return { approvalWs, validationWs };
-  };
-
-  const buildInboxVm = (approvalWs: WorkspacePresentationTarget, validationWs: WorkspaceMissionControlTarget | undefined) =>
-    buildHumanInboxViewModel({
-      folder: approvalWs.folderName,
-      wsHash: approvalWs.wsHash,
-      approvals: listPendingApprovalViewItems(approvalWs.workspaceRoot),
-      validations: validationWs
-        ? buildValidationsViewModel({ folder: approvalWs.folderName, wsHash: approvalWs.wsHash, validations: validationWs.listValidations() }).validations
-        : [],
-      // SDD 482 phase 4C — Saved Agent proposals, read from the same store the Bridge writes to.
-      // `unreadable` travels beside them rather than being dropped: a corrupt proposal is a thing the
-      // human must SEE, and this is the only place where "someone edited this" is distinguishable
-      // from "it was withdrawn".
-      ...(() => {
-        const queue = readLiveSavedAgentProposalQueue(approvalWs.workspaceRoot, Date.now());
-        const removals = readLiveSavedAgentRemovalProposalQueue(approvalWs.workspaceRoot, Date.now());
-        const configSha = workspaceConfigSha256(approvalWs.workspaceRoot);
-        const nowMs = Date.now();
-        return {
-          savedAgentProposals: queue.proposals.map((proposal) =>
-            buildSavedAgentProposalReview({
-              proposal,
-              currentConfigSha256: configSha,
-              nowMs,
-            })),
-          untrustedSavedAgentProposals: queue.unreadable,
-          savedAgentRemovals: removals.proposals.map((proposal) =>
-            buildSavedAgentRemovalProposalReview({
-              proposal,
-              currentConfigSha256: configSha,
-              nowMs,
-            })),
-          untrustedSavedAgentRemovals: removals.unreadable,
-        };
-      })(),
-      // t-e4f662 — this workspace's own threshold; absent falls through to the product default.
-      ...(() => {
-        const configured = deps.humanInboxStaleAfter?.(approvalWs.wsHash);
-        return configured === undefined ? {} : { staleAfterHours: configured };
-      })(),
-    });
-
-  /**
-   * t-e5e995 / t-00f4bc — a terminal Inbox decision removes the item from the pending projection,
-   * so its detail route ceases to identify an actionable resource. Commit the parent route and
-   * reload the shell + list as one navigation transaction. Callers invoke this only after their
-   * own typed mutation succeeds; failures deliberately leave the detail route mounted with its
-   * actionable error.
-   *
-   * Dogfood (t-00f4bc): staying on the dead detail route rendered a "no longer waiting" tombstone
-   * after a normal Approve/Close. That tombstone is not used on the success path — navigation
-   * replaces it. The host never posts `humanInboxItemMissing` after a terminal decision.
-   */
-  const returnToInbox = async () => {
-    await requestNavigate(routes.section("inbox"), live, async () => {
-      await sendModel();
-      await sendSectionModule();
-    });
-  };
-
-  const sendInbox = async () => {
-    if (panel !== live || !isSection(currentRoute, "inbox")) return;
-    const epoch = navEpoch;
-    const sources = inboxSources();
-    if (!sources) {
-      live.webview.postMessage(humanInboxErrorMessage("No Tachyon workspace for the Human Inbox."));
-      return;
-    }
-    try {
-      const vm = buildInboxVm(sources.approvalWs, sources.validationWs);
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(humanInboxMessage(vm));
-      if (!sources.validationWs) {
-        live.webview.postMessage(humanInboxErrorMessage("Validations could not be read for this workspace — approvals only."));
-      }
-    } catch (err) {
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-    }
-  };
-
-  /**
-   * One opened item, with its evidence resolved for inline preview.
-   *
-   * The workspace comes from the ROUTE's own immutable locator, never the shell scope — the router's
-   * rule for every entity route, and here it also decides which workspace root artifact paths are
-   * allowed to resolve against, so getting it from the selector would be a containment bug as well as
-   * a navigation one.
-   */
-  const sendInboxItem = async () => {
-    if (panel !== live || currentRoute.kind !== "inbox-item") return;
-    const route = currentRoute;
-    const epoch = navEpoch;
-    const sources = inboxSources(route.wsHash);
-    if (!sources || sources.approvalWs.wsHash !== route.wsHash) {
-      live.webview.postMessage(humanInboxErrorMessage("That workspace is no longer attached."));
-      return;
-    }
-    try {
-      const vm = buildInboxVm(sources.approvalWs, sources.validationWs);
-      const item = buildHumanInboxItemViewModel(vm, route.itemKind, route.itemId, {
-        workspaceRoot: sources.approvalWs.workspaceRoot,
-        load: makeInboxArtifactLoader(sources.approvalWs.workspaceRoot),
-      });
-      if (panel !== live || navEpoch !== epoch) return;
-      if (!item) {
-        // The host has authoritatively re-read the queue and confirmed that this pending resource no
-        // longer exists (for example, another window resolved it). Do not strand Control on a route
-        // whose identity is gone; the list is both the recovery path and the truthful current state.
-        //
-        // t-d16698 — say so. A person who clicked "Review" in a notification and silently landed on
-        // the list cannot tell "it was already resolved" from "the deep-link is broken", and neither
-        // could I: that ambiguity is exactly what stalled the investigation. Naming the item both
-        // answers the person and makes the next report diagnostic.
-        await returnToInbox();
-        live.webview.postMessage(humanInboxErrorMessage(
-          `${route.itemKind} ${route.itemId} is no longer pending — showing the current queue instead.`,
-        ));
-        return;
-      }
-      live.webview.postMessage(humanInboxItemMessage(item));
-    } catch (err) {
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-    }
-  };
 
   // t-610705 (Phase C.3) — ported verbatim from the retired HandoffPanelManager's post(): a load
   // failure notifies (a toast), it does NOT post a distinct error VM — the client keeps whatever it
@@ -2063,8 +1945,6 @@ export async function openCockpit(
     if (isSection(currentRoute, "validations")) await sendValidations();
     else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
-    else if (isSection(currentRoute, "inbox")) await sendInbox();
-    else if (currentRoute.kind === "inbox-item") await sendInboxItem();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
@@ -2097,8 +1977,6 @@ export async function openCockpit(
   pushControlPoll = () => { void shellPoll(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
-  // t-e76acc — one slot drives BOTH inbox surfaces; each sender no-ops off its own route.
-  pushInbox = () => { void sendInbox(); void sendInboxItem(); };
   pushHandoff = () => { void sendHandoff(); };
   pushProbes = () => { void sendProbes(); };
   // t-610705 (Phase D, D1a) — no "sendX" wrapper needed: refreshStudioReferenceData already takes
@@ -2174,158 +2052,6 @@ export async function openCockpit(
     return true;
   };
 
-  /**
-   * t-e76acc — acting on an inbox row.
-   *
-   * Every branch dispatches into the SAME typed path that row's own section already uses, with that
-   * path's own authority checks — `deps.approvals.resolve` for an approval, the workspace target's
-   * `closeValidation`/`assignValidation` for a validation. Nothing here resolves anything itself, and
-   * there is deliberately no shared "resolve this row" branch the two kinds pass through: the ratified
-   * rule is that a validation can never be redeemed as an authorization, and the way to keep a rule
-   * like that is to leave no code path that could express it.
-   *
-   * Route-gated, like every other handler in this chain: these action types are unique to the Inbox,
-   * and off an inbox route the handler returns false so `ready`/`refresh` reach the shell.
-   */
-  const handleInboxAction = async (m: Partial<HumanInboxAction>): Promise<boolean> => {
-    if (!m?.type) return false;
-    if (m.type === "refreshInbox") {
-      await sendInbox();
-      await sendInboxItem();
-      return true;
-    }
-    if (m.type === "openInboxItem" && typeof m.id === "string" && (m.kind === "approval" || m.kind === "validation" || m.kind === "saved-agent-proposal" || m.kind === "saved-agent-removal")) {
-      const sources = inboxSources();
-      if (!sources) return true;
-      const kind = m.kind;
-      const id = m.id;
-      await requestNavigate(routes.inboxItem(sources.approvalWs.wsHash, kind, id), live, async () => {
-        await sendModel();
-        await sendSectionModule();
-      });
-      return true;
-    }
-    if (m.type === "resolveInboxApproval" && typeof m.id === "string" && (m.decision === "approved" || m.decision === "denied")) {
-      // The approval capability path, unchanged and unshared: same call the Approvals section makes.
-      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : inboxSources()?.approvalWs.wsHash;
-      if (!wsHash) return true;
-      try {
-        await deps.approvals.resolve(wsHash, m.id, m.decision);
-        await returnToInbox();
-      } catch (err) {
-        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return true;
-    }
-    /**
-     * SDD 482 phase 4C — the human decision that creates a Saved Agent.
-     *
-     * The DIGEST arrives from the pane and is passed straight through to the commit path, which
-     * compares it against the stored proposal. That is what makes an approval bind to one exact
-     * proposal: if the file changed between render and click, this refuses instead of creating
-     * something the human never saw. Nothing here is reachable from the Bridge — an approval an agent
-     * could reach is not an approval.
-     */
-    if (m.type === "decideSavedAgentProposal" && typeof m.id === "string" && typeof m.digest === "string") {
-      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : undefined;
-      const sources = inboxSources(wsHash);
-      if (!sources) {
-        live.webview.postMessage(humanInboxErrorMessage("Saved Agent proposals are not available for this workspace."));
-        return true;
-      }
-      const workspaceRoot = sources.approvalWs.workspaceRoot;
-      try {
-        if (m.decision === "deny") {
-          denySavedAgentProposal({
-            workspaceRoot, proposalId: m.id, deniedBy: "human",
-            reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
-            nowMs: Date.now(),
-          });
-        } else if (m.decision === "approve") {
-          const result = await deps.approveSavedAgentProposal?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });
-          // A host without the port wired must say so rather than silently doing nothing — the shape
-          // of failure that teaches a human their approval is decorative.
-          if (!result) {
-            live.webview.postMessage(humanInboxErrorMessage("This window cannot commit Saved Agent proposals."));
-            return true;
-          }
-          if (!result.ok) {
-            live.webview.postMessage(humanInboxErrorMessage(`${result.code}: ${result.reason}`));
-            return true;
-          }
-        } else {
-          return true;
-        }
-        await returnToInbox();
-      } catch (err) {
-        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return true;
-    }
-    if (m.type === "decideSavedAgentRemoval" && typeof m.id === "string" && typeof m.digest === "string") {
-      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : undefined;
-      const sources = inboxSources(wsHash);
-      if (!sources) {
-        live.webview.postMessage(humanInboxErrorMessage("Saved Agent removal proposals are not available for this workspace."));
-        return true;
-      }
-      const workspaceRoot = sources.approvalWs.workspaceRoot;
-      try {
-        if (m.decision === "deny") {
-          denySavedAgentRemovalProposal({
-            workspaceRoot, proposalId: m.id, deniedBy: "human",
-            reason: typeof m.reason === "string" && m.reason.trim() ? m.reason.trim() : "no reason given",
-            nowMs: Date.now(),
-          });
-        } else if (m.decision === "approve") {
-          const result = await deps.approveSavedAgentRemoval?.({ workspaceRoot, proposalId: m.id, approvedDigest: m.digest });
-          if (!result) {
-            live.webview.postMessage(humanInboxErrorMessage("This window cannot commit Saved Agent removals."));
-            return true;
-          }
-          if (!result.ok) {
-            live.webview.postMessage(humanInboxErrorMessage(`${result.code}: ${result.reason}`));
-            return true;
-          }
-        } else {
-          return true;
-        }
-        await returnToInbox();
-      } catch (err) {
-        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return true;
-    }
-    if (m.type === "closeInboxValidation" || m.type === "assignInboxValidation") {
-      const wsHash = currentRoute.kind === "inbox-item" ? currentRoute.wsHash : inboxSources()?.approvalWs.wsHash;
-      const ws = wsHash ? deps.validations.getWorkspaces().find((w) => w.wsHash === wsHash) : undefined;
-      if (!ws) {
-        live.webview.postMessage(humanInboxErrorMessage("Validations are not available for this workspace."));
-        return true;
-      }
-      try {
-        if (m.type === "closeInboxValidation" && typeof m.id === "string" && typeof m.note === "string" && m.outcome) {
-          await ws.closeValidation(m.id, { outcome: m.outcome, result_note: m.note });
-        } else if (m.type === "assignInboxValidation" && typeof m.id === "string" && typeof m.assignee === "string" && m.expect) {
-          await ws.assignValidation(m.id, m.assignee, m.expect);
-        } else {
-          return true;
-        }
-        deps.validations.onValidationsChanged();
-        if (m.type === "closeInboxValidation") {
-          await returnToInbox();
-        } else {
-          await sendInbox();
-          await sendInboxItem();
-        }
-      } catch (err) {
-        live.webview.postMessage(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return true;
-    }
-    return false;
-  };
-
   if (wiredPanel !== live) {
     wiredPanel = live;
     // SDD 485 C6 — the sidebar owns the visible selector. Control observes the same window store so
@@ -2387,10 +2113,6 @@ export async function openCockpit(
       // around has no claimant left in Control at all.
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
       if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
-      // t-e76acc — the Inbox's action types are its own ("refreshInbox"/"openInboxItem"/…), so there
-      // is no shape collision with the two handlers above; it still runs after them, matching the
-      // chain's existing most-specific-first ordering.
-      if (await handleInboxAction(msg as Partial<HumanInboxAction>)) return;
       // t-610705 (Phase C.2) — no shape collision with any registry above (openFile/terminal/
       // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
       // (route.kind !== "agent-activity" → false) same as every other handler in this chain.
@@ -2833,9 +2555,6 @@ export async function openCockpit(
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
     const approvalsIsActive = isSection(currentRoute, "approvals");
-    // t-e76acc — ONE condition covers the section and its item subroute: they share a stylesheet, and
-    // a panel opened straight onto an item (revived/deep link) must paint styled too.
-    const inboxIsActive = isSection(currentRoute, "inbox") || currentRoute.kind === "inbox-item";
     const validationsIsActive = isSection(currentRoute, "validations");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
@@ -2915,7 +2634,6 @@ export async function openCockpit(
         uri("design-system.css"),
         uri("vscode-theme.css"),
         approvalsIsActive ? uri("approval.css") : undefined,
-        inboxIsActive ? uri("human-inbox.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
         // one shared conditional for the mermaid stylesheet — task-detail and activity both render
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
@@ -2976,10 +2694,6 @@ export async function openCockpit(
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
           approvals: uri("approval.css"),
-          inbox: uri("human-inbox.css"),
-          // t-e76acc — own key, same href: the item route is reachable by deep link without the list
-          // block ever running (see cockpit/App.tsx's lazy blocks for the convention).
-          "inbox-item": uri("human-inbox.css"),
           validations: uri("validations.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
