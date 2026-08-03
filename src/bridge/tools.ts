@@ -1720,6 +1720,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             if (normalizeField(skip_contract_reason).length < 10) {
               return fail(new Error("skip_contract_reason must be ≥10 chars explaining why this delegation needs no contract"));
             }
+            const structuredFields = [
+              ["task", task],
+              ["context", context],
+              ["constraints", constraints],
+              ["deliverable", deliverable],
+              ["done_when", done_when],
+            ].filter((entry) => entry[1] !== undefined).map((entry) => entry[0]);
+            if (structuredFields.length > 0) {
+              return fail(new Error(
+                `skip_contract_reason cannot be combined with structured contract fields: ${structuredFields.join(", ")}. ` +
+                "For delegated work, remove skip_contract_reason so the contract is validated and delivered; " +
+                "for a genuinely trivial spawn, remove the structured contract fields.",
+              ));
+            }
             deps.notify(`agent '${parent ?? "?"}' spawned '${name}' WITHOUT a delegation contract — reason: ${normalizeField(skip_contract_reason)}`, "warn");
             if (!suppliedTaskBrief) {
               brief = idleSpawnGuidance(skip_contract_reason);

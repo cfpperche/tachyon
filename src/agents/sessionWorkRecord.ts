@@ -45,6 +45,8 @@ export interface SessionWorkRecord {
    * frozen brief above still names, which is the one most likely to be finished.
    */
   assignment: AssignmentSelection;
+  /** A substantive delegation brief exists independently of board ownership. */
+  hasTaskBrief?: boolean;
   /**
    * t-9d250c — task ids the replayed spawn brief names that are NOT this session's live work, with
    * the status the store holds. Naming them is the whole point: the brief above is frozen at spawn
@@ -96,12 +98,14 @@ function taskLines(task: AssignedTaskRecord): string[] {
   return body ? [head, body] : [head];
 }
 
-function assignmentLines(assignment: AssignmentSelection, launch: SessionLaunchKind): string[] {
+function assignmentLines(assignment: AssignmentSelection, launch: SessionLaunchKind, hasTaskBrief: boolean): string[] {
   if (!assignment.current) {
     return [
       "Assigned work on record: none.",
-      "Do not adopt work by scanning the board, the pins, or another agent's continuity." +
-        " Wait for an explicit assignment.",
+      hasTaskBrief
+        ? "Execute the delegation brief above as ad hoc work. It does not create or assign a board task."
+        : "Wait for an explicit assignment.",
+      "Do not adopt work by scanning the board, the pins, or another agent's continuity.",
     ];
   }
   const lines = [
@@ -175,7 +179,7 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
       : "This session was restarted with a NEW conversation. The previous one is not available to you," +
         " and nothing below came from it — every line is durable record.",
     ...isolationLines(record.isolation),
-    ...assignmentLines(record.assignment, launch),
+    ...assignmentLines(record.assignment, launch, record.hasTaskBrief === true),
     ...staleContractLines(record.staleContractReferences, launch),
     launch === "spawn" ? SPAWN_RECORD_CLOSE : SESSION_RECORD_CLOSE,
   ].join("\n");

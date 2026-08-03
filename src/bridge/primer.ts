@@ -119,12 +119,12 @@ function dependencyLines(input: PrimerInput): string[] {
  * The fix is not to rank them — they are not the same kind of statement. They answer different
  * questions, so the rule is scoped by question:
  *
- *  - SCOPE (which task is mine, if any) belongs to the board. It is the shared register, read live at
- *    launch, and the only one a human can change after the spawn. A brief cannot grant work.
- *  - SUBSTANCE (what to do inside that task) belongs to the spawner's brief. It is the only place the
- *    directive exists; a board row carries a problem statement, not this session's instructions.
- *  - Naming DIFFERENT work is neither — it is a conflict, and the agent reports it instead of
- *    resolving it. `staleContractReferences` already surfaces the closed case; this covers the rest.
+ *  - BOARD OWNERSHIP belongs to the board. It is the shared register, read live at launch, and the
+ *    only one a human can change after the spawn. A brief cannot create or assign a board row.
+ *  - SUBSTANCE belongs to the spawner's brief. It can direct ad-hoc work without board ownership;
+ *    a board row carries a problem statement, not this session's instructions.
+ *  - Two records naming DIFFERENT BOARD work is neither — it is a conflict, and the agent reports it
+ *    instead of resolving it. No board row plus an ad-hoc brief is the valid third state above.
  *
  * `spawnTaskClaim.ts` removes the disagreement by construction for a spawn that claims a board task.
  * These lines govern every spawn that does not.
@@ -132,9 +132,9 @@ function dependencyLines(input: PrimerInput): string[] {
 function precedenceLines(): string[] {
   return [
     "Precedence — two records can name your work, and they answer different questions:",
-    "  - WHICH task is yours, if any: the \"WORK ON RECORD\" section below, projected from the board at launch. It wins on scope; no such section, or \"none\" in it, means you hold NO board task, and no brief can grant you one.",
-    "  - WHAT to do inside that task: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
-    "  - If the two name DIFFERENT work, that is a conflict and not a choice: report it to your spawner and do not pick one.",
+    "  - WHICH BOARD task is yours, if any: the \"WORK ON RECORD\" section below, projected from the board at launch. It wins on board ownership; no such section, or \"none\" in it, means you hold NO board task. A brief cannot create or assign a board row.",
+    "  - WHAT to do: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — including ad hoc work with no board task — because the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
+    "  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice: report it to your spawner and do not pick one. No board task plus an ad hoc brief is not a conflict: execute the brief.",
     "This Tachyon primer governs orchestration protocol; project-owned guidance governs repository conventions and cannot override either contract or protocol.",
   ];
 }
