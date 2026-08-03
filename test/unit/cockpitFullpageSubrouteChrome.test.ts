@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 /**
- * t-fullpage-proto — maintainer-directed UX change (2026-07-23): every Control subroute (task-detail,
- * the 3 Fleet subroutes, and all 7 studios) replaces the section tab strip with ONE minimal "← Back"
+ * t-fullpage-proto — maintainer-directed UX change (2026-07-23): every Control subroute (the 3 Fleet
+ * subroutes, all 7 studios, Handoff and an opened Inbox item) replaces the section tab strip with ONE "← Back"
  * row at the very top, instead of showing the full tab strip ABOVE the subroute's own inline
  * back-link. Reviewed and approved via a live headless dev-host before/after comparison (all 6
  * subroute families screenshotted). Same tolerant-source-scan pattern studioCrossStudioResidue.test.ts
@@ -16,17 +16,21 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     // t-e76acc — so did the Human Inbox item route, which is a subroute WITH a nav tab (the Inbox
     // tab stays lit while an item is open) — the two properties are independent, and this list is
     // the "render fullpage chrome" one.
-    expect(src).toContain("const isSubroute = activeRoute?.kind === \"task-detail\" || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;");
+    // SDD 485 C4 — `task-detail` left this list with the subroute itself: it is a standalone document
+    // app, and Control's `navigate` never commits that route (it opens the tab and lands on the Board).
+    expect(src).toContain("const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;");
+    expect(src).not.toContain("activeRoute?.kind === \"task-detail\"");
     expect(src).toContain("let breadcrumb: ComponentChildren = null;");
     expect(src).toMatch(/isSubroute && breadcrumb \? \(\s*<header class="ck-top ck-top--fullpage">/);
     expect(src).toContain('<div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>');
   });
 
-  it("each of the 3 branches sets breadcrumb instead of rendering its own inline back-link", () => {
+  it("each surviving branch sets breadcrumb instead of rendering its own inline back-link", () => {
     const src = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    // task-detail: no more inline .td-breadcrumb wrapper in the body.
+    // SDD 485 C4 — the task-detail branch is gone, body and breadcrumb together. Neither the inline
+    // wrapper nor the hoisted button may come back: a breadcrumb with nothing to render is a dead path.
     expect(src).not.toContain('<div class="td-breadcrumb"');
-    expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-task-detail-breadcrumb"/);
+    expect(src).not.toContain('data-testid="control-task-detail-breadcrumb"');
 
     // Fleet subroutes (Activity/Probes): backLink prop no longer passed to either component.
     expect(src).not.toMatch(/<ActivityApp[^>]*backLink=/);
@@ -44,7 +48,7 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-inbox-item-breadcrumb"/);
   });
 
-  it("task-detail.css: the now-unreachable .td-breadcrumb rule was removed, not left dead", () => {
+  it("task-detail.css: the .td-breadcrumb rule stays removed (its chrome has never come back)", () => {
     const src = readFileSync("src/webview/task-detail/task-detail.css", "utf8");
     expect(src).not.toContain(".td-breadcrumb");
   });

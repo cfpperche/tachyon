@@ -156,6 +156,69 @@ it should be present rather than politely omitted, and `sectionPanelManager.test
 message a client actually sends rather than the gate object (0.56.159's lesson, the same way
 `hiddenPanelWork.test.ts` does).
 
+### Phase C4 — the task detail keeps the `tachyonTaskDetail` viewType, so restore REVIVES instead of redirecting (2026-08-03)
+
+The obvious reading of "the legacy serializer has to open the app" is a new viewType plus a dispose-and-reopen
+redirect. C4 does the other thing: the app IS `tachyonTaskDetail`, the viewType SDD 410 retired to a
+serializer-only tombstone. Three consequences, all of them better than the redirect:
+
+- a pre-410 window state is handed to `SectionPanelManager.deserialize` and BECOMES the app's panel. Nothing is
+  disposed, nothing is reopened, and there is no window in which the human sees a tab close and another open;
+- `WEBVIEW_SURFACES` gets its row back under the same id, so the manifest reads as a reversal of 410's
+  retirement rather than as a new surface that happens to look like the old one;
+- there is no second viewType to leave behind. "No dead path" is structural rather than a thing to check.
+
+The whole compatibility shim is `migrateLegacy` in `TaskDetailPanel.ts`: the old panel persisted
+`{wsHash, taskId}` and the manager persists `{project, identity}`, so it renames two fields. No UI, which is
+the one kind of shim `spec.md` lets survive an atomic cutover. A legacy record whose fields are missing
+migrates to an EMPTY identity, which `sectionPanelKey` refuses — so it disposes, the same outcome the
+serializer already gives an unreadable state.
+
+### Phase C4 — the tombstone cache became PER PANEL, and that was a latent singleton assumption (2026-08-03)
+
+Control's task-detail tombstone cache was a single slot with a comment explaining why that was safe: "Control
+is a singleton — at most one task-detail route is ever open, so a single slot (not a Map) suffices." True of
+Control, false the moment the cardinality is `document`. In the app it is a `let lastKnown` inside `bind`,
+which is per panel by construction rather than by a Map someone has to remember to key correctly.
+
+`taskDetailApp.test.ts` covers it directly ("keeps ONE tombstone cache PER PANEL"): two tabs open, one task's
+file deleted, and the assertion is that the OTHER tab still shows its own live task. A shared slot renders task
+A's last-known state under task B's tab, which is the shape of bug that reads as data corruption to a human.
+
+This is the general lesson of the phase, stated once: every "we are a singleton, so one slot is enough" in
+Control is a defect waiting for its section to be migrated. Whoever takes a Phase D section should grep their
+surface's host code for a single slot before assuming the move is mechanical.
+
+### Phase C4 — Control keeps the task-detail ROUTE as a redirect, at the one commit point (2026-08-03)
+
+The renderer left `cockpit/App.tsx`, but the route KIND stayed in `route.ts`, and that is deliberate. Three
+things still produce one: persisted window state written before this change, a deep link, and
+`parentRoute(studio-edit, "task")` — which is Task Studio's breadcrumb, and the one place the repo genuinely
+means "back to that task". Deleting the kind would have forced Task Studio's parent policy to change in the
+same PR, for reasons that have nothing to do with the task detail.
+
+So `navigate()` — the ONE commit point every navigation intent reaches, by that function's own contract —
+turns a task-detail route into "open the document's tab, and commit Mission instead". Every producer gets the
+same coherent answer, and Control cannot end up on a route it has no renderer for. Placing it per call site
+was rejected for the obvious reason: a redirect each caller must remember is a redirect the next caller
+forgets.
+
+The client half is `navigateStudioParent`, a new cockpit action mirroring pin's `navigateReturn` exactly:
+the client sends its identity snapshot of the route it was showing and NO destination, the host derives the
+destination from `parentRoute(currentRoute)`, and a queued click from a route the human already left is
+dropped rather than fired at whatever is current. The breadcrumb used to post Task Detail's own `openTask`
+and let Control navigate in place; there is no in-place navigation to that screen any more.
+
+### Phase C4 — a dependency link opens ANOTHER document, it does not retarget this one (2026-08-03)
+
+Control answered a dep-chip click by navigating the one panel to the other task ("a subroute of a subroute
+stays a single active route, not a stack" — its own comment, and correct for a singleton). Under `document`
+cardinality that is precisely the forbidden move: retargeting an open document is what the identity rule
+exists to prevent, and it would make the dep chip a second way to lose the tab you were reading.
+
+So `openTask` opens (or reveals) the OTHER task's own tab, in the SAME project — the dep is a task in this
+document's workspace, so the identity it opens against is this document's `project`, never a shell scope.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -319,6 +382,51 @@ references), so an app added to the manifest can never be forgotten here. The ch
 `webviewChunkHygiene.test.ts` gained the case that would have caught the old shape: two entries, one chunk
 imported only by the second, and a prune that must keep it.
 
+### Phase C4 — the client's identity check is gone, and its absence is the guarantee (2026-08-03)
+
+`cockpit/main.tsx` carried two guards from t-9993cc: clear `taskVm` when the active route's identity changes,
+and reject a TASK push whose `wsHash`/`taskId` do not match the current route. Both existed because ONE panel
+served every task and a late push from the route you just left could repopulate the screen under a different
+one.
+
+The document app has neither, and that is not a simplification to be suspicious of: a document panel IS one
+identity for its whole life, the host resolves the task from that panel's own frozen target, and there is no
+second identity for a message to belong to. The guard was a client-side patch over a host-side ambiguity that
+the cardinality removes.
+
+`cockpitTaskDetailIdentity.test.ts` was a SOURCE SCAN over those two guards, so it went with them. What
+replaces it is stronger and behavioural rather than textual: `taskDetailApp.test.ts`'s "an open document is
+never retargeted" describe drives the real host with the workspace list REORDERED under an open panel (the
+strongest form of a scope change reaching it) and asserts the panel still resolves its own project. A source
+scan cannot notice that the property it was guarding moved; a behavioural test cannot pass without it.
+
+`cockpitTaskDetailShellHandshake.test.ts` went the same way, for the same class of reason: it proved that no
+Control route handler swallows the shell's READY, using the task detail as its vehicle because
+`handleTaskDetailAction` was the handler that once did. That handler no longer exists, and
+`cockpitReadyHandshake.test.ts` already asserts the property for EVERY route kind, derived from `route.ts`
+rather than transcribed. The app's own side of it is covered where it now lives: the READY handshake IS the
+first refresh (`refreshKindFor` claims it), so a freshly opened tab paints through the same path a fan-out
+refresh takes — there is no separate load path for a catch-up to diverge from, and no handler is ever offered
+the message.
+
+### Phase C4 — three Control tests were RETARGETED rather than deleted, and one new claim was added (2026-08-03)
+
+`cockpitNavPendingBracket.test.ts` measured the routePending/routeReady bracket by driving a Board card click,
+because that was Control's most ordinary navigation. It is not a navigation any more. The bracket itself is
+unchanged and still matters, so the cases moved to `project-handoff` — a detail route Control keeps — and the
+file gained the case the migration actually creates: **a click that opens a DOCUMENT must not emit a bracket
+at all.** A pending state for a navigation that never arrives leaves the client in a progress bar forever,
+which is a worse failure than the one the bracket was built to fix.
+
+`attentionOpenTaskWhileBoardLive.test.ts` (t-20bbfa) is the guard over "Attention → Open detaches Control".
+Its first half became a different claim (a second PANEL, not a changed route); its second half — Control keeps
+its panel, its singleton claim and its model flow — survives the migration untouched, because Control is still
+a singleton with the same module-scoped wiring. Both are asserted, and the new architecture makes the first
+half stronger: the notice cannot disturb Control at all, because it no longer navigates it.
+
+`cockpitMissionBoard.test.ts`'s `openTask` case now asserts the wsHash the Board passes, which is the moment
+the document's identity is decided.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
@@ -422,6 +530,26 @@ the one app that used to exist.
 B). A single global ceiling would go red for reasons that have nothing to do with an app's own cost — one
 app's growth failing another app's build — and the two per-app budgets plus the shared-chunk assertion
 already bound the thing that matters. The number is recorded here so a reader can watch it move.
+
+### Phase C4 — Task Studio's breadcrumb lands on the Board, not on the task's tab (2026-08-03)
+
+Pressing back from Task Studio used to show the task detail inside Control. Now it opens (or reveals) the
+task's own tab AND lands Control on the Board — one action, two surfaces, because Control cannot stay on a
+studio form it is navigating away from and cannot render the task either.
+
+The alternative was to leave Control on the studio and merely reveal the tab, which is not a "back" at all,
+and the other alternative — changing `parentRoute(studio-edit, "task")` to Mission — would have thrown away
+the "back to THAT task" intent the repo deliberately encoded (t-610705 D2). What ships keeps the intent and
+pays for it with a second surface moving, which is honest about what a two-app world looks like. Worth
+re-judging with the maintainer once the checkpoint after C5 has been used for a few days.
+
+### Phase C4 — the attachments grant narrowed from every workspace to one (2026-08-03)
+
+t-4d59d3 forced Control to grant EVERY attached workspace's task-attachments parent as a local resource root
+at panel creation, because one panel served every workspace and the grant cannot be re-assigned on a live
+panel without recreating its iframe (which is how Control once went permanently blank). A per-identity panel
+needs exactly one root, so the app grants only its own document's workspace — a smaller grant, and one the
+cardinality makes available rather than one anybody had to argue for.
 
 ## Open questions
 
@@ -570,3 +698,30 @@ tree: 20 passed.
 
 Worth stating because it happened twice in two phases: writing "not by substring" in a comment is
 not the same as proving the guard fails. Only the injection tells you which one you built.
+### Phase C4 — the empty-body section label is a PRE-EXISTING defect the visual pass surfaced (2026-08-03)
+
+The two-width sweep found `BODYno body` rendering on one line when a task has no body: `.ds-section` is an
+inline `<span>` whose `margin-bottom` cannot make vertical space, and `.td-body` — unlike its sibling
+`.td-journal` — is not a flex column. It only shows on an empty body, because a rendered `MarkdownView` is a
+block and forces the break itself, which is why four of the five preview fixtures hide it.
+
+It is NOT introduced by this phase and was deliberately not fixed in it: `task-detail/App.tsx` and
+`task-detail.css` are byte-identical across C4, and neither sheet Control adds that this app does not
+(`vscode-theme.css`, `cockpit.css`) carries a `.td-body` / `.ds-section` / `.ds-dim` rule — so Control renders
+it the same way today. Filed as **t-fe8ba3** with the reproduce URL, the cause and the candidate one-line fix.
+
+Worth naming as a pattern rather than as one bug: this is the SECOND time the two-width sweep has paid for
+itself on something no test would catch, and the first time it caught a defect the migration inherited rather
+than created. A phase that "changes nothing visual" is exactly when an inherited defect is cheapest to see.
+
+### Phase C4 — an out-of-order push within one identity is now possible, and is harmless (2026-08-03)
+
+Control guarded its task pushes with `navEpoch`, so a slow `loadTaskDetail` that resolved after a navigation
+was discarded. The app has no epoch: two refreshes racing on one panel can post in either order, and the
+loser's payload is a slightly older projection OF THE SAME TASK.
+
+That is a deliberate non-guard rather than an oversight. `navEpoch` protected against posting task A's data
+under task B's route, and a document panel has no route to change. What is left — a stale-by-milliseconds
+render of the task the tab IS — resolves on the next fan-out, and Control had the identical exposure already
+(`navEpoch` does not bump on a same-route refresh, by its own contract). Named here so a future reader does
+not mistake the absence for something that was forgotten.

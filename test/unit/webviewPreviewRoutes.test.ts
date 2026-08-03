@@ -55,7 +55,6 @@ describe("preview route table", () => {
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
-      "/dist/webview/task-detail.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
@@ -132,12 +131,8 @@ describe("preview route table", () => {
       "studio-task-edit",
       "studio-terminal",
       "studio-terminal-edit",
-      "task-detail",
-      // t-5564b4 — the content shapes the Task Detail report is about; the single `task-detail`
-      // fixture had no long refs, no attention and no long body, so the catalog could not show it.
-      "task-detail-heavy",
-      "task-detail-sparse",
-      "task-detail-tombstone",
+      // SDD 485 C4 — the four `task-detail*` fixtures left this route with the subroute: the task
+      // detail is a standalone app and has its own route below, previewing the REAL shipped bundle.
       "tmux",
       "validations",
       "worktrees",
@@ -147,10 +142,6 @@ describe("preview route table", () => {
     expect(msgs[1]?.model?.section).toBe("overview");
     const missionMsgs = r.makeMessage(r.fixtures.mission.vm) as Array<{ type: string }>;
     expect(missionMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot"]);
-    // t-610705 (Phase C.1) — the task-detail subroute fixture rides alongside its parent
-    // section's push (activeRoute carries the entity locator; section stays "mission").
-    const taskDetailMsgs = r.makeMessage(r.fixtures["task-detail"]!.vm) as Array<{ type: string }>;
-    expect(taskDetailMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "task"]);
     // t-610705 (Phase C.2) — the Fleet subroute fixtures: nav section is "fleet" (no embed push of
     // its own), so only the subroute's own content message rides alongside init+model.
     const activityMsgs = r.makeMessage(r.fixtures["agent-activity"]!.vm) as Array<{ type: string }>;
@@ -202,6 +193,27 @@ describe("preview route table", () => {
     const pinNewMsgs = r.makeMessage(r.fixtures["studio-pin-new"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(pinNewMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(pinNewMsgs[2]?.studioProtocolVersion).toBe(1);
+  });
+
+  it("declares the task-detail route (SDD 485 C4) against the REAL standalone bundle and the host's own CSS list", () => {
+    // The point of this route is that it previews what SHIPS: the task detail is a standalone app again,
+    // so the harness must load `task-detail.js` and the exact stylesheet list `TaskDetailPanel.ts` links —
+    // not the same component embedded in Control, which is what the retired cockpit fixtures rendered.
+    const r = ROUTES["task-detail"];
+    expect(r.bundle).toBe("/dist/webview/task-detail.js");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/task-detail.css",
+    ]);
+    // an entry of the code-split invocation: a classic <script> injection dies on its first `import`.
+    expect(r.module).toBe(true);
+    // the four content shapes t-5564b4 established, carried over from the cockpit route intact.
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "heavy", "sparse", "tombstone"]);
+    const msg = r.makeMessage(r.fixtures.default!.vm) as { type: string; vm?: { id?: string } };
+    expect(msg.type).toBe("task");
+    expect(msg.vm?.id).toBeTruthy();
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {

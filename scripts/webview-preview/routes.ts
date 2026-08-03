@@ -126,7 +126,6 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/runtime-ops.css",
       "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
-      "/dist/webview/task-detail.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
@@ -201,25 +200,21 @@ export const ROUTES: Record<string, Route> = {
         else if (vm === cockpitFixtures["plugins-source-changed"]?.vm) plugins = pluginsFixtures["source-changed"]?.vm;
         if (plugins) msgs.push(pluginsMessage(plugins));
       }
-      // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (task-detail
-      // and the Fleet subroutes below all nav to a section with no embed push of its own for THEM,
-      // so this just adds the subroute's own content on top).
+      // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (the Fleet
+      // subroutes below all nav to a section with no embed push of its own for THEM, so this just adds
+      // the subroute's own content on top).
+      // SDD 485 C4 — the `task-detail` arm is GONE with the subroute: the task detail has its own route
+      // in this table now (`?view=task-detail`), rendering the real standalone bundle rather than the
+      // same component embedded in Control. `nav-pending` still names a `task-detail:` routeKey below —
+      // that fixture depicts CONTROL waiting on a navigation, and the routeKey is the wire string it
+      // waits on, not a screen this route renders.
       const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
-      if (activeRoute?.kind === "task-detail") {
-        // t-5564b4 — the route's own taskId picks the payload, so a cockpit fixture and its task
-        // fixture stay matched by data rather than by a naming convention. Without this the catalog
-        // could only preview ONE content shape, which is why the reported breakage was invisible
-        // here: the single fixture had no long refs, no attention and no long body.
-        const wanted = (activeRoute as { taskId?: string }).taskId;
-        const detail = (Object.values(taskDetailFixtures).find((candidate) => candidate.vm.id === wanted)
-          ?? taskDetailFixtures.default)?.vm;
-        if (detail) msgs.push(taskMessage(detail));
-      } else if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
+      if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
         const feed = activityFixtures.default?.vm;
         if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
       } else if (activeRoute?.kind === "project-handoff") {
-        // t-ace77f — Handoff moved from a section push to a detail route, exactly like task-detail
-        // above: same fixture VM, same envelope, now keyed off the route instead of the tab.
+        // t-ace77f — Handoff moved from a section push to a detail route: same fixture VM, same
+        // envelope, now keyed off the route instead of the tab.
         const handoff = handoffFixtures.default?.vm;
         if (handoff) msgs.push(handoffMessage(handoff));
       } else if (activeRoute?.kind === "inbox-item") {
@@ -330,6 +325,19 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },
+  // SDD 485 C4 — Task Detail is a standalone app again, so it gets its own route back: this renders the
+  // REAL shipped `task-detail.js` bundle with the exact stylesheet list `TaskDetailPanel.ts` links, rather
+  // than the same component embedded inside Control (which is what `?view=cockpit&fixture=task-detail`
+  // used to preview). 880 is this repo's wide measurement width and the reading column's own max-width.
+  "task-detail": {
+    bundle: "/dist/webview/task-detail.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: taskDetailFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => taskMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -375,6 +383,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
+  "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

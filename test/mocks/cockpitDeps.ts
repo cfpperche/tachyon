@@ -13,7 +13,9 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     extensionUri: Uri.file("/ext"),
     collect: async () => [],
     missionBoard,
-    taskDetail: { getWorkspaces: () => [] },
+    // SDD 485 C4 — Control asks for a task's own editor tab and renders none itself; a test that cares
+    // which (wsHash, taskId) it asked for overrides this.
+    taskDetail: { getWorkspaces: () => [], openDocument: () => {} },
     activity: { getWorkspaces: () => [] },
     probes: { getWorkspaces: () => [] },
     handoff: { getWorkspaces: () => [] },

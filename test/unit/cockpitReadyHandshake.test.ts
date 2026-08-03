@@ -71,7 +71,11 @@ function depsFor(ws: Workspace) {
     openTaskStudio: () => {},
     onTasksChanged: () => {},
   };
-  const taskDetail: CockpitTaskDetail = { getWorkspaces: () => [legacyTaskDetailTarget(ws)] };
+  // SDD 485 C4 — a task-detail route no longer commits in Control: `navigate()` asks for the task's own
+  // editor tab and lands Control on the Board. It is still in the table below, because the handshake must
+  // survive being opened ON it — that redirect is exactly the kind of extra hop a shell handshake gets
+  // lost in.
+  const taskDetail: CockpitTaskDetail = { getWorkspaces: () => [legacyTaskDetailTarget(ws)], openDocument: () => {} };
   return makeFakeCockpitDeps(missionBoard, { taskDetail });
 }
 
@@ -193,7 +197,10 @@ describe("t-6ced6f — a bare `ready` returns `init` on every Control route kind
     // Anchored on the condition, not the whole line: the studio carve-out below already changed this
     // line once, and a guard that breaks when the fix is refined teaches people to delete the guard.
     const readyAnswer = source.indexOf("type === READY", listener);
-    const firstRouteHandler = source.indexOf("if (await handleTaskDetailAction(", listener);
+    // SDD 485 C4 — `handleTaskDetailAction` was the first link in this chain and left with the task
+    // detail. `handleMissionAction` is the first link now; the property under test is the ORDER, not
+    // which handler happens to be first.
+    const firstRouteHandler = source.indexOf("if (await handleMissionAction(", listener);
 
     expect(listener, "the message listener moved; this guard needs updating").toBeGreaterThan(-1);
     expect(readyAnswer, "READY is no longer answered directly in the listener").toBeGreaterThan(-1);

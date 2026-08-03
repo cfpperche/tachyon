@@ -52,7 +52,7 @@ function depsFor(ws: Workspace) {
     openTaskStudio: () => {},
     onTasksChanged: () => {},
   };
-  const taskDetail: CockpitTaskDetail = { getWorkspaces: () => [legacyTaskDetailTarget(ws)] };
+  const taskDetail: CockpitTaskDetail = { getWorkspaces: () => [legacyTaskDetailTarget(ws)], openDocument: () => {} };
   return makeFakeCockpitDeps(missionBoard, { taskDetail });
 }
 

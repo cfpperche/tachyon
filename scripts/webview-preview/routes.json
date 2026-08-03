@@ -437,90 +437,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "task-detail",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=task-detail",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "task-detail-heavy",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=task-detail-heavy",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "task-detail-sparse",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=task-detail-sparse",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "task-detail-tombstone",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=task-detail-tombstone",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "nav-pending",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=nav-pending",
     "frame": {
@@ -1591,6 +1507,82 @@
       "agent fixture",
       "agent shell fixture",
       "spec 350"
+    ]
+  },
+  {
+    "view": "task-detail",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
+    ]
+  },
+  {
+    "view": "task-detail",
+    "fixture": "heavy",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=heavy",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
+    ]
+  },
+  {
+    "view": "task-detail",
+    "fixture": "sparse",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=sparse",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
+    ]
+  },
+  {
+    "view": "task-detail",
+    "fixture": "tombstone",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=tombstone",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
     ]
   },
   {

@@ -138,20 +138,29 @@ describe("Control → Mission board routing", () => {
     expect(fanOuts()).toBe(1);
   });
 
-  it("openTask navigates in place to the task-detail subroute (t-610705 Phase C.1) — no standalone panel", async () => {
+  it("openTask asks for the task's OWN editor tab and leaves Control on the Board (SDD 485 C4)", async () => {
+    // The card click used to navigate Control in place, which is why one panel could show one task.
+    // It now opens the `document` app — and the wsHash it passes is the BOARD's workspace, which becomes
+    // that document's identity for life, never re-derived from Control's shell scope afterwards.
     const ws = fakeWorkspace();
     const { board } = boardOf([target(ws)]);
-    await openCockpit(makeFakeCockpitDeps(board), { section: "mission", wsHash: ws.wsHash });
+    const opened: Array<[string, string]> = [];
+    const deps = makeFakeCockpitDeps(board, {
+      taskDetail: { getWorkspaces: () => [], openDocument: (wsHash, taskId) => { opened.push([wsHash, taskId]); } },
+    });
+    await openCockpit(deps, { section: "mission", wsHash: ws.wsHash });
+    __createdPanels[0].webview.__receive({ type: "ready" }); // the shell handshake, so a model exists to compare
+    await flush();
 
     __createdPanels[0].webview.__receive({ type: "openTask", id: "t-abc123" });
     await flush();
 
-    const models = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model") as Array<{ model: { section: string; activeRoute?: { kind: string; wsHash: string; taskId: string } } }>;
+    expect(opened).toEqual([[ws.wsHash, "t-abc123"]]);
+    const models = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model") as Array<{ model: { section: string; activeRoute?: unknown } }>;
     const latest = models.at(-1);
-    // the nav tab still reads "mission" (task-detail is a subroute of the board), but the exact
-    // route carries the entity locator the client needs to render the task-detail body instead.
     expect(latest?.model.section).toBe("mission");
-    expect(latest?.model.activeRoute).toEqual({ kind: "task-detail", wsHash: ws.wsHash, taskId: "t-abc123" });
+    expect(latest?.model.activeRoute, "Control navigated somewhere instead of opening a tab").toBeUndefined();
+    expect(__createdPanels, "the Board forked a second Control panel").toHaveLength(1);
   });
 
   it("openTaskStudio still routes to the injected callback with the resolved workspace (Task Studio isn't migrated yet)", async () => {
