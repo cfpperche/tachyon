@@ -131,10 +131,11 @@ describe("buildPluginsViewModel", () => {
       c: { kind: "drift", detail: "edited locally" },
       d: { kind: "conflict", detail: "baseline edited" },
       e: { kind: "error", detail: "remote unreachable" },
+      g: { kind: "source-changed", version: "1.0.0" },
       // f intentionally omitted → unknown
     };
     const vm = buildPluginsViewModel({
-      lockfileText: lockText(["a", "b", "c", "d", "e", "f"].map((name) => ({ name, version: "1.0.0", runtimes: ["claude"] as Runtime[], sourced: true }))),
+      lockfileText: lockText(["a", "b", "c", "d", "e", "f", "g"].map((name) => ({ name, version: "1.0.0", runtimes: ["claude"] as Runtime[], sourced: true }))),
       present: ws("claude"),
       updateChecks: checks,
     });
@@ -144,6 +145,7 @@ describe("buildPluginsViewModel", () => {
     expect(by.c.status).toEqual({ kind: "drift", detail: "edited locally" });
     expect(by.d.status).toEqual({ kind: "conflict", detail: "baseline edited" });
     expect(by.e.status).toEqual({ kind: "error", detail: "remote unreachable" });
+    expect(by.g.status).toEqual({ kind: "source-changed", detail: "still v1.0.0" });
     expect(by.f.status.kind).toBe("unknown");
   });
 
@@ -156,6 +158,7 @@ describe("buildPluginsViewModel", () => {
       }).installed[0].actions;
 
     expect(mk({ kind: "update-available", latestVersion: "2.0.0" })).toEqual(["update", "remove"]);
+    expect(mk({ kind: "source-changed", version: "1.0.0" })).toEqual(["reapply", "remove"]);
     expect(mk({ kind: "drift" })).toEqual(["reinstall", "remove"]);
     expect(mk({ kind: "conflict" })).toEqual(["reinstall", "remove"]);
     expect(mk({ kind: "up-to-date" })).toEqual(["remove"]);

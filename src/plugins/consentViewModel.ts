@@ -423,10 +423,14 @@ export function buildReinstallConsent(preview: InstallPreview, provenance?: Inst
 /**
  * Build the consent VM for an update (or a force-reinstall over drift). `forceReinstall` frames a conflict/drift
  * re-materialize. The install plan + provenance come from the UpdatePreview.
+ *
+ * t-4e5f11 — when `contentChangedSameVersion`, frame as Reapply (same version, different source bytes). The word
+ * "Update" would contradict the card badge "source changed · still vX" on the same line of product language.
  */
 export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallProvenance | undefined, forceReinstall = false, present: ReadonlySet<Runtime> = new Set()): ConsentVM {
   const pluginName = preview.install?.manifest.name ?? "";
   const version = preview.toVersion;
+  const contentChanged = preview.contentChangedSameVersion === true;
   const requiresForce = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
   const conflicts: ConsentConflict[] = preview.conflicts.map((c) => ({ settingsRel: c.settingsRel, edited: c.edited, collided: c.collided }));
 
@@ -434,17 +438,28 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
   if (!preview.found) errors.push(`'${pluginName}' is not installed — use install`);
   if (preview.upToDate) errors.push(`already up to date (v${version})`);
 
+  const title = forceReinstall
+    ? `Reinstall ${pluginName}@${version}`
+    : contentChanged
+      ? `Reapply ${pluginName}@${version} — source content changed`
+      : `Update ${pluginName} → ${version}`;
+  const confirmLabel = requiresForce ? "Force update" : contentChanged ? "Reapply" : "Update";
+  const warnings = contentChanged
+    ? [`Manifest version is still ${version}; the resolved plugin payload hash differs from what this workspace installed.`]
+    : undefined;
+
   const vm: ConsentVM = {
     op: "update",
     pluginName,
     version,
-    title: forceReinstall ? `Reinstall ${pluginName}@${version}` : `Update ${pluginName} → ${version}`,
-    confirmLabel: requiresForce ? "Force update" : "Update",
+    title,
+    confirmLabel,
     provenance: provenanceRows(provenance),
     token: preview.install?.fingerprint ?? "",
     ...(conflicts.length > 0 ? { conflicts } : {}),
     ...(preview.isDowngrade ? { isDowngrade: true } : {}),
     ...(requiresForce ? { requiresForce: true } : {}),
+    ...(warnings ? { warnings } : {}),
     ...(errors.length > 0 ? { errors } : {}),
   };
   if (preview.install) {
@@ -497,6 +512,8 @@ export function deriveUpdateCheck(preview: UpdatePreview): UpdateCheck {
     const detail = preview.conflicts.map((c) => `${c.settingsRel}: ${c.edited} edited`).join("; ");
     return { kind: "drift", detail };
   }
+  // t-4e5f11 — same version, different bytes: a distinct card state (not "update available · vX" which implies a bump).
+  if (preview.contentChangedSameVersion) return { kind: "source-changed", version: preview.toVersion };
   if (preview.upToDate || preview.isDowngrade) return { kind: "up-to-date" };
   return { kind: "update-available", latestVersion: preview.toVersion };
 }

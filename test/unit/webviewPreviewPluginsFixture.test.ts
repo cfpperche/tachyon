@@ -55,6 +55,19 @@ describe("plugins preview fixture fidelity", () => {
   it("empty matches the real builder cold state", () => {
     expect(vms.empty).toEqual(buildPluginsViewModel({ lockfileText: undefined, present }));
   });
+
+  it("t-4e5f11 source-changed matches the real builder (secrets-guard · reapply)", () => {
+    const real = buildPluginsViewModel({
+      lockfileText: lockText(),
+      present,
+      intact,
+      updateChecks: { ...up, "secrets-guard": { kind: "source-changed", version: "2.0.1" } },
+    });
+    expect((vms as unknown as { sourceChanged: unknown }).sourceChanged).toEqual(real);
+    const sg = real.installed.find((p) => p.name === "secrets-guard");
+    expect(sg?.status).toEqual({ kind: "source-changed", detail: "still v2.0.1" });
+    expect(sg?.actions).toEqual(["reapply", "remove"]);
+  });
 });
 
 /**

@@ -48,6 +48,8 @@ function statusBadge(status: PluginStatus): { tone: string; label: string } | nu
   switch (status.kind) {
     case "up-to-date": return { tone: "ok", label: "up to date" };
     case "update-available": return { tone: "warn", label: `update available${status.latestVersion ? ` · v${status.latestVersion}` : ""}` };
+    // t-4e5f11 — true about the version AND the world: same label, different source bytes.
+    case "source-changed": return { tone: "warn", label: `source changed · ${status.detail ?? "content differs"}` };
     case "drift": return { tone: "err", label: "drift · edited locally" };
     case "conflict": return { tone: "err", label: "conflict" };
     case "error": return { tone: "err", label: status.detail ? `error · ${status.detail}` : "error" };
@@ -55,7 +57,7 @@ function statusBadge(status: PluginStatus): { tone: string; label: string } | nu
   }
 }
 
-const actionLabel: Record<PluginAction, string> = { update: "Update", reinstall: "Reinstall", remove: "Remove" };
+const actionLabel: Record<PluginAction, string> = { update: "Update", reapply: "Reapply", reinstall: "Reinstall", remove: "Remove" };
 
 function RuntimePillView({ pill }: { pill: RuntimePill }) {
   return (
@@ -107,7 +109,8 @@ function CoverageNotice({ p }: { p: InstalledPluginVM }) {
 function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch }) {
   const badge = statusBadge(p.status);
   const run = (a: PluginAction) => {
-    if (a === "update") dispatch.update(p.name);
+    // reapply uses the same host update path (previewUpdateOp) — only the label/consent framing differs.
+    if (a === "update" || a === "reapply") dispatch.update(p.name);
     else if (a === "reinstall") dispatch.reinstall(p.name);
     else dispatch.remove(p.name);
   };

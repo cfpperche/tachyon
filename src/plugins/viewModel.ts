@@ -13,10 +13,22 @@ import { SUPPORTED_RUNTIMES, type Runtime } from "./manifest.js";
 import { parseLockfile, type PluginLock, type ExternalToolReqLock } from "./lockfile.js";
 
 /** A plugin's freshness relative to its source. `unknown` = not yet checked (no update-check injected). */
-export type PluginStatusKind = "up-to-date" | "update-available" | "drift" | "conflict" | "error" | "unknown";
+export type PluginStatusKind =
+  | "up-to-date"
+  | "update-available"
+  | "source-changed"
+  | "drift"
+  | "conflict"
+  | "error"
+  | "unknown";
 
-/** Action buttons the card surfaces. `reinstall` = force-gated re-materialize over local edits. */
-export type PluginAction = "update" | "reinstall" | "remove";
+/**
+ * Action buttons the card surfaces.
+ * - `update` = labeled version bump available
+ * - `reapply` = t-4e5f11 same version, different source bytes (distinct word so it does not contradict the badge)
+ * - `reinstall` = force-gated re-materialize over local edits
+ */
+export type PluginAction = "update" | "reapply" | "reinstall" | "remove";
 
 export interface RuntimePill {
   runtime: Runtime;
@@ -99,6 +111,8 @@ export interface PluginsViewModel {
 export type UpdateCheck =
   | { kind: "up-to-date" }
   | { kind: "update-available"; latestVersion: string }
+  /** t-4e5f11 — manifest version matches lock, but integrity.payload differs. */
+  | { kind: "source-changed"; version: string }
   | { kind: "drift"; detail?: string }
   | { kind: "conflict"; detail?: string }
   | { kind: "error"; detail: string };
@@ -134,6 +148,8 @@ function statusFrom(check: UpdateCheck | undefined): PluginStatus {
       return { kind: "up-to-date" };
     case "update-available":
       return { kind: "update-available", latestVersion: check.latestVersion };
+    case "source-changed":
+      return { kind: "source-changed", detail: `still v${check.version}` };
     case "drift":
       return { kind: "drift", detail: check.detail };
     case "conflict":
@@ -153,6 +169,9 @@ function actionsFor(kind: PluginStatusKind): PluginAction[] {
   switch (kind) {
     case "update-available":
       return ["update", "remove"];
+    case "source-changed":
+      // distinct action word — "Update" next to "source changed · still vX" would contradict on the same line.
+      return ["reapply", "remove"];
     case "drift":
     case "conflict":
       return ["reinstall", "remove"];

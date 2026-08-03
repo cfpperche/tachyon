@@ -2097,11 +2097,27 @@ export interface UpdatePreview {
   isDowngrade: boolean;
   fromVersion?: string;
   toVersion: string;
+  /**
+   * t-4e5f11 — true when manifest versions match but the freshly resolved source payload hash differs from
+   * the lockfile's `integrity.payload`. Distinct from a labeled version bump: the world moved, the version
+   * label did not. Absent/false for every other outcome.
+   */
+  contentChangedSameVersion?: boolean;
   /** per-runtime conflicts (edited baseline and/or user-added collisions). */
   conflicts: UpdateConflict[];
   /** the install plan that would apply the new version (the merge with prior). Present when an update is possible. */
   install?: InstallPreview;
   errors: string[];
+}
+
+/** Optional inputs that let the freshness oracle see more than the manifest version (t-4e5f11). */
+export interface PreviewUpdateOpts {
+  /**
+   * sha256 of the freshly resolved plugin payload (from `loadPluginFromSource` → `provenance.integrity.payload`).
+   * When versions match, compared to `lock.integrity.payload`. Omit (or a lock without integrity) → version-only
+   * back-compat for dir installs and pre-integrity locks.
+   */
+  payloadHash?: string;
 }
 
 /** Compare major.minor.patch numerically (prerelease ignored). Shares `compareSemver` with the tag comparator
@@ -2114,8 +2130,12 @@ const compareVersions = compareSemver;
  * kinds (both refuse without force): a baseline group the user EDITED/removed (current ≠ baseline), and a
  * user-ADDED group that already equals a new-version group (installing would DUPLICATE it). A lower version
  * is flagged as a downgrade. Returns the conflicts + the install plan for the new version.
+ *
+ * Freshness oracle (t-4e5f11 / owner decision D): version is primary; when versions match, `integrity.payload`
+ * breaks the tie (same version + different bytes ⇒ not up-to-date). Resolved commit is NOT compared — a monorepo
+ * tag move would false-positive every sibling whose `#path=` payload is unchanged (spec 266).
  */
-export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string, git: GitRun = defaultGitRun): Promise<UpdatePreview> {
+export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string, git: GitRun = defaultGitRun, opts: PreviewUpdateOpts = {}): Promise<UpdatePreview> {
   const toVersion = plugin.manifest.version;
   const plan = planRemove(plugin.manifest.name, workspaceRoot); // prior owned + current settings per runtime
   if (plan.errors.length > 0) return { found: !!plan.lock, upToDate: false, isDowngrade: false, toVersion, conflicts: [], errors: plan.errors };
@@ -2134,7 +2154,21 @@ export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string,
   }
   const target = new Set<Runtime>(plan.lock.runtimes);
 
-  if (fromVersion === toVersion) {
+  // t-4e5f11 — version match is no longer automatically fresh. When both the lock and the freshly resolved
+  // source carry an integrity.payload and they differ, the source content changed under an unchanged version
+  // label: fall through and build an install plan. Missing either side preserves version-only back-compat
+  // (dir install, pre-integrity lock, caller that did not pass payloadHash).
+  const lockedPayload = plan.lock.integrity?.payload;
+  const nextPayload = opts.payloadHash;
+  const contentChangedSameVersion =
+    fromVersion === toVersion &&
+    typeof lockedPayload === "string" &&
+    lockedPayload.length > 0 &&
+    typeof nextPayload === "string" &&
+    nextPayload.length > 0 &&
+    lockedPayload !== nextPayload;
+
+  if (fromVersion === toVersion && !contentChangedSameVersion) {
     return { found: true, upToDate: true, isDowngrade: false, fromVersion, toVersion, conflicts: [], errors: [] };
   }
 
@@ -2155,12 +2189,25 @@ export async function previewUpdate(plugin: LoadedPlugin, workspaceRoot: string,
     if (edited > 0 || collided > 0) conflicts.push({ runtime: step.runtime, settingsRel: step.settingsRel, edited, collided });
   }
 
-  return { found: true, upToDate: false, isDowngrade: compareVersions(toVersion, fromVersion) < 0, fromVersion, toVersion, conflicts, install, errors: install.errors };
+  return {
+    found: true,
+    upToDate: false,
+    // same-version content reapply is never a downgrade (versions equal).
+    isDowngrade: contentChangedSameVersion ? false : compareVersions(toVersion, fromVersion) < 0,
+    fromVersion,
+    toVersion,
+    ...(contentChangedSameVersion ? { contentChangedSameVersion: true } : {}),
+    conflicts,
+    install,
+    errors: install.errors,
+  };
 }
 
 export interface UpdateResult {
   updated: boolean;
   upToDate?: boolean;
+  /** t-4e5f11 — echo of the preview flag so the panel toast can say "Reapplied" not "Updated". */
+  contentChangedSameVersion?: boolean;
   conflicts?: UpdateConflict[];
   errors: string[];
 }
@@ -2173,7 +2220,8 @@ export interface UpdateResult {
  */
 export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, opts: { force?: boolean; provenance?: InstallProvenance; expectedFingerprint?: string; skillDecisions?: Record<string, "keep" | "replace">; mcpDecisions?: Record<string, "keep" | "replace">; mcpConfirmed?: boolean; gitHookConfirmed?: boolean; toolConfirmed?: boolean; launcherBundlePath?: string; dataConfirmed?: boolean; dataResolverBundlePath?: string; externalResolverBundlePath?: string; viewConfirmed?: boolean; fleetReadConfirmed?: boolean; actionConfirmed?: Record<string, true>; nodePath?: string; toolTlsCa?: string | Buffer; onProgress?: ProvisionProgressFn; resolveFinalUrl?: (url: string) => Promise<string>; git?: GitRun } = {}): Promise<UpdateResult> {
   const git = opts.git ?? defaultGitRun;
-  const preview = await previewUpdate(plugin, workspaceRoot, git);
+  // t-4e5f11 — pass the freshly resolved payload hash so same-version content changes are not short-circuited.
+  const preview = await previewUpdate(plugin, workspaceRoot, git, { payloadHash: opts.provenance?.integrity.payload });
   if (preview.errors.length > 0) return { updated: false, errors: preview.errors };
   if (!preview.found) return { updated: false, errors: [`plugin '${plugin.manifest.name}' is not installed — use install`] };
   if (preview.upToDate) return { updated: false, upToDate: true, errors: [] };
@@ -2194,5 +2242,10 @@ export async function applyUpdate(plugin: LoadedPlugin, workspaceRoot: string, o
   // on the preview), so applyInstall's TOCTOU re-derive matches and no runtime is silently added or dropped.
   const target = new Set<Runtime>(preview.install.targetRuntimes);
   const res = await applyInstall(plugin, preview.install, workspaceRoot, target, { provenance: opts.provenance, skillDecisions: opts.skillDecisions, mcpDecisions: opts.mcpDecisions, mcpConfirmed: opts.mcpConfirmed, gitHookConfirmed: opts.gitHookConfirmed, toolConfirmed: opts.toolConfirmed, launcherBundlePath: opts.launcherBundlePath, dataConfirmed: opts.dataConfirmed, dataResolverBundlePath: opts.dataResolverBundlePath, externalResolverBundlePath: opts.externalResolverBundlePath, viewConfirmed: opts.viewConfirmed, fleetReadConfirmed: opts.fleetReadConfirmed, actionConfirmed: opts.actionConfirmed, nodePath: opts.nodePath, toolTlsCa: opts.toolTlsCa, onProgress: opts.onProgress, resolveFinalUrl: opts.resolveFinalUrl, git });
-  return { updated: res.installed, conflicts: preview.conflicts, errors: res.errors };
+  return {
+    updated: res.installed,
+    conflicts: preview.conflicts,
+    errors: res.errors,
+    ...(preview.contentChangedSameVersion ? { contentChangedSameVersion: true } : {}),
+  };
 }

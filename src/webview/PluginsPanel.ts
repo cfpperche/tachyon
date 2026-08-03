@@ -240,7 +240,10 @@ export class PluginsPanelManager {
       const spec = await resolveEffectiveUpdateSpec(p.source.spec, this.gitRun(ws));
       const loaded = await loadPluginFromSource(spec, this.gitRun(ws));
       if (!loaded.plugin) return { kind: "error", detail: loaded.errors.join("; ") };
-      return deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws)));
+      // t-4e5f11 — pass payload hash so same-version content drift is visible on the card.
+      return deriveUpdateCheck(await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws), {
+        payloadHash: loaded.provenance?.integrity.payload,
+      }));
     } catch (e) {
       return { kind: "error", detail: e instanceof Error ? e.message : String(e) };
     }
@@ -484,7 +487,10 @@ export class PluginsPanelManager {
       io.postResult(false, `Could not load '${entry.source.spec}': ${loaded.errors.join("; ")}`);
       return;
     }
-    const preview = await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws));
+    // t-4e5f11 — pass payload hash so same-version content change builds a plan instead of "already up to date".
+    const preview = await previewUpdate(loaded.plugin, ws.workspaceRoot, this.gitRun(ws), {
+      payloadHash: loaded.provenance?.integrity.payload,
+    });
     const force = forceReinstall || preview.conflicts.length > 0 || preview.isDowngrade;
     const present = detectRuntimes(ws.workspaceRoot); // hint only — labels the (fixed) update runtime rows
     io.setPending({ kind: "update", plugin: loaded.plugin, provenance: loaded.provenance, force, fingerprint: preview.install?.fingerprint ?? "" });
@@ -523,7 +529,14 @@ export class PluginsPanelManager {
       // spec 270 — capture whether config existed BEFORE the update (the apply rewrites the lockfile below).
       const hadConfigBefore = !!this.lockfile(ws)?.plugins[op.plugin.manifest.name]?.config;
       const r = await applyUpdate(op.plugin, ws.workspaceRoot, { force: op.force, provenance: op.provenance, expectedFingerprint: token, skillDecisions, mcpDecisions, mcpConfirmed, gitHookConfirmed, toolConfirmed, launcherBundlePath: this.launcherBundlePath(), dataConfirmed, dataResolverBundlePath: this.dataResolverBundlePath(), externalResolverBundlePath: this.externalResolverBundlePath(), viewConfirmed, fleetReadConfirmed, actionConfirmed: trueActions(actionConfirmed), onProgress: (p) => io.postBusy(progressBusyLabel(p)), git: this.gitRun(ws) });
-      io.postResult(r.updated, r.updated ? `Updated ${op.plugin.manifest.name}.` : (r.upToDate ? "Already up to date." : r.errors.join("; ")));
+      // t-4e5f11 — toast true about version AND the world: Reapplied@vX when content changed under same version.
+      const okMsg = r.contentChangedSameVersion
+        ? `Reapplied ${op.plugin.manifest.name}@${op.plugin.manifest.version}.`
+        : `Updated ${op.plugin.manifest.name}.`;
+      const failMsg = r.upToDate
+        ? "Already up to date."
+        : (r.errors.length > 0 ? r.errors.join("; ") : "No change applied.");
+      io.postResult(r.updated, r.updated ? okMsg : failMsg);
       // spec 270 — only when an update INTRODUCES config (absent before, present now) do we open it, treating that
       // first appearance like a fresh install. A plain update of an already-configurable plugin must NOT re-open
       // (noise + a false "did the update touch my config?" signal — the update preserves the human's edits).

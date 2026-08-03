@@ -13,7 +13,13 @@ import type { PluginsViewModel } from "../../../src/plugins/viewModel";
 import type { Fixture } from "../routes";
 import vms from "./plugins.vms.json";
 
-const captured = vms as unknown as { default: PluginsViewModel; updateAvailable: PluginsViewModel; empty: PluginsViewModel; runtimeGap: PluginsViewModel };
+const captured = vms as unknown as {
+  default: PluginsViewModel;
+  updateAvailable: PluginsViewModel;
+  empty: PluginsViewModel;
+  runtimeGap: PluginsViewModel;
+  sourceChanged: PluginsViewModel;
+};
 
 export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
   // every card resolved to "up to date" — the steady state.
@@ -29,4 +35,7 @@ export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
   // and three of the four installs never covered it. agent-browser is the covered control (its card stays
   // quiet), so the shot proves the notice is per-card rather than a global banner.
   "runtime-gap": { provenance: "captured-host-vm", vm: captured.runtimeGap },
+
+  // t-4e5f11 — secrets-guard: same version, different source bytes → badge "source changed · still vX" + Reapply.
+  "source-changed": { provenance: "captured-host-vm", vm: captured.sourceChanged },
 };
