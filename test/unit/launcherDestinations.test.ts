@@ -24,7 +24,13 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
    *  bundle dir, the launcher on the section id, so the seam needs one explicit map rather than a
    *  guessed transform. Phase D adds a line here per migration — deliberately, so the mapping is read
    *  rather than inferred. */
-  const SECTION_TO_APP_VIEW: Record<string, string> = { mission: "mission-control" };
+  const SECTION_TO_APP_VIEW: Record<string, string> = {
+    mission: "mission-control",
+    // SDD 485 D1 — the tmux tile's section id is `tmux`; its bundle directory has always been `inspector`
+    // (and stayed that way through the migration, because renaming a directory inside a cutover buys
+    // nothing). The second line in this map, and the second migration — exactly as this file predicted.
+    tmux: "inspector",
+  };
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {
     const rendered = new Set<string>(COCKPIT_SECTION_ORDER);

@@ -19,6 +19,7 @@ import type { ControlWorkspaceScope } from "./ControlWorkspaceScope.js";
  *
  *   dashboard  key = viewId | project              one panel per section per project; re-open REVEALS
  *   document   key = viewId | project | identity   one panel per identity; two identities are two panels
+ *   window     key = viewId                        one panel, full stop — the subject is not per-project
  *
  * ## What was taken from `StudioPanelManagerBase`, and what was deliberately left behind
  *
@@ -48,15 +49,26 @@ import type { ControlWorkspaceScope } from "./ControlWorkspaceScope.js";
  *    caught by a test: it cannot reach the webview, and it cannot leave the panel stale either.
  */
 
-/** Which panel of an app. `identity` is present exactly when the app's cardinality is `document`. */
+/**
+ * Which panel of an app. Both fields are optional HERE and mandatory per CARDINALITY: `sectionPanelKey`
+ * refuses a target that does not fit its app's row, in both directions. That is the shape C1 chose for
+ * `identity` (a document with none is refused; a dashboard with one is refused) and D1 extends to
+ * `project`, because `window` is an app for which a project is not merely unnecessary but WRONG.
+ *
+ * The alternative — a discriminated union of three target types — was weighed and rejected: the manager is
+ * generic over its refresh kind, not over its cardinality, so a union target would have to be threaded
+ * through `SectionAppConfig.title`, `extraLocalResourceRoots`, `bootstrapGlobals` and every app's `bind`,
+ * to move a check the runtime rule already makes and every app already relies on for `identity`.
+ */
 export interface SectionPanelTarget {
   /**
-   * The project (workspace hash) this panel was opened AGAINST. For a document this is part of its
-   * identity and is frozen at open — switching the sidebar's project selector changes what the next thing
-   * opens against, never what an open document is (`spec.md`, and `route.ts:37` before it).
+   * The project (workspace hash) this panel was opened AGAINST. Required for `dashboard` and `document`,
+   * REFUSED for `window`. For a document it is part of its identity and is frozen at open — switching the
+   * sidebar's project selector changes what the next thing opens against, never what an open document is
+   * (`spec.md`, and `route.ts:37` before it).
    */
-  readonly project: string;
-  /** The document's identity (a task id, an entity id). Absent for a dashboard. */
+  readonly project?: string;
+  /** The document's identity (a task id, an entity id). Required for `document`, refused otherwise. */
   readonly identity?: string;
 }
 
@@ -68,7 +80,8 @@ export interface SectionPanelTarget {
 export interface SectionPanelState extends TrustedPanelState {
   schemaVersion: 1;
   view: string;
-  project: string;
+  /** omitted for a `window` app, which has no project — see `SectionPanelTarget`. */
+  project?: string;
   identity?: string;
 }
 
@@ -157,18 +170,52 @@ interface PanelEntry<K extends string> {
 /**
  * Compose the key. Exported and pure so the cardinality rule can be read and tested without a panel, a
  * webview or an extension host — the same posture `decideCatchUp` and `postureDeclarationErrors` take.
+ *
+ * Every member REFUSES the parts that do not belong to it, in both directions, because a key that quietly
+ * accepts a field it does not use is a key that lies: two callers passing different values for an ignored
+ * field would believe they addressed different panels and get one, or the reverse. The `never` default is
+ * what makes a NEW member of `SectionAppCardinality` a compile error here rather than a silent fall-through
+ * into whichever branch happens to be last.
  */
 export function sectionPanelKey(viewId: string, cardinality: SectionAppCardinality, target: SectionPanelTarget): string {
-  if (cardinality === "document") {
-    if (target.identity === undefined || target.identity === "") {
-      throw new Error(`${viewId}: a "document" app opens against an identity — one panel per identity is the whole point of the cardinality`);
+  switch (cardinality) {
+    case "document": {
+      if (target.project === undefined || target.project === "") {
+        throw new Error(`${viewId}: a "document" app opens against a project — its identity is (project, identity), and a project-less document cannot be told apart from another workspace's task of the same id`);
+      }
+      if (target.identity === undefined || target.identity === "") {
+        throw new Error(`${viewId}: a "document" app opens against an identity — one panel per identity is the whole point of the cardinality`);
+      }
+      return `${viewId}|${target.project}|${target.identity}`;
     }
-    return `${viewId}|${target.project}|${target.identity}`;
+    case "dashboard": {
+      if (target.project === undefined || target.project === "") {
+        throw new Error(`${viewId}: a "dashboard" app opens against a project — one panel per section PER PROJECT; declare cardinality "window" if the surface is not per-project`);
+      }
+      if (target.identity !== undefined) {
+        throw new Error(`${viewId}: a "dashboard" app has no identity (got "${target.identity}") — one panel per section per project; declare cardinality "document" if it needs one`);
+      }
+      return `${viewId}|${target.project}`;
+    }
+    case "window": {
+      // SDD 485 D1 — the refusals ARE the cardinality. A `window` app is one panel for the whole window
+      // because its subject is not per-project (the tmux socket is shared, and the screen's own universe
+      // includes workspaces this window has never opened). Accepting a project here would put it in the
+      // key, and a second caller with a different project would get a second identical panel — which is
+      // exactly the outcome this member exists to make impossible.
+      if (target.project !== undefined) {
+        throw new Error(`${viewId}: a "window" app has no project (got "${target.project}") — its subject is shared by every workspace, so a project in the key would open one identical panel per project`);
+      }
+      if (target.identity !== undefined) {
+        throw new Error(`${viewId}: a "window" app has no identity (got "${target.identity}") — one panel for the window; declare cardinality "document" if it needs one`);
+      }
+      return viewId;
+    }
+    default: {
+      const unhandled: never = cardinality;
+      throw new Error(`unhandled cardinality "${String(unhandled)}" — every member of SectionAppCardinality must say what a key is made of`);
+    }
   }
-  if (target.identity !== undefined) {
-    throw new Error(`${viewId}: a "dashboard" app has no identity (got "${target.identity}") — one panel per section per project; declare cardinality "document" if it needs one`);
-  }
-  return `${viewId}|${target.project}`;
 }
 
 export class SectionPanelManager<K extends string = string> {
@@ -205,6 +252,13 @@ export class SectionPanelManager<K extends string = string> {
 
   /** Resolve ambient scope once, at open. Existing targets never observe later changes. */
   openInCurrentScope(identity?: string): boolean {
+    if (this.cardinality === "window") {
+      // Nothing to resolve: a `window` app has no project, so "open against the current scope" and "open"
+      // are the same request. Answering `false` here would send a caller down a fallback path looking for
+      // a project that must not exist.
+      this.open({});
+      return true;
+    }
     const project = this.workspaceScope?.current;
     if (!project) return false;
     this.open(identity === undefined ? { project } : { project, identity });
@@ -217,11 +271,19 @@ export class SectionPanelManager<K extends string = string> {
    * viewType, so the only thing left to defend is a state whose shape drifted between versions.
    */
   deserialize(panel: vscode.WebviewPanel, state: SectionPanelState): void {
-    if (typeof state.project !== "string" || (state.identity !== undefined && typeof state.identity !== "string")) {
+    // Only the SHAPE is defended here (a field present but not a string). Whether the fields FIT this
+    // app's cardinality is `sectionPanelKey`'s single answer, reached through `mount` below — a state
+    // carrying a project for a `window` app, or none for a dashboard, is a stale panel, not a crash.
+    const malformed = (state.project !== undefined && typeof state.project !== "string")
+      || (state.identity !== undefined && typeof state.identity !== "string");
+    if (malformed) {
       panel.dispose();
       return;
     }
-    const target: SectionPanelTarget = state.identity !== undefined ? { project: state.project, identity: state.identity } : { project: state.project };
+    const target: SectionPanelTarget = {
+      ...(state.project !== undefined ? { project: state.project } : {}),
+      ...(state.identity !== undefined ? { identity: state.identity } : {}),
+    };
     try {
       this.mount(target, panel);
     } catch {
@@ -236,7 +298,10 @@ export class SectionPanelManager<K extends string = string> {
     return {
       schemaVersion: 1,
       view: this.config.app.viewId,
-      project: target.project,
+      // Omitted rather than emitted empty when the app has no project: for a `window` app this makes the
+      // persisted record `{schemaVersion, view}` — byte-identical to what the retired standalone panels
+      // wrote — so a pre-410 window state revives into the app with no migration step to get wrong.
+      ...(target.project !== undefined ? { project: target.project } : {}),
       ...(target.identity !== undefined ? { identity: target.identity } : {}),
     };
   }

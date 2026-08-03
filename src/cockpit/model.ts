@@ -59,6 +59,10 @@ export type CockpitSectionId =
  * redirected rather than silently mistaken for something else), and it is still a launcher tile — but the
  * tile opens the app, and Control has no renderer for it. This is the shape Phase D repeats: a migrated
  * section moves from here to the compatibility list below, and its tile's destination changes.
+ *
+ * SDD 485 D1 — `tmux` left the same way, and it is the second of ten. Phase D's whole shape is this one
+ * edit: an id moves from here into the compatibility list, `WEBVIEW_APPS` gains a row, and the tile does
+ * not move at all.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
@@ -69,22 +73,22 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "execution-graph",
   "runtime",
   "runtime-config",
-  "tmux",
   "plugins",
   "settings",
 ];
 
 /**
  * All accepted section routes. Approvals and Validations remain valid compatibility/deep-link targets, but
- * the Human Inbox is their only top-level navigation entry. `mission` is here for a different reason (SDD
- * 485 C5): the Board is an app now, and this entry is what lets a persisted or deep-linked `section:mission`
- * still DECODE, so extension.ts can redirect it to that app instead of falling back to Overview and losing
- * which screen the human had.
+ * the Human Inbox is their only top-level navigation entry. `mission` (SDD 485 C5) and `tmux` (D1) are here
+ * for a different reason: both are apps now, and these entries are what let a persisted or deep-linked
+ * `section:mission` / `section:tmux` still DECODE, so it can be redirected to the app instead of falling
+ * back to Overview and losing which screen the human had.
  */
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   "approvals",
   "mission",
+  "tmux",
   "validations",
 ];
 

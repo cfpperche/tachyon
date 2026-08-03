@@ -11,7 +11,8 @@ import type { TmuxServerSnapshot } from "./inspector/model.js";
 import { CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
-import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
+import { type InspectorDeps } from "./webview/ServerInspector.js";
+import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -1336,6 +1337,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
   };
 
+  /**
+   * SDD 485 D1 — the tmux Server Inspector is a standalone `window` app: ONE editor tab for the whole
+   * window, because the socket it reads is shared by every workspace in it and its own screen already
+   * filters by workspace with an "all" option. The deps are built ONCE here rather than per open, because
+   * `makeServerInspectorDeps` closes over live state the panel must not lose between opens: the terminal
+   * registry `open()` reuses (`termBySession`), the per-pid CPU-tick baselines `cpuBusy` differences
+   * against, and the `displayedRows` receipt `kill` refuses a stale identity with.
+   */
+  const tmuxPanels = new TmuxPanelManager(context.extensionUri, makeServerInspectorDeps());
+  context.subscriptions.push({ dispose: () => tmuxPanels.dispose() });
+
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
@@ -1809,23 +1821,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       },
     },
-    inspector: (() => {
-      const insp = makeServerInspectorDeps();
-      return {
-        snapshot: insp.snapshot,
-        folderByHash: insp.folderByHash,
-        cpuBusy: insp.cpuBusy,
-        serverHealth: insp.serverHealth,
-        capture: insp.capture,
-        open: insp.open,
-        kill: insp.kill,
-        reapDead: insp.reapDead,
-        reapOrphans: insp.reapOrphans,
-      };
-    })(),
     plugins: pluginsPanels,
     // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
     openBoard,
+    // SDD 485 D1 — and the tmux app, which takes no argument at all: `window` cardinality means there is
+    // one panel for the window and nothing to key it on.
+    openTmux: () => tmuxPanels.open(),
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openGlobalSettings");
     },
@@ -2351,14 +2352,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openBoard(state.wsKey);
   });
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
-  // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
-  // redirects into Control → tmux via tachyon.inspectServer, same as the live open path below.
-  // (Phase C.0) — same claimed-singleton guard as the Board shim above.
-  registerTrustedPanelSerializer<ServerInspectorPanelState>(context, SERVER_INSPECTOR_VIEW_TYPE, (panel) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    void vscode.commands.executeCommand("tachyon.inspectServer");
-  });
+  // SDD 485 D1 — the tmux app's own restore, and the cleanest revival in the whole spec: the panel VS Code
+  // hands back is REUSED. This viewType is the one 410 retired, and its tombstone persisted
+  // `{schemaVersion, view}` — exactly what a `window` app writes, since it has no project and no identity.
+  // So a pre-410 record is not migrated, it is already valid: no dispose-and-reopen, no shim, no dead path,
+  // and no `isCockpitSingletonClaimed()` guard (that guard existed because the old redirect would navigate a
+  // Control panel someone else had restored; opening an app touches no Control state, and re-opening
+  // reveals rather than duplicating, which makes this safe against VS Code's unspecified revive order).
+  registerTrustedPanelSerializer<SectionPanelState>(context, TMUX_VIEW_TYPE, (panel, state) => tmuxPanels.deserialize(panel, state));
   // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
   // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
   // overview rather than reviving into whatever the raw payload happened to contain.
@@ -2676,7 +2677,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // `tachyon.openGlobalSettings` above opens the file that actually holds these settings.
     // t-7bcba6 — tachyon.persistenceSettings (Visible legacy reminders / silentHooks kill switch) removed.
     // ---- server inspector (F27) — cross-workspace socket queries; Control → tmux (t-610705 Phase B #5) ----
-    vscode.commands.registerCommand("tachyon.inspectServer", () => openCockpit(makeCockpitDeps(), { section: "tmux" })),
+    // SDD 485 D1 — the tmux Server Inspector opens as its own editor tab, or reveals the one already open.
+    vscode.commands.registerCommand("tachyon.inspectServer", () => { tmuxPanels.open(); }),
     // ---- Control (desktop MVP, t-fe52f0 frente 1) — editor sysadmin; palette + launcher tiles ----
     // t-6e2952 — optional section opens/navigates the singleton Control (no second panel). The
     // sidebar header view/title button was removed; the launcher tab is the primary door.
@@ -2688,6 +2690,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const resolved = resolveCockpitSection(section);
         if (resolved === "mission") {
           openBoard();
+          return Promise.resolve();
+        }
+        // SDD 485 D1 — the second id to leave Control through this line, and the shape Phase D repeats.
+        if (resolved === "tmux") {
+          tmuxPanels.open();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

@@ -35,7 +35,7 @@ const read = (rel: string) => readFileSync(path.join(repoRoot, rel), "utf8");
  * a lookup into the same strings the component reads: a guard that derives its expectation from the
  * subject cannot notice the subject losing its title.
  *
- * Five render their own PageChrome from the shell. The code-split ones (inbox, runtime, tmux, plugins)
+ * Five render their own PageChrome from the shell. The code-split ones (inbox, runtime, plugins)
  * are photographed at their Suspense fallback — a static serializer can never resolve a
  * lazy chunk — so what this asserts for them is precisely the loading-window identity that used to come
  * from the tab strip, worded as the launcher tile the human clicked. The remaining two are in
@@ -51,14 +51,14 @@ const SECTION_HEADING: Record<CockpitSectionId, string> = {
   "execution-graph": "Execution graph",
   runtime: "Runtime Ops",
   "runtime-config": "Runtime Config",
-  tmux: "tmux",
   plugins: "Plugins",
   settings: "Settings",
   // Not on COCKPIT_SECTION_ORDER — listed because the record is keyed by CockpitSectionId and a new
   // section must be answered here, not silently skipped. `approvals`/`validations` are deep-link only;
-  // `mission` (SDD 485 C5) HAS a launcher tile but is a standalone app, so Control renders no section
-  // for it and this suite never asks it to.
+  // `mission` (SDD 485 C5) and `tmux` (D1) HAVE launcher tiles but are standalone apps, so Control
+  // renders no section for either and this suite never asks it to.
   approvals: "Approvals",
+  tmux: "tmux",
   validations: "Validations",
 };
 

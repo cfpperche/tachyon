@@ -34,6 +34,7 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
+import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
   humanInboxFixtureVm,
@@ -115,9 +116,6 @@ export const ROUTES: Record<string, Route> = {
   // retired Activity/Probes panels; both are Fleet subroutes now — use ?view=cockpit&fixture=
   // agent-activity / agent-probes (same App.tsx components, same fixture VMs, via the cockpit
   // route's activeRoute injection above).
-  // t-610705 (SDD 410 Phase B #5) — the standalone "inspector" route previewed the retired tmux
-  // Server Inspector panel; tmux is a cockpit-only section now — use ?view=cockpit&fixture=tmux
-  // (same App.tsx, same fixture VM).
   // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
   // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
   // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
@@ -137,7 +135,6 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
-      "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
@@ -199,12 +196,6 @@ export const ROUTES: Record<string, Route> = {
         }
       } else if (model.section === "runtime-config") {
         msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
-      } else if (model.section === "tmux") {
-        const insp = inspectorFixtures.default?.vm;
-        if (insp) {
-          msgs.push({ type: "inspectorInit", strings: inspectorStrings });
-          msgs.push({ type: "inspectorModel", model: insp });
-        }
       } else if (model.section === "plugins") {
         // Multiple cockpit fixtures share section "plugins"; identity picks which plugins VM rides along
         // (same pattern as "nav-pending"). t-fb216a runtime-gap; t-4e5f11 source-changed + update-available.
@@ -375,6 +366,24 @@ export const ROUTES: Record<string, Route> = {
     pageFrame: true,
     makeMessage: (vm) => missionControlSnapshotMessage(vm as never),
   },
+  // SDD 485 D1 — the tmux Server Inspector, standalone again, so it gets its own route back for the same
+  // reason the task detail and the Board did: this renders the REAL shipped `inspector.js` with the exact
+  // stylesheet list `TmuxPanel.ts` links, rather than the same component embedded inside Control. Two
+  // messages, which is why this route's `makeMessage` returns an array — and they are the SHARED
+  // `init`/`model` envelopes now, not Control's namespaced `inspectorInit`/`inspectorModel`.
+  //
+  // No `pageFrame`: the inspector is a page-scrolling document (like the task detail), links no
+  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized `#frame` is the right
+  // model of what a real webview gives it.
+  inspector: {
+    bundle: "/dist/webview/inspector.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/inspector.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: inspectorFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => [inspectorInitMessage(inspectorStrings), inspectorModelMessage(vm as never)],
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -422,6 +431,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
   "mission-control": { title: "Board", aliases: ["board", "mission control", "task board", "kanban"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
+  inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

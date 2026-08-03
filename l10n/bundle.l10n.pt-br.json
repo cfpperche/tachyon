@@ -565,6 +565,7 @@
   "the tmux server is wedged — run 'Tachyon: Restart tmux Server' to ask the persistent engine to recover it.": "o servidor tmux está travado — execute 'Tachyon: Reiniciar servidor tmux' para pedir que a engine persistente faça a recuperação.",
   "the tmux server on Tachyon's dedicated socket looks wedged — it holds the socket but fails every command. Recover now? (kills the stuck server; its sessions are already lost)": "o servidor tmux no socket dedicado do Tachyon parece travado — ele segura o socket mas falha em todos os comandos. Recuperar agora? (mata o servidor travado; as sessões dele já foram perdidas)",
   "the tmux server was wedged — auto-recovered. Restart your agents to continue.": "o servidor tmux travou — recuperado automaticamente. Reinicie seus agents para continuar.",
+  "tmux": "tmux",
   "tmux Server Inspector": "Inspetor do Servidor tmux",
   "tmux install docs": "docs de instalação do tmux",
   "tmux recovery is already running in another Tachyon engine.": "a recuperação do tmux já está em execução em outra engine do Tachyon.",

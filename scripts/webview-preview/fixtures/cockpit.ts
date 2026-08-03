@@ -142,8 +142,6 @@ export const strings: CockpitStrings = {
   runtimeConfigOpaqueSections: "Opaque sections",
   runtimeConfigReadError: "Could not read this runtime configuration source",
   runtimeConfigUnavailable: "Runtime configuration is unavailable because this workspace configuration did not load.",
-  tmuxTitle: "tmux",
-  tmuxHint: "Server inspector (embedded).",
   pluginsTitle: "Plugins",
   pluginsHint: "Install, update, and integrity (embedded).",
   settingsTitle: "Settings",
@@ -1101,7 +1099,6 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
-  tmux: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "tmux", nowIso: now }) },
   plugins: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
   // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM (see routes.ts).
   "plugins-runtime-gap": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },

@@ -133,8 +133,6 @@ export interface CockpitStrings {
   runtimeConfigOpaqueSections: string;
   runtimeConfigReadError: string;
   runtimeConfigUnavailable: string;
-  tmuxTitle: string;
-  tmuxHint: string;
   pluginsTitle: string;
   pluginsHint: string;
   settingsTitle: string;

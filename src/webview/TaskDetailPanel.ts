@@ -149,8 +149,10 @@ export class TaskDetailPanelManager {
         return type === READY || type === "requestSnapshot" ? "task" : undefined;
       },
       bind: (session) => {
-        const { project, identity } = session.target;
-        const taskId = identity ?? "";
+        // `sectionPanelKey` refuses a `document` target missing either half, so a panel cannot exist
+        // without both — the fallbacks are the type's shape, not a case that can be reached.
+        const project = session.target.project ?? "";
+        const taskId = session.target.identity ?? "";
         /**
          * The LAST KNOWN good projection for THIS panel. Ported from Control's single slot, which was
          * correct only because Control was a singleton — a document app has as many as it has tabs.

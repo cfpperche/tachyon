@@ -68,8 +68,16 @@ proved a three-way merge of two such PRs silently keeps BOTH sides with no confl
 notes.md). So Phase D is SEQUENTIAL on that file: one lands, the next rebases onto it. Two agents may
 work in parallel only if the second re-applies onto the first before delivery, never merges into it.
 
-- [ ] D1–D10. One PR per dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution, Runtime
-      Ops, Runtime Config, tmux, Plugins, Settings — minus any already moved). Each PR: app lands,
+- [x] D1. **tmux Server Inspector** — and the task that discovered the THIRD cardinality. It is not a
+      dashboard: the socket is cross-workspace by design, the model carries sessions owned by closed
+      and other-window workspaces, and the screen has its own workspace filter with an "all" option,
+      so one panel per project would open N identical tabs onto one server. `window` (key = `viewId`,
+      no project, no identity) is the member, and `sectionPanelKey` REFUSES both — see notes.md for
+      the rejected "dashboard with a constant project". The retired `tachyonServerInspector` viewType
+      is reused rather than replaced, because a `window` app's persisted state is byte-identical to
+      that tombstone's, so restore revives with no shim at all.
+- [ ] D2–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
+      Runtime Ops, Runtime Config, Plugins, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
 - [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
@@ -185,6 +193,36 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
       reads the 1280px browser viewport and never fires. Measuring a breakpoint here needs the BROWSER
       viewport set (what `scripts/visual-qa/*.mjs` already do with `page.setViewport`); `?width=` alone
       silently tests nothing. Filed with the maintainer's own half of the measurement as **t-b24282**.
+- [x] **Evidence (D1, 2026-08-03):** the tmux app at 880 and 360, on BOTH its tabs, captured through the
+      route this change adds — `npm run preview:webview` + `?view=inspector&fixture=volume&width=<w>&height=900`
+      with the browser VIEWPORT set to the same width (t-b24282's fix, used rather than only cited), rendering
+      the REAL shipped `dist/webview/inspector.js` with the exact stylesheet list `TmuxPanel.ts` links
+      (`cockpitCssParity.test.ts` asserts the two agree). The `volume` fixture is committed with the route —
+      20 sessions across four groups (three attached, one closed/foreign), 15 live, 5 dead, 4 orphaned, long
+      `startCommand`s — because C5's pass came back clean on a broken screen partly for want of volume.
+      Screenshots under `.vqa/485-d1/` (gitignored work evidence; the ROUTE and the driver
+      `scripts/visual-qa/tmux-app-widths.mjs` are committed, so all four are one command to re-take) and
+      attached via `attach_evidence` on `tmuxapp` (`ev-2026-08-03T17:24:48.967Z-0`). Anchor, written from the
+      task's problem statement before the surface was measured: *the inspector must arrive as a first-class
+      editor tab showing the SAME server it showed inside Control — at 880 the page chrome on one row above
+      the Overview/Server tabs, the five-column filter bar on one row below them, session rows reading
+      status · label · meta · age · actions, with the surface's own single page pad rather than doubled or
+      absent where Control's shell used to be; at 360 usable rather than clipping, the filter bar reflowing
+      instead of overflowing and the row actions wrapping instead of pushing the row off the page; and at both
+      widths its own Workspace filter, with the "all" option, present and untouched — because that filter is
+      the reason this app is one panel and not one per project.*
+- [x] **Verdict (D1):** satisfies the anchor at both widths, on both tabs; zero horizontal overflow anywhere
+      (scrollWidth == clientWidth at 880 and 360). At 880 the five filters sit on one row and each session row
+      reads on one line; at 360 the filter bar reflows to five stacked rows, each session row wraps its meta
+      and actions below the identity, and the Server tab's five-metric grid reflows 2-up with the diagnostics
+      `pre` scrolling inside itself while the page does not. The Workspace filter and its "all" option render
+      unchanged at both widths, and the `(closed workspace)` foreign group shows its own note — the two facts
+      the `window` cardinality rests on, visible on screen rather than only in a test.
+      Two things named so they are not read as migration defects, both INHERITED: at 360 the Kill button wraps
+      to its own line (`.acts { flex-wrap: wrap }`, and Control rendered it identically), and every age reads
+      ~414d because the fixture pins a fixed epoch while `ago()` computes live — a fixture artifact the
+      `default` fixture has always had. `inspector/App.tsx` and `inspector.css` are byte-identical across this
+      change, which is what lets both claims be checked rather than asserted.
 
 ## Cookbook
 

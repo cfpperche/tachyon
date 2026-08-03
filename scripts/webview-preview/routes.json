@@ -1065,27 +1065,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "tmux",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=tmux",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "plugins",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins",
     "frame": {
@@ -1619,6 +1598,63 @@
       "mission control",
       "task board",
       "kanban"
+    ]
+  },
+  {
+    "view": "inspector",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "tmux",
+    "aliases": [
+      "tmux",
+      "server inspector",
+      "tmux server inspector",
+      "sessions"
+    ]
+  },
+  {
+    "view": "inspector",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "tmux",
+    "aliases": [
+      "tmux",
+      "server inspector",
+      "tmux server inspector",
+      "sessions"
+    ]
+  },
+  {
+    "view": "inspector",
+    "fixture": "volume",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=volume",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "tmux",
+    "aliases": [
+      "tmux",
+      "server inspector",
+      "tmux server inspector",
+      "sessions"
     ]
   },
   {

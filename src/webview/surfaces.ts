@@ -113,11 +113,21 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // The trusted serializer for the legacy "tachyonProbes" viewType stays registered in
   // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the matching
   // probes subroute.
-  // The standalone tmux Server Inspector panel was retired (t-610705, SDD 410 Phase B #5, 2026-07-20) —
-  // tmux is a cockpit section only (src/webview/inspector/App.tsx stays, lazy-imported by cockpit/App.tsx;
-  // no per-workspace scoping needed — the tmux socket is cross-workspace by design). The trusted serializer
-  // for the legacy "tachyonServerInspector" viewType stays registered in extension.ts: a revived pre-410
-  // panel disposes itself and redirects into Control → tmux (same command the live open path uses).
+  // SDD 485 D1 (2026-08-03) — the tmux Server Inspector is a STANDALONE APP again, reversing 410 Phase B
+  // #5's retirement. It is the `window` kind, and it is the app that introduced that cardinality: the tmux
+  // socket is cross-workspace by design (the sentence this comment used to carry as the REASON no scoping
+  // was needed is now the reason the key has no project in it), the model's groups include `foreign` rows
+  // owned by closed folders and other windows, and the screen has its own Workspace filter with an "all"
+  // option. One panel for the window; two attached projects do not make two identical tabs.
+  //
+  // The viewType is the RETIRED one, deliberately: 410 left it a serializer-only tombstone persisting
+  // `{schemaVersion, view}` and nothing else, which is exactly what a `window` app writes — so a pre-410
+  // panel REVIVES into this app rather than being disposed and redirected, with no migration shim at all.
+  //
+  // `conform`, and the contract checks it: it mounts through the shared shell (via SectionPanelManager),
+  // links design-system.css, and inspector.css styles no page frame, mints no `--ds-*` values and gives
+  // `#root` no height — it is a page-scrolling document, so it links no page-frame.css either.
+  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/TmuxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 485 A1 — Control is a full-bleed multi-section app: cockpit.css hard-resets `html, body, #root` with
   // `!important` so the embedded sections' standalone CSS cannot re-impose a page pad (that reset is the
   // reason cockpitCssParity.test.ts pins cockpit.css LAST). Own page chrome, shared kit → `extend`.

@@ -1,22 +1,17 @@
 import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import type { TmuxServerSnapshot } from "../inspector/model.js";
 
-export const SERVER_INSPECTOR_VIEW_TYPE = "tachyonServerInspector";
-
-export interface ServerInspectorPanelState {
-  schemaVersion: 1;
-  view: typeof SERVER_INSPECTOR_VIEW_TYPE;
-}
-
 /**
- * t-610705 (SDD 410 Phase B #5) — the standalone tmux Server Inspector webview panel was retired:
- * tmux is a cockpit section only now (Cockpit.ts builds and handles the model/actions independently).
- * `tachyon.inspectServer` opens Control → tmux directly (extension.ts); a revived pre-410 panel
- * disposes itself and redirects the same way, via that command (see the trusted serializer in
- * extension.ts).
+ * SDD 485 D1 (2026-08-03) — what is left of this file is real DOMAIN logic and nothing else: the
+ * tmux-socket dependency shape the inspector reads through. The panel machinery it used to describe came
+ * back, but not here — `src/webview/TmuxPanel.ts` is the live host now, and it owns the viewType
+ * (`TMUX_VIEW_TYPE`, still the string 410 retired) and the persisted state (`SectionPanelState`, which for
+ * a `window` app is byte-identical to the tombstone's).
  *
- * What survives here is real domain logic, not webview plumbing: the tmux-socket dependency shape
- * shared by Control's embedded tmux section (makeCockpitDeps().inspector reuses this exact shape).
+ * History, because it is the reason the viewType did not change: t-610705 (SDD 410 Phase B #5) retired the
+ * standalone panel and made tmux a Control section, leaving this file a types-only stub with a
+ * `SERVER_INSPECTOR_VIEW_TYPE` + `ServerInspectorPanelState` pair used only by a dispose-and-redirect
+ * serializer. Both are gone with the redirect they served.
  */
 export interface InspectorDeps {
   /** Raw pane snapshot for the whole Tachyon namespace on the socket. */

@@ -23,16 +23,30 @@
  */
 
 /**
- * How many panels of one app may exist at once. This is the whole of the dashboard/document distinction
- * `spec.md` introduced ("Two kinds of app, not one"), expressed as data:
+ * How many panels of one app may exist at once, and — equivalently — what a panel's KEY is made of.
+ * `spec.md` introduced two kinds ("Two kinds of app, not one"); SDD 485 D1 added the third, because the
+ * first migrated dashboard turned out not to be one:
  *
- *  - `dashboard` — ONE panel per app per project. Opening it again REVEALS the panel that is already open.
- *    The Board, Fleet, Engine, Settings and the other eight land here.
- *  - `document`  — ONE panel per IDENTITY. Two identities are two panels, side by side, and a document's
- *    identity is fixed at open: the project selector changes what the NEXT thing opens against, never what
- *    an open document IS (`route.ts:37` already treats a task detail's `wsHash` that way).
+ *  - `dashboard` — ONE panel per app per project; key `viewId | project`. Opening it again REVEALS the
+ *    panel that is already open. The Board, Fleet, Engine, Settings and most of the rest land here.
+ *  - `document`  — ONE panel per IDENTITY; key `viewId | project | identity`. Two identities are two
+ *    panels, side by side, and a document's identity is fixed at open: the project selector changes what
+ *    the NEXT thing opens against, never what an open document IS (`route.ts:37` already treats a task
+ *    detail's `wsHash` that way).
+ *  - `window`    — ONE panel, full stop; key `viewId`, with NO project and NO identity. For a surface
+ *    whose subject is not per-project: the tmux Server Inspector reads ONE socket shared by every
+ *    workspace in the window, and its own screen already filters by workspace with an "all" option
+ *    (`inspector/App.tsx`, protected by `controlWorkspaceScope.test.ts`). Under `dashboard` two attached
+ *    projects would open two byte-identical panels onto the same server; under `window` they open one.
+ *
+ * **A project constant would have been a lie, and that is why this is a third member rather than a
+ * convention.** "Dashboard, keyed on a fixed string" produces one panel too — but the key would carry a
+ * project the panel does not have, `panelStateFor` would persist it, `openInCurrentScope` would resolve a
+ * scope and hand over something meaningless, and nothing would stop the next caller passing a REAL project
+ * and getting a second identical panel. A cardinality is enforcement; this one has to be able to enforce
+ * "there is no project here", which only a member `sectionPanelKey` can REFUSE against can do.
  */
-export type SectionAppCardinality = "dashboard" | "document";
+export type SectionAppCardinality = "dashboard" | "document" | "window";
 
 /**
  * Which host owns an app's panel lifecycle. A union rather than an optional field, for the same reason
@@ -92,6 +106,21 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // serializer can keep redirecting a pre-410 panel instead of colliding with this one — the opposite call
   // from C4's, and for the opposite reason: that tombstone has no live redirect left to preserve.
   { view: "mission-control", viewId: "tachyonBoard", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D1 — the tmux Server Inspector, the FIRST Phase D migration and the app that introduced
+  // `window`. The socket is one per user, shared by every workspace in the window (`WEBVIEW_SURFACES`
+  // recorded that when 410 retired this panel: "no per-workspace scoping needed — the tmux socket is
+  // cross-workspace by design"), and the screen's own universe is wider than any project: its groups
+  // include `foreign: true` rows for closed and other-window workspaces, which no project key could name.
+  //
+  // `view` stays "inspector" — the directory the screen has always lived in and the basename its
+  // stylesheet already ships under; renaming it inside a cutover would touch ~10 files to say the same
+  // thing (the same call C5 made for "mission-control"). The viewType is the RETIRED
+  // `tachyonServerInspector`, reused rather than replaced: 410 left it a serializer-only tombstone whose
+  // persisted state is `{schemaVersion, view}` and nothing else — which is EXACTLY what a `window` app
+  // persists, since it has no project and no identity. So a pre-410 window state is not migrated, it is
+  // already valid, and restore REVIVES instead of redirecting. (C4 reused its viewType for a weaker
+  // version of this reason; C5 could not, because its tombstone carried an incompatible `wsHash`.)
+  { view: "inspector", viewId: "tachyonServerInspector", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

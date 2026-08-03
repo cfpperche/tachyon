@@ -53,7 +53,6 @@ describe("preview route table", () => {
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
       "/dist/webview/runtime-ops.css",
-      "/dist/webview/inspector.css",
       "/dist/webview/mermaid-block.css",
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
@@ -134,7 +133,8 @@ describe("preview route table", () => {
       "studio-terminal-edit",
       // SDD 485 C4 — the four `task-detail*` fixtures left this route with the subroute: the task
       // detail is a standalone app and has its own route below, previewing the REAL shipped bundle.
-      "tmux",
+      // SDD 485 D1 — and no "tmux" fixture, for the same reason: the inspector is a standalone app with
+      // its own route now, so Control has no tmux section to render or photograph.
       "validations",
       "worktrees",
     ]);
@@ -156,8 +156,6 @@ describe("preview route table", () => {
     expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
     const runtimeMsgs = r.makeMessage(r.fixtures.runtime.vm) as Array<{ type: string }>;
     expect(runtimeMsgs.map((m) => m.type)).toEqual(["init", "model", "runtimeOpsSnapshot"]);
-    const tmuxMsgs = r.makeMessage(r.fixtures.tmux.vm) as Array<{ type: string }>;
-    expect(tmuxMsgs.map((m) => m.type)).toEqual(["init", "model", "inspectorInit", "inspectorModel"]);
     const pluginsMsgs = r.makeMessage(r.fixtures.plugins.vm) as Array<{ type: string }>;
     expect(pluginsMsgs.map((m) => m.type)).toEqual(["init", "model", "plugins"]);
     // t-610705 (Phase C.3) — Handoff folds into a section (unlike Fleet's subroutes): nav section is
@@ -228,6 +226,32 @@ describe("preview route table", () => {
     const msg = r.makeMessage(r.fixtures.default!.vm) as { type: string; vm?: { id?: string } };
     expect(msg.type).toBe("task");
     expect(msg.vm?.id).toBeTruthy();
+  });
+
+  it("declares the tmux route (SDD 485 D1) against the REAL standalone bundle and the host's own CSS list", () => {
+    // Same point as the task-detail case above: the harness must load what SHIPS. It also pins the
+    // envelope change the cutover makes — Control had to namespace its pushes (`inspectorInit`/
+    // `inspectorModel`) to avoid colliding with its own `init`/`model`; the standalone app uses the
+    // SHARED constants `inspector/messages.ts` has declared since spec 279 and nothing collides.
+    const r = ROUTES.inspector;
+    expect(r.bundle).toBe("/dist/webview/inspector.js");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/inspector.css",
+    ]);
+    expect(r.module).toBe(true);
+    // No page-frame link, so no `pageFrame` flag: the inspector scrolls as a document.
+    expect(r.cssLinks.some((href) => href.endsWith("/page-frame.css"))).toBe(false);
+    expect(r.pageFrame).toBeUndefined();
+    // `volume` is the fixture the two-width visual pass drives — C5's lesson, that a thin fixture can
+    // pass a broken layout, applied before the screenshot rather than after it.
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "volume"]);
+    const volume = r.fixtures.volume.vm as { totalSessions: number; groups: unknown[] };
+    expect(volume.totalSessions).toBeGreaterThanOrEqual(20);
+    expect(volume.groups.length).toBeGreaterThanOrEqual(4);
+    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
+    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
@@ -320,6 +344,8 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // multi-entry targets, not just the one it was written for.
     expect(bundles.has("dist/webview/mission-control.js")).toBe(true);
     expect(bundles.has("dist/webview/task-detail.js")).toBe(true);
+    // SDD 485 D1 — and inspector.js, the third surface to come back as its own entry.
+    expect(bundles.has("dist/webview/inspector.js")).toBe(true);
     expect(bundles.has("dist/webview/task-studio.js")).toBe(false);
   });
 
