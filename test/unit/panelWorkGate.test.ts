@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   decideCatchUp,
@@ -214,5 +215,54 @@ describe("PanelWorkGate — the reveal is the safety property", () => {
     // can find it rather than left as a magic literal in the class.
     expect(DEFAULT_CATCH_UP_WINDOW).toBe(64);
     expect(DEFAULT_CATCH_UP_WINDOW / 2.4).toBeGreaterThan(20);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The doors, checked from the SOURCE — not from the behaviour of the doors that exist today.
+//
+// Every behavioural test above proves that the four doors Phase B found are gated. None of them
+// would notice a FIFTH one added later, and Phase C/D exist to add ten apps' worth of refresh paths.
+// That gap has a precedent worth not repeating: 0.56.159 shipped a coalescing fix with green unit
+// tests and changed nothing in production, because the tests called the one coalesced door while
+// production used five others. Green tests proved the door worked; nothing proved it was the only
+// door. This is that missing proof, and it is deliberately static — the same posture Phase A took
+// for the design system: the mechanism is a test, not a habit.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door cannot sneak in)", () => {
+  const cockpit = readFileSync("src/webview/Cockpit.ts", "utf8");
+
+  it("routes every Control push through pushControlRefresh or the gate's own resync branch", () => {
+    // The two sanctioned homes for a `pushX?.()` call: inside the `pushControlRefresh` switch (the
+    // gated path), and the gate's `resync:` option (the reveal's rebuild, which runs BECAUSE the
+    // panel just became visible). Anywhere else is an ungated door.
+    //
+    // Sanctioned sites are matched by OFFSET, never by line text. The first cut of this test compared
+    // `switchBody.includes(line.trim())` and was blind: an injected `pushMissionBoard?.();` anywhere in
+    // the file is a substring of the switch's own `case "mission": pushMissionBoard?.(); return;`, so
+    // every bypass "passed". A guard that cannot fail is worse than no guard — this one is proven to
+    // go red by the fail-before recorded in notes.md.
+    const found = /function pushControlRefresh\([\s\S]*?\n}/.exec(cockpit);
+    expect(found, "pushControlRefresh not found — did it move or get renamed?").not.toBeNull();
+    const sanctioned: Array<[number, number]> = [[found!.index, found!.index + found![0].length]];
+    for (const m of cockpit.matchAll(/\bresync:\s*\(\)\s*=>.*$/gm)) sanctioned.push([m.index!, m.index! + m[0].length]);
+
+    const lineAt = (offset: number): number => cockpit.slice(0, offset).split("\n").length;
+    const ungated: string[] = [];
+    for (const m of cockpit.matchAll(/\b(push[A-Z][A-Za-z]*)\?\.\(/g)) {
+      if (sanctioned.some(([from, to]) => m.index! >= from && m.index! < to)) continue;
+      ungated.push(`Cockpit.ts:${lineAt(m.index!)}: ${m[1]}?.() is called outside pushControlRefresh — a hidden panel would still do this work. Add a ControlRefreshKind and go through refreshControl().`);
+    }
+    expect(ungated, ungated.join("\n")).toEqual([]);
+  });
+
+  it("keeps every ControlRefreshKind reachable — a kind with no case is a silently dead door", () => {
+    const union = /type ControlRefreshKind =([\s\S]*?);/.exec(cockpit)?.[1] ?? "";
+    expect(union, "ControlRefreshKind not found").not.toBe("");
+    const kinds = [...union.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+    expect(kinds.length).toBeGreaterThan(0);
+    const switchBody = /function pushControlRefresh\([\s\S]*?\n}/.exec(cockpit)?.[0] ?? "";
+    const missing = kinds.filter((k) => !switchBody.includes(`case "${k}":`));
+    expect(missing, `ControlRefreshKind values with no case in pushControlRefresh: ${missing.join(", ")}`).toEqual([]);
   });
 });

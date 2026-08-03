@@ -329,3 +329,23 @@ change that needs the two-width evidence this phase does not produce. Owner: una
 - **`PluginSurfaceHost` editor panels** (`plugins/ui/host.ts`) also refresh unconditionally in
   `refreshAll()`. The same primitive applies; out of Phase B's declared scope (`AgentPanePanel` +
   Control), so untouched here.
+
+### Phase B — the door guard is static, and its first cut was blind (2026-08-03, review)
+
+Phase B's behavioural tests prove the four doors it found are gated. None of them would notice a
+FIFTH door added later — and Phases C/D exist to add ten apps' worth of refresh paths. That is the
+0.56.159 shape exactly: green tests proved the door worked, nothing proved it was the only door.
+
+So `panelWorkGate.test.ts` gained a static guard: every `pushX?.()` in `Cockpit.ts` must sit inside
+`pushControlRefresh` or the gate's `resync:` branch, and every `ControlRefreshKind` must have a case.
+
+**Its first cut was itself blind, and the fail-before is what caught it.** It compared
+`switchBody.includes(line.trim())`, so an injected `pushMissionBoard?.();` anywhere in the file
+matched as a substring of the switch's own `case "mission": pushMissionBoard?.(); return;` — every
+bypass passed. Rewritten to match sanctioned sites by OFFSET rather than by line text.
+
+Fail-before, re-run after the rewrite: injecting `pushMissionBoard?.()` into `refreshCockpitProbes`
+goes red naming `Cockpit.ts:973` and the fix. Clean tree: 18 passed.
+
+The lesson is the one A5 encodes and this note repeats from the other side: a guard nobody has
+watched fail is a guard nobody knows works.
