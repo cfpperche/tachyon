@@ -104,6 +104,9 @@ describe("preview route table", () => {
       "plugins",
       // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM.
       "plugins-runtime-gap",
+      // t-4e5f11 — labeled version bump / same-version content change card states.
+      "plugins-source-changed",
+      "plugins-update-available",
       "runtime",
       "runtime-config",
       "settings",

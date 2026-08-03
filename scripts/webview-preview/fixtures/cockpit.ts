@@ -1119,6 +1119,10 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   plugins: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
   // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM (see routes.ts).
   "plugins-runtime-gap": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
+  // t-4e5f11 — labeled version bump on visual-qa (badge "update available · v0.2.0" + Update).
+  "plugins-update-available": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
+  // t-4e5f11 — same version, different source bytes on secrets-guard (badge + Reapply).
+  "plugins-source-changed": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
   worktrees: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "worktrees", nowIso: now }) },
   settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
   empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "overview", nowIso: now }) },

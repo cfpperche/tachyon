@@ -269,6 +269,19 @@ describe("buildUpdateConsent", () => {
     expect(buildUpdateConsent(updatePreview({ upToDate: true }), PROV).errors).toContain("already up to date (v1.3.0)");
     expect(buildUpdateConsent(updatePreview({ found: false }), PROV).errors?.some((e) => /not installed/.test(e))).toBe(true);
   });
+
+  it("t-4e5f11 — same-version content change frames as Reapply, not Update", () => {
+    const vm = buildUpdateConsent(updatePreview({
+      fromVersion: "1.3.0",
+      toVersion: "1.3.0",
+      contentChangedSameVersion: true,
+    }), PROV);
+    expect(vm.title).toBe("Reapply tdd-guard@1.3.0 — source content changed");
+    expect(vm.confirmLabel).toBe("Reapply");
+    expect(vm.warnings?.[0]).toMatch(/still 1\.3\.0/);
+    expect(vm.errors).toBeUndefined();
+    expect(vm.requiresForce).toBeUndefined();
+  });
 });
 
 describe("buildRemoveConsent", () => {
@@ -302,5 +315,10 @@ describe("deriveUpdateCheck", () => {
     expect(deriveUpdateCheck(updatePreview({ errors: ["x"] }))).toEqual({ kind: "error", detail: "x" });
     expect(deriveUpdateCheck(updatePreview({ found: false })).kind).toBe("error");
     expect(deriveUpdateCheck(updatePreview({ isDowngrade: true, toVersion: "1.1.0" })).kind).toBe("up-to-date");
+    // t-4e5f11 — not "update-available · v{same}" (that would imply a version bump)
+    expect(deriveUpdateCheck(updatePreview({ fromVersion: "1.3.0", toVersion: "1.3.0", contentChangedSameVersion: true }))).toEqual({
+      kind: "source-changed",
+      version: "1.3.0",
+    });
   });
 });

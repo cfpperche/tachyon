@@ -4,11 +4,12 @@ export type InstalledSortMode = "name-asc" | "name-desc" | "status" | "version";
 
 const STATUS_RANK: Record<PluginStatusKind, number> = {
   "update-available": 0,
-  drift: 1,
-  conflict: 2,
-  error: 3,
-  unknown: 4,
-  "up-to-date": 5,
+  "source-changed": 1,
+  drift: 2,
+  conflict: 3,
+  error: 4,
+  unknown: 5,
+  "up-to-date": 6,
 };
 
 function textFor(p: InstalledPluginVM): string {

@@ -19,6 +19,7 @@ import {
   runtimeSupportsSkills,
   planMcpTargets,
   runtimeSupportsMcp,
+  type InstallProvenance,
 } from "../../src/plugins/engine.js";
 import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
 import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
@@ -1727,8 +1728,99 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     const effective = await resolveEffectiveUpdateSpec("github:o/mono2@v1.0.0", git);
     expect(effective).toBe("github:o/mono2@v2.0.0");
     // …but the manifest version is the deciding signal → up-to-date (no false "update available").
+    // Without payloadHash this stays version-only (spec 266 back-compat / callers that omit the hash).
     const v2 = await loadPluginFromSource(effective, git, { cacheRoot });
     expect((await previewUpdate(v2.plugin!, ws)).upToDate).toBe(true);
+  });
+});
+
+describe("t-4e5f11 freshness oracle (version primary + payload when equal)", () => {
+  const HASH_A = "a".repeat(64);
+  const HASH_B = "b".repeat(64);
+  const CMD_V1 = `"${PLUGIN_ROOT_PLACEHOLDER}"/v1.sh`;
+  const CMD_V2 = `"${PLUGIN_ROOT_PLACEHOLDER}"/v2.sh`;
+  const cmdsOf = (ws: string) => readJson(SETTINGS(ws)).hooks.PreToolUse.map((g: { hooks: Array<{ command: string }> }) => g.hooks[0].command);
+  const prov = (payload: string): InstallProvenance => ({
+    source: { type: "git", spec: "github:o/p@v1.0.0", remote: "https://github.com/o/p.git", ref: "v1.0.0", resolvedCommit: "c".repeat(40) },
+    integrity: { algorithm: "sha256", payload },
+  });
+
+  it("same version + matching payloadHash → up-to-date (no install plan)", async () => {
+    const ws = makeWorkspace();
+    const p = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
+    await applyInstall(p, previewInstall(p, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: prov(HASH_A), mcpConfirmed: true });
+    const p2 = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
+    const preview = await previewUpdate(p2, ws, undefined, { payloadHash: HASH_A });
+    expect(preview).toMatchObject({ found: true, upToDate: true, isDowngrade: false, fromVersion: "1.0.0", toVersion: "1.0.0" });
+    expect(preview.contentChangedSameVersion).toBeUndefined();
+    expect(preview.install).toBeUndefined();
+  });
+
+  it("same version + different payloadHash → not up-to-date, has plan, contentChangedSameVersion; apply re-pins integrity", async () => {
+    const ws = makeWorkspace();
+    const p = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
+    await applyInstall(p, previewInstall(p, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: prov(HASH_A), mcpConfirmed: true });
+    const p2 = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V2 })).plugin!;
+    const preview = await previewUpdate(p2, ws, undefined, { payloadHash: HASH_B });
+    expect(preview.upToDate).toBe(false);
+    expect(preview.contentChangedSameVersion).toBe(true);
+    expect(preview.isDowngrade).toBe(false);
+    expect(preview.install).toBeDefined();
+    expect(preview.install!.errors).toEqual([]);
+
+    const res = await applyUpdate(p2, ws, {
+      provenance: { ...prov(HASH_B), source: { ...prov(HASH_B).source, resolvedCommit: "d".repeat(40) } },
+      expectedFingerprint: preview.install!.fingerprint,
+    });
+    expect(res.updated).toBe(true);
+    expect(res.contentChangedSameVersion).toBe(true);
+    const lock = readJson(LOCK(ws)).plugins.sdd;
+    expect(lock.version).toBe("1.0.0");
+    expect(lock.integrity.payload).toBe(HASH_B);
+    expect(cmdsOf(ws)[0]).toContain("v2.sh");
+  });
+
+  it("legacy lock without integrity → version-only (even when a payloadHash is supplied)", async () => {
+    const ws = makeWorkspace();
+    // dir install: no provenance → no integrity on the lock
+    await install(makePlugin({ version: "1.0.0", command: CMD_V1 }), ws);
+    expect(readJson(LOCK(ws)).plugins.sdd.integrity).toBeUndefined();
+    const p2 = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V2 })).plugin!;
+    const preview = await previewUpdate(p2, ws, undefined, { payloadHash: HASH_B });
+    expect(preview.upToDate).toBe(true);
+    expect(preview.contentChangedSameVersion).toBeUndefined();
+    expect(preview.install).toBeUndefined();
+  });
+
+  it.skipIf(!gitOk())("monorepo: identical payload under a higher tag stays up-to-date when payloadHash is compared", async () => {
+    // Two tags, same plugin version, no file change between them (allow-empty commit) — commit advances, bytes do not.
+    const repo = tmp("src-mono-id-");
+    const run = (args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    run(["init", "-q", "-b", "main"]);
+    fs.mkdirSync(path.join(repo, "claude"), { recursive: true });
+    fs.writeFileSync(path.join(repo, "claude", "hooks.json"), JSON.stringify({ PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }] }));
+    fs.writeFileSync(path.join(repo, "claude", "gate.sh"), "#!/bin/sh\n");
+    fs.writeFileSync(path.join(repo, "tachyon-plugin.json"), JSON.stringify({ name: "mono3", version: "1.0.0", description: "d", runtimes: ["claude"], blocks: { claude: "claude/" } }));
+    run(["add", "-A"]); run(["commit", "-q", "-m", "v1.0.0"]); run(["tag", "v1.0.0"]);
+    run(["commit", "--allow-empty", "-q", "-m", "v2.0.0"]); run(["tag", "v2.0.0"]);
+    const remote = "https://github.com/o/mono3.git";
+    const git: GitRun = async (args, cwd) => {
+      const mapped = args.map((a) => (a === remote ? repo : a));
+      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+    };
+    const ws = makeWorkspace();
+    const cacheRoot = tmp("cache-");
+    const v1 = await loadPluginFromSource("github:o/mono3@v1.0.0", git, { cacheRoot });
+    await applyInstall(v1.plugin!, previewInstall(v1.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: v1.provenance });
+    const effective = await resolveEffectiveUpdateSpec("github:o/mono3@v1.0.0", git);
+    expect(effective).toBe("github:o/mono3@v2.0.0");
+    const v2 = await loadPluginFromSource(effective, git, { cacheRoot });
+    // commits differ, versions match, payloads match → still up-to-date under oracle D
+    expect(v1.provenance!.source.resolvedCommit).not.toBe(v2.provenance!.source.resolvedCommit);
+    expect(v1.provenance!.integrity.payload).toBe(v2.provenance!.integrity.payload);
+    const preview = await previewUpdate(v2.plugin!, ws, git, { payloadHash: v2.provenance!.integrity.payload });
+    expect(preview.upToDate).toBe(true);
+    expect(preview.contentChangedSameVersion).toBeUndefined();
   });
 });
 

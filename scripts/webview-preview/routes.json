@@ -1214,6 +1214,48 @@
   },
   {
     "view": "cockpit",
+    "fixture": "plugins-update-available",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-update-available",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
+    "fixture": "plugins-source-changed",
+    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-source-changed",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Control",
+    "aliases": [
+      "control",
+      "cockpit",
+      "sysadmin",
+      "project control",
+      "fleet control",
+      "control plane"
+    ]
+  },
+  {
+    "view": "cockpit",
     "fixture": "worktrees",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=worktrees",
     "frame": {
