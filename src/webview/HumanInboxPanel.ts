@@ -297,7 +297,10 @@ export class HumanInboxPanelManager {
       // the third answer this grep has given in three migrations, and `embedPagePad.test.ts` holds it.
       styleFiles: ["codicon.css", "design-system.css", "human-inbox.css"],
       title: () => vscode.l10n.t("Human Inbox"),
-      iconName: "inbox",
+      // No `iconName`: t-6c59f6 landed while this was in flight and made the editor-tab icon DERIVED from
+      // the launcher tile that opens the app (`WEBVIEW_APPS`' `section` → `controlSectionIcon`). Declaring
+      // one here would be the fourth hand-written opinion about a glyph the tile already names, which is
+      // the divergence that fix exists to end.
       // The detail route renders an item's evidence inline: a host-loaded image (pin preview's contract) and
       // a sandboxed `srcdoc` prototype (task detail's). Both were Control's CSP passthroughs for this
       // section and they move with the surface — an app that cannot render the evidence is an app that

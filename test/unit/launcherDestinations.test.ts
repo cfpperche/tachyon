@@ -20,26 +20,20 @@ import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
  */
 describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   const appSections = new Set(WEBVIEW_APPS.filter((a) => a.host === "section").map((a) => a.view));
-  /** `mission` (the Board) is the app whose bundle dir is `mission-control`; the manifest keys on the
-   *  bundle dir, the launcher on the section id, so the seam needs one explicit map rather than a
-   *  guessed transform. Phase D adds a line here per migration — deliberately, so the mapping is read
-   *  rather than inferred. */
-  const SECTION_TO_APP_VIEW: Record<string, string> = {
-    mission: "mission-control",
-    // SDD 485 D1 — the tmux tile's section id is `tmux`; its bundle directory has always been `inspector`
-    // (and stayed that way through the migration, because renaming a directory inside a cutover buys
-    // nothing). The second line in this map, and the second migration — exactly as this file predicted.
-    tmux: "inspector",
-    // SDD 485 D3 — the Runtime Ops tile's section id is `runtime` (it always has been: `COCKPIT_SECTION_ORDER`
-    // and `TAB_META` both spell it that way), and its bundle directory is `runtime-ops`. Third line, third
-    // migration. D2's Plugins needed none because its two names already agreed — which is the reason this map
-    // is written out rather than derived: two of the four so far do not match, and no transform predicts which.
-    runtime: "runtime-ops",
-    // SDD 485 D4 — the Inbox tile's section id is `inbox`; its bundle directory has always been
-    // `human-inbox` (the surface's product name is the Human Inbox; the tile is short for the grid).
-    // Fourth line, fourth migration — and the third of five whose two names disagree.
-    inbox: "human-inbox",
-  };
+  /**
+   * `mission` (the Board) is the app whose bundle dir is `mission-control`; the manifest keys on the
+   * bundle dir, the launcher on the section id, so the seam needs an explicit mapping rather than a
+   * guessed transform — two of the four migrated so far do not match, and no transform predicts which.
+   *
+   * t-icon — this map used to be WRITTEN HERE, one hand-added line per migration. It is now DERIVED: the
+   * manifest row declares the `section` its tile opens, because a second consumer appeared that needed the
+   * same fact (`sectionAppIconName`, resolving the editor-tab icon from the tile's). A fact two places
+   * need is a fact that must be declared once, and the test is the wrong place to declare it — a mapping
+   * only the test knows cannot be read by the product it describes.
+   */
+  const SECTION_TO_APP_VIEW: Record<string, string> = Object.fromEntries(
+    WEBVIEW_APPS.filter((a) => a.section !== undefined).map((a) => [a.section!, a.view]),
+  );
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {
     const rendered = new Set<string>(COCKPIT_SECTION_ORDER);

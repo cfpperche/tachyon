@@ -112,7 +112,6 @@ export class TmuxPanelManager {
       // is a page-scrolling document like the task detail, not a full-bleed board.
       styleFiles: ["codicon.css", "design-system.css", "inspector.css"],
       title: () => vscode.l10n.t("tmux"),
-      iconName: "terminal-tmux",
       refreshKindFor: tmuxRefreshKind,
       bind: (session) => {
         const send = async (): Promise<void> => {

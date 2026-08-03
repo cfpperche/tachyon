@@ -86,6 +86,9 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     expect(await error.$eval("[role='alert']", (el) => el.textContent)).toContain("Runtime Ops could not refresh the inventory.");
     // The standalone app refreshes through its host protocol, not a command URI. The error state
     // deliberately carries no stale `.runtime-ops-refresh` link; keep measuring the explicit alert.
+    // t-db235f — `runtime-ops.css` carried two rules for that button until this task deleted them, so
+    // the absence is now total: no element, no style waiting for one. This assertion stays as the
+    // record of a deliberate absence rather than an omission.
     expect(await error.$(".runtime-ops-refresh")).toBeNull();
     await error.close();
 

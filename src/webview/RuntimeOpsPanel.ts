@@ -185,7 +185,6 @@ export class RuntimeOpsPanelManager {
       // both halves.
       styleFiles: ["codicon.css", "design-system.css", "runtime-ops.css"],
       title: () => vscode.l10n.t("Runtime Ops"),
-      iconName: "graph",
       refreshKindFor: runtimeOpsRefreshKind,
       bind: (session) => {
         const send = async (): Promise<void> => {

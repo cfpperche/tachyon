@@ -223,7 +223,6 @@
 }
 
 .runtime-ops-agents summary:focus-visible,
-.runtime-ops-refresh:focus-visible,
 .runtime-ops-provider-control button:focus-visible {
   outline: 2px solid var(--ds-focus);
   outline-offset: 2px;
@@ -297,11 +296,6 @@
 }
 
 .runtime-ops-error strong { color: var(--ds-err); }
-
-.runtime-ops-refresh {
-  color: var(--ds-link);
-  font-size: var(--ds-small);
-}
 
 @container (max-width: 720px) {
   .runtime-ops-summary { align-items: flex-start; flex-wrap: wrap; gap: var(--ds-2) var(--ds-4); padding-block: var(--ds-2); }
