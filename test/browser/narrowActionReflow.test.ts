@@ -3,8 +3,6 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 
-const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit";
-
 async function loadFixture(
   page: Page,
   origin: string,
@@ -13,7 +11,8 @@ async function loadFixture(
 ): Promise<void> {
   await page.setViewport({ width, height: 760 });
   await page.goto(
-    `${origin}${PREVIEW}&fixture=${fixture}&width=${width}&height=760`,
+    `${origin}/scripts/webview-preview/index.html?view=${fixture === "fleet" ? "cockpit" : "mission-control"}` +
+      `&fixture=${fixture === "fleet" ? "fleet" : "default"}&width=${width}&height=760`,
     { waitUntil: "networkidle0" },
   );
   await page.waitForSelector(

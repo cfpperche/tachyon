@@ -34,7 +34,7 @@ const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/fb216a-plugin-
  * check passed vacuously because `documentElement` reports the clip while `body` reports the real 1100.
  * Frame height is generous enough that the last card is inside the box rather than cut off by the clip.
  */
-const routeAt = (w: number, h: number) => `?view=cockpit&fixture=plugins-runtime-gap&width=${w}&height=${h}`;
+const routeAt = (w: number, h: number) => `?view=plugins&fixture=runtime-gap&width=${w}&height=${h}`;
 const WIDE = { w: 880, h: 1200 };
 const NARROW = { w: 360, h: 1980 };
 
