@@ -660,5 +660,22 @@
   "Validations could not be read for this workspace — approvals only.": "As validações não puderam ser lidas para este workspace — apenas aprovações.",
   "This window cannot commit Saved Agent proposals.": "Esta janela não pode confirmar propostas de Saved Agent.",
   "This window cannot commit Saved Agent removals.": "Esta janela não pode confirmar remoções de Saved Agent.",
-  "No Tachyon workspace is attached in this window, so nothing is waiting on you here.": "Nenhum workspace Tachyon está anexado nesta janela, então nada está esperando por você aqui."
+  "No Tachyon workspace is attached in this window, so nothing is waiting on you here.": "Nenhum workspace Tachyon está anexado nesta janela, então nada está esperando por você aqui.",
+  "No Tachyon workspace is attached in this window.": "Nenhum workspace Tachyon está anexado nesta janela.",
+  "Engine": "Engine",
+  "Engine / Bridge": "Engine / Bridge",
+  "Run Doctor": "Executar diagnóstico",
+  "Nothing to show.": "Nada para mostrar.",
+  "Attached": "Anexado",
+  "Error": "Erro",
+  "State": "Estado",
+  "Version": "Versão",
+  "Instance": "Instância",
+  "Started": "Iniciado",
+  "Bundle": "Bundle",
+  "Protocol": "Protocolo",
+  "Port": "Porta",
+  "Auth": "Autenticação",
+  "Root": "Raiz",
+  "Hash": "Hash"
 }

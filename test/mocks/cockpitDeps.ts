@@ -51,8 +51,6 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     worktreeRemove: async () => undefined,
     worktreeForgetRecord: async () => undefined,
     openConfigFile: async () => {},
-    clearEngineLog: async () => {},
-    openEngineJournal: () => {},
     setCompanionTabTools: async () => {},
     setIdleAfterMinutes: async () => {},
     setCompanionAllowedHosts: async () => {},

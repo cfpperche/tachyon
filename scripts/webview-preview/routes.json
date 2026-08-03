@@ -288,27 +288,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "engine",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=engine",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "execution-graph",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph",
     "frame": {
@@ -2019,6 +1998,24 @@
       "quota",
       "provider capacity",
       "rate limit"
+    ]
+  },
+  {
+    "view": "engine",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=engine&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Engine",
+    "aliases": [
+      "engine",
+      "bridge",
+      "control plane"
     ]
   },
   {

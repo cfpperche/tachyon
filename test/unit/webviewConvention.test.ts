@@ -97,6 +97,7 @@ describe("webview convention (spec 279)", () => {
       // born as a Control section after 410 and never had a standalone panel, so unlike C4's and D2's
       // reuses there is no tombstone and no `migrateLegacy`.
       tachyonHumanInbox: "HUMAN_INBOX_VIEW_TYPE",
+      tachyonEngine: "ENGINE_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
@@ -472,5 +473,17 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     const used = new Set(extending.flatMap((s) => s.extensionPoints));
     const unused = SHELL_EXTENSION_POINTS.filter((p) => !used.has(p));
     expect(unused, `extension points declared by the shell but used by nothing: ${unused.join(", ")}`).toEqual([]);
+  });
+
+  it("the Engine app consumes its linked shared workspace sheet (SDD 485 D5)", () => {
+    const host = readFileSync("src/webview/EnginePanel.ts", "utf8");
+    const consumers = readFileSync("src/webview/engine/App.tsx", "utf8")
+      + readFileSync("src/webview/cockpit/EngineLogPanel.tsx", "utf8");
+    const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
+    expect(host).toContain('"engine-workspace.css"');
+    for (const className of ["ck-card-list", "ck-empty", "ci-ws", "ci-log"]) {
+      expect(consumers).toContain(className);
+      expect(shared).toContain(`.${className}`);
+    }
   });
 });

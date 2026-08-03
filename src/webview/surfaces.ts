@@ -227,6 +227,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // cockpit.css never carried one for `.hi-root`, which is the third answer that grep has now given
   // (D2 had to move a rule, D3 had to delete two, this one had nothing to do).
   { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

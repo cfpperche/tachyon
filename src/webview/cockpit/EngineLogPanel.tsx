@@ -1,12 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import { Button, Input, Select } from "../shared/ui";
-import {
-  copyTextAction,
-  engineLogClearAction,
-  engineLogJournalAction,
-  type CockpitAction,
-} from "./messages";
+import type { EngineAction } from "../engine/messages";
 
 export type LogSource = "daemon" | "events" | "bridge";
 type Since = "all" | "2m" | "15m";
@@ -52,7 +47,7 @@ export function EngineLogPanel({
   post,
 }: {
   row: ControlInspectorWorkspaceRow;
-  post: (a: CockpitAction) => void;
+  post: (a: EngineAction) => void;
 }) {
   const [source, setSource] = useState<LogSource>("daemon");
   const [filter, setFilter] = useState("");
@@ -140,7 +135,7 @@ export function EngineLogPanel({
           <Button
             variant="default"
             disabled={filtered.length === 0}
-            onClick={() => post(copyTextAction(filtered.join("\n")))}
+            onClick={() => post({ type: "copyText", text: filtered.join("\n") })}
           >
             Copy
           </Button>
@@ -148,11 +143,11 @@ export function EngineLogPanel({
             variant="default"
             disabled={source !== "daemon"}
             title={source !== "daemon" ? "Clear applies to daemon ring only" : "Clear daemon ring"}
-            onClick={() => post(engineLogClearAction(row.wsHash))}
+            onClick={() => post({ type: "engineLogClear", wsHash: row.wsHash })}
           >
             Clear
           </Button>
-          <Button variant="default" onClick={() => post(engineLogJournalAction(row.wsHash))}>
+          <Button variant="default" onClick={() => post({ type: "engineLogJournal", wsHash: row.wsHash })}>
             Journal
           </Button>
         </div>
