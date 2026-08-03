@@ -90,9 +90,12 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     ];
     const html = renderStatic(App({ fleets: twoRoots, initialTab: "Control" }));
     expect((html.match(/data-testid="control-grid"/g) ?? []).length).toBe(1);
-    // no folder header above it (the per-folder map is not entered for this tab).
-    expect(html).not.toContain("Alpha");
-    expect(html).not.toContain("Beta");
+    // no folder header above it (the per-folder map is not entered for this tab). Asserted on the
+    // folder GROUP itself, not on "no workspace name appears anywhere": SDD 485 C6 put the project
+    // selector in this tab's header row, and it lists workspace names as options by design. The name
+    // was only ever a proxy for the header, and the proxy stopped being equivalent to the property.
+    expect(html).not.toContain('class="grp folder');
+    expect(html).not.toContain("folder-body");
     // and the grid lives INSIDE the one tabpanel, never above the tab strip.
     const app = read("src/webview/sidebar/App.tsx");
     expect(app.split('class="tabs"')[0] ?? "").not.toContain("<ControlGrid");
