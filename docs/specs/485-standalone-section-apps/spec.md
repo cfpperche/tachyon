@@ -114,6 +114,14 @@ contract will be worked around instead of used._
   - **Given** the migration has shipped
   - **When** the human opens the Board and a terminal, or two task details, in a split editor
   - **Then** both are visible and live at the same time
+- [ ] **Scenario: choosing the project does not rewrite an open document**
+  - **Given** a task detail opened from project A, and the sidebar's Control tab header offering the
+    project selector
+  - **When** the human switches the selector to project B
+  - **Then** the open task detail still shows project A's task — the switch changes what the next
+    thing opens against, never what an open document *is*
+- [ ] The project selector lives in the header row of the sidebar's Control tab, in the slot the
+      Agents tab already uses, and exists exactly once — no per-app copy, no mirror
 - [ ] **Scenario: the launcher opens apps**
   - **Given** the sidebar Control tab (t-6e2952)
   - **When** the human activates a section tile
@@ -160,8 +168,28 @@ contract will be worked around instead of used._
 - **What is the unit of "app"?** Twelve separate bundles reintroduces the bundle-budget problem 410
   solved with one; one bundle with twelve lazy mounts keeps the CSS graph shared but weakens
   isolation. Owner: plan, and it should be decided with the bundle-budget test in hand.
-- **Where is workspace scope chosen?** Today the scope selector lives in Overview and every section
-  reads it (t-46eb4f). With N apps, one of them owning the selector is odd. Owner: plan.
+- ~~**Where is workspace scope chosen?**~~ **RESOLVED by the maintainer, 2026-08-03.** The selector
+  moves out of Overview and into the **header row of the sidebar's Control tab**, in the slot the
+  Agents tab already uses for its `All · N` filter. This is the placement neither consult proposed:
+  codex argued for "the launcher" without saying where in it, grok argued for each app's own chrome.
+  The header row wins because the pattern already exists in the product — it lands as `conform`, not
+  as a new component — and because one control cannot diverge from itself the way twelve copies can
+  (the divergence t-46eb4f closed).
+
+  Two consequences that ride along, and neither is optional:
+  - The scope's authority is the **host**, extracted from `Cockpit.ts`'s module-scoped
+    `controlWsHash` into a window-level store the section managers observe. The UI moves; the single
+    writer does not become many.
+  - **Changing the selector must never retarget an already-open document.** `route.ts:37` already
+    treats a task detail's `wsHash` as identity, not preference — a task opened from project A stays
+    that task. Without this, two task details side by side silently become different documents when
+    the human touches the selector. This is a correctness rule, not a UX preference.
+
+  Accepted residue: the selector is only on screen while the sidebar is on the Control tab. Changing
+  project is a rare action, and today it is worse — buried in a section the human may not have open.
+  - `controlWorkspaceScope.test.ts` anchors the selector's testid to `cockpit/App.tsx` and must move
+    with it, in the same change. The test is right in spirit (one control, no mirrors) and wrong in
+    its anchor once the selector leaves Control.
 - **Does the migration keep both paths alive per section during the transition, or cut over?** 410
   migrated one surface per PR with the old panel retired at the end of each; the mirror image here
   is one section per PR with the Control section retired at the end of each. Owner: plan.
