@@ -45,8 +45,8 @@ describe("preview route table", () => {
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
       "/dist/webview/vscode-theme.css",
-      "/dist/webview/mission-control.tailwind.css",
-      "/dist/webview/mission-control.css",
+      // SDD 485 C5 — the two mission-control sheets left with the Board (its own route now), exactly as
+      // C4's task-detail.css did one commit earlier.
       "/dist/webview/plugins.tailwind.css",
       "/dist/webview/plugins.css",
       "/dist/webview/approval.css",
@@ -91,13 +91,14 @@ describe("preview route table", () => {
       // doorbell can land on, and the deep-link destination this task is about.
       "inbox",
       "inbox-item",
-      "mission",
+      // SDD 485 C5 — no "mission" fixture: the Board is a standalone app with its own route now, so
+      // Control has no Board section to render or photograph (same as C4's four task-detail fixtures).
       "multi-workspace",
       // t-46eb4f — Overview with two roots attached: the one global scope selector, with its
       // "All workspaces" option (the single-root case is `default`, where it still renders).
       "multi-workspace-overview",
       "multi-workspace-scoped",
-      // t-ac79a7 — the navigation-pending state: the Board still on screen while the task-detail
+      // t-ac79a7 — the navigation-pending state: Control's landing screen still on display while the
       // route it just committed is loading (the fixture pushes routePending, never routeReady).
       "nav-pending",
       "plugins",
@@ -140,8 +141,9 @@ describe("preview route table", () => {
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
     expect(msgs[1]?.model?.section).toBe("overview");
-    const missionMsgs = r.makeMessage(r.fixtures.mission.vm) as Array<{ type: string }>;
-    expect(missionMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot"]);
+    // SDD 485 C5 — no `mission` fixture and no `snapshot` push: the Board is its own route now. The
+    // nav-pending fixture is what still names a `task-detail:` routeKey, and it carries only init+model
+    // plus the pending envelope, because a route Control cannot render pushes no content of its own.
     // t-610705 (Phase C.2) — the Fleet subroute fixtures: nav section is "fleet" (no embed push of
     // its own), so only the subroute's own content message rides alongside init+model.
     const activityMsgs = r.makeMessage(r.fixtures["agent-activity"]!.vm) as Array<{ type: string }>;
@@ -175,18 +177,17 @@ describe("preview route table", () => {
     expect(terminalMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(terminalMsgs[2]?.studioProtocolVersion).toBe(1);
     // t-610705 (Phase D, D2) — task's fixtures module reuses "dense-edit" via the SAME byStudio
-    // lookup (routes.ts) — no separate "studio-task" new-session fixture (task is edit-only). Nav
-    // section is "mission" (not "fleet" like the other 5 studios), so the mission board's own
-    // "snapshot" push rides alongside "load" too — same dual-push shape as the task-detail fixture
-    // above (both are subroutes of the "mission" section).
+    // lookup (routes.ts) — no separate "studio-task" new-session fixture (task is edit-only). Its nav
+    // section is "mission" (not "fleet" like the other 5 studios); SDD 485 C5 made that section push
+    // nothing of its own, so only "load" rides alongside init+model, like every other studio.
     const taskMsgs = r.makeMessage(r.fixtures["studio-task-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "snapshot", "load"]);
-    expect(taskMsgs[3]?.studioProtocolVersion).toBe(1);
+    expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
+    expect(taskMsgs[2]?.studioProtocolVersion).toBe(1);
     // t-610705 (Phase D, D3) — pin's fixtures module reuses "dense-edit"/"new" via the SAME byStudio
     // lookup. Nav section is null (nav-less — route.ts), so the fixture's own `section` is "overview"
     // (the same fallback Cockpit.ts's real host uses) — "overview" rides no embed push of its own, so
     // only "load" rides alongside init+model, same shape as the Fleet-parented studios (command et
-    // al.), not the dual-push "mission" shape task-detail/studio-task-edit have above.
+    // al.). Since SDD 485 C5 no section rides a second push at all, so every studio is this shape.
     const pinMsgs = r.makeMessage(r.fixtures["studio-pin-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(pinMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(pinMsgs[2]?.studioProtocolVersion).toBe(1);
@@ -301,8 +302,11 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // test t-c55f8d repointed AT cockpit — a false positive that would get this guard deleted in a week.
     expect(bundles.has("dist/webview/cockpit.js")).toBe(true);
     expect(bundles.has("dist/webview/sidebar.js")).toBe(true);
-    // and the retired ones are genuinely absent, which is the whole premise.
-    expect(bundles.has("dist/webview/mission-control.js")).toBe(false);
+    // SDD 485 C4/C5 — task-detail.js and mission-control.js are BACK, as entries of the same splitting
+    // invocation: both surfaces are standalone apps again. They are the canary that this derivation sees
+    // multi-entry targets, not just the one it was written for.
+    expect(bundles.has("dist/webview/mission-control.js")).toBe(true);
+    expect(bundles.has("dist/webview/task-detail.js")).toBe(true);
     expect(bundles.has("dist/webview/task-studio.js")).toBe(false);
   });
 

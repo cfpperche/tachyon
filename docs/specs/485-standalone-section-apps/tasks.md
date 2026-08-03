@@ -49,7 +49,7 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
       baseline (~244 KB, gate 350 KB) so a future reader can see whether this reversal cost size.
 - [x] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task
       details from different projects open side by side and stay distinct.
-- [ ] C5. **Board as a dashboard app** — one panel per project, revealed rather than duplicated.
+- [x] C5. **Board as a dashboard app** — one panel per project, revealed rather than duplicated.
 - [ ] C6. Move the project selector into the sidebar Control tab header row (the slot the Agents tab
       uses for `All · N`), with the host keeping a single writer. Re-anchor
       `controlWorkspaceScope.test.ts` in the same change.
@@ -145,6 +145,29 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
       make vertical space, and `.td-body` — unlike `.td-journal` — is not a flex column). `App.tsx` and
       `task-detail.css` are byte-identical across C4 and neither Control-only sheet touches those
       rules, so Control renders it the same way today. Filed as **t-fe8ba3**.
+- [x] **Evidence (C5, 2026-08-03):** the Board at 880 and 360, captured through the route this change
+      adds — `npm run preview:webview` + `?view=mission-control&fixture=default`, rendering the REAL
+      shipped `dist/webview/mission-control.js`. Screenshots under `.tachyon/vqa/485-c5/` (gitignored
+      work evidence, the same call C1–C3 and C4 made — `docs/` holds durable documentation, not generated
+      images; the ROUTE is committed, so either width is one command to re-take) and attached via
+      `attach_evidence` on `fase485c5` (`ev-2026-08-03T15:05:38.916Z-1`). Anchor, written from the task's
+      problem statement before the surface was built: *the Board must arrive as a first-class editor tab
+      showing the SAME work queue it showed inside Control — nothing gained and nothing lost by the move:
+      the toolbar on one row at 880, the columns and cards below it, page padding that is the board's own
+      rather than doubled or absent where Control's shell used to be; and at 360 usable rather than
+      clipping, with the toolbar wrapping instead of overflowing and the board scrolling horizontally
+      inside itself while the page does not.*
+- [x] **Verdict (C5):** satisfies the anchor at both widths. At 880 the title and all four toolbar
+      controls sit on one row, the columns render below with the board's own single page pad, and nothing
+      of Control's shell is left behind. At 360 the toolbar reflows to three rows through
+      design-system.css's shared 620px `.ds-page-chrome` breakpoint — nothing clips, nothing overlaps —
+      and the board scrolls horizontally inside itself rather than the page doing so.
+      The pass earned its cost on a false alarm worth repeating: at 360 the create action LOOKED lost, and
+      the cause was the harness rather than the board — `scripts/webview-preview/index.html` sizes a DIV
+      (`#frame`), not an iframe, so `?width=360` narrows the box while `@media (max-width: 620px)` still
+      reads the 1280px browser viewport and never fires. Measuring a breakpoint here needs the BROWSER
+      viewport set (what `scripts/visual-qa/*.mjs` already do with `page.setViewport`); `?width=` alone
+      silently tests nothing. Filed with the maintainer's own half of the measurement as **t-b24282**.
 
 ## Cookbook
 

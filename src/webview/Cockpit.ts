@@ -39,12 +39,9 @@ import {
 } from "./cockpit/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
 import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget, WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
-import {
-  snapshotMessage,
-  taskErrorMessage,
-  type MissionControlAction,
-} from "./mission-control/messages.js";
-import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
+// SDD 485 C5 — the Board's own envelope no longer travels through Control: the board is a standalone app
+// (`src/webview/BoardPanel.ts`) and its `snapshot`/`taskError` messages belong to that panel's client, the
+// same way C4's moved to `TaskDetailPanel.ts` one commit earlier.
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 import { startActivityFeed, type ActivityFeed } from "../cockpit/activityFeed.js";
 import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
@@ -146,14 +143,19 @@ export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
 export type { CockpitPanelState };
 export { decodeCockpitPanelState };
 
-/** Board wiring for Mission tab embed (same targets as MissionControlPanelManager). */
+/**
+ * Task-store wiring Control still needs after SDD 485 C5 moved the Board out into its own app.
+ *
+ * The name is kept rather than churned: `getWorkspaces` is what the Validations section resolves its own
+ * workspace through, and `openTaskStudio`/`onTasksChanged` are what the Board app and the studio routes use.
+ * What left with the Board is the RENDERING, not this dependency.
+ */
 export interface CockpitMissionBoard {
   getWorkspaces: () => WorkspaceMissionControlTarget[];
   /**
-   * t-610705 (Phase C.1) — Task Studio isn't migrated yet (it shares StudioPanelManagerBase with 8
-   * other panels; deferred to its own design pass). "Open task" no longer routes through here — the
-   * Board's openTask message navigates to the task-detail subroute directly (see
-   * handleMissionAction's "openTask" case) — Task Detail is fully Control-native now.
+   * t-610705 (Phase D, D2) — Task Studio isn't migrated yet (it shares StudioPanelManagerBase with 8
+   * other panels; deferred to its own design pass). Since SDD 485 C4/C5 it is called by the task-detail APP
+   * and the Board APP through the same extension.ts wiring, not by a Control-native surface.
    * Typed on the shared WorkspacePresentationTarget base (not the narrower WorkspaceMissionControlTarget)
    * since the task-detail route also calls this with its own WorkspaceTaskDetailTarget — the real
    * implementation (extension.ts) only ever needs `wsHash` to look up the underlying workspace.
@@ -357,6 +359,13 @@ export interface CockpitDeps {
   runtimeConfig: CockpitRuntimeConfig;
   inspector: CockpitInspector;
   plugins: PluginsPanelManager;
+  /**
+   * SDD 485 C5 — open (or reveal) the Board APP for a project. Control no longer renders the board, so every
+   * "go to the Board" affordance it still owns — Overview's Jump card, Fleet's action, the launcher tile —
+   * leaves Control instead of navigating inside it. `wsHash` is the project Control's own scope resolves to;
+   * the app keys its panel on it. Sibling of C4's `taskDetail.openDocument`, and for the same reason.
+   */
+  openBoard: (wsHash?: string) => void;
   openSettings: () => void;
   openDoctor: () => void;
   /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
@@ -835,19 +844,37 @@ function captureReturnRoute(route: CockpitRoute): CockpitRoute {
  */
 let openTaskDocument: ((wsHash: string, taskId: string) => void) | undefined;
 
+/**
+ * SDD 485 C5 — the same seam for the Board: `navigate()` is module-scoped and has no `deps` in reach, so the
+ * open is bound from `deps.openBoard` when a panel is created and cleared with it.
+ */
+let openBoardDocument: (() => void) | undefined;
+
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
     // still arrives: from persisted window state written before the cutover, from a deep link, and from
     // Task Studio's breadcrumb (`parentRoute(studio-edit, "task")`). All three mean the same thing now —
-    // open that task's own tab — and Control itself lands on the route's parent, the Board.
+    // open that task's own tab.
     //
     // Placed at the ONE commit point every navigation intent reaches (see this function's own contract
     // below) rather than at each caller: a redirect that has to be remembered per call site is a redirect
     // the next caller forgets. This is a shim with NO UI, which is the only kind `spec.md` lets survive an
     // atomic cutover.
+    //
+    // SDD 485 C5 — it used to land Control on the Board, which was then a section. The Board is an app now,
+    // so Control lands on Overview and does NOT also open a Board tab: the human asked for a task, and the
+    // task's tab is what just opened. Opening a second panel they did not ask for is not a redirect.
     openTaskDocument?.(route.wsHash, route.taskId);
-    route = routes.section("mission");
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "mission") {
+    // SDD 485 C5 — and the same for the Board itself. Nine doors could ask Control for it (two commands, the
+    // launcher tile, two legacy serializers, a revived route, Overview's Jump card, Fleet's action, a studio
+    // exit); guarding each is nine guards and one that gets forgotten. Here it is one, at the point every
+    // one of them funnels through, next to C4's for exactly the same reason.
+    openBoardDocument?.();
+    route = routes.section("overview");
   }
   reconcileActivityTeardown(route);
   reconcileStudioTeardown(route);
@@ -904,9 +931,8 @@ async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, a
 
 /** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
  *  sections aggregate; per-workspace sections fall back to the first workspace). Replaces the
- *  former per-section missionWsHash/approvalWsHash pair and Plugins' derived fallback. */
+ *  former pair of per-section scope aliases and Plugins' derived fallback. */
 let controlWsHash: string | undefined;
-let pushMissionBoard: (() => void) | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
 /** t-e76acc — the unified Human Inbox re-reads on ANY approval or validation mutation, from anywhere. */
@@ -927,13 +953,12 @@ let wiredPanel: vscode.WebviewPanel | undefined;
  */
 type ControlRefreshKind =
   | "shell-poll"
-  | "mission" | "probes" | "handoff" | "approvals" | "validations" | "inbox"
+  | "probes" | "handoff" | "approvals" | "validations" | "inbox"
   | "studio-reference" | "task-studio" | "pin-studio";
 
 function pushControlRefresh(kind: ControlRefreshKind): void {
   switch (kind) {
     case "shell-poll": pushControlPoll?.(); return;
-    case "mission": pushMissionBoard?.(); return;
     case "probes": pushProbes?.(); return;
     case "handoff": pushHandoff?.(); return;
     case "approvals": pushApprovals?.(); return;
@@ -977,14 +1002,14 @@ export function __controlGateProbe(): { visible: boolean; pending: number; lastC
   return { visible: controlGate?.visible ?? false, pending: controlGate?.pending ?? 0, lastCatchUp: lastControlCatchUp };
 }
 
-/** Refresh embedded Mission board after task mutations. */
-export function refreshCockpitMissionBoard(): void {
-  refreshControl("mission");
-}
+/* SDD 485 C5 — `refreshCockpitMissionBoard()` is gone with the board's renderer, exactly as C4's
+ * `refreshCockpitTaskDetail()` went one commit earlier. The fan-out door for the board belongs to
+ * `BoardPanelManager.refresh()` now, which extension.ts's `onTasksChanged` calls in its place; leaving a
+ * Control-side wrapper behind would be the second live path this cutover exists to prevent. */
 
 /** t-610705 (Phase C.2) — refresh an open agent-probes/workspace-probes subroute after the probe
  *  ledger changes (wired into extension.ts's onViewsChanged("probes"), replacing the retired
- *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route (mirrors refreshCockpitMissionBoard). */
+ *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route. */
 export function refreshCockpitProbes(): void {
   refreshControl("probes");
 }
@@ -1055,12 +1080,15 @@ const PLUGIN_ACTION_TYPES = new Set([
 
 const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "reapOrphans"]);
 
-// t-610705 (Phase B #6) — the bounded/coalesced agent-liveness pass lives in src/cockpit/missionVm.ts
-// (ported from the retired MissionControlPanelManager so the embedded board keeps the 250ms
-// never-block guarantee). One shared instance for the singleton panel; the shared navEpoch (Phase
-// C.0) now guards staleness — this used to be its own `missionGeneration` counter.
-const missionAgentLists = new MissionAgentLists();
+// SDD 485 C5 — the bounded/coalesced agent-liveness pass went WITH the board: it stays in
+// src/cockpit/missionVm.ts (a pure function of a workspace target, with no Control in it) and
+// `BoardPanelManager` owns the instance now. Control kept no copy — an unused one is a second
+// coalescing window waiting to disagree with the real one.
 
+/** SDD 485 C5 — kept for the sections that still resolve a workspace the Control-scope way (Validations, and
+ *  the Board/studio hand-offs, which need a wsHash to open AGAINST). The Board APP no longer resolves like
+ *  this: a dashboard panel is opened against a project and that project is half its key, so
+ *  `BoardPanelManager` looks its own workspace up strictly. */
 function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): WorkspaceMissionControlTarget | undefined {
   const all = board.getWorkspaces();
   if (all.length === 0) return undefined;
@@ -1222,7 +1250,6 @@ export async function openCockpit(
     route?: CockpitRoute;
     revivedPanel?: vscode.WebviewPanel;
     wsHash?: string;
-    missionWsHash?: string;
     approvalWsHash?: string;
   },
 ): Promise<void> {
@@ -1242,9 +1269,10 @@ export async function openCockpit(
   // redirecting into an EXISTING panel might be interrupting a dirty studio form, so that path goes
   // through requestNavigate() once `live` exists a few lines down.
   const revealingExisting = !!panel && !opts?.revivedPanel;
-  // t-d16a39 — both legacy per-section opt names feed the ONE shell scope (callers unchanged).
+  // t-d16a39 — the legacy per-section opt name feeds the ONE shell scope (callers unchanged).
+  // SDD 485 C5 — the board's own alias went with it: its last caller, `tachyon.missionControl`, opens the
+  // app now, which keys its panel on a project rather than moving Control's scope.
   if (opts?.wsHash) controlWsHash = opts.wsHash;
-  if (opts?.missionWsHash) controlWsHash = opts.missionWsHash;
   if (opts?.approvalWsHash) controlWsHash = opts.approvalWsHash;
 
   const creating = !panel || !!opts?.revivedPanel;
@@ -1307,7 +1335,6 @@ export async function openCockpit(
         if (controlGate === disposingGate) controlGate = undefined;
         pushControlPoll = undefined;
         clearCockpitSingletonClaim();
-        pushMissionBoard = undefined;
         pushApprovals = undefined;
         pushValidations = undefined;
         pushInbox = undefined;
@@ -1318,13 +1345,13 @@ export async function openCockpit(
         pushPinStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
         openTaskDocument = undefined;
+        openBoardDocument = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
         // provenance (design-dueto probe-43bca1cc: module-scoped router state outlives any one panel).
         currentRoute = routes.section("overview");
         lastCommittedNonStudioRoute = routes.section("overview");
-        missionAgentLists.clear();
         stopActivityBinding();
         stopStudioBinding();
         deps.plugins.unbindControlEmbed();
@@ -1335,6 +1362,11 @@ export async function openCockpit(
   // SDD 485 C4 — bound BEFORE the initial navigate below, because that navigate is exactly the call a
   // revived/deep-linked task-detail route arrives through, and a redirect wired later would miss it.
   openTaskDocument = (wsHash, taskId) => deps.taskDetail.openDocument(wsHash, taskId);
+  // SDD 485 C5 — same seam, same reason, and the scope handed over is the one Control itself would have
+  // rendered (`resolveMissionWs`, which already prefers the shell scope `opts.wsHash` set a few lines
+  // above). A launcher click, a Jump card and a Fleet action therefore land on the SAME project's panel —
+  // and re-opening reveals it rather than making a second, which is what `cardinality: "dashboard"` buys.
+  openBoardDocument = () => deps.openBoard(resolveMissionWs(deps.missionBoard)?.wsHash);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1440,26 +1472,6 @@ export async function openCockpit(
     if (panel === live && navEpoch === epoch) {
       live.webview.postMessage(modelMessage(model));
       live.title = sectionTitle(s, navSection(currentRoute) ?? "overview");
-    }
-  };
-
-  const sendMission = async () => {
-    if (panel !== live || !isSection(currentRoute, "mission")) return;
-    const epoch = navEpoch;
-    const ws = resolveMissionWs(deps.missionBoard);
-    if (!ws) {
-      live.webview.postMessage(taskErrorMessage("No Tachyon workspace for Mission board."));
-      return;
-    }
-    try {
-      // Trailing retry: a list that settles late (after its 250ms fallback already rendered, with
-      // further refreshes coalesced behind it) re-posts once so real liveness replaces "unavailable".
-      const vm = await buildMissionVm(ws, missionAgentLists, () => void sendMission());
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(snapshotMessage(vm));
-    } catch (err) {
-      if (panel !== live || navEpoch !== epoch) return;
-      live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
     }
   };
 
@@ -1728,13 +1740,15 @@ export async function openCockpit(
   // IDENTICAL for both triggers; only whether-to-navigate-at-all differs.
   // t-c3c819 — task-detail is only a valid exit destination for a REAL, already-saved task; Task
   // Studio's staged-create pattern opens a brand-new task straight into studio-edit with a
-  // pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on disk"). Fall
-  // back to the studio's own section instead — "mission" (Board) is correct unconditionally here:
-  // task-detail is task-only, parentRoute never produces it for any other studio (route.ts's
-  // parentRoute switch), so this branch can't misfire for one.
+  // pre-minted, still-unsaved id, and task-detail(id) for that id 404s ("never found on disk").
+  // SDD 485 C5 — that fallback used to be the Board section. The Board is a standalone app now, and
+  // `navigate()` would turn a `section("mission")` here into "open a Board tab" — a panel appearing on a
+  // CANCEL is a surprise, not a recovery. So the exit lands on Overview, Control's own landing screen, and
+  // the Board stays one launcher click away. The rule this line exists for is unchanged: a never-persisted
+  // task must not exit to task-detail(id).
   const studioExitTarget = (route: StudioRoute, persisted: boolean): CockpitRoute => {
     const parent = parentRoute(route);
-    return parent?.kind === "task-detail" && !persisted ? routes.section("mission") : parent ?? routes.section("overview");
+    return parent?.kind === "task-detail" && !persisted ? routes.section("overview") : parent ?? routes.section("overview");
   };
 
   // t-610705 (Phase D, D0) — studio-envelope dispatch (ready/patch/dirty/save/cancel/domain). The
@@ -1840,7 +1854,7 @@ export async function openCockpit(
   /**
    * SDD 485 C4 — Control no longer RENDERS a task detail; the app does (`TaskDetailPanel.ts`). What used to
    * live here — `sendTaskDetail`, `handleTaskDetailAction`, `resolveTaskDetailWs` and the single
-   * `lastKnownTaskDetail` tombstone slot — moved into that app's `bind`, where the tombstone cache is per
+   * its single last-known tombstone slot — moved into that app's `bind`, where that cache is per
    * panel rather than per singleton and the workspace is resolved from the panel's own frozen target rather
    * than from a route this host happens to be on.
    *
@@ -2078,8 +2092,7 @@ export async function openCockpit(
     const readyEpoch = navEpoch;
     const readyKey = routeKey(currentRoute);
     bindPluginsIfNeeded();
-    if (isSection(currentRoute, "mission")) await sendMission();
-    else if (isSection(currentRoute, "validations")) await sendValidations();
+    if (isSection(currentRoute, "validations")) await sendValidations();
     else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (isSection(currentRoute, "inbox")) await sendInbox();
@@ -2117,7 +2130,6 @@ export async function openCockpit(
     await sendSectionModule();
   };
   pushControlPoll = () => { void shellPoll(); };
-  pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
   // t-e76acc — one slot drives BOTH inbox surfaces; each sender no-ops off its own route.
@@ -2142,65 +2154,12 @@ export async function openCockpit(
     }
   };
 
-  const handleMissionAction = async (m: Partial<MissionControlAction>): Promise<boolean> => {
-    if (!m?.type) return false;
-    if (m.type === "requestSnapshot") {
-      await sendMission();
-      return true;
-    }
-    if (m.type === "updateTask" && typeof m.id === "string" && m.patch) {
-      const ws = resolveMissionWs(deps.missionBoard);
-      if (!ws) return true;
-      try {
-        await ws.updateTask(m.id, m.patch);
-        deps.missionBoard.onTasksChanged();
-      } catch (err) {
-        live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));
-      }
-      return true;
-    }
-    if (m.type === "reorderLane" && typeof m.status === "string" && Array.isArray(m.orderedIds) && m.expect) {
-      const ws = resolveMissionWs(deps.missionBoard);
-      if (!ws) return true;
-      try {
-        await ws.reorderLane(m.status, m.priority, { orderedIds: m.orderedIds, expect: m.expect });
-        deps.missionBoard.onTasksChanged();
-      } catch (err) {
-        live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err)));
-      }
-      return true;
-    }
-    if (m.type === "closeValidation" && typeof m.id === "string" && typeof m.result_note === "string" && m.outcome) {
-      const ws = resolveMissionWs(deps.missionBoard);
-      if (!ws) return true;
-      try {
-        await ws.closeValidation(m.id, { outcome: m.outcome, result_note: m.result_note });
-        deps.missionBoard.onTasksChanged();
-      } catch (err) {
-        live.webview.postMessage(taskErrorMessage(err instanceof Error ? err.message : String(err), m.id));
-      }
-      return true;
-    }
-    if (m.type === "openTask" && typeof m.id === "string") {
-      // SDD 485 C4 — a task opens as its OWN editor tab now (the `document` app), not as a subroute of
-      // this panel. The board card's own workspace still resolves the entity's wsHash: that hash is the
-      // document's IDENTITY from this moment on, and nothing — least of all a later change of the shell's
-      // workspace-scope selector — may retarget the tab it opens.
-      const ws = resolveMissionWs(deps.missionBoard);
-      if (ws) deps.taskDetail.openDocument(ws.wsHash, m.id);
-      return true;
-    }
-    if (m.type === "copyTaskId" && typeof m.id === "string") {
-      await vscode.env.clipboard.writeText(m.id);
-      return true;
-    }
-    if (m.type === "openTaskStudio") {
-      const ws = resolveMissionWs(deps.missionBoard);
-      if (ws) deps.missionBoard.openTaskStudio(ws, typeof m.id === "string" ? m.id : undefined);
-      return true;
-    }
-    return false;
-  };
+  /**
+   * SDD 485 C5 — Control no longer RENDERS the board, so its snapshot sender, its action handler and the
+   * agent-liveness instance that fed them moved into `BoardPanel.ts`'s `bind`, one commit after C4's task
+   * detail made the same journey. What is left of the board in this file is a REDIRECT with no UI, at
+   * `navigate()`'s one commit point.
+   */
 
   const handleApprovalAction = async (m: Partial<ApprovalAction>): Promise<boolean> => {
     if (!m?.type) return false;
@@ -2497,10 +2456,9 @@ export async function openCockpit(
         return;
       }
 
-      // SDD 485 C4 — `handleTaskDetailAction` is GONE: the task detail is its own app (TaskDetailPanel.ts)
-      // and Control no longer renders it, so the shape collision this chain used to order around
-      // ("openTask" being both a TaskDetailAction and a MissionControlAction) has one claimant again.
-      if (await handleMissionAction(msg as Partial<MissionControlAction>)) return;
+      // SDD 485 C4/C5 — the task-detail and board action handlers are both GONE from this chain: each is
+      // its own app with its own client, so the "openTask" shape collision this chain used to order
+      // around has no claimant left in Control at all.
       if (await handleApprovalAction(msg as Partial<ApprovalAction>)) return;
       if (await handleValidationsAction(msg as Partial<ValidationsAction>)) return;
       // t-e76acc — the Inbox's action types are its own ("refreshInbox"/"openInboxItem"/…), so there
@@ -2991,7 +2949,6 @@ export async function openCockpit(
     const validationsIsActive = isSection(currentRoute, "validations");
     const pluginsIsActive = isSection(currentRoute, "plugins");
     const tmuxIsActive = isSection(currentRoute, "tmux");
-    const missionIsActive = isSection(currentRoute, "mission");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = currentRoute.kind === "project-handoff";
@@ -3069,8 +3026,6 @@ export async function openCockpit(
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
-        missionIsActive ? uri("mission-control.tailwind.css") : undefined,
-        missionIsActive ? uri("mission-control.css") : undefined,
         pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
         pluginsIsActive ? uri("plugins.css") : undefined,
         approvalsIsActive ? uri("approval.css") : undefined,
@@ -3146,8 +3101,6 @@ export async function openCockpit(
           "plugins-tailwind": uri("plugins.tailwind.css"),
           plugins: uri("plugins.css"),
           tmux: uri("inspector.css"),
-          "mission-tailwind": uri("mission-control.tailwind.css"),
-          mission: uri("mission-control.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
           probes: uri("probes.css"),

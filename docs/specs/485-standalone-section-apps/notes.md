@@ -219,6 +219,103 @@ exists to prevent, and it would make the dep chip a second way to lose the tab y
 So `openTask` opens (or reveals) the OTHER task's own tab, in the SAME project — the dep is a task in this
 document's workspace, so the identity it opens against is this document's `project`, never a shell scope.
 
+### Phase C5 — the Board's `view` stayed `mission-control`, and its viewType did NOT (2026-08-03)
+
+The app manifest row is `{ view: "mission-control", viewId: "tachyonBoard", cardinality: "dashboard" }`, and
+the two halves were decided for opposite reasons — and the viewType half is the OPPOSITE call from C4's,
+which is worth reading together with it.
+
+`view` is the directory and the bundle basename. Keeping `mission-control` means `src/webview/mission-control/`
+gained a `main.tsx` beside the `App.tsx` that was already there, and the two stylesheets `esbuild.mjs` already
+emits under that basename needed no rename and no repointing in `cockpitCssParity`. Renaming the directory to
+`board` would have been a rename touching ~10 files to say the same thing, inside a cutover.
+
+`viewId` had to be NEW. C4 could reuse `tachyonTaskDetail` because 410 had retired that viewType to a
+tombstone whose serializer only disposed and redirected — there was nothing live to preserve. `tachyonMission-
+Control` is different: it is a LIVE redirect carrying its own persisted shape (`{schemaVersion, view, wsHash}`)
+for panels written before 410. Reusing it would have made one viewType mean two incompatible shapes with no
+way to tell them apart. So the legacy id stays a dispose-and-redirect — now INTO this app, carrying its
+`wsHash` as the project — and `tachyonBoard` is what the live app registers.
+
+**The Phase A cost this section was priced for came out at ZERO.** The Phase A open question warned that
+Control's embedded sections style `html`/`body` and that each becomes page chrome its own manifest row must
+declare or drop when it goes standalone, naming `mission-control.css` as carrying two such rules. Re-measured
+here: t-e085bc had already deleted them, and the sheet mints no `--ds-*` values either. The Board is a
+`conform` row and the contract checks it rather than being told. The warning is still live for `activity.css`.
+
+### Phase C5 — `mission` left `COCKPIT_SECTION_ORDER` but stayed a `CockpitSectionId` (2026-08-03)
+
+The first shape tried was to keep `mission` a Control section and simply not render it. That fails
+`controlTabsBarRetired.test.ts` immediately and correctly: it renders every id in `COCKPIT_SECTION_ORDER` and
+asserts each puts its own heading on screen, so a section with no renderer falls through to the
+unknown-section fallback and reads as "Settings". A section list containing something Control cannot render
+is a lie the suite already knew how to catch.
+
+So `COCKPIT_SECTION_ORDER` is now, precisely, **what Control renders**, and `mission` moved to the
+compatibility list beside `approvals`/`validations`. It stays a `CockpitSectionId` on purpose rather than
+being deleted: a persisted `section:"mission"` panel state and a `tachyon.openControl mission` deep link must
+still DECODE, or they fall back to Overview and the human silently loses the screen they had instead of being
+redirected to it.
+
+That split the launcher's catalog from Control's section list, which had been the same array. `sectionNav.ts`
+now owns a `LAUNCHER_ORDER` of twelve — eleven sections plus the Board — with a `standalone` flag on the
+tiles that open an app, and a module-level check that every section Control renders has a tile. This is the
+shape Phase D repeats ten more times: a migration moves an id from one list to the other and changes where its
+tile lands, without moving the tile.
+
+### Phase C5 — the Board's redirect joins C4's, at `navigate()` rather than at nine call sites (2026-08-03)
+
+Nine doors could ask Control for the Board: two commands, the launcher tile, the legacy Board serializer, a
+Task Studio serializer's malformed-state fallback, a revived persisted route, Overview's Jump card, Fleet's
+action, and a studio exit. Guarding each is nine guards and one that gets forgotten.
+
+The first draft put the guard on `openCockpit`'s two navigation call sites. Rebasing onto C4 showed a better
+home, already occupied: C4 had put its own task-detail redirect inside `navigate()`, the ONE commit point
+every navigation intent funnels through, with a module-scoped `openTaskDocument` slot bound from `deps` when a
+panel is created. C5's is the same three lines beside it (`openBoardDocument`), which means the two redirects
+are read together and a third migration has an obvious place to go.
+
+One composition detail that only exists because both landed: C4's redirect used to land Control on
+`section("mission")` — the Board — after opening the task's tab. It lands on Overview now. Chaining into C5's
+redirect instead would have opened a Board panel on every task-detail navigation, which nobody asked for; a
+redirect that opens a surface the human did not request is not a redirect.
+
+The client half is one line in `cockpit/main.tsx`: `onSetSection("mission")` posts the action and skips the
+OPTIMISTIC model update every other section gets, because optimistically rendering a section this build has no
+renderer for would flash the unknown-section fallback for the frame before the host's real model lands.
+Consequence worth naming: `cockpit/App.tsx`'s three "go to the Board" affordances were NOT rewired. They still
+call `onSetSection("mission")`, and they still work. The destination moved; the affordance did not.
+
+### Phase C5 — a dashboard's workspace lookup is STRICT, and that is the cardinality (2026-08-03)
+
+Control resolved "which workspace is the board about?" through a fallback chain — preferred, then the shell's
+global scope, then the first attached root — because one panel had to answer for whatever scope the human last
+chose. `BoardPanelManager` looks its workspace up by exact `wsHash`, because the project IS half the panel's
+key. A loose resolution would let two panels land on the same workspace under different keys, or let a panel
+silently retarget when the selector moves — which is the rule `spec.md` states for documents and is no more
+acceptable for a dashboard. A project that is no longer attached says so on the panel and never borrows
+another project's tasks (`boardPanel.test.ts` drives exactly that: open, close the folder, poll).
+
+The liveness scan did NOT move again. `buildMissionVm` + `MissionAgentLists` stayed in
+`src/cockpit/missionVm.ts` — a pure function of a workspace target with no Control anywhere in it — and the
+new host imports them. Control kept no instance: an unused second coalescing window is a second window waiting
+to disagree with the real one.
+
+### Phase C5 — the trailing liveness retry is the ONE new host-initiated door, and it re-enters through the gate
+
+`buildMissionVm`'s `onTrailingRetry` fires when a slow agent-list settles after its 250 ms fallback already
+rendered, and it re-posts so real liveness replaces "unavailable". That is a host-initiated push, so it goes
+through `session.run("board", …)` rather than calling `send()` directly.
+
+Honest about what proves it: the manager's own structural gate would have caught it anyway — `session.post` to
+a hidden panel posts nothing and arms a resync — so an ungated version of this door could not have reached a
+hidden webview or left it stale either. Fail-before was run against the mechanism that CAN fail: bypassing
+`SectionPanelManager`'s `refreshKindFor` routing (`entry.binding.replay(kind)` instead of
+`entry.gate.run(...)`) goes red twice, on the static door guard naming the offending line and on the fixture's
+behavioural poll test. `boardPanel.test.ts`'s own poll case was strengthened after noticing it would have
+passed on a DEAD door as readily as a gated one: it now asserts the poll IS served while visible before
+asserting it is ignored while hidden.
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -426,6 +523,44 @@ half stronger: the notice cannot disturb Control at all, because it no longer na
 
 `cockpitMissionBoard.test.ts`'s `openTask` case now asserts the wsHash the Board passes, which is the moment
 the document's identity is decided.
+
+### Phase C5 — Phase B's Control measurement lost its exemplar door TWICE (2026-08-03)
+
+`hiddenPanelWork.test.ts`'s "Control does no work behind another tab" block was built on
+`refreshCockpitMissionBoard`. C4 deleted `refreshCockpitTaskDetail` and C5 deletes the board's — so the
+block was repointed to `refreshCockpitHandoff`, which `onViewsChanged("handoff")` still calls and which is
+exactly ONE refresh kind. Validations was tried first and rejected: `refreshCockpitValidations` pushes TWO
+kinds (validations AND inbox), which doubles every suppressed count the test asserts.
+
+Nothing about Phase B's finding changed — the gate, the journal, the delta/resync branch and the client-poll
+door are the same code, measured through a different section. What the migrated surfaces' gating now proves
+lives in `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' own doors. That is the
+cutover working rather than a gap it left.
+
+Two more were repointed for the same reason and are worth naming so a reader does not read them as weakened:
+`cockpitRouter.test.ts`'s three navEpoch cases used the board's slow `listMissionControlAgents()` as the
+wedgeable in-flight response and now use Runtime Ops' injectable `buildSnapshot()`; and
+`cockpitReadyHandshake.test.ts`'s ordering guard names `handleApprovalAction` as the chain's first link,
+having named `handleTaskDetailAction` and then `handleMissionAction` before it — the property under test is
+the ORDER, not which handler happens to be first.
+
+### Phase C5 — the C4 merge composed both sides of Cockpit.ts silently, so C5 was REBASED rather than merged (2026-08-03)
+
+Recorded because the failure is invisible and will recur in Phase D, where ten more surfaces leave the same
+host. C4 and C5 were built in parallel from the same base and both rewrote `src/webview/Cockpit.ts` heavily —
+C4 removing the task-detail renderer, C5 removing the board's. Merging the second onto the first produced NO
+conflict and a file LARGER than either side: git saw one branch's deletions and the other's edits in
+different hunks and kept both, resurrecting the task-detail push next to the standalone app. Two live
+renderers of one screen — precisely what `spec.md` forbids — with not one conflict marker to notice it by. A
+`cherry-pick` was worse: it took C5's whole file and dropped C4's deletions in silence.
+
+What shipped: C5 reset to `main` (with C4 in it) and re-applied its cutover by hand against the C4 text,
+which is also how its redirect found its way into `navigate()` beside C4's instead of living in a wrapper of
+its own. The maintainer verifies it with three greps that must all answer zero —
+`resolveBlobUri`, `lastKnownTaskDetail`, `sendMission` in `Cockpit.ts` — because those are the exact symbols
+the silent merge brought back. **The lesson for Phase D: two surfaces must not leave the same host in
+parallel.** A three-way merge cannot tell "both deleted different things" from "one deleted, one edited", and
+no test the two branches share will notice, because each branch is green on its own.
 
 ## Tradeoffs
 

@@ -44,7 +44,7 @@ describe("Task Studio provisional-new Cancel/Back stays on Board (t-c3c819)", ()
     expect(invokeAt).toBeGreaterThan(abandonAt);
   });
 
-  it("Cockpit.ts: the shared studioExitTarget helper falls back to the mission section instead of task-detail when the binding was never persisted", () => {
+  it("Cockpit.ts: the shared studioExitTarget helper falls back to a renderable section instead of task-detail when the binding was never persisted", () => {
     // t-527767 — this logic moved out of onCancelled's own body and into a helper shared with
     // onSaved (identical "where does this route's exit land" computation for both triggers); the
     // behavior this test guards is unchanged, only where the source lives.
@@ -53,7 +53,11 @@ describe("Task Studio provisional-new Cancel/Back stays on Board (t-c3c819)", ()
     expect(helperAt).toBeGreaterThan(-1);
     const helperBody = src.slice(helperAt, helperAt + 400);
     expect(helperBody).toMatch(/parent\?\.kind === "task-detail" && !persisted/);
-    expect(helperBody).toContain('routes.section("mission")');
+    // SDD 485 C5 — the fallback SECTION changed (the Board left Control for its own app, and `navigate()`
+    // would turn a section("mission") here into "open a Board tab" — a panel appearing on a CANCEL). The
+    // rule this test exists for did not: a never-persisted task's exit must not go to task-detail(id).
+    expect(helperBody).toContain('routes.section("overview")');
+    expect(helperBody, "the never-persisted branch must not route to task-detail").not.toContain("routes.taskDetail");
 
     const hookAt = src.indexOf("onCancelled: (persisted) => {");
     expect(hookAt).toBeGreaterThan(-1);

@@ -51,12 +51,20 @@ export type CockpitSectionId =
   | "plugins"
   | "settings";
 
+/**
+ * The sections CONTROL ITSELF RENDERS, in product order.
+ *
+ * SDD 485 C5 — `mission` left this list when the Board became a standalone app. It is still a
+ * `CockpitSectionId` and still a decodable route (a persisted pre-485 panel must be READABLE so it can be
+ * redirected rather than silently mistaken for something else), and it is still a launcher tile — but the
+ * tile opens the app, and Control has no renderer for it. This is the shape Phase D repeats: a migrated
+ * section moves from here to the compatibility list below, and its tile's destination changes.
+ */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
   "engine",
   "fleet",
   "inbox",
-  "mission",
   "worktrees",
   "execution-graph",
   "runtime",
@@ -67,12 +75,16 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
 ];
 
 /**
- * All accepted section routes. Approvals and Validations remain valid compatibility/deep-link
- * targets, but the Human Inbox is their only top-level navigation entry.
+ * All accepted section routes. Approvals and Validations remain valid compatibility/deep-link targets, but
+ * the Human Inbox is their only top-level navigation entry. `mission` is here for a different reason (SDD
+ * 485 C5): the Board is an app now, and this entry is what lets a persisted or deep-linked `section:mission`
+ * still DECODE, so extension.ts can redirect it to that app instead of falling back to Overview and losing
+ * which screen the human had.
  */
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   "approvals",
+  "mission",
   "validations",
 ];
 

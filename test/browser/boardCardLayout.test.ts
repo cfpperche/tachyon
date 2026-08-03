@@ -4,13 +4,13 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 
-// t-c55f8d (2026-08-01): the board stopped shipping as its own `dist/webview/mission-control.js` bundle —
-// it is a Control section inside cockpit.js now (esbuild.mjs keeps both mission-control CSS files, which is
-// why only the script 404'd and the page rendered empty). The hand-rolled host page + `snapshot` push that
-// used to stand in for the harness is replaced by the harness itself: `?view=cockpit&fixture=mission` pushes
-// the SAME missionControlFixtures.default VM. `width`/`height` size the preview frame to the viewport, so
-// the lane-width and board-scroller measurements below still measure what they measured before.
-const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=mission";
+// t-c55f8d (2026-08-01) replaced this test's hand-rolled host page with the preview harness, after the board
+// stopped shipping its own `dist/webview/mission-control.js` and the page rendered empty on a 404'd script.
+// SDD 485 C5 (2026-08-03): that bundle exists again — the Board is a standalone app — so the route is the
+// board's own, pushing the SAME missionControlFixtures.default VM through the same shared envelope.
+// `width`/`height` size the preview frame to the viewport, so the lane-width and board-scroller
+// measurements below still measure what they measured before.
+const PREVIEW = "/scripts/webview-preview/index.html?view=mission-control&fixture=default";
 
 async function loadBoard(page: Page, origin: string, frame: { width: number; height: number }): Promise<void> {
   await page.goto(`${origin}${PREVIEW}&width=${frame.width}&height=${frame.height}`, { waitUntil: "networkidle0" });

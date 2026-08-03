@@ -87,9 +87,15 @@ const postedOn = (panel: (typeof __createdPanels)[number], type: string): unknow
 const lastModel = (panel: (typeof __createdPanels)[number]): { model?: { activeRoute?: unknown } } | undefined =>
   postedOn(panel, "model").at(-1) as { model?: { activeRoute?: unknown } } | undefined;
 
-/** Control, live and scoped to the Board — the WARM arrangement the report requires. */
-async function boardIsOpen(deps: CockpitDeps, ws: Workspace) {
-  await openCockpit(deps, { section: "mission", missionWsHash: ws.wsHash });
+/**
+ * Control, live and scoped — the WARM arrangement the report requires.
+ *
+ * SDD 485 C5 — step 1 of the report was "Control is on the Board". The Board is a standalone app now, so
+ * what the arrangement actually needs survives (a live, already-scoped Control, the one shape where the
+ * REVEAL path runs instead of the create path) while the section it sat on does not.
+ */
+async function controlIsOpen(deps: CockpitDeps, ws: Workspace) {
+  await openCockpit(deps, { section: "overview", wsHash: ws.wsHash });
   const panel = __createdPanels[0]!;
   panel.webview.__receive(readyMessage());
   await flush();
@@ -100,11 +106,11 @@ async function boardIsOpen(deps: CockpitDeps, ws: Workspace) {
 const attentionOpen = (app: TaskDetailPanelManager, wsHash: string, taskId: string): void => app.open(wsHash, taskId);
 
 describe("t-20bbfa — Attention → Open lands on the Task, with Control still attached", () => {
-  it("opens the task as its OWN tab beside the live Board", async () => {
+  it("opens the task as its OWN tab beside a live Control", async () => {
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "the task the note landed on", author: "human" });
     const app = taskDetailApp(ws);
-    const control = await boardIsOpen(depsFor(app, ws), ws);
+    const control = await controlIsOpen(depsFor(app, ws), ws);
 
     attentionOpen(app, ws.wsHash, task.id);
     __createdPanels.at(-1)!.webview.__receive(readyMessage());
@@ -131,7 +137,7 @@ describe("t-20bbfa — Attention → Open lands on the Task, with Control still 
     const task = await ws.taskStore.create({ title: "note target", author: "human" });
     const app = taskDetailApp(ws);
     const deps = depsFor(app, ws);
-    const control = await boardIsOpen(deps, ws);
+    const control = await controlIsOpen(deps, ws);
     const before = postedOn(control, "model").length;
 
     attentionOpen(app, ws.wsHash, task.id);
@@ -152,7 +158,7 @@ describe("t-20bbfa — Attention → Open lands on the Task, with Control still 
     const other = fakeWorkspace("ws-2");
     const task = await other.taskStore.create({ title: "raised elsewhere", author: "human" });
     const app = taskDetailApp(scoped, other);
-    await boardIsOpen(depsFor(app, scoped, other), scoped);
+    await controlIsOpen(depsFor(app, scoped, other), scoped);
 
     attentionOpen(app, "ws-2", task.id);
     __createdPanels.at(-1)!.webview.__receive(readyMessage());
@@ -168,7 +174,7 @@ describe("t-20bbfa — Attention → Open lands on the Task, with Control still 
     const ws = fakeWorkspace();
     const task = await ws.taskStore.create({ title: "clicked twice", author: "human" });
     const app = taskDetailApp(ws);
-    await boardIsOpen(depsFor(app, ws), ws);
+    await controlIsOpen(depsFor(app, ws), ws);
 
     attentionOpen(app, ws.wsHash, task.id);
     attentionOpen(app, ws.wsHash, task.id);

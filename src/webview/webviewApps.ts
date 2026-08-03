@@ -84,6 +84,14 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // serializer-only tombstone, so a pre-410 window state revives INTO this app rather than redirecting
   // through Control (see TaskDetailPanel.ts).
   { view: "task-detail", viewId: "tachyonTaskDetail", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 C5 — the Board, and the maintainer's motivating case #1 (the Board open beside an agent
+  // terminal). `dashboard` is the whole of its difference from the task detail above: one panel per project,
+  // and re-opening it reveals the panel that is already open rather than making a second. `view` stays
+  // "mission-control" because that is the directory the screen has always lived in and the basename its two
+  // stylesheets already ship under; the viewType is NEW (`tachyonBoard`) so the legacy `tachyonMissionControl`
+  // serializer can keep redirecting a pre-410 panel instead of colliding with this one — the opposite call
+  // from C4's, and for the opposite reason: that tombstone has no live redirect left to preserve.
+  { view: "mission-control", viewId: "tachyonBoard", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

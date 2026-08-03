@@ -14,7 +14,6 @@ import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { SERVER_INSPECTOR_VIEW_TYPE, type ServerInspectorPanelState, type InspectorDeps } from "./webview/ServerInspector.js";
 import {
   openCockpit,
-  refreshCockpitMissionBoard,
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskStudioEntity,
@@ -52,6 +51,8 @@ import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentPro
 import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
+import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
+import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { mintTaskId } from "./tasks/TaskStore.js";
@@ -1112,7 +1113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // below) and an engine-side panel mutation (board drag/edit, detail edit) must reach the same three targets,
   // so a board-side edit is never invisible to an open Detail tab (and vice versa).
   const onTasksChanged = () => {
-    refreshCockpitMissionBoard(); // Control → Mission is THE board since t-610705 (standalone panel retired)
+    boardPanels.refresh(); // SDD 485 C5 — every open Board panel, gated: hidden ones journal and do nothing
     taskDetailPanels.refresh(); // SDD 485 C4 — EVERY open task-detail document, each re-reading its own task
     refreshCockpitTaskStudioEntity(); // Control → task studio-edit route (t-610705 Phase D, D2, same reasoning)
     sidebarProto.refresh();
@@ -1172,6 +1173,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
+  // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
+  // than duplicated, so it can be read beside an agent terminal. `openTask` hands the card's own workspace
+  // to the task-detail app above — the Board never learns where a task detail lives, which is what let C4
+  // and C5 land in either order.
+  const boardPanels = new BoardPanelManager(context.extensionUri, {
+    getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+    openTask: (ws, taskId) => taskDetailPanels.open(ws.wsHash, taskId),
+    openTaskStudio: (ws, id) => {
+      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
+    },
+    // Deliberately a call THROUGH the shared fan-out rather than a direct self-refresh: a board edit must
+    // reach every open Task Detail and the sidebar too, which is the whole reason that function exists.
+    onTasksChanged: () => onTasksChanged(),
+  });
+  context.subscriptions.push({ dispose: () => boardPanels.dispose() });
+  /**
+   * Open (or reveal) the Board for a project. `hash` is the caller's preference; with none, the first
+   * attached workspace answers — the same fallback Control's own scope resolution uses, and the point at
+   * which C6's sidebar project selector will become the authority.
+   */
+  const openBoard = (hash?: string): void => {
+    const ws = (hash ? byHash(hash) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is no Board to open."), "warn");
+      return;
+    }
+    boardPanels.open(ws.wsHash);
+  };
 
   // t-feaaea — one exclusive tmux client per session. Both viewports attach with `-d`, so without
   // an arbiter the second one evicts the first mid-redraw: dot fill, then `attach ended`.
@@ -1669,7 +1698,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
       onValidationsChanged: () => {
         refreshCockpitValidations();
-        refreshCockpitMissionBoard();
+        // SDD 485 C5 — the board carries validation counts, so a close still re-posts it; the target is the
+        // app's own fan-out door now, and it is gated per panel like every other push into it.
+        boardPanels.refresh();
       },
     },
     runtimeOps: {
@@ -1789,6 +1820,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       };
     })(),
     plugins: pluginsPanels,
+    // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
+    openBoard,
     openSettings: () => {
       void vscode.commands.executeCommand("tachyon.openGlobalSettings");
     },
@@ -2136,6 +2169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // on reveal rather than replay the handful of kinds `refreshAll` happens to touch.
         markControlSourceResync();
         taskDetailPanels.markSourceResync(); // SDD 485 C4 — same bargain for every open task document
+        boardPanels.markSourceResync(); // SDD 485 C5 — and for every open Board panel
         refreshAll();
       }
       for (const event of result.events) {
@@ -2215,16 +2249,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
   };
 
-  // t-610705 (Phase B #6) — a revived pre-410 standalone Board panel disposes itself and redirects
-  // into Control → Mission scoped to its persisted workspace, same as tachyon.missionControl.
-  // (Phase C.0) — unless Control's OWN revival/open already claimed the singleton this session:
-  // VS Code doesn't guarantee revive order, and a shim redirect after the real Cockpit already
-  // restored (possibly onto a different route the user is looking at) must not clobber it.
+  // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
+  // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
+  // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
+  // the new app: it is a live redirect with its own persisted shape (`{wsHash}`), and one viewType meaning
+  // two incompatible shapes has no way to tell them apart. No `isCockpitSingletonClaimed()` guard any more,
+  // and its absence is the point: that guard existed because the redirect would otherwise navigate a Control
+  // panel someone else had already restored. Opening an app touches no Control state, and re-opening for the
+  // same project reveals rather than duplicating — which makes this safe against VS Code's unspecified
+  // revive order all by itself.
   registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => {
     panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state?.wsHash });
+    openBoard(state?.wsHash);
   });
+  // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
+  // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
+  registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2302,7 +2342,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", state.wsKey, state.snapshot.entityId) });
       return;
     }
-    void openCockpit(makeCockpitDeps(), { section: "mission", wsHash: state.wsKey });
+    // SDD 485 C5 — the Board is an app: a malformed "new" Task Studio state lands on it directly rather
+    // than asking Control for a section it no longer renders.
+    openBoard(state.wsKey);
   });
   registerTrustedPanelSerializer<PipelineStudioPanelState>(context, PIPELINE_STUDIO_VIEW_TYPE, (panel, state) => pipelineStudioPanels.deserialize(panel, state));
   // t-610705 (SDD 410 Phase B #5) — a revived pre-410 standalone panel disposes itself and
@@ -2636,15 +2678,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // sidebar header view/title button was removed; the launcher tab is the primary door.
     vscode.commands.registerCommand("tachyon.openControl", (section?: unknown) => {
       if (typeof section === "string" && section.trim()) {
-        return openCockpit(makeCockpitDeps(), { section: resolveCockpitSection(section) });
+        // SDD 485 C5 — the launcher tile is still ONE door for all twelve; what changed is where the Board's
+        // id lands. Routed here rather than in the sidebar so the sidebar never has to learn which of the
+        // twelve are apps — Phase D flips ten more ids through this same line.
+        const resolved = resolveCockpitSection(section);
+        if (resolved === "mission") {
+          openBoard();
+          return Promise.resolve();
+        }
+        return openCockpit(makeCockpitDeps(), { section: resolved });
       }
       return openCockpit(makeCockpitDeps());
     }),
     // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
-    // convenience: Control → Mission tab (same as tachyon.missionControl without pick when single-root)
-    vscode.commands.registerCommand("tachyon.openControlMission", () => openCockpit(makeCockpitDeps(), { section: "mission" })),
+    // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
+    vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
     // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
     // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
@@ -2995,11 +3045,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
-    // spec 335 + Control monolith POC — open the Mission board *inside* Control (same board UX; new access path).
+    // spec 335 — open the Board for one project. SDD 485 C5: its own editor tab, revealed if already open.
     vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (!ws) return;
-      await openCockpit(makeCockpitDeps(), { section: "mission", missionWsHash: ws.wsHash });
+      openBoard(ws.wsHash);
     }),
     // spec 339 — open Task Studio in new-task mode from the command palette (mirrors the board's own
     // "+ Task" button and the card context menu's "Edit in Studio", both of which route through the

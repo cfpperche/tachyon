@@ -78,38 +78,57 @@ function boardOf(targets: WorkspaceMissionControlTarget[]): CockpitMissionBoard 
  * tests need a deps builder whose validations list mirrors the board's, so router-level messages
  * reach the actual switch. Not a router bug — filed separately as t-3990c3.
  */
-function depsFor(targets: WorkspaceMissionControlTarget[]): ReturnType<typeof makeFakeCockpitDeps> {
+function depsFor(
+  targets: WorkspaceMissionControlTarget[],
+  overrides: Partial<ReturnType<typeof makeFakeCockpitDeps>> = {},
+): ReturnType<typeof makeFakeCockpitDeps> {
   return makeFakeCockpitDeps(boardOf(targets), {
     validations: { getWorkspaces: () => targets, onValidationsChanged: () => {} },
+    ...overrides,
   });
 }
+
+/**
+ * A section whose module push is genuinely ASYNC and injectable, so an in-flight response can be held open
+ * across a navigation. Runtime Ops is that section: `buildSnapshot()` is a dep, and `sendRuntime` captures
+ * `navEpoch` before awaiting it exactly like every other sender.
+ *
+ * SDD 485 C5 — this used to be the Board's `listMissionControlAgents()`. The Board left Control for its own
+ * app, so the vehicle changed; the mechanism under test (one `navEpoch`, captured before the await, checked
+ * after) is Control-wide and unchanged, and its per-panel equivalent for the apps is the `PanelWorkGate`.
+ */
+function wedgeableRuntime(targets: WorkspaceMissionControlTarget[], build: () => Promise<never>) {
+  return depsFor(targets, { runtimeOps: { buildSnapshot: build } as never });
+}
+
+const snapshotsOf = (type: string) =>
+  __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === type);
 
 const messageTypes = () => __createdPanels[0].webview.posted.map((m) => (m as { type?: string }).type);
 
 describe("navigation epoch — discards stale responses from a superseded route", () => {
-  it("a slow mission snapshot that resolves AFTER navigating away is never posted", async () => {
+  it("a slow section response that resolves AFTER navigating away is never posted", async () => {
     const ws = fakeWorkspace();
-    const pending = deferred<never[]>();
-    ws.manager.list = () => pending.promise;
-    const deps = depsFor([target(ws)]);
+    const pending = deferred<never>();
+    const deps = wedgeableRuntime([target(ws)], () => pending.promise);
 
-    await openCockpit(deps, { section: "mission", wsHash: ws.wsHash });
+    await openCockpit(deps, { section: "runtime", wsHash: ws.wsHash });
     // "ready" is the real client's first message — triggers sendModel + sendSectionModule, so
-    // sendMission's listMissionControlAgents() is now in-flight and wedged on `pending`.
+    // sendRuntime's buildSnapshot() is now in-flight and wedged on `pending`.
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
-    expect(messageTypes()).not.toContain("snapshot");
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot");
 
-    // navigate away before the slow list() resolves
+    // navigate away before the slow buildSnapshot() resolves
     __createdPanels[0].webview.__receive({ type: "setSection", section: "overview" });
     await flush();
-    expect(messageTypes()).not.toContain("snapshot");
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot");
 
-    pending.resolve([]);
+    pending.resolve({ generatedAt: "", providers: [] } as never);
     await flush();
     await flush();
-    // the wedged call finally resolves, but the epoch it captured is stale — still no snapshot
-    expect(messageTypes()).not.toContain("snapshot");
+    // the wedged call finally resolves, but the epoch it captured is stale — still nothing posted
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot");
   });
 
   it("the global scope survives navigation between screens (t-46eb4f)", async () => {
@@ -149,61 +168,58 @@ describe("navigation epoch — discards stale responses from a superseded route"
   });
 
   it("a fresh navigate to the SAME section invalidates an in-flight response from the prior visit", async () => {
-    // Same wsHash for both visits: MissionAgentLists coalesces them onto the SAME underlying
-    // list() call (by design — see missionVm.test.ts), so both sendMission() calls resolve
-    // together off ONE list() settle. This test proves the epoch guard still lets exactly the
-    // CURRENT (second) call's post through and discards the stale first one, even though they
-    // wake up from the identical resolved promise at the identical tick.
+    // BOTH visits await the SAME underlying promise, so they wake up at the identical tick off one
+    // settle. That is the sharp case: the epoch guard has to let exactly the CURRENT (second) call's
+    // post through and discard the stale first one, with no timing difference to hide behind.
     const wsA = fakeWorkspace(mkroot(), { hash: "ws-a" });
-    const pending = deferred<never[]>();
-    wsA.manager.list = () => pending.promise;
-    const deps = depsFor([target(wsA)]);
+    const pending = deferred<never>();
+    const deps = wedgeableRuntime([target(wsA)], () => pending.promise);
 
-    await openCockpit(deps, { section: "mission", wsHash: "ws-a" });
+    await openCockpit(deps, { section: "runtime", wsHash: "ws-a" });
     __createdPanels[0].webview.__receive({ type: "ready" });
-    await flush(); // the first sendMission's list() is now in-flight and wedged
-    expect(messageTypes()).not.toContain("snapshot");
+    await flush(); // the first sendRuntime's buildSnapshot() is now in-flight and wedged
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot");
 
-    // re-navigate to mission (e.g. clicking the tab again) — bumps the epoch even though the
-    // section string is unchanged; both sendMission calls now await the SAME coalesced promise.
-    __createdPanels[0].webview.__receive({ type: "setSection", section: "mission" });
+    // re-navigate to the same section (e.g. clicking the tile again) — bumps the epoch even though
+    // the section string is unchanged; both sendRuntime calls now await the same promise.
+    __createdPanels[0].webview.__receive({ type: "setSection", section: "runtime" });
     await flush();
-    expect(messageTypes()).not.toContain("snapshot"); // still wedged — neither call has resolved
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot"); // still wedged — neither has resolved
 
-    pending.resolve([]); // both the stale first call AND the fresh second call wake up together
+    pending.resolve({ generatedAt: "", providers: [] } as never); // both calls wake up together
     await flush();
     await flush();
-    // exactly ONE snapshot — the first (stale-epoch) call's post was discarded, only the current
+    // exactly ONE push — the first (stale-epoch) call's post was discarded, only the current
     // (second) navigate's own send resolved to a post.
-    const snapshots = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
-    expect(snapshots).toHaveLength(1);
+    expect(snapshotsOf("runtimeOpsSnapshot")).toHaveLength(1);
   });
 
   it("switching the workspace scope invalidates an in-flight response built for the old scope", async () => {
     const wsA = fakeWorkspace(mkroot(), { hash: "ws-a" });
     const wsB = fakeWorkspace(mkroot(), { hash: "ws-b" });
-    const pending = deferred<never[]>();
-    wsA.manager.list = () => pending.promise;
-    wsB.manager.list = async () => [];
-    const deps = depsFor([target(wsA), target(wsB)]);
+    const pending = deferred<never>();
+    let call = 0;
+    // The FIRST read (built for ws-a) wedges; the read the scope switch triggers answers instantly.
+    const deps = wedgeableRuntime([target(wsA), target(wsB)], (() => {
+      call += 1;
+      return call === 1 ? pending.promise : Promise.resolve({ generatedAt: "", providers: [] });
+    }) as never);
 
-    await openCockpit(deps, { section: "mission", wsHash: "ws-a" });
+    await openCockpit(deps, { section: "runtime", wsHash: "ws-a" });
     __createdPanels[0].webview.__receive({ type: "ready" });
-    await flush(); // ws-a's sendMission is now in-flight and wedged
-    expect(messageTypes()).not.toContain("snapshot");
+    await flush(); // ws-a's read is now in-flight and wedged
+    expect(messageTypes()).not.toContain("runtimeOpsSnapshot");
 
     __createdPanels[0].webview.__receive({ type: "switchControlWorkspace", wsHash: "ws-b" });
     await flush();
-    const afterSwitch = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
-    // the ws-b snapshot (instant list()) should have posted already
-    expect(afterSwitch).toHaveLength(1);
+    // the post-switch read (instant) should have landed already
+    expect(snapshotsOf("runtimeOpsSnapshot")).toHaveLength(1);
 
-    pending.resolve([]);
+    pending.resolve({ generatedAt: "", providers: [] } as never);
     await flush();
     await flush();
-    // the late ws-a response must NOT add a second snapshot on top of ws-b's
-    const final = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
-    expect(final).toHaveLength(1);
+    // the late ws-a response must NOT add a second push on top of the current scope's
+    expect(snapshotsOf("runtimeOpsSnapshot")).toHaveLength(1);
   });
 });
 

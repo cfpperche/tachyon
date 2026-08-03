@@ -933,7 +933,8 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     },
   },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
-  mission: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }) },
+  // SDD 485 C5 — no `mission` fixture: Control has no Board section to photograph any more. The Board has
+  // its own harness route (?view=mission-control), rendering the same component in the page it really ships.
   // SDD 485 C4 — the four `task-detail*` cockpit fixtures are GONE with the subroute: the task detail
   // is a standalone app, so its four content shapes (default / heavy / sparse / tombstone) are previewed
   // through its OWN route (`?view=task-detail`) against the REAL shipped bundle. Previewing it here would
@@ -941,11 +942,14 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   /**
    * t-ac79a7 — the navigation-feedback state, sequenced the way the LIVE host sequences it.
    *
-   * The model here is the Board with NO activeRoute, because that is what the client is still
-   * holding while a Board click is in flight: `routePending` is posted synchronously from
-   * navigate(), and the task-detail model does not arrive until `deps.collect()` finishes seconds
+   * The model here is Control's landing screen with NO activeRoute, because that is what the client is
+   * still holding while a navigation is in flight: `routePending` is posted synchronously from
+   * navigate(), and the destination's model does not arrive until `deps.collect()` finishes seconds
    * later (t-af3eef). So the honest picture of "waiting" is the ORIGIN screen plus the progress
    * bar — not the destination's own loading state, which only appears once the model has landed.
+   *
+   * SDD 485 C5 — that origin used to be Control's own Board. It is Overview now: the Board is a separate
+   * app, and the click that starts this navigation arrives from OUTSIDE Control.
    *
    * The route registry pushes the pending envelope for this fixture and deliberately never the
    * matching `routeReady`, so the surface stays in the bracket for as long as a screenshot needs.
@@ -955,7 +959,7 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
    */
   "nav-pending": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel(bundles, { section: "mission", nowIso: now }),
+    vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }),
   },
   // t-610705 (Phase C.2) — Fleet subroutes: buildCockpitModel only knows sections, so activeRoute is
   // attached after, exactly like Cockpit.ts's sendModel() does for the real host. Nav section: "fleet".

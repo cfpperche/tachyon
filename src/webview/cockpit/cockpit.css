@@ -172,11 +172,11 @@ main.ck-main,
   align-self: stretch;
 }
 
-/* Embedded product surfaces (Mission / Approvals / Runtime / tmux / Plugins) — full-bleed hosts. */
+/* Embedded product surfaces (Approvals / Inbox / Validations / Runtime / tmux / Plugins) — full-bleed
+   hosts. SDD 485 C5 — the `--mission` variant went with the Board's renderer; the board styles its own
+   page now (mission-control.css, in its own app) and a rule with no selector left is not a spare. */
 main.ck-main.ck-main--embed,
-main.ck-main.ck-main--mission,
-.ck-main.ck-main--embed,
-.ck-main.ck-main--mission {
+.ck-main.ck-main--embed {
   padding: 0 !important;
   overflow: hidden;
   display: flex;
@@ -184,8 +184,7 @@ main.ck-main.ck-main--mission,
   min-height: 0;
 }
 
-.ck-embed-host,
-.ck-mission-host {
+.ck-embed-host {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -196,13 +195,6 @@ main.ck-main.ck-main--mission,
   box-sizing: border-box;
 }
 
-.ck-mission-host .mc-root {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: 100%;
-  width: 100%;
-}
-
 /*
  * Nested standalone product roots: fill the embed host edge-to-edge.
  * Their standalone sheets center/constrain `main` / `.ds-wrap` for a lone panel —
@@ -210,7 +202,6 @@ main.ck-main.ck-main--mission,
  */
 .ck-embed-host > main,
 .ck-embed-host > .runtime-ops,
-.ck-embed-host > .mc-root,
 .ck-embed-host > .ck-plugins-root {
   flex: 1 1 auto;
   min-height: 0;
@@ -1807,12 +1798,11 @@ main.ck-main.ck-main--mission,
 }
 .ck-nav-stalled .codicon { color: var(--ds-warn, var(--vscode-editorWarning-foreground, #cca700)); }
 
-/* Layout-neutral by construction: in the flex (embed/mission) layouts this
-   wrapper has to carry the same flex participation `.ck-embed-host` expects
-   from its parent, or inserting it would collapse the surface it wraps. In the
-   plain block layout it needs nothing. */
-.ck-main--embed > .ck-route-content,
-.ck-main--mission > .ck-route-content {
+/* Layout-neutral by construction: in the flex (embed) layout this wrapper has
+   to carry the same flex participation `.ck-embed-host` expects from its
+   parent, or inserting it would collapse the surface it wraps. In the plain
+   block layout it needs nothing. */
+.ck-main--embed > .ck-route-content {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;

@@ -10,12 +10,14 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import {
   openCockpit,
-  refreshCockpitMissionBoard,
+  refreshCockpitHandoff,
   markControlSourceResync,
   __controlGateProbe,
+  type CockpitHandoff,
   type CockpitMissionBoard,
 } from "../../src/webview/Cockpit.js";
 import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/DaemonEngineHost.js";
@@ -31,8 +33,16 @@ import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/Daem
  * It also drives the doors PRODUCTION drives. 0.56.159 shipped the t-b51923 coalescing with a green
  * suite and changed nothing on the live engine, because the test called the one coalesced door while
  * production reached the same effect through five others. So every case below enters through
- * `refreshAll()` / `refreshCockpitMissionBoard()` / the pane's own poll — the exact functions
+ * `refreshAll()` / `refreshCockpitHandoff()` / the pane's own poll — the exact functions
  * `extension.ts`'s `onViewsChanged` fan-out calls — rather than through the gate object.
+ *
+ * SDD 485 C4/C5 — the Control block below used to drive `refreshCockpitMissionBoard`, then briefly
+ * `refreshCockpitTaskDetail`. Both surfaces left Control for their own apps and took those functions with
+ * them, so the exemplar door here is Handoff: still reached from `onViewsChanged("handoff")`, still exactly
+ * ONE refresh kind (Validations pushes two — validations AND inbox — which doubles every suppressed count).
+ * Nothing about the mechanism changed; what the migrated surfaces' own gating proves now lives in
+ * `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' doors. That is the cutover
+ * working, not a gap it left.
  */
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -172,8 +182,8 @@ describe("SDD 485 B3 — with N panels open and one visible, a views-changed is 
 });
 
 /**
- * SDD 485 B1/B2 applied to Control, through `refreshCockpitMissionBoard` — the function
- * `onTasksChanged` calls on every task mutation from every source (MCP tool, board edit, detail edit).
+ * SDD 485 B1/B2 applied to Control, through `refreshCockpitHandoff` — the function
+ * `onViewsChanged("handoff")` calls whenever the project handoff document changes, from any source.
  */
 describe("SDD 485 B4 — Control does no work behind another tab", () => {
   const dirs: string[] = [];
@@ -202,16 +212,41 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
     } as unknown as Workspace;
   }
 
-  async function openControlOnBoard() {
+  const handoffDep = (): CockpitHandoff => ({
+    getWorkspaces: () => [{
+      workspaceRoot: "/repo",
+      wsHash: "ws-1",
+      folderName: "Project",
+      loadHandoff: async () => ({
+        canonicalRelativePath: ".tachyon/HANDOFF.md",
+        exists: true,
+        body: "## Current State\n",
+        staleness: "fresh",
+        pendingCount: 0,
+        updatedAt: "2026-07-21T00:00:00.000Z",
+        updatedBy: "human",
+        revision: "0123456789abcdef",
+        notes: [],
+        distillTargets: [],
+      }),
+      ensureHandoffFile: async () => "/repo/.tachyon/HANDOFF.md",
+      startHandoffDistill: async () => ({ mode: "existing", agent: "codex" }),
+    }] as never,
+  });
+
+  async function openControlOnHandoff() {
     const ws = fakeWorkspace();
     const board: CockpitMissionBoard = {
       getWorkspaces: () => [legacyMissionControlTarget(ws)],
       openTaskStudio: () => {},
-      onTasksChanged: () => refreshCockpitMissionBoard(),
+      onTasksChanged: () => {},
     };
     let collects = 0;
-    const deps = makeFakeCockpitDeps(board, { collect: async () => { collects += 1; return []; } });
-    await openCockpit(deps, { section: "mission", wsHash: "ws-1" });
+    const deps = makeFakeCockpitDeps(board, {
+      collect: async () => { collects += 1; return []; },
+      handoff: handoffDep(),
+    });
+    await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1"), wsHash: "ws-1" });
     await flush();
     const panel = __createdPanels[0]!;
     panel.webview.posted.length = 0;
@@ -219,24 +254,24 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
   }
 
   const snapshots = (panel: typeof __createdPanels[number]) =>
-    panel.webview.posted.filter((m) => (m as { type?: string }).type === "snapshot");
+    panel.webview.posted.filter((m) => (m as { type?: string }).type === "handoff");
 
-  it("posts a board snapshot while visible", async () => {
-    const { panel } = await openControlOnBoard();
+  it("posts the section's own model while visible", async () => {
+    const { panel } = await openControlOnHandoff();
 
-    refreshCockpitMissionBoard();
+    refreshCockpitHandoff();
     await flush();
 
     expect(snapshots(panel)).toHaveLength(1);
   });
 
   it("posts NOTHING while hidden, however many task mutations arrive", async () => {
-    const { panel, collects, resetCollects } = await openControlOnBoard();
+    const { panel, collects, resetCollects } = await openControlOnHandoff();
     __setPanelVisible(panel, false);
     resetCollects();
     panel.webview.posted.length = 0;
 
-    for (let i = 0; i < 20; i++) refreshCockpitMissionBoard();
+    for (let i = 0; i < 20; i++) refreshCockpitHandoff();
     await flush();
 
     expect(panel.webview.posted).toEqual([]);
@@ -245,24 +280,24 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
   });
 
   it("catches up by delta on reveal — one snapshot for twenty suppressed invalidations", async () => {
-    const { panel, collects, resetCollects } = await openControlOnBoard();
+    const { panel, collects, resetCollects } = await openControlOnHandoff();
     __setPanelVisible(panel, false);
-    for (let i = 0; i < 20; i++) refreshCockpitMissionBoard();
+    for (let i = 0; i < 20; i++) refreshCockpitHandoff();
     resetCollects();
     panel.webview.posted.length = 0;
 
     __setPanelVisible(panel, true);
     await flush();
 
-    expect(__controlGateProbe().lastCatchUp).toMatchObject({ mode: "delta", kinds: ["mission"], suppressed: 20 });
+    expect(__controlGateProbe().lastCatchUp).toMatchObject({ mode: "delta", kinds: ["handoff"], suppressed: 20 });
     expect(snapshots(panel)).toHaveLength(1);
     expect(collects()).toBe(0); // a delta does not re-post the whole model
   });
 
   it("catches up by FULL RESYNC when the upstream event cursor expired while hidden", async () => {
-    const { panel, collects, resetCollects } = await openControlOnBoard();
+    const { panel, collects, resetCollects } = await openControlOnHandoff();
     __setPanelVisible(panel, false);
-    refreshCockpitMissionBoard();
+    refreshCockpitHandoff();
     // extension.ts calls this next to `refreshAll()` on `result.resynced || result.engineChanged`.
     markControlSourceResync();
     resetCollects();
@@ -282,7 +317,7 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
     // The door the `views-changed` fan-out never reaches: `retainContextWhenHidden` keeps the
     // webview's timer alive, so a hidden Control used to run a full model collect twenty times a
     // minute. Driven here the way the client drives it — a `refresh` message on the wire.
-    const { panel, collects, resetCollects } = await openControlOnBoard();
+    const { panel, collects, resetCollects } = await openControlOnHandoff();
     __setPanelVisible(panel, false);
     resetCollects();
     panel.webview.posted.length = 0;
@@ -304,7 +339,7 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
   });
 
   it("still answers the poll while visible", async () => {
-    const { panel, collects, resetCollects } = await openControlOnBoard();
+    const { panel, collects, resetCollects } = await openControlOnHandoff();
     resetCollects();
 
     panel.webview.__receive({ type: "refresh" });
@@ -315,11 +350,11 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
 
   it("keeps refreshing a panel that lost FOCUS but is still on screen", async () => {
     // Two apps side by side is the capability SDD 485 is buying; gating on `active` would break it.
-    const { panel } = await openControlOnBoard();
+    const { panel } = await openControlOnHandoff();
     panel.active = false;
     panel.__fireViewState();
 
-    refreshCockpitMissionBoard();
+    refreshCockpitHandoff();
     await flush();
 
     expect(snapshots(panel)).toHaveLength(1);

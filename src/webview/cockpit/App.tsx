@@ -34,8 +34,6 @@ import {
 } from "../shared/ui/kit";
 import { RuntimeLogo } from "../agent-studio-shell/runtimeLogos";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
-import type { MissionControlDispatch, TaskErrorEvent } from "../mission-control/App";
-import type { MissionControlVM } from "../mission-control/messages";
 import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
@@ -66,13 +64,12 @@ import type {
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 // t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
 // mechanism); two sheets (Tailwind layer + base) share the chunk, like Plugins.
-const MissionControlApp = lazy(() =>
-  import("../mission-control/App").then((m) => {
-    loadSectionStylesheet("mission-tailwind");
-    loadSectionStylesheet("mission");
-    return { default: m.App };
-  }),
-);
+// SDD 485 C5 — the Board's lazy block is GONE, not disabled: the board is a standalone app
+// (src/webview/mission-control/main.tsx + BoardPanel.ts) and this file no longer imports its
+// component, its stylesheets or its dispatch — the same journey C4's task detail made one commit
+// earlier. Two live renderers of one screen is what the atomic cutover forbids: Control's host state
+// is global (`panel`, `currentRoute`, `navEpoch`), so the same screen in two places means two
+// subscriptions and two possible answers to one command.
 // SDD 485 C4 — the task-detail lazy block is GONE with the subroute: the task detail is a standalone
 // `document` app (src/webview/task-detail/main.tsx) with its own bundle, error boundary and stylesheet
 // list, so Control neither imports its renderer nor co-loads its CSS. Two live renderers of one screen is
@@ -325,10 +322,6 @@ export interface CockpitAppProps {
   navPending?: { routeKey: string; phase: "pending" | "slow" | "stalled" };
   /** t-ac79a7 — retry from the stalled banner. */
   onRetryNavigation?: () => void;
-  /** Embedded Mission Control board (same Preact App as the standalone panel). */
-  missionVm?: MissionControlVM;
-  missionError?: TaskErrorEvent;
-  missionDispatch: MissionControlDispatch;
   /** t-610705 (Phase C.2) — the agent-activity subroute of Fleet. */
   activityVm?: ActivityViewModel;
   activityPrepended: boolean;
@@ -384,7 +377,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["mission", "validations", "approvals", "inbox", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime", "tmux", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -1918,28 +1911,6 @@ export function App(p: CockpitAppProps) {
         </Suspense>
       </div>
     );
-  } else if (section === "mission") {
-    // Visual monolith POC: full Mission Control board in-tab (same App + host actions as standalone).
-    // t-b87bfe: Validations live on the dedicated Control → Validations tab (not on the task board).
-    body = (
-      <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["mission"].navKey]} />}>
-          <MissionControlApp
-            vm={p.missionVm}
-            lastError={p.missionError}
-            dispatch={p.missionDispatch}
-            // t-ac79a7 — the routeKey is the host's own identifier; the board only needs the task id
-            // out of it. Parsed here rather than shipping a second field, so there is one authority
-            // on what a pending navigation is.
-            pendingTaskId={
-              p.navPending?.routeKey.startsWith("task-detail:")
-                ? p.navPending.routeKey.split(":")[2]
-                : undefined
-            }
-          />
-        </Suspense>
-      </div>
-    );
   } else if (section === "validations") {
     body = (
       <div class="ck-embed-host" data-testid="control-validations-host">
@@ -2237,7 +2208,7 @@ export function App(p: CockpitAppProps) {
       ) : null}
 
       <main
-        class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}
+        class={`ck-main${isEmbed ? " ck-main--embed" : ""}`}
         aria-busy={navBusy ? "true" : undefined}
       >
         {/* t-ac79a7 — the stalled end state. Replaces the progress bar rather than joining it: past

@@ -1071,12 +1071,15 @@ function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: CockpitSect
         // TAB. The tab-strip dot next to it says "something is wrong"; this one says WHERE, so the
         // alarm has an address. Announced through the button's own label, not as a decorative glyph.
         const err = engineHasError && s.id === "engine";
+        // SDD 485 — a standalone app's tile opens its OWN editor tab, so the tooltip must not promise
+        // Control. The click is unchanged (one door: `tachyon.openControl <id>`); only the wording is.
+        const opens = s.standalone ? `Open ${s.label}` : `Open Control — ${s.label}`;
         return (
           <Button
             key={s.id}
             class={`ctl-tile${err ? " has-err" : ""}`}
             icon={s.icon}
-            title={err ? `Open Control — ${s.label} (errors in engine log)` : `Open Control — ${s.label}`}
+            title={err ? `${opens} (errors in engine log)` : opens}
             aria-label={err ? `${s.label}, errors in engine log` : undefined}
             data-section={s.id}
             data-testid={`control-tile-${s.id}`}

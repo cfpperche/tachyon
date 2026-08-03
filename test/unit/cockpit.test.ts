@@ -8,7 +8,10 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER[2]).toBe("fleet");
     expect(COCKPIT_SECTION_ORDER).toContain("inbox");
     expect(COCKPIT_SECTION_ORDER).not.toContain("approvals");
-    expect(COCKPIT_SECTION_ORDER).toContain("mission");
+    // SDD 485 C5 — the Board is a standalone app: it is still a CockpitSectionId (so a persisted or
+    // deep-linked route decodes and can be redirected) and still a launcher tile, but Control renders no
+    // section for it, and this list is what Control renders.
+    expect(COCKPIT_SECTION_ORDER).not.toContain("mission");
     expect(COCKPIT_SECTION_ORDER).not.toContain("validations");
     expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
     // t-e88c8a — the Deliveries tab was retired with the Delivery tool surface.
