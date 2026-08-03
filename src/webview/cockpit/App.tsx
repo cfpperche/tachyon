@@ -30,7 +30,6 @@ import {
   KitDropdownContent,
   KitDropdownItem,
   KitDropdownTrigger,
-  KitSelect,
 } from "../shared/ui/kit";
 import { RuntimeLogo } from "../agent-studio-shell/runtimeLogos";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
@@ -274,7 +273,6 @@ function SectionFallback({ title }: { title?: string }) {
 }
 
 /** t-d16a39 — non-empty UI sentinel for "All workspaces" (Radix Select forbids value=""). */
-const ALL_WORKSPACES = "__all__";
 
 export interface CockpitAppProps {
   model: CockpitModel | undefined;
@@ -1704,19 +1702,6 @@ export function App(p: CockpitAppProps) {
                   in Overview, and is always visible: with a single root it still answers "which root
                   am I looking at", which the header's old >1-workspace condition never did. Every
                   other screen consumes the resulting scope; none offers its own copy of it. */}
-              <KitSelect
-                aria-label="Control workspace"
-                data-testid="control-workspace-select"
-                class="ck-workspace-select"
-                value={m.selectedWsHash ?? ALL_WORKSPACES}
-                onValueChange={(value) => p.onSwitchWorkspace(value === ALL_WORKSPACES ? "" : value)}
-                options={[
-                  // "All workspaces" is only a real choice when there is more than one: with a lone
-                  // root it and that root select the same data, so offering both is noise.
-                  ...(m.workspaces.length > 1 ? [{ value: ALL_WORKSPACES, label: s.allWorkspaces }] : []),
-                  ...m.workspaces.map((w) => ({ value: w.hash, label: w.folder })),
-                ]}
-              />
               <label class="ck-auto" title={s.auto}>
                 <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
                 {s.auto}

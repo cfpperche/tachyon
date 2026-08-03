@@ -26,6 +26,7 @@ function Root() {
   const [prefs, setPrefs] = useState<{ agents?: string; terminals?: string }>({});
   const [collapsedKeys, setCollapsedKeys] = useState<string[]>([]);
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined);
+  const [selectedWsHash, setSelectedWsHash] = useState<string | undefined>(undefined);
   useEffect(() => {
     let gotFleet = false;
     let retry: number | undefined;
@@ -46,6 +47,7 @@ function Root() {
         if (d.prefs) setPrefs(d.prefs);
         setCollapsedKeys(Array.isArray(d.collapsedKeys) ? d.collapsedKeys : []);
         if (typeof d.appVersion === "string" && d.appVersion.trim()) setAppVersion(d.appVersion.trim());
+        setSelectedWsHash(typeof d.selectedWsHash === "string" ? d.selectedWsHash : undefined);
       }
     };
     const onFocus = () => requestFleet();
@@ -77,8 +79,9 @@ function Root() {
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
+    switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
   };
-  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} />;
+  return <App fleets={fleets} dispatch={dispatch} prefs={prefs} collapsedKeys={collapsedKeys} appVersion={appVersion} selectedWsHash={selectedWsHash} />;
 }
 
 const root = document.getElementById("root");

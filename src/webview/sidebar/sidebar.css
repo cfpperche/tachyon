@@ -96,6 +96,7 @@
   .sec .agent-filter-select:focus-visible { outline: 1px solid var(--ds-focus); outline-offset: 1px; }
   .sec .pin-filter { gap: 4px; }
 	  .pin-filter select { max-width: 98px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
+  .sec .control-workspace-select { max-width: 150px; min-width: 0; height: 22px; border: 1px solid var(--ds-border); border-radius: 4px; background: var(--vscode-dropdown-background, var(--vscode-sideBar-background)); color: var(--vscode-dropdown-foreground, var(--vscode-foreground)); font: inherit; font-size: 10px; }
 	  .tag-clear { height: 22px; display: inline-flex; align-items: center; gap: 3px; max-width: 104px; padding: 0 5px; border: 1px solid var(--ds-border); border-radius: 4px; color: var(--ds-muted); font-size: 10px; }
 	  .tag-clear:hover { background: var(--hover); color: var(--vscode-foreground); }
 	  .tag-clear .codicon { font-size: 10px; }

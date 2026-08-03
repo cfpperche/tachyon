@@ -28,14 +28,17 @@ export interface FleetMessage {
   collapsedKeys: string[];
   /** t-38c2a1 — running extension version (e.g. "0.56.41"). */
   appVersion?: string;
+  /** SDD 485 C6 — window scope used by the next Control app/document open. */
+  selectedWsHash?: string;
 }
 export function fleetMessage(
   fleets: FleetVM[],
   prefs: SortPrefs,
   collapsedKeys: string[] = [],
   appVersion?: string,
+  selectedWsHash?: string,
 ): FleetMessage {
-  return { type: FLEET, fleets, prefs, collapsedKeys, ...(appVersion ? { appVersion } : {}) };
+  return { type: FLEET, fleets, prefs, collapsedKeys, ...(appVersion ? { appVersion } : {}), ...(selectedWsHash ? { selectedWsHash } : {}) };
 }
 
 /** the union the sidebar webview listens for (host → webview). */

@@ -14,6 +14,7 @@ import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
+import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import {
   mergeCardTemplateConfigs,
   parseCardTemplate,
@@ -43,7 +44,7 @@ export interface PinPreviewPanelState {
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort" | "setCollapsed";
+  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort" | "setCollapsed" | "switchControlWorkspace";
   id?: string;
   agent?: string;
   op?: string;
@@ -100,6 +101,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private lastFleets: FleetVM[] = [];
   private pushGeneration = 0;
+  private readonly scopeSubscription: vscode.Disposable;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -107,7 +109,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
     /** t-38c2a1 — extension package version shown in the sidebar header. */
     private readonly appVersion?: string,
-  ) {}
+  ) {
+    this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
+  }
+
+  dispose(): void {
+    this.scopeSubscription.dispose();
+  }
 
   private sortCache?: SortPrefs; // synchronous mirror so overlapping setSort writes don't lose a section (codex)
   private sortPrefs(): SortPrefs {
@@ -266,12 +274,18 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // the engine's own projection, so a settings change re-derives from it without a re-fetch, and
     // nothing persists a template that belongs to one person on one machine.
     void view.webview.postMessage(
-      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion),
+      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, controlWorkspaceScope.current),
     );
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {
     if (m?.type === "ready") return void this.push();
+    if (m?.type === "switchControlWorkspace") {
+      const hash = m.hash || undefined;
+      if (hash !== undefined && !this.wsFor(hash)) return;
+      controlWorkspaceScope.set(hash);
+      return void this.push();
+    }
     if (m?.type === "setSort" && (m.section === "agents" || m.section === "terminals") && (m.mode === "name-asc" || m.mode === "name-desc")) {
       // spec 242 (D9) — update the in-memory cache SYNCHRONOUSLY (before the await) so a second overlapping
       // setSort reads the new object, then persist + republish (the validated mode never writes garbage).

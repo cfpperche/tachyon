@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import type { CockpitGlobalSettingsState } from "../cockpit/model.js";
 import * as fs from "node:fs";
@@ -932,7 +933,6 @@ async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, a
 /** t-d16a39 — the ONE shell-level workspace scope. undefined = "All workspaces" (aggregate
  *  sections aggregate; per-workspace sections fall back to the first workspace). Replaces the
  *  former pair of per-section scope aliases and Plugins' derived fallback. */
-let controlWsHash: string | undefined;
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
 /** t-e76acc — the unified Human Inbox re-reads on ANY approval or validation mutation, from anywhere. */
@@ -1096,8 +1096,8 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1110,8 +1110,8 @@ function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePr
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1124,8 +1124,8 @@ function resolveHandoffWs(handoff: CockpitHandoff, prefer?: string): WorkspaceHa
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1142,8 +1142,8 @@ function resolveFleetActivityWs(activity: CockpitActivity, prefer?: string): Wor
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1158,8 +1158,8 @@ function resolveFleetProbesWs(probes: CockpitProbes, prefer?: string): Workspace
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1175,8 +1175,8 @@ function resolveFleetStudioWs(studios: CockpitStudios, prefer?: string): Workspa
     const hit = all.find((w) => w.wsHash === prefer);
     if (hit) return hit;
   }
-  if (controlWsHash) {
-    const hit = all.find((w) => w.wsHash === controlWsHash);
+  if (controlWorkspaceScope.current) {
+    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
     if (hit) return hit;
   }
   return all[0];
@@ -1272,8 +1272,8 @@ export async function openCockpit(
   // t-d16a39 — the legacy per-section opt name feeds the ONE shell scope (callers unchanged).
   // SDD 485 C5 — the board's own alias went with it: its last caller, `tachyon.missionControl`, opens the
   // app now, which keys its panel on a project rather than moving Control's scope.
-  if (opts?.wsHash) controlWsHash = opts.wsHash;
-  if (opts?.approvalWsHash) controlWsHash = opts.approvalWsHash;
+  if (opts?.wsHash) controlWorkspaceScope.set(opts.wsHash);
+  if (opts?.approvalWsHash) controlWorkspaceScope.set(opts.approvalWsHash);
 
   const creating = !panel || !!opts?.revivedPanel;
   if (panel && !opts?.revivedPanel) {
@@ -1426,14 +1426,14 @@ export async function openCockpit(
       // see cockpit/App.tsx's `isNavlessStudio`).
       model = buildCockpitModel(bundles, {
         section,
-        wsHash: controlWsHash,
+        wsHash: controlWorkspaceScope.current,
         personalCardTemplate: personalCardTemplateState(),
         globalSettings: globalSettingsState(),
       });
       // SDD 480 Phase 4 — built only for the section that renders it. Folding the ledger on every
       // model tick would spend the projection on ~13 sections that never look at it.
       if (section === "execution-graph") {
-        model.executionGraph = buildExecutionGraphSectionVm(deps, controlWsHash);
+        model.executionGraph = buildExecutionGraphSectionVm(deps, controlWorkspaceScope.current);
       }
     } catch (err) {
       model = buildCockpitModel(
@@ -1451,7 +1451,7 @@ export async function openCockpit(
             approvals: [],
           },
         ],
-        { section: navSection(currentRoute) ?? "overview", wsHash: controlWsHash },
+        { section: navSection(currentRoute) ?? "overview", wsHash: controlWorkspaceScope.current },
       );
     }
     // t-610705 (Phase C.1) — carries the exact route when it's a subroute; buildCockpitModel stays
@@ -1816,7 +1816,7 @@ export async function openCockpit(
   const sendRuntimeConfig = async () => {
     if (panel !== live || !isSection(currentRoute, "runtime-config")) return;
     const epoch = navEpoch;
-    const snapshot = deps.runtimeConfig.buildSnapshot(controlWsHash);
+    const snapshot = deps.runtimeConfig.buildSnapshot(controlWorkspaceScope.current);
     if (panel !== live || navEpoch !== epoch) return;
     if (!snapshot) {
       live.webview.postMessage(runtimeConfigSnapshotUnavailableMessage());
@@ -1845,7 +1845,7 @@ export async function openCockpit(
 
   const bindPluginsIfNeeded = () => {
     if (isSection(currentRoute, "plugins")) {
-      deps.plugins.bindControlEmbed(live.webview, controlWsHash);
+      deps.plugins.bindControlEmbed(live.webview, controlWorkspaceScope.current);
     } else {
       deps.plugins.unbindControlEmbed();
     }
@@ -2412,6 +2412,16 @@ export async function openCockpit(
 
   if (wiredPanel !== live) {
     wiredPanel = live;
+    // SDD 485 C6 — the sidebar owns the visible selector. Control observes the same window store so
+    // its still-embedded sections re-scope, while standalone panel targets remain frozen at open.
+    const scopeSubscription = controlWorkspaceScope.onDidChange(async () => {
+      if (panel !== live) return;
+      navEpoch += 1;
+      await sendModel();
+      await sendSectionModule();
+    });
+    live.onDidDispose(() => scopeSubscription.dispose());
+
     live.webview.onDidReceiveMessage(async (msg: Record<string, unknown>) => {
       if (panel !== live || !msg || typeof msg !== "object" || typeof msg.type !== "string") return;
       const type = msg.type;
@@ -2586,10 +2596,7 @@ export async function openCockpit(
           // t-610705 (Phase C.0) — a scope switch also bumps navEpoch: it's the same "the world
           // changed" event class as navigation (a slow response built for the old scope must not
           // land after the switch).
-          controlWsHash = c.wsHash || undefined;
-          navEpoch += 1;
-          await sendModel();
-          await sendSectionModule();
+          controlWorkspaceScope.set(c.wsHash || undefined);
           return;
         case "copyDiagnostics": {
           try {
@@ -2794,7 +2801,7 @@ export async function openCockpit(
           if ((c.runtime === "codex" || c.runtime === "claude") && typeof c.documentId === "string" && Array.isArray(c.changes) && isSection(currentRoute, "runtime-config")) {
             try {
               await deps.runtimeConfig.saveChanges({
-                wsHash: controlWsHash,
+                wsHash: controlWorkspaceScope.current,
                 runtime: c.runtime,
                 documentId: c.documentId,
                 expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
@@ -3078,7 +3085,7 @@ export async function openCockpit(
         schemaVersion: 2,
         view: COCKPIT_VIEW_TYPE,
         route: currentRoute,
-        ...(controlWsHash ? { wsHash: controlWsHash } : {}),
+        ...(controlWorkspaceScope.current ? { wsHash: controlWorkspaceScope.current } : {}),
       } satisfies CockpitPanelState,
       bootstrapGlobals: {
         /**
