@@ -35,6 +35,10 @@ down. So:
 - window overflowed, or `WorkspaceClient` reported `resynced`/`engineChanged` while we were hidden →
   **full resync**. We stop claiming to know what changed and rebuild.
 
+The resync branch is not a bespoke path: it is `sendModel()` + `sendSectionModule()`, the exact body
+of the shell's own 3s poll. Recovery therefore runs code Control executes twenty times a minute
+rather than a branch that only ever fires on reveal.
+
 The upstream-resync branch is wired from `extension.ts`'s subscriber (`markControlSourceResync()`
 next to the `refreshAll()` that was already there). Without it, a hidden Control would replay the
 three kinds `refreshAll` happens to touch and silently assert it knows what the engine just admitted
@@ -50,10 +54,28 @@ gating on `active` would have broken it in the same change that enabled it.
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
+### The `views-changed` fan-out was not the only door (B1)
+
+`plan.md` and the task brief both framed Phase B around `extension.ts`'s `views-changed` fan-out.
+Enumerating every path by which a hidden Control could still do work turned up a louder one that the
+fan-out never touches: **the client's own 3s poll.** `cockpit/main.tsx` runs
+`setInterval(() => post(refreshAction()), 3000)`, and `retainContextWhenHidden: true` keeps that
+timer alive behind another tab, so a hidden Control ran `sendModel()` (a collect across every
+workspace root, including the classified worktree read on some sections) plus `sendSectionModule()`
+**twenty times a minute, forever** — more work than the whole event fan-out put together at the
+post-t-b51923 rate.
+
+Gated host-side, in the `case "refresh"` handler, not client-side: the host is where the gate and
+the guard already live, and a host-side gate holds no matter what any client version's timer does.
+
+This is 0.56.159's lesson arriving on schedule — that release shipped green tests that changed
+nothing in production because the test drove the one door and production used five. Which is why the
+guard in `hiddenPanelWork.test.ts` drives the wire message a client actually sends rather than the
+gate object.
+
 ### The activity feed is paused, not journaled (B1/B2)
 
-`plan.md` framed Phase B entirely around the `views-changed` fan-out. Control has a second
-hidden-work path that never emits one: the agent-activity feed (`src/cockpit/activityFeed.ts`) runs a
+The third door, and the second that emits no `views-changed` at all: the agent-activity feed (`src/cockpit/activityFeed.ts`) runs a
 1s attention poll and an `fs.watchFile` that reads, rebuilds and posts on every log append, whether
 or not anyone is looking.
 
@@ -97,6 +119,15 @@ taken.** t-b51923 measured a running engine; no engine daemon is reachable from 
 this task. The harness above is the honest substitute — real producer, real consumer, synthetic
 arrival pattern — and the live number is worth re-taking on the maintainer's machine with Control and
 a couple of panes open behind other tabs.
+
+**Control's own hidden cost, by door, per minute behind another tab:**
+
+| door | before | after |
+|---|---|---|
+| client 3s poll → `sendModel` + `sendSectionModule` | 20 full collects | **0** (1 on reveal) |
+| `views-changed` fan-out → `refreshCockpit*` | 1 per event (~239/min at the storm rate) | **0** (≤1 per kind on reveal) |
+| activity feed (on an agent-activity route) | 1s attention poll + a read/build/post per log append | **0** (one catch-up read on reveal) |
+| agent pane co-attach poll, per open pane | 30 `tmux list-clients` | **0** (1 on reveal) |
 
 ### Suppression is per-panel, not per-manager
 

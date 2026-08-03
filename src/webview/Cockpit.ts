@@ -902,16 +902,13 @@ let wiredPanel: vscode.WebviewPanel | undefined;
  * at the panel, and gating them would delay the very interaction that proves it is visible.
  */
 type ControlRefreshKind =
+  | "shell-poll"
   | "mission" | "task-detail" | "probes" | "handoff" | "approvals" | "validations" | "inbox"
   | "studio-reference" | "task-studio" | "pin-studio";
 
-const CONTROL_REFRESH_KINDS: readonly ControlRefreshKind[] = [
-  "mission", "task-detail", "probes", "handoff", "approvals", "validations", "inbox",
-  "studio-reference", "task-studio", "pin-studio",
-];
-
 function pushControlRefresh(kind: ControlRefreshKind): void {
   switch (kind) {
+    case "shell-poll": pushControlPoll?.(); return;
     case "mission": pushMissionBoard?.(); return;
     case "task-detail": pushTaskDetail?.(); return;
     case "probes": pushProbes?.(); return;
@@ -928,8 +925,12 @@ function pushControlRefresh(kind: ControlRefreshKind): void {
 /** SDD 485 B1 — hidden ⇒ journal the invalidation and do nothing. Undefined gate = no panel, and the
  *  push slots are undefined too, so the call is already a no-op — pass it through rather than hide it. */
 let controlGate: PanelWorkGate<ControlRefreshKind> | undefined;
-/** The resync branch: `sendModel()` plus every kind, wired in `openCockpit` where those live. */
-let pushControlResync: (() => void) | undefined;
+/**
+ * The shell's own periodic refresh (`sendModel()` + `sendSectionModule()`), wired in `openCockpit`
+ * where those live. It is BOTH the client 3s poll's body and the gate's resync branch — the resync
+ * is deliberately not a bespoke path but the one Control already runs twenty times a minute.
+ */
+let pushControlPoll: (() => void) | undefined;
 /** Test/instrumentation seam — what the last reveal decided (delta vs resync, and from how deep). */
 let lastControlCatchUp: CatchUpDecision<ControlRefreshKind> | undefined;
 
@@ -1275,7 +1276,7 @@ export async function openCockpit(
     lastControlCatchUp = undefined;
     controlGate = new PanelWorkGate<ControlRefreshKind>(panelVisibility(panel), {
       replay: (kind) => pushControlRefresh(kind),
-      resync: () => pushControlResync?.(),
+      resync: () => pushControlPoll?.(),
       // Unconditional: the activity log grows without emitting a single `views-changed`, so its
       // catch-up cannot hang off the journal's decision (see panelWorkGate.ts's `onReveal`).
       onReveal: () => activityBinding?.feed.catchUp(),
@@ -1288,7 +1289,7 @@ export async function openCockpit(
         panel = undefined;
         disposingGate.dispose();
         if (controlGate === disposingGate) controlGate = undefined;
-        pushControlResync = undefined;
+        pushControlPoll = undefined;
         clearCockpitSingletonClaim();
         pushMissionBoard = undefined;
         pushApprovals = undefined;
@@ -2186,20 +2187,21 @@ export async function openCockpit(
   };
 
   /**
-   * SDD 485 B2 — the resync branch of the reveal. `sendModel()` re-posts the whole model (the one
-   * push a delta never carries: nothing in the fan-out asks for it, so a hidden panel that missed a
-   * scope- or fleet-shaped change cannot recover it kind by kind), and every content push then
-   * refreshes whichever route is actually mounted — each one already no-ops off its own route.
+   * SDD 485 B1/B2 — the shell's periodic refresh, in one place: the client's 3s poll calls it, and
+   * the gate's resync branch calls the same thing.
    *
-   * Deliberately NOT the READY path: this must not re-post `routeReady`, which is one half of a
-   * navigation bracket the client is not in the middle of.
+   * `sendModel()` is the push a delta never carries — nothing in the `views-changed` fan-out asks
+   * for it, so a hidden panel that missed a scope- or fleet-shaped change cannot recover it kind by
+   * kind — and `sendSectionModule()` is already the complete "refresh whatever route is mounted"
+   * dispatcher, wider than the fan-out (it reaches runtime, tmux and plugins too). Reusing the poll
+   * body rather than inventing a resync path means the recovery is the code Control runs twenty
+   * times a minute, not a branch that only ever executes on reveal.
    */
-  pushControlResync = () => {
-    void (async () => {
-      await sendModel();
-      for (const kind of CONTROL_REFRESH_KINDS) pushControlRefresh(kind);
-    })();
+  const shellPoll = async (): Promise<void> => {
+    await sendModel();
+    await sendSectionModule();
   };
+  pushControlPoll = () => { void shellPoll(); };
   pushMissionBoard = () => { void sendMission(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
@@ -2653,8 +2655,12 @@ export async function openCockpit(
         // t-6ced6f — no `case READY:` here. It is answered at the TOP of this listener, before the
         // per-route chain, and returns there; a second site would be a second thing to keep in sync.
         case "refresh":
-          await sendModel();
-          await sendSectionModule();
+          // SDD 485 B1 — the LOUDEST hidden-work door in Control, and not one the `views-changed`
+          // fan-out reaches: `retainContextWhenHidden` keeps the client's own 3s timer alive behind
+          // another tab, so a panel nobody is looking at used to run a full model collect twenty
+          // times a minute, forever. Gated like every other refresh; the reveal replays exactly what
+          // the next tick would have done.
+          refreshControl("shell-poll");
           return;
         case "setSection":
           // t-610705 (Phase C.0) — sugar over navigate(); C.1+ adds a "navigate" message carrying

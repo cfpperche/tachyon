@@ -278,6 +278,41 @@ describe("SDD 485 B4 — Control does no work behind another tab", () => {
     expect(snapshots(panel)).toHaveLength(1);
   });
 
+  it("ignores the client's own 3s poll while hidden, and answers it on reveal", async () => {
+    // The door the `views-changed` fan-out never reaches: `retainContextWhenHidden` keeps the
+    // webview's timer alive, so a hidden Control used to run a full model collect twenty times a
+    // minute. Driven here the way the client drives it — a `refresh` message on the wire.
+    const { panel, collects, resetCollects } = await openControlOnBoard();
+    __setPanelVisible(panel, false);
+    resetCollects();
+    panel.webview.posted.length = 0;
+
+    for (let i = 0; i < 20; i++) panel.webview.__receive({ type: "refresh" }); // one minute of polling
+    await flush();
+
+    expect(collects()).toBe(0);
+    expect(panel.webview.posted).toEqual([]);
+
+    __setPanelVisible(panel, true);
+    await flush();
+    await flush();
+
+    // One catch-up, not twenty replays: the poll body runs once and the panel is current again.
+    expect(collects()).toBe(1);
+    expect(panel.webview.posted.some((m) => (m as { type?: string }).type === "model")).toBe(true);
+    expect(snapshots(panel)).toHaveLength(1);
+  });
+
+  it("still answers the poll while visible", async () => {
+    const { panel, collects, resetCollects } = await openControlOnBoard();
+    resetCollects();
+
+    panel.webview.__receive({ type: "refresh" });
+    await flush();
+
+    expect(collects()).toBe(1);
+  });
+
   it("keeps refreshing a panel that lost FOCUS but is still on screen", async () => {
     // Two apps side by side is the capability SDD 485 is buying; gating on `active` would break it.
     const { panel } = await openControlOnBoard();
