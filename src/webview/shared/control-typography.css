@@ -1,0 +1,8 @@
+/* SDD 485 D6 — shared typography used by Control and extracted section apps. This is separate from
+   engine-workspace.css because ck-mono describes no workspace or Engine contract; its two consumers are
+   Control (six uses) and Worktrees (three uses). */
+.ck-mono {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  word-break: break-all;
+}

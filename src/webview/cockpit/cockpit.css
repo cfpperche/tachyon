@@ -1269,12 +1269,6 @@ main.ck-main.ck-main--embed,
   min-height: 22px;
 }
 
-.ck-mono {
-  font-variant-numeric: tabular-nums;
-  font-size: 10px;
-  word-break: break-all;
-}
-
 /* Settings — Companion tab tools (SDD 414) */
 /* t-7b4bb5 — dual-authority intro: two cards, paths wrap, stacks on narrow viewports. */
 .ck-settings-intro {

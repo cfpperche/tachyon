@@ -45,7 +45,13 @@ export class WorktreesPanelManager {
   private configFor(app: WebviewAppEntry): SectionAppConfig<WorktreesRefreshKind> {
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "engine-workspace.css", "worktrees.css"],
+      styleFiles: [
+        "codicon.css",
+        "design-system.css",
+        "control-typography.css",
+        "engine-workspace.css",
+        "worktrees.css",
+      ],
       title: () => vscode.l10n.t("Worktrees"),
       bootstrapGlobals: () => ({ __TACHYON_STRINGS__: worktreesStrings() }),
       refreshKindFor: worktreesRefreshKind,

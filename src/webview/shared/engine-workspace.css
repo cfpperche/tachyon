@@ -1,6 +1,6 @@
-/* Shared only while Control's remaining sections and the standalone Engine consume these primitives.
-   This is deliberately not a generic ck namespace: it contains the Engine workspace/log contract plus
-   the two layout utilities Engine actually renders. Worktrees' ck-wt-* rules remain owned by Control. */
+/* SDD 485 D5/D6 — opt-in workspace primitives shared across Control and extracted apps. Engine and
+   Worktrees consume ck-card-list. Typography lives in control-typography.css; the surface-owned ck-wt-*
+   leaf moved to worktrees.css because it has exactly one consumer. */
 .ck-card-list { display: flex; flex-direction: column; gap: 8px; }
 .ck-empty { padding: 12px 0; text-align: left; font-size: 11px; color: var(--ds-muted); }
 .ci-ws { border:1px solid var(--ds-border);border-radius:4px;margin-bottom:10px;overflow:hidden;background:color-mix(in srgb,var(--vscode-foreground) 3%,transparent) }

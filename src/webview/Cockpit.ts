@@ -2647,6 +2647,9 @@ export async function openCockpit(
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
         taskStudioIsActive ? uri("task-studio.css") : undefined,
         pinStudioIsActive ? uri("pin-studio.css") : undefined,
+        // SDD 485 D6 — ck-mono has two consumers now: Control and standalone Worktrees. Its shared
+        // typography sheet is linked here rather than leaving the definition trapped in cockpit.css.
+        uri("control-typography.css"),
         uri("engine-workspace.css"),
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),
