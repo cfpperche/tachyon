@@ -1584,6 +1584,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
     term.show(); term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
   };
+
+  // SDD 485 D6 — Worktrees owns these ports now. Both require the dashboard's immutable project;
+  // there is deliberately no first-workspace fallback, because that would let a stale/malicious row
+  // address another project's checkout.
+  const removeManagedWorktree = async (id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(
+      await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
+      "worktree.remove-managed",
+    );
+    return result.removed === true ? undefined : String(result.error ?? "removal refused");
+  };
+  const forgetManagedWorktreeRecord = async (id: string, wsHash: string): Promise<string | undefined> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(
+      await extensionInvoke(ws, { action: "worktree.forget-record", id }),
+      "worktree.forget-record",
+    );
+    return result.forgotten === true ? undefined : `record not found or refused: ${id}`;
+  };
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
@@ -2011,28 +2033,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     revealPath: (fsPath) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
     },
-    // spec 444 — Worktrees hygiene. Return value = human-readable refusal (undefined = success);
-    // the engine's ManagedWorktreeService re-validates fail-closed on every call.
-    worktreeRemove: async (id, deleteBranch, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace attached");
-      const result = jsonObject(
-        await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
-        "worktree.remove-managed",
-      );
-      if (result.removed === true) return undefined;
-      return String(result.error ?? "removal refused");
-    },
-    worktreeForgetRecord: async (id, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace attached");
-      const result = jsonObject(
-        await extensionInvoke(ws, { action: "worktree.forget-record", id }),
-        "worktree.forget-record",
-      );
-      if (result.forgotten === true) return undefined;
-      return `record not found or refused: ${id}`;
-    },
     openConfigFile: async (wsHash) => {
       const ws = wsHash ? byHash(wsHash) : workspaces()[0];
       if (!ws) throw new Error("no Tachyon workspace attached");
@@ -2381,8 +2381,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const worktreesPanels = new WorktreesPanelManager(context.extensionUri, {
     collect: engineHost.collect,
     revealPath: engineHost.revealPath,
-    remove: (id, deleteBranch, wsHash) => engineHost.worktreeRemove(id, deleteBranch, wsHash),
-    forget: (id, wsHash) => engineHost.worktreeForgetRecord(id, wsHash),
+    remove: removeManagedWorktree,
+    forget: forgetManagedWorktreeRecord,
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => worktreesPanels.dispose() });
   const openWorktreesTab = (hash?: string): boolean => {

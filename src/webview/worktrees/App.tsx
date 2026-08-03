@@ -1,9 +1,8 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { CockpitModel, CockpitWorktreeRow } from "../../cockpit/model";
-import type { CockpitStrings } from "../cockpit/messages";
 import { Badge, Button, EmptyState, ListRow, PageChrome } from "../shared/ui";
-import type { WorktreesAction } from "./messages";
+import type { WorktreesAction, WorktreesStrings as Strings } from "./messages";
 
 /** spec 444 — hygiene classification groups, in action-priority order. */
 const WT_GROUPS = ["ready-to-remove", "needs-review", "occupied", "record-only"] as const;
@@ -39,12 +38,12 @@ export function WorktreesHygiene({
   onCopyText,
   onPost,
 }: {
-  s: CockpitStrings;
+  s: Strings;
   rows: CockpitWorktreeRow[];
   unavailable?: Array<{ folder: string; reason: string }>;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
-  onPost: (action: CockpitAction) => void;
+  onPost: (action: WorktreesAction) => void;
 }) {
   const [selected, setSelected] = useState<Record<string, "remove" | "forget">>({});
   const [confirming, setConfirming] = useState(false);
@@ -306,7 +305,6 @@ export function WorktreesHygiene({
   );
 }
 
-export type Strings = Pick<CockpitStrings, "worktreesTitle" | "worktreesHint" | "agent" | "change" | "branch" | "reveal" | "copyPath" | "noneListed" | "wtAgentGone" | "wtAgentOwned" | "wtAlsoDeleteBranch" | "wtBlocked" | "wtCancel" | "wtClearSelection" | "wtConfirmBody" | "wtConfirmRun" | "wtConfirmTitle" | "wtEngineUnavailable" | "wtForgetRecord" | "wtOccupiedBy" | "wtOccupiedDesc" | "wtOccupiedTitle" | "wtReadyDesc" | "wtReadyTitle" | "wtRecordDesc" | "wtRecordTitle" | "wtRemoveCheckout" | "wtReviewConfirm" | "wtReviewDesc" | "wtReviewTitle" | "wtSelectAll" | "wtSelected" | "wtShowAll">;
 export const defaultStrings: Strings = {
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
@@ -343,5 +341,5 @@ export const defaultStrings: Strings = {
   wtShowAll: "Show all",
 };
 export function App({ model, strings: s, post }: { model?: CockpitModel; strings: Strings; post: (action: WorktreesAction) => void }) {
-  return <main><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s as CockpitStrings} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={(action) => post(action as WorktreesAction)} /> : null}</main>;
+  return <main><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}</main>;
 }
