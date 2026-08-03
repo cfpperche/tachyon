@@ -24,6 +24,7 @@ import {
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
 import { isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
+import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
   resolveAgentNativeConfigSupport,
@@ -472,6 +473,17 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     // flag is on and a non-empty LSP config is merged), and the fix for an inert switch is to stop
     // offering it, not to open a measured leak. Code intelligence is being built as Bridge `code_*`
     // tools across every runtime (`t-4fbbb2`), which is also the only shape that covers Codex.
+    //
+    // t-09be02 — AMBIENT is not "present". The plugin engine materializes into `.grok/skills/<skill>`
+    // and `.grok/hooks/tachyon-plugins.json` (engine.ts ADAPTERS.grok), so a bare existence check made
+    // installing ANY plugin an unfixable block on creating a canonical Grok agent — the product
+    // refusing its own governed projection. The invariant is about config nobody DECLARED for this
+    // agent; a plugin skill was declared, consented at install, and recorded in
+    // `.tachyon/plugins.lock.json` with the payload it was copied from still on disk. So the question
+    // asked here is now "is there anything under this path Tachyon did NOT put there?", answered by
+    // CONTENT against that receipt (`projectedInputs.ts`) — never by path name, which a `mkdir
+    // .grok/skills/sdd` would defeat. Everything the lockfile does not claim, and every claimed path
+    // whose bytes drifted, still blocks and still names the offending path.
     const ambientCandidates = [
       "AGENTS.md",
       ".grok/config.toml",
@@ -483,14 +495,17 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
       ".grok/lsp.json",
       ".grok/sandbox.toml",
     ];
+    const claims = readRuntimeProjectionClaims(input.workspaceRoot, "grok");
     const blockers = ambientCandidates.flatMap((relative) => {
-      try {
-        fs.lstatSync(path.join(input.workspaceRoot, ...relative.split("/")));
-        return [`profile/native-attestation: ambient Grok input must be absent: ${relative}`];
-      } catch (error) {
-        return (error as NodeJS.ErrnoException).code === "ENOENT"
-          ? []
-          : [`profile/native-attestation: cannot safely inspect ambient Grok input: ${relative}`];
+      const verdict = inspectRuntimeWorkspaceInput(input.workspaceRoot, claims, relative);
+      switch (verdict.status) {
+        case "absent":
+        case "projected":
+          return [];
+        case "ambient":
+          return [`profile/native-attestation: ambient Grok input must be absent: ${verdict.path}${verdict.detail ? ` (${verdict.detail})` : ""}`];
+        default:
+          return [`profile/native-attestation: cannot safely inspect ambient Grok input: ${verdict.path} (${verdict.detail})`];
       }
     });
     if (blockers.length > 0) return blockers;

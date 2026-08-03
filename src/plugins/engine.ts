@@ -33,6 +33,7 @@ import { parseClaudeHooksBlock } from "./adapters/claude.js";
 import { parseCodexHooksBlock } from "./adapters/codex.js";
 import { parseGrokHooksBlock } from "./adapters/grok.js";
 import { readFile, atomicWrite } from "./fsx.js";
+import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "./paths.js";
 import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
 import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
@@ -78,10 +79,10 @@ import {
 
 export const MANIFEST_REL = "tachyon-plugin.json";
 const HOOKS_FILE = "hooks.json"; // inside a runtime block dir
-const SKILLS_DIR = "skills"; // spec 251 — the plugin's neutral skills payload root
+const SKILLS_DIR = PLUGIN_SKILLS_DIR; // spec 251 — the plugin's neutral skills payload root
 const SKILL_FILE = "SKILL.md"; // inside each skills/<name>/ dir
 const MCP_FILE = "mcp.json"; // spec 254 — the plugin's neutral MCP-server payload (at the plugin root)
-export const PAYLOAD_ROOT = ".tachyon/plugins";
+export const PAYLOAD_ROOT = PLUGIN_PAYLOAD_ROOT;
 
 const MAX_PAYLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 const MAX_PAYLOAD_FILES = 5000;

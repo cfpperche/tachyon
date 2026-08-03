@@ -908,6 +908,144 @@ describe("loadProfileAwareConfig", () => {
     expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/config.toml");
   });
 
+  /**
+   * t-09be02 — the plugin engine writes `.grok/skills/<skill>` and `.grok/hooks/tachyon-plugins.json`
+   * (engine.ts ADAPTERS.grok), and the inspector refused those paths for merely EXISTING, so installing
+   * any plugin made a canonical Grok agent impossible to create. `.grok/` is git-ignored, so none of it
+   * shows up in a diff and only a machine that installed a plugin reproduces it — hence a test that
+   * builds the lockfile + the projected tree itself.
+   *
+   * The three cases are one question asked three ways: is this path something TACHYON put here?
+   */
+  describe("t-09be02: Grok ambient inputs are what Tachyon did NOT project", () => {
+    const HOOK_GROUP = { matcher: "Bash", hooks: [{ type: "command", command: "echo guard" }] };
+
+    /** A workspace with a canonical Grok profile plus one installed plugin, materialized for grok. */
+    function grokWorkspaceWithPlugin(label: string): { root: string; options: LoadProfileAwareConfigInput } {
+      const root = temporaryRoot(label);
+      const directory = path.join(root, ".tachyon", "agents", "grok-p");
+      fs.mkdirSync(directory, { recursive: true });
+      const bytes = Buffer.from(stringify({
+        schemaVersion: 1,
+        agentId: AGENT_ID,
+        runtime: { adapter: "grok", executable: "grok" },
+      }));
+      fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
+
+      // the plugin payload the installer copies from — the receipt the projection is checked against.
+      const payload = path.join(root, ".tachyon", "plugins", "sdd", "skills", "sdd");
+      fs.mkdirSync(path.join(payload, "references"), { recursive: true });
+      fs.writeFileSync(path.join(payload, "SKILL.md"), "---\nname: sdd\ndescription: spec-driven\n---\nbody\n");
+      fs.writeFileSync(path.join(payload, "references", "cookbook.md"), "# cookbook\n");
+
+      // what `activateInstall` wrote into the runtime's project dirs.
+      const projected = path.join(root, ".grok", "skills", "sdd");
+      fs.mkdirSync(path.join(projected, "references"), { recursive: true });
+      fs.writeFileSync(path.join(projected, "SKILL.md"), "---\nname: sdd\ndescription: spec-driven\n---\nbody\n");
+      fs.writeFileSync(path.join(projected, "references", "cookbook.md"), "# cookbook\n");
+      fs.mkdirSync(path.join(root, ".grok", "hooks"), { recursive: true });
+      fs.writeFileSync(
+        path.join(root, ".grok", "hooks", "tachyon-plugins.json"),
+        `${JSON.stringify({ hooks: { PreToolUse: [HOOK_GROUP] } }, null, 2)}\n`,
+      );
+
+      fs.writeFileSync(path.join(root, ".tachyon", "plugins.lock.json"), `${JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          sdd: {
+            name: "sdd",
+            version: "1.8.0",
+            runtimes: ["grok"],
+            targets: [
+              { runtime: "grok", kind: "skill-dir", file: ".grok/skills/sdd" },
+              { runtime: "grok", kind: "settings-hook", file: ".grok/hooks/tachyon-plugins.json", ref: "PreToolUse", removal: [HOOK_GROUP] },
+            ],
+          },
+        },
+      }, null, 2)}\n`);
+
+      const record: AgentProfileAuthorityRecord = {
+        schemaVersion: 1,
+        agentName: "grok-p",
+        agentId: AGENT_ID,
+        revision: "profile-r1",
+        canonicalSha256: sha256(bytes),
+        runtimeInspector: { ...GROK_PRIVATE_HOME_INPUT_INSPECTOR },
+      };
+      return {
+        root,
+        options: {
+          yamlText: "agents:\n  grok-p:\n    profile: .tachyon/agents/grok-p/agent.yml\n",
+          workspaceRoot: root,
+          authorities: new Map([["grok-p", record]]),
+        },
+      };
+    }
+
+    it("a canonical Grok agent is creatable with plugins installed — the lockfile claims what the engine wrote", () => {
+      const { options } = grokWorkspaceWithPlugin("tachyon-grok-projected-ok-");
+      const result = loadProfileAwareConfig(options);
+      expect(result.errors).toEqual([]);
+      expect(result.config?.agents["grok-p"]).toMatchObject({ kind: "agent", cmd: "grok" });
+    });
+
+    it("a `.grok` entry no plugin claims still blocks, naming that entry", () => {
+      const { root, options } = grokWorkspaceWithPlugin("tachyon-grok-unclaimed-");
+      const handmade = path.join(root, ".grok", "skills", "handwritten");
+      fs.mkdirSync(handmade, { recursive: true });
+      fs.writeFileSync(path.join(handmade, "SKILL.md"), "---\nname: handwritten\ndescription: mine\n---\n");
+
+      const blocked = loadProfileAwareConfig(options);
+      expect(blocked.config).toBeUndefined();
+      // the OFFENDING entry, not the directory that happens to contain it.
+      expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/skills/handwritten");
+    });
+
+    it("planting a directory with a claimed skill's NAME does not defeat the check — content is the receipt", () => {
+      // The whole point: subtracting by path name would let `mkdir .grok/skills/sdd` walk through the
+      // lock. The claimed path's bytes must still match the payload the installer copied from.
+      const { root, options } = grokWorkspaceWithPlugin("tachyon-grok-planted-");
+      fs.writeFileSync(path.join(root, ".grok", "skills", "sdd", "SKILL.md"), "---\nname: sdd\ndescription: mine now\n---\nsomething else\n");
+
+      const blocked = loadProfileAwareConfig(options);
+      expect(blocked.config).toBeUndefined();
+      expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/skills/sdd");
+      expect(blocked.errors.join("\n")).toContain("does not match the installed payload");
+    });
+
+    it("an extra file smuggled into a claimed skill dir blocks, and so does a hand-added hook group", () => {
+      const { root, options } = grokWorkspaceWithPlugin("tachyon-grok-smuggled-");
+      fs.writeFileSync(path.join(root, ".grok", "skills", "sdd", "extra.sh"), "#!/bin/sh\n");
+      expect(loadProfileAwareConfig(options).errors.join("\n")).toContain("ambient Grok input must be absent: .grok/skills/sdd");
+      fs.rmSync(path.join(root, ".grok", "skills", "sdd", "extra.sh"));
+
+      fs.writeFileSync(
+        path.join(root, ".grok", "hooks", "tachyon-plugins.json"),
+        `${JSON.stringify({ hooks: { PreToolUse: [HOOK_GROUP, { matcher: "Bash", hooks: [{ type: "command", command: "curl evil" }] }] } }, null, 2)}\n`,
+      );
+      const blocked = loadProfileAwareConfig(options);
+      expect(blocked.config).toBeUndefined();
+      expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/hooks/tachyon-plugins.json");
+    });
+
+    it("a lockfile that claims a path whose payload is gone proves nothing, so the path stays ambient", () => {
+      const { root, options } = grokWorkspaceWithPlugin("tachyon-grok-no-payload-");
+      fs.rmSync(path.join(root, ".tachyon", "plugins", "sdd"), { recursive: true, force: true });
+      const blocked = loadProfileAwareConfig(options);
+      expect(blocked.config).toBeUndefined();
+      expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/skills/sdd");
+    });
+
+    it("a corrupt lockfile claims nothing — every projected path falls back to ambient", () => {
+      const { root, options } = grokWorkspaceWithPlugin("tachyon-grok-corrupt-lock-");
+      fs.writeFileSync(path.join(root, ".tachyon", "plugins.lock.json"), "{ not json");
+      const blocked = loadProfileAwareConfig(options);
+      expect(blocked.config).toBeUndefined();
+      // nothing is claimed, so the candidate ITSELF is ambient again — the pre-t-09be02 behavior.
+      expect(blocked.errors.join("\n")).toContain("ambient Grok input must be absent: .grok/skills");
+    });
+  });
+
   it("t-26f508 review: a Grok authority created under the superseded v1 inspector still loads", () => {
     // The hazard this covers is NOT scoped to the stale agent: one projection error makes
     // loadProfileAwareConfig return {errors} for the WHOLE config, so an upgrade would stop every
