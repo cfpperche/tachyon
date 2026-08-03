@@ -76,8 +76,18 @@ work in parallel only if the second re-applies onto the first before delivery, n
       the rejected "dashboard with a constant project". The retired `tachyonServerInspector` viewType
       is reused rather than replaced, because a `window` app's persisted state is byte-identical to
       that tombstone's, so restore revives with no shim at all.
-- [ ] D2–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
-      Runtime Ops, Runtime Config, Plugins, Settings). Each PR: app lands,
+- [x] D2. **Plugins** — the second Phase D migration and the second `dashboard`. Where D1 found a third
+      cardinality by not fitting, this one fits the table the spec always had, and the fact is in the
+      domain rather than in a policy: a plugin install is per-workspace end to end (lockfile, runtime
+      detection and every apply are rooted at one `workspaceRoot`), so two attached projects have two
+      genuinely different plugin sets and two panels showing two answers is correct. The retired
+      `tachyonPlugins` viewType is REUSED (a one-field `wsHash`→`project` rename), which is C4's call
+      rather than C5's — see notes.md for the two-part question that separates the three prior calls.
+      The trap this one paid for was the page PAD, not the page FRAME: `.ck-plugins-root`'s
+      `--ds-page-pad-*` rule lived in `cockpit.css`, and the Phase A consumption check cannot see a
+      missing pad. **D3 should grep `cockpit.css` for its surface's root class before anything else.**
+- [ ] D3–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
+      Runtime Ops, Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
 - [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
@@ -223,6 +233,42 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
       ~414d because the fixture pins a fixed epoch while `ago()` computes live — a fixture artifact the
       `default` fixture has always had. `inspector/App.tsx` and `inspector.css` are byte-identical across this
       change, which is what lets both claims be checked rather than asserted.
+
+- [x] **Evidence (D2, 2026-08-03):** the Plugins app at 880 and 360, on FOUR fixtures, captured through the
+      route this change adds — `npm run preview:webview` +
+      `?view=plugins&fixture=<default|update-available|source-changed|runtime-gap>&width=<w>&height=900`
+      with the browser VIEWPORT set to the same width (t-b24282's fix, used rather than only cited),
+      rendering the REAL shipped `dist/webview/plugins.js` with the exact stylesheet list
+      `PluginsPanel.ts` links (`cockpitCssParity.test.ts` asserts the two agree). The fixtures are the ones
+      t-4e5f11 and t-fb216a already committed, used rather than invented. Screenshots under `.vqa/485-d2/`
+      (gitignored work evidence; the ROUTE and the driver `scripts/visual-qa/plugins-app-widths.mjs` are
+      committed, so all eight are one command to re-take) and attached via `attach_evidence` on
+      `pluginsapp`. Anchor, written from the task's problem statement before the surface was measured:
+      *Plugins must arrive as a first-class editor tab showing the SAME installed list it showed inside
+      Control — nothing gained and nothing lost by the move. At 880 the page chrome and its three actions on
+      one row, the install-by-source bar and the Installed/Marketplace tabs below it, the filter/sort
+      toolbar on ONE row, and each card reading name · version · status badge · actions with its provenance
+      and runtime pills beneath, all inside the surface's own single page pad rather than doubled or absent
+      where Control's shell used to be; at 360 usable rather than clipping, with `plugins.css`'s own
+      `@media (max-width: 720px)` firing; and at BOTH widths the card states t-4e5f11 built reading exactly
+      as they did — "up to date", "update available · vX" beside Update, and "source changed · still vX"
+      beside REAPPLY, because a migration is exactly where a badge and its verb quietly stop agreeing.*
+- [x] **Verdict (D2):** satisfies the anchor at both widths on all four fixtures; zero horizontal overflow
+      anywhere (scrollWidth == clientWidth at 880 and 360, and no unclipped element escaping the page box).
+      At 880 the three chrome actions sit on one row, the toolbar's filter/sort/count read as one row, and
+      every card reads on the lines the anchor names. At 360 `plugins.css`'s 720px block fires — the
+      toolbar collapses to one column and `.card-actions` becomes a full-width row under the title — the
+      chrome actions wrap to two rows, and t-fb216a's coverage notice wraps as prose. The page pad measures
+      12px/16px at both widths, from `plugins.css` rather than from Control's shell, which is the one CSS
+      rule this migration had to move. The two card states t-4e5f11 built are verified by their exact
+      strings rather than by eye: `visual-qa` reads "update available · v0.2.0" beside **Update**, and
+      `secrets-guard` reads "source changed · still v2.0.1" beside **Reapply**.
+      One thing named so it is not read as a migration defect: the FOURTH state the task names — downgrade —
+      is not a fourth card rendering. `deriveUpdateCheck` maps `isDowngrade` to `up-to-date` deliberately
+      (a source resolving LOWER offers nothing to update to, and "update available · v0.1.0" would be a
+      lie); its distinct treatment is the consent drawer's force gate, which has never been a harness
+      fixture in Control either. So three card renderings cover the four states, and `default` stands for
+      both "up to date" and "downgrade".
 
 ## Cookbook
 

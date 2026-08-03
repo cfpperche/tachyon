@@ -48,9 +48,6 @@ import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import type { SessionInspectionState } from "../runtime-ops/messages";
-import type { PluginsDispatch } from "../plugins/App";
-import type { PluginsViewModel } from "../../plugins/viewModel";
-import type { ConsentVM } from "../../plugins/consentViewModel";
 
 import type { StudioDispatch } from "../shared/studio/protocol";
 import type {
@@ -61,7 +58,7 @@ import type {
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
 // t-610705 (Phase B #6) — CSS co-load, sixth surface (see the Approvals comment below for the
-// mechanism); two sheets (Tailwind layer + base) share the chunk, like Plugins.
+// mechanism); two sheets (Tailwind layer + base) share the chunk.
 // SDD 485 C5 — the Board's lazy block is GONE, not disabled: the board is a standalone app
 // (src/webview/mission-control/main.tsx + BoardPanel.ts) and this file no longer imports its
 // component, its stylesheets or its dispatch — the same journey C4's task detail made one commit
@@ -112,15 +109,10 @@ const RuntimeOpsApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-610705 — CSS co-load, fourth surface; two sheets (base + its Tailwind utility layer) share the
-// section id's chunk, so both load via distinct bootstrap-global keys off one lazy-import resolve.
-const PluginsApp = lazy(() =>
-  import("../plugins/App").then((m) => {
-    loadSectionStylesheet("plugins-tailwind");
-    loadSectionStylesheet("plugins");
-    return { default: m.App };
-  }),
-);
+// SDD 485 D2 — the Plugins lazy import is GONE with its section: it is a standalone `dashboard` app now
+// (src/webview/PluginsPanel.ts + plugins/main.tsx), one panel per project, and two live renderers of one
+// screen is the thing spec.md forbids. `src/webview/plugins/App.tsx` is unchanged and unmoved — what
+// changed is who mounts it, which is the whole of a Phase D cutover.
 // SDD 485 D1 — the tmux Server Inspector's lazy import is GONE with its section: it is a standalone
 // `window` app now (src/webview/TmuxPanel.ts + inspector/main.tsx), and two live renderers of one screen
 // is the thing spec.md forbids. `src/webview/inspector/App.tsx` is unchanged and unmoved — what changed is
@@ -349,10 +341,6 @@ export interface CockpitAppProps {
   runtimeConfigUnavailable?: boolean;
   onOpenRuntimeConfigSource: (path: string) => void;
   onSaveRuntimeConfigChanges: (runtime: RuntimeConfigRuntime, documentId: string, expectedRevision: string | undefined, changes: RuntimeConfigChange[]) => void;
-  pluginsVm?: PluginsViewModel;
-  pluginsConsent?: ConsentVM;
-  pluginsBusy?: string;
-  pluginsDispatch: PluginsDispatch;
   /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
    *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
    *  decoded VM — see command-studio-shell/App.tsx's own doc comment for why. `studioDispatch` is
@@ -365,7 +353,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -1938,19 +1926,6 @@ export function App(p: CockpitAppProps) {
     );
   } else if (section === "runtime-config") {
     body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} unavailable={p.runtimeConfigUnavailable} onOpenSource={p.onOpenRuntimeConfigSource} onSaveChanges={p.onSaveRuntimeConfigChanges} />;
-  } else if (section === "plugins") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-plugins">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["plugins"].navKey]} />}>
-          <PluginsApp
-            vm={p.pluginsVm}
-            consent={p.pluginsConsent}
-            busy={p.pluginsBusy}
-            dispatch={p.pluginsDispatch}
-          />
-        </Suspense>
-      </div>
-    );
   } else {
     // settings (and any unknown section fallback)
     const companion = m.companion;

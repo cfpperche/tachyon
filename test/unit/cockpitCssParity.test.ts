@@ -130,6 +130,31 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(ROUTES.inspector.cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
   });
 
+  // SDD 485 D2 — the same parity, one app over. Load-bearing here for a specific reason: the four card
+  // states t-4e5f11 built are photographed through this harness, and `plugins.css` is the sheet that
+  // styles the badge, the card and the 720px reflow. A harness linking a different set would photograph a
+  // screen that does not ship.
+  it("the harness Plugins route links the same product CSS, in the same order, as PluginsPanel.ts", () => {
+    const src = readFileSync("src/webview/PluginsPanel.ts", "utf8");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
+    expect(block, "src/webview/PluginsPanel.ts: no `styleFiles: [...]` array found — did the config move?").not.toBeNull();
+    const host = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+    expect(host.length, "empty scan of PluginsPanel.ts styleFiles — a silently-blind parity check").toBeGreaterThan(3);
+    // the Tailwind layer must precede the base sheet, which is the order Control linked them in and the
+    // order the cascade needs (utilities layer first, panel deltas after).
+    expect(host.indexOf("plugins.tailwind.css")).toBeLessThan(host.indexOf("plugins.css"));
+    expect(ROUTES.plugins.cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
+  });
+
+  it("Control no longer links the plugins sheets — the cutover's other half, checked rather than remembered", () => {
+    // A section that left Control must take its stylesheets with it: an eager link for a screen this
+    // build cannot render is dead weight in every session, and a co-load key with no caller is the kind of
+    // residue t-17d885 was about.
+    expect(hostCssOrder()).not.toContain("plugins.css");
+    expect(hostCssOrder()).not.toContain("plugins.tailwind.css");
+    expect(readFileSync(COCKPIT_HOST, "utf8")).not.toContain('"plugins-tailwind"');
+  });
+
   it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);

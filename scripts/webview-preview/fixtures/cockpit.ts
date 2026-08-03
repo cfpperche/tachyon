@@ -142,8 +142,6 @@ export const strings: CockpitStrings = {
   runtimeConfigOpaqueSections: "Opaque sections",
   runtimeConfigReadError: "Could not read this runtime configuration source",
   runtimeConfigUnavailable: "Runtime configuration is unavailable because this workspace configuration did not load.",
-  pluginsTitle: "Plugins",
-  pluginsHint: "Install, update, and integrity (embedded).",
   settingsTitle: "Settings",
   settingsHint: "Tachyon settings and workspace config.",
   workspaces: "Workspaces",
@@ -1099,13 +1097,6 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   },
   runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
-  plugins: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
-  // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM (see routes.ts).
-  "plugins-runtime-gap": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
-  // t-4e5f11 — labeled version bump on visual-qa (badge "update available · v0.2.0" + Update).
-  "plugins-update-available": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
-  // t-4e5f11 — same version, different source bytes on secrets-guard (badge + Reapply).
-  "plugins-source-changed": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "plugins", nowIso: now }) },
   worktrees: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "worktrees", nowIso: now }) },
   settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
   empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "overview", nowIso: now }) },

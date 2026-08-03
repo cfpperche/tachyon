@@ -1,6 +1,5 @@
 import { Uri } from "vscode";
 import type { CockpitDeps, CockpitMissionBoard } from "../../src/webview/Cockpit.js";
-import { PluginsPanelManager } from "../../src/webview/PluginsPanel.js";
 import type { RuntimeOpsSnapshot } from "../../src/runtimeOps/types.js";
 
 /**
@@ -27,13 +26,15 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },
     runtimeOps: { buildSnapshot: () => ({ generatedAt: "", providers: [] }) as unknown as RuntimeOpsSnapshot },
     runtimeConfig: { buildSnapshot: () => undefined, openSource: async () => {}, saveChanges: async () => {} },
-    plugins: new PluginsPanelManager(Uri.file("/ext"), () => []),
     // SDD 485 C5 — Control opens the Board app instead of rendering it; a test that cares which project it
     // was handed overrides this.
     openBoard: () => {},
     // SDD 485 D1 — Control opens the tmux app instead of rendering it; a test that cares that it was asked
     // (rather than that Control navigated) overrides this.
     openTmux: () => {},
+    // SDD 485 D2 — Control opens the Plugins app instead of rendering it; a test that cares which project
+    // it was handed overrides this.
+    openPlugins: () => {},
     openSettings: () => {},
     openDoctor: () => {},
     fleetStart: async () => {},

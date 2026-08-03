@@ -107,17 +107,6 @@ import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "..
 import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
 import type { StudioDispatch } from "../shared/studio/protocol";
 import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
-import type { PluginsDispatch } from "../plugins/App";
-import type { PluginsViewModel } from "../../plugins/viewModel";
-import type { ConsentVM } from "../../plugins/consentViewModel";
-import {
-  PLUGINS,
-  CONSENT,
-  BUSY,
-  RESULT,
-  confirmMessage,
-  type ConfirmPayload,
-} from "../plugins/messages";
 
 declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
@@ -140,7 +129,7 @@ const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
  * Kept client-side and deliberately small: the client only needs to know "do not optimistically render
  * this", never which app it is or where it opens. `Cockpit.ts`'s `navigate()` is what actually routes it.
  */
-const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux"]);
+const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux", "plugins"]);
 
 function Root() {
   return (
@@ -177,9 +166,6 @@ function CockpitRoot() {
   const [sessionInspections, setSessionInspections] = useState<Record<string, SessionInspectionState>>({});
   const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
   const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
-  const [pluginsVm, setPluginsVm] = useState<PluginsViewModel | undefined>(undefined);
-  const [pluginsConsent, setPluginsConsent] = useState<ConsentVM | undefined>(undefined);
-  const [pluginsBusy, setPluginsBusy] = useState<string | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -387,27 +373,6 @@ function CockpitRoot() {
       } else if (type === RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE) {
         setRuntimeConfigSnapshot(undefined);
         setRuntimeConfigUnavailable(true);
-      } else if (type === PLUGINS && raw.vm) {
-        setPluginsVm(raw.vm as PluginsViewModel);
-        setPluginsBusy(undefined);
-      } else if (type === CONSENT && raw.vm) {
-        setPluginsConsent(raw.vm as ConsentVM);
-        setPluginsBusy(undefined);
-      } else if (type === BUSY) {
-        setPluginsBusy(typeof raw.label === "string" ? raw.label : "Working…");
-      } else if (type === RESULT) {
-        // t-963b66 — Plugins ops land on the product Toast stack (not a local .toast slot).
-        const msg = String(raw.message ?? "");
-        if (msg) {
-          toastApi.show({
-            message: msg,
-            tone: raw.ok ? "ok" : "err",
-            context: "Plugins",
-            durationMs: raw.ok ? undefined : 0,
-          });
-        }
-        setPluginsBusy(undefined);
-        setPluginsConsent(undefined);
       } else if (type === "toast" && typeof raw.text === "string") {
         const toneRaw = typeof raw.tone === "string" ? raw.tone : "info";
         const tone: ToastTone =
@@ -546,31 +511,8 @@ function CockpitRoot() {
     [],
   );
 
-  const pluginsDispatch: PluginsDispatch = useMemo(
-    () => ({
-      refresh: () => post({ type: "refresh" }),
-      checkUpdates: () => post({ type: "checkUpdates" }),
-      checkPluginUpdate: (name: string) => post({ type: "checkPluginUpdate", name }),
-      install: (spec: string) => post({ type: "install", spec }),
-      update: (name: string) => post({ type: "update", name }),
-      reinstall: (name: string) => post({ type: "reinstall", name }),
-      remove: (name: string) => post({ type: "remove", name }),
-      reselect: (runtimes: string[]) => post({ type: "reselect", runtimes }),
-      repair: () => post({ type: "repair" }),
-      rehydrate: () => post({ type: "rehydrate" }),
-      confirm: (payload: ConfirmPayload) => post(confirmMessage(payload)),
-      cancel: () => {
-        setPluginsConsent(undefined);
-        post({ type: "cancel" });
-      },
-      dismissToast: () => toastApi.clear(),
-      openConfig: (name: string) => post({ type: "openConfig", name }),
-      openDocs: (name: string) => post({ type: "openDocs", name }),
-      installExternal: (externalTool: string, pluginName?: string) =>
-        post({ type: "installExternal", externalTool, ...(pluginName ? { pluginName } : {}) }),
-    }),
-    [toastApi],
-  );
+  // SDD 485 D2 — `pluginsDispatch` left with the renderer: Plugins is a standalone app, and its client
+  // half is `plugins/main.tsx`, which owns this dispatch, its own ToastProvider and its own 3s poll.
 
   return (
     <App
@@ -655,10 +597,6 @@ function CockpitRoot() {
       runtimeConfigUnavailable={runtimeConfigUnavailable}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
       onSaveRuntimeConfigChanges={(runtime, documentId, expectedRevision, changes) => post({ type: "saveRuntimeConfigChanges", runtime, documentId, expectedRevision, changes })}
-      pluginsVm={pluginsVm}
-      pluginsConsent={pluginsConsent}
-      pluginsBusy={pluginsBusy}
-      pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
         // SDD 485 C5/D1 — "go to the Board" and "go to tmux" are no longer navigations inside Control: the
         // host answers each by opening that APP and landing Control on Overview. Posted WITHOUT the

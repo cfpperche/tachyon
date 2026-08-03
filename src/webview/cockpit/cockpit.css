@@ -201,8 +201,7 @@ main.ck-main.ck-main--embed,
  * inside Control that produces a skinny centered column in a sea of empty chrome.
  */
 .ck-embed-host > main,
-.ck-embed-host > .runtime-ops,
-.ck-embed-host > .ck-plugins-root {
+.ck-embed-host > .runtime-ops {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -735,15 +734,8 @@ main.ck-main.ck-main--embed,
   padding: 0;
 }
 
-.ck-embed-host > .ck-plugins-root,
-.ck-plugins-root {
-  box-sizing: border-box;
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
-  width: 100%;
-  min-height: 0;
-  max-width: none;
-  margin: 0;
-}
+/* SDD 485 D2 — the `.ck-plugins-root` page-pad rule left with the surface: Plugins is a standalone app
+   (`plugins.css` owns its pad now), so a copy here would be a rule with no element to match. */
 
 /* Approvals / any main root: full-bleed width (no 980px column inside Control). */
 .ck-embed-host > main.approval-root,
