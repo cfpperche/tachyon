@@ -65,10 +65,15 @@ export function decideSpawnTaskClaim(task: ClaimableTaskRow, agent: string): Spa
     return {
       kind: "refuse",
       reason:
-        `spawn_agent cannot claim '${task.id}' for '${agent}': it is in inbox. Triage is a human decision, and ` +
-        "spawning an agent at a task is not one — a task nobody has evaluated must not become work merely " +
+        `spawn_agent cannot claim '${task.id}' for '${agent}': it is in inbox. Triage is a deliberate decision, ` +
+        "and spawning an agent at a task is not one — a task nobody has evaluated must not become work merely " +
         "because someone pointed a launch at it. Triage it first (update_task with status 'triaged'), then " +
-        "spawn again with the same claim.",
+        "spawn again with the same claim. " +
+        // t-f33480 — this used to say "a HUMAN decision", and nothing enforced that: any agent could call
+        // update_task and the move left no trace at all. The refusal below is real and stays; what changed is
+        // that the sentence now describes what the mechanism does. Deliberate is enforced (this refusal), and
+        // accountable is enforced (the status move journals author + reason). Human was neither.
+        "Whoever triages is recorded in the task journal with their reason.",
     };
   }
   if (CLOSED_STATUSES.has(task.status)) {
