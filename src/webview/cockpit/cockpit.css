@@ -51,7 +51,8 @@ body {
   box-sizing: border-box;
 }
 
-/* ---- top chrome: one row — tabs + actions (no title bar) ---- */
+/* ---- top chrome: t-aa2780 — the ONLY header Control renders is a subroute's "← Back" row. The
+   section tab strip is gone; the sidebar's Control tab is the navigation. ---- */
 .ck-top {
   flex-shrink: 0;
   border-bottom: 1px solid var(--ds-border);
@@ -67,9 +68,9 @@ body {
   gap: var(--ds-3);
 }
 
-/* t-d16a39 — the shell-level workspace scope, pinned to the tab strip's right edge. Quiet by
-   design: it's ambient context ("what is Control looking at"), not a primary action — compacted
-   to the tab row's own height and type size so it reads as part of the nav, not a form control. */
+/* t-d16a39 — the shell-level workspace scope. Quiet by design: it's ambient context ("what is
+   Control looking at"), not a primary action — compacted so it reads as context, not a form control.
+   t-46eb4f moved it into Overview's action cluster; t-aa2780 removed the tab row it once sat beside. */
 .ck-workspace-select[data-slot="select-trigger"],
 select.ck-workspace-select {
   flex: none;
@@ -116,61 +117,8 @@ select.ck-workspace-select {
   font-size: 13px;
 }
 
-/* Tabs — full-width nav strip (no competing action cluster). */
-.ck-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 1px;
-  min-width: 0;
-  flex: 1 1 auto;
-  row-gap: 0;
-}
-
-.ck-tabs button {
-  all: unset;
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 7px 7px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--ds-muted);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  white-space: nowrap;
-}
-
-.ck-tabs button .codicon {
-  font-size: 14px;
-  line-height: 1;
-  flex: none;
-}
-
-.ck-tabs button:hover {
-  color: var(--vscode-foreground);
-}
-
-.ck-tabs button.active {
-  color: var(--vscode-foreground);
-  font-weight: 600;
-  border-bottom-color: var(--ds-focus);
-}
-
-.ck-tabs button .tag {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.55;
-  padding: 0 4px;
-  border: 1px solid var(--ds-border);
-  border-radius: 3px;
-}
-
-/* ---- t-fullpage-proto: fullpage subroute chrome — the tab strip's row is replaced by ONE minimal
-   back-link, so the subroute's own content gets the vertical space the tabs would have used. ---- */
+/* ---- t-fullpage-proto: fullpage subroute chrome — ONE minimal back-link row above the subroute's
+   own content. Since t-aa2780 removed the section tab strip, this is the only .ck-top there is. ---- */
 .ck-top--fullpage {
   padding: 0 4px;
 }
@@ -1172,19 +1120,6 @@ main.ck-main.ck-main--mission,
   border-radius: 4px;
   background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-editor-background) 92%, #000));
 }
-.ck-tabs button.has-err {
-  position: relative;
-}
-.ck-tab-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 4px;
-  border-radius: 50%;
-  background: var(--ds-err, #f14c4c);
-  vertical-align: super;
-}
-
 .ci-badge {
   display: inline-flex;
   padding: 0 6px;

@@ -222,6 +222,11 @@ const fleet = z.object({
     errors: z.array(text(2_000, 1)).min(1).max(100),
     summary: text(2_000, 1),
   }).strict().optional(),
+  // t-aa2780 — the engine's own report that its daemon log ring holds an error line. Declared here or
+  // this STRICT object rejects the whole fleet (SDD 478 M5). OPTIONAL on purpose: a projection built
+  // outside the engine process cannot read that ring, and "unset" has to stay distinguishable from
+  // "read it, no errors" — the sidebar draws no dot for either, but only one of them is a measurement.
+  engineLogHasError: z.boolean().optional(),
   // SDD 479 — declared here, or this STRICT object drops the field and the whole fleet with it (the
   // failure SDD 478 M5 hit: an undeclared field made ROWS vanish, not just that field). The ids are
   // re-checked against the live catalog, so a wire value the product cannot render never reaches the

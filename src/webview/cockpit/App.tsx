@@ -2,7 +2,6 @@ import type { ComponentChildren } from "preact";
 import { lazy, Suspense } from "preact/compat";
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
-  COCKPIT_SECTION_ORDER,
   type CockpitModel,
   type CockpitGlobalSettingsState,
   type CockpitSectionId,
@@ -262,8 +261,25 @@ const PinStudioApp = lazy(() =>
   }),
 );
 
-function SectionFallback() {
-  return <EmptyState kind="loading" message="Loading…" />;
+/**
+ * t-aa2780 — a lazy section's loading screen now NAMES the section.
+ *
+ * With the tab strip gone, the body is the only thing that says which section is on screen, and a
+ * code-split chunk's fallback is frequently the FIRST thing a human sees after clicking a launcher
+ * tile. A bare "Loading…" left the whole panel anonymous for that window. `title` is the launcher's
+ * own label (TAB_META's navKey), so the screen echoes the tile that was clicked rather than the
+ * section's eventual H1, which is sometimes worded differently ("Inbox" tile → "Human Inbox" page).
+ *
+ * Subroutes deliberately pass nothing: they render the "← Back" breadcrumb above this, which already
+ * says where the human is and where they came from.
+ */
+function SectionFallback({ title }: { title?: string }) {
+  return (
+    <>
+      {title ? <PageChrome title={title} /> : null}
+      <EmptyState kind="loading" message="Loading…" />
+    </>
+  );
 }
 
 /** t-d16a39 — non-empty UI sentinel for "All workspaces" (Radix Select forbids value=""). */
@@ -1285,7 +1301,18 @@ function RuntimeConfigInventory({
     setDraftSettings(settings);
     setDraftMcp(Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled])));
   }, [snapshotKey]);
-  if (!config) return <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>;
+  // t-aa2780 — the degraded state keeps the section's H1. It was the one section body whose "no
+  // snapshot yet / engine can't serve it" screen said nothing about WHICH section it was, which the
+  // tab strip used to answer from outside. Same chrome as the loaded state, so the two do not read as
+  // two different screens.
+  if (!config) {
+    return (
+      <div class="rcp-root" data-testid="control-runtime-config">
+        <PageChrome title={s.runtimeConfigTitle} hint={s.runtimeConfigHint} />
+        <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>
+      </div>
+    );
+  }
   const activeRuntime = runtime!;
   const initialSettings: Record<string, string | boolean | string[] | number> = Object.fromEntries(config.knownSettings.filter((setting) => setting.editValue !== undefined).map((setting) => [setting.key, setting.editValue])) as Record<string, string | boolean | string[] | number>;
   const initialMcp = Object.fromEntries(config.mcpServers.map((server) => [server.name, server.enabled]));
@@ -1515,14 +1542,10 @@ export function App(p: CockpitAppProps) {
   // (unlike Handoff) it keeps its own nav tab lit: the human is working a counted queue down.
   const isInboxItem = activeRoute?.kind === "inbox-item";
   const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff || isInboxItem;
-  // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): `section` above already
-  // falls back to "overview" (the same fallback Cockpit.ts's host uses for background-data purposes),
-  // but "overview" IS a real, clickable tab — without this, it would incorrectly render as visually
-  // active while Pin Studio is open. Suppressed here, client-side only; deliberately NOT threaded
-  // through `model.section` itself (design-dueto probe-43bca1cc minor finding: coercing null to
-  // "overview" anywhere but a background-data fallback would make nav-less state indistinguishable
-  // from "Overview is genuinely active").
-  const isNavlessStudio = (!!activeRoute && isStudioRoute(activeRoute) && activeRoute.studio === "pin") || isProjectHandoff;
+  // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
+  // rendering as active while a nav-less route (Pin Studio, Project Handoff) was open. There is no tab
+  // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
+  // distinction it protected is no longer observable anywhere.
   // t-fullpage-proto — every subroute (task-detail, the 3 Fleet subroutes, all 7 studios) gets the
   // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
   // very top, and the content area gets the vertical space the tab strip would have used. Each
@@ -1911,7 +1934,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "inbox") {
     body = (
       <div class="ck-embed-host" data-testid="control-inbox">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["inbox"].navKey]} />}>
           <HumanInboxApp vm={p.inboxVm} error={p.inboxError} dispatch={p.inboxDispatch} />
         </Suspense>
       </div>
@@ -1919,7 +1942,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "approvals") {
     body = (
       <div class="ck-embed-host" data-testid="control-approvals">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["approvals"].navKey]} />}>
           <ApprovalsApp vm={p.approvalVm} error={p.approvalError} dispatch={p.approvalDispatch} />
         </Suspense>
       </div>
@@ -1929,7 +1952,7 @@ export function App(p: CockpitAppProps) {
     // t-b87bfe: Validations live on the dedicated Control → Validations tab (not on the task board).
     body = (
       <div class="ck-embed-host ck-mission-host" data-testid="control-mission-board">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["mission"].navKey]} />}>
           <MissionControlApp
             vm={p.missionVm}
             lastError={p.missionError}
@@ -1949,7 +1972,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "validations") {
     body = (
       <div class="ck-embed-host" data-testid="control-validations-host">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["validations"].navKey]} />}>
           <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
         </Suspense>
       </div>
@@ -1986,7 +2009,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "runtime") {
     body = (
       <div class="ck-embed-host" data-testid="control-runtime-ops">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["runtime"].navKey]} />}>
           <RuntimeOpsApp
             snapshot={p.runtimeSnapshot}
             onSetProviderObservation={p.onRuntimeSetProviderObservation}
@@ -2001,7 +2024,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "tmux") {
     body = (
       <div class="ck-embed-host" data-testid="control-tmux-inspector">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["tmux"].navKey]} />}>
           <InspectorApp {...p.inspector} />
         </Suspense>
       </div>
@@ -2009,7 +2032,7 @@ export function App(p: CockpitAppProps) {
   } else if (section === "plugins") {
     body = (
       <div class="ck-embed-host" data-testid="control-plugins">
-        <Suspense fallback={<SectionFallback />}>
+        <Suspense fallback={<SectionFallback title={s[TAB_META["plugins"].navKey]} />}>
           <PluginsApp
             vm={p.pluginsVm}
             consent={p.pluginsConsent}
@@ -2217,8 +2240,10 @@ export function App(p: CockpitAppProps) {
   return (
     <div class="ck-root">
       {/* t-ac79a7 — immediate, layout-stable evidence that a navigation is in flight. The bar is
-          position:absolute over the header's bottom edge so showing/hiding it never reflows the
-          content underneath — the requirement is feedback WITHOUT a jump. */}
+          position:absolute at the panel's top edge so showing/hiding it never reflows the content
+          underneath — the requirement is feedback WITHOUT a jump. t-aa2780: it was described as
+          sitting over the header's bottom edge, but it is `top: 0` against an unpositioned .ck-root,
+          so removing the tab strip moved nothing — the bar still paints across the panel's top. */}
       {navBusy && !navStalled ? <div class="ck-nav-progress" data-testid="control-nav-progress" aria-hidden="true" /> : null}
       {/* Announced politely and owned by no control, so a screen reader hears the navigation without
           focus moving off whatever the user actuated. Rendered always (not just while busy) because a
@@ -2226,46 +2251,19 @@ export function App(p: CockpitAppProps) {
       <div class="ck-sr-only" role="status" aria-live="polite" data-testid="control-nav-status">
         {navAnnounce ? (navStalled ? s.navStalled : s.navLoading) : ""}
       </div>
-      {/* t-fullpage-proto — a subroute (task-detail, a Fleet subroute, or any studio) replaces the
-          whole section tab strip with ONE minimal "← Back" row; the content area gets the vertical
-          space the tabs would have used. `breadcrumb` is null for a genuine deep-link edge case
-          (pin with no captured returnRoute) — falls back to the normal tab strip rather than showing
-          an empty header. */}
+      {/* t-aa2780 — Control has NO section tab strip. Navigation is the launcher grid in the sidebar's
+          Control tab (src/webview/sidebar/App.tsx, catalog in cockpit/sectionNav.ts): an always-visible
+          strip beside Control, so switching section is one click on a surface already on screen.
+
+          t-fullpage-proto — the ONE header Control still renders is a subroute's minimal "← Back" row.
+          When `breadcrumb` is null (the deep-link edge: a studio whose parent is neither a section nor
+          a task-detail) there is now no header at all rather than a fallback tab strip — the way out of
+          that route is the launcher, the same as from any section. */}
       {isSubroute && breadcrumb ? (
         <header class="ck-top ck-top--fullpage">
           <div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>
         </header>
-      ) : (
-        <header class="ck-top">
-          {/* Tabs only — Refresh / Auto / Diagnostics live on Overview. */}
-          <div class="ck-chrome">
-            <div class="ck-tabs" role="tablist" aria-label={s.title}>
-              {COCKPIT_SECTION_ORDER.map((id) => {
-                const meta = TAB_META[id];
-                const engineErr =
-                  id === "engine" && m?.control.workspaces.some((w) => w.engine.logHasError);
-                return (
-                  <button
-                    type="button"
-                    role="tab"
-                    key={id}
-                    aria-selected={section === id && !isNavlessStudio}
-                    class={`${section === id && !isNavlessStudio ? "active" : ""}${engineErr ? " has-err" : ""}`}
-                    onClick={() => p.onSetSection(id)}
-                  >
-                    <span class={`codicon codicon-${meta.icon}`} />
-                    {s[meta.navKey]}
-                    {engineErr ? <span class="ck-tab-dot" aria-label="errors in engine log" /> : null}
-                  </button>
-                );
-              })}
-            </div>
-            {/* t-46eb4f — the shell-level scope selector moved into Overview (and stopped hiding
-                itself on a single root). The nav strip chooses a SCREEN; the root is chosen once,
-                in one place, and every screen reads it. */}
-          </div>
-        </header>
-      )}
+      ) : null}
 
       <main
         class={`ck-main${isEmbed ? " ck-main--embed" : ""}${section === "mission" ? " ck-main--mission" : ""}`}

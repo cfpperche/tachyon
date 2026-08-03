@@ -53,6 +53,18 @@
     color: var(--vscode-badge-foreground, #fff);
     pointer-events: none;
   }
+  /* t-aa2780 — engine log-error dot on the Control tab (was .ck-tab-dot on Control's own Engine tab).
+     Absolutely positioned like .tab-badge so lighting it never changes the strip's height: an alarm
+     that reflows the row it lives in draws the eye by moving everything else, which is the wrong
+     signal. Error red, not badge blue — the Attentions badge counts work waiting, this reports a
+     fault. Its meaning is on the button's aria-label; the glyph itself is aria-hidden. */
+  .tab-dot {
+    position: absolute; top: 4px; right: max(3px, calc(50% - 12px));
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ds-err, var(--vscode-errorForeground, #f14c4c));
+    pointer-events: none;
+  }
+  .tab.has-err { color: var(--vscode-foreground); }
 
   /* active section title */
   .sec { display: flex; align-items: center; gap: 6px; padding: 9px 12px 2px; }
@@ -505,5 +517,16 @@
     max-width: 100%; overflow-wrap: anywhere;
   }
   .ctl-tile.ds-btn:hover .ds-btn-label { color: var(--vscode-foreground); }
+  /* t-aa2780 — the same engine log-error dot, on the Engine TILE: the strip's dot says "something is
+     wrong", this one says which section to open. Pinned to the icon plate and out of flow, so an
+     error never makes one cell taller than the other eleven and breaks the grid's row rhythm. */
+  .ctl-tile.ds-btn { position: relative; }
+  .ctl-tile-dot {
+    position: absolute; top: 6px; right: max(6px, calc(50% - 20px));
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ds-err, var(--vscode-errorForeground, #f14c4c));
+    pointer-events: none;
+  }
+  .ctl-tile.has-err .ds-btn-label { color: var(--vscode-foreground); }
 
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }

@@ -33,6 +33,7 @@ import { ProviderObservationPreferences, type ProviderObservationStatePort } fro
 import { ProviderObservationService } from "../runtimeObservability/service.js";
 import { ResourceSampler } from "../attention/resourceSample.js";
 import { executeExtensionCommand, executeExtensionQuery } from "./extensionOperationService.js";
+import { getEngineLogRing } from "./engineLogRing.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
@@ -498,6 +499,11 @@ async function executeWorkspaceQuery(
     return workspaceSidebarViewSuccessV1(await projectSidebarView(workspace, {
       observedModelFor: (agent) => runtimeOpsSnapshots.observedModelFor(workspace.workspaceRoot, workspace.wsHash, agent),
       resourceSampler: sidebarResources,
+      // t-aa2780 — the sidebar's engine-error dot reads the SAME ring the control server's `health` op
+      // reports `logHasError` from, in the same process that owns it. Not a second source of truth:
+      // one ring, two readers. No ring installed (a host that never called installEngineLogRing) stays
+      // `undefined`, so the field is omitted rather than asserting "no errors" about a ring nobody read.
+      engineLogHasError: () => getEngineLogRing()?.hasError(),
     }));
   }
   if (query.method === "runtime-ops.view") {

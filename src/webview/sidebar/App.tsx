@@ -1045,23 +1045,48 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  * A tile never opens a panel itself — it asks the host for `tachyon.openControl <section>`, which goes
  * through `openCockpit`: existing panel → reveal + navigate, no panel → open on that section. That is the
  * one door, and it keeps the launcher out of the singleton claim race (Cockpit.ts:1204-1212).
+ *
+ * t-aa2780 — WHY THIS IS NOT A `tablist`, now that it is Control's only navigation.
+ *
+ * The strip it replaced was `role="tablist"` with `aria-selected` on the live section. That contract
+ * cannot be honestly kept from here: the grid lives in the SIDEBAR webview and the sections render in a
+ * separate editor panel that this view neither owns nor observes. Control may be closed, showing a
+ * subroute, or have been navigated by its own breadcrumb or a deep link — and no message tells the
+ * sidebar. `aria-selected` would therefore be a claim that goes stale silently, which is worse for a
+ * screen-reader user than no claim at all: it would announce a selected tab that is not on screen.
+ *
+ * So the semantics are deliberately OTHER, and weaker on purpose: a labelled group of twelve buttons,
+ * each of which OPENS a section. That is what they do. Keyboard reach does not regress — the old strip
+ * had no roving tabindex or arrow-key handling either (twelve plain buttons carrying tab roles), so
+ * both are twelve ordinary Tab stops actuated with Enter/Space.
+ *
+ * "Which section am I in" moved with the navigation: the section's own H1 in the Control panel answers
+ * it, which is why every one of the twelve now has one (see cockpit/App.tsx's SectionFallback).
  */
-function ControlGrid({ onOpen }: { onOpen: (section: CockpitSectionId) => void }) {
+function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: CockpitSectionId) => void; engineHasError: boolean }) {
   return (
     <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
-      {CONTROL_SECTION_NAV.map((s) => (
-        <Button
-          key={s.id}
-          class="ctl-tile"
-          icon={s.icon}
-          title={`Open Control — ${s.label}`}
-          data-section={s.id}
-          data-testid={`control-tile-${s.id}`}
-          onClick={() => onOpen(s.id)}
-        >
-          {s.label}
-        </Button>
-      ))}
+      {CONTROL_SECTION_NAV.map((s) => {
+        // t-aa2780 — the Engine tile carries the log-error dot that used to sit on Control's Engine
+        // TAB. The tab-strip dot next to it says "something is wrong"; this one says WHERE, so the
+        // alarm has an address. Announced through the button's own label, not as a decorative glyph.
+        const err = engineHasError && s.id === "engine";
+        return (
+          <Button
+            key={s.id}
+            class={`ctl-tile${err ? " has-err" : ""}`}
+            icon={s.icon}
+            title={err ? `Open Control — ${s.label} (errors in engine log)` : `Open Control — ${s.label}`}
+            aria-label={err ? `${s.label}, errors in engine log` : undefined}
+            data-section={s.id}
+            data-testid={`control-tile-${s.id}`}
+            onClick={() => onOpen(s.id)}
+          >
+            {s.label}
+            {err ? <span class="ctl-tile-dot" data-testid="control-tile-engine-dot" aria-hidden="true" /> : null}
+          </Button>
+        );
+      })}
     </div>
   );
 }
@@ -1158,6 +1183,14 @@ export function App({
   const totalAgents = agentFilterCounts.all;
   /** t-37f554 — open attention count for the tab badge only; never forces a tab switch. */
   const openAttentionCount = useMemo(() => attentionRows(fleets).length, [fleets]);
+  /**
+   * t-aa2780 — any root whose engine log ring holds an error. Lights the Control TAB's icon (visible
+   * from every tab, so the signal outlives whichever list the human is reading) and the Engine tile
+   * inside it. Multi-root folds with `some`: one dot for the window, the same way `openAttentionCount`
+   * sums across roots — the tab strip is a window-level surface and has no folder to scope to.
+   * A folder whose projection never stated the field simply does not vote.
+   */
+  const engineHasError = useMemo(() => fleets.some((f) => f.engineLogHasError === true), [fleets]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
@@ -1273,15 +1306,22 @@ export function App({
       <div class="tabs" role="tablist" aria-label="Sidebar sections">
         {TABS.map(({ id, icon }, i) => {
           const badge = id === "Attentions" && openAttentionCount > 0 ? openAttentionCount : 0;
-          const label = badge > 0 ? `${id}, ${badge} open` : id;
+          // t-aa2780 — the Control tab's icon carries the engine log-error dot that Control's own
+          // Engine TAB carried until the strip was removed. This is a WIDER reach than the signal had:
+          // the old dot required Control to be open, this strip is on screen whenever the sidebar is.
+          // A dot, not the numeric badge Attentions uses: the ring reports a boolean ("there are error
+          // lines"), and inventing a count here would be a number no reader could reconcile with the log.
+          const engineErr = id === "Control" && engineHasError;
+          const label = badge > 0 ? `${id}, ${badge} open` : engineErr ? `${id}, errors in engine log` : id;
           return (
-          <button class={`tab${tab === id ? " active" : ""}`} type="button" role="tab" id={`tab-${id}`}
+          <button class={`tab${tab === id ? " active" : ""}${engineErr ? " has-err" : ""}`} type="button" role="tab" id={`tab-${id}`}
             aria-selected={tab === id} aria-controls="sidebar-panel" aria-label={label}
             title={label}
-            data-testid={id === "Attentions" ? "tab-attentions" : undefined}
+            data-testid={id === "Attentions" ? "tab-attentions" : id === "Control" ? "tab-control" : undefined}
             tabindex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={(e) => tabKey(e, i)}>
             <Icon name={icon} />
             {badge > 0 ? <span class="tab-badge" data-testid="tab-attentions-badge" aria-hidden="true">{badge > 99 ? "99+" : badge}</span> : null}
+            {engineErr ? <span class="tab-dot" data-testid="tab-control-engine-dot" aria-hidden="true" /> : null}
           </button>
           );
         })}
@@ -1368,7 +1408,7 @@ export function App({
           <AttentionStack fleets={fleets} dispatch={dispatch} />
         ) : tab === "Control" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
-          <ControlGrid onOpen={(section) => dispatch?.global("openControl", undefined, section)} />
+          <ControlGrid onOpen={(section) => dispatch?.global("openControl", undefined, section)} engineHasError={engineHasError} />
         ) : fleets.map((f) => {
           // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
           // single-root is multi-root with N=1, one code path. It's where the Project Handoff chip lives.

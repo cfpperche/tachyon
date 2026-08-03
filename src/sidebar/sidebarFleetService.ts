@@ -83,6 +83,19 @@ export interface SidebarFleetServiceOptions {
   observedModelFor?: (agentName: string) => ObservedModelInput | undefined;
   now?: () => number;
   resourceSampler?: Pick<ResourceSampler, "sample" | "clear" | "keys">;
+  /**
+   * t-aa2780 — reads the engine daemon log ring's own "has an error line" flag, for the sidebar's
+   * passive engine-error dot (the signal Control's Engine tab used to carry).
+   *
+   * An OPTION rather than a `SidebarFleetSource` member because it is a fact about the PROCESS doing
+   * the projecting, not about the workspace being projected: only the engine that owns the ring can
+   * answer it. A caller that cannot (the in-extension legacy adapter, every hand-built test source)
+   * omits it, and the field stays absent — never a fabricated `false`.
+   *
+   * Returning `undefined` says the same thing from inside a caller that HAS the hook but found no
+   * ring to read (an engine host that never installed one): still not a measurement, still no dot.
+   */
+  engineLogHasError?: () => boolean | undefined;
 }
 
 /** Builds the complete sidebar projection at the operational authority, never in the editor shell. */
@@ -126,6 +139,7 @@ export async function buildSidebarFleet(
     });
   }));
 
+  const engineLogHasError = options.engineLogHasError?.();
   const running = new Set(all.filter((agent) => agent.running).map((agent) => agent.name));
   const externalTools = source.externalTools ?? new ExternalToolRegistry();
   const liveAgents = all.filter((agent) => agent.kind === "agent" && agent.running && !agent.dead);
@@ -383,6 +397,9 @@ export async function buildSidebarFleet(
       pendingCount: handoffSnapshot.pendingCount,
     },
     ...(configFailure ? { configError: toConfigErrorVM(configFailure) } : {}),
+    // t-aa2780 — only stated when somebody actually read the ring; see the option's doc for why
+    // "unread" must not collapse into `false`.
+    ...(engineLogHasError === undefined ? {} : { engineLogHasError }),
     // SDD 479 — the project's card layout, or the reason a written one was refused. Never both:
     // `parseCardTemplate` returns a template or errors, so a half-applied layout has no path here.
     // `settings` is optional in practice even though the type declares it: a hand-built config (every
