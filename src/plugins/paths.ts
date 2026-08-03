@@ -8,6 +8,15 @@
 const CONTROL_RE = /[\x00-\x1f\x7f]/; // C0 controls + DEL (explicit escapes — a literal class silently broke hyphens)
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/; // one path segment: no separators, no ':', no controls
 
+/**
+ * The workspace-relative root of every plugin's materialized payload (`.tachyon/plugins/<name>/…`) and
+ * the neutral skills dir inside it. They live HERE rather than only in the engine because a second
+ * reader — the projection-receipt check (`projectedInputs.ts`, t-09be02) — has to reconstruct the exact
+ * source a skill-dir target was copied from, and two copies of that layout would drift apart silently.
+ */
+export const PLUGIN_PAYLOAD_ROOT = ".tachyon/plugins";
+export const PLUGIN_SKILLS_DIR = "skills";
+
 export interface PathCheck {
   ok: boolean;
   reason?: string;
