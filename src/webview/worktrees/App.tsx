@@ -307,7 +307,41 @@ export function WorktreesHygiene({
 }
 
 export type Strings = Pick<CockpitStrings, "worktreesTitle" | "worktreesHint" | "agent" | "change" | "branch" | "reveal" | "copyPath" | "noneListed" | "wtAgentGone" | "wtAgentOwned" | "wtAlsoDeleteBranch" | "wtBlocked" | "wtCancel" | "wtClearSelection" | "wtConfirmBody" | "wtConfirmRun" | "wtConfirmTitle" | "wtEngineUnavailable" | "wtForgetRecord" | "wtOccupiedBy" | "wtOccupiedDesc" | "wtOccupiedTitle" | "wtReadyDesc" | "wtReadyTitle" | "wtRecordDesc" | "wtRecordTitle" | "wtRemoveCheckout" | "wtReviewConfirm" | "wtReviewDesc" | "wtReviewTitle" | "wtSelectAll" | "wtSelected" | "wtShowAll">;
-export const defaultStrings = {} as Strings;
+export const defaultStrings: Strings = {
+  worktreesTitle: "Managed worktrees",
+  worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
+  agent: "agent",
+  change: "change",
+  branch: "Branch",
+  reveal: "Reveal",
+  copyPath: "Copy path",
+  noneListed: "Nothing listed for this workspace yet.",
+  wtAgentGone: "Agent no longer exists — leftover checkout",
+  wtAgentOwned: "Managed by Agent Studio → Forget",
+  wtAlsoDeleteBranch: "Also delete local branch",
+  wtBlocked: "Blocked",
+  wtCancel: "Cancel",
+  wtClearSelection: "Clear",
+  wtConfirmBody: "Each entry is re-checked at execution — one whose state changed is skipped with a reason, the rest proceed.",
+  wtConfirmRun: "Run cleanup",
+  wtConfirmTitle: "Confirm cleanup",
+  wtEngineUnavailable: "Engine unavailable — registry not shown (unverified data is never displayed).",
+  wtForgetRecord: "Forget record",
+  wtOccupiedBy: "occupied by",
+  wtOccupiedDesc: "A live agent holds this checkout right now.",
+  wtOccupiedTitle: "Occupied",
+  wtReadyDesc: "Clean, unoccupied, and every commit is already in its base branch. Safe to delete.",
+  wtReadyTitle: "Ready to remove",
+  wtRecordDesc: "The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row.",
+  wtRecordTitle: "Record-only",
+  wtRemoveCheckout: "Remove checkout",
+  wtReviewConfirm: "Review & confirm…",
+  wtReviewDesc: "Blocked from cleanup — read the reason before touching these by hand.",
+  wtReviewTitle: "Needs review",
+  wtSelectAll: "Select all",
+  wtSelected: "selected",
+  wtShowAll: "Show all",
+};
 export function App({ model, strings: s, post }: { model?: CockpitModel; strings: Strings; post: (action: WorktreesAction) => void }) {
   return <main><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s as CockpitStrings} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={(action) => post(action as WorktreesAction)} /> : null}</main>;
 }

@@ -21,8 +21,8 @@ export interface WorktreesDeps {
  * fallback, so project A cannot remove a worktree belonging to project B.
  *
  * No legacy standalone id exists: Worktrees was born inside Control, so a new viewType is the honest
- * persisted contract. The ck-wt-* leaf moved with its sole consumer; engine-workspace.css remains linked
- * because ck-card-list/ck-mono still have multiple consumers.
+ * persisted contract. The ck-wt-* leaf moved with its sole consumer; ck-card-list remains in the linked
+ * engine-workspace sheet, while ck-mono has its own shared typography sheet for Control + Worktrees.
  */
 export class WorktreesPanelManager {
   private readonly manager: SectionPanelManager<WorktreesRefreshKind>;
@@ -37,6 +37,7 @@ export class WorktreesPanelManager {
   }
 
   open(project: string): void { this.manager.open({ project }); }
+  get openKeys(): string[] { return this.manager.openKeys; }
   openInCurrentScope(): boolean { return this.manager.openInCurrentScope(); }
   refresh(): void { this.manager.refresh("worktrees"); }
   deserialize(panel: vscode.WebviewPanel, state: SectionPanelState): void { this.manager.deserialize(panel, state); }
@@ -110,12 +111,38 @@ export function worktreesRefreshKind(message: unknown): WorktreesRefreshKind | u
 function worktreesStrings(): Record<string, string> {
   const t = vscode.l10n.t;
   return {
-    worktreesTitle: t("Managed worktrees"), worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
-    agent: t("Agent"), change: t("Change"), branch: t("Branch"), reveal: t("Reveal"), copyPath: t("Copy path"), noneListed: t("Nothing to show."),
-    wtAgentGone: t("Agent no longer exists"), wtAgentOwned: t("Managed by Agent Studio"), wtAlsoDeleteBranch: t("Also delete branch"), wtBlocked: t("Blocked"),
-    wtCancel: t("Cancel"), wtClearSelection: t("Clear"), wtConfirmBody: t("The engine re-validates every item before changing it."), wtConfirmRun: t("Run cleanup"), wtConfirmTitle: t("Confirm cleanup"),
-    wtEngineUnavailable: t("Worktree data is unavailable."), wtForgetRecord: t("Forget record"), wtOccupiedBy: t("Occupied by"), wtOccupiedDesc: t("Currently used by an agent."), wtOccupiedTitle: t("Occupied"),
-    wtReadyDesc: t("Safe to remove."), wtReadyTitle: t("Ready to remove"), wtRecordDesc: t("Registry entries without a checkout."), wtRecordTitle: t("Record only"), wtRemoveCheckout: t("Remove checkout"),
-    wtReviewConfirm: t("Review"), wtReviewDesc: t("Needs human review."), wtReviewTitle: t("Needs review"), wtSelectAll: t("Select all"), wtSelected: t("selected"), wtShowAll: t("Show all"),
+    worktreesTitle: t("Managed worktrees"),
+    worktreesHint: t("Tachyon-managed checkouts — reveal and copy paths."),
+    agent: t("agent"),
+    change: t("change"),
+    branch: t("Branch"),
+    reveal: t("Reveal"),
+    copyPath: t("Copy path"),
+    noneListed: t("Nothing listed for this workspace yet."),
+    wtAgentGone: t("Agent no longer exists — leftover checkout"),
+    wtAgentOwned: t("Managed by Agent Studio → Forget"),
+    wtAlsoDeleteBranch: t("Also delete local branch"),
+    wtBlocked: t("Blocked"),
+    wtCancel: t("Cancel"),
+    wtClearSelection: t("Clear"),
+    wtConfirmBody: t("Each entry is re-checked at execution — one whose state changed is skipped with a reason, the rest proceed."),
+    wtConfirmRun: t("Run cleanup"),
+    wtConfirmTitle: t("Confirm cleanup"),
+    wtEngineUnavailable: t("Engine unavailable — registry not shown (unverified data is never displayed)."),
+    wtForgetRecord: t("Forget record"),
+    wtOccupiedBy: t("occupied by"),
+    wtOccupiedDesc: t("A live agent holds this checkout right now."),
+    wtOccupiedTitle: t("Occupied"),
+    wtReadyDesc: t("Clean, unoccupied, and every commit is already in its base branch. Safe to delete."),
+    wtReadyTitle: t("Ready to remove"),
+    wtRecordDesc: t("The registry row survives, but the checkout's directory is gone. Nothing to reveal — just forget the row."),
+    wtRecordTitle: t("Record-only"),
+    wtRemoveCheckout: t("Remove checkout"),
+    wtReviewConfirm: t("Review & confirm…"),
+    wtReviewDesc: t("Blocked from cleanup — read the reason before touching these by hand."),
+    wtReviewTitle: t("Needs review"),
+    wtSelectAll: t("Select all"),
+    wtSelected: t("selected"),
+    wtShowAll: t("Show all"),
   };
 }
