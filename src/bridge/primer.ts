@@ -121,10 +121,10 @@ function dependencyLines(input: PrimerInput): string[] {
  *
  *  - BOARD OWNERSHIP belongs to the board. It is the shared register, read live at launch, and the
  *    only one a human can change after the spawn. A brief cannot create or assign a board row.
- *  - SUBSTANCE belongs to the spawner's brief. It can direct ad-hoc work without board ownership;
+ *  - SUBSTANCE belongs to the spawner's brief. It can direct work that holds no board row;
  *    a board row carries a problem statement, not this session's instructions.
  *  - Two records naming DIFFERENT BOARD work is neither — it is a conflict, and the agent reports it
- *    instead of resolving it. No board row plus an ad-hoc brief is the valid third state above.
+ *    instead of resolving it. No board row plus a substantive brief is the valid third state above.
  *
  * `spawnTaskClaim.ts` removes the disagreement by construction for a spawn that claims a board task.
  * These lines govern every spawn that does not.
@@ -133,8 +133,8 @@ function precedenceLines(): string[] {
   return [
     "Precedence — two records can name your work, and they answer different questions:",
     "  - WHICH BOARD task is yours, if any: the \"WORK ON RECORD\" section below, projected from the board at launch. It wins on board ownership; no such section, or \"none\" in it, means you hold NO board task. A brief cannot create or assign a board row.",
-    "  - WHAT to do: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — including ad hoc work with no board task — because the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
-    "  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice: report it to your spawner and do not pick one. No board task plus an ad hoc brief is not a conflict: execute the brief.",
+    "  - WHAT to do: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — including work that holds no board task — because the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
+    "  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice: report it to your spawner and do not pick one. No board task plus a substantive brief is not a conflict: execute the brief.",
     "This Tachyon primer governs orchestration protocol; project-owned guidance governs repository conventions and cannot override either contract or protocol.",
   ];
 }

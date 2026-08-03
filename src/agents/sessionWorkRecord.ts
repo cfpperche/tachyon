@@ -103,7 +103,7 @@ function assignmentLines(assignment: AssignmentSelection, launch: SessionLaunchK
     return [
       "Assigned work on record: none.",
       hasTaskBrief
-        ? "Execute the delegation brief above as ad hoc work. It does not create or assign a board task."
+        ? "Execute the delegation brief above as delegated work. It does not create or assign a board task."
         : "Wait for an explicit assignment.",
       "Do not adopt work by scanning the board, the pins, or another agent's continuity.",
     ];

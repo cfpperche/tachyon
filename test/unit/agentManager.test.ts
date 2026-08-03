@@ -1115,7 +1115,7 @@ describe("AgentManager", () => {
       }
     });
 
-    it("executes a substantive ad-hoc brief when no board task is assigned (t-7b9e60 A)", async () => {
+    it("executes a substantive delegation brief when no board task is assigned (t-7b9e60 A)", async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-7b9e60-adhoc-"));
       try {
         const { fake, manager } = harness(root, { assignedWork: () => [] });
@@ -1135,13 +1135,13 @@ describe("AgentManager", () => {
 
         const brief = delivered(root, fake, spawnFrom);
         expect(brief).toContain("Assigned work on record: none.");
-        expect(brief).toContain("Execute the delegation brief above as ad hoc work");
+        expect(brief).toContain("Execute the delegation brief above as delegated work");
         expect(brief).not.toContain("Wait for an explicit assignment");
 
         const from = mark(fake);
         await manager.restart("worker", { stop: "force", session: "new" });
         const restarted = delivered(root, fake, from);
-        expect(restarted).toContain("Execute the delegation brief above as ad hoc work");
+        expect(restarted).toContain("Execute the delegation brief above as delegated work");
         expect(restarted).not.toContain("Wait for an explicit assignment");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });

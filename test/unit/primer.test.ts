@@ -267,7 +267,11 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
       const primer = primerOf(delegatedAdhoc);
       expect(primer).toMatch(/WHAT to do/);
       expect(primer).toMatch(/wins on substance/);
-      expect(primer).toMatch(/ad hoc work with no board task/);
+      // t-7b9e60 — the third state must be NAMED, not merely implied. The wording deliberately avoids
+      // the retired agent-species term that `agentSpeciesNomenclature.test.ts` keeps out of product
+      // language: two different meanings sharing one word is how the sentence this fixes got misread
+      // in the first place, and the guard refuses that word here too — including in this comment.
+      expect(primer).toMatch(/work that holds no board task/);
       expect(primer).toMatch(/the directive exists nowhere else/);
     });
 
