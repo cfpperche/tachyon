@@ -69,7 +69,9 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
   // survives in it. A validated contract is substance by construction; anything else must prove it,
   // so a boilerplate-only row can never announce itself as `task brief (present)`.
   const hasTaskBrief = !!layers.taskContractCompletion || briefCarriesTaskSubstance(present(layers.taskBrief));
-  const sessionRecord = layers.sessionWorkRecord ? renderSessionWorkRecord(layers.sessionWorkRecord) : undefined;
+  const sessionRecord = layers.sessionWorkRecord
+    ? renderSessionWorkRecord({ ...layers.sessionWorkRecord, hasTaskBrief })
+    : undefined;
   const manifest: AgentPromptManifest = {
     soul: !!layers.soul,
     role: !!layers.role && layers.role !== "custom",

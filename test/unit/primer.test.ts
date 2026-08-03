@@ -255,18 +255,19 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
       const primer = primerOf(delegatedAdhoc);
       // Named by the anchor the agent actually sees (`sessionWorkRecord.ts` delimiters), not by prose.
       expect(primer).toContain('"WORK ON RECORD"');
-      expect(primer).toMatch(/WHICH task is yours/);
-      expect(primer).toMatch(/wins on scope/);
+      expect(primer).toMatch(/WHICH BOARD task is yours/);
+      expect(primer).toMatch(/wins on board ownership/);
       // The measured incident: a brief naming t-21101f while the board held nothing for that agent.
       // Absence has to be stated, or "no section" reads as "no rule" and the brief wins by default.
       expect(primer).toMatch(/means you hold NO board task/);
-      expect(primer).toMatch(/no brief can grant you one/);
+      expect(primer).toMatch(/A brief cannot create or assign a board row/);
     });
 
     it("gives SUBSTANCE to the spawner's brief, so the board row is not read as instructions", () => {
       const primer = primerOf(delegatedAdhoc);
-      expect(primer).toMatch(/WHAT to do inside that task/);
+      expect(primer).toMatch(/WHAT to do/);
       expect(primer).toMatch(/wins on substance/);
+      expect(primer).toMatch(/ad hoc work with no board task/);
       expect(primer).toMatch(/the directive exists nowhere else/);
     });
 
@@ -277,7 +278,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
      */
     it("makes a disagreement a report, not a choice", () => {
       const primer = primerOf(delegatedAdhoc);
-      expect(primer).toMatch(/name DIFFERENT work/);
+      expect(primer).toMatch(/BOTH name DIFFERENT BOARD work/);
       expect(primer).toMatch(/conflict and not a choice/);
       expect(primer).toMatch(/report it to your spawner and do not pick one/);
     });
@@ -285,7 +286,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     it("says the same thing to every spawn shape", () => {
       for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
         const primer = primerOf(input);
-        expect(primer).toMatch(/wins on scope/);
+        expect(primer).toMatch(/wins on board ownership/);
         expect(primer).toMatch(/wins on substance/);
         expect(primer).toMatch(/conflict and not a choice/);
       }
@@ -297,7 +298,7 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
      */
     it("spends at most five lines on the rule", () => {
       const lines = primerOf(delegatedAdhoc).split("\n");
-      const precedence = lines.filter((line) => /Precedence|wins on scope|wins on substance|conflict and not a choice|governs orchestration protocol/.test(line));
+      const precedence = lines.filter((line) => /Precedence|wins on board ownership|wins on substance|conflict and not a choice|governs orchestration protocol/.test(line));
       expect(precedence).toHaveLength(5);
     });
   });

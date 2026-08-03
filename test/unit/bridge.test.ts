@@ -394,8 +394,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
 
 
-
-
   it("run_host_action uses the Bridge-resolved caller and never accepts caller as a parameter", async () => {
     hostActionCalls.length = 0;
     const { tools } = await client.listTools();
@@ -943,6 +941,44 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(launch).toContain(`Recorded skip reason: ${reason}`);
     expect(launch).toContain("Do not scan unrelated tasks, pins, or continuity");
     await client.callTool({ name: "kill_agent", arguments: { name: "waiting-child" } });
+  });
+
+  it("spawn_agent refuses skip_contract_reason with structured contract fields (t-7b9e60 B)", async () => {
+    const spawned = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "contradictory-child",
+        cmd: "claude",
+        parent: "claude",
+        task: "Inspect the parser fixture and report the finding.",
+        context: "A read-only consultation.",
+        constraints: "Do not modify files.",
+        done_when: "The parent receives the finding.",
+        skip_contract_reason: "this should be rejected as contradictory",
+      },
+    });
+
+    expect(spawned.isError).toBe(true);
+    const message = JSON.stringify(spawned.content);
+    expect(message).toContain("skip_contract_reason");
+    expect(message).toContain("task, context, constraints, done_when");
+    expect(message).toContain("remove skip_contract_reason");
+    expect(message).toContain("remove the structured contract fields");
+    expect(sessions.has(`tachyon-${HASH}-contradictory-child`)).toBe(false);
+
+    const completionOnly = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name: "contradictory-deliverable-child",
+        cmd: "claude",
+        parent: "claude",
+        deliverable: "A concise report.",
+        skip_contract_reason: "this should also be rejected",
+      },
+    });
+    expect(completionOnly.isError).toBe(true);
+    expect(JSON.stringify(completionOnly.content)).toContain("deliverable");
+    expect(sessions.has(`tachyon-${HASH}-contradictory-deliverable-child`)).toBe(false);
   });
 
 
