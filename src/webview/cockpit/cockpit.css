@@ -200,8 +200,11 @@ main.ck-main.ck-main--embed,
  * Their standalone sheets center/constrain `main` / `.ds-wrap` for a lone panel —
  * inside Control that produces a skinny centered column in a sea of empty chrome.
  */
-.ck-embed-host > main,
-.ck-embed-host > .runtime-ops {
+/* SDD 485 D3 — `.runtime-ops` left this selector list with the surface: Runtime Ops is a standalone
+   `window` app now, so a rule naming it here would be a rule with no element left to match. It was
+   never carrying the surface's PAD (that always lived in `runtime-ops.css`) — only embed-context
+   neutralization, which is exactly what stops meaning anything once there is no embed. */
+.ck-embed-host > main {
   flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
@@ -209,9 +212,6 @@ main.ck-main.ck-main--embed,
   max-width: none !important;
   margin: 0 !important;
   box-sizing: border-box !important;
-}
-
-.ck-embed-host > main {
   /* Surface roots (.approval-root / .insp-root / …) own Fleet page pad — host must not double it. */
   padding: 0 !important;
   overflow: auto;

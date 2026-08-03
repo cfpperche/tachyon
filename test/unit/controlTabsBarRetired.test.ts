@@ -54,8 +54,8 @@ const SECTION_HEADING: Record<CockpitSectionId, string> = {
   settings: "Settings",
   // Not on COCKPIT_SECTION_ORDER — listed because the record is keyed by CockpitSectionId and a new
   // section must be answered here, not silently skipped. `approvals`/`validations` are deep-link only;
-  // `mission` (SDD 485 C5), `tmux` (D1) and `plugins` (D2) HAVE launcher tiles but are standalone apps,
-  // so Control renders no section for any of them and this suite never asks it to.
+  // `mission` (SDD 485 C5), `tmux` (D1), `plugins` (D2) and `runtime` (D3) HAVE launcher tiles but are
+  // standalone apps, so Control renders no section for any of them and this suite never asks it to.
   approvals: "Approvals",
   plugins: "Plugins",
   tmux: "tmux",
@@ -205,11 +205,14 @@ describe("t-aa2780 — every section says which section it is", () => {
 
   it("a lazy section names itself WHILE loading, which is when it used to be anonymous", () => {
     // Rendered at the Suspense fallback (see staticPreact's suspense note): heading present, chunk not.
-    // SDD 485 D2 — driven through Runtime Ops rather than Plugins, which was this case's vehicle until
-    // Plugins became a standalone app. The property is unchanged and belongs to the shell rather than to
-    // any one section; what moved is which lazy section is still Control's to render.
-    const html = renderStatic(Shell({ strings: cockpitStrings, model: sectionModel("runtime"), inspector: {} }));
-    expect(headings(html)).toContain("Runtime Ops");
+    //
+    // SDD 485 D3 — driven through the Inbox now. This case has been repointed twice by the same force:
+    // Plugins was its vehicle until D2, Runtime Ops until D3, and each time the section it drove became a
+    // standalone app. The property under test belongs to the SHELL, not to any one section, so what the
+    // repoints record is which lazy sections Control still owns — three, after this one (`inbox`,
+    // `approvals`, `validations`), and Phase D is not finished with them.
+    const html = renderStatic(Shell({ strings: cockpitStrings, model: sectionModel("inbox"), inspector: {} }));
+    expect(headings(html)).toContain("Inbox");
     expect(html).toContain("ds-empty-state--loading");
   });
 

@@ -7,6 +7,29 @@ import type { InspectedSession } from "../../runtimeOps/sessionInspection";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
+/**
+ * SDD 485 D3 — webview → host: "re-read the snapshot, nothing has been asked for". The app's own 3s timer,
+ * which is the timer CONTROL used to own: inside Control the runtime snapshot was re-posted as a side
+ * effect of `sendSectionModule()` running every three seconds for whatever section was active, so this
+ * surface never had a refresh message of its own at all.
+ *
+ * D2 had to separate this word from `refresh` because Plugins' `refresh` carried a side effect (dropping
+ * every update check) that a periodic re-gather must not have. The check was run here before assuming the
+ * same, and the answer is different: **Runtime Ops has no `refresh` message and never had one** — the only
+ * two things this client ever posts are the two actions below. So there is no word to collide with, and
+ * `POLL` is minted rather than borrowed for the opposite reason: it keeps `refresh` FREE, so a future
+ * human-pressed Refresh button can mean whatever it needs to without inheriting the poll's meaning. The
+ * word the gate claims and the word a human presses are separate by construction, in the same shape D2
+ * arrived at by paying for it.
+ */
+export const POLL = "runtimeOpsPoll" as const;
+export interface RuntimeOpsPollAction {
+  type: typeof POLL;
+}
+export function runtimeOpsPollAction(): RuntimeOpsPollAction {
+  return { type: POLL };
+}
+
 export const RUNTIME_OPS_SNAPSHOT = "runtimeOpsSnapshot" as const;
 export const RUNTIME_OPS_LOADING = "runtimeOpsLoading" as const;
 export const RUNTIME_OPS_SET_PROVIDER_OBSERVATION = "runtimeOpsSetProviderObservation" as const;

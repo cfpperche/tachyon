@@ -86,8 +86,23 @@ work in parallel only if the second re-applies onto the first before delivery, n
       The trap this one paid for was the page PAD, not the page FRAME: `.ck-plugins-root`'s
       `--ds-page-pad-*` rule lived in `cockpit.css`, and the Phase A consumption check cannot see a
       missing pad. **D3 should grep `cockpit.css` for its surface's root class before anything else.**
-- [ ] D3–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
-      Runtime Ops, Runtime Config, Settings). Each PR: app lands,
+- [x] D3. **Runtime Ops** — and the migration that shows a section's cardinality is not a property of
+      being a section. It was commissioned as a `dashboard` and is a **`window`**: `buildSnapshot()` takes
+      NO project and `extension.ts` implements it as a merge across every attached workspace, the provider
+      quota it shows is account-wide by its own type's words, and `sendRuntime` never read the project
+      selector — so two attached projects would have opened two byte-identical panels. The launcher tile
+      beside it decides the point: **Runtime Config is a `dashboard`** (`buildSnapshot(wsHash)`), so two
+      adjacent tiles have opposite cardinalities and the difference is a parameter on a signature. The
+      brief's `DONE_WHEN` ("prove two projects differ BY CONTENT") was unsatisfiable without changing
+      behaviour the same brief forbade, and was replaced with D1's symmetric proof: one panel, and
+      `sectionPanelKey` REFUSING a project. The viewType is NEW (`tachyonRuntimeOps`) — the first surface to
+      fail the "does the id still name this app" half, because `tachyonRuntimeOpsView` names spec 367's
+      retired **WebviewView**, a different surface kind that was never registered. D2's `cockpit.css` grep
+      paid off in the OTHER direction: the pad was always this sheet's, so the residue was a rule to DELETE
+      in both sheets rather than move. **D4 should run BOTH ten-second checks: grep `cockpit.css` for the
+      root class, and read the host dep's signature for whether it accepts a project.**
+- [ ] D4–D10. One PR per remaining dashboard (Overview, Engine, Fleet, Inbox, Worktrees, Execution,
+      Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
 - [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
@@ -269,6 +284,47 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
       lie); its distinct treatment is the consent drawer's force gate, which has never been a harness
       fixture in Control either. So three card renderings cover the four states, and `default` stands for
       both "up to date" and "downgrade".
+- [x] **Evidence (D3, 2026-08-03):** Runtime Ops at 880 and 360, on FIVE fixtures, captured through the
+      route this change RESTORES — `npm run preview:webview` +
+      `?view=runtime-ops&fixture=<provider-healthy|throttled|provider-exhausted|long-label|duplicate-workspace>&width=<w>&height=900`
+      with the browser VIEWPORT set to the same width (t-b24282), rendering the REAL shipped
+      `dist/webview/runtime-ops.js` with the exact stylesheet list `RuntimeOpsPanel.ts` links
+      (`cockpitCssParity.test.ts` asserts the two agree). The fixtures are the ones already committed, used
+      rather than invented. Screenshots under `.vqa/485-d3/` (gitignored work evidence; the ROUTE and the
+      driver `scripts/visual-qa/runtime-ops-app-widths.mjs` are committed, so all ten are one command to
+      re-take) and attached via `attach_evidence` on `runtimeopsapp` (`ev-2026-08-03T19:36:58.523Z-0`).
+      Anchor, written from the task's problem statement before the surface was measured: *Runtime Ops must
+      arrive as a first-class editor tab showing the SAME runtime inventory it showed inside Control. At 880
+      the page chrome above a five-metric summary strip with the snapshot timestamp pushed to its right
+      edge, the provider-capacity block below it reading identity · quota windows · control one row per
+      provider, and the runtime table below that with its five column headers and one group per runtime, all
+      inside the surface's OWN single page pad — which always lived in `runtime-ops.css` rather than in
+      `cockpit.css`, so it must measure the SAME now that the embed-context rules are deleted; at 360 usable
+      rather than clipping, with this sheet's own `@container (max-width: 720px)` and
+      `@media (max-width: 760px)` firing; and at BOTH widths the two CROSS-WORKSPACE facts legible — a
+      runtime row naming every workspace it spans, and the provider block stating its quota is account-wide
+      — because those are the visible evidence for the `window` cardinality this task took against its brief.*
+- [x] **Verdict (D3):** satisfies the anchor at both widths on all five fixtures; zero horizontal overflow
+      anywhere (scrollWidth == clientWidth at 880 and 360, no unclipped element escaping the page box).
+      **The load-bearing measurement is a negative one:** the page pad reads 12px/16px at every width on
+      every fixture — identical to Control — which is what proves the two deleted rules
+      (`cockpit.css`'s `.ck-embed-host > .runtime-ops` and this sheet's `!important` re-assert) were embed-only
+      compensation rather than something load-bearing. A static CSS test cannot make that claim.
+      At 880 the summary strip sits on one row with the timestamp flush right (gap 0px) and the table renders
+      its five headers as a grid; at 360 the summary reflows to three rows, the provider rows stack with
+      full-width meters and the control below, and the table header goes `display: none` while each cell shows
+      its `data-label` — the stacked layout `runtime-ops.css` was written for. The cardinality's own evidence is
+      on screen rather than only in a test: `duplicate-workspace` renders ONE runtime row reading
+      "2 managed / apps/api, tools/api", and the capacity header states the quota is "not attributed to a
+      runtime, workspace, or agent".
+      Two corrections the run forced, recorded because they were the measurement being wrong rather than the
+      screen: the capacity block is ALWAYS two rows (an unobserved provider reads "not observed" rather than
+      vanishing — confirmed pre-existing, since `runtime-ops/App.tsx`, the fixtures and `src/runtimeOps/` are
+      byte-identical across this change), and `mixed` is literally `const mixed = providerHealthy`, so
+      measuring both would have photographed one screen twice and reported two passes; `throttled` and
+      `provider-exhausted` took its slot. One thing named so it is not read as a migration defect: every
+      timestamp reads 7/9/26 because the fixtures pin a fixed epoch — the same fixture artifact D1 recorded.
+
 
 ## Cookbook
 

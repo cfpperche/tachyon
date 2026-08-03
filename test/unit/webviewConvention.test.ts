@@ -89,6 +89,10 @@ describe("webview convention (spec 279)", () => {
       // SDD 485 D1 — the same viewType, a LIVE app again: its serializer revives the panel into
       // TmuxPanelManager instead of disposing and redirecting (the token moved to TmuxPanel.ts with it).
       tachyonServerInspector: "TMUX_VIEW_TYPE",
+      // SDD 485 D3 — a NEW viewType, unlike the three reuses above it: the only legacy id
+      // (`tachyonRuntimeOpsView`) names spec 367's retired WebviewView, a different surface KIND that was
+      // never registered, so it stays in the dispose-only loop and this app registers its own.
+      tachyonRuntimeOps: "RUNTIME_OPS_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",

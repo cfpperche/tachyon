@@ -30,6 +30,11 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     // (and stayed that way through the migration, because renaming a directory inside a cutover buys
     // nothing). The second line in this map, and the second migration — exactly as this file predicted.
     tmux: "inspector",
+    // SDD 485 D3 — the Runtime Ops tile's section id is `runtime` (it always has been: `COCKPIT_SECTION_ORDER`
+    // and `TAB_META` both spell it that way), and its bundle directory is `runtime-ops`. Third line, third
+    // migration. D2's Plugins needed none because its two names already agreed — which is the reason this map
+    // is written out rather than derived: two of the four so far do not match, and no transform predicts which.
+    runtime: "runtime-ops",
   };
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {

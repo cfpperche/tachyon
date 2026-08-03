@@ -56,15 +56,20 @@ describe("loadSectionStylesheet (t-610705)", () => {
     expect(appended).toHaveLength(0);
   });
 
-  // t-610705 — Runtime Ops is the second surface to adopt this mechanism; the bootstrap global now
-  // carries multiple section→URI entries. Each section's injection is independent of the others.
+  // t-610705 — the bootstrap global carries multiple section→URI entries, and each section's injection is
+  // independent of the others.
+  //
+  // SDD 485 D3 — the second entry was `runtime` until Runtime Ops became a standalone app, which took its
+  // co-load key out of `Cockpit.ts` with it. The example is a LIVE section now: this test builds its own
+  // map, so a retired key would still have passed — and would have told the next reader that Control
+  // co-loads a sheet it no longer links. `cockpitCssParity` is what checks the real pairing.
   it("resolves the right URI when multiple sections are registered on the same bootstrap map", () => {
-    const runtimeHref = "vscode-webview://x/runtime-ops.css";
+    const validationsHref = "vscode-webview://x/validations.css";
     (globalThis as { window: { __tachyonSectionStyles: Record<string, string> } }).window.__tachyonSectionStyles = {
       approvals: href,
-      runtime: runtimeHref,
+      validations: validationsHref,
     };
-    loadSectionStylesheet("runtime");
-    expect(appended).toEqual([{ rel: "stylesheet", href: runtimeHref }]);
+    loadSectionStylesheet("validations");
+    expect(appended).toEqual([{ rel: "stylesheet", href: validationsHref }]);
   });
 });

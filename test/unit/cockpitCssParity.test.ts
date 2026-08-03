@@ -155,6 +155,26 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(readFileSync(COCKPIT_HOST, "utf8")).not.toContain('"plugins-tailwind"');
   });
 
+  // SDD 485 D3 — the same parity, one app further. Load-bearing for the same reason the others are: the
+  // `?view=runtime-ops` route is what `test/browser/runtimeOpsView.test.ts` drives, and a harness linking a
+  // different sheet set would photograph a screen that does not ship.
+  it("the harness Runtime Ops route links the same product CSS, in the same order, as RuntimeOpsPanel.ts", () => {
+    const src = readFileSync("src/webview/RuntimeOpsPanel.ts", "utf8");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
+    expect(block, "src/webview/RuntimeOpsPanel.ts: no `styleFiles: [...]` array found — did the config move?").not.toBeNull();
+    const host = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+    expect(host.length, "empty scan of RuntimeOpsPanel.ts styleFiles — a silently-blind parity check").toBeGreaterThan(2);
+    expect(ROUTES["runtime-ops"].cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
+  });
+
+  it("Control no longer links the runtime-ops sheet — the cutover's other half, checked rather than remembered", () => {
+    // A section that left Control must take its stylesheet with it: an eager link for a screen this build
+    // cannot render is dead weight in every session, and a co-load key with no caller is the kind of
+    // residue t-17d885 was about.
+    expect(hostCssOrder()).not.toContain("runtime-ops.css");
+    expect(readFileSync(COCKPIT_HOST, "utf8")).not.toContain("runtime: uri(");
+  });
+
   it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);

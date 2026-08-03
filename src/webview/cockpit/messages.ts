@@ -83,8 +83,6 @@ export interface CockpitStrings {
   egAttrUnproven: string;
   worktreesTitle: string;
   worktreesHint: string;
-  runtimeTitle: string;
-  runtimeHint: string;
   runtimeConfigTitle: string;
   runtimeConfigHint: string;
   runtimeConfigPrototype: string;

@@ -16,7 +16,10 @@ describe("cockpit model", () => {
     expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
     // t-e88c8a — the Deliveries tab was retired with the Delivery tool surface.
     expect(COCKPIT_SECTION_ORDER).not.toContain("deliveries");
-    expect(COCKPIT_SECTION_ORDER).toContain("runtime");
+    // SDD 485 D3 — Runtime Ops is a standalone `window` app, so Control renders no section for it. Its
+    // launcher NEIGHBOUR stays, and the pair is worth asserting together: `runtime` and `runtime-config` are
+    // adjacent tiles with opposite cardinalities, because only one of the two reads a project.
+    expect(COCKPIT_SECTION_ORDER).not.toContain("runtime");
     expect(COCKPIT_SECTION_ORDER).toContain("runtime-config");
     expect(COCKPIT_SECTION_ORDER).toContain("settings");
   });

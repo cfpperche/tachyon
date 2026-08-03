@@ -1023,27 +1023,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "runtime",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "runtime-config",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime-config",
     "frame": {
@@ -1666,6 +1645,346 @@
       "plugin manager",
       "install plugin",
       "marketplace"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "loading",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=loading",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=error",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "mixed",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=mixed",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "throttled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=throttled",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "stale-bridge",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=stale-bridge",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "long-label",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=long-label",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "duplicate-workspace",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=duplicate-workspace",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-healthy",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-healthy",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-exhausted",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-exhausted",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-partial",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-partial",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-unauthenticated",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-unauthenticated",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-stale",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-stale",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-timeout",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-timeout",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-invalid",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-invalid",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-disabled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-disabled",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
     ]
   },
   {
