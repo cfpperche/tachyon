@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { FAILURE_LIMITS, STATIC_GATES, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
+import { FAILURE_LIMITS, STATIC_GATES, classifyOptionalAuthUnavailable, formatFailure, formatSuccess, summarizeReport } from "../../scripts/verify-full.mjs";
 
 const repoRoot = process.cwd();
 const runner = path.join(repoRoot, "scripts/verify-full.mjs");
@@ -71,6 +71,59 @@ describe("quiet full verification", () => {
     expect(summarizeReport(passingReport)).toEqual({ files: 2, passedFiles: 2, failedFiles: 0,
       total: 12, passed: 10, failed: 0, skipped: 1, todo: 1 });
     expect(formatSuccess(passingReport)).toBe("verify:full:quiet passed\nFiles: 2 passed (2)\nTests: 10 passed | 1 skipped | 1 todo (12)");
+  });
+
+  it("declares optional missing runtime credentials as skips without hiding other harness failures", () => {
+    const report: any = {
+      success: false, numTotalTests: 3, numPassedTests: 1, numFailedTests: 2, numPendingTests: 0, numTodoTests: 0,
+      testResults: [{ status: "failed", assertionResults: [
+        { status: "passed", fullName: "works" },
+        { status: "failed", fullName: "needs optional Claude auth", failureMessages: [
+          "HarnessUnavailableError: isolated harness for 'child': no credentials at /private/.claude/.credentials.json — run claude /login first\n    at materializeHome",
+        ] },
+        { status: "failed", fullName: "a real harness defect", failureMessages: [
+          "HarnessUnavailableError: isolated harness for 'child': captured capability contains an unsafe path",
+        ] },
+      ] }],
+    };
+
+    expect(classifyOptionalAuthUnavailable(report)).toEqual({
+      skipped: 1,
+      reasons: [{ reason: "harness credential unavailable", count: 1 }],
+    });
+    expect(summarizeReport(report)).toMatchObject({ passed: 1, failed: 1, skipped: 1 });
+    expect(report.testResults[0].assertionResults.map((item: any) => item.status))
+      .toEqual(["passed", "pending", "failed"]);
+    expect(report.success).toBe(false);
+  });
+
+  it("prints the count and reason for every credential skip", () => {
+    expect(formatSuccess(passingReport, [{ reason: "harness credential unavailable", count: 7 }]))
+      .toContain("Coverage unavailable (declared skips):\n- 7: harness credential unavailable");
+  });
+
+  it("recognizes measured wrapped and probe auth-absence errors, but not other preflight failures", () => {
+    const report: any = {
+      success: false, numFailedTests: 3, numPendingTests: 0,
+      testResults: [{ status: "failed", assertionResults: [
+        { status: "failed", failureMessages: [
+          "AggregateError: agent 'child' launch preparation failed: isolated harness for 'child': no credentials at /private/.claude/.credentials.json — run claude /login first; its worktree recovery state was preserved\n    at spawnCore",
+        ] },
+        { status: "failed", failureMessages: [
+          "RuntimeLaunchPreflightError: runtime_preflight_failed: credential store probe failed\n    at assertLaunchPreflight",
+        ] },
+        { status: "failed", failureMessages: [
+          "RuntimeLaunchPreflightError: runtime_preflight_failed: model inventory probe failed\n    at assertLaunchPreflight",
+        ] },
+      ] }],
+    };
+
+    expect(classifyOptionalAuthUnavailable(report)).toEqual({ skipped: 2, reasons: [
+      { reason: "harness credential unavailable", count: 1 },
+      { reason: "runtime credential unavailable", count: 1 },
+    ] });
+    expect(report.numFailedTests).toBe(1);
+    expect(report.success).toBe(false);
   });
 
   it("bounds assertion count, each assertion, and total diagnostics", () => {
