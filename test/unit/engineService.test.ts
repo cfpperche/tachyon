@@ -1,3 +1,4 @@
+import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
@@ -30,6 +31,18 @@ import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDa
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
+
+/**
+ * t-70fda0 — `agent.start` for the codex `worker` materializes a real harness home and fails hard
+ * when host credentials are absent (`no credentials at …/.codex/auth.json`). Same disease as
+ * t-eccb00: environment must become a named skip, not an assertion failure that looks like a
+ * regression. Classify BEFORE the body runs; never rewrite the report afterwards.
+ */
+skipTestsWithoutOptionalRuntimeAuth({
+  codex: [
+    "owns a real Workspace and direct Bridge across shell replacement and no-shell time",
+  ],
+});
 
 /** t-c289cf — real tmux ops against the daemon's private TMUX_TMPDIR (never production -L tachyon). */
 function tmuxExecutorForEnv(env: NodeJS.ProcessEnv): (args: string[]) => Promise<ExecResult> {

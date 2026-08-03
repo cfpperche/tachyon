@@ -168,6 +168,10 @@ skipTestsWithoutOptionalRuntimeAuth({
     "snapshotContinuityForFork copies a paused snapshot with fork provenance + a re-scope note (D8)",
     "removeContinuity reaps the brief + state on delete",
   ],
+  // t-70fda0 — spawns a declared codex agent; missing host auth.json was a hard red, not a skip.
+  codex: [
+    "t-1a808e: declared Codex model overrides still receive silent persistence hooks",
+  ],
 });
 
 describe("continuity wiring (spec 241, headless via Workspace.createForTest)", () => {
