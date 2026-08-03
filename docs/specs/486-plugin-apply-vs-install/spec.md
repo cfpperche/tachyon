@@ -212,10 +212,17 @@ done twice.
   deve viajar no repo … exceto o explicitamente declarado como as specs do plugin sdd"*.
 
   It is already the practice, which is why it is the right answer here rather than a preference:
-  `.gitignore:13` closes `.tachyon/`, `:32` closes `tachyon.yml` itself, and the exceptions are
-  re-opened BY NAME (`.tachyon/designs`, `.tachyon/evidence`, `.tachyon/reviews`, and the SDD
-  plugin's `docs/specs/`). A fleet's own configuration does not travel; only deliberately published
-  documents do.
+  `.gitignore:13` closes `.tachyon/` and `:32` closes `tachyon.yml` itself. A fleet's own
+  configuration does not travel; only deliberately published documents do.
+
+  **Correction, measured 2026-08-03:** an earlier draft of this paragraph said the exceptions are
+  "re-opened BY NAME" in `.gitignore`. They are not — there is no `!.tachyon/…` line at the repo root
+  at all, and the only exceptions in that file are under `test/fixtures/`. Files DO exist in the repo
+  under `.tachyon/designs/` and `.tachyon/evidence/`; they got there by `git add -f`, one at a time,
+  by hand. The conclusion does not change — it gets stronger, since nothing under `.tachyon/` travels
+  by default. But the difference is the one this repo keeps paying for elsewhere: "re-opened by name
+  in `.gitignore`" is a rule a machine enforces; "somebody force-added it" is a habit. Do not build
+  on the first sentence, because only the second is true.
 
   Consequence, and it is the correct default rather than a shortfall: a teammate who clones this repo
   gets the plugins declared and **nothing applied**. They choose, on their machine, exactly as this
