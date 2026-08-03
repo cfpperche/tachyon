@@ -9,6 +9,11 @@ export const __createdPanels: Array<{
   iconPath?: { light: Uri; dark: Uri };
   revealCount: number;
   disposed: boolean;
+  /** SDD 485 Phase B — a real panel is visible when created (it is revealed into the active group). */
+  visible: boolean;
+  active: boolean;
+  onDidChangeViewState(cb: () => void): { dispose(): void };
+  __fireViewState(): void;
   webview: {
     html: string;
     options: unknown;
@@ -103,6 +108,16 @@ export function __getQuickPickCalls(): Array<{ items: readonly string[]; options
   return [...__quickPickCalls];
 }
 
+/**
+ * SDD 485 Phase B — hide or reveal a created panel the way the editor does: flip the flag, then fire
+ * `onDidChangeViewState`. Tests drive this instead of wall time, because the gate counts WORK.
+ */
+export function __setPanelVisible(panel: typeof __createdPanels[number], visible: boolean): void {
+  panel.visible = visible;
+  panel.active = visible;
+  panel.__fireViewState();
+}
+
 export class Uri {
   constructor(public fsPath: string) {}
   static file(fsPath: string): Uri {
@@ -169,11 +184,24 @@ export const window = {
   createWebviewPanel: (_viewType: string, title: string, _showOptions?: unknown, options?: unknown) => {
     const messageHandlers: Array<(msg: unknown) => void> = [];
     const disposeHandlers: Array<() => void> = [];
+    const viewStateHandlers: Array<() => void> = [];
     const panel = {
       title,
       iconPath: undefined as { light: Uri; dark: Uri } | undefined,
       revealCount: 0,
       disposed: false,
+      visible: true,
+      active: true,
+      onDidChangeViewState: (cb: () => void) => {
+        viewStateHandlers.push(cb);
+        return {
+          dispose: () => {
+            const index = viewStateHandlers.indexOf(cb);
+            if (index >= 0) viewStateHandlers.splice(index, 1);
+          },
+        };
+      },
+      __fireViewState: () => { for (const cb of [...viewStateHandlers]) cb(); },
       webview: {
         html: "",
         options: options as unknown,
@@ -186,7 +214,14 @@ export const window = {
         },
         __receive: (msg: unknown) => { for (const cb of messageHandlers) cb(msg); },
       },
-      reveal: () => { panel.revealCount += 1; },
+      reveal: () => {
+        panel.revealCount += 1;
+        // A real reveal makes the panel visible AND fires a view-state event — including when it was
+        // already visible (the `active` half changes). The gate has to tell those two apart itself.
+        panel.visible = true;
+        panel.active = true;
+        panel.__fireViewState();
+      },
       dispose: () => {
         panel.disposed = true;
         for (const cb of disposeHandlers) cb();

@@ -5,6 +5,7 @@ import type { StudioHostAdapter } from "./adapter.js";
 import { decodeStudioMessage, envelope, STUDIO_PROTOCOL_VERSION, type StudioConcurrencyState, type StudioRestoreSnapshot } from "./protocol.js";
 import { mapUnknownError, type StudioError } from "./errorTaxonomy.js";
 import { decideRestore } from "./restoreDecisions.js";
+import { PanelWorkGate, panelVisibility } from "../panelWorkGate.js";
 
 /**
  * spec 350 T2 — StudioPanelManagerBase: the ONE lifecycle every studio dialect triplicated (PinStudioPanelManager,
@@ -60,8 +61,14 @@ export interface StudioPanelState<TPatch> {
   snapshot: StudioRestoreSnapshot<string, TPatch>;
 }
 
+/** SDD 485 B1 — the two refreshes a studio panel can be asked to do from OUTSIDE itself. Both arrive
+ *  through `extension.ts`'s `views-changed` fan-out, and neither used to ask whether anyone is looking. */
+type StudioRefreshKind = "refresh" | "referenceData";
+
 interface PanelEntry<TEntity, TPatch, TReferenceData> {
   panel: vscode.WebviewPanel;
+  /** SDD 485 B1 — hidden ⇒ no adapter load, no post; revealed ⇒ caught up (see panelWorkGate.ts). */
+  gate: PanelWorkGate<StudioRefreshKind>;
   wsKey: string;
   mode: "new" | "edit";
   entityId: string | undefined;
@@ -119,16 +126,21 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
     this.open(state.wsKey, state.snapshot.mode, state.snapshot.entityId, state.snapshot, panel);
   }
 
+  /** SDD 485 B1 — the fan-out door. A hidden panel journals the invalidation and runs NOTHING; the
+   *  adapter is not consulted and the webview is not posted to until someone looks at it again. */
   refreshAll(): void {
-    for (const entry of this.panels.values()) void this.loadAndPost(entry, null);
+    for (const entry of this.panels.values()) entry.gate.run("refresh", () => void this.loadAndPost(entry, null));
   }
 
   refreshReferenceData(): void {
-    for (const entry of this.panels.values()) void this.loadAndPostReferenceData(entry);
+    for (const entry of this.panels.values()) entry.gate.run("referenceData", () => void this.loadAndPostReferenceData(entry));
   }
 
   dispose(): void {
-    for (const { panel } of this.panels.values()) panel.dispose();
+    for (const { panel, gate } of this.panels.values()) {
+      gate.dispose();
+      panel.dispose();
+    }
     this.panels.clear();
   }
 
@@ -190,6 +202,16 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
 
     const entry: PanelEntry<TEntity, TPatch, TReferenceData> = {
       panel,
+      gate: new PanelWorkGate<StudioRefreshKind>(panelVisibility(panel), {
+        // Delta: replay exactly the invalidation kinds that arrived while hidden.
+        replay: (kind) => {
+          if (kind === "refresh") void this.loadAndPost(entry, null);
+          else void this.loadAndPostReferenceData(entry);
+        },
+        // Resync: the full load supersedes a reference-data refresh (it posts both halves), so the
+        // window blowing costs one load rather than a replayed tail.
+        resync: () => void this.loadAndPost(entry, null),
+      }),
       wsKey,
       mode,
       entityId,
@@ -202,7 +224,7 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
     };
     this.panels.set(key, entry);
     panel.webview.onDidReceiveMessage((raw: unknown) => void this.handleMessage(entry, raw));
-    panel.onDidDispose(() => { this.panels.delete(key); });
+    panel.onDidDispose(() => { entry.gate.dispose(); this.panels.delete(key); });
     void this.loadAndPost(entry, restoreSnapshot ?? null);
   }
 

@@ -50,6 +50,47 @@ The second half is what stops `extend` becoming a rubber stamp — without it, d
 points on every surface would silence the contract while looking compliant. It also buys a
 non-vacuity guarantee for free: the "declared point is actually used" test passing is proof that
 detection really sees the four extending surfaces, so the contract cannot be quietly blind.
+### Phase B — where the visibility gate lives (2026-08-03)
+
+`src/webview/shared/panelWorkGate.ts`, one primitive, used by every panel host: the studio manager
+base, Control, and the agent pane. It sits at the **manager** layer rather than at `extension.ts`'s
+fan-out, because the fan-out has no idea which panels exist or which of them a human is looking at —
+`onViewsChanged` dispatches by `ViewKind`, and only the manager holds panels. Gating at the fan-out
+would have to answer "is ANY consumer visible", which is the wrong question the moment there is more
+than one panel per kind, which is exactly what this spec is for.
+
+The gate exposes its one decision as a pure function (`decideCatchUp`), the same way
+`studio/restoreDecisions.ts` does, so the branch that must never be wrong can be read and tested
+without a panel, a webview or a clock.
+
+### Catch-up before suppression, and the shape of the journal
+
+The reveal was designed first. t-b51923's real risk was never the storm — it was swallowing the last
+invalidation and leaving a view stale forever, and this phase can commit that exact fault one layer
+down. So:
+
+- while hidden, each suppressed invalidation is journaled in a bounded window (64 entries,
+  ≈27s at the post-t-b51923 rate);
+- on reveal with the window intact → **delta**: replay each DISTINCT kind once. Legitimate because a
+  `views-changed` carries no payload — it says "this view is stale", never what changed — so N
+  identical ones hold exactly the information of one;
+- window overflowed, or `WorkspaceClient` reported `resynced`/`engineChanged` while we were hidden →
+  **full resync**. We stop claiming to know what changed and rebuild.
+
+The resync branch is not a bespoke path: it is `sendModel()` + `sendSectionModule()`, the exact body
+of the shell's own 3s poll. Recovery therefore runs code Control executes twenty times a minute
+rather than a branch that only ever fires on reveal.
+
+The upstream-resync branch is wired from `extension.ts`'s subscriber (`markControlSourceResync()`
+next to the `refreshAll()` that was already there). Without it, a hidden Control would replay the
+three kinds `refreshAll` happens to touch and silently assert it knows what the engine just admitted
+it does not.
+
+### `visible`, not `active`
+
+The gate keys on `WebviewPanel.visible`. A panel side by side with the focused one is being looked
+at and must keep working — two live surfaces at once is the capability this whole spec buys, and
+gating on `active` would have broken it in the same change that enabled it.
 
 ## Deviations
 
@@ -138,6 +179,40 @@ contract has to catch. **It was never committed; it is deleted.** Four states we
 passing the same set to `renderWebviewShell` — the declared-extension path end to end.
 
 Then the scratch was deleted and the suite re-run clean: `Test Files 1 passed · Tests 15 passed`.
+### The `views-changed` fan-out was not the only door (B1)
+
+`plan.md` and the task brief both framed Phase B around `extension.ts`'s `views-changed` fan-out.
+Enumerating every path by which a hidden Control could still do work turned up a louder one that the
+fan-out never touches: **the client's own 3s poll.** `cockpit/main.tsx` runs
+`setInterval(() => post(refreshAction()), 3000)`, and `retainContextWhenHidden: true` keeps that
+timer alive behind another tab, so a hidden Control ran `sendModel()` (a collect across every
+workspace root, including the classified worktree read on some sections) plus `sendSectionModule()`
+**twenty times a minute, forever** — more work than the whole event fan-out put together at the
+post-t-b51923 rate.
+
+Gated host-side, in the `case "refresh"` handler, not client-side: the host is where the gate and
+the guard already live, and a host-side gate holds no matter what any client version's timer does.
+
+This is 0.56.159's lesson arriving on schedule — that release shipped green tests that changed
+nothing in production because the test drove the one door and production used five. Which is why the
+guard in `hiddenPanelWork.test.ts` drives the wire message a client actually sends rather than the
+gate object.
+
+### The activity feed is paused, not journaled (B1/B2)
+
+The third door, and the second that emits no `views-changed` at all: the agent-activity feed (`src/cockpit/activityFeed.ts`) runs a
+1s attention poll and an `fs.watchFile` that reads, rebuilds and posts on every log append, whether
+or not anyone is looking.
+
+It is gated through `ActivityFeedIO.paused` rather than through the journal, because the feed already
+owns a better journal than the gate could keep: the durable log itself. Hidden, it reads nothing and
+its byte offset stays put; on reveal `catchUp()` ingests forward from that offset — a real delta —
+and `pump()`'s existing `size < offset` branch is a real full re-prime when the log was truncated
+under it. The same delta/resync bargain, arriving from the file rather than from a counter.
+
+Consequence: the gate needed an `onReveal` hook that fires on EVERY reveal, including the one the
+journal calls `none`. An activity log can grow while zero invalidations arrive, so hanging its
+catch-up off the journal's decision would have left it stale for exactly the case it exists to cover.
 
 ## Tradeoffs
 
@@ -161,6 +236,53 @@ every surface`) is the safeguard against the source scan silently matching nothi
 `page-chrome` and `token-scale` are scanned in `src/webview/<view>/**/*.css` — the surface's own
 directory — not across every stylesheet it links. Control links a dozen embedded sections' sheets and
 would otherwise answer for all of them. See the Open questions entry below for what that leaves.
+### Measured before/after (B4)
+
+**Consumer work, `StudioPanelManagerBase.refreshAll()` with 8 panels open and 1 visible:**
+
+| | journal events/s | refresh work/s |
+|---|---|---|
+| before (every panel refreshes, always) | 3.98 | **31.87** |
+| after (hidden panels do nothing) | 3.98 | **3.98** |
+
+Both rows come from one run of `test/unit/hiddenPanelWork.test.ts` ("before/after, producer unchanged
+and consumer gated"), which prints them. The producer is the real `DaemonEngineHost` with its real
+250ms coalescing window, fed t-b51923's measured storm shape (~15 invalidations/s per running agent ×
+2 agents = 1800/min); it emitted 239 `views-changed` in the simulated minute. The consumer is the
+real manager driven through the real fan-out door. "Before" is every panel visible, which is
+byte-for-byte today's behaviour — nothing in the old code asked about visibility.
+
+**The journal rate is identical in both rows, and that is the result, not a null one.** This phase
+changes the CONSUMER; a number that moved there would mean it had reached into t-b51923's producer
+fix, which this task explicitly forbade.
+
+What was NOT done, and should not be read into the table: **no live two-agent measurement was
+taken.** t-b51923 measured a running engine; no engine daemon is reachable from a change worktree
+(no `events/*.jsonl` under any storage root here), and opening an editor window was out of bounds for
+this task. The harness above is the honest substitute — real producer, real consumer, synthetic
+arrival pattern — and the live number is worth re-taking on the maintainer's machine with Control and
+a couple of panes open behind other tabs.
+
+**Control's own hidden cost, by door, per minute behind another tab:**
+
+| door | before | after |
+|---|---|---|
+| client 3s poll → `sendModel` + `sendSectionModule` | 20 full collects | **0** (1 on reveal) |
+| `views-changed` fan-out → `refreshCockpit*` | 1 per event (~239/min at the storm rate) | **0** (≤1 per kind on reveal) |
+| activity feed (on an agent-activity route) | 1s attention poll + a read/build/post per log append | **0** (one catch-up read on reveal) |
+| agent pane co-attach poll, per open pane | 30 `tmux list-clients` | **0** (1 on reveal) |
+
+### Suppression is per-panel, not per-manager
+
+Each panel carries its own gate and its own journal. Simpler would have been one journal per manager
+plus a visible-panel set, but then a panel revealed after a different one had already drained the
+journal would come back empty-handed. Per-panel costs one array per open panel and cannot fail that way.
+
+### The window can blow, on purpose
+
+64 entries, so a panel hidden through a genuine storm takes ONE full resync on reveal instead of a
+long replay. A journal that deduped kinds at record time would never overflow and the resync branch
+would be dead code — a branch that never runs is not a safety net, it is a comment.
 
 ## Open questions
 
@@ -187,3 +309,23 @@ app at a time. Owner: whoever takes the first section migration.
 `conform` and the deletion is the cleanest possible outcome of a conformance contract. It was NOT
 done here: Phase A moves nothing and changes nothing visually, and a `body` baseline swap is a visual
 change that needs the two-width evidence this phase does not produce. Owner: unassigned; small.
+### Work that still happens while hidden, and was left alone deliberately
+
+- **The agent pane's tmux data stream.** The pane keeps its `attach` client and keeps writing output
+  into xterm while hidden. Suppressing it needs somewhere to hold the bytes, and xterm's scrollback
+  IS that somewhere — dropping them loses output, and detaching to avoid them contradicts t-feaaea
+  (reattach is a human decision, and a reveal is not one). What WAS gated is the pane's only periodic
+  host work: the 2s `tmux list-clients` co-attach poll.
+- **`fs.watchFile`'s stat poll (2/s per open activity route).** The feed reads and posts nothing while
+  hidden, but the watcher stays armed. Closing it means unwatch/rewatch across visibility, which
+  resets the `prev` stat its change detector compares against. Cheap enough to leave; named here so
+  it is not mistaken for zero.
+- **The sidebar (`SidebarPrototypeProvider.refresh`) is NOT gated, and must not be naively gated.**
+  It is the heaviest single consumer — every `views-changed` re-gathers a fleet per workspace root —
+  but its push also sets `view.badge`, the attention count on the activity-bar icon, which is visible
+  precisely WHILE the view is hidden. Gating it wholesale would freeze that badge: a correctness
+  regression wearing a performance win's clothes. Splitting the badge computation from the fleet push
+  would make it gateable, and is worth its own task.
+- **`PluginSurfaceHost` editor panels** (`plugins/ui/host.ts`) also refresh unconditionally in
+  `refreshAll()`. The same primitive applies; out of Phase B's declared scope (`AgentPanePanel` +
+  Control), so untouched here.

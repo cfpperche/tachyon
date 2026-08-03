@@ -73,6 +73,12 @@ interface LivePane {
   foreignKey: string | null;
   /** t-edbe36 — poll handle while attached; cleared on detach/dispose. */
   foreignTimer: ReturnType<typeof setInterval> | null;
+  /**
+   * SDD 485 B1 — does the pane WANT the co-attach poll running (attached, not handed off)? Kept
+   * apart from `foreignTimer` because hiding the tab clears the timer without changing the intent:
+   * the poll must come back on reveal, and must NOT come back after a detach.
+   */
+  foreignWatch: boolean;
 }
 
 export class AgentPanePanelManager {
@@ -144,6 +150,7 @@ export class AgentPanePanelManager {
       detached: false,
       foreignKey: null,
       foreignTimer: null,
+      foreignWatch: false,
     };
     this.byAgent.set(args.agent, live);
 
@@ -169,11 +176,17 @@ export class AgentPanePanelManager {
       void panel.webview.postMessage(msg);
     };
 
-    const stopForeignWatch = () => {
+    /** Clears the timer without forgetting that the pane WANTS to be watching (see `live.foreignWatch`). */
+    const clearForeignTimer = () => {
       if (live.foreignTimer !== null) {
         clearInterval(live.foreignTimer);
         live.foreignTimer = null;
       }
+    };
+
+    const stopForeignWatch = () => {
+      live.foreignWatch = false;
+      clearForeignTimer();
     };
 
     const clearForeignNotice = (restoreStatus: boolean) => {
@@ -229,9 +242,19 @@ export class AgentPanePanelManager {
       clearForeignNotice(true);
     };
 
-    const startForeignWatch = () => {
-      stopForeignWatch();
-      if (!args.listClients) return;
+    /**
+     * SDD 485 B1 — the pane's one piece of periodic WORK: `tmux list-clients` every 2s, per open
+     * pane, forever. It exists to explain a co-attached client on screen, so a pane nobody is
+     * looking at has nothing to explain and the poll is pure cost. Hidden ⇒ the timer is cleared and
+     * no `list-clients` runs; revealed ⇒ it restarts with an immediate probe.
+     *
+     * The catch-up here needs no journal and has no delta branch: `probeForeign` reads the CURRENT
+     * client list, so one probe on reveal is a full resync by construction. What was suppressed is
+     * only the notice ABOUT that state, and the state is re-derived, never replayed.
+     */
+    const armForeignWatch = () => {
+      clearForeignTimer();
+      if (!live.foreignWatch || !args.listClients || !panel.visible) return;
       // Resize catches local geometry changes; a short poll catches a shell attach that does not
       // resize our webview (the foreign client is smaller — we just get · padding).
       live.foreignTimer = setInterval(() => {
@@ -239,6 +262,16 @@ export class AgentPanePanelManager {
       }, 2000);
       void probeForeign();
     };
+
+    const startForeignWatch = () => {
+      live.foreignWatch = true;
+      armForeignWatch();
+    };
+
+    panel.onDidChangeViewState(() => {
+      if (panel.visible) armForeignWatch();
+      else clearForeignTimer();
+    });
 
     /**
      * Another viewport (the integrated terminal) is taking this session — let go of our tmux
