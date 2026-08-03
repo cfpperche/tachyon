@@ -129,7 +129,9 @@ describe("decideSpawnTaskClaim — the decision, without a store", () => {
     expect(decision.kind).toBe("refuse");
     const reason = decision.kind === "refuse" ? decision.reason : "";
     expect(reason).toContain("it is in inbox");
-    expect(reason).toContain("Triage is a human decision");
+    expect(reason).toContain("Triage is a deliberate decision");
+    // t-f33480 — the refusal is real and stays; "human" was the part nothing enforced.
+    expect(reason).toContain("recorded in the task journal");
     expect(reason).toContain("triaged");
   });
 });
@@ -178,7 +180,7 @@ describe("t-48f504 — spawn_agent(claim_task) binds the launch to the board", (
 
     expect(result.isError).toBe(true);
     expect(result.content[0]?.text).toContain("it is in inbox");
-    expect(result.content[0]?.text).toContain("Triage is a human decision");
+    expect(result.content[0]?.text).toContain("Triage is a deliberate decision");
     expect(spawned).toEqual([]);
     expect(JSON.stringify(store.get(task.id))).toBe(before);
   });

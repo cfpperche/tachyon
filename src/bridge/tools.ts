@@ -1555,8 +1555,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "active with this agent as assignee in the same operation, so the brief you write and the work the agent " +
         "reads off the board are one fact instead of two that can disagree. A task this agent cannot hold (still in " +
         "inbox, closed, or assigned to someone else) is refused HERE, naming the reason, instead of launching an " +
-        "agent that discovers it a turn later. Triage stays a separate, human decision: an inbox task is never " +
-        "claimed by spawning at it. " +
+        "agent that discovers it a turn later. Triage stays a SEPARATE, DELIBERATE decision — not a human-only one: " +
+        "an inbox task is never claimed by spawning at it, and whoever triages leaves author and reason in the " +
+        "task journal (t-f33480). The old wording said \"human decision\" and nothing enforced it; a boundary that " +
+        "is neither imposed nor audited is a sentence, so the enforcement became the TRACE rather than the caller. " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
         "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
         "Subject to the maxAgents guardrail.",
