@@ -1603,6 +1603,25 @@
     ]
   },
   {
+    "view": "mission-control",
+    "fixture": "volume",
+    "url": "/scripts/webview-preview/index.html?view=mission-control&fixture=volume",
+    "frame": {
+      "w": 1100,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Board",
+    "aliases": [
+      "board",
+      "mission control",
+      "task board",
+      "kanban"
+    ]
+  },
+  {
     "view": "section-app-fixture",
     "fixture": "document",
     "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document",

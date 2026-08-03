@@ -23,12 +23,28 @@ function addStylesheet(href: string): void {
   document.head.appendChild(link);
 }
 
-function frameTo(frame: { w: number; h: number }): void {
+/**
+ * Size the surface. Two shapes, and the difference is the whole point of `route.pageFrame`:
+ *
+ *  - default — `#frame` is a sized box the surface renders inside (a sidebar view, a studio panel);
+ *  - page frame (t-32c872) — the surface IS the page, so `#frame` is collapsed out of the layout
+ *    (`display: contents`) and the size goes on `<html>`, which is what a real webview's page frame is.
+ *    `#root` then gets a height only if the surface's own stylesheet chain provides one — the same
+ *    condition the product has, instead of a free definite height from a harness div that does not ship.
+ */
+function frameTo(frame: { w: number; h: number }, pageFrame: boolean): void {
   const el = document.getElementById("frame");
-  if (el) {
-    el.style.width = `${frame.w}px`;
-    el.style.height = `${frame.h}px`;
+  if (!el) return;
+  if (pageFrame) {
+    el.style.display = "contents";
+    // inline, so a route sheet's own `html { height: 100% }` (page-frame.css) does not win over the
+    // measurement width/height — the frame is the stand-in for the editor tab's viewport.
+    document.documentElement.style.width = `${frame.w}px`;
+    document.documentElement.style.height = `${frame.h}px`;
+    return;
   }
+  el.style.width = `${frame.w}px`;
+  el.style.height = `${frame.h}px`;
 }
 
 function run(): void {
@@ -62,7 +78,7 @@ function run(): void {
   const heightParam = params.get("height");
   const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
   const frameH = heightParam && Number(heightParam) > 0 ? Number(heightParam) : route.frame.h;
-  frameTo({ w: frameW, h: frameH });
+  frameTo({ w: frameW, h: frameH }, route.pageFrame === true);
   // Optional theme stand-ins; default remains Dark+ harness tokens.
   const requestedTheme = params.get("theme");
   const theme = requestedTheme === "light" || requestedTheme === "high-contrast" ? requestedTheme : "dark";

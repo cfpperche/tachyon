@@ -103,6 +103,21 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
   // ("studio-pin-richdoc") even though it resolves to the same rich-doc.css href as Task's
   // "studio-task-richdoc" — a shared key called from two lazy blocks would fail the co-load-id
   // parity check below (a plain array compare, not set-based).
+  // t-32c872 — the SAME parity, one app over: the harness's Board route must link exactly what
+  // `BoardPanel.ts` links, in the same order. This is not symmetry for its own sake — the Board's visual
+  // evidence (per-column scrolling, no page scroll) is taken in this harness, and a harness that links a
+  // different set proves nothing about what ships. The host's list is a `styleFiles:` config handed to
+  // SectionPanelManager rather than an inline `styles: [...]`, so it is scanned from that key.
+  it("the harness Board route links the same product CSS, in the same order, as BoardPanel.ts", () => {
+    const src = readFileSync("src/webview/BoardPanel.ts", "utf8");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
+    expect(block, "src/webview/BoardPanel.ts: no `styleFiles: [...]` array found — did the config move?").not.toBeNull();
+    const host = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+    expect(host.length, "empty scan of BoardPanel.ts styleFiles — a silently-blind parity check").toBeGreaterThan(3);
+    expect(host).toContain("page-frame.css");
+    expect(ROUTES["mission-control"].cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
+  });
+
   it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);

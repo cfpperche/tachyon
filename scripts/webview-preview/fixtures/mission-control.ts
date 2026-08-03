@@ -149,6 +149,46 @@ const snapshot: BoardSnapshot = {
   attachmentCounts: { "t-a11f0e": 2 },
 };
 
+/**
+ * t-32c872 — the VOLUME fixture, and the reason it exists is a defect the `default` fixture above could not
+ * show. Eight cards spread over six statuses fit inside any frame, so the Board looked right standalone even
+ * though its per-column scrolling was gone: nothing was tall enough to need a scroll region, so nothing
+ * revealed that the region had no height to scroll inside.
+ *
+ * The shape is the owner's own board on the day the bug was reported (0.56.164): INBOX 99 / TRIAGED 11 /
+ * ACTIVE 0 / LANDED 76. ACTIVE stays EMPTY on purpose — an empty column beside two tall ones is where the
+ * chain breaks visibly (a column that collapses to its content instead of filling the board's height), and
+ * a fixture where every column is full would hide it.
+ */
+function bulk(prefix: string, status: Task["status"], count: number, title: (i: number) => string): TaskView[] {
+  return Array.from({ length: count }, (_, i) => ({
+    task: task(`t-${prefix}${String(i).padStart(4, "0")}`, status, title(i), {
+      kind: i % 3 === 0 ? "bug" : "feature",
+      ...(i % 4 === 0 ? { priority: (i % 3) as 0 | 1 | 2 } : {}),
+      ...(i % 5 === 0 ? { assignee: ["claude", "codex", "grok"][i % 3] } : {}),
+      author: i % 2 === 0 ? "human" : "claude",
+    }),
+  }));
+}
+
+const volumeViews: TaskView[] = [
+  ...bulk("i", "inbox", 99, (i) => `Inbox item ${i + 1}: triage this report and decide whether it is a task`),
+  ...bulk("t", "triaged", 11, (i) => `Triaged ${i + 1}: scoped and waiting for an agent`),
+  ...bulk("l", "landed", 76, (i) => `Landed ${i + 1}: shipped and contained in main`),
+];
+
+const volumeSnapshot: BoardSnapshot = {
+  views: volumeViews,
+  allowedDropStatuses: Object.fromEntries(volumeViews.map((v) => [v.task.id, ["triaged", "active", "landed", "done", "dropped"]])),
+  chips: [
+    { agent: "claude", source: "declared", next: { task: volumeViews[1]!.task } },
+    { agent: "codex", source: "declared", next: { empty: true, reason: "no-tasks" } },
+    { agent: "human", source: "human", next: { empty: true, reason: "all-assigned-elsewhere" } },
+  ],
+  validations: { items: [], pendingCount: 0, humanPendingCount: 0, agentPendingCount: 0, candidateCount: 0, candidates: [] },
+  attachmentCounts: {},
+};
+
 export const missionControlFixtures: Record<string, Fixture<MissionControlVM>> = {
   default: {
     provenance: "synthetic-edge",
@@ -156,6 +196,14 @@ export const missionControlFixtures: Record<string, Fixture<MissionControlVM>> =
       folder: "tachyon",
       wsHash: "a1b2c3",
       snapshot,
+    },
+  },
+  volume: {
+    provenance: "synthetic-edge",
+    vm: {
+      folder: "tachyon",
+      wsHash: "a1b2c3",
+      snapshot: volumeSnapshot,
     },
   },
 };

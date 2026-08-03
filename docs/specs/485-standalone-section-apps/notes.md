@@ -316,6 +316,87 @@ behavioural poll test. `boardPanel.test.ts`'s own poll case was strengthened aft
 passed on a DEAD door as readily as a gated one: it now asserts the poll IS served while visible before
 asserting it is ignored while hidden.
 
+### t-32c872 — the page frame is a SHARED SHEET, and the contract now reads CONSUMPTION (2026-08-03)
+
+The Board shipped standalone (C5) and lost per-column scrolling: one page-long scrollbar, four columns
+grown to their content. Cause, already traced in the task: `.col-body { overflow-y: auto }` is the end of a
+height chain that starts at `body`, and inside Control the start came from `cockpit.css` (`html, body {
+height: 100% !important }`). t-e085bc had deleted the Board's own copy of those rules ON PURPOSE and named
+cockpit.css the owner; C5 then moved the Board out from under that owner and linked nothing in its place.
+
+**Where the height lives now: `src/webview/shared/page-frame.css`, LINKED, not copied.** The premise 485
+changed is "one app = one page" — a standalone section app IS the editor tab, fills it, and scrolls in its
+own regions. That is a property of the shared frame, so it is one sheet an app opts into
+(`BoardPanel.ts`'s `styleFiles`), the same way `design-system.css` already owns the body baseline. Linking
+a shared sheet is CONFORMANCE, not `page-chrome`: the Phase A scan reads `src/webview/<view>/**`, so the
+Board stays `conform` — correctly, because it still styles no page frame of its own.
+
+The sheet deliberately stops at `body`. `#root` stays the SURFACE's own declaration, because that rule is
+the observable seam where a surface's layout meets the page frame — and it is the only thing a static
+contract can read. Move `#root { height: 100% }` into the shared sheet and every app silently inherits a
+chain, there is nothing left in the surface to detect, and the guard below is born green.
+
+**The contract's real gap was the question it asked.** Phase A asks "does this surface DECLARE that it
+styles the page frame?". For the Board the answer was no and it was RIGHT — `conform` was an accurate
+declaration of a surface that broke anyway. The missing question is the other half: **does it CONSUME page
+chrome another sheet provides, and does it link that sheet itself?** A surface can be conforming and still
+collapse the moment it stops sitting next to whatever was holding it up. Three tests in
+`webviewConvention.test.ts` now:
+
+- a surface whose own CSS gives `#root` a percentage height must LINK a sheet that gives `html`/`body` a
+  height (providers are resolved back to their source and read — no name allowlist);
+- the mirror: a surface that links `page-frame.css` must actually anchor `#root` to the frame, so the sheet
+  cannot become the new blanket (`overflow: hidden` is the WRONG frame for a document surface — it would
+  put task detail's reading column out of reach);
+- a blind-scan guard: the frame sheet must really provide a chain, and at least one surface must really
+  consume one, or the two rules above are asserting nothing.
+
+**Fail-before, both directions** (this session has been bitten three times by a guard that passed because
+it was blind — Phase B's static door guard, C1's manager guard, and A5's own scratch surface):
+
+    × a surface that DEPENDS on a root height chain links a sheet that provides it (t-32c872)
+      → tachyonBoard: CONSUMES a page-frame height chain but links nothing that provides it —
+        src/webview/mission-control/mission-control.css: `#root { height: 100%; min-height: 0; display: flex;
+        flex-direction: column; }` resolves against a `body` with no height, so it collapses to content.
+        Link page-frame.css (the shared frame) in src/webview/BoardPanel.ts, or stop anchoring to the frame.
+        Linked: [codicon.css, design-system.css, vscode-theme.css, mission-control.tailwind.css,
+        mission-control.css].
+
+That is RED against the shipped 0.56.164 tree — the real defect, not an injected one — and green once
+`page-frame.css` joins the list. The mirror rule was proven red by injecting the sheet into
+`TaskDetailPanel.ts` (reverted): *tachyonTaskDetail: links page-frame.css but its own CSS never anchors
+`#root` to the frame*. `cockpit` and `sidebar` are consumers too and pass on their own providers
+(`cockpit.css`, `sidebar.css`), so the rule is not a one-surface special case.
+
+This is what closes the eight remaining traps: every Phase D section that anchors to the frame either links
+the shared sheet or names itself in a failing test.
+
+### t-32c872 — the preview harness could not see this defect class, and now can (2026-08-03)
+
+Worth stating plainly because it explains how C5's two-width visual pass came back clean on a broken
+screen, and it is not only the fixture's fault: **the harness rendered `#root` inside its own sized
+`#frame` div**, which handed the surface a definite height a real webview's `body` only has when a
+stylesheet gives it one. The harness was more generous than the product, so the bug was invisible there by
+construction — a fixture with 99 cards would have looked fine too.
+
+`Route.pageFrame` fixes that for surfaces that ARE the page: `preview.ts` collapses `#frame`
+(`display: contents`) and puts the measurement size on `<html>`, which is where a real page frame lives.
+Measured on the same URL, `?fixture=volume&width=880&height=900`:
+
+| | page scrollHeight / viewport | `.col-body` scrollable |
+|---|---|---|
+| before (no `page-frame.css`) | **12451** / 900 — one page-long scrollbar | no (clientHeight == scrollHeight == 12343) |
+| after | 900 / 900 — the page does not scroll | yes (INBOX 12343, LANDED 9478 inside 792) |
+
+Independent scroll, at 1100: INBOX `scrollTop` 2000, LANDED 600, TRIAGED/ACTIVE/DONE 0, page `scrollY` 0.
+
+Two guards keep the harness honest rather than a note asking the next author to remember: a route linking
+`page-frame.css` must declare `pageFrame` (`webviewPreviewRoutes.test.ts`), and the harness's Board CSS list
+must equal `BoardPanel.ts`'s, in order (`cockpitCssParity.test.ts` — the same parity that file already holds
+Control to). The `volume` fixture (INBOX 99 / TRIAGED 11 / ACTIVE 0 / LANDED 76, the owner's own board on
+the day of the report) is committed with the route: ACTIVE stays empty on purpose, because an empty column
+beside two tall ones is where a collapsed chain shows.
+
 ## Deviations
 
 ### C6/C7 — one window scope, resolved only at open (2026-08-03)
@@ -582,6 +663,32 @@ no test the two branches share will notice, because each branch is green on its 
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+
+### t-32c872 — where the page frame lives: four candidates, three rejected (2026-08-03)
+
+1. **Copy `html, body { height: 100% }` back into `mission-control.css`.** Rejected, and it is the option
+   the task's constraints name explicitly: it is the gambiarra t-e085bc removed, it re-arms the co-load
+   bleed (that sheet still co-loads into any Control session that ever showed the board), and repeated per
+   section it recreates the dual pad SDD 410 closed and Phase A exists to prevent. Ten copies of a rule are
+   ten places for it to drift.
+2. **Put the height on `html, body` in `design-system.css`,** the baseline every conforming surface already
+   links. Rejected on blast radius and on evidence: pin-preview and task detail are page-scrolling
+   documents, and `overflow: hidden` there hides their own content below the fold — changing every surface
+   that passes through the shared shell to fix one. It also makes the new guard un-failable: if every
+   surface provides the chain, nothing can ever consume one it does not link, and the check is born green.
+3. **`#root { position: absolute; inset: 0 }`,** which is how `agent-pane.css` gets a full-height page with
+   no `body` height at all. It works and it is genuinely simpler, but it is surface-local again — it solves
+   the Board and leaves the other nine to rediscover it — and it leaves the contract nothing to read, since
+   "this surface needs the frame" stops being visible anywhere.
+4. **Chosen: one shared `page-frame.css`, opt-in per app, with the contract checking consumption.** Given
+   up: an app author has to remember one more line in `styleFiles`. Bought: the rule exists once, the
+   remembering is enforced by a test that names the surface, and both directions are checked (linking it
+   without needing it fails too).
+
+Not done, deliberately: folding `cockpit.css`'s own `html, body` reset into this sheet. Control's reset is
+`!important` because it must overpower the embedded sections' sheets it co-loads — a different job with a
+different mechanism, and Phase E is already the change that removes it. Merging them now would be a
+speculative refactor of the one surface this task must not disturb.
 
 ### Phase A — detection reads shipped source, not a runtime hook (2026-08-03)
 

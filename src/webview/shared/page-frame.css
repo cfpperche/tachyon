@@ -1,0 +1,42 @@
+/*
+ * SDD 485 — THE PAGE FRAME of a standalone app, in ONE place.
+ *
+ * t-32c872. `mission-control.css`'s per-column scrolling is a height chain: `body` with a definite
+ * height → `#root { height: 100% }` → … → `.col-body { overflow-y: auto }`. Inside Control that chain
+ * started at `cockpit/cockpit.css:13-22`, which pins `html, body { height: 100% !important; overflow:
+ * hidden !important }` — t-e085bc deleted the Board's own copy of those rules on purpose and declared
+ * cockpit.css the owner. SDD 485 C5 then moved the Board OUT of Control and it linked no such sheet, so
+ * `#root { height: 100% }` resolved against an unsized body, shrank to content, and four columns grew
+ * into one page-long scrollbar.
+ *
+ * The premise changed with 485: **one app = one page**. A standalone section app IS the editor tab —
+ * it fills the tab and scrolls in its own regions, never as a document. That is a property of the SHARED
+ * frame, not of each section's stylesheet, so it lives here and is LINKED, never copied. Copying these
+ * five lines into ten section sheets is exactly the dual pad SDD 410 closed and the Phase A contract
+ * exists to prevent.
+ *
+ * Opt-in, and deliberately so — "one app = one page" is not true of every surface on the shared shell.
+ * A DOCUMENT app (task detail: a centred 880px reading column) is a page that scrolls; giving it
+ * `overflow: hidden` would put its own content out of reach. So an app that wants the frame links this
+ * sheet; the ones that want a scrolling document do not. `webviewConvention.test.ts` checks that a
+ * surface which DEPENDS on the chain actually links it (and that one which links it actually uses it).
+ *
+ * It stops at `body` on purpose. `#root` stays the SURFACE's own declaration — that rule is the
+ * observable seam where a surface's layout meets the page frame, and it is what makes the dependency
+ * detectable in the surface's own CSS. Move `#root` in here and every app silently gets a height chain,
+ * the contract has nothing left to read, and the guard is born green.
+ *
+ * Not a design-system.css rule for the same reason: that sheet is linked by page-scrolling surfaces
+ * (pin-preview, task detail) and by the sidebar, so height/overflow there would change every surface
+ * that passes through the shared shell to fix one.
+ */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  /* The app owns its scroll regions; the page itself never scrolls. */
+  overflow: hidden;
+}
