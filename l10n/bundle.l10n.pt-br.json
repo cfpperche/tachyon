@@ -44,6 +44,7 @@
   "Active learnings": "Aprendizados ativos",
   "Active version": "Versão ativa",
   "Agent": "Agente",
+  "Worktrees": "Worktrees",
   "Agent '{0}' is no longer available.": "O agente '{0}' não está mais disponível.",
   "Agent '{0}' is not running.": "O agente '{0}' não está em execução.",
   "Agent '{0}' migrated to agent.yml (transaction {1}).": "Agente '{0}' migrado para agent.yml (transação {1}).",

@@ -1,118 +1,137 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { openCockpit, type CockpitMissionBoard } from "../../src/webview/Cockpit.js";
-import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Uri } from "vscode";
+import { __createdPanels, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
+import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
+import { readyMessage } from "../../src/webview/worktrees/messages.js";
+import type { CockpitWorkspaceBundle, CockpitWorktreeRow } from "../../src/cockpit/model.js";
 
 /**
- * spec 444 (t-9f8dfc) — host-side dispatch coverage for the Worktrees hygiene actions. The engine
- * re-validates every call fail-closed; these tests prove the Cockpit host layer (a) forwards
- * single actions with their consent flags, (b) surfaces refusals as toasts instead of silent
- * success, and (c) implements the batch's drop-on-state-change semantics: a refused item is
- * SKIPPED with its reason while the rest of the batch proceeds (the spec's preview/confirm
- * concurrency acceptance criterion).
+ * SDD 485 D6 — retargeted from Control's retired Worktrees handler to the standalone dashboard host.
+ * The decisive containment case sends project B's wsHash through project A's panel and proves the host
+ * still calls the mutation port with A: the immutable panel target is authority; client fields are not.
  */
+
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => __resetVscodeMock());
 afterEach(() => {
-  for (const p of __createdPanels) if (!p.disposed) p.dispose();
+  for (const panel of __createdPanels) if (!panel.disposed) panel.dispose();
 });
 
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-const missionBoard: CockpitMissionBoard = { getWorkspaces: () => [], openTaskStudio: () => {}, onTasksChanged: () => {} };
-
-function toasts(): string[] {
-  return __createdPanels[0].webview.posted
-    .filter((m) => (m as { type?: string }).type === "toast")
-    .map((m) => (m as { text: string }).text);
+function row(wsHash: string, id: string): CockpitWorktreeRow {
+  return {
+    id,
+    kind: "change",
+    path: `/cache/${wsHash}/${id}`,
+    branch: `tachyon/${id}`,
+    status: "active",
+    wsHash,
+    classification: {
+      state: "ready-to-remove",
+      reasons: [],
+      pathExists: true,
+      dirty: false,
+      aheadOfBase: 0,
+      containedInBase: true,
+      containedInTrunk: true,
+      trunkRef: "main",
+    },
+  };
 }
 
-describe("Worktrees hygiene actions (spec 444)", () => {
-  it("worktreeRemove forwards id + deleteBranch consent and stays silent on success", async () => {
-    const calls: Array<{ id: string; deleteBranch: boolean; wsHash?: string }> = [];
-    const deps = makeFakeCockpitDeps(missionBoard, {
-      worktreeRemove: async (id, deleteBranch, wsHash) => {
-        calls.push({ id, deleteBranch, wsHash });
-        return undefined;
-      },
-    });
-    await openCockpit(deps, { section: "worktrees" });
-    __createdPanels[0].webview.__receive({ type: "worktreeRemove", id: "mw-1", deleteBranch: true, wsHash: "ws-1" });
-    await flush();
-    expect(calls).toEqual([{ id: "mw-1", deleteBranch: true, wsHash: "ws-1" }]);
-    expect(toasts()).toEqual([]);
+function bundle(wsHash: string, worktree: CockpitWorktreeRow): CockpitWorkspaceBundle {
+  return {
+    control: {
+      folderName: wsHash,
+      workspaceRoot: `/${wsHash}`,
+      wsHash,
+      bridgeUrl: "http://127.0.0.1:1",
+      identity: null,
+      notes: [],
+    } as CockpitWorkspaceBundle["control"],
+    agents: [],
+    worktrees: [worktree],
+    approvals: [],
+  };
+}
+
+function harness(over: Partial<WorktreesDeps> = {}): {
+  manager: WorktreesPanelManager;
+  removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }>;
+  forgotten: Array<{ id: string; wsHash: string }>;
+} {
+  const removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }> = [];
+  const forgotten: Array<{ id: string; wsHash: string }> = [];
+  const deps: WorktreesDeps = {
+    collect: async () => [bundle("ws-a", row("ws-a", "a-only")), bundle("ws-b", row("ws-b", "b-only"))],
+    revealPath: () => {},
+    remove: async (id, deleteBranch, wsHash) => { removed.push({ id, deleteBranch, wsHash }); return undefined; },
+    forget: async (id, wsHash) => { forgotten.push({ id, wsHash }); return undefined; },
+    ...over,
+  };
+  return { manager: new WorktreesPanelManager(Uri.file("/ext"), deps), removed, forgotten };
+}
+
+async function open(manager: WorktreesPanelManager, wsHash: string): Promise<typeof __createdPanels[number]> {
+  manager.open(wsHash);
+  const panel = __createdPanels.at(-1)!;
+  panel.webview.__receive(readyMessage());
+  await flush();
+  await flush();
+  return panel;
+}
+
+function modelIds(panel: typeof __createdPanels[number]): string[] {
+  const message = panel.webview.posted.filter((item) => (item as { type?: string }).type === "worktreesModel").at(-1) as
+    | { model?: { worktrees?: Array<{ id: string }> } }
+    | undefined;
+  return message?.model?.worktrees?.map((item) => item.id) ?? [];
+}
+
+describe("SDD 485 D6 — standalone Worktrees dashboard", () => {
+  it("gives two projects distinct panels and distinct content", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    const panelB = await open(h.manager, "ws-b");
+    expect(h.manager.openKeys).toEqual([`${WORKTREES_VIEW_TYPE}|ws-a`, `${WORKTREES_VIEW_TYPE}|ws-b`]);
+    expect(modelIds(panelA)).toEqual(["a-only"]);
+    expect(modelIds(panelB)).toEqual(["b-only"]);
   });
 
-  it("a refusal (state changed since render) surfaces as a toast, never silent success", async () => {
-    const deps = makeFakeCockpitDeps(missionBoard, {
-      worktreeRemove: async () => "refused: worktree is occupied by 'codex'",
-    });
-    await openCockpit(deps, { section: "worktrees" });
-    __createdPanels[0].webview.__receive({ type: "worktreeRemove", id: "mw-1" });
+  it("panel A cannot remove project B even when the message claims B", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeRemove", id: "a-only", deleteBranch: true, wsHash: "ws-b" });
     await flush();
-    expect(toasts()).toEqual(["refused: worktree is occupied by 'codex'"]);
+    expect(h.removed).toEqual([{ id: "a-only", deleteBranch: true, wsHash: "ws-a" }]);
   });
 
-  it("worktreeForgetRecord forwards and surfaces its refusal the same way", async () => {
-    const forgotten: string[] = [];
-    const deps = makeFakeCockpitDeps(missionBoard, {
-      worktreeForgetRecord: async (id) => {
-        forgotten.push(id);
-        return id === "mw-gone" ? undefined : `record not found or refused: ${id}`;
-      },
-    });
-    await openCockpit(deps, { section: "worktrees" });
-    __createdPanels[0].webview.__receive({ type: "worktreeForgetRecord", id: "mw-gone" });
-    __createdPanels[0].webview.__receive({ type: "worktreeForgetRecord", id: "mw-nope" });
+  it("forget uses the immutable panel project too", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeForgetRecord", id: "ghost", wsHash: "ws-b" });
     await flush();
-    expect(forgotten).toEqual(["mw-gone", "mw-nope"]);
-    expect(toasts()).toEqual(["record not found or refused: mw-nope"]);
+    expect(h.forgotten).toEqual([{ id: "ghost", wsHash: "ws-a" }]);
   });
 
-  it("batch cleanup: a refused item drops out with its reason while the rest proceed", async () => {
-    const executed: string[] = [];
-    const deps = makeFakeCockpitDeps(missionBoard, {
-      worktreeRemove: async (id) => {
-        executed.push(`remove:${id}`);
-        // mw-b's state changed between the client's preview and this execution — refuse it.
-        return id === "mw-b" ? "an agent started occupying this path" : undefined;
-      },
-      worktreeForgetRecord: async (id) => {
-        executed.push(`forget:${id}`);
-        return undefined;
-      },
-    });
-    await openCockpit(deps, { section: "worktrees" });
-    __createdPanels[0].webview.__receive({
+  it("batch cleanup revalidates every well-formed item and ignores malformed entries", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({
       type: "worktreeBatchCleanup",
-      items: [
-        { id: "mw-a", op: "remove" },
-        { id: "mw-b", op: "remove" },
-        { id: "mw-c", op: "forget" },
-      ],
+      items: [{ id: "one", op: "remove", wsHash: "ws-b" }, { id: 42, op: "forget" }, { id: "two", op: "forget" }],
     });
     await flush();
-    expect(executed).toEqual(["remove:mw-a", "remove:mw-b", "forget:mw-c"]);
-    const summary = toasts().at(-1) ?? "";
-    expect(summary).toContain("2 done");
-    expect(summary).toContain("1 skipped");
-    expect(summary).toContain("mw-b: an agent started occupying this path");
+    await flush();
+    expect(h.removed).toEqual([{ id: "one", deleteBranch: false, wsHash: "ws-a" }]);
+    expect(h.forgotten).toEqual([{ id: "two", wsHash: "ws-a" }]);
   });
 
-  it("batch cleanup ignores malformed items instead of crashing the batch", async () => {
-    const executed: string[] = [];
-    const deps = makeFakeCockpitDeps(missionBoard, {
-      worktreeForgetRecord: async (id) => {
-        executed.push(id);
-        return undefined;
-      },
-    });
-    await openCockpit(deps, { section: "worktrees" });
-    __createdPanels[0].webview.__receive({
-      type: "worktreeBatchCleanup",
-      items: [{ id: "mw-ok", op: "forget" }, { id: 42, op: "forget" }, { op: "forget" }, "garbage", null],
-    });
+  it("surfaces an engine refusal instead of claiming success", async () => {
+    const h = harness({ remove: async () => "occupied by codex" });
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeRemove", id: "a-only" });
     await flush();
-    expect(executed).toEqual(["mw-ok"]);
-    expect(toasts().at(-1)).toContain("1 done");
+    expect(__getWarningMessageCalls().map((call) => call.message)).toContain("occupied by codex");
   });
 });

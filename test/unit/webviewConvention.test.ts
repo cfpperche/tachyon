@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
 import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
+import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
 // tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
@@ -98,6 +99,7 @@ describe("webview convention (spec 279)", () => {
       // reuses there is no tombstone and no `migrateLegacy`.
       tachyonHumanInbox: "HUMAN_INBOX_VIEW_TYPE",
       tachyonEngine: "ENGINE_VIEW_TYPE",
+      tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
@@ -485,5 +487,28 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
       expect(consumers).toContain(className);
       expect(shared).toContain(`.${className}`);
     }
+  });
+
+  it("every section app links definitions for the ck/ci classes its JSX consumes", () => {
+    const sources = stylesheetSourcesByName();
+    const violations: string[] = [];
+    for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section")) {
+      const jsxPath = `src/webview/${app.view}/App.tsx`;
+      if (!existsSync(jsxPath)) continue;
+      const surface = WEBVIEW_SURFACES.find((entry) => entry.view === app.view);
+      if (!surface) continue;
+      const linkedCss = linkedStylesheets(surface)
+        .flatMap((name) => sources.get(name) ?? [])
+        .map((file) => readFileSync(file, "utf8"))
+        .join("\n");
+      const used = new Set([...readFileSync(jsxPath, "utf8").matchAll(/\b(?:ck|ci)-[a-z0-9-]+/g)]
+        .map((match) => match[0].replace(/-$/, "")));
+      for (const className of used) {
+        if (!new RegExp(`\\.${className}(?![a-z0-9-])`).test(linkedCss)) {
+          violations.push(`${app.view}: uses .${className}, but none of its linked stylesheets defines it`);
+        }
+      }
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
   });
 });

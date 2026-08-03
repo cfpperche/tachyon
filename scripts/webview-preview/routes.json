@@ -981,27 +981,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "worktrees",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=worktrees",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "settings",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=settings",
     "frame": {
@@ -2016,6 +1995,24 @@
       "engine",
       "bridge",
       "control plane"
+    ]
+  },
+  {
+    "view": "worktrees",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=worktrees&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Worktrees",
+    "aliases": [
+      "worktrees",
+      "managed worktrees",
+      "checkout hygiene"
     ]
   },
   {

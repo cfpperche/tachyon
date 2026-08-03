@@ -26,6 +26,7 @@ import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/huma
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { engineModelMessage } from "../../src/webview/engine/messages";
+import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
@@ -149,11 +150,13 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
+      "/dist/webview/control-typography.css",
       "/dist/webview/engine-workspace.css",
       "/dist/webview/cockpit.css",
     ],
     frame: { w: 1100, h: 720 },
-    fixtures: Object.fromEntries(Object.entries(cockpitFixtures).filter(([, fixture]) => fixture.vm.section !== "engine")) as Record<string, Fixture>,
+    fixtures: Object.fromEntries(Object.entries(cockpitFixtures).filter(([, fixture]) =>
+      fixture.vm.section !== "engine" && fixture.vm.section !== "worktrees")) as Record<string, Fixture>,
     // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
     // a module (classic <script> injection dies with "Cannot use import statement outside a module").
     module: true,
@@ -437,6 +440,16 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => engineModelMessage(vm as never),
   },
+  // SDD 485 D6 — the fixture moved with the renderer: the same classified model now reaches the real
+  // standalone Worktrees bundle, with both shared sheets its production panel declares.
+  worktrees: {
+    bundle: "/dist/webview/worktrees.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/worktrees.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.worktrees },
+    module: true,
+    makeMessage: (vm) => worktreesModelMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -489,6 +502,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
   "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
   engine: { title: "Engine", aliases: ["engine", "bridge", "control plane"] },
+  worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

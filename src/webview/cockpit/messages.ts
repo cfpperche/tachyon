@@ -81,8 +81,6 @@ export interface CockpitStrings {
   egAttrProven: string;
   egAttrShared: string;
   egAttrUnproven: string;
-  worktreesTitle: string;
-  worktreesHint: string;
   runtimeConfigTitle: string;
   runtimeConfigHint: string;
   runtimeConfigPrototype: string;
@@ -305,33 +303,6 @@ export interface CockpitStrings {
   temporary: string;
   agent: string;
   change: string;
-  /** spec 444 — Worktrees hygiene groups + actions. */
-  wtReadyTitle: string;
-  wtReadyDesc: string;
-  wtReviewTitle: string;
-  wtReviewDesc: string;
-  wtOccupiedTitle: string;
-  wtOccupiedDesc: string;
-  wtRecordTitle: string;
-  wtRecordDesc: string;
-  wtRemoveCheckout: string;
-  /** t-e722ce — an agent worktree row: this tab shows it and Agent Studio removes it. */
-  wtAgentOwned: string;
-  wtAgentGone: string;
-  wtForgetRecord: string;
-  wtAlsoDeleteBranch: string;
-  wtSelectAll: string;
-  wtClearSelection: string;
-  wtSelected: string;
-  wtReviewConfirm: string;
-  wtConfirmTitle: string;
-  wtConfirmBody: string;
-  wtConfirmRun: string;
-  wtCancel: string;
-  wtEngineUnavailable: string;
-  wtBlocked: string;
-  wtOccupiedBy: string;
-  wtShowAll: string;
 }
 
 export type CockpitAction =
@@ -407,17 +378,7 @@ export type CockpitAction =
   /** t-ace77f — Overview's Handoff entry: the host resolves the workspace and navigates to the
    *  `project-handoff` route. No section to switch to any more — the tab is gone. */
   | { type: "openProjectHandoff" }
-  /** spec 444 — remove a classified-safe checkout by registry id. The engine re-validates
-   *  fail-closed (occupancy, dirty, ownership) on every call; a stale UI verdict is refused, never
-   *  forced through. `deleteBranch` is explicit per-click consent, honored only for
-   *  Tachyon-created branches (service-enforced). */
-  | { type: "worktreeRemove"; id: string; deleteBranch?: boolean; wsHash?: string }
-  /** spec 444 — forget a record-only tombstone row (registry only; disk untouched). */
-  | { type: "worktreeForgetRecord"; id: string; wsHash?: string }
-  /** spec 444 — batch cleanup: each item is an individual forget/remove the engine re-validates
-   *  independently, so an entry whose state changed since the preview drops out with a stated
-   *  reason instead of failing (or forcing) the whole batch. */
-  | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
+  ;
 
 /** Ephemeral pair offer — not part of the polled CockpitModel. */
 export type CompanionPairOffer =

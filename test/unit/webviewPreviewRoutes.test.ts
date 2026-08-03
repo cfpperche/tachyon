@@ -66,6 +66,7 @@ describe("preview route table", () => {
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
+      "/dist/webview/control-typography.css",
       "/dist/webview/engine-workspace.css",
       "/dist/webview/cockpit.css",
     ]);
@@ -130,7 +131,6 @@ describe("preview route table", () => {
       // SDD 485 D3 — and no "runtime" fixture: Runtime Ops has its own route below too, with all
       // seventeen of its fixtures reachable rather than the single one this list could carry.
       "validations",
-      "worktrees",
     ]);
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);

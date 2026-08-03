@@ -17,7 +17,9 @@ describe("cockpit model", () => {
     // section for it, and this list is what Control renders.
     expect(COCKPIT_SECTION_ORDER).not.toContain("mission");
     expect(COCKPIT_SECTION_ORDER).not.toContain("validations");
-    expect(COCKPIT_SECTION_ORDER).toContain("worktrees");
+    // SDD 485 D6 — Worktrees is now a standalone dashboard. The id remains decodable and the tile
+    // remains visible, but Control no longer renders this section.
+    expect(COCKPIT_SECTION_ORDER).not.toContain("worktrees");
     // t-e88c8a — the Deliveries tab was retired with the Delivery tool surface.
     expect(COCKPIT_SECTION_ORDER).not.toContain("deliveries");
     // SDD 485 D3 — Runtime Ops is a standalone `window` app, so Control renders no section for it. Its

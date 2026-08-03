@@ -5,6 +5,7 @@
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import { routes as cockpitRoutes } from "../../../src/cockpit/route";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/webview/human-inbox/viewModel";
@@ -18,7 +19,7 @@ import { sealExecutionEvent, type SealedExecutionEvent } from "../../../src/exec
 import { projectExecutions } from "../../../src/executionGraph/executionProjection";
 import { buildExecutionGraphVm } from "../../../src/cockpit/executionGraphVm";
 
-export const strings: CockpitStrings = {
+export const strings: CockpitStrings & WorktreesStrings = {
   title: "Control",
   subtitle: "Project sysadmin",
   navOverview: "Overview",
