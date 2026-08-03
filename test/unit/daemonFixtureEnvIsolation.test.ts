@@ -49,6 +49,28 @@ describe("daemon fixture env isolation (t-93ec7f)", () => {
     }
   });
 
+  it("FIXTURE_WORKERS covers every worker fixture on disk — a FOURTH one cannot escape by being new", () => {
+    // The list above is written by hand, which is correct: not every worker fixture is a daemon that
+    // could hold a live Bridge token, and that judgement is a human's. What must NOT be a human's job is
+    // NOTICING that a new one appeared. So the completeness of the list is checked against the directory
+    // rather than trusted: a fourth fixture makes this red, and whoever adds it has to classify it —
+    // either into FIXTURE_WORKERS, or into the exemption below with a reason.
+    //
+    // Exempt, with reasons measured in this task's repo scan: none today. When the first exemption is
+    // needed, it lands here as a named entry, not as a silent omission from the list above.
+    const EXEMPT: ReadonlySet<string> = new Set<string>();
+    const onDisk = fs.readdirSync(path.join(ROOT, "test/fixtures"))
+      .filter((n) => n.endsWith("Worker.ts"))
+      .filter((n) => !EXEMPT.has(n));
+    const unlisted = onDisk.filter((n) => !FIXTURE_WORKERS.includes(n as typeof FIXTURE_WORKERS[number]));
+    expect(
+      unlisted,
+      `worker fixtures on disk that FIXTURE_WORKERS does not name: ${unlisted.join(", ")}. If one of these ` +
+      "spawns a real daemon, add it to FIXTURE_WORKERS so its spawn sites are checked. If it cannot hold a " +
+      "live Bridge token, add it to EXEMPT with the reason — but decide, do not leave it unnamed.",
+    ).toEqual([]);
+  });
+
   it("every test that spawns an engine fixture worker builds env through isolatedDaemonChildEnv and passes env:", () => {
     const rows = testFilesReferencingWorkers();
     expect(rows.length).toBeGreaterThan(0);
@@ -61,17 +83,17 @@ describe("daemon fixture env isolation (t-93ec7f)", () => {
         row.source.includes("assertNoFleetLeak"),
         `${row.file} spawns ${row.workers.join(", ")} but does not call assertNoFleetLeak`,
       ).toBe(true);
-      // Every spawn( that launches the worker path must carry env: — catch a bare spawn reopening inheritance.
-      const spawnBlocks = row.source.match(/spawn\([\s\S]{0,400}?\{[\s\S]{0,200}?\}/g) ?? [];
-      const engineSpawns = spawnBlocks.filter((block) =>
-        FIXTURE_WORKERS.some((w) => block.includes("worker") || row.source.includes(w)),
-      );
-      // Fallback: if the regex missed a multi-line form, require at least one `env:` next to a spawn.
+      // Every spawn( that launches the worker path must carry env: — catch a bare spawn reopening
+      // inheritance. This is a whole-file check rather than a per-spawn one, and the limit is stated
+      // rather than hidden: a file with two spawns, one isolated and one bare, passes here. The
+      // per-spawn version needs a parser, and the three files this covers have one spawn each — so the
+      // honest guard is this one plus the fact that a fourth file is caught by the completeness test
+      // above. (An earlier revision computed a per-block match and then discarded it, which read like a
+      // stronger check than it was.)
       expect(
         /spawn\([\s\S]*?\benv\s*:/.test(row.source),
         `${row.file}: spawn of an engine fixture must pass env: (got no env: near spawn)`,
       ).toBe(true);
-      void engineSpawns;
     }
   });
 
