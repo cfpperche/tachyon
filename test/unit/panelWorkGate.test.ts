@@ -278,7 +278,10 @@ describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door c
     const lines = manager.split("\n");
     const ungated: string[] = [];
     lines.forEach((line, i) => {
-      if (!/\bentry\.binding\b/.test(line)) return;
+      // ANY receiver, not just one named `entry`. Bound to that name this guard had the very blindness
+      // it was written against, one level up: `for (const e of this.panels.values()) e.binding.replay(…)`
+      // is an ungated door that passed clean, and only the exact identifier `entry` was ever checked.
+      if (!/\.binding\b/.test(line)) return;
       const trimmed = line.trim();
       if (sanctionedLines.has(trimmed) || trimmed.includes("gate.run(")) return;
       ungated.push(`SectionPanelManager.ts:${i + 1}: ${trimmed} — reaches the app's domain outside the gate. Wrap it in gate.run(kind, …) or make it a gate option.`);

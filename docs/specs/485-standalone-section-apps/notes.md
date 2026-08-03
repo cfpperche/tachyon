@@ -553,3 +553,20 @@ the seam for it here is `binding.onReveal` plus `session.visible`. Worth naming 
 above could be read as a stronger promise than it is: a hidden panel does no work THROUGH THIS MANAGER.
 Owner: whoever migrates a section with a periodic host-side source (Fleet and the activity routes are the
 candidates), in that section's own PR.
+
+### Phase C — the manager's door guard was bound to one variable name (2026-08-03, review)
+
+C1's guard over `SectionPanelManager` correctly refused a substring match, citing Phase B's blind
+first cut. It then matched `/\bentry\.binding\b/` — the exact identifier. An ungated door written
+`for (const e of this.panels.values()) e.binding.replay(…)` passed clean; renaming it to `entry`
+made the same line go red.
+
+Same failure class as the one it was avoiding, one level up: the guard saw a spelling, not a shape.
+Widened to `/\.binding\b/` — any receiver. The allowlist is unchanged, since its entries are exact
+call lines and still match.
+
+Fail-before after the fix: the `e.binding` form goes red naming `SectionPanelManager.ts:258`. Clean
+tree: 20 passed.
+
+Worth stating because it happened twice in two phases: writing "not by substring" in a comment is
+not the same as proving the guard fails. Only the injection tells you which one you built.
