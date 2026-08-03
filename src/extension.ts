@@ -2300,7 +2300,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const { route, wsHash } = decodeCockpitPanelState(state);
     return openCockpit(makeCockpitDeps(), { revivedPanel: panel, route, wsHash });
   });
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
+  // SDD 485 C1 — `tachyonSectionAppFixture` is dispose-only for the same reason `tachyonAgentFixtureStudio`
+  // is: it is a dev-only proof surface that nothing here instantiates, so there is no manager to revive a
+  // panel INTO. `SectionPanelManager` itself does support revival (it persists project + identity and
+  // re-opens on the same key); that contract is exercised against a real `registerTrustedPanelSerializer`
+  // in `test/unit/sectionPanelManager.test.ts`, and C4/C5 wire it here for the apps that ship.
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 

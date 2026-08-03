@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { ROUTES, PREVIEW_ROUTE_OPTOUTS, buildCatalog } from "../../scripts/webview-preview/routes.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 
 // spec 278 Lane D — the route CATALOG smoke. routes.json is GENERATED from the route table (buildCatalog); this
 // test keeps the committed file in sync AND asserts every catalog route is structurally renderable (its view +
@@ -22,7 +23,10 @@ describe("webview preview route catalog (spec 278)", () => {
       const route = ROUTES[e.view];
       expect(route, `catalog view '${e.view}' not in the route table`).toBeTruthy();
       expect(route.fixtures[e.fixture], `fixture '${e.fixture}' missing for view '${e.view}'`).toBeTruthy();
-      expect(esbuild.includes(route.bundle.replace(/^\//, "")), `no esbuild entry for ${route.bundle}`).toBe(true);
+      // SDD 485 C2 — the standalone apps are entries of one splitting invocation (outdir + entryNames), so
+      // their output path is never a literal in esbuild.mjs; `buildsWebviewEntry` knows both build shapes.
+      const view = /^\/dist\/webview\/(.+)\.js$/.exec(route.bundle)?.[1] ?? "";
+      expect(buildsWebviewEntry(esbuild, view), `no esbuild entry for ${route.bundle}`).toBe(true);
       expect(e.url).toBe(`/scripts/webview-preview/index.html?view=${e.view}&fixture=${e.fixture}`);
       expect(e.frame).toEqual(route.frame);
     }

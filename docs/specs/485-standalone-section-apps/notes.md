@@ -92,6 +92,70 @@ The gate keys on `WebviewPanel.visible`. A panel side by side with the focused o
 at and must keep working — two live surfaces at once is the capability this whole spec buys, and
 gating on `active` would have broken it in the same change that enabled it.
 
+### Phase C — the manager's config is a manifest ROW plus one seam, and the seam has four members (2026-08-03)
+
+`plan.md` asked for "one `SectionPanelManager`, configured from the manifest entry". The shape that came
+out is `SectionAppConfig = { app: WebviewAppEntry } + declarative surface bits + bind(session) => binding`,
+and the two halves are deliberately different in kind:
+
+- everything DECLARATIVE (the manifest row, `styleFiles`, `title`, `iconName`, CSP passthroughs, the shell
+  extension points) is data a test can read. That is what keeps the Phase A promise: the conformance
+  contract inspects a manifest, not twelve heterogeneous classes;
+- everything BEHAVIOURAL is one function, `bind(session) => binding`, and the binding has four members:
+  `replay(kind)`, `resync()`, optional `onReveal()`, optional `onMessage()`. Nothing else — no lifecycle to
+  implement, no base class to subclass, no save flow to stub out.
+
+`replay` and `resync` are named after `panelWorkGate.ts`'s two catch-up branches on purpose. An app that
+implements them has, by construction, implemented its reveal behaviour; there is no separate "catch-up
+path" for an author to forget or for a test to be the only caller of. The first model an app ever posts
+goes through `replay` too (the `ready` handshake is claimed by `refreshKindFor`), so the catch-up path is
+the path that runs twenty times a session rather than one that only fires on reveal.
+
+**What was taken from `StudioPanelManagerBase`, and what was rejected.** Taken: the FORM — a declarative
+surface config, a `Map` on a composite key, reveal-on-reopen rather than a second panel, creation through
+the shared shell, and a persisted state that is the minimum the serializer needs. Rejected: the DIALECT.
+That base speaks `entity`/`patch`/`dirty`/`save`/`cancel`/CAS because a studio edits one record. A section
+app is the other thing — the host pushes a model at a screen that reads it — and pasting the studio
+vocabulary onto a dashboard would have handed all twelve apps a save flow none of them uses, and put the
+conformance contract back in front of twelve different message protocols.
+
+### Phase C — `session.post()` to a hidden panel is DROPPED, and the drop arms a resync (2026-08-03)
+
+Phase B's guard is static: it reads `Cockpit.ts` and fails on a `pushX?.()` outside the sanctioned sites.
+That is the right mechanism for one surface with a known set of doors. It is not enough for a CLASS that
+ten more apps will be built on, by authors who will not read its doc comment — a static guard can only
+know about doors in files it was pointed at.
+
+So the gate here is structural as well as tested. `SectionPanelManager` gives the domain exactly one way to
+reach the webview (`session.post`), and that one way asks `gate.visible` first: a post to a hidden panel
+posts NOTHING and calls `markSourceResync()`, so the panel rebuilds from scratch the moment someone looks
+at it. A bypass therefore cannot reach a hidden webview, and cannot leave it stale either — the two
+failure modes the gate exists to prevent — without any test having anticipated that particular bypass.
+
+It also covers the case no static guard would have caught anyway: an async load that STARTED while the
+panel was visible and resolves after the tab went behind another one. That is not sabotage, it is the
+ordinary shape of `await`, and it is how a hidden panel gets written to in practice.
+
+The static guard is still there (`panelWorkGate.test.ts` gained two cases pointed at this file: every
+`entry.binding.*` call sits in a gate option or inside `gate.run`, and there is exactly ONE `postMessage`
+site which checks visibility and arms the resync). Fail-before was run for both: injecting
+`setTimeout(() => entry.binding.replay(…))` goes red naming `SectionPanelManager.ts:360`, and adding a
+second `broadcast` post site goes red naming both offsets. Belt AND braces, because the braces are the
+part that scales to apps nobody has written yet.
+
+### Phase C — the CLIENT's own poll is gated by CONFIG, not by trust (2026-08-03)
+
+Phase B's loudest finding was that Control's hidden cost was not the event fan-out at all: it was the
+webview's own `setInterval(3000)`, kept alive by `retainContextWhenHidden: true`, running a full collect
+twenty times a minute behind another tab. The fix was host-side, in the `case "refresh"` handler.
+
+`SectionAppConfig.refreshKindFor(message)` is that fix generalized: an app declares which inbound messages
+mean "refresh me", and the manager routes those through the gate instead of to `onMessage`. The proof
+surface deliberately KEEPS a 3s client poll for this reason — it is the thing being defended against, so
+it should be present rather than politely omitted, and `sectionPanelManager.test.ts` drives the wire
+message a client actually sends rather than the gate object (0.56.159's lesson, the same way
+`hiddenPanelWork.test.ts` does).
+
 ## Deviations
 
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
@@ -214,6 +278,47 @@ Consequence: the gate needed an `onReveal` hook that fires on EVERY reveal, incl
 journal calls `none`. An activity log can grow while zero invalidations arrive, so hanging its
 catch-up off the journal's decision would have left it stale for exactly the case it exists to cover.
 
+### Phase C — the manager lives in `src/webview/shared/`, not `src/webview/` (2026-08-03)
+
+`plan.md`'s file table says `src/webview/SectionPanelManager.ts` *(new)*. It landed at
+`src/webview/shared/SectionPanelManager.ts` instead, and this is a correctness deviation rather than taste:
+Phase A's contract test resolves "does this surface mount through the shared shell?" by accepting either a
+direct `renderWebviewShell(` call in the host file OR an import of a module under `src/webview/shared/`
+that makes one (`sharedMountModules()` walks exactly that directory). At the plan's path, every app host
+that delegated panel creation to the manager would have failed the contract for mounting outside the
+shared shell — while in fact mounting through it. The manager is shared infrastructure and belongs beside
+`shell.ts`, `panelWorkGate.ts`, `panelSerializer.ts` and `studio/StudioPanelManagerBase.ts` anyway.
+
+### Phase C — an app manifest SEPARATE from `WEBVIEW_SURFACES`, and `esbuild.mjs` keeps its own copy (2026-08-03)
+
+Two questions needed one source or they would drift — what the manager configures itself from, and what
+the budget test measures — and neither is the question `WEBVIEW_SURFACES` answers (conformance posture,
+across surfaces that are not apps: a WebviewView, a static preview page, a plugin relay). So
+`src/webview/webviewApps.ts` is a second, smaller manifest, and `webviewAppBudget.test.ts` asserts every
+app row has a real surface row with the same bundle name, so the two cannot describe different worlds.
+
+The uncomfortable half: `esbuild.mjs` is JavaScript and cannot import a TypeScript module, so it carries
+its own `WEBVIEW_APP_VIEWS` array. Three alternatives were weighed and rejected — a JSON file both sides
+read (TS would infer `string`, not the literal unions that make a missing `cardinality` a compile error,
+and JSON carries no doc comments, which is where this repo keeps its reasoning); transpiling the manifest
+in-process inside `esbuild.mjs` (a build that must build itself before it can build); and deriving the
+entry list from the filesystem (every `src/webview/*/main.tsx`, which would sweep in surfaces that are not
+apps). What is there instead is a test that fails, by name and in both directions, when the two lists
+disagree — the same bargain the convention guard already takes when it reads `esbuild.mjs` as text.
+
+### Phase C — the chunk-hygiene roots are DISCOVERED, not named (2026-08-03)
+
+`scripts/webview-chunk-hygiene.mjs` seeded reachability from a hardcoded `["cockpit.js"]`, which was right
+while exactly one entry existed. With a multi-entry splitting invocation it becomes actively destructive:
+the whole point of one invocation is that the apps SHARE chunks, so a graph rooted only at Control prunes
+every chunk another app needs and the package audit then refuses a build that was correct. Roots are now
+every top-level `*.js` in `dist/webview` (IIFE bundles are harmless roots — they contain no chunk
+references), so an app added to the manifest can never be forgotten here. The chunk prefix moved with it:
+`cockpit-` named the one entry that used to exist, and the chunks belong to every app now, so it is `app-`.
+
+`webviewChunkHygiene.test.ts` gained the case that would have caught the old shape: two entries, one chunk
+imported only by the second, and a prune that must keep it.
+
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
@@ -284,6 +389,40 @@ journal would come back empty-handed. Per-panel costs one array per open panel a
 long replay. A journal that deduped kinds at record time would never overflow and the resync branch
 would be dead code — a branch that never runs is not a safety net, it is a comment.
 
+### Bundle size, before and after the multi-entry build (C2/C3)
+
+The number a future reader wants is "did putting the app count back cost size?", so here is the whole
+comparison in one place. All figures are uncompressed bytes of the real `node esbuild.mjs` output on this
+worktree, measured the same way the budget test measures.
+
+| | eager entry | reachable graph | chunks on disk |
+|---|---|---|---|
+| SDD 410's recorded baseline (`cockpitBundleBudget.test.ts`, gate 350 KB) | ~244 KB | not measured | not measured |
+| this worktree, BEFORE C2 (single-entry cockpit target) | **105.1 KB** (107,591 B) | 1.58 MB (1,661,961 B) | 29 files, 1,554,370 B |
+| after C2 — `cockpit.js` | **103.5 KB** (105,995 B) | 1.58 MB (1,661,592 B) | 30 files, 1,555,597 B |
+| after C2 — `section-app-fixture.js` | **1.9 KB** (1,951 B) | 37.9 KB (38,838 B) | — |
+
+**The headline is the second app's price: ~3.2 KB total** (1,951 B of entry + 1,227 B of new chunk). All
+three chunks it reaches are shared with Control — that is the splitting invocation doing exactly what it
+was chosen for, and `webviewAppBudget.test.ts` asserts it as a test rather than reporting it as a fact
+("proves the apps SHARE chunks"). Twelve independent IIFE builds would instead have copied Preact and the
+kit twelve times, which is the concrete shape of the budget hole `spec.md` rejected that option over.
+
+`cockpit.js` did not grow when a second app joined its graph; it got **1.6 KB smaller**. About 0.1 KB of
+that is shorter chunk filenames (`app-` replacing `cockpit-` across ~25 references) and the rest is
+modules that became shared chunks once there were two consumers. It is a small number and it is reported
+as one — the point is the direction, not the magnitude.
+
+**410's ~244 KB is a historical figure, not a measurement taken here.** Control's eager entry has roughly
+halved since that baseline was written, for reasons that predate this spec (more of the shell moved behind
+lazy imports). The gate carried forward from it is unchanged at 350 KB, now applied PER APP rather than to
+the one app that used to exist.
+
+**What is deliberately not gated:** the shipped union (both entries + all 30 chunks = 1.59 MB / 1,663,543
+B). A single global ceiling would go red for reasons that have nothing to do with an app's own cost — one
+app's growth failing another app's build — and the two per-app budgets plus the shared-chunk assertion
+already bound the thing that matters. The number is recorded here so a reader can watch it move.
+
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
@@ -349,3 +488,51 @@ goes red naming `Cockpit.ts:973` and the fix. Clean tree: 18 passed.
 
 The lesson is the one A5 encodes and this note repeats from the other side: a guard nobody has
 watched fail is a guard nobody knows works.
+
+### Phase C — the proof surface is dev-only, and the trusted serializer is therefore only proven in test (2026-08-03)
+
+C1–C3 deliver a mechanism and move no section, so the only app on it today is
+`section-app-fixture` — dev-only in exactly the sense spec 350's two studio fakes are: `extension.ts`
+never instantiates its manager, no command contributes it, and it is reachable only from its own tests and
+the preview harness. Following the precedent those two set, dev-only buys it NO exemption from the Phase A
+contract: it is a `conform` row whose CSS is held to the same scan as every shipped surface.
+
+The consequence to be honest about: its `extension.ts` serializer policy is **dispose-only**, because
+there is no live manager instance to revive a panel into. `SectionPanelManager` does implement revival (it
+persists `project` + `identity` and re-opens on the same key), and that contract is exercised end to end
+against a real `registerTrustedPanelSerializer` in `sectionPanelManager.test.ts` — the test registers the
+serializer, feeds it the state read back out of the RENDERED page rather than a re-derived copy, and
+asserts the revived panel lands on the same key and is not disposed. What is NOT proven here is a real
+window reload, which needs an app that ships: **C4/C5 own that**, and D12 owns it at N panels.
+
+### Phase C — no visual evidence was produced, and here is exactly why (2026-08-03)
+
+`plan.md` says every phase after B is visible. C1–C3 is the seam in that claim: no section moved, no
+shipped surface changed, and `cockpit/App.tsx` was not touched. The one thing a human could look at is the
+dev-only proof surface, which no user can reach.
+
+It does carry a preview harness route (`?view=section-app-fixture`, four fixtures: `document`,
+`document-second-identity`, `dashboard`, `revealed-resync`), so the evidence is CHEAP for whoever wants
+it — but no screenshots were taken in this change, at either width, and none are claimed. The two-width
+sweep belongs to the phases that move a surface a human uses, starting with C4. Recording the absence
+rather than skipping it silently, per the repository convention.
+
+### Phase C — Control is in the app manifest, and Phase E takes it back out (2026-08-03)
+
+`WEBVIEW_APPS` has a `host` union: `{ host: "section", cardinality }` for the apps `SectionPanelManager`
+drives, and `{ host: "control" }` for Control itself. Control is listed because it SHARES the build — it
+is the reason the split chunks have a second consumer at all today, and its eager size is the number 410's
+budget was written about — but the manager refuses to be constructed over that row rather than defaulting
+its cardinality to something nobody declared. When Phase E removes Control, the row goes with it.
+
+### Phase C — the manager gates the doors it OWNS; a host's own timers are still the host's problem
+
+`SectionPanelManager` gates three doors by construction: the fan-out (`refresh`), inbound webview messages
+an app claims through `refreshKindFor`, and every post. What it cannot gate is work a host starts on its
+own account and never routes through the session — a `setInterval` in the app's host file, an `fs.watch`,
+a subscription registered elsewhere. Phase B hit exactly this and answered it per-source (the activity feed
+is paused via `ActivityFeedIO.paused`; the agent pane's co-attach poll is armed/cleared on view state), and
+the seam for it here is `binding.onReveal` plus `session.visible`. Worth naming because the doc comment
+above could be read as a stronger promise than it is: a hidden panel does no work THROUGH THIS MANAGER.
+Owner: whoever migrates a section with a periodic host-side source (Fleet and the activity routes are the
+candidates), in that section's own PR.

@@ -1,29 +1,59 @@
 /**
- * t-06a542 — keep dist/webview/chunks aligned with what cockpit.js can actually load.
+ * t-06a542 — keep dist/webview/chunks aligned with what the built app entries can actually load.
  *
- * esbuild content-hashed `chunks/cockpit-[name]-[hash].js` files accumulate across rebuilds when
- * the directory is not wiped: 0.56.110 shipped 134 `cockpit-App-*.js` (~9.7 MB) while cockpit.js
- * only referenced ~24. That is package bloat and artifact-diff noise, not a runtime correctness
- * bug — but packaging must not ship unreachable chunks.
+ * esbuild content-hashed chunk files accumulate across rebuilds when the directory is not wiped:
+ * 0.56.110 shipped 134 `cockpit-App-*.js` (~9.7 MB) while cockpit.js only referenced ~24. That is package
+ * bloat and artifact-diff noise, not a runtime correctness bug — but packaging must not ship unreachable
+ * chunks.
  *
- * Reachability is a BFS over static `chunks/<basename>` references starting at cockpit.js (and any
- * other ESM entry that may import the same chunk tree). Dynamic import URLs in the esbuild output
- * still contain the chunk path as a string, so a simple path scan is enough.
+ * SDD 485 C2 — the graph now has MORE THAN ONE ROOT. The splitting invocation builds one entry per
+ * standalone app (`dist/webview/<view>.js`) and the whole point of one invocation is that they SHARE
+ * chunks, so reachability seeded from a single hardcoded `cockpit.js` would delete every chunk the other
+ * apps need the moment Control stops being the only entry. Two changes follow from that, and neither is
+ * cosmetic:
+ *
+ *  - the roots are DISCOVERED (every top-level `*.js` in the directory) rather than named, so an app added
+ *    to the manifest can never be forgotten here — a forgotten root reads as "prune everything it owns";
+ *  - a chunk kept alive by ANY entry survives, which is what makes a shared chunk shared.
+ *
+ * Reachability is a BFS over static `chunks/<basename>` references. Dynamic import URLs in the esbuild
+ * output still contain the chunk path as a string, so a simple path scan is enough.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-// Entry (cockpit.js) imports as `./chunks/cockpit-….js`; chunk-to-chunk imports are
-// same-directory `./cockpit-….js`. Both must seed the graph or shared helpers look "stale".
-const CHUNK_REF_RE = /(?:chunks\/|\.\/)(cockpit-[A-Za-z0-9_.-]+\.js)/g;
+/**
+ * The chunk filename prefix (`chunkNames: "chunks/app-[name]-[hash]"` in esbuild.mjs). It exists so a chunk
+ * reference is unambiguous in minified output: an entry imports `./chunks/app-….js` and a chunk imports its
+ * sibling as `./app-….js`, and nothing else in dist/webview is named that way. Before 485 this was
+ * `cockpit-`, which named the one entry that existed; the chunks are shared by every app now.
+ */
+export const WEBVIEW_CHUNK_PREFIX = "app-";
+
+// Entry imports as `./chunks/app-….js`; chunk-to-chunk imports are same-directory `./app-….js`.
+// Both must seed the graph or shared helpers look "stale".
+const CHUNK_REF_RE = new RegExp(String.raw`(?:chunks\/|\.\/)(${WEBVIEW_CHUNK_PREFIX}[A-Za-z0-9_.-]+\.js)`, "g");
+
+/**
+ * The ESM entries that root the graph: every top-level `.js` in the webview dir. Non-splitting IIFE
+ * bundles (sidebar, agent-pane, mermaid, …) live there too and simply contribute no chunk references.
+ * @param {string} webviewDir
+ * @returns {string[]} basenames, sorted
+ */
+export function webviewEntryFiles(webviewDir) {
+  if (!fs.existsSync(webviewDir)) return [];
+  return fs.readdirSync(webviewDir)
+    .filter((name) => name.endsWith(".js") && !name.startsWith("."))
+    .sort();
+}
 
 /**
  * @param {string} webviewDir absolute or cwd-relative path to dist/webview
- * @param {string[]} entryFiles basenames under webviewDir that seed the graph (default cockpit.js)
+ * @param {string[]} [entryFiles] basenames under webviewDir that seed the graph (default: every top-level .js)
  * @returns {Set<string>} basenames under chunks/ that are reachable
  */
-export function reachableWebviewChunkBasenames(webviewDir, entryFiles = ["cockpit.js"]) {
+export function reachableWebviewChunkBasenames(webviewDir, entryFiles = webviewEntryFiles(webviewDir)) {
   const chunksDir = path.join(webviewDir, "chunks");
   const reachable = new Set();
   const queue = [];
@@ -94,7 +124,7 @@ export function pruneUnreachableWebviewChunks(webviewDir) {
 }
 
 /**
- * Fail closed at package time if any chunk on disk is not reachable from the cockpit entry graph.
+ * Fail closed at package time if any chunk on disk is not reachable from a built entry.
  * @param {string} webviewDir
  */
 export function assertWebviewChunksReachable(webviewDir) {
@@ -104,14 +134,14 @@ export function assertWebviewChunksReachable(webviewDir) {
   const onDisk = fs.readdirSync(chunksDir).filter((name) => name.endsWith(".js") && !name.startsWith("."));
   if (onDisk.length === 0) return;
 
-  const entry = path.join(webviewDir, "cockpit.js");
-  if (!fs.existsSync(entry)) {
+  const entries = webviewEntryFiles(webviewDir);
+  if (entries.length === 0) {
     throw new Error(
-      `webview chunk audit: dist/webview/chunks has ${onDisk.length} file(s) but cockpit.js is missing — refuse to package a partial Control shell`,
+      `webview chunk audit: dist/webview/chunks has ${onDisk.length} file(s) but no top-level app entry (*.js) exists — refuse to package a partial webview build`,
     );
   }
 
-  const reachable = reachableWebviewChunkBasenames(webviewDir);
+  const reachable = reachableWebviewChunkBasenames(webviewDir, entries);
   const stale = onDisk.filter((name) => !reachable.has(name)).sort();
   if (stale.length === 0) return;
 

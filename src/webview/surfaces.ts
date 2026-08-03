@@ -176,6 +176,17 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // StudioFrame's four CONTENT regions (client-side, spec 350 T5), which is kit usage, not a page-frame
   // departure — so it `conform`s too.
   { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, editorHome: "dev-only", posture: "conform" },
+  // SDD 485 C1–C3 — the section-app proof surface: the first (and so far only) app driven by the generic
+  // `SectionPanelManager`, and the second entry of the code-split build without which "Preact and the kit
+  // are extracted into shared chunks" would be a claim with no witness. Dev-only in the same sense as the
+  // two spec-350 fakes above — `extension.ts` never instantiates its manager and no command contributes it
+  // — and, following the precedent those two set, dev-only buys NO exemption: it mounts through the shared
+  // shell (via SectionPanelManager), links design-system.css, and its own stylesheet neither styles the
+  // page frame nor mints `--ds-*` values. It `conform`s, and the contract checks that rather than trusting
+  // this sentence.
+  // `editorHome: "dev-only"` and not "standalone": the mechanism is for standalone apps, but THIS surface
+  // never reaches a user, and the field records where a surface actually lives, not what it demonstrates.
+  { viewId: "tachyonSectionAppFixture", view: "section-app-fixture", hostFile: "src/webview/SectionAppFixturePanel.ts", mode: "live", converted: true, editorHome: "dev-only", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
   // Studio (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
   // "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; standalone bundles

@@ -1,0 +1,11 @@
+/* SDD 485 C2 — the section-app proof surface's OWN stylesheet: per-app CSS is half of what "each app owns
+   its bootstrap, error boundary and CSS" means, and it is what the Phase A contract reads to decide whether
+   this surface departs from the design system. It deliberately does not: no `html`/`body` rules (that would
+   be `page-chrome`), no `--ds-*` declarations (that would be `token-scale`) — every value below READS the
+   shared scale. This surface's manifest row says `conform`, and this file is why that is true. */
+.saf-page { display: grid; gap: var(--ds-3); padding: var(--ds-3); max-width: 720px; }
+.saf-facts { display: grid; grid-template-columns: max-content 1fr; gap: var(--ds-1) var(--ds-3); margin: 0; align-items: baseline; }
+.saf-facts dt { color: var(--ds-muted); font-size: var(--ds-small); text-transform: uppercase; letter-spacing: .05em; }
+.saf-facts dd { margin: 0; }
+.saf-mono { font-family: var(--ds-mono); overflow-wrap: anywhere; }
+.saf-note { color: var(--ds-muted); font-size: var(--ds-small); margin: 0; }

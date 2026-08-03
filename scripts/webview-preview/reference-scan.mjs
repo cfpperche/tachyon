@@ -119,21 +119,29 @@ export function callerFiles(roots = CALLER_ROOTS) {
 }
 
 /**
- * The webview bundles esbuild.mjs declares it emits. Two shapes, because the build has two:
+ * The webview bundles esbuild.mjs declares it emits. Three shapes, because the build has three:
  *   - `outfile: "dist/webview/<name>.js"` — every single-entry target (sidebar, pin-preview, …);
- *   - `outdir: "dist/webview"` + `entryNames: "<name>"` — the code-split ESM cockpit target, which has no
- *     `outfile` at all (esbuild.mjs even `delete`s the inherited one). Reading only `outfile:` would call
- *     the LIVE cockpit.js undeclared and fail every repointed test — the exact false positive that would
- *     get this guard deleted in its first week.
+ *   - `outdir: "dist/webview"` + `entryNames: "<name>"` — a code-split target with a FIXED output name and
+ *     no `outfile` at all (esbuild.mjs even `delete`s the inherited one). Reading only `outfile:` would
+ *     call such a bundle undeclared and fail every test repointed at it — the exact false positive that
+ *     would get this guard deleted in its first week;
+ *   - SDD 485 C2 — `entryNames: "[name]"`, the MULTI-entry splitting invocation, whose output names are the
+ *     keys of its entry map. `[name]` is a template, not a filename, so it is expanded from the build's own
+ *     `WEBVIEW_APP_VIEWS` array; without that, every standalone app would read as undeclared at once.
  */
 export function declaredWebviewBundles(esbuildSource = readFileSync("esbuild.mjs", "utf8")) {
   const code = blankComments(esbuildSource);
+  const appViewsBlock = /const WEBVIEW_APP_VIEWS = \[([\s\S]*?)\];/.exec(code)?.[1] ?? "";
+  const appViews = [...appViewsBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const bundles = new Set();
   for (const m of code.matchAll(/outfile:\s*"(dist\/webview\/[^"]+\.js)"/g)) bundles.add(m[1]);
   for (const m of code.matchAll(/outdir:\s*"(dist\/webview)"/g)) {
     // entryNames may sit either side of outdir inside the same config object literal.
     const window = code.slice(Math.max(0, m.index - 600), m.index + 600);
-    for (const e of window.matchAll(/entryNames:\s*"([^"/]+)"/g)) bundles.add(`${m[1]}/${e[1]}.js`);
+    for (const e of window.matchAll(/entryNames:\s*"([^"/]+)"/g)) {
+      if (e[1] === "[name]") for (const view of appViews) bundles.add(`${m[1]}/${view}.js`);
+      else bundles.add(`${m[1]}/${e[1]}.js`);
+    }
   }
   return bundles;
 }

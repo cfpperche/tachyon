@@ -256,6 +256,47 @@ describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door c
     expect(ungated, ungated.join("\n")).toEqual([]);
   });
 
+  // SDD 485 C1 — the same guard, pointed at the class every future app's doors will be built on. Control is
+  // one surface with a known set of pushes; `SectionPanelManager` is the shape ten more will arrive in, so a
+  // door added there is a door added to all of them at once.
+  const manager = readFileSync("src/webview/shared/SectionPanelManager.ts", "utf8");
+
+  it("SectionPanelManager reaches the domain ONLY through the gate", () => {
+    // The three sanctioned sites are the gate's own option callbacks (the reveal's catch-up, which runs
+    // BECAUSE the panel just became visible) and anything wrapped in `gate.run`. `onMessage`/`dispose` are
+    // not work the gate owns: one is an inbound message the config chose not to claim as a refresh, the
+    // other is teardown. Matched against an allowlist of exact call lines, never by substring containment —
+    // Phase B's own guard was blind exactly there (notes.md, "its first cut was blind").
+    const sanctionedLines = new Set([
+      "replay: (kind) => entry.binding.replay(kind),",
+      "resync: () => entry.binding.resync(),",
+      "onReveal: () => entry.binding.onReveal?.(),",
+      "entry.binding.onMessage?.(raw);",
+      "entry.binding.dispose?.();",
+      "entry.binding = config.bind(session);",
+    ]);
+    const lines = manager.split("\n");
+    const ungated: string[] = [];
+    lines.forEach((line, i) => {
+      if (!/\bentry\.binding\b/.test(line)) return;
+      const trimmed = line.trim();
+      if (sanctionedLines.has(trimmed) || trimmed.includes("gate.run(")) return;
+      ungated.push(`SectionPanelManager.ts:${i + 1}: ${trimmed} — reaches the app's domain outside the gate. Wrap it in gate.run(kind, …) or make it a gate option.`);
+    });
+    expect(ungated, ungated.join("\n")).toEqual([]);
+  });
+
+  it("SectionPanelManager has exactly ONE post site, and it asks whether anyone is looking", () => {
+    // A post is the only way work reaches a webview, so the gate is structural rather than advisory: a
+    // second post site, or one that stopped consulting visibility, would let a hidden panel be written to
+    // by every app built on this class at once.
+    const posts = [...manager.matchAll(/webview\.postMessage\(/g)];
+    expect(posts.map((m) => manager.slice(0, m.index!).split("\n").length), "more than one postMessage site in SectionPanelManager.ts").toHaveLength(1);
+    const before = manager.slice(Math.max(0, posts[0].index! - 400), posts[0].index!);
+    expect(before, "the post site no longer checks panel visibility — a hidden panel would be written to").toContain("entry.gate.visible");
+    expect(before, "a dropped post must arm a rebuild on reveal, or the panel comes back with a hole in it").toContain("markSourceResync()");
+  });
+
   it("keeps every ControlRefreshKind reachable — a kind with no case is a silently dead door", () => {
     const union = /type ControlRefreshKind =([\s\S]*?);/.exec(cockpit)?.[1] ?? "";
     expect(union, "ControlRefreshKind not found").not.toBe("");

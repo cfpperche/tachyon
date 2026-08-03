@@ -1550,5 +1550,81 @@
       "agent shell fixture",
       "spec 350"
     ]
+  },
+  {
+    "view": "section-app-fixture",
+    "fixture": "document",
+    "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document",
+    "frame": {
+      "w": 880,
+      "h": 520
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Section app (mechanism proof)",
+    "aliases": [
+      "section app",
+      "section panel",
+      "standalone app",
+      "spec 485"
+    ]
+  },
+  {
+    "view": "section-app-fixture",
+    "fixture": "document-second-identity",
+    "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document-second-identity",
+    "frame": {
+      "w": 880,
+      "h": 520
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Section app (mechanism proof)",
+    "aliases": [
+      "section app",
+      "section panel",
+      "standalone app",
+      "spec 485"
+    ]
+  },
+  {
+    "view": "section-app-fixture",
+    "fixture": "dashboard",
+    "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=dashboard",
+    "frame": {
+      "w": 880,
+      "h": 520
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Section app (mechanism proof)",
+    "aliases": [
+      "section app",
+      "section panel",
+      "standalone app",
+      "spec 485"
+    ]
+  },
+  {
+    "view": "section-app-fixture",
+    "fixture": "revealed-resync",
+    "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=revealed-resync",
+    "frame": {
+      "w": 880,
+      "h": 520
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Section app (mechanism proof)",
+    "aliases": [
+      "section app",
+      "section panel",
+      "standalone app",
+      "spec 485"
+    ]
   }
 ]
