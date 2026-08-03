@@ -95,11 +95,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // a pure redirect stub — it never calls createWebviewPanel, matching every other retired panel's
   // shape below. The trusted serializer for the legacy "tachyonApprovals" viewType stays registered
   // in extension.ts: a revived pre-410 panel disposes itself and redirects into Control → Approvals.
-  // The standalone Plugins panel was retired (t-d23f93, 2026-07-20) — Plugins is a cockpit section
-  // only (src/webview/plugins/App.tsx stays, lazy-imported by cockpit/App.tsx; the per-workspace
-  // need is served by Control's shell workspace selector, t-d16a39). The trusted serializer for
-  // the legacy "tachyonPlugins" viewType stays registered in extension.ts: a revived pre-410 panel
-  // disposes itself and redirects into Control → Plugins.
   // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio panel (spec 255) was retired: it's a
   // Control studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by cockpit/App.tsx
   // via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it). The trusted
@@ -128,6 +123,24 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // links design-system.css, and inspector.css styles no page frame, mints no `--ds-*` values and gives
   // `#root` no height — it is a page-scrolling document, so it links no page-frame.css either.
   { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/TmuxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  // SDD 485 D2 (2026-08-03) — Plugins is a STANDALONE APP again, reversing 410 Phase B's retirement
+  // (t-d23f93). It is the `dashboard` kind and the case the spec's table always described: a plugin
+  // install is a per-workspace fact end to end, so the per-workspace need this row's previous comment
+  // said was "served by Control's shell workspace selector" is served by the CARDINALITY now — one panel
+  // per project, keyed on it, and re-opening reveals rather than duplicating.
+  //
+  // The viewType is the RETIRED one, reused: `tachyonPlugins` still names this app (its bundle directory
+  // is `plugins` too), and the pre-410 panel persisted `{schemaVersion, view, wsHash}` whose one scoping
+  // field maps exactly onto a dashboard's `project` — so restore REVIVES the panel through a one-field
+  // rename (`migrateLegacy`) instead of disposing and reopening. C4's call, not C5's; see
+  // `PLUGINS_VIEW_TYPE`'s own comment for what separates the two.
+  //
+  // `conform`, and the contract checks it: it mounts through the shared shell (via SectionPanelManager),
+  // links design-system.css, and `plugins.css` styles no page frame, mints no `--ds-*` values and gives
+  // `#root` no height — a page-scrolling document, so no `page-frame.css` either. What it DID gain is its
+  // own `--ds-page-pad-*` rule, which used to come from cockpit.css: page pad is not page chrome (the
+  // scan reads `html`/`body` selectors), so this stays a conforming surface that now owns its own pad.
+  { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 485 A1 — Control is a full-bleed multi-section app: cockpit.css hard-resets `html, body, #root` with
   // `!important` so the embedded sections' standalone CSS cannot re-impose a page pad (that reset is the
   // reason cockpitCssParity.test.ts pins cockpit.css LAST). Own page chrome, shared kit → `extend`.

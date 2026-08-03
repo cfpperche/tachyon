@@ -109,7 +109,6 @@ import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
 import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
-import type { PluginsPanelManager } from "./PluginsPanel.js";
 import { isStudioRoute, parentRoute } from "../cockpit/route.js";
 import {
   reconcileStudioTeardown,
@@ -233,7 +232,7 @@ export interface CockpitRuntimeConfig {
 
 /**
  * Control — editor visual hub.
- * Embedded product surfaces: Approvals, Inbox, Plugins, Runtime Ops,
+ * Embedded product surfaces: Approvals, Inbox, Runtime Ops,
  * plus rich native Fleet / Worktrees / Settings modules.
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
@@ -340,7 +339,14 @@ export interface CockpitDeps {
   }) => Promise<SavedAgentRemovalCommitResult>;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
-  plugins: PluginsPanelManager;
+  /**
+   * SDD 485 D2 — open (or reveal) the Plugins APP for one project. Control no longer renders Plugins, so
+   * the doors it still owns for that screen — Overview's Jump card and a persisted/deep-linked
+   * `section:plugins` — leave Control instead of navigating inside it. Takes the project, because
+   * `dashboard` cardinality is one panel PER PROJECT and that project is half the panel's key. Sibling of
+   * C5's `openBoard` and D1's `openTmux`.
+   */
+  openPlugins: (wsHash?: string) => void;
   /**
    * SDD 485 D1 — open (or reveal) the tmux APP. Control no longer renders the inspector, so the two doors
    * it still owns for that screen — Overview's Jump card and a persisted/deep-linked `section:tmux` — leave
@@ -525,8 +531,6 @@ function strings(): CockpitStrings {
     runtimeConfigOpaqueSections: t("Opaque sections"),
     runtimeConfigReadError: t("Could not read this runtime configuration source"),
     runtimeConfigUnavailable: t("Runtime configuration is unavailable because this workspace configuration did not load."),
-    pluginsTitle: t("Plugins"),
-    pluginsHint: t("Install, update, and integrity (embedded)."),
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),
@@ -804,6 +808,12 @@ let openBoardDocument: (() => void) | undefined;
  */
 let openTmuxApp: (() => void) | undefined;
 
+/**
+ * SDD 485 D2 — and the same seam for Plugins. Fourth of these, and the second to carry a project: a
+ * `dashboard` panel opens AGAINST one, which is exactly the distinction a shared table would erase.
+ */
+let openPluginsApp: (() => void) | undefined;
+
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
@@ -837,6 +847,15 @@ function navigate(route: CockpitRoute): void {
     // client and never touches extension.ts, so a redirect living in the command wiring would have missed
     // it entirely. Here, every door funnels through one commit point — same reason as C4's and C5's above.
     openTmuxApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "plugins") {
+    // SDD 485 D2 — and the same for Plugins. Four doors could ask Control for it (the
+    // `tachyon.openPlugins` command, the launcher tile, Overview's Jump card, and a revived/deep-linked
+    // `section:plugins`), and the Jump card is again the one that proves the placement: it posts
+    // `onSetSection("plugins")` from inside the client and never touches extension.ts. Fourth entry in
+    // this block, and the block is now the readable inventory of what has left Control.
+    openPluginsApp?.();
     route = routes.section("overview");
   }
   reconcileActivityTeardown(route);
@@ -1034,11 +1053,6 @@ export function refreshCockpitValidations(): void {
 export function refreshCockpitHandoff(): void {
   refreshControl("handoff");
 }
-
-const PLUGIN_ACTION_TYPES = new Set([
-  "checkUpdates", "checkPluginUpdate", "install", "update", "reinstall", "remove",
-  "reselect", "repair", "rehydrate", "confirm", "cancel", "openConfig", "openDocs", "installExternal",
-]);
 
 // SDD 485 C5 — the bounded/coalesced agent-liveness pass went WITH the board: it stays in
 // src/cockpit/missionVm.ts (a pure function of a workspace target, with no Control in it) and
@@ -1306,6 +1320,7 @@ export async function openCockpit(
         openTaskDocument = undefined;
         openBoardDocument = undefined;
         openTmuxApp = undefined;
+        openPluginsApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1314,7 +1329,6 @@ export async function openCockpit(
         lastCommittedNonStudioRoute = routes.section("overview");
         stopActivityBinding();
         stopStudioBinding();
-        deps.plugins.unbindControlEmbed();
       }
     });
   }
@@ -1330,6 +1344,11 @@ export async function openCockpit(
   // SDD 485 D1 — no scope to resolve and none to pass: `window` cardinality is precisely the statement that
   // this screen is not about a project, so there is nothing here for a scope change to retarget.
   openTmuxApp = () => deps.openTmux();
+  // SDD 485 D2 — the fourth of these seams, and the second that carries a project: a dashboard panel is
+  // opened AGAINST one, so the scope handed over is the one Control itself would have rendered the section
+  // for. A launcher click, a Jump card and a revived route therefore land on the SAME project's panel — and
+  // re-opening reveals it rather than making a second, which is what `cardinality: "dashboard"` buys.
+  openPluginsApp = () => deps.openPlugins(controlWorkspaceScope.current);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1789,14 +1808,6 @@ export async function openCockpit(
     live.webview.postMessage(runtimeConfigSnapshotMessage(snapshot));
   };
 
-  const bindPluginsIfNeeded = () => {
-    if (isSection(currentRoute, "plugins")) {
-      deps.plugins.bindControlEmbed(live.webview, controlWorkspaceScope.current);
-    } else {
-      deps.plugins.unbindControlEmbed();
-    }
-  };
-
   /**
    * SDD 485 C4 — Control no longer RENDERS a task detail; the app does (`TaskDetailPanel.ts`). What used to
    * live here — `sendTaskDetail`, `handleTaskDetailAction`, `resolveTaskDetailWs` and the single
@@ -2037,7 +2048,6 @@ export async function openCockpit(
     // pending state.
     const readyEpoch = navEpoch;
     const readyKey = routeKey(currentRoute);
-    bindPluginsIfNeeded();
     if (isSection(currentRoute, "validations")) await sendValidations();
     else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
@@ -2045,7 +2055,6 @@ export async function openCockpit(
     else if (currentRoute.kind === "inbox-item") await sendInboxItem();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
-    else if (isSection(currentRoute, "plugins")) deps.plugins.refreshControlEmbed();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
     else if (isStudioRoute(currentRoute)) {
@@ -2066,7 +2075,7 @@ export async function openCockpit(
    * `sendModel()` is the push a delta never carries — nothing in the `views-changed` fan-out asks
    * for it, so a hidden panel that missed a scope- or fleet-shaped change cannot recover it kind by
    * kind — and `sendSectionModule()` is already the complete "refresh whatever route is mounted"
-   * dispatcher, wider than the fan-out (it reaches runtime, tmux and plugins too). Reusing the poll
+   * dispatcher, wider than the fan-out (it reaches runtime and the studios too). Reusing the poll
    * body rather than inventing a resync path means the recovery is the code Control runs twenty
    * times a minute, not a branch that only ever executes on reveal.
    */
@@ -2411,12 +2420,6 @@ export async function openCockpit(
         return;
       }
 
-      // Plugin product actions only (install/update/…). Never steal cockpit `ready`/`refresh` —
-      // those must always run the Control shell init/model + sendSectionModule path (which binds the embed).
-      if (PLUGIN_ACTION_TYPES.has(type) && isSection(currentRoute, "plugins")) {
-        if (deps.plugins.handleControlEmbedMessage(msg as never)) return;
-      }
-
       const c = msg as unknown as CockpitAction;
       switch (c.type) {
         case "studioNavCheckpointAck":
@@ -2487,7 +2490,7 @@ export async function openCockpit(
           return;
         case "switchControlWorkspace":
           // t-d16a39 — "" = All workspaces. Re-send model (aggregate sections re-scope) AND the
-          // active section's module (per-workspace sections re-resolve; plugins embed re-binds).
+          // active section's module (per-workspace sections re-resolve).
           // t-610705 (Phase C.0) — a scope switch also bumps navEpoch: it's the same "the world
           // changed" event class as navigation (a slow response built for the old scope must not
           // land after the switch).
@@ -2849,7 +2852,6 @@ export async function openCockpit(
     const inboxIsActive = isSection(currentRoute, "inbox") || currentRoute.kind === "inbox-item";
     const runtimeIsActive = isSection(currentRoute, "runtime");
     const validationsIsActive = isSection(currentRoute, "validations");
-    const pluginsIsActive = isSection(currentRoute, "plugins");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = currentRoute.kind === "project-handoff";
@@ -2927,8 +2929,6 @@ export async function openCockpit(
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
-        pluginsIsActive ? uri("plugins.tailwind.css") : undefined,
-        pluginsIsActive ? uri("plugins.css") : undefined,
         approvalsIsActive ? uri("approval.css") : undefined,
         inboxIsActive ? uri("human-inbox.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
@@ -2998,8 +2998,6 @@ export async function openCockpit(
           "inbox-item": uri("human-inbox.css"),
           runtime: uri("runtime-ops.css"),
           validations: uri("validations.css"),
-          "plugins-tailwind": uri("plugins.tailwind.css"),
-          plugins: uri("plugins.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
           probes: uri("probes.css"),

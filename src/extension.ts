@@ -1103,10 +1103,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     () => workspaces().map((ws) => ws.plugin),
   );
   context.subscriptions.push({ dispose: () => pluginSurfaces.dispose() });
-  // spec 250 — the editor-area Plugins View (browse/install/update/remove; one per root), opened by the
-  // sidebar title button. Step B = read-only render of the installed list from the committed lockfile.
-  const pluginsPanels = new PluginsPanelManager(context.extensionUri, () => workspaces().map((ws) => ws.git), () => pluginSurfaces.refreshAll());
+  // spec 250 → SDD 485 D2 — the editor-area Plugins app (browse/install/update/remove), a standalone
+  // `dashboard`: ONE editor tab per project, revealed rather than duplicated. Per-project is the whole of
+  // its cardinality and it is a fact about the domain rather than a policy — the lockfile, the runtime
+  // detection and every apply are rooted at one `workspaceRoot`.
+  const pluginsPanels = new PluginsPanelManager(
+    context.extensionUri,
+    () => workspaces().map((ws) => ws.git),
+    () => pluginSurfaces.refreshAll(),
+    undefined,
+    controlWorkspaceScope,
+  );
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
+  /**
+   * Open (or reveal) Plugins for a project — the same shape as `openBoard` below, and for the same reason:
+   * a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here, rather than
+   * handing the panel a scope it would later observe changing.
+   */
+  const openPluginsTab = (hash?: string): void => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there are no plugins to manage."), "warn");
+      return;
+    }
+    pluginsPanels.open(ws.wsHash);
+  };
   // t-610705 (SDD 410 Phase C.2) — the standalone Probes inspector was retired: it's a Control
   // subroute now (fleet/agent/<name>/probes; src/webview/probes/App.tsx stays, lazy-imported by
   // cockpit/App.tsx).
@@ -1821,9 +1842,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       },
     },
-    plugins: pluginsPanels,
     // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
     openBoard,
+    // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
+    // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
+    openPlugins: (hash?: string) => openPluginsTab(hash),
     // SDD 485 D1 — and the tmux app, which takes no argument at all: `window` cardinality means there is
     // one panel for the window and nothing to key it on.
     openTmux: () => tmuxPanels.open(),
@@ -2241,10 +2264,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   let workspaceReviversReady = false;
   const deferredWorkspacePanelRevives: Array<() => void> = [];
   const workspacePanelReviveDeferral = {
-    shouldDefer: (state: { wsHash?: unknown }) =>
-      !workspaceReviversReady
-      && typeof state.wsHash === "string"
-      && !workspaces().some((ws) => ws.wsHash === state.wsHash),
+    // SDD 485 D2 — `project` as well as `wsHash`: a section app persists the workspace under the manifest's
+    // name for it, and a deferral that only knew the pre-485 spelling would silently stop deferring the
+    // moment a surface migrated — which is the shape of regression nobody notices, because the panel still
+    // opens, just briefly wrong.
+    shouldDefer: (state: { wsHash?: unknown; project?: unknown }) => {
+      const hash = typeof state.project === "string" ? state.project : typeof state.wsHash === "string" ? state.wsHash : undefined;
+      return !workspaceReviversReady && hash !== undefined && !workspaces().some((ws) => ws.wsHash === hash);
+    },
     onReady: (callback: () => void): void => {
       deferredWorkspacePanelRevives.push(callback);
     },
@@ -2294,7 +2321,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(state.wsHash) });
   });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  // SDD 485 D2 — the Plugins app's own restore, and the second REUSED viewType (after C4's and D1's):
+  // the panel VS Code hands back is kept, keyed on the project it persisted, so a reload puts Plugins back
+  // in its tab instead of opening a second one. A pre-410 record carrying `wsHash` instead of `project` is
+  // accepted too — `migrateLegacy` renames the one field, which is the whole of the shim and has no UI.
+  // The revive deferral stays: it is what keeps a panel restored BEFORE its workspace is attached from
+  // painting "no workspace attached" for a moment (see `workspacePanelReviveDeferral`, which now reads
+  // either field name).
+  registerTrustedPanelSerializer<SectionPanelState | PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
     panel.dispose();
     if (isCockpitSingletonClaimed()) return;
@@ -2697,6 +2731,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           tmuxPanels.open();
           return Promise.resolve();
         }
+        // SDD 485 D2 — the third.
+        if (resolved === "plugins") {
+          openPluginsTab();
+          return Promise.resolve();
+        }
         return openCockpit(makeCockpitDeps(), { section: resolved });
       }
       return openCockpit(makeCockpitDeps());
@@ -3048,12 +3087,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         : { section: "overview" });
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
-      // spec 410 (t-d23f93) — Plugins live in Control (cockpit section); no second peer panel.
+      // SDD 485 D2 — Plugins opens as its own editor tab, or reveals the one already open for this
+      // project. The workspace picker stays: this is the door a human takes with no project in hand, and
+      // a dashboard has to be opened against one.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), {
-        section: "plugins",
-        ...(ws ? { wsHash: ws.wsHash } : {}),
-      });
+      openPluginsTab(ws?.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 — open the Board for one project. SDD 485 C5: its own editor tab, revealed if already open.

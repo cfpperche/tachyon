@@ -504,6 +504,106 @@ emits a `views-changed` for tmux, inside Control or outside it. The socket is po
 manager's `refresh()` exists for a caller that does not yet exist, and `markSourceResync()` for the
 same reason.
 
+### Phase D2 — Plugins is the `dashboard` the spec always described, and the fact is in the domain (2026-08-03)
+
+D1 found a third cardinality by not fitting. D2 fits, and the reason is worth stating because it is the
+shape the remaining eight should be checked against: **a plugin install is a per-workspace fact end to
+end.** The lockfile is `<workspaceRoot>/.tachyon/plugins-lock.json`, `detectRuntimes` reads that root, and
+every apply — install, update, reinstall, remove, rehydrate, repair — writes into it. Two attached projects
+therefore have two genuinely different plugin sets, and two panels showing two answers is CORRECT rather
+than duplicated. That is the exact inverse of tmux, whose socket is one per user and whose model includes
+sessions owned by workspaces this window never opened.
+
+The test that carries it (`pluginsApp.test.ts`, "gives two PROJECTS a panel each") gives one project a
+lockfile and the other none, so the two panels post visibly different models. A cardinality assertion that
+only counted panels would pass under a shared model too.
+
+### Phase D2 — the viewType question is not "was the tombstone a redirect" (2026-08-03)
+
+Three prior calls looked contradictory: C4 REUSED `tachyonTaskDetail`, C5 refused `tachyonMissionControl`,
+D1 reused `tachyonServerInspector` for free. All three tombstones were dispose-and-redirect serializers, so
+that cannot be the discriminator, and reading the notes as if it were is how a fourth migration picks wrong.
+
+The question that actually separates them is two-part: **does the id still NAME this app, and does its
+legacy record map onto this app's key with no residue?**
+
+| | id still names it | legacy record maps | call |
+|---|---|---|---|
+| C4 task detail | yes | `{wsHash, taskId}` → `{project, identity}` | reuse + 2-field rename |
+| C5 Board | **no** — the screen is the Board, the row is `{view: mission-control, viewId: tachyonBoard}` | would have | new id; legacy stays a redirect |
+| D1 tmux | yes | `{schemaVersion, view}` is ALREADY a `window` state | reuse, no shim |
+| D2 Plugins | yes | `{wsHash}` → `{project}` | reuse + 1-field rename |
+
+So `tachyonPlugins` is reused: the app IS Plugins, its bundle directory IS `plugins`, and the pre-410
+panel's one scoping field is exactly the one field a dashboard key is made of. Restore therefore REVIVES
+the panel VS Code hands back instead of disposing and reopening it, which is the difference between a
+reload and a human watching one tab close and another open. `migrateLegacy` is the whole shim and has no
+UI; a record with neither field migrates to an empty project, which `sectionPanelKey` refuses, so the panel
+is disposed — the same outcome an unreadable state already gets.
+
+One consequence rode along. `workspacePanelReviveDeferral` in `extension.ts` read `state.wsHash` only, so
+the moment a surface migrated its persisted spelling the deferral silently stopped deferring — the panel
+still opens, just briefly showing "no workspace attached". It reads `project ?? wsHash` now. Worth naming
+because it is a shared helper that quietly stops applying to exactly the surfaces this phase produces:
+Approvals is the only other user today, and D13's Pins will be the next.
+
+### Phase D2 — the page PAD was the trap, and it is t-32c872 one property over (2026-08-03)
+
+The brief warned about `page-frame.css`, and the answer here is NO: `plugins.css` gives `#root` no height,
+styles no page frame and mints no `--ds-*`, so Plugins page-scrolls like the task detail and the inspector.
+Linking the frame would have FAILED `webviewConvention.test.ts`'s mirror rule (a sheet linked without being
+anchored to), and `overflow: hidden` is the wrong frame for a document that scrolls.
+
+What did have to move is the page PAD. `.ck-plugins-root`'s `padding: var(--ds-page-pad-*)` lived in
+**`cockpit.css`** — the sheet a standalone app does not link — so without moving the rule the whole surface
+renders flush against the tab edge, at every width, on every fixture. Same failure CLASS as t-32c872 (a
+surface consuming page chrome another sheet provides and then stopping sitting next to it), one property
+over, and **the Phase A consumption check cannot see it**: that check resolves `#root` percentage-height
+chains, and a missing pad is neither a height nor a chain.
+
+So it is asserted in `embedPagePad.test.ts` instead, which is where "who owns this surface's page pad"
+already lives for Validations and Runtime Ops. Fail-before was run rather than asserted: deleting the rule
+from `plugins.css` goes red naming the surface —
+
+    × the Plugins root applies the Fleet page pad from its OWN stylesheet
+      → no rule found for `.ck-plugins-root`
+
+— and the mirror case ("cockpit.css no longer pads it") is what stops a copy being left behind in both
+places, which would make the real owner ambiguous for the next reader.
+
+**For D3–D10, this is the check to run before anything else:** grep `cockpit.css` for your surface's root
+class. Four of the remaining sections have a rule there today (`.ck-embed-host > main` covers the
+`<main>`-rooted ones, which re-assert their own pad; the div-rooted ones do not).
+
+### Phase D2 — the client's poll needed a NEW word, because `refresh` already meant something (2026-08-03)
+
+Every migrated app so far inherited its own timer from Control's 3s shell poll, and D1's inspector simply
+reused its existing `refresh` message for it. That would have been a bug here: Plugins' `refresh` is the
+human pressing the Refresh button, and the host answers it by DROPPING every update check found so far
+(`io.setChecks({})`). A poll sharing the word would run that drop twenty times a minute, and a just-found
+"update available" badge would vanish within three seconds — **t-0fc9ee's bug arriving by a new road**, in
+a phase whose whole claim is that behaviour does not change.
+
+So `plugins/messages.ts` gained `POLL`, and `pluginsRefreshKind` claims `READY` + `POLL` for the gate while
+`refresh` stays a human action routed to `onMessage`. `pluginsApp.test.ts` drives twenty polls and asserts
+the stored check survives, then drives one `refresh` and asserts it does not.
+
+### Phase D2 — the embed's session state was a singleton assumption, and the cardinality is what exposes it (2026-08-03)
+
+C4 predicted this for the whole of Phase D ("every 'we are a singleton, so one slot is enough' in Control is
+a defect waiting for its section to be migrated"). Plugins had three: `checks`, `pending` and `busy` lived
+in ONE closure, with "one at a time" as its own comment — true of the Control embed, false of a dashboard.
+
+They live inside `bind` now, which is per panel by construction rather than by a Map someone has to
+remember to key. The concrete failures a shared closure would have produced, and which
+`pluginsApp.test.ts` drives directly: project A's consent drawer confirmable by project B's token — against
+B's workspace root, on an INSTALL surface — and one project's slow clone silently swallowing the other's
+click through a shared busy guard.
+
+The t-0fc9ee cases from `pluginsControlEmbed.test.ts` came with it, rewritten rather than deleted: what the
+embed had to defend by NOT rebinding, a per-panel closure gets for free, so the same properties are asserted
+against the hazard that still exists (the poll) instead of the one that cannot recur (the rebind).
+
 ## Deviations
 
 ### C6/C7 — one window scope, resolved only at open (2026-08-03)

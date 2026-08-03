@@ -110,8 +110,6 @@ export const ROUTES: Record<string, Route> = {
   },
   // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
   // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.
-  // t-d23f93 — the standalone "plugins" route previewed the retired standalone panel; Plugins is a
-  // cockpit-only section now — use ?view=cockpit&fixture=plugins (same App.tsx, same fixture VM).
   // t-610705 (SDD 410 Phase C.2) — the standalone "activity" and "probes" routes previewed the
   // retired Activity/Probes panels; both are Fleet subroutes now — use ?view=cockpit&fixture=
   // agent-activity / agent-probes (same App.tsx components, same fixture VMs, via the cockpit
@@ -129,8 +127,7 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/vscode-theme.css",
       // SDD 485 C5 — no mission-control sheets: the Board is a standalone app with its own route below,
       // and Control stopped linking them in the same change (cockpitCssParity asserts the two agree).
-      "/dist/webview/plugins.tailwind.css",
-      "/dist/webview/plugins.css",
+      // SDD 485 D2 — and no plugins sheets, for the same reason and in the same change.
       "/dist/webview/approval.css",
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
@@ -196,15 +193,11 @@ export const ROUTES: Record<string, Route> = {
         }
       } else if (model.section === "runtime-config") {
         msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
-      } else if (model.section === "plugins") {
-        // Multiple cockpit fixtures share section "plugins"; identity picks which plugins VM rides along
-        // (same pattern as "nav-pending"). t-fb216a runtime-gap; t-4e5f11 source-changed + update-available.
-        let plugins = pluginsFixtures.default?.vm;
-        if (vm === cockpitFixtures["plugins-runtime-gap"]?.vm) plugins = pluginsFixtures["runtime-gap"]?.vm;
-        else if (vm === cockpitFixtures["plugins-update-available"]?.vm) plugins = pluginsFixtures["update-available"]?.vm;
-        else if (vm === cockpitFixtures["plugins-source-changed"]?.vm) plugins = pluginsFixtures["source-changed"]?.vm;
-        if (plugins) msgs.push(pluginsMessage(plugins));
       }
+      // SDD 485 D2 — no `section === "plugins"` arm: Plugins has its own route in this table now, for the
+      // same reason C4's task detail and C5's Board do. The identity-matching this arm used to do (four
+      // cockpit fixtures sharing one section, disambiguated by object identity) is gone with it — the
+      // plugins route names its fixtures directly, which is what a route of one's own buys.
       // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (the Fleet
       // subroutes below all nav to a section with no embed push of its own for THEM, so this just adds
       // the subroute's own content on top).
@@ -384,6 +377,25 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => [inspectorInitMessage(inspectorStrings), inspectorModelMessage(vm as never)],
   },
+  // SDD 485 D2 — Plugins, standalone again, so it gets its own route back for the same reason the task
+  // detail, the Board and the inspector did: this renders the REAL shipped `plugins.js` with the exact
+  // stylesheet list `PluginsPanel.ts` links, rather than the same component embedded inside Control.
+  //
+  // No `pageFrame`: Plugins is a page-scrolling document (like the task detail and the inspector), links no
+  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized `#frame` is the right
+  // model of what a real webview gives it. 880 is this repo's wide measurement width; the height is
+  // generous because the four card states are measured on a list, and `plugins.css`'s own
+  // `@media (max-width: 720px)` is what makes the 360 pass worth taking (it needs the BROWSER viewport
+  // set, not only `?width=` — t-b24282).
+  plugins: {
+    bundle: "/dist/webview/plugins.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: pluginsFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => pluginsMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -432,6 +444,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "mission-control": { title: "Board", aliases: ["board", "mission control", "task board", "kanban"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
+  plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

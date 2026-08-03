@@ -1,4 +1,24 @@
-/* outer pad: .ck-plugins-root / cockpit embed rule — Fleet tokens */
+/* SDD 485 D2 — the page pad, and it lives HERE now.
+ *
+ * It used to be `cockpit.css`'s (`.ck-embed-host > .ck-plugins-root, .ck-plugins-root { padding:
+ * var(--ds-page-pad-*) }`), because inside Control this surface was an embed and Control owned the page.
+ * A standalone app IS the page, and cockpit.css is not in its stylesheet list — without this rule the
+ * whole surface renders flush against the tab edge.
+ *
+ * This is t-32c872's shape one property over: a surface that CONSUMES page chrome another sheet provides
+ * and stops sitting next to it. The Phase A consumption check cannot see this one — it reads `#root`
+ * height chains, and a missing pad is neither a height nor a chain — so `embedPagePad.test.ts` asserts it
+ * instead, beside the same claim it already makes for Validations and Runtime Ops. It is the same three
+ * tokens every other product root uses (`.insp-root`, `.approval-root`, `.validations-main`), so this is
+ * conformance to the Fleet baseline rather than page chrome of its own. */
+.ck-plugins-root {
+  box-sizing: border-box;
+  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
+  width: 100%;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+}
 .ds-head { margin: 0; padding: 0; }
 /* spec 278 — Plugins view panel-specific styles, extracted from PluginsPanel.ts's inline <style> (spec 252)
    into one shared source linked by BOTH the real webview panel AND the dev preview harness (no drift).

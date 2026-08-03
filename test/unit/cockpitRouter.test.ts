@@ -11,7 +11,6 @@ import { legacyMissionControlTarget, type WorkspaceMissionControlTarget } from "
 import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
 import { isCockpitSingletonClaimed, markCockpitSingletonClaimed, clearCockpitSingletonClaim } from "../../src/webview/cockpitSingleton.js";
 import { ApprovalPanelManager } from "../../src/webview/ApprovalPanel.js";
-import { PluginsPanelManager } from "../../src/webview/PluginsPanel.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 /**
@@ -289,16 +288,11 @@ describe("revive precedence — legacy shims skip their redirect once Control is
     expect(__getExecutedCommands().some((c) => c.command === "tachyon.openApprovals")).toBe(true);
   });
 
-  it("PluginsPanelManager.deserialize redirects when unclaimed, no-ops when already claimed", () => {
-    const mgr = new PluginsPanelManager(undefined as never, () => []);
-    const panel = { dispose: () => {} } as never;
-
-    mgr.deserialize(panel, { schemaVersion: 1, view: "tachyonPlugins", wsHash: "ws-1" });
-    expect(__getExecutedCommands().some((c) => c.command === "tachyon.openPlugins")).toBe(true);
-
-    __resetVscodeMock();
-    markCockpitSingletonClaimed();
-    mgr.deserialize(panel, { schemaVersion: 1, view: "tachyonPlugins", wsHash: "ws-1" });
-    expect(__getExecutedCommands().some((c) => c.command === "tachyon.openPlugins")).toBe(false);
-  });
+  // SDD 485 D2 — the Plugins case left this suite with the redirect it was about. There is no
+  // dispose-and-redirect for `tachyonPlugins` any more: the app REUSES that viewType, so a revived panel
+  // is kept and re-keyed rather than thrown away and re-requested through a command, and the
+  // `isCockpitSingletonClaimed()` guard went with it (that guard existed because the redirect would
+  // otherwise navigate a Control panel someone else had already restored — opening an app touches no
+  // Control state). What replaced this case is `pluginsApp.test.ts`'s revive block, which drives a REAL
+  // `registerTrustedPanelSerializer` with both the app's own state and the pre-410 `{wsHash}` record.
 });

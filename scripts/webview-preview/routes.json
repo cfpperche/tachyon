@@ -1065,90 +1065,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "plugins",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "plugins-runtime-gap",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-runtime-gap",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "plugins-update-available",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-update-available",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "plugins-source-changed",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=plugins-source-changed",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "worktrees",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=worktrees",
     "frame": {
@@ -1655,6 +1571,101 @@
       "server inspector",
       "tmux server inspector",
       "sessions"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "update-available",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=update-available",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "runtime-gap",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=runtime-gap",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
+    ]
+  },
+  {
+    "view": "plugins",
+    "fixture": "source-changed",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=source-changed",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
     ]
   },
   {

@@ -2,7 +2,14 @@ import * as vscode from "vscode";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { WorkspaceGitPresentationTarget } from "../shell/WorkspacePresentation.js";
-import { isCockpitSingletonClaimed } from "./cockpitSingleton.js";
+import {
+  SectionPanelManager,
+  type SectionAppConfig,
+  type SectionPanelState,
+  type SectionPanelTarget,
+} from "./shared/SectionPanelManager.js";
+import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import {
   detectRuntimes,
   loadPluginFromSource,
@@ -21,7 +28,7 @@ import {
   type InstallProvenance,
 } from "../plugins/engine.js";
 import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
-import { pluginsMessage, consentMessage, busyMessage, resultMessage, type PluginsActionType } from "./plugins/messages.js";
+import { pluginsMessage, consentMessage, busyMessage, resultMessage, POLL, READY, type PluginsActionType } from "./plugins/messages.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
 import { gatherToolPlan } from "../plugins/toolPlan.js";
@@ -33,13 +40,37 @@ import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReq
 import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
+/**
+ * The viewType, and it is the RETIRED one on purpose — the fourth call in this spec's series, and the one
+ * that makes the rule readable. C4 REUSED `tachyonTaskDetail` and paid a two-field rename for it; C5 could
+ * NOT reuse `tachyonMissionControl`; D1 reused `tachyonServerInspector` for free.
+ *
+ * The question that decides it is not "was the tombstone a redirect" — all three were — but **does the id
+ * still NAME this app, and does its legacy record map onto this app's key with no residue?** For the Board
+ * the answer was no on the first half: the product screen is called the Board, its manifest row is
+ * `{view: "mission-control", viewId: "tachyonBoard"}`, and `tachyonMissionControl` names a screen that no
+ * longer exists under that name. Here both halves are yes — the app IS Plugins, its bundle directory IS
+ * `plugins`, and the pre-410 panel's one scoping field (`wsHash`) is exactly the one field a `dashboard`
+ * key is made of. So `migrateLegacy` renames it and the panel VS Code hands back is REUSED: a window
+ * closed since before 410 gets its Plugins tab back rather than watching one close and another open, and
+ * there is no second viewType left behind for a future reader to keep in sync.
+ */
 export const PLUGINS_VIEW_TYPE = "tachyonPlugins";
 
+/**
+ * The persisted shape the STANDALONE panel wrote before SDD 410 retired it. It is not what this app
+ * persists — `SectionPanelManager` writes `project` — but the viewType is the same, so a window that has
+ * been closed since before 410 can still hand us one of these. `migrateLegacy` below is the whole of the
+ * compatibility shim, and it has no UI: it translates ONE field name.
+ */
 export interface PluginsPanelState {
   schemaVersion: 1;
   view: typeof PLUGINS_VIEW_TYPE;
   wsHash: string;
 }
+
+/** the one invalidation kind this app knows: "the plugin state you are showing may be stale". */
+type PluginsRefreshKind = "plugins";
 
 /** The op the user is consenting to — held host-side between preview and confirm (the apply re-checks TOCTOU). */
 type PendingOp =
@@ -115,58 +146,181 @@ interface PanelIO {
 }
 
 /**
- * spec 250 → spec 410 (t-d23f93) — Plugins host service. Originally the editor-area Plugins View
- * panel manager (one WebviewPanel per workspace root); since SDD 410 Phase B, Plugins opens as
- * Control → Plugins (cockpit section) and this manager no longer creates peer panels — `open`/
- * `deserialize` only redirect legacy opens/revives (ApprovalPanelManager pattern), with the
- * per-workspace need served by Control's shell-level workspace selector (t-d16a39). What remains
- * REAL here is the host side of the Plugins product surface, driven through the Control embed:
- * the HOST gathers the model (detectRuntimes + committed lockfile + buildPluginsViewModel — all
- * I/O lives here) and routes the interactive surface (install-by-source, the BLOCKING consent
- * drawer, apply actions with TOCTOU re-checks, lazy update-checks; async ops serialized by a busy
- * flag). The Preact webview renders it (never imports vscode/engine).
+ * spec 250 → spec 410 (t-d23f93) → SDD 485 D2 — the Plugins app, and the second Phase D migration.
+ *
+ * Originally the editor-area Plugins View panel manager (one WebviewPanel per workspace root); SDD 410
+ * Phase B retired it into a Control section; this phase reverses that retirement onto the generic
+ * `SectionPanelManager`, so Plugins is once again its own editor tab — and can therefore sit BESIDE the
+ * agent terminal whose plugin it is about, which is the capability ceiling `spec.md` reversed the app
+ * count for.
+ *
+ * ## Why `dashboard`, and why that is not the same question D1 asked
+ *
+ * A dashboard is one panel per section PER PROJECT, and a plugin install is a per-workspace fact all the
+ * way down: the lockfile is `<workspaceRoot>/.tachyon/plugins-lock.json`, `detectRuntimes` reads that
+ * root, and every apply below writes into it. Two attached projects genuinely have two different plugin
+ * sets, so two panels showing two answers is the CORRECT outcome — the opposite of tmux (D1), whose
+ * socket is one per user and whose model includes sessions owned by workspaces this window never opened.
+ * That is what made tmux a `window` app and makes this one the dashboard the spec always expected.
+ *
+ * ## What this file owns, and what it does not
+ *
+ * The key (`viewId | project`), reveal-on-reopen, the shared shell, the persisted state, revive, and the
+ * `PanelWorkGate` that makes a hidden panel do no work and a revealed one never stale all belong to
+ * `SectionPanelManager`. What is left here is the domain, unchanged by the move: the HOST gathers the
+ * model (detectRuntimes + committed lockfile + buildPluginsViewModel — all I/O lives here) and routes the
+ * interactive surface (install-by-source, the BLOCKING consent drawer, apply actions with TOCTOU
+ * re-checks, lazy update-checks; async ops serialized by a busy flag). The Preact webview renders it and
+ * never imports vscode/engine.
+ *
+ * ## The session state became PER PANEL, and that was a latent singleton assumption
+ *
+ * `checks` / `pending` / `busy` lived in one closure because the Control embed was one session — "one at
+ * a time" was its own comment, true of a singleton and false of a dashboard. They live inside `bind` now,
+ * which is per panel by construction. This is C4's tombstone-cache finding arriving in the shape notes.md
+ * predicted for the whole of Phase D: with two projects open, a shared `pending` would let project A's
+ * consent drawer be confirmed by project B's token, and a shared `busy` would make one project's clone
+ * silently swallow the other's click.
+ *
+ * ## Hidden work
+ *
+ * Two doors reach this app and both are gated by construction: the client's own 3s poll (claimed by
+ * `pluginsRefreshKind`, so the gate answers it host-side whatever timer a client version runs) and every
+ * `session.post`. There is no fan-out door — nothing in the extension host emits a `views-changed` for
+ * plugins, inside Control or outside it; the lockfile is read on demand, not watched. `refresh()` exists
+ * for a caller that does not yet exist, and `markSourceResync()` for the same reason.
  */
-/** Control-monolith embed: the Plugins message surface bound into Control's webview. */
-interface ControlPluginsEmbed {
-  webview: vscode.Webview;
-  ws: WorkspaceGitPresentationTarget;
-  io: PanelIO;
-  post: () => void;
-}
-
 export class PluginsPanelManager {
-  /** The Control embed (plugins section). One at a time. */
-  private embed: ControlPluginsEmbed | undefined;
+  private readonly manager: SectionPanelManager<PluginsRefreshKind>;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly getWorkspaces: () => WorkspaceGitPresentationTarget[],
     private readonly onPluginsChanged: () => void = () => undefined,
-  ) {}
+    app: WebviewAppEntry = webviewApp("plugins"),
+    workspaceScope?: ControlWorkspaceScope,
+  ) {
+    this.manager = new SectionPanelManager<PluginsRefreshKind>(extensionUri, this.configFor(app), workspaceScope);
+  }
 
-  /** spec 410 (t-d23f93) — legacy open path: redirect into Control's Plugins section. */
-  open(wsHash?: string): void {
-    void vscode.commands.executeCommand("tachyon.openPlugins", wsHash);
+  /** Open Plugins for one project, or REVEAL the panel already open for it. */
+  open(project: string): void {
+    this.manager.open({ project });
+  }
+
+  openInCurrentScope(): boolean {
+    return this.manager.openInCurrentScope();
+  }
+
+  /** The fan-out door, for a caller that has one. Returns how many panels actually did work. */
+  refresh(): number {
+    return this.manager.refresh("plugins");
+  }
+
+  /** the upstream event cursor expired: every hidden panel rebuilds instead of replaying on reveal. */
+  markSourceResync(): void {
+    this.manager.markSourceResync();
   }
 
   /**
-   * A revived pre-410 standalone panel is disposed and re-opened as Control → Plugins — UNLESS
-   * Control's own revival/open already claimed the singleton this session (t-610705 Phase C.0):
-   * VS Code doesn't guarantee revive order across view types, and a redirect after the real
-   * Cockpit already restored would clobber whatever route the user is already looking at.
-   * `open()` above is unguarded — it is a live, user-initiated jump and must always navigate.
+   * Revive a panel VS Code restored across a window reload. Accepts BOTH this app's own persisted state
+   * and the pre-410 standalone panel's `{wsHash}` — same viewType, so both can arrive here, and a legacy
+   * record deserves the project it named rather than a disposed tab.
    */
-  deserialize(panel: vscode.WebviewPanel, state: PluginsPanelState): void {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    void vscode.commands.executeCommand("tachyon.openPlugins", state.wsHash);
+  deserialize(panel: vscode.WebviewPanel, state: SectionPanelState | PluginsPanelState): void {
+    this.manager.deserialize(panel, migrateLegacy(state));
+  }
+
+  get openKeys(): string[] {
+    return this.manager.openKeys;
+  }
+
+  private workspaceFor(target: SectionPanelTarget): WorkspaceGitPresentationTarget | undefined {
+    // STRICT, exactly as the Board's is (C5): the project IS half this panel's key, so resolving it
+    // loosely would let two panels land on one workspace under different keys, or let a panel silently
+    // retarget when the sidebar's project selector moves. A project that is no longer attached says so;
+    // it never borrows another project's plugins — which for a surface that INSTALLS things would not be
+    // a cosmetic error.
+    return this.getWorkspaces().find((w) => w.wsHash === target.project);
+  }
+
+  private configFor(app: WebviewAppEntry): SectionAppConfig<PluginsRefreshKind> {
+    return {
+      app,
+      // The exact sheets, in the same order, Control linked while Plugins was its active section
+      // (`pluginsIsActive ? …` pair, after the three shell-wide ones) — minus `vscode-theme.css`, which
+      // Control links for every section and this surface never used a rule from.
+      //
+      // No `page-frame.css`, and that is a measured claim rather than an omission: `plugins.css` gives
+      // `#root` no height and styles no page frame, so this surface page-scrolls like the task detail and
+      // the inspector rather than filling its tab in bounded regions. Linking the frame here would fail
+      // `webviewConvention.test.ts`'s mirror rule (a sheet linked without being anchored to), and
+      // `overflow: hidden` is the wrong frame for a document that scrolls.
+      //
+      // What DID have to move is the page PAD: `.ck-plugins-root`'s `--ds-page-pad-*` rule lived in
+      // `cockpit.css`, so this app would have rendered flush to the tab edge. It is `plugins.css`'s own
+      // rule now — the same class of trap as t-32c872, one property over, and the one the Phase A
+      // consumption check cannot see because it reads `#root` height chains and not padding.
+      styleFiles: ["codicon.css", "design-system.css", "plugins.tailwind.css", "plugins.css"],
+      title: () => vscode.l10n.t("Plugins"),
+      iconName: "extensions",
+      refreshKindFor: pluginsRefreshKind,
+      bind: (session) => {
+        // PER PANEL, not per manager — see this class's doc comment. Two projects are two panels, two
+        // consent drawers and two busy guards, and nothing about one may reach the other.
+        let checks: Record<string, UpdateCheck> = {};
+        let pending: PendingOp | undefined;
+        let busy = false;
+        const post = (): void => {
+          const ws = this.workspaceFor(session.target);
+          if (!ws) {
+            session.post(resultMessage(false, `No Tachyon workspace attached for this Plugins panel (${session.target.project}).`));
+            return;
+          }
+          session.post(pluginsMessage(this.gather(ws, checks)));
+        };
+        const io: PanelIO = {
+          post,
+          postConsent: (vm) => { session.post(consentMessage(vm)); },
+          postBusy: (label) => { session.post(busyMessage(label)); },
+          postResult: (ok, message) => { session.post(resultMessage(ok, message)); },
+          getPending: () => pending,
+          setPending: (p) => { pending = p; },
+          getChecks: () => checks,
+          setChecks: (c) => { checks = c; },
+          isBusy: () => busy,
+          setBusy: (b) => { busy = b; },
+        };
+        return {
+          // `replay` and `resync` do the same work, and that is a property of the surface rather than an
+          // oversight: the model is a full read of one workspace's lockfile and runtimes, so there is
+          // nothing a delta could carry that a rebuild does not. What the gate's distinction still
+          // decides is how MANY of these run after a burst — one, either way. (Same shape as the Board's
+          // and the inspector's, and for the same reason.)
+          replay: () => { post(); },
+          resync: () => { post(); },
+          onMessage: (raw) => {
+            const ws = this.workspaceFor(session.target);
+            if (!ws) {
+              session.post(resultMessage(false, `No Tachyon workspace attached for this Plugins panel (${session.target.project}).`));
+              return;
+            }
+            void this.onMessage(ws, raw as InboundMsg, io);
+          },
+        };
+      },
+    };
   }
 
   /** Route one inbound webview message. Network/apply ops are serialized by a `busy` flag (one at a time). */
   private async onMessage(ws: WorkspaceGitPresentationTarget, m: InboundMsg, io: PanelIO): Promise<void> {
+    // `ready` and `poll` never arrive here — `pluginsRefreshKind` claims them for the gate — so
+    // everything below is an action on a panel someone is looking at.
     switch (m.type) {
-      case "ready":
       case "refresh":
+        // The human pressing Refresh, and it means MORE than a re-gather: it drops every update check
+        // found so far, so the cards go back to `unknown` and the next "Check for updates" re-resolves
+        // from scratch. The 3s poll deliberately does NOT arrive here — see `POLL` in plugins/messages.ts.
         io.setChecks({});
         io.post();
         return;
@@ -691,68 +845,39 @@ export class PluginsPanelManager {
     return out;
   }
 
-  /** Re-post to the Control embed (cheap; no-op when Plugins isn't the active section). */
-  refreshAll(): void {
-    this.embed?.post();
-  }
-
-  /**
-   * Control monolith: drive Plugins UI into an existing webview (no separate panel).
-   * Posts the same plugins/consent/busy/result envelope the standalone panel uses.
-   *
-   * IDEMPOTENT for the same webview + workspace (t-0fc9ee): the shell's 3s poll routes through
-   * here on every tick, and the session state below (checks/pending/busy) is closure-owned — a
-   * blind rebind wiped a just-found update check, orphaned a pending consent drawer (confirmOp
-   * finds no pending and silently returns), and forgot the busy guard. Data refresh must never
-   * recreate the session; a NEW session is created only on first entry, a real workspace switch,
-   * or a replaced webview (leaving the section unbinds — see unbindControlEmbed).
-   */
-  bindControlEmbed(webview: vscode.Webview, wsHash?: string): void {
-    const ws = wsHash === undefined ? this.getWorkspaces()[0] : this.getWorkspaces().find((w) => w.wsHash === wsHash);
-    if (!ws) return;
-    if (this.embed && this.embed.webview === webview && this.embed.ws.wsHash === ws.wsHash) {
-      this.embed.post();
-      return;
-    }
-    let checks: Record<string, UpdateCheck> = {};
-    let pending: PendingOp | undefined;
-    let busy = false;
-    const post = (): void => {
-      void webview.postMessage(pluginsMessage(this.gather(ws, checks)));
-    };
-    const io: PanelIO = {
-      post,
-      postConsent: (vm) => void webview.postMessage(consentMessage(vm)),
-      postBusy: (label) => void webview.postMessage(busyMessage(label)),
-      postResult: (ok, message) => void webview.postMessage(resultMessage(ok, message)),
-      getPending: () => pending,
-      setPending: (p) => { pending = p; },
-      getChecks: () => checks,
-      setChecks: (c) => { checks = c; },
-      isBusy: () => busy,
-      setBusy: (b) => { busy = b; },
-    };
-    this.embed = { webview, ws, io, post };
-    post();
-  }
-
-  unbindControlEmbed(): void {
-    this.embed = undefined;
-  }
-
-  /** Forward one inbound message to the Control embed session (if bound). */
-  handleControlEmbedMessage(m: InboundMsg): boolean {
-    const emb = this.embed;
-    if (!emb) return false;
-    void this.onMessage(emb.ws, m, emb.io);
-    return true;
-  }
-
-  refreshControlEmbed(): void {
-    this.embed?.post();
-  }
-
   dispose(): void {
-    this.embed = undefined;
+    this.manager.dispose();
   }
+}
+
+/**
+ * The ONE place that decides whether an inbound message is the client asking for work: the shell's SHARED
+ * `ready` handshake and the app's own 3s `poll`. A string compare the HOST does — never a promise the
+ * client keeps — which is what makes the gate hold whatever timer a client version happens to run.
+ * Exported so the rule is testable without a panel.
+ *
+ * `refresh` is deliberately NOT here: it is a human pressing a button on a panel someone is looking at,
+ * and it carries a side effect (dropping the update checks) that a periodic re-gather must not have.
+ */
+export function pluginsRefreshKind(message: unknown): PluginsRefreshKind | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const type = (message as { type?: unknown }).type;
+  return type === READY || type === POLL ? "plugins" : undefined;
+}
+
+/**
+ * The pre-410 standalone panel's state, translated into this app's. ONE field renamed — a compatibility
+ * shim with NO UI, which is the one kind `spec.md` allows to survive a cutover. Anything already in the
+ * new shape passes through untouched, and a record with neither field migrates to an EMPTY project, which
+ * `sectionPanelKey` refuses — so the panel is disposed, the same outcome the serializer already gives an
+ * unreadable state.
+ */
+function migrateLegacy(state: SectionPanelState | PluginsPanelState): SectionPanelState {
+  if (typeof (state as Partial<SectionPanelState>).project === "string") return state as SectionPanelState;
+  const legacy = state as Partial<PluginsPanelState>;
+  return {
+    schemaVersion: 1,
+    view: PLUGINS_VIEW_TYPE,
+    project: typeof legacy.wsHash === "string" ? legacy.wsHash : "",
+  };
 }

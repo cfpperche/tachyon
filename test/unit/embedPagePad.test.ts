@@ -101,18 +101,48 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
   });
 });
 
-describe("Plugins root pads exactly once inside its Control embed host", () => {
-  // maintainer dogfood 2026-07-23: cockpit/App.tsx wrapped <PluginsApp> in its own extra
-  // `<div class="ck-plugins-root">`, but plugins/App.tsx already roots ITS render on that same class
-  // (`.ck-plugins-root` is `--ds-page-pad-*`-padded, same as .runtime-ops/.validations-main above) — so
-  // the page pad applied twice, nesting the whole surface visibly further in/down than every other tab.
-  it("cockpit/App.tsx's plugins branch does not wrap PluginsApp in a second .ck-plugins-root", () => {
-    const cockpit = read(COCKPIT_APP);
-    const start = cockpit.indexOf('section === "plugins"');
-    expect(start, "plugins branch not found in cockpit/App.tsx").toBeGreaterThan(-1);
-    const end = cockpit.indexOf('} else {', start);
-    const branch = cockpit.slice(start, end === -1 ? undefined : end);
-    expect(branch).not.toContain('class="ck-plugins-root"');
+/**
+ * SDD 485 D2 — the same page-pad contract, RETARGETED, because the surface it is about moved.
+ *
+ * Until this migration the claim was about Control: `cockpit/App.tsx` once wrapped <PluginsApp> in its own
+ * extra `<div class="ck-plugins-root">` while plugins/App.tsx already rooted ITS render on that class, so
+ * the pad applied twice (maintainer dogfood, 2026-07-23). There is no Control branch to double-pad any
+ * more — Plugins is a standalone app.
+ *
+ * What replaced it is the failure this migration could actually have shipped, and nearly did: the pad
+ * rule lived in `cockpit.css` (`.ck-embed-host > .ck-plugins-root, .ck-plugins-root { padding:
+ * var(--ds-page-pad-*) }`), and a standalone app does not link `cockpit.css`. Without moving the rule the
+ * whole surface renders flush against the tab edge, at every width, on every fixture.
+ *
+ * This is t-32c872's shape one property over — a surface CONSUMING page chrome another sheet provides —
+ * and the Phase A consumption check in `webviewConvention.test.ts` cannot see it: that check reads `#root`
+ * percentage-height chains, and a missing pad is neither a height nor a chain. So it is asserted here,
+ * beside the identical claim this file already makes for Validations and Runtime Ops, which is where a
+ * reader looking for "who owns this surface's page pad" already looks.
+ */
+describe("Plugins owns its own page pad now that it is a standalone app (SDD 485 D2)", () => {
+  const plugins = read("src/webview/plugins/plugins.css");
+
+  it("the Plugins root applies the Fleet page pad from its OWN stylesheet", () => {
+    expectPagePad(plugins, ".ck-plugins-root");
+  });
+
+  it("cockpit.css no longer pads it — a rule with no element left to match", () => {
+    // The other half of the move: a copy left behind would be dead in Control and would make the real
+    // owner ambiguous the next time someone reads for it.
+    const cockpit = read("src/webview/cockpit/cockpit.css");
+    for (const r of rules(cockpit)) {
+      expect(
+        r.selector.split(",").some((part) => part.trim().endsWith(".ck-plugins-root")),
+        `cockpit.css still styles .ck-plugins-root (\`${r.selector}\`) — Plugins left Control in SDD 485 D2`,
+      ).toBe(false);
+    }
+  });
+
+  it("Control renders no Plugins section to pad in the first place", () => {
+    // The cutover half: two live renderers is what spec.md forbids, and a surviving branch here is how
+    // one would come back without any test noticing.
+    expect(read(COCKPIT_APP)).not.toContain('section === "plugins"');
   });
 
   it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {

@@ -56,6 +56,26 @@ export function resultMessage(ok: boolean, message: string): ResultMessage {
 /** the union the Plugins webview listens for (host → webview). */
 export type PluginsHostMessage = PluginsMessage | ConsentMessage | BusyMessage | ResultMessage;
 
+/**
+ * SDD 485 D2 — webview → host: "re-read the model, nothing has been asked for". The app's own 3s timer,
+ * which is the timer CONTROL used to own: inside Control the plugins model was re-posted as a side effect
+ * of `sendSectionModule()` running every three seconds for whatever section was active.
+ *
+ * It is a SEPARATE word from `refresh` on purpose, and the separation is the product behaviour rather than
+ * taste. `refresh` is the human pressing the Refresh button, and the host answers it by DROPPING every
+ * update check it has found (`io.setChecks({})`) — that is what the button means. A poll that shared the
+ * word would run that drop twenty times a minute and a just-found "update available" badge would vanish
+ * within three seconds: t-0fc9ee's bug exactly, arriving by a new road. So the poll asks for a re-gather
+ * and nothing else, and it is the message `pluginsRefreshKind` claims for the visibility gate.
+ */
+export const POLL = "poll" as const;
+export interface PollActionMessage {
+  type: typeof POLL;
+}
+export function pollAction(): PollActionMessage {
+  return { type: POLL };
+}
+
 export interface ConfirmPayload {
   token: string;
   skillDecisions?: Record<string, "keep" | "replace">;
@@ -80,7 +100,7 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
 /** spec 280 — the webview→host action type union (the Plugins view's inbound messages). Typing the host's
  *  InboundMsg.type against this makes a typo'd `case "…"` a compile error (the typed-union convention). */
 export type PluginsActionType =
-  | "ready" | "refresh" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
+  | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
   | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal";
 
 /** t-d23f93 — the result-toast shape (moved from the retired standalone bootstrap main.tsx). */

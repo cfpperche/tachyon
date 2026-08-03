@@ -133,8 +133,6 @@ export interface CockpitStrings {
   runtimeConfigOpaqueSections: string;
   runtimeConfigReadError: string;
   runtimeConfigUnavailable: string;
-  pluginsTitle: string;
-  pluginsHint: string;
   settingsTitle: string;
   settingsHint: string;
   workspaces: string;

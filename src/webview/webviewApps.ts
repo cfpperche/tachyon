@@ -121,6 +121,18 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // already valid, and restore REVIVES instead of redirecting. (C4 reused its viewType for a weaker
   // version of this reason; C5 could not, because its tombstone carried an incompatible `wsHash`.)
   { view: "inspector", viewId: "tachyonServerInspector", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D2 — Plugins, the SECOND Phase D migration and the second `dashboard`. Where D1's tmux found
+  // the third cardinality by not fitting, this one is the case the spec's table always described: a plugin
+  // install is a per-workspace fact end to end (the lockfile is `<workspaceRoot>/.tachyon/plugins-lock.json`,
+  // `detectRuntimes` reads that root, every apply writes into it), so two attached projects have two
+  // genuinely different plugin sets and two panels showing two answers is CORRECT rather than duplicated.
+  //
+  // `view` and `viewId` agree here, which is what let the RETIRED `tachyonPlugins` viewType be reused: the
+  // id still names this app, and the pre-410 panel's one scoping field (`wsHash`) is exactly the one field
+  // a dashboard key is made of, so restore REVIVES through a one-field rename (`migrateLegacy` in
+  // PluginsPanel.ts) instead of disposing and reopening. That is C4's call rather than C5's, and the
+  // difference is not the tombstone — all three were redirects — but whether the id still names the app.
+  { view: "plugins", viewId: "tachyonPlugins", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

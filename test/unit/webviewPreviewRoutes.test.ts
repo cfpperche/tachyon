@@ -47,8 +47,6 @@ describe("preview route table", () => {
       "/dist/webview/vscode-theme.css",
       // SDD 485 C5 — the two mission-control sheets left with the Board (its own route now), exactly as
       // C4's task-detail.css did one commit earlier.
-      "/dist/webview/plugins.tailwind.css",
-      "/dist/webview/plugins.css",
       "/dist/webview/approval.css",
       "/dist/webview/human-inbox.css",
       "/dist/webview/validations.css",
@@ -100,12 +98,6 @@ describe("preview route table", () => {
       // t-ac79a7 — the navigation-pending state: Control's landing screen still on display while the
       // route it just committed is loading (the fixture pushes routePending, never routeReady).
       "nav-pending",
-      "plugins",
-      // t-fb216a — same Plugins section, but the route pushes the runtime-coverage-gap plugins VM.
-      "plugins-runtime-gap",
-      // t-4e5f11 — labeled version bump / same-version content change card states.
-      "plugins-source-changed",
-      "plugins-update-available",
       "runtime",
       "runtime-config",
       "settings",
@@ -135,6 +127,9 @@ describe("preview route table", () => {
       // detail is a standalone app and has its own route below, previewing the REAL shipped bundle.
       // SDD 485 D1 — and no "tmux" fixture, for the same reason: the inspector is a standalone app with
       // its own route now, so Control has no tmux section to render or photograph.
+      // SDD 485 D2 — and none of the four `plugins*` fixtures: Plugins has its own route below, whose
+      // fixtures name the four card states directly instead of four Control models disambiguated by
+      // object identity.
       "validations",
       "worktrees",
     ]);
@@ -156,8 +151,6 @@ describe("preview route table", () => {
     expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
     const runtimeMsgs = r.makeMessage(r.fixtures.runtime.vm) as Array<{ type: string }>;
     expect(runtimeMsgs.map((m) => m.type)).toEqual(["init", "model", "runtimeOpsSnapshot"]);
-    const pluginsMsgs = r.makeMessage(r.fixtures.plugins.vm) as Array<{ type: string }>;
-    expect(pluginsMsgs.map((m) => m.type)).toEqual(["init", "model", "plugins"]);
     // t-610705 (Phase C.3) — Handoff folds into a section (unlike Fleet's subroutes): nav section is
     // "handoff" itself, so its own content message rides alongside init+model directly.
     const handoffMsgs = r.makeMessage(r.fixtures.handoff.vm) as Array<{ type: string }>;
@@ -254,6 +247,29 @@ describe("preview route table", () => {
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
   });
 
+  it("declares the Plugins route (SDD 485 D2) against the REAL standalone bundle and the host's own CSS list", () => {
+    // Same point as the three cases above: the harness must load what SHIPS. The fixture list is the
+    // load-bearing half here — the four card states t-4e5f11 built (up to date, update available,
+    // downgrade, source changed at the same version) are what this migration must not disturb, and they
+    // are addressable BY NAME now rather than through four Control models told apart by identity.
+    const r = ROUTES.plugins;
+    expect(r.bundle).toBe("/dist/webview/plugins.js");
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/plugins.tailwind.css",
+      "/dist/webview/plugins.css",
+    ]);
+    expect(r.module).toBe(true);
+    // No page-frame link, so no `pageFrame` flag: Plugins scrolls as a document, like the inspector.
+    expect(r.cssLinks.some((href) => href.endsWith("/page-frame.css"))).toBe(false);
+    expect(r.pageFrame).toBeUndefined();
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "runtime-gap", "source-changed", "update-available"]);
+    const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: { installed?: unknown[] } };
+    expect(msg.type).toBe("plugins");
+    expect(msg.vm?.installed?.length).toBeGreaterThan(0);
+  });
+
   it("declares the pin-preview route (spec 279) with a hostile fixture carrying injection payloads", () => {
     const r = ROUTES["pin-preview"];
     expect(r.bundle).toBe("/dist/webview/pin-preview.js");
@@ -344,8 +360,12 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // multi-entry targets, not just the one it was written for.
     expect(bundles.has("dist/webview/mission-control.js")).toBe(true);
     expect(bundles.has("dist/webview/task-detail.js")).toBe(true);
-    // SDD 485 D1 — and inspector.js, the third surface to come back as its own entry.
+    // SDD 485 D1/D2 — and inspector.js and plugins.js, the third and fourth surfaces to come back as
+    // their own entries. `dist/webview/plugins.js` is a string this very file's history names as DEAD
+    // (t-c55f8d found sixteen references to it after 410 retired the bundle); it is live again, which is
+    // exactly the kind of reversal a derived guard must see rather than be told.
     expect(bundles.has("dist/webview/inspector.js")).toBe(true);
+    expect(bundles.has("dist/webview/plugins.js")).toBe(true);
     expect(bundles.has("dist/webview/task-studio.js")).toBe(false);
   });
 
