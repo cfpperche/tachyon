@@ -120,6 +120,36 @@ work in parallel only if the second re-applies onto the first before delivery, n
       Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
+
+      **These are a different shape of work from D1–D4, and the difference is not where anyone expects.**
+      Measured before planning: the JSX is NOT the cost. Engine is 12 lines, Worktrees 13, Execution 16 —
+      thin wrappers around `ModuleChrome` plus components that already exist and already ship
+      (`WorkspaceCard`, `ListRow`). Fleet is 66 and Overview 113. None approaches what
+      `human-inbox/App.tsx` already was before D4 touched it. Extraction is close to mechanical.
+
+      The cost is the MODEL. `buildCockpitModel(bundles, opts)` is ONE pure function producing every
+      section's slice from one `CockpitDeps.collect()`. D1–D4 each had a host source of their own
+      (`inboxSources`, `buildSnapshot`, the plugin lockfile); these six share Control's. So each PR has a
+      fork it must answer explicitly:
+
+        (a) the app calls the same builder and reads its own slice — cheap to write, and every open panel
+            pays the whole collect;
+        (b) collect + builder split per section — real work, and the payoff is an open Fleet not
+            re-collecting worktree data.
+
+      **Take (a) first.** (b) is optimization before a measurement exists, and `t-a8f4a9` (an engine event
+      hub pushing deltas instead of per-window polling) plausibly subsumes the whole problem — doing (b)
+      now risks building something that gets thrown away. Record the collect cost per panel when (a) lands;
+      that is the measurement (b) would need and nobody has.
+
+      Two facts checked rather than assumed, so no one re-derives them:
+
+        - **The workspace scope survives Overview leaving.** `cockpit/App.tsx`'s comment calls its `<select>`
+          "THE global workspace scope, and the only one in Control", which reads like a blocker. It is not:
+          `controlWorkspaceScope` is a host-side per-window authority and the SIDEBAR writes it
+          (`SidebarPrototype.ts:286`). Overview's select is a second writer, not the owner.
+        - **Settings has no `section === "settings"` branch.** It is the `else` fallback at the end of the
+          chain. Whoever migrates it finds that out before starting, not during.
 - [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
       (spec.md § "A document is one ENTITY"). Same panel, same key (`taskId`), mode as state. Declare
       and test the unsaved-edit policy on mode switch — that policy is the cost this decision accepts,
