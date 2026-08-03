@@ -13,6 +13,7 @@ import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSe
 import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { readyMessage } from "../../src/webview/shared/ready.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
+import { ControlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
 
 /**
  * SDD 485 C4 — the Task Detail as a standalone `document` app.
@@ -69,16 +70,17 @@ interface Harness {
   targets: WorkspaceTaskDetailTarget[];
 }
 
-function harness(...workspaces: Workspace[]): Harness {
+function harnessWithScope(scope: ControlWorkspaceScope | undefined, ...workspaces: Workspace[]): Harness {
   let fanOuts = 0;
   const studioOpens: Array<[string, string]> = [];
   const targets = workspaces.map((ws) => legacyTaskDetailTarget(ws));
   const manager = new TaskDetailPanelManager(extensionUri, () => targets, {
     onTasksChanged: () => { fanOuts += 1; },
     openTaskStudio: (ws, taskId) => { studioOpens.push([ws.wsHash, taskId]); },
-  });
+  }, undefined, scope);
   return { manager, fanOuts: () => fanOuts, studioOpens: () => studioOpens, targets };
 }
+function harness(...workspaces: Workspace[]): Harness { return harnessWithScope(undefined, ...workspaces); }
 
 const panelAt = (i: number) => __createdPanels[i]!;
 const lastPanel = () => __createdPanels.at(-1)!;
@@ -197,6 +199,28 @@ describe("SDD 485 C4 — two task details, side by side", () => {
 // ---------------------------------------------------------------------------------------------
 
 describe("SDD 485 C4 — an open document is never retargeted", () => {
+  it("keeps A open after selecting B, while the next document opens against B", async () => {
+    const alpha = fakeWorkspace(mkroot(), { hash: "ws-alpha" });
+    const beta = fakeWorkspace(mkroot(), { hash: "ws-beta" });
+    const a = await alpha.taskStore.create({ title: "alpha stays", author: "human" });
+    const b = await beta.taskStore.create({ title: "beta opens next", author: "human" });
+    const scope = new ControlWorkspaceScope();
+    scope.set("ws-alpha");
+    const h = harnessWithScope(scope, alpha, beta);
+
+    expect(h.manager.openInCurrentScope(a.id)).toBe(true);
+    lastPanel().webview.__receive(readyMessage());
+    await flush();
+    scope.set("ws-beta");
+    expect(h.manager.openInCurrentScope(b.id)).toBe(true);
+    lastPanel().webview.__receive(readyMessage());
+    await flush();
+
+    expect(taskVms(panelAt(0)).at(-1)).toMatchObject({ wsHash: "ws-alpha", task: { title: "alpha stays" } });
+    expect(taskVms(panelAt(1)).at(-1)).toMatchObject({ wsHash: "ws-beta", task: { title: "beta opens next" } });
+    scope.dispose();
+  });
+
   it("keeps its own project when the set of workspaces (and their order) changes under it", async () => {
     // The project selector's authority is the HOST, and what it changes is which workspace the NEXT thing
     // opens against. This models the strongest version of a scope change reaching an open panel: the

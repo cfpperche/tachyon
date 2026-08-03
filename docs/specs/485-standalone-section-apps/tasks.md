@@ -50,10 +50,10 @@ maintainer visual sign-off before release (convention agreed 2026-08-02).
 - [x] C4. **Task detail as a document app** — multi-instance, identity fixed at open. Two task
       details from different projects open side by side and stay distinct.
 - [x] C5. **Board as a dashboard app** — one panel per project, revealed rather than duplicated.
-- [ ] C6. Move the project selector into the sidebar Control tab header row (the slot the Agents tab
+- [x] C6. Move the project selector into the sidebar Control tab header row (the slot the Agents tab
       uses for `All · N`), with the host keeping a single writer. Re-anchor
       `controlWorkspaceScope.test.ts` in the same change.
-- [ ] C7. Guard the identity rule: switching the selector does not retarget an open document.
+- [x] C7. Guard the identity rule: switching the selector does not retarget an open document.
 - [ ] C8. Launcher tiles and `tachyon.*` commands open/reveal these two apps; their old Control
       routes become redirects with no dead path left behind.
 - [ ] **CHECKPOINT — stop and use it.** Board beside a terminal, two task details side by side, for a

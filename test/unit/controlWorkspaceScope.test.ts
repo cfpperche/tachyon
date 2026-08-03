@@ -22,25 +22,19 @@ function webviewSources(dir = WEBVIEW): string[] {
   });
 }
 
-const cockpitApp = readFileSync(path.join(WEBVIEW, "cockpit", "App.tsx"), "utf8");
+const sidebarApp = readFileSync(path.join(WEBVIEW, "sidebar", "App.tsx"), "utf8");
 
-describe("the global workspace scope has exactly one control (t-46eb4f)", () => {
-  it("only Overview renders it, and nothing else in the webview does", () => {
+describe("the global workspace scope has exactly one control (SDD 485 C6)", () => {
+  it("only the sidebar renders it, in Control's sec-actions slot", () => {
     const owners = webviewSources().filter((file) => readFileSync(file, "utf8").includes('data-testid="control-workspace-select"'));
-    expect(owners.map((f) => path.relative(WEBVIEW, f))).toEqual(["cockpit/App.tsx"]);
+    expect(owners.map((f) => path.relative(WEBVIEW, f))).toEqual(["sidebar/App.tsx"]);
 
-    // It sits in Overview's own actions row — not in the nav chrome, where a second one used to live.
-    const overviewActions = /<div class="ck-overview-actions">[\s\S]*?<\/div>\s*\}/.exec(cockpitApp)?.[0] ?? "";
-    expect(overviewActions).toContain('data-testid="control-workspace-select"');
-    const navChrome = cockpitApp.slice(cockpitApp.indexOf('role="tab"'));
-    expect(navChrome).not.toContain('data-testid="control-workspace-select"');
+    const controlHeader = /tab === "Control"[\s\S]*?<span class="sec-actions">[\s\S]*?<\/span>/.exec(sidebarApp)?.[0] ?? "";
+    expect(controlHeader).toContain('data-testid="control-workspace-select"');
   });
 
-  it("is rendered unconditionally — a single root still shows which root it is", () => {
-    // The retired header copy was gated on `m.workspaces.length > 1`; the Overview one is not.
-    expect(cockpitApp).not.toMatch(/m\.workspaces\.length > 1 \?\s*\n?\s*<KitSelect/);
-    // Only the "All workspaces" OPTION is conditional (it means nothing with one root).
-    expect(cockpitApp).toMatch(/m\.workspaces\.length > 1 \? \[\{ value: ALL_WORKSPACES/);
+  it("does not turn a single project into selector noise", () => {
+    expect(sidebarApp).toMatch(/tab === "Control" && fleets\.length > 1/);
   });
 
   it("no screen mirrors it — the Board's own workspace dropdown is gone", () => {
@@ -54,17 +48,12 @@ describe("the global workspace scope has exactly one control (t-46eb4f)", () => 
     expect(boardMessages).not.toContain("switchWorkspace");
   });
 
-  it("the host writes controlWsHash from exactly one client message", () => {
+  it("the host authority is the window store, not Cockpit module state", () => {
     const host = readFileSync(path.join(WEBVIEW, "Cockpit.ts"), "utf8");
-    const assignments = host.match(/controlWsHash = /g) ?? [];
-    // Three: the open-options block (deep link + the `approvalWsHash` alias, both one scope) and the single
-    // `switchControlWorkspace` case. Any fourth is a second writer and must be justified here.
-    // SDD 485 C5 — was four. `missionWsHash` was the third alias and went with the Board: its only caller,
-    // `tachyon.missionControl`, opens the Board APP now, which keys its panel on a project rather than
-    // moving Control's scope.
-    expect(assignments).toHaveLength(3);
-    expect(host).toMatch(/case "switchControlWorkspace":[\s\S]*?controlWsHash = c\.wsHash \|\| undefined;/);
-    expect(host).not.toMatch(/m\.type === "switchWorkspace"/);
+    const sidebarHost = readFileSync(path.join(WEBVIEW, "SidebarPrototype.ts"), "utf8");
+    expect(sidebarHost).toMatch(/m\?\.type === "switchControlWorkspace"[\s\S]*?controlWorkspaceScope\.set\(hash\)/);
+    expect(host).not.toContain("let controlWsHash");
+    expect(host).toContain("controlWorkspaceScope.current");
   });
 });
 

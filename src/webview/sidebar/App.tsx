@@ -59,6 +59,7 @@ export interface Dispatch {
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
   /** Persist all collapsed sidebar group keys. Keys include workspace hashes when workspace-scoped. */
   setCollapsedKeys?: (keys: string[]) => void;
+  switchWorkspace?: (wsHash: string) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
 export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
@@ -1110,6 +1111,7 @@ export function App({
   collapsedKeys = [],
   /** Test seam — production always starts on Agents; never auto-switches when attentions arrive. */
   initialTab = "Agents",
+  selectedWsHash,
 }: {
   fleets?: FleetVM[];
   dispatch?: Dispatch;
@@ -1117,6 +1119,7 @@ export function App({
   collapsedKeys?: string[];
   appVersion?: string;
   initialTab?: TabId;
+  selectedWsHash?: string;
 }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -1331,6 +1334,21 @@ export function App({
       </div>
       <div class="sec">
         <b>{tab}</b>
+        {tab === "Control" && fleets.length > 1 && (
+          <span class="sec-actions">
+            <select
+              class="control-workspace-select"
+              data-testid="control-workspace-select"
+              value={selectedWsHash ?? ""}
+              title="Control workspace"
+              aria-label="Control workspace"
+              onChange={(e) => dispatch?.switchWorkspace?.((e.currentTarget as HTMLSelectElement).value)}
+            >
+              <option value="">All workspaces</option>
+              {fleets.map((fleet) => <option value={fleet.folder?.hash ?? ""}>{fleet.folder?.name ?? "Workspace"}</option>)}
+            </select>
+          </span>
+        )}
         {(tab === "Agents" || tab === "Terminals") && (() => {
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;

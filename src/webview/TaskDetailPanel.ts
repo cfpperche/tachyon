@@ -11,6 +11,7 @@ import { taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./ta
 import { READY } from "./shared/ready.js";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 import type { TaskDetailProjectionV1 } from "../runtime-api/taskDetailProjection.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 
 export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";
 
@@ -74,13 +75,18 @@ export class TaskDetailPanelManager {
       openTaskStudio: (ws: WorkspaceTaskDetailTarget, taskId: string) => void;
     },
     app: WebviewAppEntry = webviewApp("task-detail"),
+    workspaceScope?: ControlWorkspaceScope,
   ) {
-    this.manager = new SectionPanelManager<TaskDetailRefreshKind>(extensionUri, this.configFor(app));
+    this.manager = new SectionPanelManager<TaskDetailRefreshKind>(extensionUri, this.configFor(app), workspaceScope);
   }
 
   /** Open the task's own editor tab, or REVEAL it if this identity is already open. */
   open(wsHash: string, taskId: string): void {
     this.manager.open({ project: wsHash, identity: taskId });
+  }
+
+  openInCurrentScope(taskId: string): boolean {
+    return this.manager.openInCurrentScope(taskId);
   }
 
   /** the fan-out door — every open task detail re-reads. Returns how many panels did work. */

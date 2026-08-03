@@ -44,9 +44,18 @@ const OPTION_ROWS: FleetVM["agents"] = [
   },
 ];
 
-export const sidebarFixtures: Record<string, Fixture<FleetVM>> = {
+export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
   // the richest canonical state — the real SAMPLE the production bundle ships.
   default: { provenance: "sample-derived", vm: SAMPLE },
+
+  /** SDD 485 C6 — two attached projects make the Control header's project selector meaningful. */
+  "multi-project": {
+    provenance: "synthetic-edge",
+    vm: [
+      SAMPLE,
+      { ...SAMPLE, folder: { hash: "second-project", name: "Second Project" }, agents: [] },
+    ],
+  },
 
   empty: { provenance: "synthetic-edge", vm: { ...base, agents: [] } },
 

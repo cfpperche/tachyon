@@ -318,6 +318,23 @@ asserting it is ignored while hidden.
 
 ## Deviations
 
+### C6/C7 — one window scope, resolved only at open (2026-08-03)
+
+`ControlWorkspaceScope` is the single extension-host authority. The sidebar Control header is its visible
+writer; Control observes it for the sections that have not migrated yet, and `SectionPanelManager` exposes
+`openInCurrentScope` so an ambient selection is resolved once, when a new panel opens. The resulting
+`SectionPanelTarget` remains immutable and keyed by project + identity. The explicit C7 test opens task A,
+selects project B, then proves A remains A while the next task document opens against B.
+
+The selector is omitted when only one project is attached. With multiple projects it occupies the existing
+`.sec-actions` slot and offers the aggregate plus each attached project.
+
+**Evidence:** `ev-2026-08-03T16:27:20.800Z-0`; captures at `.vqa/visual-qa/control-{one,multi}-{880,360}.png`
+used viewport and `?width=` together.
+
+**Verdict:** pass — at 880 and 360 the multi-project selector stays aligned and compact without crowding the
+launcher; the one-project state adds no control or empty header residue.
+
 _Where implementation intentionally departed from `plan.md`, and why it was necessary or better._
 
 ### Phase A — no page-frame "regions/slots" were added; the repo already has regions one layer down (2026-08-03)

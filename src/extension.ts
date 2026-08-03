@@ -52,6 +52,7 @@ import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPa
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
+import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
@@ -1087,6 +1088,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.globalState,
     (context.extension.packageJSON as { version?: string }).version,
   );
+  context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
   // subroute now (fleet/agent/<name>/activity; src/webview/activity/App.tsx stays, lazy-imported by
@@ -1171,6 +1173,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, taskId) });
       },
     },
+    undefined,
+    controlWorkspaceScope,
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
@@ -1186,7 +1190,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Deliberately a call THROUGH the shared fan-out rather than a direct self-refresh: a board edit must
     // reach every open Task Detail and the sidebar too, which is the whole reason that function exists.
     onTasksChanged: () => onTasksChanged(),
-  });
+  }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => boardPanels.dispose() });
   /**
    * Open (or reveal) the Board for a project. `hash` is the caller's preference; with none, the first
@@ -1194,7 +1198,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * which C6's sidebar project selector will become the authority.
    */
   const openBoard = (hash?: string): void => {
-    const ws = (hash ? byHash(hash) : undefined) ?? workspaces()[0];
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
     if (!ws) {
       notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is no Board to open."), "warn");
       return;

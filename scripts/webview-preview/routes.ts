@@ -93,7 +93,7 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 340, h: 760 },
     fixtures: sidebarFixtures as Record<string, Fixture>,
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
-    makeMessage: (vm) => fleetMessage([vm as never], {}),
+    makeMessage: (vm) => fleetMessage(Array.isArray(vm) ? vm as never : [vm as never], {}),
   },
   // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
   // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.

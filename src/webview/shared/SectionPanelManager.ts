@@ -4,6 +4,7 @@ import { panelIcon } from "./panelIcon.js";
 import { PanelWorkGate, panelVisibility } from "./panelWorkGate.js";
 import type { TrustedPanelState } from "./panelSerializer.js";
 import type { SectionAppCardinality, WebviewAppEntry } from "../webviewApps.js";
+import type { ControlWorkspaceScope } from "./ControlWorkspaceScope.js";
 
 /**
  * SDD 485 Phase C — ONE panel manager for every standalone section app, configured from a manifest entry
@@ -178,6 +179,7 @@ export class SectionPanelManager<K extends string = string> {
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly config: SectionAppConfig<K>,
+    private readonly workspaceScope?: ControlWorkspaceScope,
   ) {
     if (config.app.host !== "section") {
       // Control's singleton is in the app manifest because it shares the BUILD, not because this class
@@ -199,6 +201,14 @@ export class SectionPanelManager<K extends string = string> {
   /** Open the panel for `target`, or REVEAL it if this key is already open. */
   open(target: SectionPanelTarget): void {
     this.mount(target, undefined);
+  }
+
+  /** Resolve ambient scope once, at open. Existing targets never observe later changes. */
+  openInCurrentScope(identity?: string): boolean {
+    const project = this.workspaceScope?.current;
+    if (!project) return false;
+    this.open(identity === undefined ? { project } : { project, identity });
+    return true;
   }
 
   /**

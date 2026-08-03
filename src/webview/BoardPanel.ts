@@ -4,6 +4,7 @@ import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
 import { READY, snapshotMessage, taskErrorMessage, type MissionControlAction } from "./mission-control/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 
 export const BOARD_VIEW_TYPE = "tachyonBoard";
 
@@ -65,13 +66,18 @@ export class BoardPanelManager {
     extensionUri: vscode.Uri,
     private readonly deps: BoardPanelDeps,
     app: WebviewAppEntry = webviewApp("mission-control"),
+    workspaceScope?: ControlWorkspaceScope,
   ) {
-    this.manager = new SectionPanelManager<BoardRefreshKind>(extensionUri, this.configFor(app));
+    this.manager = new SectionPanelManager<BoardRefreshKind>(extensionUri, this.configFor(app), workspaceScope);
   }
 
   /** Open the Board for one project, or REVEAL the panel already open for it. */
   open(project: string): void {
     this.manager.open({ project });
+  }
+
+  openInCurrentScope(): boolean {
+    return this.manager.openInCurrentScope();
   }
 
   /** The fan-out door. Returns how many panels actually did work — visible ones only. */
