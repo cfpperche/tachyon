@@ -62,6 +62,29 @@ It is the ruling this repo already made, applied one level up. `worktreeProjecti
 Today that protects an agent from the workspace. This spec protects the **workspace** from an
 install. Same sentence, one level out: *nothing inherits what nobody asked for.*
 
+### Scope cut, 2026-08-03 — the third level moves out
+
+The maintainer asked whether the agent-type duality should exist at all: one `Agent` with a lifetime,
+rather than Saved and Temporary as species. Measured while answering: the 58 places that branch on
+`lifetime` almost all read it as a FIELD already (`canDismiss = temporary && !running` is a lifetime
+consequence, not a species one), and SDD 482 had already declared these "identity/lifetime semantics,
+not technical species". The duality that remains is in the **capability layer** — a Saved agent gets
+skills through profile grants, a Temporary through the delegated toolkit: one question answered by
+two mechanisms.
+
+That unification is SDD 487, and it rewrites exactly what this spec's third level would build. So the
+third level moves out, and the maintainer's objection is the reason: *"vamos fazer 486 pra depois
+remover codigo? se for nao faz sentido"*.
+
+What stays here is what survives 487 untouched, because it is about the **workspace**, not about
+agents: installing stops materializing, and a human applies or un-applies per skill. The delegated
+toolkit's source change stays too — not by choice but by force: once install materializes nothing,
+the toolkit breaks unless it reads the payload instead.
+
+What leaves: Grok joining the skill-grant enum (`t-84c678`) and a Saved Agent's skill selection.
+Both belong to the unified capability model, and building them against today's split would be work
+done twice.
+
 ## Acceptance criteria
 
 - [ ] **Scenario: installing materializes nothing**
@@ -79,11 +102,6 @@ install. Same sentence, one level out: *nothing inherits what nobody asked for.*
   - **When** the human un-applies it
   - **Then** the materialization is removed from every runtime dir, the payload stays installed, and
     re-applying needs no refetch
-- [ ] **Scenario: a Saved Agent's skills are chosen, not inherited**
-  - **Given** installed plugins, some applied to the workspace
-  - **When** a human creates a canonical agent and selects a subset of skills
-  - **Then** exactly that subset reaches the agent's private home, independent of what the workspace
-    has applied
 - [ ] **Scenario: a Temporary agent inherits its parent's, filtered by runtime**
   - **Given** a parent agent that can see a set of skills
   - **When** it spawns a Temporary child
@@ -106,9 +124,10 @@ install. Same sentence, one level out: *nothing inherits what nobody asked for.*
   one-machine transition costs more than the transition.
 - **Not a change to what a skill IS**, nor to the plugin fetch/integrity model. `plugins.lock.json`
   and its payload hashes stay the record of what was installed; this spec adds what is applied.
-- **Not the per-agent grant model itself.** `agentSkillAuthorization.ts` already defines
-  authorize → select → deliver for `claude` / `codex` / `pi`. Whether **Grok** joins that enum is
-  `t-84c678` and becomes a consequence of this spec, not a prerequisite.
+- **Not the per-agent grant model, and not a Saved Agent's skill selection.** Both moved to SDD 487
+  by the scope cut above. `agentSkillAuthorization.ts` defines authorize → select → deliver for
+  `claude` / `codex` / `pi`; whether **Grok** joins that enum (`t-84c678`) is answered there, against
+  the unified model, rather than here against the split one.
 - **Not the inspector's content check.** `t-09be02` stays: a materialization the lockfile claims is
   still not ambient. This spec makes that path rarer, not wrong.
 - **Terminals are out of scope** — a terminal is not an agent and holds no skills.

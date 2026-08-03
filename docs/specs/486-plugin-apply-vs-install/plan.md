@@ -9,7 +9,7 @@ remove it — `install` and `uninstall` both walk `plugins.lock.json`'s `targets
 **second fact** between them: whether a given skill is currently *applied*. So this is less new
 machinery than an existing action being split away from install and given a switch.
 
-Four phases, in dependency order. The first is the whole point; the rest fall out of it.
+Two phases, after the 2026-08-03 scope cut. The first is the whole point; the second is forced by it.
 
 ### Phase A — applied-state exists, and install stops materializing
 
@@ -34,24 +34,18 @@ This is a source change, not a behaviour change: the runtime filter, the per-nam
 capture failure (`t-b505b3` follow-up) and the digest-conflict refusal (`t-b0cfd4`) all stay exactly
 as they are. Delegation must work with **zero** skills applied — that is the phase's acceptance test.
 
-### Phase C — a Saved Agent selects, and Grok can be selected for
+### Phases C and D moved to SDD 487
 
-The capability model already has authorize → select → deliver and already understands a plugin skill
-as a source (`agentSkillAuthorization.ts`). Its adapter enum is `"claude" | "codex" | "pi"`; Grok is
-absent, which is `t-84c678`.
+Cut on 2026-08-03. The Saved-Agent skill selection and Grok joining the grant enum (`t-84c678`) live
+in the capability layer that SDD 487 unifies, so building them here would be work done twice — the
+maintainer's objection, and it is correct.
 
-That task is narrower than it was written: a delegated Grok child ALREADY receives skills into its
-private home through the toolkit above. The gap is Saved agents only. So Phase C adds Grok to the
-grant path and points the selection UI at installed skills — not at whatever the workspace happens to
-hold.
+The inspector verification that was Phase D goes with them: proving "a canonical Grok agent is
+creatable because nothing was materialized" is worth doing once, after the model it depends on has
+settled.
 
-### Phase D — the inspector stops needing to forgive
-
-With nothing materialized by default, a canonical Grok profile has nothing ambient to refuse in the
-common case. `t-09be02`'s content-subtraction stays — a materialization the lockfile claims is still
-not ambient, and a human who applied a skill has declared it — but it becomes the uncommon path
-rather than the load-bearing one. Mostly verification: prove the maintainer's original report is
-fixed at the source, and record in the inspector's own comment why the subtraction now matters less.
+What remains here is Phases A and B, and B is not optional — once install materializes nothing, the
+delegated toolkit breaks unless its source moves to the payload.
 
 ## Key decisions
 
@@ -85,10 +79,8 @@ fixed at the source, and record in the inspector's own comment why the subtracti
 | `src/plugins/paths.ts` | applied-record location, beside `PLUGIN_PAYLOAD_ROOT` (added by `t-09be02`) |
 | *(new)* applied-state store | durable per-workspace record of (plugin, skill) → applied |
 | `src/agents/AgentManager.ts` | delegated toolkit captures from the payload, not `target.file` |
-| `src/config/agentSkillAuthorization.ts` | `SkillGrantAdapter` gains `"grok"` (`t-84c678`) |
 | `src/webview/plugins/App.tsx` | per-skill apply/un-apply control |
 | `src/config/agentProfileProjection.ts` | comment only — why the subtraction now matters less |
-| `docs/runtimes/parity.md` | Grok's skill-grant row changes; record it |
 
 ## Risks & unknowns
 
@@ -108,9 +100,9 @@ fixed at the source, and record in the inspector's own comment why the subtracti
 
 ## Visual impact
 
-Phase A adds a per-skill apply/un-apply control to the Plugins screen, and Phase C adds skill
-selection to the Saved Agent form. Both are visible surfaces, so both carry screenshots before
-release under the convention agreed 2026-08-02 — measured with the browser viewport AND `?width=`
+Phase A adds a per-skill apply/un-apply control to the Plugins screen — the only visible surface
+this spec still owns after the cut. It carries screenshots before release under the convention
+agreed 2026-08-02 — measured with the browser viewport AND `?width=`
 together, since `plugins.css` has a `@media (max-width: 720px)` that a frame-only resize never fires
 (`t-b24282`).
 
