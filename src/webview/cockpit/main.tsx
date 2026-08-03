@@ -105,17 +105,6 @@ import type { SessionInspectionState } from "../runtime-ops/messages";
 import type { InspectedSession } from "../../runtimeOps/sessionInspection";
 import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "../runtime-config/messages";
 import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
-import type { InspectorAppProps } from "../inspector/App";
-import type { InspectorModel } from "../../inspector/model";
-import type { InspectorStrings } from "../inspector/messages";
-import {
-  captureAction,
-  refreshAction as inspectorRefreshAction,
-  openAction,
-  killAction,
-  reapDeadAction,
-  reapOrphansAction,
-} from "../inspector/messages";
 import type { StudioDispatch } from "../shared/studio/protocol";
 import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
 import type { PluginsDispatch } from "../plugins/App";
@@ -145,6 +134,13 @@ const post = (msg: unknown): void => {
  *  unchanged; the two studio kinds are a closed set. */
 const isStudioActiveRoute = (r: CockpitModel["activeRoute"]): boolean =>
   r?.kind === "studio-new" || r?.kind === "studio-edit";
+
+/**
+ * SDD 485 — the section ids whose tile/affordance opens a STANDALONE APP rather than navigating Control.
+ * Kept client-side and deliberately small: the client only needs to know "do not optimistically render
+ * this", never which app it is or where it opens. `Cockpit.ts`'s `navigate()` is what actually routes it.
+ */
+const STANDALONE_APP_SECTIONS = new Set<CockpitSectionId>(["mission", "tmux"]);
 
 function Root() {
   return (
@@ -181,10 +177,6 @@ function CockpitRoot() {
   const [sessionInspections, setSessionInspections] = useState<Record<string, SessionInspectionState>>({});
   const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
   const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
-  const [inspectorStrings, setInspectorStrings] = useState<InspectorStrings | undefined>(undefined);
-  const [inspectorModel, setInspectorModel] = useState<InspectorModel | undefined>(undefined);
-  const [inspectorCaptures, setInspectorCaptures] = useState<Record<string, string>>({});
-  const [inspectorOpen, setInspectorOpen] = useState<Set<string>>(new Set());
   const [pluginsVm, setPluginsVm] = useState<PluginsViewModel | undefined>(undefined);
   const [pluginsConsent, setPluginsConsent] = useState<ConsentVM | undefined>(undefined);
   const [pluginsBusy, setPluginsBusy] = useState<string | undefined>(undefined);
@@ -395,12 +387,6 @@ function CockpitRoot() {
       } else if (type === RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE) {
         setRuntimeConfigSnapshot(undefined);
         setRuntimeConfigUnavailable(true);
-      } else if (type === "inspectorInit" && raw.strings) {
-        setInspectorStrings(raw.strings as InspectorStrings);
-      } else if (type === "inspectorModel" && raw.model) {
-        setInspectorModel(raw.model as InspectorModel);
-      } else if (type === "inspectorCapture" && typeof raw.session === "string") {
-        setInspectorCaptures((prev) => ({ ...prev, [raw.session as string]: String(raw.text ?? "") }));
       } else if (type === PLUGINS && raw.vm) {
         setPluginsVm(raw.vm as PluginsViewModel);
         setPluginsBusy(undefined);
@@ -586,40 +572,6 @@ function CockpitRoot() {
     [toastApi],
   );
 
-  const inspectorProps: Pick<
-    InspectorAppProps,
-    "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
-  > = {
-    model: inspectorModel,
-    strings: inspectorStrings,
-    captures: inspectorCaptures,
-    open: inspectorOpen,
-    auto,
-    onToggleAuto: setAuto,
-    onToggleCapture: (session: string) => {
-      setInspectorOpen((prev) => {
-        const next = new Set(prev);
-        next.add(session);
-        post(captureAction(session));
-        return next;
-      });
-    },
-    onCloseCapture: (session: string) => {
-      setInspectorOpen((prev) => {
-        const next = new Set(prev);
-        next.delete(session);
-        return next;
-      });
-    },
-    onAction: (a) => {
-      if (a.type === "refresh") post(inspectorRefreshAction());
-      else if (a.type === "reapDead") post(reapDeadAction());
-      else if (a.type === "reapOrphans") post(reapOrphansAction());
-      else if (a.type === "open") post(openAction(a.session));
-      else if (a.type === "kill") post(killAction(a.session));
-    },
-  };
-
   return (
     <App
       model={model}
@@ -703,17 +655,17 @@ function CockpitRoot() {
       runtimeConfigUnavailable={runtimeConfigUnavailable}
       onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
       onSaveRuntimeConfigChanges={(runtime, documentId, expectedRevision, changes) => post({ type: "saveRuntimeConfigChanges", runtime, documentId, expectedRevision, changes })}
-      inspector={inspectorProps}
       pluginsVm={pluginsVm}
       pluginsConsent={pluginsConsent}
       pluginsBusy={pluginsBusy}
       pluginsDispatch={pluginsDispatch}
       onSetSection={(section: CockpitSectionId) => {
-        // SDD 485 C5 — "go to the Board" is no longer a navigation inside Control: the host answers this by
-        // opening the Board APP and landing Control on Overview. Posted WITHOUT the optimistic model update
-        // below on purpose — optimistically rendering a section this build has no renderer for would flash
-        // the unknown-section fallback for the frame before the host's real model arrives.
-        if (section === "mission") {
+        // SDD 485 C5/D1 — "go to the Board" and "go to tmux" are no longer navigations inside Control: the
+        // host answers each by opening that APP and landing Control on Overview. Posted WITHOUT the
+        // optimistic model update below on purpose — optimistically rendering a section this build has no
+        // renderer for would flash the unknown-section fallback for the frame before the host's real model
+        // arrives. A set rather than a chain of `||` because Phase D adds eight more ids to it.
+        if (STANDALONE_APP_SECTIONS.has(section)) {
           post(setSectionAction(section));
           return;
         }

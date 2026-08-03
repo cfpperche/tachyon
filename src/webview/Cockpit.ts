@@ -108,12 +108,6 @@ import type { RuntimeOpsSnapshot, RuntimeOpsProviderV2 } from "../runtimeOps/typ
 import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
 import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
-import {
-  type InspectorStrings,
-  type InspectorAction,
-} from "./inspector/messages.js";
-import { buildInspectorModel, type InspectorModel, type TmuxServerSnapshot } from "../inspector/model.js";
-import type { PaneSnapshot } from "../tmux/TmuxService.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import type { PluginsPanelManager } from "./PluginsPanel.js";
 import { isStudioRoute, parentRoute } from "../cockpit/route.js";
@@ -237,21 +231,9 @@ export interface CockpitRuntimeConfig {
   saveChanges: (input: { wsHash?: string; runtime: RuntimeConfigRuntime; documentId: string; expectedRevision?: string; changes: RuntimeConfigChange[] }) => Promise<void>;
 }
 
-export interface CockpitInspector {
-  snapshot: () => Promise<PaneSnapshot[]>;
-  folderByHash: () => Map<string, string>;
-  cpuBusy: (rows: PaneSnapshot[]) => Map<string, boolean>;
-  serverHealth: () => Promise<TmuxServerSnapshot>;
-  capture: (session: string) => Promise<string>;
-  open: (session: string) => void;
-  kill: (session: string) => Promise<void>;
-  reapDead: () => Promise<number>;
-  reapOrphans: () => Promise<number>;
-}
-
 /**
  * Control — editor visual hub.
- * Embedded product surfaces: Mission, Approvals, Plugins, Runtime Ops, tmux Inspector,
+ * Embedded product surfaces: Approvals, Inbox, Plugins, Runtime Ops,
  * plus rich native Fleet / Worktrees / Settings modules.
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
@@ -358,8 +340,14 @@ export interface CockpitDeps {
   }) => Promise<SavedAgentRemovalCommitResult>;
   runtimeOps: CockpitRuntimeOps;
   runtimeConfig: CockpitRuntimeConfig;
-  inspector: CockpitInspector;
   plugins: PluginsPanelManager;
+  /**
+   * SDD 485 D1 — open (or reveal) the tmux APP. Control no longer renders the inspector, so the two doors
+   * it still owns for that screen — Overview's Jump card and a persisted/deep-linked `section:tmux` — leave
+   * Control instead of navigating inside it. No argument: `window` cardinality means there is exactly one
+   * panel and nothing to key it on. Sibling of C4's `taskDetail.openDocument` and C5's `openBoard`.
+   */
+  openTmux: () => void;
   /**
    * SDD 485 C5 — open (or reveal) the Board APP for a project. Control no longer renders the board, so every
    * "go to the Board" affordance it still owns — Overview's Jump card, Fleet's action, the launcher tile —
@@ -537,8 +525,6 @@ function strings(): CockpitStrings {
     runtimeConfigOpaqueSections: t("Opaque sections"),
     runtimeConfigReadError: t("Could not read this runtime configuration source"),
     runtimeConfigUnavailable: t("Runtime configuration is unavailable because this workspace configuration did not load."),
-    tmuxTitle: t("tmux"),
-    tmuxHint: t("Server inspector (embedded)."),
     pluginsTitle: t("Plugins"),
     pluginsHint: t("Install, update, and integrity (embedded)."),
     settingsTitle: t("Settings"),
@@ -765,47 +751,6 @@ function strings(): CockpitStrings {
   };
 }
 
-function inspectorStrings(): InspectorStrings {
-  const t = vscode.l10n.t;
-  return {
-    title: t("tmux Server Inspector"),
-    subtitle: t("Live view of the dedicated tachyon socket — every session Tachyon owns."),
-    refresh: t("Refresh"),
-    auto: t("Auto-refresh"),
-    empty: t("No Tachyon sessions on the socket. Start an agent, command, or runbook to populate the server."),
-    summary: t("{0} sessions · {1} live", "{0}", "{1}"),
-    foreignNote: t("not an open workspace — orphaned or owned by another window"),
-    pid: t("pid"),
-    live: t("live"),
-    dead: t("exited"),
-    exit: t("exit {0}", "{0}"),
-    busy: t("busy"),
-    idle: t("idle"),
-    open: t("Open"),
-    capture: t("Capture"),
-    kill: t("Kill"),
-    reapDead: t("Kill {0} dead", "{0}"),
-    reapOrphans: t("Reap {0} orphaned", "{0}"),
-    killConfirm: t("Kill session {0}? This stops the process and removes the pane.", "{0}"),
-    kindSession: t("Agents & terminals"),
-    kindCommand: t("Commands"),
-    kindRunbook: t("Runbook steps"),
-    kindAnchor: t("Engine internals"),
-    kindUnknown: t("Other"),
-    captureEmpty: t("(no output)"),
-    ageSeconds: t("{0}s", "{0}"),
-    ageMinutes: t("{0}m", "{0}"),
-    ageHours: t("{0}h", "{0}"),
-    ageDays: t("{0}d", "{0}"),
-    overview: t("Overview"), server: t("Server"), all: t("All"), search: t("Search sessions, commands, or labels"),
-    workspace: t("Workspace"), status: t("Status"), kind: t("Kind"), cpu: t("CPU"), details: t("Details"),
-    fullName: t("Full session name"), hash: t("Workspace hash"), command: t("Current command"), startCommand: t("Start command"), uptime: t("Uptime"),
-    total: t("Total"), orphaned: t("Orphaned"), socket: t("Socket"), path: t("Path"), health: t("Health"), version: t("tmux version"),
-    serverPids: t("Server PIDs"), diagnostics: t("Process diagnostics"), noDiagnostics: t("No process diagnostics available."),
-    refreshCapture: t("Refresh capture"), close: t("Close"), bulkActions: t("Bulk actions"),
-  };
-}
-
 let panel: vscode.WebviewPanel | undefined;
 let currentRoute: CockpitRoute = routes.section("overview");
 /**
@@ -851,6 +796,14 @@ let openTaskDocument: ((wsHash: string, taskId: string) => void) | undefined;
  */
 let openBoardDocument: (() => void) | undefined;
 
+/**
+ * SDD 485 D1 — and the same seam for tmux. Third of these, and they are deliberately three plain slots
+ * rather than a table: each is bound from a DIFFERENT `deps` member with a different signature (a task
+ * takes an identity, the Board takes a project, tmux takes nothing — which is its cardinality showing), so
+ * a table would have to erase exactly the distinction Phase D is here to make explicit.
+ */
+let openTmuxApp: (() => void) | undefined;
+
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
@@ -875,6 +828,15 @@ function navigate(route: CockpitRoute): void {
     // exit); guarding each is nine guards and one that gets forgotten. Here it is one, at the point every
     // one of them funnels through, next to C4's for exactly the same reason.
     openBoardDocument?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "tmux") {
+    // SDD 485 D1 — and the same for tmux. Four doors could ask Control for it (the `tachyon.inspectServer`
+    // command, the launcher tile, Overview's Jump card, and a revived/deep-linked `section:tmux`), and the
+    // Overview card is the one that proves the placement: it posts `onSetSection("tmux")` from inside the
+    // client and never touches extension.ts, so a redirect living in the command wiring would have missed
+    // it entirely. Here, every door funnels through one commit point — same reason as C4's and C5's above.
+    openTmuxApp?.();
     route = routes.section("overview");
   }
   reconcileActivityTeardown(route);
@@ -1078,8 +1040,6 @@ const PLUGIN_ACTION_TYPES = new Set([
   "reselect", "repair", "rehydrate", "confirm", "cancel", "openConfig", "openDocs", "installExternal",
 ]);
 
-const INSPECTOR_ACTION_TYPES = new Set(["open", "kill", "capture", "reapDead", "reapOrphans"]);
-
 // SDD 485 C5 — the bounded/coalesced agent-liveness pass went WITH the board: it stays in
 // src/cockpit/missionVm.ts (a pure function of a workspace target, with no Control in it) and
 // `BoardPanelManager` owns the instance now. Control kept no copy — an unused one is a second
@@ -1254,7 +1214,6 @@ export async function openCockpit(
   },
 ): Promise<void> {
   const s = strings();
-  const inspS = inspectorStrings();
   // t-610705 (Phase C.0) — the router design dueto's "retired-panel revive redirects can overwrite
   // a live cockpit session" finding: VS Code does not guarantee revive order across view types.
   // If a legacy shim's redirect raced ahead of the Cockpit's OWN trusted revival and already
@@ -1346,6 +1305,7 @@ export async function openCockpit(
         doOpenActivityTranscript = undefined;
         openTaskDocument = undefined;
         openBoardDocument = undefined;
+        openTmuxApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1367,6 +1327,9 @@ export async function openCockpit(
   // above). A launcher click, a Jump card and a Fleet action therefore land on the SAME project's panel —
   // and re-opening reveals it rather than making a second, which is what `cardinality: "dashboard"` buys.
   openBoardDocument = () => deps.openBoard(resolveMissionWs(deps.missionBoard)?.wsHash);
+  // SDD 485 D1 — no scope to resolve and none to pass: `window` cardinality is precisely the statement that
+  // this screen is not about a project, so there is nothing here for a scope change to retarget.
+  openTmuxApp = () => deps.openTmux();
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1826,23 +1789,6 @@ export async function openCockpit(
     live.webview.postMessage(runtimeConfigSnapshotMessage(snapshot));
   };
 
-  const sendInspector = async () => {
-    if (panel !== live || !isSection(currentRoute, "tmux")) return;
-    const epoch = navEpoch;
-    let model: InspectorModel;
-    try {
-      const [snap, server] = await Promise.all([deps.inspector.snapshot(), deps.inspector.serverHealth()]);
-      const busy = deps.inspector.cpuBusy(snap);
-      model = buildInspectorModel(snap, deps.inspector.folderByHash(), busy, server);
-    } catch {
-      model = { groups: [], totalSessions: 0, liveSessions: 0, deadSessions: 0, orphanSessions: 0, busySessions: 0 };
-    }
-    if (panel !== live || navEpoch !== epoch) return;
-    // Namespaced to avoid colliding with Control's own `init`/`model` messages.
-    live.webview.postMessage({ type: "inspectorInit", strings: inspS });
-    live.webview.postMessage({ type: "inspectorModel", model });
-  };
-
   const bindPluginsIfNeeded = () => {
     if (isSection(currentRoute, "plugins")) {
       deps.plugins.bindControlEmbed(live.webview, controlWorkspaceScope.current);
@@ -2099,7 +2045,6 @@ export async function openCockpit(
     else if (currentRoute.kind === "inbox-item") await sendInboxItem();
     else if (isSection(currentRoute, "runtime")) await sendRuntime();
     else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
-    else if (isSection(currentRoute, "tmux")) await sendInspector();
     else if (isSection(currentRoute, "plugins")) deps.plugins.refreshControlEmbed();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
@@ -2361,55 +2306,6 @@ export async function openCockpit(
     return false;
   };
 
-  const handleInspectorAction = async (m: Partial<InspectorAction>): Promise<boolean> => {
-    if (!m?.type || !INSPECTOR_ACTION_TYPES.has(m.type)) return false;
-    if (!isSection(currentRoute, "tmux")) return false;
-    switch (m.type) {
-      case "open":
-        if (m.session) deps.inspector.open(m.session);
-        return true;
-      case "reapDead":
-        await deps.inspector.reapDead();
-        await sendInspector();
-        return true;
-      case "reapOrphans":
-        await deps.inspector.reapOrphans();
-        await sendInspector();
-        return true;
-      case "capture": {
-        if (!m.session) return true;
-        let text = "";
-        try {
-          text = await deps.inspector.capture(m.session);
-        } catch {
-          text = "";
-        }
-        live.webview.postMessage({ type: "inspectorCapture", session: m.session, text });
-        return true;
-      }
-      case "kill": {
-        if (!m.session) return true;
-        const ok = await showNotification(
-          vscode.l10n.t("Kill session {0}? This stops the process and removes the pane.", m.session),
-          "warn",
-          [vscode.l10n.t("Kill")],
-          { modal: true },
-        );
-        if (ok) {
-          try {
-            await deps.inspector.kill(m.session);
-          } catch {
-            /* gone */
-          }
-          await sendInspector();
-        }
-        return true;
-      }
-      default:
-        return false;
-    }
-  };
-
   if (wiredPanel !== live) {
     wiredPanel = live;
     // SDD 485 C6 — the sidebar owns the visible selector. Control observes the same window store so
@@ -2475,7 +2371,6 @@ export async function openCockpit(
       // is no shape collision with the two handlers above; it still runs after them, matching the
       // chain's existing most-specific-first ordering.
       if (await handleInboxAction(msg as Partial<HumanInboxAction>)) return;
-      if (await handleInspectorAction(msg as Partial<InspectorAction>)) return;
       // t-610705 (Phase C.2) — no shape collision with any registry above (openFile/terminal/
       // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
       // (route.kind !== "agent-activity" → false) same as every other handler in this chain.
@@ -2955,7 +2850,6 @@ export async function openCockpit(
     const runtimeIsActive = isSection(currentRoute, "runtime");
     const validationsIsActive = isSection(currentRoute, "validations");
     const pluginsIsActive = isSection(currentRoute, "plugins");
-    const tmuxIsActive = isSection(currentRoute, "tmux");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = currentRoute.kind === "project-handoff";
@@ -3039,7 +2933,6 @@ export async function openCockpit(
         inboxIsActive ? uri("human-inbox.css") : undefined,
         validationsIsActive ? uri("validations.css") : undefined,
         runtimeIsActive ? uri("runtime-ops.css") : undefined,
-        tmuxIsActive ? uri("inspector.css") : undefined,
         // one shared conditional for the mermaid stylesheet — task-detail and activity both render
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
@@ -3107,7 +3000,6 @@ export async function openCockpit(
           validations: uri("validations.css"),
           "plugins-tailwind": uri("plugins.tailwind.css"),
           plugins: uri("plugins.css"),
-          tmux: uri("inspector.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
           probes: uri("probes.css"),

@@ -86,7 +86,9 @@ describe("webview convention (spec 279)", () => {
       tachyonPlugins: "PLUGINS_VIEW_TYPE",
       tachyonPinStudio: "PIN_STUDIO_VIEW_TYPE",
       tachyonProbes: "PROBES_VIEW_TYPE",
-      tachyonServerInspector: "SERVER_INSPECTOR_VIEW_TYPE",
+      // SDD 485 D1 — the same viewType, a LIVE app again: its serializer revives the panel into
+      // TmuxPanelManager instead of disposing and redirecting (the token moved to TmuxPanel.ts with it).
+      tachyonServerInspector: "TMUX_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",

@@ -118,6 +118,18 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(ROUTES["mission-control"].cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
   });
 
+  // SDD 485 D1 — the same parity, one app over. The tmux app's visual evidence is taken in this harness,
+  // so a harness linking a different set proves nothing about what ships. Same scan shape as the Board's
+  // above (a `styleFiles:` config handed to SectionPanelManager, not an inline `styles: [...]`).
+  it("the harness tmux route links the same product CSS, in the same order, as TmuxPanel.ts", () => {
+    const src = readFileSync("src/webview/TmuxPanel.ts", "utf8");
+    const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(src);
+    expect(block, "src/webview/TmuxPanel.ts: no `styleFiles: [...]` array found — did the config move?").not.toBeNull();
+    const host = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+    expect(host.length, "empty scan of TmuxPanel.ts styleFiles — a silently-blind parity check").toBeGreaterThan(2);
+    expect(ROUTES.inspector.cssLinks.map((href) => href.slice(href.lastIndexOf("/") + 1))).toEqual(host);
+  });
+
   it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);

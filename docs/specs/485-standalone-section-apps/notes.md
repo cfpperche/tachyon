@@ -397,6 +397,113 @@ Control to). The `volume` fixture (INBOX 99 / TRIAGED 11 / ACTIVE 0 / LANDED 76,
 the day of the report) is committed with the route: ACTIVE stays empty on purpose, because an empty column
 beside two tall ones is where a collapsed chain shows.
 
+### Phase D1 — the tmux app is a THIRD cardinality, `window`, and "dashboard with a constant project" is the alternative that was rejected (2026-08-03)
+
+The decision this task existed to take. `spec.md` declared two kinds; the first Phase D surface fits
+neither, and the fit is not close.
+
+**Why not `dashboard`.** A dashboard is one panel per section PER PROJECT — key `viewId|project`. The
+tmux Server Inspector has no project, and three facts said so BEFORE this migration rather than being
+arranged by it:
+
+- the socket is one per user (`tmux -L tachyon`), shared by every workspace in the window. The manifest
+  recorded it when SDD 410 retired the standalone panel — "no per-workspace scoping needed — the tmux
+  socket is cross-workspace by design" — as the reason no scoping was needed; it is now the reason the
+  key has no project in it;
+- the model's universe is WIDER than the attached workspaces. `buildInspectorModel` emits `foreign`
+  groups for sessions owned by closed folders and by other windows — rows no project key could name,
+  and precisely the rows the Reap-orphans action exists for;
+- the screen already has its own Workspace filter with an "all" option, and
+  `controlWorkspaceScope.test.ts` protects it on purpose: "tmux keeps its Workspace filter — its
+  universe includes closed and other-workspace sessions".
+
+Under `dashboard`, a window with two attached projects would open TWO editor tabs rendering
+byte-identical content read from one server. `tmuxPanel.test.ts` drives exactly that case.
+
+**The rejected alternative: `dashboard`, keyed on a constant project.** It produces one panel, so it
+is not obviously wrong, and it needs no new member. It was rejected because the key would LIE, and a
+cardinality is enforcement rather than bookkeeping:
+
+- `sectionPanelKey` would emit `tachyonServerInspector|<some-constant>`, and `panelStateFor` would
+  persist a `project` the panel does not have — a field a future reader would reasonably act on;
+- `openInCurrentScope` would resolve an ambient scope and hand over something meaningless;
+- and the part that decides it: **nothing could refuse a real project.** The constant is a convention
+  the first caller keeps and the second forgets. One `open(ws.wsHash)` — from a launcher tile someone
+  wires like the Board's, or from a Phase D migration copying this file — silently produces a second
+  identical panel, and no test that does not already suspect it would notice. `window` can refuse,
+  because refusing is what it IS: `sectionPanelKey` throws on a project and on an identity.
+
+**What the member costs, and what it buys structurally.** `SectionAppCardinality` gains `window`;
+`SectionPanelTarget.project` and `SectionPanelState.project` become optional; and `sectionPanelKey`
+became an exhaustive `switch` with a `never` default, so a FOURTH member that nobody handles is a
+compile error rather than a silent fall-through into whichever branch happened to be last. Optional
+`project` also made a rule possible that was previously unstateable: a dashboard or a document with a
+MISSING project is now refused too, symmetric with C1's refusal of a document with no identity.
+
+Considered and rejected for the type shape: a discriminated union of three target types. The manager
+is generic over its refresh KIND, not over its cardinality, so a union target would have to be threaded
+through `title`, `extraLocalResourceRoots`, `bootstrapGlobals` and every app's `bind` — to move a check
+the runtime rule already makes, and that every app already depends on for `identity`.
+
+### Phase D1 — the retired viewType was REUSED, and the cardinality is what made that clean (2026-08-03)
+
+Read this next to C4's and C5's opposite calls; the three together are the rule.
+
+C4 reused `tachyonTaskDetail` and paid for it with `migrateLegacy` (two field renames). C5 could NOT
+reuse `tachyonMissionControl`: that tombstone is a live redirect carrying its own `{wsHash}`, and one
+viewType meaning two incompatible shapes has no way to tell them apart.
+
+D1 is the clean case. SDD 410 left `tachyonServerInspector` a serializer-only tombstone whose persisted
+state was `{schemaVersion, view}` and nothing else — the surface had nothing to be scoped by. That is
+EXACTLY what a `window` app writes, because `panelStateFor` omits `project` when the cardinality has
+none. So a pre-410 record is not a legacy shape to migrate: **it is already a valid state for this
+app.** The serializer reuses the panel VS Code hands back; there is no dispose-and-reopen, no shim, no
+dead path, and nothing for a future reader to keep in sync. `tmuxPanel.test.ts` feeds the verbatim
+tombstone state through a real `registerTrustedPanelSerializer` and asserts the panel survives and
+paints.
+
+The `isCockpitSingletonClaimed()` guard went with the redirect, and its absence is the point: that
+guard existed because the old redirect would navigate a Control panel someone else had already
+restored. Opening an app touches no Control state, and re-opening reveals rather than duplicating.
+
+### Phase D1 — what left `cockpit/App.tsx`, and the one door that proves where the redirect belongs (2026-08-03)
+
+Out of Control, in one commit: the `InspectorApp` lazy import and its `tmux` CSS co-load; the
+`section === "tmux"` render arm and `tmux` in `EMBED_SECTIONS`; the `inspector` prop on
+`CockpitAppProps`; the client's four inspector state slots, its three `inspectorInit`/`inspectorModel`/
+`inspectorCapture` message arms and its `inspectorProps`; and host-side `sendInspector`,
+`handleInspectorAction`, `INSPECTOR_ACTION_TYPES`, `inspectorStrings`, the `CockpitInspector` dep, the
+`tmuxIsActive` eager stylesheet and the `tmux` co-load bootstrap key. `tmux` moved from
+`COCKPIT_SECTION_ORDER` to the compatibility list beside `mission`, so it still DECODES — a persisted
+`section:"tmux"` panel or a `tachyon.openControl tmux` deep link is redirected rather than falling back
+to Overview and losing the screen the human had.
+
+`src/webview/inspector/App.tsx`, `inspector.css` and `messages.ts` are byte-identical. What changed is
+who mounts them.
+
+The redirect sits in `navigate()`, beside C4's and C5's, and **Overview's Jump card is the door that
+proves the placement**: it posts `onSetSection("tmux")` from inside the client and never touches
+`extension.ts`, so a redirect living in the command wiring would have missed it entirely. Four doors
+reach this screen (the `tachyon.inspectServer` command, the launcher tile, that Jump card, and a
+revived/deep-linked route) and all four funnel through the one commit point.
+
+Two smaller notes for whoever takes D2:
+
+- **the client gained a set, not a second `if`.** `cockpit/main.tsx` now has
+  `STANDALONE_APP_SECTIONS = {mission, tmux}` — the ids whose click must NOT get the optimistic model
+  update, because optimistically rendering a section this build has no renderer for flashes the
+  unknown-section fallback. Eight more ids join that set, and nothing else about the client changes.
+- **the deps are built ONCE, at construction, not per open.** `makeServerInspectorDeps()` closes over
+  live state a second call would throw away: the terminal registry `open()` reuses, the per-pid CPU-tick
+  baselines `cpuBusy` differences against, and the `displayedRows` receipt `kill` refuses a stale
+  identity with. A migration whose host holds no such state can be more casual; one that does must
+  check before wiring `new XPanelManager(uri, makeXDeps())` inside a callback.
+
+There is no fan-out door, and that is a fact rather than an omission: nothing in the extension host
+emits a `views-changed` for tmux, inside Control or outside it. The socket is polled, not watched. The
+manager's `refresh()` exists for a caller that does not yet exist, and `markSourceResync()` for the
+same reason.
+
 ## Deviations
 
 ### C6/C7 — one window scope, resolved only at open (2026-08-03)

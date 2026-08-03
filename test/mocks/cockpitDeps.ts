@@ -27,21 +27,13 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },
     runtimeOps: { buildSnapshot: () => ({ generatedAt: "", providers: [] }) as unknown as RuntimeOpsSnapshot },
     runtimeConfig: { buildSnapshot: () => undefined, openSource: async () => {}, saveChanges: async () => {} },
-    inspector: {
-      snapshot: async () => [],
-      folderByHash: () => new Map(),
-      cpuBusy: () => new Map(),
-      serverHealth: async () => ({ state: "unknown" }) as never,
-      capture: async () => "",
-      open: () => {},
-      kill: async () => {},
-      reapDead: async () => 0,
-      reapOrphans: async () => 0,
-    },
     plugins: new PluginsPanelManager(Uri.file("/ext"), () => []),
     // SDD 485 C5 — Control opens the Board app instead of rendering it; a test that cares which project it
     // was handed overrides this.
     openBoard: () => {},
+    // SDD 485 D1 — Control opens the tmux app instead of rendering it; a test that cares that it was asked
+    // (rather than that Control navigated) overrides this.
+    openTmux: () => {},
     openSettings: () => {},
     openDoctor: () => {},
     fleetStart: async () => {},

@@ -84,7 +84,7 @@ export class SectionAppFixturePanelManager {
             app: app.view,
             cardinality,
             key: session.key,
-            project: session.target.project,
+            project: session.target.project ?? "",
             identity: session.target.identity ?? "",
             revision,
             lastPush,

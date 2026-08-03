@@ -48,7 +48,6 @@ import type { HumanInboxErrorReceipt } from "../human-inbox/messages";
 import type { HumanInboxKind } from "../../humanInbox/model";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
 import type { SessionInspectionState } from "../runtime-ops/messages";
-import type { InspectorAppProps } from "../inspector/App";
 import type { PluginsDispatch } from "../plugins/App";
 import type { PluginsViewModel } from "../../plugins/viewModel";
 import type { ConsentVM } from "../../plugins/consentViewModel";
@@ -122,15 +121,10 @@ const PluginsApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-610705 (SDD 410 Phase B #5) — CSS co-load, fifth surface (see the Approvals comment above for
-// the mechanism). Also retires the tmux Server Inspector's standalone dual-path: Cockpit.ts already
-// builds and handles the tmux model/actions independently of ServerInspector.ts (spec 410 Phase B #5).
-const InspectorApp = lazy(() =>
-  import("../inspector/App").then((m) => {
-    loadSectionStylesheet("tmux");
-    return { default: m.App };
-  }),
-);
+// SDD 485 D1 — the tmux Server Inspector's lazy import is GONE with its section: it is a standalone
+// `window` app now (src/webview/TmuxPanel.ts + inspector/main.tsx), and two live renderers of one screen
+// is the thing spec.md forbids. `src/webview/inspector/App.tsx` is unchanged and unmoved — what changed is
+// who mounts it, which is the whole of a Phase D cutover.
 // t-610705 (Phase C.2) — CSS co-load, eighth surface: the agent-activity subroute of Fleet. Shares
 // the mermaid-block.css sheet with Handoff (see Cockpit.ts's combined eager-styles condition)
 // but under its OWN bootstrap-global key ("activity-mermaid") — same href, distinct id, so the
@@ -355,10 +349,6 @@ export interface CockpitAppProps {
   runtimeConfigUnavailable?: boolean;
   onOpenRuntimeConfigSource: (path: string) => void;
   onSaveRuntimeConfigChanges: (runtime: RuntimeConfigRuntime, documentId: string, expectedRevision: string | undefined, changes: RuntimeConfigChange[]) => void;
-  inspector: Pick<
-    InspectorAppProps,
-    "model" | "strings" | "captures" | "open" | "auto" | "onToggleAuto" | "onToggleCapture" | "onCloseCapture" | "onAction"
-  >;
   pluginsVm?: PluginsViewModel;
   pluginsConsent?: ConsentVM;
   pluginsBusy?: string;
@@ -375,7 +365,7 @@ export interface CockpitAppProps {
 }
 
 /** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime", "tmux", "plugins"]);
+const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals", "inbox", "runtime", "plugins"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -1948,14 +1938,6 @@ export function App(p: CockpitAppProps) {
     );
   } else if (section === "runtime-config") {
     body = <RuntimeConfigInventory s={s} snapshot={p.runtimeConfigSnapshot} unavailable={p.runtimeConfigUnavailable} onOpenSource={p.onOpenRuntimeConfigSource} onSaveChanges={p.onSaveRuntimeConfigChanges} />;
-  } else if (section === "tmux") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-tmux-inspector">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["tmux"].navKey]} />}>
-          <InspectorApp {...p.inspector} />
-        </Suspense>
-      </div>
-    );
   } else if (section === "plugins") {
     body = (
       <div class="ck-embed-host" data-testid="control-plugins">

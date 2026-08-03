@@ -70,6 +70,17 @@ So this spec declares two kinds, and every decision below applies to both:
 |---|---|---|
 | **Dashboard** | one panel per section, per project | Board, Fleet, Engine, Settings, the other eight |
 | **Document** | one panel per identity | task detail, and any future entity screen |
+| **Window** | one panel, no project and no identity | tmux Server Inspector |
+
+**The third kind was found by building, 2026-08-03 (D1), and is recorded here rather than in a
+footnote because it changes what "the twelve sections" means.** A dashboard is per-PROJECT, and the
+tmux inspector has no project: its socket is one per user and shared by every workspace in the window,
+its model includes sessions owned by folders this window never opened, and its screen carries its own
+workspace filter with an "all" option. Under `dashboard` two attached projects would open two
+byte-identical panels onto one server. The rejected alternative — dashboard keyed on a constant
+project — makes one panel and a key that lies, and could not REFUSE a caller that passed a real
+project; see notes.md for the full argument. Cardinality remains a parameter of one manager, now with
+three values instead of two.
 
 A document's identity is fixed at open and is never rewritten by the project selector. That is the
 rule that makes "two task details side by side" mean two *different* documents rather than one

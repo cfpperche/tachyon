@@ -66,7 +66,7 @@ const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
 ];
 
 /** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */
-const STANDALONE_APPS = new Set<CockpitSectionId>(["mission"]);
+const STANDALONE_APPS = new Set<CockpitSectionId>(["mission", "tmux"]);
 
 /** Top-level launcher entries in product order — the launcher grid's sole catalog. */
 export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {
