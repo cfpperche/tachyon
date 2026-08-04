@@ -42,6 +42,7 @@ import {
   cockpitFixtures,
   NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
+  runtimeConfigPreviewStrings,
   strings as cockpitStrings,
   validationsFixtureVm,
 } from "./fixtures/cockpit";
@@ -84,6 +85,8 @@ export interface Route<VM = unknown> {
   /** set when the built bundle is an ESM module (esbuild code-splitting) rather than a classic script — the
    *  harness must inject it via `<script type="module">` or the browser rejects its `import` statements. */
   module?: boolean;
+  /** globals the production panel bootstraps before loading the app bundle. */
+  globals?: Record<string, unknown>;
   /**
    * t-32c872 — this surface IS the page (an SDD 485 standalone app that links `page-frame.css`), so the
    * harness must not interpose its own sized `#frame` box: `preview.ts` collapses it (`display: contents`)
@@ -157,7 +160,11 @@ export const ROUTES: Record<string, Route> = {
     ],
     frame: { w: 1100, h: 720 },
     fixtures: Object.fromEntries(Object.entries(cockpitFixtures).filter(([name, fixture]) =>
-      fixture.vm.section !== "engine" && fixture.vm.section !== "worktrees" && name !== "fleet")) as Record<string, Fixture>,
+      fixture.vm.section !== "engine"
+      && fixture.vm.section !== "worktrees"
+      && fixture.vm.section !== "runtime-config"
+      && name !== "runtime-config"
+      && name !== "fleet")) as Record<string, Fixture>,
     // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
     // a module (classic <script> injection dies with "Cannot use import statement outside a module").
     module: true,
@@ -185,8 +192,6 @@ export const ROUTES: Record<string, Route> = {
       } else if (model.section === "approvals") {
         const approval = approvalFixtures.pending?.vm;
         if (approval) msgs.push(approvalsMessage(approval));
-      } else if (model.section === "runtime-config") {
-        msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
       }
       // SDD 485 D2 — no `section === "plugins"` arm: Plugins has its own route in this table now, for the
       // same reason C4's task detail and C5's Board do. The identity-matching this arm used to do (four
@@ -432,6 +437,15 @@ export const ROUTES: Record<string, Route> = {
       const state = vm as RuntimeOpsPreviewState;
       return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
     },
+  },
+  "runtime-config": {
+    bundle: "/dist/webview/runtime-config.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/runtime-config.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: { provenance: "unit-fixture-derived", vm: runtimeConfigFixtureSnapshot } },
+    module: true,
+    globals: { __TACHYON_STRINGS__: runtimeConfigPreviewStrings },
+    makeMessage: (vm) => runtimeConfigSnapshotMessage(vm as never),
   },
   engine: {
     bundle: "/dist/webview/engine.js",

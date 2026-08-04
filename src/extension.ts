@@ -18,6 +18,7 @@ import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanIn
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
+import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import {
   openCockpit,
   refreshCockpitApprovals,
@@ -1628,6 +1629,87 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
       : vscode.l10n.t("Continued {0} → {1}", fromName, toName));
   };
+  const runtimeConfigDeps: RuntimeConfigDeps = {
+    buildSnapshot: (wsHash) => {
+      const ws = byHash(wsHash);
+        if (!ws?.config) return undefined;
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
+        const common = {
+          workspaceRoot: ws.workspaceRoot,
+          agents: ws.config.agents,
+          pendingAgents,
+          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
+        };
+        try {
+          return {
+            runtimes: [
+              inspectCodexRuntimeConfig(common),
+              inspectClaudeRuntimeConfig(common),
+              inspectGrokRuntimeConfig({
+                ...common,
+                grokHome: grokConfigHome({ homeDir: common.homeDir, env: process.env, profileHome: !!common.homeDir }),
+              }),
+            ],
+          };
+        } catch (error) {
+          console.error("[Tachyon] Runtime Config snapshot failed", error);
+          return undefined;
+        }
+    },
+    openSource: async (sourcePath) => {
+      await vscode.window.showTextDocument(
+        vscode.Uri.file(sourcePath),
+        { preview: false, viewColumn: vscode.ViewColumn.Beside },
+      );
+    },
+    saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
+        const ws = byHash(wsHash);
+        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
+        let scope: "global" | "workspace";
+        let revision: string;
+        if (runtime === "codex") {
+          scope = documentId === "codex-global" ? "global" : documentId === "codex-workspace" ? "workspace" : (() => { throw new Error("Unknown Codex Runtime Config document."); })();
+          const applied = applyCodexNativeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            ...home,
+            scope,
+            expectedRevision,
+            changes: changes.map((change) => change.kind === "setting"
+              ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
+                : change),
+          });
+          revision = applied.revision;
+        } else if (runtime === "grok") {
+          scope = grokDocumentScope(documentId);
+          const applied = applyGrokRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            grokHome: grokConfigHome({ homeDir: home.homeDir, env: process.env, profileHome: !!home.homeDir }),
+            documentId,
+            expectedRevision,
+            changes,
+          });
+          revision = applied.revision;
+        } else {
+          scope = documentId === "claude-global-settings" ? "global" : "workspace";
+          const applied = applyClaudeRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            ...home,
+            documentId,
+            expectedRevision,
+            changes,
+          });
+          revision = applied.revision;
+        }
+        if (revision) {
+          await ws.extension.invoke({ action: "runtime-config.mark-pending", runtime, scope, revision });
+          await ws.client.sync();
+        }
+    },
+  };
+
   const makeCockpitDeps = (): CockpitDeps => ({
     extensionUri: context.extensionUri,
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
@@ -1901,86 +1983,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         boardPanels.refresh();
       },
     },
-    runtimeConfig: {
-      buildSnapshot: (wsHash) => {
-        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-        if (!ws?.config) return undefined;
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
-        const common = {
-          workspaceRoot: ws.workspaceRoot,
-          agents: ws.config.agents,
-          pendingAgents,
-          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
-        };
-        try {
-          return {
-            runtimes: [
-              inspectCodexRuntimeConfig(common),
-              inspectClaudeRuntimeConfig(common),
-              inspectGrokRuntimeConfig({
-                ...common,
-                grokHome: grokConfigHome({ homeDir: common.homeDir, env: process.env, profileHome: !!common.homeDir }),
-              }),
-            ],
-          };
-        } catch (error) {
-          console.error("[Tachyon] Runtime Config snapshot failed", error);
-          return undefined;
-        }
-      },
-      openSource: async (sourcePath) => {
-        await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
-      },
-      saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
-        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
-        let scope: "global" | "workspace";
-        let revision: string;
-        if (runtime === "codex") {
-          scope = documentId === "codex-global" ? "global" : documentId === "codex-workspace" ? "workspace" : (() => { throw new Error("Unknown Codex Runtime Config document."); })();
-          const applied = applyCodexNativeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            ...home,
-            scope,
-            expectedRevision,
-            changes: changes.map((change) => change.kind === "setting"
-              ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
-                : change),
-          });
-          revision = applied.revision;
-        } else if (runtime === "grok") {
-          scope = grokDocumentScope(documentId);
-          const applied = applyGrokRuntimeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            grokHome: grokConfigHome({ homeDir: home.homeDir, env: process.env, profileHome: !!home.homeDir }),
-            documentId,
-            expectedRevision,
-            changes,
-          });
-          revision = applied.revision;
-        } else {
-          scope = documentId === "claude-global-settings" ? "global" : "workspace";
-          const applied = applyClaudeRuntimeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            ...home,
-            documentId,
-            expectedRevision,
-            changes,
-          });
-          revision = applied.revision;
-        }
-        if (revision) {
-          await ws.extension.invoke({ action: "runtime-config.mark-pending", runtime, scope, revision });
-          await ws.client.sync();
-        }
-      },
-    },
-    // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
     openBoard,
     openFleet: (hash?: string) => openFleetTab(hash),
+    openRuntimeConfig: (hash?: string) => openRuntimeConfigTab(hash),
     // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
     // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
     openPlugins: (hash?: string) => openPluginsTab(hash),
@@ -2364,6 +2369,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  // SDD 485 D8 — every read and write is rooted in the immutable dashboard project.
+  const runtimeConfigPanels = new RuntimeConfigPanelManager(
+    context.extensionUri,
+    runtimeConfigDeps,
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => runtimeConfigPanels.dispose() });
+  const openRuntimeConfigTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    runtimeConfigPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
   // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
   const fleetPanels = new FleetPanelManager(context.extensionUri, {
@@ -2405,6 +2430,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
@@ -2884,6 +2910,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "fleet") {
           openFleetTab();
+          return Promise.resolve();
+        }
+        if (resolved === "runtime-config") {
+          openRuntimeConfigTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

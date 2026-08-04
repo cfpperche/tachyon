@@ -82,8 +82,6 @@ import {
   type ValidationsAction,
 } from "./validations/messages.js";
 import type { ApprovalDecision } from "../bridge/approvalRequest.js";
-import { runtimeConfigSnapshotMessage, runtimeConfigSnapshotUnavailableMessage } from "./runtime-config/messages.js";
-import type { RuntimeConfigChange, RuntimeConfigControlSnapshot, RuntimeConfigRuntime } from "../runtimeConfig/types.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { isStudioRoute, parentRoute } from "../cockpit/route.js";
 import {
@@ -177,22 +175,6 @@ export interface CockpitProbes {
   getWorkspaces: () => WorkspaceProbePresentationTarget[];
 }
 
-/**
- * SDD 485 D3 — `CockpitRuntimeOps` left with the renderer: it is `RuntimeOpsDeps` in
- * `src/webview/RuntimeOpsPanel.ts` now, unchanged apart from the file it lives in.
- *
- * Worth leaving a marker here rather than a clean deletion, because the interface BELOW is what makes the
- * cardinality readable at a glance: `runtimeConfig.buildSnapshot` takes a `wsHash` and Runtime Ops'
- * took none. Adjacent launcher tiles, opposite cardinalities — Runtime Config is the `dashboard` the D3
- * brief expected Runtime Ops to be, and only one of the two can be keyed on a project.
- */
-
-/** Read-only native runtime-config inventory. Editing is intentionally deferred to SDD 446 B. */
-export interface CockpitRuntimeConfig {
-  buildSnapshot: (wsHash?: string) => RuntimeConfigControlSnapshot | undefined;
-  openSource: (sourcePath: string) => Promise<void>;
-  saveChanges: (input: { wsHash?: string; runtime: RuntimeConfigRuntime; documentId: string; expectedRevision?: string; changes: RuntimeConfigChange[] }) => Promise<void>;
-}
 
 /**
  * Control — editor visual hub.
@@ -290,7 +272,6 @@ export interface CockpitDeps {
    * optional for the same reason — a host that has not wired one says so out loud rather than accepting a
    * click and doing nothing — and still supplied by the extension, never reachable from the Bridge.
    */
-  runtimeConfig: CockpitRuntimeConfig;
   /**
    * SDD 485 D3 — open (or reveal) the Runtime Ops APP. Control no longer renders Runtime Ops, so the
    * doors it still owns for that screen — Overview's Jump card and a persisted/deep-linked
@@ -299,6 +280,8 @@ export interface CockpitDeps {
    * screen is not about a project, so there is nothing to key it on.
    */
   openRuntimeOps: () => void;
+  /** SDD 485 D8 — open Runtime Config as a project dashboard. */
+  openRuntimeConfig: (wsHash?: string) => void;
   /**
    * SDD 485 D4 — open (or reveal) the Human Inbox APP for one project. Control no longer renders the
    * Inbox, so the doors it still owns for that screen — Overview's "Waiting on you" metric, its Jump
@@ -444,54 +427,6 @@ function strings(): CockpitStrings {
     egAttrProven: t("proven"),
     egAttrShared: t("shared"),
     egAttrUnproven: t("unproven"),
-    runtimeConfigTitle: t("Runtime Config"),
-  runtimeConfigHint: t("Global runtime configuration, capabilities, and agent impact."),
-    runtimeConfigPrototype: t("Read-only inventory"),
-    runtimeConfigEditable: t("Editable measured settings"),
-    runtimeConfigGlobalWarning: t("Global changes also affect the selected runtime outside Tachyon."),
-    runtimeConfigUnset: t("Not set"),
-    runtimeConfigDisableMcp: t("Disable from source"),
-    runtimeConfigGlobal: t("Global"),
-    runtimeConfigWorkspace: t("Workspace"),
-    runtimeConfigRuntime: t("Runtime"),
-    runtimeConfigScope: t("Scope"),
-    runtimeConfigCapabilitiesTitle: t("Skills, MCPs, hooks & extensions"),
-    runtimeConfigDetected: t("detected"),
-    runtimeConfigKnown: t("Known settings"),
-    runtimeConfigCapabilities: t("Runtime capabilities"),
-    runtimeConfigOther: t("Other settings"),
-    runtimeConfigOtherHint: t("Preserved in the source file even when Tachyon does not edit them visually."),
-    runtimeConfigSourceFile: t("Source file"),
-    runtimeConfigUsedBy: t("Used by agents"),
-    runtimeConfigConfigured: t("configured"),
-    runtimeConfigEnabled: t("Enabled"),
-    runtimeConfigDisabled: t("Disabled"),
-    runtimeConfigReload: t("Reload"),
-    runtimeConfigOpenFile: t("Open file"),
-    runtimeConfigSave: t("Save changes"),
-    runtimeConfigViewRaw: t("View keys"),
-    runtimeConfigCodex: t("OpenAI Codex"),
-    runtimeConfigClaude: t("Anthropic Claude"),
-    runtimeConfigGrok: t("xAI Grok"),
-    runtimeConfigGlobalConfig: t("Global config"),
-    runtimeConfigWorkspaceConfig: t("Workspace config"),
-    runtimeConfigGlobalSettings: t("Global settings"),
-    runtimeConfigWorkspaceSettings: t("Workspace settings"),
-    runtimeConfigWorkspaceMcp: t("Workspace MCP"),
-    runtimeConfigFolderTrust: t("Folder trust"),
-    runtimeConfigTheme: t("Theme"),
-    runtimeConfigReducedMotion: t("Reduced motion"),
-    runtimeConfigSpinnerTips: t("Spinner tips"),
-    runtimeConfigTurnDuration: t("Turn duration"),
-    runtimeConfigTerminalProgress: t("Terminal progress bar"),
-    runtimeConfigAlwaysThinking: t("Always thinking"),
-    runtimeConfigReadOnly: t("Read only"),
-    runtimeConfigReadOnlyDocument: t("This source is read-only in Control."),
-    runtimeConfigHiddenRecords: t("runtime-managed records are hidden from this inventory."),
-    runtimeConfigOverriddenBy: t("Overridden by"),
-    runtimeConfigOpaqueSections: t("Opaque sections"),
-    runtimeConfigReadError: t("Could not read this runtime configuration source"),
-    runtimeConfigUnavailable: t("Runtime configuration is unavailable because this workspace configuration did not load."),
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),
@@ -755,6 +690,7 @@ let openPluginsApp: (() => void) | undefined;
  * type — the same way `openPluginsApp`'s project shows a dashboard's.
  */
 let openRuntimeOpsApp: (() => void) | undefined;
+let openRuntimeConfigApp: (() => void) | undefined;
 
 /**
  * SDD 485 D4 — and the same seam for the Human Inbox. Sixth and seventh of these, and the first PAIR:
@@ -823,6 +759,11 @@ function navigate(route: CockpitRoute): void {
     // by now the block is the readable inventory of what has left Control: task detail, Board, tmux,
     // Plugins, Runtime Ops.
     openRuntimeOpsApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "runtime-config") {
+    // SDD 485 D8 — launcher, Overview jump, persisted state and deep links converge at this shim.
+    openRuntimeConfigApp?.();
     route = routes.section("overview");
   }
   if (route.kind === "inbox-item") {
@@ -1258,6 +1199,7 @@ export async function openCockpit(
         openTmuxApp = undefined;
         openPluginsApp = undefined;
         openRuntimeOpsApp = undefined;
+        openRuntimeConfigApp = undefined;
         openInboxApp = undefined;
         openInboxItemApp = undefined;
         openFleetApp = undefined;
@@ -1303,6 +1245,7 @@ export async function openCockpit(
   openInboxApp = () => deps.openHumanInbox(controlWorkspaceScope.current);
   openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
+  openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1608,20 +1551,6 @@ export async function openCockpit(
    * non-guard for the task detail).
    */
 
-  let runtimeConfigKnownPaths = new Set<string>();
-  const sendRuntimeConfig = async () => {
-    if (panel !== live || !isSection(currentRoute, "runtime-config")) return;
-    const epoch = navEpoch;
-    const snapshot = deps.runtimeConfig.buildSnapshot(controlWorkspaceScope.current);
-    if (panel !== live || navEpoch !== epoch) return;
-    if (!snapshot) {
-      live.webview.postMessage(runtimeConfigSnapshotUnavailableMessage());
-      return;
-    }
-    runtimeConfigKnownPaths = new Set(snapshot.runtimes.flatMap((runtime) => runtime.documents.map((document) => document.path)));
-    live.webview.postMessage(runtimeConfigSnapshotMessage(snapshot));
-  };
-
   /**
    * SDD 485 C4 — Control no longer RENDERS a task detail; the app does (`TaskDetailPanel.ts`). What used to
    * live here — `sendTaskDetail`, `handleTaskDetailAction`, `resolveTaskDetailWs` and the single
@@ -1865,7 +1794,6 @@ export async function openCockpit(
     if (isSection(currentRoute, "validations")) await sendValidations();
     else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
-    else if (isSection(currentRoute, "runtime-config")) await sendRuntimeConfig();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
     else if (isStudioRoute(currentRoute)) {
@@ -2165,32 +2093,6 @@ export async function openCockpit(
           return;
         case "revealPath":
           if (typeof c.path === "string" && c.path) deps.revealPath(c.path);
-          return;
-        case "openRuntimeConfigSource":
-          if (typeof c.path === "string" && runtimeConfigKnownPaths.has(c.path) && isSection(currentRoute, "runtime-config")) {
-            try {
-              await deps.runtimeConfig.openSource(c.path);
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
-            }
-          }
-          return;
-        case "saveRuntimeConfigChanges":
-          if ((c.runtime === "codex" || c.runtime === "claude") && typeof c.documentId === "string" && Array.isArray(c.changes) && isSection(currentRoute, "runtime-config")) {
-            try {
-              await deps.runtimeConfig.saveChanges({
-                wsHash: controlWorkspaceScope.current,
-                runtime: c.runtime,
-                documentId: c.documentId,
-                expectedRevision: typeof c.expectedRevision === "string" ? c.expectedRevision : undefined,
-                changes: c.changes,
-              });
-              await sendRuntimeConfig();
-              live.webview.postMessage(toastMessage("Runtime configuration saved."));
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err)));
-            }
-          }
           return;
         case "copyText":
           if (typeof c.text === "string") {

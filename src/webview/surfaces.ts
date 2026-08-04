@@ -211,6 +211,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // `--ds-page-pad-*` rule, which is why this migration moved no CSS and only DELETED the embed-context
   // overrides that Control and this sheet each carried for the other.
   { viewId: "tachyonRuntimeOps", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonRuntimeConfig", view: "runtime-config", hostFile: "src/webview/RuntimeConfigPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // SDD 485 D4 (2026-08-03) — the Human Inbox is a STANDALONE APP, the fourth Phase D migration and the
   // third `dashboard`: everything it reads is rooted at ONE workspace root (pending approvals, that
   // workspace's validations, both Saved Agent proposal queues, the artifact loader's containment root), so

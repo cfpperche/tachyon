@@ -70,8 +70,6 @@ import {
   closeValidationItemAction,
   assignValidationAction,
 } from "../validations/messages";
-import { RUNTIME_CONFIG_SNAPSHOT, RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE } from "../runtime-config/messages";
-import type { RuntimeConfigControlSnapshot } from "../../runtimeConfig/types";
 import type { StudioDispatch } from "../shared/studio/protocol";
 import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
 
@@ -124,8 +122,6 @@ function CockpitRoot() {
   const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
   const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
   const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
-  const [runtimeConfigSnapshot, setRuntimeConfigSnapshot] = useState<RuntimeConfigControlSnapshot | undefined>(undefined);
-  const [runtimeConfigUnavailable, setRuntimeConfigUnavailable] = useState(false);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -294,12 +290,6 @@ function CockpitRoot() {
       // panel that IS one project's queue has no second identity for a late push to belong to.
       // SDD 485 D3 — the two runtime-ops arms left with the renderer: Runtime Ops is a standalone app, and
       // its client half is `runtime-ops/main.tsx`, which owns both state slots and its own 3s poll.
-      } else if (type === RUNTIME_CONFIG_SNAPSHOT && raw.snapshot) {
-        setRuntimeConfigSnapshot(raw.snapshot as RuntimeConfigControlSnapshot);
-        setRuntimeConfigUnavailable(false);
-      } else if (type === RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE) {
-        setRuntimeConfigSnapshot(undefined);
-        setRuntimeConfigUnavailable(true);
       } else if (type === "toast" && typeof raw.text === "string") {
         const toneRaw = typeof raw.tone === "string" ? raw.tone : "info";
         const tone: ToastTone =
@@ -468,10 +458,6 @@ function CockpitRoot() {
       validationsVm={validationsVm}
       validationsError={validationsError}
       validationsDispatch={validationsDispatch}
-      runtimeConfigSnapshot={runtimeConfigSnapshot}
-      runtimeConfigUnavailable={runtimeConfigUnavailable}
-      onOpenRuntimeConfigSource={(path: string) => post({ type: "openRuntimeConfigSource", path })}
-      onSaveRuntimeConfigChanges={(runtime, documentId, expectedRevision, changes) => post({ type: "saveRuntimeConfigChanges", runtime, documentId, expectedRevision, changes })}
       onSetSection={(section: CockpitSectionId) => {
         // SDD 485 C5/D1 — "go to the Board" and "go to tmux" are no longer navigations inside Control: the
         // host answers each by opening that APP and landing Control on Overview. Posted WITHOUT the

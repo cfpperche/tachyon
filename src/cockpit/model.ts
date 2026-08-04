@@ -63,15 +63,13 @@ export type CockpitSectionId =
  * SDD 485 D1 — `tmux` left the same way, and it is the second of ten. Phase D's whole shape is this one
  * edit: an id moves from here into the compatibility list, `WEBVIEW_APPS` gains a row, and the tile does
  * not move at all. D2 — `plugins`, the third, by exactly that edit and no other. D3 — `runtime`
- * (Runtime Ops), the fourth, and note that `runtime-config` STAYS: adjacent tiles, opposite
- * cardinalities, and only one of the two moved. D4 — `inbox` (the Human Inbox), the fifth, and the
+ * (Runtime Ops), the fourth. D4 — `inbox` (the Human Inbox), the fifth, and the
  * first whose departure also takes a SUBROUTE with it: `inbox-item` is rendered inside that app now, so
  * both route kinds redirect (see `navigate()` in Cockpit.ts).
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
   "execution-graph",
-  "runtime-config",
   "settings",
 ];
 
@@ -92,6 +90,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   "mission",
   "plugins",
   "runtime",
+  "runtime-config",
   "tmux",
   "worktrees",
   "validations",
