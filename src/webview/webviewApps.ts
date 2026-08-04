@@ -169,6 +169,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // never registered in production, so there is no record to revive and reuse would buy nothing. See
   // `RUNTIME_OPS_VIEW_TYPE`'s own comment for the full table of the five calls this series has now made.
   { view: "runtime-ops", viewId: "tachyonRuntimeOps", section: "runtime", host: "section", cardinality: "window", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D8 — unlike adjacent Runtime Ops, buildSnapshot(wsHash) reads one workspace root.
+  // New id: Runtime Config was born inside Control and has no retired standalone panel.
+  { view: "runtime-config", viewId: "tachyonRuntimeConfig", section: "runtime-config", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D4 — the Human Inbox, the FOURTH Phase D migration and the third `dashboard`. D3 established
   // that "it is a Control section" says nothing about cardinality and that the question is whether the
   // surface's data source ACCEPTS a project; here the answer is yes, everywhere, and it predates this

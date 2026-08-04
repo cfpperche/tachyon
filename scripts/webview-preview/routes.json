@@ -939,27 +939,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "runtime-config",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime-config",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "settings",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=settings",
     "frame": {
@@ -1956,6 +1935,18 @@
       "quota",
       "provider capacity",
       "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-config",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=runtime-config&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "unit-fixture-derived"
     ]
   },
   {

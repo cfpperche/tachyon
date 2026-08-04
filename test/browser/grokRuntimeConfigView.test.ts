@@ -18,7 +18,7 @@ import { startGateServer, type GateServer } from "./support/gateServer";
  *
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/grokRuntimeConfigView.test.ts
  */
-const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime-config";
+const PREVIEW = "/scripts/webview-preview/index.html?view=runtime-config&fixture=default";
 
 /**
  * The runtime dropdown is the Kit (Radix) dropdown, which opens on `pointerdown` — measured

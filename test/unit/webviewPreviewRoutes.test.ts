@@ -96,7 +96,6 @@ describe("preview route table", () => {
       // t-ac79a7 — the navigation-pending state: Control's landing screen still on display while the
       // route it just committed is loading (the fixture pushes routePending, never routeReady).
       "nav-pending",
-      "runtime-config",
       "settings",
       "studio-agent",
       "studio-agent-canonical",

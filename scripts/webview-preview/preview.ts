@@ -106,6 +106,7 @@ function run(): void {
     "/dist/webview/mermaid.js";
   (window as Window & { __katexSrc?: string }).__katexSrc = "/dist/webview/katex.js";
   (window as Window & { __katexCssUri?: string }).__katexCssUri = "/dist/webview/katex.min.css";
+  if (route.globals) Object.assign(window, route.globals);
 
   // deterministic injection: wait for the view's ready handshake, inject the fixture exactly once.
   let injected = false;

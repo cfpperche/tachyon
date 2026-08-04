@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { cockpitFixtures, strings as cockpitStrings, runtimeConfigFixtureSnapshot } from "../../scripts/webview-preview/fixtures/cockpit.js";
+import { cockpitFixtures, strings as cockpitStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { COCKPIT_SECTION_ORDER, type CockpitModel, type CockpitSectionId } from "../../src/cockpit/model.js";
 import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
 import { SAMPLE, type FleetVM } from "../../src/sidebar/types.js";
@@ -73,9 +73,10 @@ const SECTION_HEADING: Record<CockpitSectionId, string> = {
  */
 const RADIX_BOUND: ReadonlyArray<{ id: CockpitSectionId; chrome: RegExp }> = [
   { id: "overview", chrome: /<PageChrome\s+title=\{s\.overviewTitle\}/ },
-  { id: "runtime-config", chrome: /<PageChrome\s+title=\{s\.runtimeConfigTitle\}/ },
 ];
-const RENDERABLE = COCKPIT_SECTION_ORDER.filter((id) => !RADIX_BOUND.some((r) => r.id === id));
+const RENDERABLE = COCKPIT_SECTION_ORDER.filter(
+  (id) => id !== "runtime-config" && !RADIX_BOUND.some((r) => r.id === id),
+);
 
 /** The fixture whose model IS this section with no subroute on top of it. */
 function sectionModel(id: CockpitSectionId): CockpitModel {
@@ -97,7 +98,6 @@ describe("t-aa2780 — Control renders no section tab strip", () => {
     renderStatic(Shell({
       strings: cockpitStrings,
       model: sectionModel(id),
-      runtimeConfigSnapshot: runtimeConfigFixtureSnapshot,
       inspector: {},
     }));
 
@@ -180,7 +180,6 @@ describe("t-aa2780 — every section says which section it is", () => {
       const html = renderStatic(Shell({
         strings: cockpitStrings,
         model: sectionModel(id),
-        runtimeConfigSnapshot: runtimeConfigFixtureSnapshot,
         inspector: {},
       }));
       expect(headings(html), `section '${id}' renders no page heading — it is anonymous without the tab strip`)
@@ -193,9 +192,6 @@ describe("t-aa2780 — every section says which section it is", () => {
     for (const { id, chrome } of RADIX_BOUND) {
       expect(src, `section '${id}' lost its PageChrome title`).toMatch(chrome);
     }
-    // Runtime Config states it on BOTH arms: the loaded editor and the no-snapshot/unavailable screen,
-    // which was the one section body that used to render a bare, unnamed message.
-    expect((src.match(/<PageChrome\s+title=\{s\.runtimeConfigTitle\}/g) ?? []).length).toBe(2);
   });
 
   it("every launcher tile has a heading here — a new tile needs one", () => {

@@ -1,0 +1,504 @@
+/* SDD 485 D8 — moved with the sole rcp-* consumer from Control. */
++.rcp-root {
+  width: 100%;
+  max-width: 1180px;
+}
+
+.rcp-toolbar,
+.rcp-impact,
+.rcp-card {
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  border-radius: var(--ds-radius);
+}
+
+.rcp-toolbar {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(235px, 1fr) minmax(260px, 1.2fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+}
+
+.rcp-toolbar-field,
+.rcp-toolbar-action {
+  display: grid;
+  grid-template-rows: 12px 32px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.rcp-toolbar-action .ds-btn {
+  height: 32px;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.rcp-toolbar-value {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.rcp-segmented {
+  display: flex;
+  min-height: 32px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+}
+
+.rcp-segmented button {
+  flex: 1 1 auto;
+  border: 0;
+  border-right: 1px solid var(--ds-border);
+  background: transparent;
+  color: var(--ds-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.rcp-segmented button:last-child {
+  border-right: 0;
+}
+
+.rcp-segmented button.active {
+  background: color-mix(in srgb, var(--vscode-focusBorder) 22%, transparent);
+  color: var(--vscode-foreground);
+}
+
+.rcp-segmented .codicon {
+  margin-right: 3px;
+  font-size: 10px;
+}
+
+.rcp-runtime-select {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  text-align: left;
+}
+
+.rcp-runtime-select:hover,
+.rcp-runtime-select[data-state="open"] {
+  border-color: var(--vscode-focusBorder);
+  background: color-mix(in srgb, var(--vscode-focusBorder) 12%, var(--vscode-editor-background));
+}
+
+.rcp-runtime-select:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.rcp-runtime-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcp-runtime-chevron {
+  color: var(--ds-muted);
+  font-size: 12px;
+  justify-self: end;
+}
+
+.rcp-runtime-select[data-state="open"] .rcp-runtime-chevron {
+  transform: rotate(180deg);
+}
+
+.rcp-runtime-logo,
+.rcp-runtime-logo .ash-runtime-logo {
+  display: block;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+}
+
+.rcp-runtime-menu[data-slot="dropdown-menu-content"] {
+  z-index: 100;
+  min-width: var(--radix-dropdown-menu-trigger-width);
+  padding: 4px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  box-shadow: 0 6px 18px color-mix(in srgb, #000 38%, transparent);
+}
+
+.rcp-runtime-option[data-slot="dropdown-menu-item"] {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: calc(var(--ds-radius) - 2px);
+  cursor: pointer;
+  font-size: 10px;
+  outline: none;
+}
+
+.rcp-runtime-option[data-slot="dropdown-menu-item"][data-highlighted] {
+  background: var(--vscode-menu-selectionBackground);
+  color: var(--vscode-menu-selectionForeground);
+}
+
+.rcp-runtime-check {
+  justify-self: end;
+  font-size: 12px;
+}
+
+.rcp-eyebrow {
+  color: var(--ds-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rcp-source-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--vscode-textLink-foreground);
+}
+
+.rcp-impact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
+.rcp-global-warning {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 2px solid var(--vscode-editorWarning-foreground, #cca700);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 9%, transparent);
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
+.rcp-agent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rcp-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.rcp-card {
+  min-width: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.rcp-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.rcp-card-head h2 {
+  margin: 3px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rcp-card-head p {
+  max-width: 620px;
+  margin: 5px 0 0;
+  color: var(--ds-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.rcp-setting-list,
+.rcp-capability-list {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-border);
+}
+
+.rcp-setting,
+.rcp-capability-group {
+  background: var(--vscode-editor-background);
+  min-height: 38px;
+}
+
+.rcp-setting {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(150px, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.rcp-setting code {
+  overflow: hidden;
+  color: var(--vscode-textLink-foreground);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcp-setting--editable label {
+  font-weight: 600;
+}
+
+/* Why Control shows a key it will not write (measured authority, or an ignored scope). */
+.rcp-setting-note {
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.rcp-setting-editor {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.rcp-setting-editor input:not([type="checkbox"]) {
+  min-width: 0;
+  flex: 1;
+  height: 25px;
+  box-sizing: border-box;
+  border: 1px solid var(--vscode-input-border, var(--ds-border));
+  border-radius: 2px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font: inherit;
+  padding: 0 7px;
+}
+
+.rcp-setting-editor input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
+.rcp-setting-editor .ds-btn,
+.rcp-capability-item .ds-btn {
+  height: 25px;
+  flex: 0 0 auto;
+  font-size: 9px;
+}
+
+.rcp-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.rcp-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+.rcp-actions-state {
+  margin-right: auto;
+  color: var(--ds-muted);
+  font-size: 10px;
+}
+
+.rcp-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--ds-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.rcp-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
+.rcp-setting select {
+  width: 100%;
+  min-width: 0;
+  height: 25px;
+  border: 1px solid var(--vscode-dropdown-border, var(--ds-border));
+  border-radius: 2px;
+  background: var(--vscode-dropdown-background);
+  color: var(--vscode-dropdown-foreground);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 0 7px;
+}
+
+.rcp-capability-group-head,
+.rcp-capability-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 8px;
+}
+
+.rcp-capability-group-head {
+  justify-content: flex-start;
+  background: color-mix(in srgb, var(--vscode-sideBar-background) 78%, var(--vscode-editor-background));
+  color: var(--ds-muted);
+}
+
+.rcp-capability-group-head > .codicon {
+  color: var(--vscode-textLink-foreground);
+}
+
+.rcp-capability-group-head strong {
+  color: var(--vscode-foreground);
+  font-size: 10px;
+}
+
+.rcp-capability-group-head > span:last-child {
+  margin-left: auto;
+  font-size: 9px;
+}
+
+.rcp-capability-item {
+  min-height: 34px;
+  padding-left: 28px;
+  border-top: 1px solid var(--ds-border);
+}
+
+.rcp-capability-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.rcp-capability-item strong {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.rcp-capability-item > div > span {
+  overflow: hidden;
+  color: var(--ds-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rcp-capability-empty {
+  padding: 7px 28px;
+  border-top: 1px solid var(--ds-border);
+  color: var(--ds-muted);
+  font-size: 9px;
+}
+
+.rcp-switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ds-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.rcp-switch input {
+  accent-color: var(--vscode-checkbox-selectBackground, var(--vscode-focusBorder));
+}
+
+.rcp-card--other {
+  grid-column: 1 / -1;
+}
+
+.rcp-other-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.rcp-other-preview code,
+.rcp-card--other pre {
+  border: 1px solid var(--ds-border);
+  background: var(--vscode-textCodeBlock-background);
+  border-radius: 3px;
+  color: var(--ds-muted);
+  font-size: 9px;
+  padding: 4px 6px;
+}
+
+.rcp-runtime-state {
+  margin-bottom: 8px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--vscode-textLink-foreground);
+  background: color-mix(in srgb, var(--vscode-textBlockQuote-background) 82%, transparent);
+  color: var(--ds-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.rcp-card--other pre {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 850px) {
+  .rcp-toolbar,
+  .rcp-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rcp-card--other {
+    grid-column: auto;
+  }
+}
+
+/* Embed hosts stay pad-free; each product root applies --ds-page-pad-*. */

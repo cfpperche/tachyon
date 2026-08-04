@@ -654,6 +654,7 @@
   "agent '{0}': plugin '{1}' hooks were not projected into its session — {2}": "agente '{0}': os hooks do plugin '{1}' não foram projetados na sessão dele — {2}",
   "another tmux client ({0}×{1}) is attached — temporary; work is safe": "outro cliente tmux ({0}×{1}) está anexado — temporário; o trabalho está seguro",
   "'{0}' is authorized for {1}. {1} is running, so its session still has the capabilities it launched with — restart {1} to deliver this one.": "'{0}' está autorizado para {1}. {1} está em execução, então a sessão dele ainda tem as capacidades com que foi iniciada — reinicie {1} para entregar esta.",
+  "Runtime Config": "Configuração de runtime",
   "Runtime Ops": "Runtime Ops",
   "This engine does not expose session inspection.": "Este engine não expõe inspeção de sessão.",
   "Human Inbox": "Caixa de Entrada",
